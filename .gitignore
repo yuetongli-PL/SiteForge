@@ -1,1 +1,12 @@
 captures/
+__pycache__/
+*.pyc
+_tmp_*.html
+book-content/
+expanded-states/
+governance/
+interaction-abstraction/
+knowledge-base/
+nl-entry/
+operation-docs/
+state-analysis/

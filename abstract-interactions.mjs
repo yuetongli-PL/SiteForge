@@ -1,0 +1,1859 @@
+// @ts-check
+
+import { createHash } from 'node:crypto';
+import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+const DEFAULT_OPTIONS = {
+  analysisManifestPath: undefined,
+  analysisDir: undefined,
+  expandedStatesDir: undefined,
+  outDir: path.resolve(process.cwd(), 'interaction-abstraction'),
+};
+
+const ANALYSIS_MANIFEST_NAME = 'analysis-manifest.json';
+const ELEMENTS_FILE_NAME = 'elements.json';
+const STATES_FILE_NAME = 'states.json';
+const TRANSITIONS_FILE_NAME = 'transitions.json';
+const SITE_PROFILE_FILE_NAME = 'site-profile.json';
+const STATE_MANIFEST_FILE_NAME = 'manifest.json';
+const CAPABILITY_MATRIX_FILE_NAME = 'capability-matrix.json';
+const BOOK_CONTENT_MANIFEST_NAME = 'book-content-manifest.json';
+const BOOK_CONTENT_FILE_NAMES = {
+  books: 'books.json',
+  authors: 'authors.json',
+  searchResults: 'search-results.json',
+};
+
+const ACTION_DEFINITIONS = [
+  {
+    actionId: 'noop',
+    primitive: 'noop',
+    actionName: 'No Operation',
+    appliesTo: [
+      'tab-group',
+      'details-toggle',
+      'expanded-toggle',
+      'menu-button',
+      'dialog-open',
+      'category-link-group',
+      'content-link-group',
+      'author-link-group',
+      'chapter-link-group',
+      'utility-link-group',
+      'auth-link-group',
+      'pagination-link-group',
+      'form-submit-group',
+      'search-form-group',
+    ],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: [],
+    effects: [],
+    locatorPreference: [],
+  },
+  {
+    actionId: 'navigate',
+    primitive: 'click',
+    actionName: 'Navigate',
+    appliesTo: ['category-link-group', 'content-link-group', 'author-link-group', 'chapter-link-group', 'utility-link-group', 'auth-link-group', 'pagination-link-group'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: ['activeMemberId'],
+    effects: ['activeMemberId = targetMemberId'],
+    locatorPreference: ['locator.id', 'controlledTarget', 'label', 'locator.domPath'],
+  },
+  {
+    actionId: 'click-toggle',
+    primitive: 'click',
+    actionName: 'Click Toggle',
+    appliesTo: ['details-toggle', 'expanded-toggle', 'menu-button', 'dialog-open'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: ['expanded', 'open'],
+    effects: ['expanded = desiredValue', 'open = desiredValue'],
+    locatorPreference: ['locator.id', 'controlledTarget', 'label', 'locator.domPath'],
+  },
+  {
+    actionId: 'select-member',
+    primitive: 'click',
+    actionName: 'Select Member',
+    appliesTo: ['tab-group'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: ['activeMemberId'],
+    effects: ['activeMemberId = targetMemberId'],
+    locatorPreference: ['locator.id', 'controlledTarget', 'label', 'locator.domPath'],
+  },
+  {
+    actionId: 'submit',
+    primitive: 'click',
+    actionName: 'Submit',
+    appliesTo: ['form-submit-group'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: [],
+    effects: ['submit form'],
+    locatorPreference: ['locator.id', 'controlledTarget', 'label', 'locator.domPath'],
+  },
+  {
+    actionId: 'search-submit',
+    primitive: 'submit',
+    actionName: 'Search Submit',
+    appliesTo: ['search-form-group'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: ['queryText'],
+    effects: ['queryText = queryText', 'submit search form'],
+    locatorPreference: ['locator.id', 'label', 'locator.domPath'],
+  },
+  {
+    actionId: 'download-book',
+    primitive: 'read-artifact-or-crawl',
+    actionName: 'Download Book',
+    appliesTo: ['content-link-group'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string | undefined',
+      desiredValue: 'boolean | undefined',
+      queryText: 'string | undefined',
+    },
+    reads: ['activeMemberId'],
+    effects: ['prefer local collected novel artifact for targetMemberId', 'generate or reuse site crawler script when artifact missing'],
+    locatorPreference: ['member.downloadFile', 'member.label'],
+  },
+];
+
+/**
+ * @typedef {{
+ *   intentId: string,
+ *   intentType: string,
+ *   intentName: string,
+ *   elementId: string,
+ *   elementKind: string,
+ *   sourceElementName: string,
+ *   stateField: string,
+ *   actionId: string,
+ *   targetDomain: {
+ *     parameter: string,
+ *     observedValues: Array<{ value: string | boolean, label: string | null, stateIds: string[], edgeIds: string[] }>,
+ *     candidateValues: Array<{ value: string | boolean, label: string | null, observed: boolean }>,
+ *     actionableValues: Array<{ value: string | boolean, label: string | null, edgeIds: string[] }>
+ *   },
+ *   evidence: {
+ *     stateIds: string[],
+ *     edgeIds: string[]
+ *   }
+ * }} IntentRecord
+ */
+
+function createSha256(value) {
+  return createHash('sha256').update(String(value), 'utf8').digest('hex');
+}
+
+function normalizeWhitespace(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeText(value) {
+  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
+}
+
+function normalizeLabel(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function normalizeUrlNoFragment(input) {
+  if (!input) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(input);
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return String(input).split('#')[0];
+  }
+}
+
+function formatTimestampForDir(date = new Date()) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
+}
+
+function sanitizeHost(host) {
+  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
+}
+
+function compareNullableStrings(left, right) {
+  return String(left ?? '').localeCompare(String(right ?? ''), 'en');
+}
+
+function compareValue(left, right) {
+  const leftKey = typeof left === 'boolean' ? Number(left) : String(left ?? '');
+  const rightKey = typeof right === 'boolean' ? Number(right) : String(right ?? '');
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function firstNonEmpty(values) {
+  for (const value of values) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    const normalized = normalizeWhitespace(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
+async function pathExists(targetPath) {
+  if (!targetPath) {
+    return false;
+  }
+
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFile(filePath) {
+  return JSON.parse(await readFile(filePath, 'utf8'));
+}
+
+async function writeJsonFile(filePath, value) {
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+function resolveMaybeRelative(inputPath, baseDir) {
+  if (!inputPath) {
+    return null;
+  }
+  return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
+}
+
+function buildWarning(code, message, details = {}) {
+  return {
+    code,
+    message,
+    ...details,
+  };
+}
+
+function summarizeForStdout(manifest) {
+  return {
+    intents: manifest.summary.intents,
+    actions: manifest.summary.actions,
+    decisionRules: manifest.summary.decisionRules,
+    actionableElements: manifest.summary.actionableElements,
+    primaryArchetype: manifest.summary.primaryArchetype,
+    outDir: manifest.outDir,
+  };
+}
+
+function serializeDecisionValue(value) {
+  return typeof value === 'boolean' ? String(value) : String(value ?? '');
+}
+
+function stableValueKey(value) {
+  return typeof value === 'boolean' ? `bool:${value}` : `str:${String(value ?? '')}`;
+}
+
+async function firstExistingPath(candidates) {
+  for (const candidate of candidates) {
+    if (!candidate?.value) {
+      continue;
+    }
+    const resolved = resolveMaybeRelative(candidate.value, candidate.baseDir);
+    if (await pathExists(resolved)) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+async function resolveAnalysisInput(options) {
+  if (options.analysisManifestPath) {
+    const analysisManifestPath = path.resolve(options.analysisManifestPath);
+    if (!(await pathExists(analysisManifestPath))) {
+      throw new Error(`Analysis manifest not found: ${analysisManifestPath}`);
+    }
+    return {
+      analysisManifestPath,
+      analysisDir: path.dirname(analysisManifestPath),
+    };
+  }
+
+  if (!options.analysisDir) {
+    throw new Error('Pass analysisManifestPath, --analysis-manifest, analysisDir, or --analysis-dir.');
+  }
+
+  const analysisDir = path.resolve(options.analysisDir);
+  if (!(await pathExists(analysisDir))) {
+    throw new Error(`Analysis directory not found: ${analysisDir}`);
+  }
+
+  const candidateManifest = path.join(analysisDir, ANALYSIS_MANIFEST_NAME);
+  return {
+    analysisManifestPath: (await pathExists(candidateManifest)) ? candidateManifest : null,
+    analysisDir,
+  };
+}
+
+async function resolveAnalysisFiles(analysisDir, analysisManifest) {
+  const manifestDir = analysisManifest ? path.dirname(analysisManifest.__path) : analysisDir;
+
+  const elementsPath = await firstExistingPath([
+    { value: analysisManifest?.files?.elements, baseDir: manifestDir },
+    { value: path.join(analysisDir, ELEMENTS_FILE_NAME), baseDir: analysisDir },
+  ]);
+  const statesPath = await firstExistingPath([
+    { value: analysisManifest?.files?.states, baseDir: manifestDir },
+    { value: path.join(analysisDir, STATES_FILE_NAME), baseDir: analysisDir },
+  ]);
+  const transitionsPath = await firstExistingPath([
+    { value: analysisManifest?.files?.transitions, baseDir: manifestDir },
+    { value: path.join(analysisDir, TRANSITIONS_FILE_NAME), baseDir: analysisDir },
+  ]);
+  const siteProfilePath = await firstExistingPath([
+    { value: analysisManifest?.files?.siteProfile, baseDir: manifestDir },
+    { value: path.join(analysisDir, SITE_PROFILE_FILE_NAME), baseDir: analysisDir },
+  ]);
+
+  if (!elementsPath || !statesPath || !transitionsPath) {
+    throw new Error(`Analysis artifacts missing under ${analysisDir}`);
+  }
+
+  return {
+    elementsPath,
+    statesPath,
+    transitionsPath,
+    siteProfilePath,
+  };
+}
+
+async function loadAnalysisArtifacts(options) {
+  const { analysisManifestPath, analysisDir } = await resolveAnalysisInput(options);
+  const warnings = [];
+
+  let analysisManifest = null;
+  if (analysisManifestPath) {
+    analysisManifest = await readJsonFile(analysisManifestPath);
+    analysisManifest.__path = analysisManifestPath;
+  }
+
+  const files = await resolveAnalysisFiles(analysisDir, analysisManifest);
+  const [elementsDocument, statesDocument, transitionsDocument] = await Promise.all([
+    readJsonFile(files.elementsPath),
+    readJsonFile(files.statesPath),
+    readJsonFile(files.transitionsPath),
+  ]);
+  const siteProfileDocument = files.siteProfilePath ? await readJsonFile(files.siteProfilePath).catch(() => null) : null;
+
+  const baseUrl = analysisManifest?.baseUrl ?? statesDocument.baseUrl ?? elementsDocument.baseUrl ?? transitionsDocument.baseUrl ?? options.url ?? null;
+  const inputUrl = analysisManifest?.inputUrl ?? statesDocument.inputUrl ?? elementsDocument.inputUrl ?? transitionsDocument.inputUrl ?? options.url;
+
+  let expandedStatesDir = null;
+  if (options.expandedStatesDir) {
+    expandedStatesDir = path.resolve(options.expandedStatesDir);
+  } else if (analysisManifest?.source?.expandedStatesDir) {
+    expandedStatesDir = resolveMaybeRelative(analysisManifest.source.expandedStatesDir, analysisDir);
+  }
+
+  if (expandedStatesDir && !(await pathExists(expandedStatesDir))) {
+    warnings.push(buildWarning('expanded_states_dir_missing', `Expanded states directory not found: ${expandedStatesDir}`, {
+      expandedStatesDir,
+    }));
+    expandedStatesDir = null;
+  }
+
+  let bookContentDir = null;
+  let bookContentManifestPath = null;
+  let bookContentManifest = null;
+  let bookContentBooksDocument = [];
+  if (analysisManifest?.source?.bookContentDir) {
+    bookContentDir = resolveMaybeRelative(analysisManifest.source.bookContentDir, analysisDir);
+  }
+  if (analysisManifest?.source?.bookContentManifest) {
+    bookContentManifestPath = resolveMaybeRelative(analysisManifest.source.bookContentManifest, analysisDir);
+  }
+  if (!bookContentManifestPath && bookContentDir) {
+    const candidateManifest = path.join(bookContentDir, BOOK_CONTENT_MANIFEST_NAME);
+    if (await pathExists(candidateManifest)) {
+      bookContentManifestPath = candidateManifest;
+    }
+  }
+  if (bookContentManifestPath && await pathExists(bookContentManifestPath)) {
+    try {
+      bookContentManifest = await readJsonFile(bookContentManifestPath);
+      const booksPath = await firstExistingPath([
+        { value: bookContentManifest?.files?.books, baseDir: bookContentDir ?? path.dirname(bookContentManifestPath) },
+        { value: path.join(bookContentDir ?? path.dirname(bookContentManifestPath), BOOK_CONTENT_FILE_NAMES.books), baseDir: bookContentDir ?? path.dirname(bookContentManifestPath) },
+      ]);
+      if (booksPath) {
+        bookContentBooksDocument = await readJsonFile(booksPath);
+      }
+    } catch (error) {
+      warnings.push(buildWarning('book_content_parse_failed', `Failed to parse book-content artifacts: ${error.message}`, {
+        bookContentManifestPath,
+      }));
+      bookContentDir = null;
+      bookContentManifestPath = null;
+      bookContentManifest = null;
+      bookContentBooksDocument = [];
+    }
+  }
+
+  return {
+    analysisDir,
+    analysisManifestPath,
+    analysisManifest,
+    files,
+    inputUrl,
+    baseUrl,
+    elementsDocument,
+    statesDocument,
+    transitionsDocument,
+    siteProfileDocument,
+    expandedStatesDir,
+    bookContentDir,
+    bookContentManifestPath,
+    bookContentManifest,
+    bookContentBooksDocument,
+    warnings,
+  };
+}
+
+async function createOutputLayout(baseUrl, rootOutDir) {
+  const generatedAt = new Date().toISOString();
+  const host = (() => {
+    try {
+      return new URL(baseUrl).host;
+    } catch {
+      return 'unknown-host';
+    }
+  })();
+  const outDir = path.join(path.resolve(rootOutDir), `${formatTimestampForDir(new Date(generatedAt))}_${sanitizeHost(host)}_abstraction`);
+  await mkdir(outDir, { recursive: true });
+  return {
+    generatedAt,
+    outDir,
+    intentsPath: path.join(outDir, 'intents.json'),
+    actionsPath: path.join(outDir, 'actions.json'),
+    decisionTablePath: path.join(outDir, 'decision-table.json'),
+    capabilityMatrixPath: path.join(outDir, CAPABILITY_MATRIX_FILE_NAME),
+    manifestPath: path.join(outDir, 'abstraction-manifest.json'),
+  };
+}
+
+function mergeOptions(options = {}) {
+  return {
+    ...DEFAULT_OPTIONS,
+    ...options,
+    analysisManifestPath: options.analysisManifestPath ?? DEFAULT_OPTIONS.analysisManifestPath,
+    analysisDir: options.analysisDir ?? DEFAULT_OPTIONS.analysisDir,
+    expandedStatesDir: options.expandedStatesDir ?? DEFAULT_OPTIONS.expandedStatesDir,
+    outDir: options.outDir ? path.resolve(options.outDir) : DEFAULT_OPTIONS.outDir,
+  };
+}
+
+function buildStateFieldSpec(elementKind) {
+  switch (elementKind) {
+    case 'tab-group':
+      return {
+        intentType: 'switch-tab',
+        stateField: 'activeMemberId',
+        actionId: 'select-member',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'switch-in-page-state',
+      };
+    case 'details-toggle':
+    case 'expanded-toggle':
+      return {
+        intentType: 'expand-panel',
+        stateField: 'expanded',
+        actionId: 'click-toggle',
+        parameter: 'desiredValue',
+        capabilityFamily: 'switch-in-page-state',
+      };
+    case 'menu-button':
+    case 'dialog-open':
+      return {
+        intentType: 'open-overlay',
+        stateField: 'open',
+        actionId: 'click-toggle',
+        parameter: 'desiredValue',
+        capabilityFamily: 'switch-in-page-state',
+      };
+    case 'category-link-group':
+      return {
+        intentType: 'open-category',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'navigate-to-category',
+      };
+    case 'content-link-group':
+      return {
+        intentType: 'open-book',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'navigate-to-content',
+      };
+    case 'author-link-group':
+      return {
+        intentType: 'open-author',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'navigate-to-author',
+      };
+    case 'chapter-link-group':
+      return {
+        intentType: 'open-chapter',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'navigate-to-chapter',
+      };
+    case 'utility-link-group':
+      return {
+        intentType: 'open-utility-page',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'navigate-to-utility-page',
+      };
+    case 'auth-link-group':
+      return {
+        intentType: 'open-auth-page',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'open-auth-page',
+      };
+    case 'pagination-link-group':
+      return {
+        intentType: 'paginate-content',
+        stateField: 'activeMemberId',
+        actionId: 'navigate',
+        parameter: 'targetMemberId',
+        capabilityFamily: 'navigate-to-utility-page',
+      };
+    case 'search-form-group':
+      return {
+        intentType: 'search-book',
+        stateField: 'queryText',
+        actionId: 'search-submit',
+        parameter: 'queryText',
+        capabilityFamily: 'search-content',
+      };
+    default:
+      return null;
+  }
+}
+
+function normalizeElementStateValue(elementKind, elementState) {
+  if (!elementState) {
+    return null;
+  }
+
+  switch (elementKind) {
+    case 'tab-group':
+    case 'category-link-group':
+    case 'content-link-group':
+    case 'author-link-group':
+    case 'chapter-link-group':
+    case 'utility-link-group':
+    case 'auth-link-group':
+    case 'pagination-link-group':
+      return elementState.value?.activeMemberId ?? null;
+    case 'search-form-group':
+      return elementState.value?.queryText ?? null;
+    case 'details-toggle':
+      return Boolean(elementState.value?.open);
+    case 'expanded-toggle':
+      return Boolean(elementState.value?.expanded);
+    case 'menu-button':
+    case 'dialog-open':
+      return Boolean(elementState.value?.open);
+    default:
+      return null;
+  }
+}
+
+function buildIndices(elementsDocument, statesDocument, transitionsDocument) {
+  const elementsById = new Map();
+  const membersById = new Map();
+  const statesById = new Map();
+  const elementStatesByStateId = new Map();
+  const transitionsByObservedStateId = new Map();
+
+  for (const element of toArray(elementsDocument.elements)) {
+    elementsById.set(element.elementId, element);
+    for (const member of toArray(element.members)) {
+      membersById.set(member.memberId, {
+        ...member,
+        elementId: element.elementId,
+        elementKind: element.kind,
+      });
+    }
+  }
+
+  for (const state of toArray(statesDocument.states)) {
+    statesById.set(state.stateId, state);
+    const perStateMap = new Map();
+    for (const elementState of toArray(state.elementStates)) {
+      perStateMap.set(elementState.elementId, elementState);
+    }
+    elementStatesByStateId.set(state.stateId, perStateMap);
+  }
+
+  for (const edge of toArray(transitionsDocument.edges)) {
+    transitionsByObservedStateId.set(edge.observedStateId, edge);
+  }
+
+  return {
+    elementsById,
+    membersById,
+    statesById,
+    elementStatesByStateId,
+    transitionsByObservedStateId,
+  };
+}
+
+async function indexExpandedStateManifests(expandedStatesDir) {
+  const result = new Map();
+  if (!expandedStatesDir) {
+    return result;
+  }
+
+  const statesDir = path.join(expandedStatesDir, 'states');
+  if (!(await pathExists(statesDir))) {
+    return result;
+  }
+
+  const entries = await readdir(statesDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const [stateId] = entry.name.split('_');
+    if (!stateId || result.has(stateId)) {
+      continue;
+    }
+    const manifestPath = path.join(statesDir, entry.name, STATE_MANIFEST_FILE_NAME);
+    if (await pathExists(manifestPath)) {
+      result.set(stateId, manifestPath);
+    }
+  }
+  return result;
+}
+
+function compareTriggerLocatorPath(fullPath, locatorPath) {
+  if (!fullPath || !locatorPath) {
+    return false;
+  }
+  return fullPath === locatorPath || fullPath.endsWith(locatorPath) || locatorPath.endsWith(fullPath);
+}
+
+function triggerKindToElementKind(triggerKind) {
+  switch (triggerKind) {
+    case 'tab':
+      return 'tab-group';
+    case 'details-toggle':
+      return 'details-toggle';
+    case 'expanded-toggle':
+      return 'expanded-toggle';
+    case 'menu-button':
+      return 'menu-button';
+    case 'dialog-open':
+      return 'dialog-open';
+    default:
+      return null;
+  }
+}
+
+function triggerToExpectedElementKind(trigger) {
+  if (!trigger?.kind) {
+    return null;
+  }
+  if (trigger.kind === 'safe-nav-link') {
+    if (trigger.semanticRole === 'category') {
+      return 'category-link-group';
+    }
+    if (trigger.semanticRole === 'author') {
+      return 'author-link-group';
+    }
+    return 'utility-link-group';
+  }
+  if (trigger.kind === 'content-link') {
+    return 'content-link-group';
+  }
+  if (trigger.kind === 'chapter-link') {
+    return 'chapter-link-group';
+  }
+  if (trigger.kind === 'auth-link') {
+    return 'auth-link-group';
+  }
+  if (trigger.kind === 'pagination-link') {
+    return 'pagination-link-group';
+  }
+  if (trigger.kind === 'search-form') {
+    return 'search-form-group';
+  }
+  if (trigger.kind === 'form-submit') {
+    return 'form-submit-group';
+  }
+  return triggerKindToElementKind(trigger.kind);
+}
+
+function buildFallbackStateManifestList(paths) {
+  const unique = [...new Set(paths.filter(Boolean))].sort(compareNullableStrings);
+  return unique.length > 0 ? unique : undefined;
+}
+
+async function createFallbackContext(artifacts, indices, warnings) {
+  const manifestPathsByStateId = await indexExpandedStateManifests(artifacts.expandedStatesDir);
+  const manifestCache = new Map();
+  let usedFallbackEvidence = false;
+
+  async function loadStateManifest(stateId) {
+    if (manifestCache.has(stateId)) {
+      return manifestCache.get(stateId);
+    }
+
+    const stateRecord = indices.statesById.get(stateId) ?? null;
+    const preferredPath = stateRecord?.files?.manifest ?? null;
+    const fallbackPath = manifestPathsByStateId.get(stateId) ?? null;
+    const manifestPath = await firstExistingPath([
+      { value: preferredPath, baseDir: artifacts.analysisDir },
+      { value: fallbackPath, baseDir: artifacts.analysisDir },
+    ]);
+
+    if (!manifestPath) {
+      manifestCache.set(stateId, null);
+      return null;
+    }
+
+    try {
+      const manifest = await readJsonFile(manifestPath);
+      const record = { manifest, manifestPath };
+      manifestCache.set(stateId, record);
+      usedFallbackEvidence = true;
+      return record;
+    } catch (error) {
+      warnings.push(buildWarning('fallback_manifest_parse_failed', `Failed to parse fallback manifest for ${stateId}: ${error.message}`, {
+        stateId,
+        manifestPath,
+      }));
+      manifestCache.set(stateId, null);
+      return null;
+    }
+  }
+
+  return {
+    loadStateManifest,
+    get usedFallbackEvidence() {
+      return usedFallbackEvidence;
+    },
+  };
+}
+
+async function resolveEdgeTrigger(edge, fallbackContext) {
+  if (edge?.trigger?.locator && (edge.trigger.label || edge.trigger.locator.id || edge.trigger.controlledTarget)) {
+    return {
+      trigger: edge.trigger,
+      fallbackManifestPath: null,
+    };
+  }
+
+  if (!fallbackContext) {
+    return {
+      trigger: edge?.trigger ?? null,
+      fallbackManifestPath: null,
+    };
+  }
+
+  const fallbackRecord = await fallbackContext.loadStateManifest(edge.observedStateId);
+  if (!fallbackRecord?.manifest?.trigger) {
+    return {
+      trigger: edge?.trigger ?? null,
+      fallbackManifestPath: fallbackRecord?.manifestPath ?? null,
+    };
+  }
+
+  const mergedTrigger = {
+    ...(edge.trigger ?? {}),
+    ...fallbackRecord.manifest.trigger,
+    locator: {
+      ...(edge.trigger?.locator ?? {}),
+      ...(fallbackRecord.manifest.trigger.locator ?? {}),
+    },
+  };
+
+  return {
+    trigger: mergedTrigger,
+    fallbackManifestPath: fallbackRecord.manifestPath,
+  };
+}
+
+function findTabTarget(element, trigger) {
+  const locator = trigger?.locator ?? {};
+  const normalizedLabel = normalizeLabel(trigger?.label || locator.label || locator.textSnippet);
+
+  return toArray(element.members).find((member) => locator.id && member.matchKey === `id:${locator.id}`)
+    ?? toArray(element.members).find((member) => locator.ariaControls && member.controlledTarget === locator.ariaControls)
+    ?? toArray(element.members).find((member) => normalizedLabel && normalizeLabel(member.label) === normalizedLabel)
+    ?? toArray(element.members).find((member) => compareTriggerLocatorPath(member.domPath, locator.domPath));
+}
+
+function findMemberTarget(element, trigger) {
+  const locator = trigger?.locator ?? {};
+  const normalizedLabel = normalizeLabel(trigger?.label || locator.label || locator.textSnippet);
+  const normalizedHref = normalizeUrlNoFragment(trigger?.href || locator.href);
+
+  return toArray(element.members).find((member) => locator.id && member.matchKey === `id:${locator.id}`)
+    ?? toArray(element.members).find((member) => normalizedHref && normalizeUrlNoFragment(member.href || member.locator?.href) === normalizedHref)
+    ?? toArray(element.members).find((member) => locator.ariaControls && member.controlledTarget === locator.ariaControls)
+    ?? toArray(element.members).find((member) => normalizedLabel && normalizeLabel(member.label) === normalizedLabel)
+    ?? toArray(element.members).find((member) => compareTriggerLocatorPath(member.domPath, locator.domPath));
+}
+
+function findSingleElementMatch(element, trigger) {
+  const locator = trigger?.locator ?? {};
+  const member = toArray(element.members)[0] ?? null;
+  if (!member) {
+    return false;
+  }
+
+  const normalizedLabel = normalizeLabel(trigger?.label || locator.label || locator.textSnippet);
+  return Boolean(
+    (locator.id && member.matchKey === `id:${locator.id}`)
+      || (locator.ariaControls && member.controlledTarget === locator.ariaControls)
+      || (normalizedLabel && normalizeLabel(member.label) === normalizedLabel)
+      || compareTriggerLocatorPath(member.domPath, locator.domPath)
+      || (!locator.id && !locator.ariaControls && !normalizedLabel && !locator.domPath && element.kind === triggerKindToElementKind(trigger?.kind))
+  );
+}
+
+async function attributeEdgesToTargets(artifacts, indices, fallbackContext, warnings) {
+  const attributed = [];
+
+  for (const edge of toArray(artifacts.transitionsDocument.edges)) {
+    if (!['captured', 'duplicate'].includes(edge.outcome) || !edge.toState) {
+      continue;
+    }
+
+    const toState = indices.statesById.get(edge.toState);
+    if (!toState) {
+      warnings.push(buildWarning('edge_target_state_missing', `Transition target state missing for ${edge.observedStateId}`, {
+        observedStateId: edge.observedStateId,
+        toState: edge.toState,
+      }));
+      continue;
+    }
+
+    const { trigger, fallbackManifestPath } = await resolveEdgeTrigger(edge, fallbackContext);
+    const expectedKind = triggerToExpectedElementKind(trigger);
+    if (!expectedKind) {
+      warnings.push(buildWarning('edge_trigger_kind_unmapped', `Unable to map trigger kind for ${edge.observedStateId}`, {
+        observedStateId: edge.observedStateId,
+        triggerKind: trigger?.kind ?? null,
+      }));
+      continue;
+    }
+
+    if ([
+      'tab-group',
+      'category-link-group',
+      'content-link-group',
+      'author-link-group',
+      'chapter-link-group',
+      'utility-link-group',
+      'auth-link-group',
+      'pagination-link-group',
+    ].includes(expectedKind)) {
+      let matched = null;
+      for (const element of indices.elementsById.values()) {
+        if (element.kind !== expectedKind) {
+          continue;
+        }
+        const member = expectedKind === 'tab-group' ? findTabTarget(element, trigger) : findMemberTarget(element, trigger);
+        if (!member) {
+          continue;
+        }
+        matched = { element, member };
+        break;
+      }
+
+      if (!matched) {
+        warnings.push(buildWarning('edge_tab_target_unresolved', `Unable to resolve tab target for ${edge.observedStateId}`, {
+          observedStateId: edge.observedStateId,
+        }));
+        continue;
+      }
+
+      const targetElementState = indices.elementStatesByStateId.get(toState.stateId)?.get(matched.element.elementId) ?? null;
+      const targetValue = normalizeElementStateValue(matched.element.kind, targetElementState) ?? matched.member.memberId;
+      attributed.push({
+        edgeId: edge.edgeId,
+        observedStateId: edge.observedStateId,
+        toStateId: toState.stateId,
+        elementId: matched.element.elementId,
+        elementKind: matched.element.kind,
+        targetValue,
+        targetLabel: matched.member.label,
+        fallbackManifestPath,
+      });
+      continue;
+    }
+
+    if (expectedKind === 'search-form-group') {
+      const element = [...indices.elementsById.values()].find((candidate) => candidate.kind === expectedKind) ?? null;
+      if (!element) {
+        warnings.push(buildWarning('edge_element_unresolved', `Unable to resolve search form for ${edge.observedStateId}`, {
+          observedStateId: edge.observedStateId,
+          triggerKind: trigger?.kind ?? null,
+        }));
+        continue;
+      }
+
+      const targetValue = normalizeWhitespace(trigger?.queryText || toState.pageFacts?.queryText || '');
+      if (!targetValue) {
+        warnings.push(buildWarning('edge_target_value_missing', `Unable to resolve search query for ${edge.observedStateId}`, {
+          observedStateId: edge.observedStateId,
+          elementId: element.elementId,
+        }));
+        continue;
+      }
+
+      attributed.push({
+        edgeId: edge.edgeId,
+        observedStateId: edge.observedStateId,
+        toStateId: toState.stateId,
+        elementId: element.elementId,
+        elementKind: element.kind,
+        targetValue,
+        targetLabel: targetValue,
+        fallbackManifestPath,
+      });
+      continue;
+    }
+
+    const candidates = [...indices.elementsById.values()].filter((element) => element.kind === expectedKind);
+    const element = candidates.find((candidate) => findSingleElementMatch(candidate, trigger)) ?? null;
+    if (!element) {
+      warnings.push(buildWarning('edge_element_unresolved', `Unable to resolve element for ${edge.observedStateId}`, {
+        observedStateId: edge.observedStateId,
+        triggerKind: trigger?.kind ?? null,
+      }));
+      continue;
+    }
+
+    const targetElementState = indices.elementStatesByStateId.get(toState.stateId)?.get(element.elementId) ?? null;
+    const targetValue = normalizeElementStateValue(element.kind, targetElementState);
+    if (targetValue === null) {
+      warnings.push(buildWarning('edge_target_value_missing', `Unable to resolve target value for ${edge.observedStateId}`, {
+        observedStateId: edge.observedStateId,
+        elementId: element.elementId,
+      }));
+      continue;
+    }
+
+    attributed.push({
+      edgeId: edge.edgeId,
+      observedStateId: edge.observedStateId,
+      toStateId: toState.stateId,
+      elementId: element.elementId,
+      elementKind: element.kind,
+      targetValue,
+      targetLabel: null,
+      fallbackManifestPath,
+    });
+  }
+
+  return attributed;
+}
+
+function buildElementValueObservations(element, statesDocument, indices) {
+  const observations = new Map();
+  const allStateIds = [];
+
+  for (const state of toArray(statesDocument.states)) {
+    const elementState = indices.elementStatesByStateId.get(state.stateId)?.get(element.elementId) ?? null;
+    if (!elementState) {
+      continue;
+    }
+
+    const value = normalizeElementStateValue(element.kind, elementState);
+    if (value === null) {
+      continue;
+    }
+
+    allStateIds.push(state.stateId);
+    const key = stableValueKey(value);
+    let record = observations.get(key);
+    if (!record) {
+      record = {
+        value,
+        label: null,
+        stateIds: [],
+      };
+      observations.set(key, record);
+    }
+    record.stateIds.push(state.stateId);
+  }
+
+  return {
+    observations,
+    allStateIds: allStateIds.sort(compareNullableStrings),
+  };
+}
+
+function buildEdgeObservationsForElement(element, attributedEdges) {
+  const byValue = new Map();
+  const edgeIds = [];
+
+  for (const edge of attributedEdges.filter((item) => item.elementId === element.elementId)) {
+    edgeIds.push(edge.edgeId);
+    const key = stableValueKey(edge.targetValue);
+    let record = byValue.get(key);
+    if (!record) {
+      record = {
+        value: edge.targetValue,
+        edgeIds: [],
+        fallbackManifestPaths: [],
+      };
+      byValue.set(key, record);
+    }
+    record.edgeIds.push(edge.edgeId);
+    if (edge.fallbackManifestPath) {
+      record.fallbackManifestPaths.push(edge.fallbackManifestPath);
+    }
+  }
+
+  for (const record of byValue.values()) {
+    record.edgeIds.sort(compareNullableStrings);
+    record.fallbackManifestPaths = [...new Set(record.fallbackManifestPaths)].sort(compareNullableStrings);
+  }
+
+  return {
+    byValue,
+    edgeIds: [...new Set(edgeIds)].sort(compareNullableStrings),
+  };
+}
+
+function buildIntentName(intentType, element, targetParameter) {
+  switch (intentType) {
+    case 'switch-tab':
+      return `Set Active Member: ${element.elementName}`;
+    case 'expand-panel':
+      return `Expand Panel: ${element.elementName}`;
+    case 'open-overlay':
+      return `Open Overlay: ${element.elementName}`;
+    case 'open-category':
+      return `Open Category: ${element.elementName}`;
+    case 'open-book':
+      return `Open Book: ${element.elementName}`;
+    case 'open-author':
+      return `Open Author: ${element.elementName}`;
+    case 'open-chapter':
+      return `Open Chapter: ${element.elementName}`;
+    case 'open-utility-page':
+      return `Open Utility Page: ${element.elementName}`;
+    case 'open-auth-page':
+      return `Open Auth Page: ${element.elementName}`;
+    case 'paginate-content':
+      return `Paginate Content: ${element.elementName}`;
+    case 'search-book':
+      return `Search Book: ${element.elementName}`;
+    case 'download-book':
+      return `Download Book: ${element.elementName}`;
+    default:
+      return `${intentType}: ${element.elementName} (${targetParameter})`;
+  }
+}
+
+function buildMemberTargetDomain(element, valueObservations, edgeObservations) {
+  const observedKeys = new Set(valueObservations.observations.keys());
+  const observedValues = [...valueObservations.observations.values()]
+    .map((record) => {
+      const member = toArray(element.members).find((item) => item.memberId === record.value) ?? null;
+      const edgeRecord = edgeObservations.byValue.get(stableValueKey(record.value));
+      return {
+        value: record.value,
+        label: member?.label ?? record.label ?? null,
+        stateIds: [...record.stateIds].sort(compareNullableStrings),
+        edgeIds: edgeRecord?.edgeIds ?? [],
+      };
+    })
+    .sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  const candidateValues = toArray(element.members)
+    .map((member) => ({
+      value: member.memberId,
+      label: member.label ?? null,
+      observed: observedKeys.has(stableValueKey(member.memberId)),
+    }))
+    .sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  const actionableValues = [...edgeObservations.byValue.values()]
+    .map((record) => {
+      const member = toArray(element.members).find((item) => item.memberId === record.value) ?? null;
+      return {
+        value: record.value,
+        label: member?.label ?? null,
+        edgeIds: record.edgeIds,
+      };
+    })
+    .sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  return {
+    parameter: 'targetMemberId',
+    observedValues,
+    candidateValues,
+    actionableValues,
+  };
+}
+
+function isMemberTargetElementKind(elementKind) {
+  return [
+    'tab-group',
+    'category-link-group',
+    'content-link-group',
+    'author-link-group',
+    'chapter-link-group',
+    'utility-link-group',
+    'auth-link-group',
+    'pagination-link-group',
+  ].includes(elementKind);
+}
+
+function buildStringTargetDomain(valueObservations, edgeObservations) {
+  const observedValues = [...valueObservations.observations.values()]
+    .filter((record) => !/^[?？]+$/.test(String(record.value ?? '').trim()))
+    .map((record) => {
+      const edgeRecord = edgeObservations.byValue.get(stableValueKey(record.value));
+      return {
+        value: String(record.value ?? ''),
+        label: record.label ?? String(record.value ?? ''),
+        stateIds: [...record.stateIds].sort(compareNullableStrings),
+        edgeIds: edgeRecord?.edgeIds ?? [],
+      };
+    })
+    .sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  const observedKeys = new Set(observedValues.map((record) => stableValueKey(record.value)));
+  const candidateValues = observedValues.map((record) => ({
+    value: record.value,
+    label: record.label,
+    observed: true,
+  }));
+
+  const actionableValues = [...edgeObservations.byValue.values()]
+    .filter((record) => !/^[?？]+$/.test(String(record.value ?? '').trim()))
+    .map((record) => ({
+      value: String(record.value ?? ''),
+      label: String(record.value ?? ''),
+      edgeIds: record.edgeIds,
+    }))
+    .filter((record) => record.value)
+    .sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  for (const actionable of actionableValues) {
+    if (!observedKeys.has(stableValueKey(actionable.value))) {
+      candidateValues.push({
+        value: actionable.value,
+        label: actionable.label,
+        observed: false,
+      });
+    }
+  }
+
+  candidateValues.sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  return {
+    parameter: 'queryText',
+    observedValues,
+    candidateValues,
+    actionableValues,
+  };
+}
+
+function buildBooleanTargetDomain(valueObservations, edgeObservations) {
+  const observedValues = [...valueObservations.observations.values()]
+    .map((record) => {
+      const edgeRecord = edgeObservations.byValue.get(stableValueKey(record.value));
+      return {
+        value: Boolean(record.value),
+        label: null,
+        stateIds: [...record.stateIds].sort(compareNullableStrings),
+        edgeIds: edgeRecord?.edgeIds ?? [],
+      };
+    })
+    .sort((left, right) => compareValue(left.value, right.value));
+
+  const candidateValues = observedValues.map((record) => ({
+    value: record.value,
+    label: null,
+    observed: true,
+  }));
+
+  const actionableValues = [...edgeObservations.byValue.values()]
+    .map((record) => ({
+      value: Boolean(record.value),
+      label: null,
+      edgeIds: record.edgeIds,
+    }))
+    .sort((left, right) => compareValue(left.value, right.value));
+
+  return {
+    parameter: 'desiredValue',
+    observedValues,
+    candidateValues,
+    actionableValues,
+  };
+}
+
+function buildIntents(elementsDocument, statesDocument, indices, attributedEdges, warnings) {
+  const intents = [];
+  const skippedElements = [];
+
+  for (const element of toArray(elementsDocument.elements).sort((left, right) => compareNullableStrings(left.elementId, right.elementId))) {
+    const spec = buildStateFieldSpec(element.kind);
+    if (!spec) {
+      skippedElements.push(element.elementId);
+      warnings.push(buildWarning('element_kind_unmapped', `Skipping ${element.elementId}; unsupported element kind ${element.kind}`, {
+        elementId: element.elementId,
+        elementKind: element.kind,
+      }));
+      continue;
+    }
+
+    const valueObservations = buildElementValueObservations(element, statesDocument, indices);
+    const edgeObservations = buildEdgeObservationsForElement(element, attributedEdges);
+    const distinctObservedValues = [...valueObservations.observations.values()];
+
+    if (distinctObservedValues.length === 0) {
+      skippedElements.push(element.elementId);
+      warnings.push(buildWarning('element_missing_state_values', `Skipping ${element.elementId}; no concrete state values found`, {
+        elementId: element.elementId,
+      }));
+      continue;
+    }
+
+    let targetDomain;
+    if (spec.parameter === 'queryText') {
+      targetDomain = buildStringTargetDomain(valueObservations, edgeObservations);
+    } else if (isMemberTargetElementKind(element.kind)) {
+      targetDomain = buildMemberTargetDomain(element, valueObservations, edgeObservations);
+    } else {
+      targetDomain = buildBooleanTargetDomain(valueObservations, edgeObservations);
+    }
+
+    if (targetDomain.actionableValues.length === 0) {
+      skippedElements.push(element.elementId);
+      warnings.push(buildWarning('element_not_actionable', `Skipping ${element.elementId}; no attributable action evidence found`, {
+        elementId: element.elementId,
+      }));
+      continue;
+    }
+
+    /** @type {IntentRecord} */
+    const intent = {
+      intentId: `intent_${createSha256(`${element.elementId}::${spec.intentType}`).slice(0, 12)}`,
+      intentType: spec.intentType,
+      intentName: buildIntentName(spec.intentType, element, spec.parameter),
+      elementId: element.elementId,
+      elementKind: element.kind,
+      sourceElementName: element.elementName,
+      stateField: spec.stateField,
+      actionId: spec.actionId,
+      targetDomain,
+      evidence: {
+        stateIds: valueObservations.allStateIds,
+        edgeIds: edgeObservations.edgeIds,
+      },
+    };
+
+    intents.push(intent);
+  }
+
+  intents.sort((left, right) => compareNullableStrings(left.elementKind, right.elementKind) || compareNullableStrings(left.elementId, right.elementId));
+  skippedElements.sort(compareNullableStrings);
+
+  return { intents, skippedElements };
+}
+
+function buildDownloadIntent(artifacts, intents, indices, warnings) {
+  const books = toArray(artifacts.bookContentBooksDocument);
+  if (books.length === 0) {
+    return null;
+  }
+
+  const contentIntent = intents.find((intent) => intent.intentType === 'open-book' && intent.elementKind === 'content-link-group') ?? null;
+  if (!contentIntent) {
+    warnings.push(buildWarning('download_intent_skipped', 'Skipping download-book intent; no content-link-group intent available.', {}));
+    return null;
+  }
+
+  const contentElement = indices.elementsById.get(contentIntent.elementId);
+  if (!contentElement) {
+    warnings.push(buildWarning('download_intent_skipped', 'Skipping download-book intent; content-link-group element missing.', {
+      elementId: contentIntent.elementId,
+    }));
+    return null;
+  }
+
+  const actionableValues = [];
+  const observedValues = [];
+  const candidateValues = [];
+  const stateIds = new Set();
+  const booksByLabel = new Map(
+    books.map((book) => [normalizeLabel(book.title), book]),
+  );
+
+  for (const candidate of toArray(contentIntent.targetDomain?.candidateValues)) {
+    const label = firstNonEmpty([candidate.label, toArray(contentElement.members).find((member) => member.memberId === candidate.value)?.label]) ?? null;
+    const normalized = normalizeLabel(label);
+    const book = booksByLabel.get(normalized) ?? null;
+    candidateValues.push({
+      value: candidate.value,
+      label,
+      observed: Boolean(candidate.observed),
+    });
+    if (!book?.downloadFile) {
+      continue;
+    }
+    actionableValues.push({
+      value: candidate.value,
+      label,
+      edgeIds: [],
+      downloadFile: book.downloadFile,
+      bookUrl: book.finalUrl,
+    });
+    const observedRecord = toArray(contentIntent.targetDomain?.observedValues).find((record) => record.value === candidate.value) ?? null;
+    observedValues.push({
+      value: candidate.value,
+      label,
+      stateIds: toArray(observedRecord?.stateIds).sort(compareNullableStrings),
+      edgeIds: [],
+    });
+    for (const stateId of toArray(observedRecord?.stateIds)) {
+      stateIds.add(stateId);
+    }
+  }
+
+  if (actionableValues.length === 0) {
+    warnings.push(buildWarning('download_intent_skipped', 'Skipping download-book intent; no collected download artifacts matched book targets.', {}));
+    return null;
+  }
+
+  return {
+    intentId: `intent_${createSha256(`${contentIntent.elementId}::download-book`).slice(0, 12)}`,
+    intentType: 'download-book',
+    intentName: buildIntentName('download-book', contentElement, 'targetMemberId'),
+    elementId: contentIntent.elementId,
+    elementKind: contentIntent.elementKind,
+    sourceElementName: contentIntent.sourceElementName,
+    stateField: 'activeMemberId',
+    actionId: 'download-book',
+    targetDomain: {
+      parameter: 'targetMemberId',
+      observedValues: observedValues.sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value)),
+      candidateValues: candidateValues.sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value)),
+      actionableValues: actionableValues.sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value)),
+    },
+    evidence: {
+      stateIds: [...stateIds].sort(compareNullableStrings),
+      edgeIds: [],
+    },
+  };
+}
+
+function buildRuleBindings(parameterName, value, elementId) {
+  if (parameterName === 'targetMemberId') {
+    return {
+      elementId,
+      targetMemberId: String(value),
+    };
+  }
+  if (parameterName === 'queryText') {
+    return {
+      elementId,
+      queryText: String(value ?? ''),
+    };
+  }
+  return {
+    elementId,
+    desiredValue: Boolean(value),
+  };
+}
+
+function buildElementStatePatch(stateField, value) {
+  return {
+    [stateField]: value,
+  };
+}
+
+function buildDecisionRules(intents, statesDocument, attributedEdges) {
+  const rules = [];
+
+  for (const intent of intents) {
+    const allElementStateIds = toArray(intent.evidence.stateIds);
+    const actionableByKey = new Map(intent.targetDomain.actionableValues.map((record) => [stableValueKey(record.value), record]));
+    const observedByKey = new Map(intent.targetDomain.observedValues.map((record) => [stableValueKey(record.value), record]));
+
+    for (const observedValue of intent.targetDomain.observedValues) {
+      const targetKey = stableValueKey(observedValue.value);
+      const parameterBinding = intent.targetDomain.parameter === 'targetMemberId'
+        ? { targetMemberId: String(observedValue.value) }
+        : intent.targetDomain.parameter === 'queryText'
+          ? { queryText: String(observedValue.value ?? '') }
+          : { desiredValue: Boolean(observedValue.value) };
+      const satisfiedRule = {
+        ruleId: `rule_${createSha256(`${intent.intentId}::satisfied::${serializeDecisionValue(observedValue.value)}`).slice(0, 12)}`,
+        intentId: intent.intentId,
+        priority: 10,
+        phase: 'satisfied',
+        parameterBinding,
+        when: {
+          elementId: intent.elementId,
+          elementKind: intent.elementKind,
+          all: [
+            {
+              field: intent.stateField,
+              op: 'eq',
+              value: observedValue.value,
+            },
+          ],
+        },
+        then: {
+          actionId: 'noop',
+          bindings: buildRuleBindings(intent.targetDomain.parameter, observedValue.value, intent.elementId),
+        },
+        expected: {
+          elementStatePatch: buildElementStatePatch(intent.stateField, observedValue.value),
+          toStateIds: [...observedValue.stateIds].sort(compareNullableStrings),
+          edgeIds: [...observedValue.edgeIds].sort(compareNullableStrings),
+        },
+        evidence: {
+          stateIds: [...observedValue.stateIds].sort(compareNullableStrings),
+          edgeIds: [...observedValue.edgeIds].sort(compareNullableStrings),
+        },
+      };
+
+      rules.push(satisfiedRule);
+
+      const actionable = actionableByKey.get(targetKey);
+      if (actionable) {
+        const targetStateIds = observedByKey.get(targetKey)?.stateIds ?? [];
+        const applicableStateIds = allElementStateIds.filter((stateId) => !targetStateIds.includes(stateId));
+        const fallbackStateManifests = buildFallbackStateManifestList(
+          attributedEdges
+            .filter((edge) => edge.elementId === intent.elementId && stableValueKey(edge.targetValue) === targetKey)
+            .map((edge) => edge.fallbackManifestPath),
+        );
+        const actRule = {
+          ruleId: `rule_${createSha256(`${intent.intentId}::act::${serializeDecisionValue(observedValue.value)}`).slice(0, 12)}`,
+          intentId: intent.intentId,
+          priority: 20,
+          phase: 'act',
+          parameterBinding,
+          when: {
+            elementId: intent.elementId,
+            elementKind: intent.elementKind,
+            all: [
+              {
+                field: intent.stateField,
+                op: 'neq',
+                value: observedValue.value,
+              },
+            ],
+          },
+          then: {
+            actionId: intent.actionId,
+            bindings: buildRuleBindings(intent.targetDomain.parameter, observedValue.value, intent.elementId),
+          },
+          expected: {
+            elementStatePatch: buildElementStatePatch(intent.stateField, observedValue.value),
+            toStateIds: [...targetStateIds].sort(compareNullableStrings),
+            edgeIds: [...actionable.edgeIds].sort(compareNullableStrings),
+          },
+          evidence: {
+            stateIds: applicableStateIds.sort(compareNullableStrings),
+            edgeIds: [...actionable.edgeIds].sort(compareNullableStrings),
+            ...(fallbackStateManifests ? { fallbackStateManifests } : {}),
+          },
+        };
+        rules.push(actRule);
+      }
+    }
+  }
+
+  rules.sort((left, right) => (
+    compareNullableStrings(left.intentId, right.intentId)
+      || left.priority - right.priority
+      || compareValue(
+        left.parameterBinding.targetMemberId ?? left.parameterBinding.queryText ?? left.parameterBinding.desiredValue,
+        right.parameterBinding.targetMemberId ?? right.parameterBinding.queryText ?? right.parameterBinding.desiredValue,
+      )
+  ));
+  return rules;
+}
+
+function buildDownloadDecisionRules(downloadIntent) {
+  if (!downloadIntent) {
+    return [];
+  }
+  const rules = [];
+  for (const target of toArray(downloadIntent.targetDomain?.actionableValues)) {
+    rules.push({
+      ruleId: `rule_${createSha256(`${downloadIntent.intentId}::download::${serializeDecisionValue(target.value)}`).slice(0, 12)}`,
+      intentId: downloadIntent.intentId,
+      priority: 20,
+      phase: 'act',
+      parameterBinding: {
+        targetMemberId: String(target.value),
+      },
+      when: {
+        elementId: downloadIntent.elementId,
+        elementKind: downloadIntent.elementKind,
+        all: [
+          {
+            field: downloadIntent.stateField,
+            op: 'neq',
+            value: target.value,
+          },
+        ],
+      },
+      then: {
+        actionId: downloadIntent.actionId,
+        bindings: {
+          elementId: downloadIntent.elementId,
+          targetMemberId: String(target.value),
+        },
+      },
+      expected: {
+        elementStatePatch: buildElementStatePatch(downloadIntent.stateField, target.value),
+        toStateIds: [],
+        edgeIds: [],
+        artifactPath: target.downloadFile ?? null,
+      },
+      evidence: {
+        stateIds: [],
+        edgeIds: [],
+      },
+    });
+  }
+  return rules;
+}
+
+function buildIntentsDocument(inputUrl, baseUrl, generatedAt, intents) {
+  return {
+    inputUrl,
+    baseUrl,
+    generatedAt,
+    intents,
+  };
+}
+
+function buildCapabilityMatrixDocument(inputUrl, baseUrl, generatedAt, siteProfileDocument, intents) {
+  return {
+    inputUrl,
+    baseUrl,
+    generatedAt,
+    primaryArchetype: siteProfileDocument?.primaryArchetype ?? 'unknown',
+    archetypes: toArray(siteProfileDocument?.archetypes),
+    capabilityFamilies: toArray(siteProfileDocument?.capabilityFamilies),
+    pageTypes: toArray(siteProfileDocument?.pageTypes),
+    capabilities: intents.map((intent) => ({
+      intentId: intent.intentId,
+      intentType: intent.intentType,
+      elementId: intent.elementId,
+      elementKind: intent.elementKind,
+      actionId: intent.actionId,
+      stateField: intent.stateField,
+      capabilityFamily: intent.intentType === 'download-book'
+        ? 'download-content'
+        : buildStateFieldSpec(intent.elementKind)?.capabilityFamily ?? null,
+      actionableTargets: toArray(intent.targetDomain?.actionableValues).map((value) => ({
+        value: value.value,
+        label: value.label ?? null,
+        edgeIds: toArray(value.edgeIds),
+      })),
+      candidateTargets: toArray(intent.targetDomain?.candidateValues).map((value) => ({
+        value: value.value,
+        label: value.label ?? null,
+        observed: Boolean(value.observed),
+      })),
+    })),
+  };
+}
+
+export async function abstractInteractions(inputUrl, options = {}) {
+  const settings = mergeOptions(options);
+  const artifacts = await loadAnalysisArtifacts({ ...settings, url: inputUrl });
+  const warnings = [...artifacts.warnings];
+  const indices = buildIndices(artifacts.elementsDocument, artifacts.statesDocument, artifacts.transitionsDocument);
+  const fallbackContext = await createFallbackContext(artifacts, indices, warnings);
+  const attributedEdges = await attributeEdgesToTargets(artifacts, indices, fallbackContext, warnings);
+  const { intents, skippedElements } = buildIntents(artifacts.elementsDocument, artifacts.statesDocument, indices, attributedEdges, warnings);
+  const downloadIntent = buildDownloadIntent(artifacts, intents, indices, warnings);
+  if (downloadIntent) {
+    intents.push(downloadIntent);
+  }
+  intents.sort((left, right) => compareNullableStrings(left.elementKind, right.elementKind) || compareNullableStrings(left.elementId, right.elementId) || compareNullableStrings(left.intentType, right.intentType));
+  const rules = [
+    ...buildDecisionRules(intents.filter((intent) => intent.intentType !== 'download-book'), artifacts.statesDocument, attributedEdges),
+    ...buildDownloadDecisionRules(downloadIntent),
+  ];
+  rules.sort((left, right) => (
+    compareNullableStrings(left.intentId, right.intentId)
+      || left.priority - right.priority
+      || compareValue(
+        left.parameterBinding.targetMemberId ?? left.parameterBinding.queryText ?? left.parameterBinding.desiredValue,
+        right.parameterBinding.targetMemberId ?? right.parameterBinding.queryText ?? right.parameterBinding.desiredValue,
+      )
+  ));
+  const layout = await createOutputLayout(artifacts.baseUrl ?? inputUrl, settings.outDir);
+
+  const intentsDocument = buildIntentsDocument(artifacts.inputUrl, artifacts.baseUrl, layout.generatedAt, intents);
+  const actionsDocument = buildActionsDocument(artifacts.inputUrl, artifacts.baseUrl, layout.generatedAt);
+  const decisionTableDocument = buildDecisionTableDocument(artifacts.inputUrl, artifacts.baseUrl, layout.generatedAt, rules);
+  const capabilityMatrixDocument = buildCapabilityMatrixDocument(
+    artifacts.inputUrl,
+    artifacts.baseUrl,
+    layout.generatedAt,
+    artifacts.siteProfileDocument,
+    intents,
+  );
+  const abstractionManifest = buildAbstractionManifest({
+    inputUrl: artifacts.inputUrl,
+    baseUrl: artifacts.baseUrl,
+    generatedAt: layout.generatedAt,
+    outDir: layout.outDir,
+    artifacts,
+    intents,
+    rules,
+    skippedElements,
+    usedFallbackEvidence: fallbackContext.usedFallbackEvidence,
+    warnings,
+  });
+
+  await writeJsonFile(layout.intentsPath, intentsDocument);
+  await writeJsonFile(layout.actionsPath, actionsDocument);
+  await writeJsonFile(layout.decisionTablePath, decisionTableDocument);
+  await writeJsonFile(layout.capabilityMatrixPath, capabilityMatrixDocument);
+  await writeJsonFile(layout.manifestPath, abstractionManifest);
+
+  return abstractionManifest;
+}
+
+function printHelp() {
+  process.stdout.write(`Usage:
+  node abstract-interactions.mjs <url> --analysis-manifest <path>
+  node abstract-interactions.mjs <url> --analysis-dir <dir>
+
+Options:
+  --analysis-manifest <path>  Path to analysis-manifest.json
+  --analysis-dir <dir>        Directory containing third-step outputs
+  --expanded-dir <dir>        Optional second-step output directory for fallback evidence
+  --out-dir <dir>             Root output directory
+  --help                      Show this help
+`);
+}
+
+function parseCliArgs(argv) {
+  const args = [...argv];
+  const options = {};
+  let url = null;
+
+  const readValue = (current, index) => {
+    const eqIndex = current.indexOf('=');
+    if (eqIndex !== -1) {
+      return { value: current.slice(eqIndex + 1), nextIndex: index };
+    }
+    if (index + 1 >= args.length) {
+      throw new Error(`Missing value for ${current}`);
+    }
+    return { value: args[index + 1], nextIndex: index + 1 };
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const current = args[index];
+    if (!current.startsWith('--')) {
+      if (url !== null) {
+        throw new Error(`Unexpected argument: ${current}`);
+      }
+      url = current;
+      continue;
+    }
+
+    switch (current.split('=')[0]) {
+      case '--analysis-manifest': {
+        const { value, nextIndex } = readValue(current, index);
+        options.analysisManifestPath = value;
+        index = nextIndex;
+        break;
+      }
+      case '--analysis-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.analysisDir = value;
+        index = nextIndex;
+        break;
+      }
+      case '--expanded-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.expandedStatesDir = value;
+        index = nextIndex;
+        break;
+      }
+      case '--out-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.outDir = value;
+        index = nextIndex;
+        break;
+      }
+      case '--help':
+        options.help = true;
+        break;
+      default:
+        throw new Error(`Unknown argument: ${current}`);
+    }
+  }
+
+  return { url, options };
+}
+
+async function runCli() {
+  try {
+    const { url, options } = parseCliArgs(process.argv.slice(2));
+    if (options.help || !url) {
+      printHelp();
+      process.exitCode = options.help ? 0 : 1;
+      return;
+    }
+
+    const manifest = await abstractInteractions(url, options);
+    process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  }
+}
+
+const isCliEntrypoint = (() => {
+  if (!process.argv[1]) {
+    return false;
+  }
+  return path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+})();
+
+if (isCliEntrypoint) {
+  await runCli();
+}
+
+function buildActionsDocument(inputUrl, baseUrl, generatedAt) {
+  return {
+    inputUrl,
+    baseUrl,
+    generatedAt,
+    actions: ACTION_DEFINITIONS,
+  };
+}
+
+function buildDecisionTableDocument(inputUrl, baseUrl, generatedAt, rules) {
+  return {
+    inputUrl,
+    baseUrl,
+    generatedAt,
+    evaluationMode: 'first-match',
+    rules,
+  };
+}
+
+function buildAbstractionManifest({
+  inputUrl,
+  baseUrl,
+  generatedAt,
+  outDir,
+  artifacts,
+  intents,
+  rules,
+  skippedElements,
+  usedFallbackEvidence,
+  warnings,
+}) {
+  return {
+    inputUrl,
+    baseUrl,
+    generatedAt,
+    outDir,
+    source: {
+      analysisManifest: artifacts.analysisManifestPath,
+      analysisDir: artifacts.analysisDir,
+      expandedStatesDir: artifacts.expandedStatesDir,
+      bookContentDir: artifacts.bookContentDir,
+      bookContentManifest: artifacts.bookContentManifestPath,
+      usedFallbackEvidence,
+    },
+    summary: {
+      inputElements: toArray(artifacts.elementsDocument.elements).length,
+      inputStates: toArray(artifacts.statesDocument.states).length,
+      inputEdges: toArray(artifacts.transitionsDocument.edges).length,
+      actionableElements: intents.length,
+      skippedElements: skippedElements.length,
+      intents: intents.length,
+      actions: ACTION_DEFINITIONS.length,
+      decisionRules: rules.length,
+      noopRules: rules.filter((rule) => rule.phase === 'satisfied').length,
+      actRules: rules.filter((rule) => rule.phase === 'act').length,
+      primaryArchetype: artifacts.siteProfileDocument?.primaryArchetype ?? 'unknown',
+    },
+    files: {
+      intents: path.join(outDir, 'intents.json'),
+      actions: path.join(outDir, 'actions.json'),
+      decisionTable: path.join(outDir, 'decision-table.json'),
+      capabilityMatrix: path.join(outDir, CAPABILITY_MATRIX_FILE_NAME),
+      manifest: path.join(outDir, 'abstraction-manifest.json'),
+    },
+    warnings,
+  };
+}

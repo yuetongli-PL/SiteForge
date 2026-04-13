@@ -357,6 +357,9 @@ async function launchBrowser(browserPath, { headless, timeoutMs }) {
   const args = [
     `--user-data-dir=${userDataDir}`,
     '--remote-debugging-port=0',
+    '--proxy-server=direct://',
+    '--proxy-bypass-list=*',
+    '--no-proxy-server',
     '--no-first-run',
     '--no-default-browser-check',
     '--hide-scrollbars',

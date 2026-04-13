@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "archetypes": [
+    {
+      "id": "in-page-stateful",
+      "description": "Tabs, accordions, dialogs, menus, and other in-page state switches.",
+      "signals": {
+        "elementKinds": [
+          "tab-group",
+          "details-toggle",
+          "expanded-toggle",
+          "menu-button",
+          "dialog-open"
+        ],
+        "pageTypes": [],
+        "capabilityFamilies": [
+          "switch-in-page-state"
+        ]
+      }
+    },
+    {
+      "id": "navigation-hub",
+      "description": "Sites centered on safe navigation links such as category, home, or utility pages.",
+      "signals": {
+        "elementKinds": [
+          "category-link-group",
+          "utility-link-group",
+          "pagination-link-group"
+        ],
+        "pageTypes": [
+          "home",
+          "category-page",
+          "history-page"
+        ],
+        "capabilityFamilies": [
+          "navigate-to-category",
+          "navigate-to-utility-page"
+        ]
+      }
+    },
+    {
+      "id": "catalog-detail",
+      "description": "Catalog/listing sites that transition into detail pages, author pages, or related content pages.",
+      "signals": {
+        "elementKinds": [
+          "content-link-group",
+          "author-link-group"
+        ],
+        "pageTypes": [
+          "book-detail-page",
+          "author-page"
+        ],
+        "capabilityFamilies": [
+          "navigate-to-content",
+          "navigate-to-author"
+        ]
+      }
+    },
+    {
+      "id": "auth-form",
+      "description": "Authentication or submit-oriented sites with login, register, authorize, or form-submit interactions.",
+      "signals": {
+        "elementKinds": [
+          "auth-link-group",
+          "form-submit-group"
+        ],
+        "pageTypes": [
+          "auth-page"
+        ],
+        "capabilityFamilies": [
+          "open-auth-page",
+          "submit-form"
+        ]
+      }
+    }
+  ]
+}

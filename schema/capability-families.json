@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "families": [
+    {
+      "id": "switch-in-page-state",
+      "safeActionKinds": [
+        "select-member",
+        "click-toggle"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "navigate-to-category",
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "navigate-to-content",
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "navigate-to-author",
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "navigate-to-chapter",
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "navigate-to-utility-page",
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "search-content",
+      "safeActionKinds": [
+        "search-submit"
+      ],
+      "approvalActionKinds": []
+    },
+    {
+      "id": "open-auth-page",
+      "safeActionKinds": [],
+      "approvalActionKinds": [
+        "navigate"
+      ]
+    },
+    {
+      "id": "submit-form",
+      "safeActionKinds": [],
+      "approvalActionKinds": [
+        "submit"
+      ]
+    }
+  ]
+}

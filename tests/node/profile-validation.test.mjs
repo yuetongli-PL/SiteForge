@@ -14,11 +14,14 @@ import {
 test('validateProfileFile accepts the checked-in profiles', async () => {
   const twentyTwoBiqu = await validateProfileFile(path.resolve('profiles/www.22biqu.com.json'));
   const moodyz = await validateProfileFile(path.resolve('profiles/moodyz.com.json'));
+  const jable = await validateProfileFile(path.resolve('profiles/jable.tv.json'));
 
   assert.equal(twentyTwoBiqu.valid, true);
   assert.equal(twentyTwoBiqu.host, 'www.22biqu.com');
   assert.equal(moodyz.valid, true);
   assert.equal(moodyz.host, 'moodyz.com');
+  assert.equal(jable.valid, true);
+  assert.equal(jable.host, 'jable.tv');
 });
 
 test('validateProfileObject rejects missing required fields with path details', () => {
@@ -31,6 +34,9 @@ test('validateProfileObject rejects missing required fields with path details', 
       searchResultsPrefixes: ['/search/list'],
       contentDetailPrefixes: ['/works/detail/'],
       authorPrefixes: ['/actress/detail/'],
+      authorListExact: [],
+      authorListPrefixes: [],
+      authorDetailPrefixes: ['/actress/detail/'],
       chapterPrefixes: [],
       historyPrefixes: [],
       authPrefixes: [],
@@ -54,6 +60,8 @@ test('validateProfileObject rejects missing required fields with path details', 
       allowedHosts: ['moodyz.com'],
       contentPathPrefixes: ['/works/detail/'],
       authorPathPrefixes: ['/actress/detail/'],
+      authorListPathPrefixes: [],
+      authorDetailPathPrefixes: ['/actress/detail/'],
       categoryPathPrefixes: ['/works/date'],
       utilityPathPrefixes: ['/top'],
       authPathPrefixes: [],

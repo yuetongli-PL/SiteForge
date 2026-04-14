@@ -41,3 +41,24 @@ test('site context reads isolated host records and resolves merged facts', async
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('site context fallback arrays override stale stored capability arrays', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-context-fallbacks-'));
+  try {
+    await upsertSiteCapabilities(workspace, 'jable.tv', {
+      baseUrl: 'https://jable.tv/',
+      capabilityFamilies: ['navigate-to-content', 'search-content'],
+      supportedIntents: ['open-video', 'download-book'],
+      safeActionKinds: ['navigate', 'download-book'],
+      pageTypes: ['category-page', 'book-detail-page'],
+    });
+
+    const context = await readSiteContext(workspace, 'jable.tv');
+
+    assert.deepEqual(resolveCapabilityFamiliesFromSiteContext(context, [['query-ranked-content']]), ['query-ranked-content']);
+    assert.deepEqual(resolveSupportedIntentsFromSiteContext(context, [['list-category-videos']]), ['list-category-videos']);
+    assert.deepEqual(resolveSafeActionKindsFromSiteContext(context, [['navigate', 'query-ranking']]), ['navigate', 'query-ranking']);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

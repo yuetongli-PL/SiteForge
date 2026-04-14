@@ -12,6 +12,7 @@ import { ensureDir, findLatestRunDir, pathExists, readJsonFile, readTextFile, wr
 import { markdownLink, normalizeImportedMarkdown, renderTable, stripKbMeta } from './lib/markdown.mjs';
 import { cleanText, firstNonEmpty, hostFromUrl, normalizeWhitespace, relativePath, sanitizeHost, slugifyAscii, toArray, toPosixPath, uniqueSortedStrings } from './lib/normalize.mjs';
 import { resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext, readSiteContext } from './lib/site-context.mjs';
+import { displayIntentName as sharedDisplayIntentName, normalizeDisplayLabel, resolveSiteTerminology } from './lib/site-terminology.mjs';
 import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
 import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
 
@@ -561,61 +562,30 @@ function isMoodyz(context) {
     || /(?:^|\.)moodyz\.com$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
 }
 
-function siteTerminology(context) {
-  if (isMoodyz(context)) {
-    return {
-      entityLabel: '作品',
-      entityPlural: '作品',
-      personLabel: '女优',
-      personPlural: '女优',
-      searchLabel: '搜索作品',
-      openEntityLabel: '打开作品',
-      openPersonLabel: '打开女优页',
-      downloadLabel: '下载作品',
-      verifiedTaskLabel: '作品/女优',
-    };
-  }
+function isJable(context) {
+  return /(?:^|\.)jable\.tv$/iu.test(String(context?.host ?? ''))
+    || /(?:^|\.)jable\.tv$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
+}
 
-  return {
-    entityLabel: '书籍',
-    entityPlural: '书籍',
-    personLabel: '作者',
-    personPlural: '作者',
-    searchLabel: '搜索书籍',
-    openEntityLabel: '打开书籍',
-    openPersonLabel: '打开作者页',
-    downloadLabel: '下载书籍',
-    verifiedTaskLabel: '书籍/作者',
-  };
+function siteTerminology(context) {
+  return resolveSiteTerminology(context.siteContext, context.url);
 }
 
 function displayIntentLabel(context, intentType) {
+  const shared = sharedDisplayIntentName(intentType, context.siteContext, context.url);
+  if (shared && shared !== String(intentType ?? '')) {
+    return shared;
+  }
   if (isMoodyz(context)) {
     switch (intentType) {
-      case 'search-book':
-      case 'search-work':
-        return 'search-work';
-      case 'open-book':
-      case 'open-work':
-        return 'open-work';
-      case 'open-author':
-      case 'open-actress':
-        return 'open-actress';
       case 'download-book':
         return 'download-work';
       case 'open-chapter':
         return 'open-chapter';
-      case 'open-category':
-        return 'open-category';
-      case 'open-utility-page':
-        return 'open-utility-page';
-      case 'open-auth-page':
-        return 'open-auth-page';
       default:
         return String(intentType ?? '');
     }
   }
-
   return String(intentType ?? '');
 }
 
@@ -655,6 +625,27 @@ function collectSearchQueries(records, limit = 6) {
   return uniqueSortedStrings(values).slice(0, limit);
 }
 
+function collectStateDisplayTitles(context, pageTypes, limit = 8) {
+  const allowedPageTypes = new Set(toArray(pageTypes));
+  const values = [];
+  for (const state of toArray(context.statesDocument?.states)) {
+    if (!allowedPageTypes.has(state?.pageType)) {
+      continue;
+    }
+    const normalized = normalizeDisplayLabel(state?.title, {
+      siteContext: context.siteContext,
+      inputUrl: context.url,
+      url: state?.finalUrl,
+      pageType: state?.pageType,
+      queryText: state?.pageFacts?.queryText,
+    });
+    if (normalized) {
+      values.push(normalized);
+    }
+  }
+  return uniqueSortedStrings(values).slice(0, limit);
+}
+
 function collectIntentTargetLabels(context, intentTypes, limit = 8) {
   const allowed = new Set(toArray(intentTypes));
   const values = [];
@@ -673,7 +664,10 @@ function collectIntentTargetLabels(context, intentTypes, limit = 8) {
       }
     }
   }
-  return uniqueSortedStrings(values).slice(0, limit);
+  return uniqueSortedStrings(values.map((value) => normalizeDisplayLabel(value, {
+    siteContext: context.siteContext,
+    inputUrl: context.url,
+  }))).slice(0, limit);
 }
 
 function getIntentTypes(context) {
@@ -692,6 +686,62 @@ function collectMoodyzSamples(context) {
     actresses,
     searchQueries,
   };
+}
+
+function collectJableSamples(context) {
+  const taxonomyGroups = collectJableCategoryTaxonomy(context);
+  const videos = uniqueSortedStrings([
+    ...collectIntentTargetLabels(context, ['open-video', 'open-book', 'open-work'], 10),
+    ...collectStateDisplayTitles(context, ['book-detail-page'], 12),
+  ]).slice(0, 10);
+  const models = uniqueSortedStrings([
+    ...collectIntentTargetLabels(context, ['open-model', 'open-author', 'open-actress'], 20),
+    ...collectStateDisplayTitles(context, ['author-page'], 20),
+  ]).filter((value) => value && value !== '演员列表' && !/^演员：[0-9a-f]{16,}$/iu.test(value)).slice(0, 10);
+  const categories = uniqueSortedStrings([
+    ...taxonomyGroups.flatMap((group) => group.tags),
+    ...collectIntentTargetLabels(context, ['open-category'], 10),
+    ...collectStateDisplayTitles(context, ['category-page', 'author-list-page'], 10),
+  ]).filter(Boolean).slice(0, 16);
+  const defaultQueries = toArray(context.siteProfileDocument?.search?.defaultQueries)
+    .map((item) => cleanText(item))
+    .filter(Boolean);
+  const searchQueries = uniqueSortedStrings([
+    ...defaultQueries,
+    ...collectIntentTargetLabels(context, ['search-video', 'search-book', 'search-work'], 10),
+    ...collectSearchQueries(context.searchResultsDocument, 10),
+  ]).slice(0, 10);
+  return {
+    videos,
+    models,
+    categories,
+    categoryGroups: taxonomyGroups,
+    searchQueries,
+  };
+}
+
+function collectJableCategoryTaxonomy(context) {
+  const groupMap = new Map();
+  for (const state of toArray(context.statesDocument?.states)) {
+    for (const group of toArray(state.pageFacts?.categoryTaxonomy)) {
+      const groupLabel = cleanText(group.groupLabel);
+      if (!groupLabel) {
+        continue;
+      }
+      const entry = groupMap.get(groupLabel) ?? { groupLabel, tags: [] };
+      for (const tag of toArray(group.tags)) {
+        const tagLabel = cleanText(tag.label);
+        if (!tagLabel || entry.tags.includes(tagLabel)) {
+          continue;
+        }
+        entry.tags.push(tagLabel);
+      }
+      groupMap.set(groupLabel, entry);
+    }
+  }
+  return [...groupMap.values()]
+    .map((entry) => ({ groupLabel: entry.groupLabel, tags: uniqueSortedStrings(entry.tags) }))
+    .sort((left, right) => String(left.groupLabel).localeCompare(String(right.groupLabel), 'zh-Hans-CN'));
 }
 
 function intentTitle22Biqu(intentType) {
@@ -815,6 +865,67 @@ function renderMoodyzSkillMd(context, outputs) {
   ].join('\n');
 }
 
+function renderJableSkillMd(context, outputs) {
+  const safeActions = resolveSafeActions(context);
+  const terms = siteTerminology(context);
+  const samples = collectJableSamples(context);
+  const intentTypes = getIntentTypes(context);
+  const supportedTasks = [
+    intentTypes.has('search-video') || intentTypes.has('search-book') ? '搜索影片' : null,
+    intentTypes.has('open-video') || intentTypes.has('open-book') ? '打开影片页' : null,
+    intentTypes.has('open-model') || intentTypes.has('open-author') ? '打开演员页' : null,
+    intentTypes.has('open-category') ? '打开分类或标签页' : null,
+    intentTypes.has('list-category-videos') ? '按分类或标签提取前 N 条榜单' : null,
+    intentTypes.has('open-utility-page') ? '打开功能页' : null,
+  ].filter(Boolean);
+  return [
+    '---',
+    `name: ${context.skillName}`,
+    `description: Instruction-only Skill for ${context.url}. Use when Codex needs to search videos, open verified video or actor pages, navigate the approved jable URL family, or extract objective top-N lists from verified category and tag pages.`,
+    '---',
+    '',
+    '# jable Skill',
+    '',
+    '## Scope',
+    '',
+    `- Site: \`${context.url}\``,
+    '- Stay inside the verified `jable.tv` URL family.',
+    `- Safe actions: \`${safeActions.join('`, `')}\``,
+    `- Supported tasks: ${supportedTasks.join('、') || '在已观测站点空间内查询和导航'}.`,
+    '- Ranking query entrypoint: `node query-jable-ranking.mjs <url> --query "<自然语言请求>"`.',
+    '',
+    '## Sample coverage',
+    '',
+    `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
+    `- 演员样本: ${samples.models.join(', ') || 'none'}`,
+    `- 搜索样本: ${samples.searchQueries.join(', ') || 'none'}`,
+    `- 分类组: ${samples.categoryGroups.map((group) => `${group.groupLabel}(${group.tags.length})`).join('、') || 'none'}`,
+    '',
+    '## Reading order',
+    '',
+    `1. Start with ${markdownLink('references/index.md', outputs.skillMd, outputs.indexMd)}.`,
+    `2. For task execution details, read ${markdownLink('references/flows.md', outputs.skillMd, outputs.flowsMd)}.`,
+    `3. For user utterances and slot mapping, read ${markdownLink('references/nl-intents.md', outputs.skillMd, outputs.nlIntentsMd)}.`,
+    `4. For failure handling, read ${markdownLink('references/recovery.md', outputs.skillMd, outputs.recoveryMd)}.`,
+    `5. For approval boundaries, read ${markdownLink('references/approval.md', outputs.skillMd, outputs.approvalMd)}.`,
+    `6. For the structured site model, read ${markdownLink('references/interaction-model.md', outputs.skillMd, outputs.interactionModelMd)}.`,
+    '',
+    '## Safety boundary',
+    '',
+    '- Search and public navigation are low-risk actions.',
+    '- “推荐/最佳”统一解释为站内公开排序结果，不做主观推荐。',
+    '- 一级分类组查询默认按组内所有标签页聚合、去重后取前 N 条。',
+    '- Keep answers inside verified video, actor, category, tag, and search pages.',
+    '- No downloads, purchases, auth submission, or off-site navigation are in scope.',
+    '',
+    '## Do not do',
+    '',
+    '- Do not leave the verified jable URL family.',
+    '- Do not invent unobserved actions or side-effect flows.',
+    '- Do not submit auth forms, uploads, payments, or unknown forms without approval.',
+  ].join('\n');
+}
+
 function render22BiquSkillMd(context, outputs) {
   const safeActions = resolveSafeActions(context);
   return [
@@ -910,6 +1021,91 @@ function renderMoodyzIndexReference(context, outputs, docsByIntent) {
   ].join('\n');
 }
 
+function renderJableIndexReference(context, outputs, docsByIntent) {
+  const samples = collectJableSamples(context);
+  const intents = context.intentsDocument.intents ?? [];
+  const intentTypes = getIntentTypes(context);
+  const verifiedTasks = [
+    intentTypes.has('search-video') || intentTypes.has('search-book') ? '搜索影片' : null,
+    intentTypes.has('open-video') || intentTypes.has('open-book') ? '打开影片页' : null,
+    intentTypes.has('open-model') || intentTypes.has('open-author') ? '打开演员页' : null,
+    intentTypes.has('open-category') ? '打开分类或标签页' : null,
+    intentTypes.has('list-category-videos') ? '按分类或标签提取榜单' : null,
+    intentTypes.has('open-utility-page') ? '打开功能页' : null,
+  ].filter(Boolean);
+  const jableDisplayTargetsByIntent = new Map([
+    ['open-video', samples.videos],
+    ['open-book', samples.videos],
+    ['open-work', samples.videos],
+    ['open-model', samples.models],
+    ['open-author', samples.models],
+    ['open-actress', samples.models],
+    ['open-category', samples.categories],
+    ['list-category-videos', samples.categories],
+    ['search-video', samples.searchQueries],
+    ['search-book', samples.searchQueries],
+    ['search-work', samples.searchQueries],
+  ]);
+  const rows = intents.map((intent) => ({
+    intent: displayIntentLabel(context, intent.intentType),
+    flow: docsByIntent.get(intent.intentId)
+      ? markdownLink(displayIntentLabel(context, intent.intentType), outputs.indexMd, docsByIntent.get(intent.intentId).mappedPath)
+      : '-',
+    actionableTargets: (jableDisplayTargetsByIntent.get(intent.intentType) ?? (intent.targetDomain?.actionableValues ?? []).map((value) => normalizeDisplayLabel(value.label, {
+      siteContext: context.siteContext,
+      inputUrl: context.url,
+    }))).join(', ') || '-',
+    recognitionOnly: (intent.targetDomain?.candidateValues ?? [])
+      .filter((value) => !(intent.targetDomain?.actionableValues ?? []).some((candidate) => candidate.value === value.value))
+      .map((value) => normalizeDisplayLabel(value.label, {
+        siteContext: context.siteContext,
+        inputUrl: context.url,
+      }))
+      .join(', ') || '-',
+  }));
+  return [
+    '# jable Index',
+    '',
+    '## Site summary',
+    '',
+    `- Entry URL: \`${context.url}\``,
+    '- Site type: navigation hub + catalog detail.',
+    `- Verified tasks: ${verifiedTasks.join('、') || '在已观测站点空间内查询和导航'}.`,
+    `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
+    `- 演员样本: ${samples.models.join(', ') || 'none'}`,
+    `- 分类样本: ${samples.categories.join(', ') || 'none'}`,
+    ...(
+      samples.categoryGroups.length > 0
+        ? [
+            '- 分类树摘要:',
+            ...samples.categoryGroups.map((group) => `  - ${group.groupLabel}: ${group.tags.slice(0, 8).join(', ')}${group.tags.length > 8 ? ` 等 ${group.tags.length} 个标签` : ''}`),
+          ]
+        : []
+    ),
+    `- 搜索样本: ${samples.searchQueries.join(', ') || 'none'}`,
+    '',
+    '## Reference navigation',
+    '',
+    `- ${markdownLink('flows.md', outputs.indexMd, outputs.flowsMd)}`,
+    `- ${markdownLink('recovery.md', outputs.indexMd, outputs.recoveryMd)}`,
+    `- ${markdownLink('approval.md', outputs.indexMd, outputs.approvalMd)}`,
+    `- ${markdownLink('nl-intents.md', outputs.indexMd, outputs.nlIntentsMd)}`,
+    `- ${markdownLink('interaction-model.md', outputs.indexMd, outputs.interactionModelMd)}`,
+    '',
+    '## Sample intent coverage',
+    '',
+    renderTable(['Intent', 'Flow Source', 'Actionable Targets', 'Recognition-only Targets'], rows),
+    '',
+    '## Notes',
+    '',
+    '- 当前站点 Skill 以导航为主：覆盖搜索、影片页、演员页、分类/标签页和功能页。',
+    '- 新增榜单型查询：可以按任一已抽取 taxonomy 标签或一级分类组，返回站内前 N 条公开结果。',
+    '- 实际执行入口：`node query-jable-ranking.mjs https://jable.tv/ --query "<请求>"`。',
+    '- “推荐/最佳”默认解释为站内综合排序，不输出主观推荐话术。',
+    '- 当前已观测的 jable 模型里，没有已验证的下载或长文本阅读流程。',
+  ].join('\n');
+}
+
 function renderMoodyzFlowsReference(context, outputs, docsByIntent) {
   const samples = collectMoodyzSamples(context);
   const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
@@ -958,6 +1154,86 @@ function renderMoodyzFlowsReference(context, outputs, docsByIntent) {
   return sections.join('\n');
 }
 
+function renderJableFlowsReference(context, outputs, docsByIntent) {
+  const samples = collectJableSamples(context);
+  const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
+  const sections = ['# Flows', '', '## Table of contents', ''];
+  for (const intent of intents) {
+    sections.push(`- [${displayIntentLabel(context, intent.intentType)}](#${slugifyAscii(displayIntentLabel(context, intent.intentType), intent.intentType)})`);
+  }
+  sections.push('');
+  for (const intent of intents) {
+    const label = displayIntentLabel(context, intent.intentType);
+    sections.push(`## ${label}`);
+    sections.push('');
+    sections.push(`- Intent ID: \`${intent.intentId}\``);
+    sections.push(`- Intent Type: \`${label}\``);
+    sections.push(`- Action: \`${intent.actionId}\``);
+    sections.push(`- Summary: ${label}`);
+    sections.push('');
+    if (label === '搜索影片') {
+      const queries = samples.searchQueries.length ? samples.searchQueries : samples.videos.slice(0, 3);
+      sections.push(`- Example user requests: ${queries.map((query) => `\`搜索${query}\``).join(', ') || '`搜索影片`'}`);
+      sections.push('- Start state: any verified public page.');
+      sections.push('- Target state: a `/search/` results page or a directly resolved `/videos/...` page.');
+      sections.push('- Main path: fill the search box -> submit -> open the matching video result if needed.');
+      sections.push('- Success signal: the result page mentions the query or the final URL matches `/videos/...`.');
+      sections.push('- Disambiguation rule: prefer exact code matches such as `JUR-652` over fuzzy title fragments.');
+    } else if (label === '打开影片') {
+      const videos = samples.videos.slice(0, 4);
+      sections.push(`- Example user requests: ${videos.map((video) => `\`打开${video}\``).join(', ') || '`打开影片`'}`);
+      sections.push('- Start state: home page, search results page, category page, or any verified public page.');
+      sections.push('- Target state: a `/videos/...` detail page.');
+      sections.push('- Main path: open the matching video link.');
+      sections.push('- Success signal: the final URL matches `/videos/...` and the page shows video metadata.');
+    } else if (label === '打开演员页') {
+      const models = samples.models.slice(0, 4);
+      sections.push(`- Example user requests: ${models.map((model) => `\`打开${model}演员页\``).join(', ') || '`打开演员页`'}`);
+      sections.push('- Start state: a video detail page or a verified public page.');
+      sections.push('- Target state: the linked `/models/...` page.');
+      sections.push('- Main path: read the model link -> open the model page.');
+      sections.push('- Success signal: the model name and URL match the selected model.');
+    } else if (label === '打开分类页') {
+      const categories = samples.categories.slice(0, 4);
+      sections.push(`- Example user requests: ${categories.map((item) => `\`打开${item}\``).join(', ') || '`打开标签页`, `进入热门列表`, `打开分类页`'}`);
+      sections.push('- Start state: home page or a verified public page.');
+      sections.push('- Target state: a category, tag, hot, or list page.');
+      sections.push('- Main path: open the matching navigation link.');
+      sections.push('- Success signal: the final URL stays inside `/categories/`, `/tags/`, `/hot/`, or `/latest-updates/`.');
+      if (samples.categoryGroups.length > 0) {
+        sections.push(`- Known taxonomy groups: ${samples.categoryGroups.map((group) => `${group.groupLabel}(${group.tags.length})`).join('、')}`);
+      }
+    } else if (label === '分类榜单查询') {
+      const groups = samples.categoryGroups.slice(0, 3).map((group) => group.groupLabel);
+      const tags = samples.categories.slice(0, 3);
+      sections.push(`- Example user requests: ${[
+        tags[0] ? `\`${tags[0]}分类，近期最佳推荐三部\`` : null,
+        tags[1] ? `\`${tags[1]}标签最近更新前五条\`` : null,
+        groups[0] ? `\`${groups[0]}分类最高收藏前三\`` : null,
+      ].filter(Boolean).join(', ') || '`黑丝分类，近期最佳推荐三部`'}`);
+      sections.push('- Start state: home page, category page, tag page, or any verified public page.');
+      sections.push('- Target state: a ranked result list extracted from a verified tag page or a taxonomy group aggregate.');
+      sections.push('- Main path: resolve the taxonomy target -> open the visible tag or category page -> switch to the requested on-site sort mode -> extract the top N cards.');
+      sections.push('- Sort semantics: “推荐/最佳/近期最佳” => 综合排序; “最近/近期” => 最近更新; “最多观看/最热” => 最多觀看; “最高收藏/收藏最多” => 最高收藏。');
+      sections.push('- Group aggregation: when the user targets a first-level category group, aggregate the visible top cards from all tags in that group, dedupe by video URL, then rank the merged set.');
+      sections.push('- Success signal: return the requested number of ranked cards with title, link, actor names, and any visible metric.');
+    } else if (label === '打开功能页') {
+      sections.push('- Example user requests: `打开搜索页`, `进入搜索结果页`');
+      sections.push('- Start state: any verified public page.');
+      sections.push('- Target state: a low-risk utility page such as `/search/`.');
+      sections.push('- Main path: open the utility link.');
+      sections.push('- Success signal: the requested utility page opens without side effects.');
+    }
+    sections.push('');
+  }
+  sections.push('## Notes');
+  sections.push('');
+  sections.push('- 这组流程以导航为主，不包含下载动作。');
+  sections.push('- 搜索消歧时，优先区分番号、影片标题和演员名称。');
+  sections.push('- 询问元数据时，以实时 `/videos/...` 和 `/models/...` 页面为准。');
+  return sections.join('\n');
+}
+
 function renderMoodyzNlIntentsReference(context, outputs) {
   const samples = collectMoodyzSamples(context);
   const intentTypes = getIntentTypes(context);
@@ -997,6 +1273,62 @@ function renderMoodyzNlIntentsReference(context, outputs) {
   return sections.join('\n');
 }
 
+function renderJableNlIntentsReference(context) {
+  const samples = collectJableSamples(context);
+  const intentTypes = getIntentTypes(context);
+  const sections = ['# NL Intents', ''];
+  const videoExamples = samples.videos.slice(0, 4);
+  const modelExamples = samples.models.slice(0, 4);
+  const searchExamples = samples.searchQueries.slice(0, 4);
+  if (intentTypes.has('search-video') || intentTypes.has('search-book')) {
+    sections.push('## 搜索影片', '');
+    sections.push('- Slots: `queryText`');
+    sections.push(`- Examples: ${searchExamples.map((item) => `\`搜索${item}\``).join(', ') || videoExamples.map((item) => `\`搜索${item}\``).join(', ') || '`搜索影片`'}`);
+    sections.push('- Notes: prefer exact video codes or exact titles when available.');
+    sections.push('');
+  }
+  if (intentTypes.has('open-video') || intentTypes.has('open-book')) {
+    sections.push('## 打开影片', '');
+    sections.push('- Slots: `videoTitle`');
+    sections.push(`- Examples: ${videoExamples.map((item) => `\`打开${item}\``).join(', ') || '`打开影片`'}`);
+    sections.push('');
+  }
+  if (intentTypes.has('open-model') || intentTypes.has('open-author')) {
+    sections.push('## 打开演员页', '');
+    sections.push('- Slots: `actorName`');
+    sections.push(`- Examples: ${modelExamples.map((item) => `\`打开${item}演员页\``).join(', ') || '`打开演员页`'}`);
+    sections.push('');
+  }
+  if (intentTypes.has('open-category')) {
+    sections.push('## 打开分类页', '');
+    sections.push('- Slots: `targetLabel`');
+    sections.push(`- Examples: ${samples.categories.slice(0, 4).map((item) => `\`打开${item}\``).join(', ') || '`打开热门列表`, `进入标签页`, `打开分类页`'}`);
+    if (samples.categoryGroups.length > 0) {
+      sections.push(`- Groups: ${samples.categoryGroups.map((group) => `${group.groupLabel}（${group.tags.slice(0, 5).join('、')}${group.tags.length > 5 ? '…' : ''}）`).join('；')}`);
+    }
+    sections.push('');
+  }
+  if (intentTypes.has('list-category-videos')) {
+    sections.push('## 分类榜单查询', '');
+    sections.push('- Slots: `targetLabel`, `sortMode`, `limit`, `scopeType`');
+    sections.push(`- Examples: ${[
+      samples.categories[0] ? `\`${samples.categories[0]}分类，近期最佳推荐三部\`` : null,
+      samples.categories[1] ? `\`${samples.categories[1]}标签最近更新前五条\`` : null,
+      samples.categoryGroups[0] ? `\`${samples.categoryGroups[0].groupLabel}分类最高收藏前三\`` : null,
+    ].filter(Boolean).join(', ') || '`黑丝分类，近期最佳推荐三部`'}`);
+    sections.push('- Sort defaults: `推荐/最佳/近期最佳 => 综合排序`; `最近/近期 => 最近更新`; `最多观看/最热 => 最多觀看`; `最高收藏/收藏最多 => 最高收藏`。');
+    sections.push('- Scope: supports all extracted taxonomy tags and all first-level category groups.');
+    sections.push('- Execution: `node query-jable-ranking.mjs https://jable.tv/ --query "<请求>"`.');
+    sections.push('');
+  }
+  if (intentTypes.has('open-utility-page')) {
+    sections.push('## 打开功能页', '');
+    sections.push('- Slots: `targetLabel`');
+    sections.push('- Examples: `打开搜索页`, `进入搜索结果页`');
+  }
+  return sections.join('\n');
+}
+
 function renderMoodyzInteractionModelReference(context, outputs) {
   const samples = collectMoodyzSamples(context);
   const elementsById = buildElementsById(context);
@@ -1014,6 +1346,29 @@ function renderMoodyzInteractionModelReference(context, outputs) {
     `- Works: ${samples.works.join(', ') || 'none'}`,
     `- Actresses: ${samples.actresses.join(', ') || 'none'}`,
     `- Search queries: ${samples.searchQueries.join(', ') || 'none'}`,
+    '',
+    renderTable(['Intent', 'Element', 'Action', 'State Field'], rows),
+  ].join('\n');
+}
+
+function renderJableInteractionModelReference(context) {
+  const samples = collectJableSamples(context);
+  const elementsById = buildElementsById(context);
+  const rows = (context.intentsDocument.intents ?? []).map((intent) => ({
+    intent: displayIntentLabel(context, intent.intentType),
+    element: `${intent.elementId} (${elementsById.get(intent.elementId)?.kind ?? '-'})`,
+    action: intent.actionId,
+    stateField: intent.stateField,
+  }));
+  return [
+    '# Interaction Model',
+    '',
+    '## Capability summary',
+    '',
+    `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
+    `- 演员样本: ${samples.models.join(', ') || 'none'}`,
+    `- 搜索样本: ${samples.searchQueries.join(', ') || 'none'}`,
+    `- 分类组: ${samples.categoryGroups.map((group) => `${group.groupLabel}(${group.tags.length})`).join('、') || 'none'}`,
     '',
     renderTable(['Intent', 'Element', 'Action', 'State Field'], rows),
   ].join('\n');
@@ -1305,11 +1660,31 @@ function resolvePrimaryArchetype(context) {
 }
 
 function resolveSafeActions(context) {
-  const profileActions = resolveSafeActionKindsFromSiteContext(context.siteContext, [
-    context.siteProfileDocument?.safeActionKinds ?? [],
-  ]);
+  const intentTypes = new Set((context.intentsDocument.intents ?? []).map((intent) => intent.intentType));
+  const siteActions = resolveSafeActionKindsFromSiteContext(context.siteContext, []);
+  if (siteActions.length) {
+    return siteActions.filter((actionId) => {
+      if (actionId === 'download-book') {
+        return intentTypes.has('download-book');
+      }
+      if (actionId === 'search-submit') {
+        return [...intentTypes].some((intentType) => intentType.startsWith('search-'));
+      }
+      return true;
+    });
+  }
+
+  const profileActions = uniqueSortedStrings([...(context.siteProfileDocument?.safeActionKinds ?? [])]);
   if (profileActions.length) {
-    return profileActions;
+    return profileActions.filter((actionId) => {
+      if (actionId === 'download-book') {
+        return intentTypes.has('download-book');
+      }
+      if (actionId === 'search-submit') {
+        return [...intentTypes].some((intentType) => intentType.startsWith('search-'));
+      }
+      return true;
+    });
   }
 
   const actionableActions = uniqueSortedStrings((context.intentsDocument.intents ?? []).map((intent) => intent.actionId));
@@ -1361,6 +1736,9 @@ function resolveContentArtifactPath(context, filePath) {
 }
 
 function renderSkillMd(context, outputs) {
+  if (isJable(context)) {
+    return renderJableSkillMd(context, outputs);
+  }
   if (isMoodyz(context)) {
     return renderMoodyzSkillMd(context, outputs);
   }
@@ -1406,6 +1784,9 @@ function renderSkillMd(context, outputs) {
 }
 
 function renderIndexReference(context, outputs, docsByIntent) {
+  if (isJable(context)) {
+    return renderJableIndexReference(context, outputs, docsByIntent);
+  }
   if (isMoodyz(context)) {
     return renderMoodyzIndexReference(context, outputs, docsByIntent);
   }
@@ -1435,6 +1816,9 @@ function renderIndexReference(context, outputs, docsByIntent) {
 }
 
 async function renderFlowsReference(context, outputs, docsByIntent) {
+  if (isJable(context)) {
+    return renderJableFlowsReference(context, outputs, docsByIntent);
+  }
   if (isMoodyz(context)) {
     return renderMoodyzFlowsReference(context, outputs, docsByIntent);
   }
@@ -1491,6 +1875,9 @@ async function renderApprovalReference(context, outputs) {
 }
 
 async function renderNlIntentsReference(context, outputs) {
+  if (isJable(context)) {
+    return renderJableNlIntentsReference(context);
+  }
   if (isMoodyz(context)) {
     return renderMoodyzNlIntentsReference(context, outputs);
   }
@@ -1518,6 +1905,9 @@ async function renderNlIntentsReference(context, outputs) {
 }
 
 async function renderInteractionModelReference(context, outputs) {
+  if (isJable(context)) {
+    return renderJableInteractionModelReference(context);
+  }
   if (isMoodyz(context)) {
     return renderMoodyzInteractionModelReference(context, outputs);
   }

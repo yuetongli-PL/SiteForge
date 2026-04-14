@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-14T06:31:30.308Z",
+  "generatedAt": "2026-04-14T12:52:21.894Z",
   "sites": {
     "www.22biqu.com": {
       "baseUrl": "https://www.22biqu.com/",
@@ -13,10 +13,12 @@
         "search-content"
       ],
       "host": "www.22biqu.com",
-      "supportedIntents": [],
+      "supportedIntents": [
+        "download-book"
+      ],
       "safeActionKinds": [],
       "approvalActionKinds": [],
-      "updatedAt": "2026-04-14T06:31:30.225Z",
+      "updatedAt": "2026-04-14T10:55:42Z",
       "primaryArchetype": null
     },
     "moodyz.com": {
@@ -49,6 +51,50 @@
       "safeActionKinds": [],
       "approvalActionKinds": [],
       "updatedAt": "2026-04-14T06:31:30.308Z"
+    },
+    "jable.tv": {
+      "baseUrl": "https://jable.tv/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "supportedIntents": [
+        "list-category-videos",
+        "open-category",
+        "open-model",
+        "open-video",
+        "search-video"
+      ],
+      "safeActionKinds": [
+        "navigate",
+        "query-ranking"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "jable.tv",
+      "updatedAt": "2026-04-14T12:52:21.894Z",
+      "rankingSupported": true,
+      "rankingModes": [
+        "combined",
+        "recent",
+        "most-viewed",
+        "most-favourited"
+      ],
+      "categoryTaxonomySupported": true,
+      "rankingQueryEntrypoint": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\query-jable-ranking.mjs"
     }
   }
 }

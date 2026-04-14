@@ -82,6 +82,7 @@ Object.assign(INTENT_TITLE_PREFIX, {
   'open-chapter': '打开章节',
   'search-book': '搜索书籍',
   'search-work': '搜索作品',
+  'list-category-videos': '分类榜单查询',
 });
 
 INTENT_TITLE_PREFIX['download-book'] = '下载书籍';
@@ -161,6 +162,11 @@ function isMoodyzContext(context) {
     || /(?:^|\.)moodyz\.com$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
 }
 
+function isJableContext(context) {
+  return /(?:^|\.)jable\.tv$/iu.test(String(context?.host ?? ''))
+    || /(?:^|\.)jable\.tv$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
+}
+
 function siteIntentTitlePrefix(context, intentType) {
   if (isMoodyzContext(context)) {
     switch (intentType) {
@@ -190,6 +196,36 @@ function siteIntentTitlePrefix(context, intentType) {
     }
   }
 
+  if (isJableContext(context)) {
+    switch (intentType) {
+      case 'search-book':
+      case 'search-video':
+        return '\u641c\u7d22\u5f71\u7247';
+      case 'open-book':
+      case 'open-video':
+        return '\u6253\u5f00\u5f71\u7247';
+      case 'open-author':
+      case 'open-model':
+        return '\u6253\u5f00\u6f14\u5458\u9875';
+      case 'download-book':
+        return '\u4e0b\u8f7d\u5f71\u7247';
+      case 'open-chapter':
+        return '\u6253\u5f00\u5185\u5bb9\u9875';
+      case 'open-category':
+        return '\u6253\u5f00\u5206\u7c7b';
+      case 'list-category-videos':
+        return '\u5206\u7c7b\u699c\u5355\u67e5\u8be2';
+      case 'open-utility-page':
+        return '\u6253\u5f00\u529f\u80fd\u9875';
+      case 'open-auth-page':
+        return '\u6253\u5f00\u8ba4\u8bc1\u9875';
+      case 'paginate-content':
+        return '\u7ffb\u9875';
+      default:
+        return String(intentType ?? '');
+    }
+  }
+
   return INTENT_TITLE_PREFIX[intentType] ?? intentType;
 }
 
@@ -204,6 +240,19 @@ function siteTerminology(context) {
       openEntityLabel: '\u6253\u5f00\u4f5c\u54c1',
       openPersonLabel: '\u6253\u5f00\u5973\u4f18\u9875',
       downloadLabel: '\u4e0b\u8f7d\u4f5c\u54c1',
+    };
+  }
+
+  if (isJableContext(context)) {
+    return {
+      entityLabel: '\u5f71\u7247',
+      entityPlural: '\u5f71\u7247',
+      personLabel: '\u6f14\u5458',
+      personPlural: '\u6f14\u5458',
+      searchLabel: '\u641c\u7d22\u5f71\u7247',
+      openEntityLabel: '\u6253\u5f00\u5f71\u7247',
+      openPersonLabel: '\u6253\u5f00\u6f14\u5458\u9875',
+      downloadLabel: '\u4e0b\u8f7d\u5f71\u7247',
     };
   }
 
@@ -974,6 +1023,26 @@ function siteIntentTypeName(context, intentType) {
         return 'open-actress';
       case 'download-book':
         return 'download-work';
+      default:
+        return String(intentType ?? '');
+    }
+  }
+
+  if (isJableContext(context)) {
+    switch (intentType) {
+      case 'search-book':
+      case 'search-video':
+        return 'search-video';
+      case 'open-book':
+      case 'open-video':
+        return 'open-video';
+      case 'open-author':
+      case 'open-model':
+        return 'open-model';
+      case 'list-category-videos':
+        return 'list-category-videos';
+      case 'download-book':
+        return 'download-video';
       default:
         return String(intentType ?? '');
     }

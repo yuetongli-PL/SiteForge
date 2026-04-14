@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { classifyJableModelsPath } from './lib/site-path-classifiers.mjs';
 
 const DEFAULT_BROWSER_PATHS = {
   win32: [
@@ -332,6 +333,16 @@ function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
     return null;
   }
 
+  if (String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv') {
+    const modelsPathKind = classifyJableModelsPath(pathname);
+    if (modelsPathKind === 'list') {
+      return 'author-list-page';
+    }
+    if (modelsPathKind === 'detail') {
+      return 'author-page';
+    }
+  }
+
   if (matchesExactPath(pathname, pageTypes.homeExact) || matchesPathPrefix(pathname, pageTypes.homePrefixes)) {
     return 'home';
   }
@@ -400,6 +411,40 @@ function inferPageTypeFromUrl(input, siteProfile = null) {
   } catch {
     return 'unknown-page';
   }
+}
+
+function isJableSiteProfile(siteProfile = null, baseUrl = '') {
+  const profileHost = String(siteProfile?.host ?? '').toLowerCase();
+  const urlHost = (() => {
+    try {
+      return new URL(String(baseUrl || '')).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  return profileHost === 'jable.tv' || profileHost === 'www.jable.tv' || urlHost === 'jable.tv' || urlHost === 'www.jable.tv';
+}
+
+function resolveNavigationWaitPolicy(settings, siteProfile = null, baseUrl = '') {
+  if (isJableSiteProfile(siteProfile, baseUrl)) {
+    return {
+      useLoadEvent: false,
+      useNetworkIdle: false,
+      documentReadyTimeoutMs: Math.min(settings.timeoutMs, 8_000),
+      domQuietTimeoutMs: Math.min(settings.timeoutMs, 3_000),
+      domQuietMs: 150,
+      idleMs: Math.min(settings.idleMs, 250),
+    };
+  }
+
+  return {
+    useLoadEvent: true,
+    useNetworkIdle: settings.waitUntil === 'networkidle',
+    documentReadyTimeoutMs: settings.timeoutMs,
+    domQuietTimeoutMs: settings.timeoutMs,
+    domQuietMs: DOM_QUIET_MS,
+    idleMs: settings.idleMs,
+  };
 }
 
 function chapterChainBaseUrl(input) {
@@ -812,28 +857,36 @@ async function waitForDomQuiet(client, sessionId, quietMs, timeoutMs) {
   );
 }
 
-async function navigateAndWaitReady(client, sessionId, url, settings, networkTracker) {
-  const loadPromise = client.waitForEvent('Page.loadEventFired', {
-    sessionId,
-    timeoutMs: settings.timeoutMs,
-  });
+async function navigateAndWaitReady(client, sessionId, url, settings, networkTracker, siteProfile = null) {
+  const waitPolicy = resolveNavigationWaitPolicy(settings, siteProfile, url);
+  const loadPromise = waitPolicy.useLoadEvent
+    ? client.waitForEvent('Page.loadEventFired', {
+      sessionId,
+      timeoutMs: waitPolicy.documentReadyTimeoutMs,
+    })
+    : null;
 
   const navigateResult = await client.send('Page.navigate', { url }, sessionId);
   if (navigateResult.errorText) {
     throw new Error(`Navigation failed: ${navigateResult.errorText}`);
   }
 
-  await loadPromise;
+  if (loadPromise) {
+    await loadPromise;
+  } else {
+    await waitForDocumentReady(client, sessionId, waitPolicy.documentReadyTimeoutMs);
+    await waitForDomQuiet(client, sessionId, waitPolicy.domQuietMs, waitPolicy.domQuietTimeoutMs);
+  }
 
-  if (settings.waitUntil === 'networkidle') {
+  if (waitPolicy.useNetworkIdle) {
     await networkTracker.waitForIdle({
       quietMs: NETWORK_IDLE_QUIET_MS,
       timeoutMs: settings.timeoutMs,
     });
   }
 
-  if (settings.idleMs > 0) {
-    await delay(settings.idleMs);
+  if (waitPolicy.idleMs > 0) {
+    await delay(waitPolicy.idleMs);
   }
 }
 
@@ -950,7 +1003,7 @@ async function captureChapterArtifacts({ client, sessionId, stateDir, currentUrl
     if (index > 0) {
       await navigateAndWaitReady(client, sessionId, normalizedCursor, settings, {
         waitForIdle: async () => undefined,
-      });
+      }, siteProfile);
     }
 
     const payload = await callPageFunction(client, sessionId, pageExtractChapterPayload, siteProfile);
@@ -1482,6 +1535,28 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   const CATEGORY_WORDS = ['分类', '小说', '栏目', '玄幻', '武侠', '都市', '历史', '科幻', '游戏', '女生', '完本'];
   const HISTORY_WORDS = ['history', '阅读记录', '最近阅读'];
 
+  function classifyJableModelsPathLocal(pathname) {
+    const normalized = String(pathname || '/').trim().toLowerCase() || '/';
+    if (normalized === '/models' || normalized === '/models/') {
+      return 'list';
+    }
+    if (!normalized.startsWith('/models/')) {
+      return null;
+    }
+    const remainder = normalized.slice('/models/'.length).replace(/^\/+|\/+$/g, '');
+    if (!remainder) {
+      return 'list';
+    }
+    const [firstSegment] = remainder.split('/');
+    if (!firstSegment) {
+      return 'list';
+    }
+    if (/^\d+$/u.test(firstSegment)) {
+      return 'list';
+    }
+    return 'detail';
+  }
+
   function normalizeText(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
   }
@@ -1550,6 +1625,15 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   }
 
   function inferProfilePageType(pathname) {
+    if (String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv') {
+      const modelsPathKind = classifyJableModelsPathLocal(pathname);
+      if (modelsPathKind === 'list') {
+        return 'author-list-page';
+      }
+      if (modelsPathKind === 'detail') {
+        return 'author-page';
+      }
+    }
     if (pathnameMatchesExact(pathname, profileConfig.pageTypes.homeExact) || pathnameMatchesPrefix(pathname, profileConfig.pageTypes.homePrefixes)) {
       return 'home';
     }
@@ -1815,6 +1899,16 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     const lowerLabel = label.toLowerCase();
     const lowerHref = String(hrefInfo.pathname || hrefInfo.normalizedHref || '').toLowerCase();
 
+    if (isJableSite) {
+      const modelsPathKind = classifyJableModelsPathLocal(lowerHref);
+      if (modelsPathKind === 'list') {
+        return 'category';
+      }
+      if (modelsPathKind === 'detail') {
+        return 'author';
+      }
+    }
+
     if (
       lowerHref === '/'
       || lowerHref === ''
@@ -2065,6 +2159,106 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   }
 
   const pageType = currentPageType();
+  const isJableSite = String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv';
+
+  function shouldKeepCandidateForCurrentPage(candidate) {
+    if (!isJableSite) {
+      return true;
+    }
+
+    if (candidate.kind === 'search-form') {
+      return true;
+    }
+
+    if (pageType === 'book-detail-page') {
+      if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'author') {
+        return true;
+      }
+      if (candidate.kind === 'content-link' && candidate.semanticRole === 'content') {
+        return false;
+      }
+      if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'category') {
+        return false;
+      }
+    }
+
+    if (pageType === 'author-page') {
+      return candidate.kind === 'content-link' || candidate.kind === 'pagination-link';
+    }
+
+    if (pageType === 'author-list-page') {
+      if (candidate.kind === 'safe-nav-link') {
+        return candidate.semanticRole === 'author' || candidate.semanticRole === 'category';
+      }
+      return candidate.kind === 'pagination-link';
+    }
+
+    if (pageType === 'search-results-page' || pageType === 'category-page' || pageType === 'home') {
+      if (candidate.kind === 'content-link' || candidate.kind === 'pagination-link') {
+        return true;
+      }
+      if (candidate.kind === 'safe-nav-link') {
+        return candidate.semanticRole === 'category' || candidate.semanticRole === 'utility' || candidate.semanticRole === 'home';
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  function quotaForCandidate(candidate) {
+    if (!isJableSite) {
+      return KIND_QUOTA[candidate.kind] ?? maxTriggers;
+    }
+
+    if (pageType === 'book-detail-page') {
+      if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'author') {
+        return 2;
+      }
+      if (candidate.kind === 'chapter-link') {
+        return 0;
+      }
+      return 0;
+    }
+
+    if (pageType === 'author-page') {
+      if (candidate.kind === 'content-link') {
+        return 4;
+      }
+      if (candidate.kind === 'pagination-link') {
+        return 1;
+      }
+      return 0;
+    }
+
+    if (pageType === 'author-list-page') {
+      if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'author') {
+        return 4;
+      }
+      if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'category') {
+        return 1;
+      }
+      if (candidate.kind === 'pagination-link') {
+        return 1;
+      }
+      return 0;
+    }
+
+    if (pageType === 'search-results-page' || pageType === 'category-page' || pageType === 'home') {
+      if (candidate.kind === 'content-link') {
+        return 4;
+      }
+      if (candidate.kind === 'pagination-link') {
+        return 1;
+      }
+      if (candidate.kind === 'safe-nav-link') {
+        return 2;
+      }
+      return KIND_QUOTA[candidate.kind] ?? maxTriggers;
+    }
+
+    return KIND_QUOTA[candidate.kind] ?? maxTriggers;
+  }
 
   if (searchQueries.length > 0) {
     const searchForm = findSearchForm();
@@ -2239,7 +2433,9 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     }
   }
 
-  candidates.sort((left, right) => {
+  const filteredCandidates = candidates.filter((candidate) => shouldKeepCandidateForCurrentPage(candidate));
+
+  filteredCandidates.sort((left, right) => {
     if (left._priority !== right._priority) {
       return left._priority - right._priority;
     }
@@ -2254,11 +2450,14 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
 
   const selected = [];
   const selectedCounts = new Map();
-  for (const candidate of candidates) {
+  for (const candidate of filteredCandidates) {
     if (selected.length >= maxTriggers) {
       break;
     }
-    const quota = KIND_QUOTA[candidate.kind] ?? maxTriggers;
+    const quota = quotaForCandidate(candidate);
+    if (quota <= 0) {
+      continue;
+    }
     const count = selectedCounts.get(candidate.kind) ?? 0;
     if (count >= quota) {
       continue;
@@ -2269,9 +2468,13 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
 
   if (selected.length < maxTriggers) {
     const selectedKeys = new Set(selected.map((candidate) => JSON.stringify([candidate.kind, candidate.label, candidate.locator.domPath, candidate.href, candidate.queryText])));
-    for (const candidate of candidates) {
+    for (const candidate of filteredCandidates) {
       if (selected.length >= maxTriggers) {
         break;
+      }
+      const quota = quotaForCandidate(candidate);
+      if (quota <= 0) {
+        continue;
       }
       const key = JSON.stringify([candidate.kind, candidate.label, candidate.locator.domPath, candidate.href, candidate.queryText]);
       if (selectedKeys.has(key)) {
@@ -2617,6 +2820,28 @@ function pageComputeStateSignature(siteProfile = null) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
   }
 
+  function classifyJableModelsPathLocal(pathname) {
+    const normalized = String(pathname || '/').trim().toLowerCase() || '/';
+    if (normalized === '/models' || normalized === '/models/') {
+      return 'list';
+    }
+    if (!normalized.startsWith('/models/')) {
+      return null;
+    }
+    const remainder = normalized.slice('/models/'.length).replace(/^\/+|\/+$/g, '');
+    if (!remainder) {
+      return 'list';
+    }
+    const [firstSegment] = remainder.split('/');
+    if (!firstSegment) {
+      return 'list';
+    }
+    if (/^\d+$/u.test(firstSegment)) {
+      return 'list';
+    }
+    return 'detail';
+  }
+
   function normalizeUrlNoFragmentLocal(value) {
     try {
       const parsed = new URL(value, document.baseURI);
@@ -2807,6 +3032,15 @@ function pageComputeStateSignature(siteProfile = null) {
         && values.some((value) => String(value || '').toLowerCase() === String(pathname || '/').toLowerCase());
       if (matchesProfileExact(profilePageTypes.homeExact) || matchesProfilePrefix(profilePageTypes.homePrefixes)) {
         return 'home';
+      }
+      if (String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv') {
+        const modelsPathKind = classifyJableModelsPathLocal(pathname);
+        if (modelsPathKind === 'list') {
+          return 'author-list-page';
+        }
+        if (modelsPathKind === 'detail') {
+          return 'author-page';
+        }
       }
       if (matchesProfilePrefix(profilePageTypes.searchResultsPrefixes)) {
         return 'search-results-page';
@@ -3009,28 +3243,31 @@ async function collectStateSignature(client, sessionId, siteProfile = null) {
   return await callPageFunction(client, sessionId, pageComputeStateSignature, siteProfile);
 }
 
-async function waitForPostTriggerSettled(client, sessionId, settings, networkTracker) {
-  await waitForDocumentReady(client, sessionId, settings.timeoutMs);
-  await waitForDomQuiet(client, sessionId, DOM_QUIET_MS, settings.timeoutMs);
-  if (settings.waitUntil === 'networkidle') {
+async function waitForPostTriggerSettled(client, sessionId, settings, networkTracker, siteProfile = null, currentUrl = '') {
+  const waitPolicy = resolveNavigationWaitPolicy(settings, siteProfile, currentUrl);
+  await waitForDocumentReady(client, sessionId, waitPolicy.documentReadyTimeoutMs);
+  await waitForDomQuiet(client, sessionId, waitPolicy.domQuietMs, waitPolicy.domQuietTimeoutMs);
+  if (waitPolicy.useNetworkIdle) {
     await networkTracker.waitForIdle({
       quietMs: NETWORK_IDLE_QUIET_MS,
       timeoutMs: settings.timeoutMs,
     });
   }
-  if (settings.idleMs > 0) {
-    await delay(settings.idleMs);
+  if (waitPolicy.idleMs > 0) {
+    await delay(waitPolicy.idleMs);
   }
 }
 
 function shouldExpandPageType(pageType) {
-  return ['home', 'category-page', 'history-page', 'search-results-page', 'book-detail-page', 'author-page'].includes(pageType);
+  return ['home', 'category-page', 'author-list-page', 'history-page', 'search-results-page', 'book-detail-page', 'author-page'].includes(pageType);
 }
 
 function selectTriggersForPage(pageType, triggers, settings, siteProfile = null, { includeSearchQueries = false } = {}) {
   const selected = [];
   let bookCount = 0;
   let searchResultBookCount = 0;
+  let safeNavCount = 0;
+  let searchFormCount = 0;
   const sampling = {
     searchResultContentLimit: Number.isFinite(Number(siteProfile?.sampling?.searchResultContentLimit))
       ? Math.max(1, Math.floor(Number(siteProfile.sampling.searchResultContentLimit)))
@@ -3045,8 +3282,101 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
       ? Math.max(1, Math.floor(Number(siteProfile.sampling.fallbackContentLimitWithSearch)))
       : MAX_FALLBACK_BOOKS,
   };
+  const isJableSite = String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv';
+  const pageSelectionLimit = (() => {
+    if (!isJableSite) {
+      return Number.POSITIVE_INFINITY;
+    }
+    if (pageType === 'book-detail-page') {
+      return 1;
+    }
+    if (pageType === 'author-page') {
+      return 2;
+    }
+    if (pageType === 'author-list-page') {
+      return 4;
+    }
+    if (pageType === 'search-results-page') {
+      return 4;
+    }
+    if (['home', 'category-page', 'history-page', 'unknown-page'].includes(pageType)) {
+      return 7;
+    }
+    return 4;
+  })();
 
-  for (const trigger of triggers) {
+  const orderedTriggers = (() => {
+    if (!isJableSite) {
+      return triggers;
+    }
+    const priorityFor = (trigger) => {
+      if (pageType === 'author-list-page') {
+        if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author') {
+          return 0;
+        }
+        if (trigger.kind === 'pagination-link') {
+          return 1;
+        }
+        if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'category') {
+          return 2;
+        }
+        return 9;
+      }
+      if (pageType === 'author-page') {
+        if (trigger.kind === 'content-link') {
+          return 0;
+        }
+        if (trigger.kind === 'pagination-link') {
+          return 1;
+        }
+        return 9;
+      }
+      if (pageType === 'search-results-page') {
+        if (trigger.kind === 'search-form') {
+          return 0;
+        }
+        if (trigger.kind === 'content-link') {
+          return 1;
+        }
+        if (trigger.kind === 'pagination-link') {
+          return 2;
+        }
+        if (trigger.kind === 'safe-nav-link' && ['category', 'utility', 'home'].includes(trigger.semanticRole)) {
+          return 3;
+        }
+        return 9;
+      }
+      if (pageType === 'home' || pageType === 'category-page') {
+        if (trigger.kind === 'search-form') {
+          return 0;
+        }
+        if (trigger.kind === 'safe-nav-link' && ['category', 'utility', 'home'].includes(trigger.semanticRole)) {
+          return 1;
+        }
+        if (trigger.kind === 'content-link') {
+          return 2;
+        }
+        if (trigger.kind === 'pagination-link') {
+          return 3;
+        }
+        return 9;
+      }
+      return 0;
+    };
+    return [...triggers].sort((left, right) => {
+      const priorityDiff = priorityFor(left) - priorityFor(right);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return (left.ordinal ?? 0) - (right.ordinal ?? 0);
+    });
+  })();
+
+  for (const trigger of orderedTriggers) {
+    if (selected.length >= pageSelectionLimit) {
+      break;
+    }
+
     if (pageType === 'book-detail-page') {
       if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author') {
         selected.push(trigger);
@@ -3062,15 +3392,38 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
         searchResultBookCount += 1;
         selected.push(trigger);
       }
+      if (isJableSite && trigger.kind === 'pagination-link') {
+        selected.push(trigger);
+      }
       continue;
     }
 
     if (pageType === 'author-page') {
       if (trigger.kind === 'content-link') {
-        if (bookCount >= sampling.authorContentLimit) {
+        const authorLimit = isJableSite
+          ? Math.min(sampling.authorContentLimit, 2)
+          : sampling.authorContentLimit;
+        if (bookCount >= authorLimit) {
           continue;
         }
         bookCount += 1;
+        selected.push(trigger);
+      }
+      if (isJableSite && trigger.kind === 'pagination-link') {
+        selected.push(trigger);
+      }
+      continue;
+    }
+
+    if (pageType === 'author-list-page') {
+      if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author') {
+        if (safeNavCount >= 4) {
+          continue;
+        }
+        safeNavCount += 1;
+        selected.push(trigger);
+      }
+      if (isJableSite && trigger.kind === 'pagination-link') {
         selected.push(trigger);
       }
       continue;
@@ -3079,25 +3432,42 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
     if (['home', 'category-page', 'history-page', 'unknown-page'].includes(pageType)) {
       if (trigger.kind === 'search-form') {
         if (includeSearchQueries) {
+          if (isJableSite && searchFormCount >= 3) {
+            continue;
+          }
+          searchFormCount += 1;
           selected.push(trigger);
         }
         continue;
       }
-      if (trigger.kind === 'content-link') {
-        const bookLimit = settings.searchQueries.length > 0
-          ? sampling.fallbackContentLimitWithSearch
-          : sampling.categoryContentLimit;
-        if (bookCount >= bookLimit) {
+        if (trigger.kind === 'content-link') {
+          const bookLimit = settings.searchQueries.length > 0
+            ? (isJableSite ? Math.min(sampling.fallbackContentLimitWithSearch, 2) : sampling.fallbackContentLimitWithSearch)
+            : (isJableSite ? Math.min(sampling.categoryContentLimit, 2) : sampling.categoryContentLimit);
+          if (bookCount >= bookLimit) {
+            continue;
+          }
+          bookCount += 1;
+          selected.push(trigger);
           continue;
         }
-        bookCount += 1;
-        selected.push(trigger);
-        continue;
+        if (trigger.kind === 'safe-nav-link') {
+          if (isJableSite) {
+            if (!['category', 'home', 'utility'].includes(trigger.semanticRole)) {
+              continue;
+            }
+            if (safeNavCount >= 2) {
+              continue;
+            }
+            safeNavCount += 1;
+          }
+          selected.push(trigger);
+          continue;
+        }
+        if (trigger.kind === 'auth-link') {
+          selected.push(trigger);
+        }
       }
-      if (trigger.kind === 'safe-nav-link' || trigger.kind === 'auth-link') {
-        selected.push(trigger);
-      }
-    }
   }
 
   return selected;
@@ -3164,7 +3534,7 @@ export async function expandStates(inputUrl, options = {}) {
       settings.searchQueries,
       siteProfile?.search?.defaultQueries,
     );
-    await navigateAndWaitReady(client, sessionId, baseUrl, settings, networkTracker);
+    await navigateAndWaitReady(client, sessionId, baseUrl, settings, networkTracker, siteProfile);
 
     const liveInitialSignature = await collectStateSignature(client, sessionId, siteProfile);
     const initialDedupKey = hashFingerprint(liveInitialSignature.fingerprint);
@@ -3200,7 +3570,7 @@ export async function expandStates(inputUrl, options = {}) {
       }
       expandedStates.add(context.stateId);
 
-      await navigateAndWaitReady(client, sessionId, context.sourceUrl, settings, networkTracker);
+      await navigateAndWaitReady(client, sessionId, context.sourceUrl, settings, networkTracker, siteProfile);
       const sourceSignature = await collectStateSignature(client, sessionId, siteProfile);
       const sourceFingerprintJson = JSON.stringify(sourceSignature.fingerprint);
       const discoveryLimit = sourceSignature.pageType === 'book-detail-page'
@@ -3231,7 +3601,7 @@ export async function expandStates(inputUrl, options = {}) {
         const attemptedAt = new Date().toISOString();
 
         try {
-          await navigateAndWaitReady(client, sessionId, context.sourceUrl, settings, networkTracker);
+          await navigateAndWaitReady(client, sessionId, context.sourceUrl, settings, networkTracker, siteProfile);
 
           const executeResult = await callPageFunction(client, sessionId, pageExecuteTrigger, trigger, siteProfile);
           if (!executeResult?.clicked) {
@@ -3253,7 +3623,7 @@ export async function expandStates(inputUrl, options = {}) {
             continue;
           }
 
-          await waitForPostTriggerSettled(client, sessionId, settings, networkTracker);
+          await waitForPostTriggerSettled(client, sessionId, settings, networkTracker, siteProfile, context.sourceUrl);
 
           const postSignature = await collectStateSignature(client, sessionId, siteProfile);
           const dedupKey = hashFingerprint(postSignature.fingerprint);

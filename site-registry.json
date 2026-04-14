@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-14T06:31:30.304Z",
+  "generatedAt": "2026-04-14T12:52:42.952Z",
   "sites": {
     "www.22biqu.com": {
       "canonicalBaseUrl": "https://www.22biqu.com/",
@@ -14,14 +14,20 @@
       "templateVersion": 3,
       "crawlerStatus": "reused",
       "host": "www.22biqu.com",
-      "capabilityFamilies": [],
-      "updatedAt": "2026-04-14T06:31:30.209Z",
-      "bookContentRoot": "C:\\Users\\lyt-p\\.openclaw\\workspace\\downloads\\22biqu\\www.22biqu.com",
+      "capabilityFamilies": [
+        "download-content",
+        "navigate-to-author",
+        "navigate-to-chapter",
+        "navigate-to-content",
+        "search-content"
+      ],
+      "updatedAt": "2026-04-14T10:55:42Z",
+      "bookContentRoot": "C:\\Users\\lyt-p\\.openclaw\\workspace\\downloads\\22biqu\\book_77085\\www.22biqu.com",
       "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com",
       "crawlerRegistryPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\registry.json",
       "latestDownloadMode": "crawler-reused",
-      "latestDownloadFile": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T053719440Z_www.22biqu.com_book-content\\downloads\\没钱修什么仙_.txt",
-      "latestDownloadManifest": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T053719440Z_www.22biqu.com_book-content\\book-content-manifest.json",
+      "latestDownloadFile": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T105511079Z_www.22biqu.com_book-content\\downloads\\青山.txt",
+      "latestDownloadManifest": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T105511079Z_www.22biqu.com_book-content\\book-content-manifest.json",
       "downloadEntrypoint": "download_book.py",
       "crawlerScriptsDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts",
       "siteArchetype": null
@@ -35,6 +41,27 @@
       "host": "moodyz.com",
       "capabilityFamilies": [],
       "updatedAt": "2026-04-14T06:31:30.304Z"
+    },
+    "jable.tv": {
+      "canonicalBaseUrl": "https://jable.tv/",
+      "siteArchetype": "catalog-detail",
+      "profilePath": null,
+      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\jable.tv",
+      "latestKnowledgeBaseCompileAt": "2026-04-14T12:29:29.206Z",
+      "latestKnowledgeBaseSourcesPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\jable.tv\\index\\sources.json",
+      "latestLintSummary": {
+        "passed": true,
+        "errorCount": 0,
+        "warningCount": 9,
+        "orphanPageCount": 7
+      },
+      "host": "jable.tv",
+      "capabilityFamilies": [],
+      "updatedAt": "2026-04-14T12:52:42.952Z",
+      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\jable",
+      "latestSkillGeneratedAt": "2026-04-14T12:52:42.947Z",
+      "latestRankingQueryAt": "2026-04-14T12:52:08.447Z",
+      "rankingQueryEntrypoint": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\query-jable-ranking.mjs"
     }
   }
 }

@@ -4,6 +4,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { cleanText } from './lib/normalize.mjs';
+import { classifyJableModelsPath } from './lib/site-path-classifiers.mjs';
+import { normalizeDisplayLabel } from './lib/site-terminology.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OPTIONS = {
@@ -172,6 +175,23 @@ function boolFromAriaValue(value) {
 }
 
 function kindTitle(kind) {
+  const siteHost = String(ACTIVE_SITE_PROFILE?.host ?? '').toLowerCase();
+  if (siteHost === 'jable.tv') {
+    switch (kind) {
+      case 'category-link-group':
+        return '分类链接';
+      case 'content-link-group':
+        return '影片链接';
+      case 'author-link-group':
+        return '演员链接';
+      case 'utility-link-group':
+        return '功能入口';
+      case 'search-form-group':
+        return '搜索表单';
+      default:
+        break;
+    }
+  }
   switch (kind) {
     case 'tab-group':
       return 'Tab Group';
@@ -232,6 +252,83 @@ function normalizePathname(input) {
   }
 }
 
+function decodeHtmlEntities(input) {
+  return String(input ?? '')
+    .replace(/&nbsp;/giu, ' ')
+    .replace(/&amp;/giu, '&')
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;/giu, '\'')
+    .replace(/&lt;/giu, '<')
+    .replace(/&gt;/giu, '>');
+}
+
+function stripHtmlTags(input) {
+  return String(input ?? '').replace(/<[^>]+>/gu, ' ');
+}
+
+function normalizeJableTaxonomyLabel(value) {
+  let text = cleanText(decodeHtmlEntities(stripHtmlTags(value)));
+  if (/(按主題|按女優|新片優先|熱度優先|藍光無碼|成人直播|色網大全|更多好站|裸聊|無修正動画)/u.test(text) && /\s/u.test(text)) {
+    text = text.split(/\s+/u).filter(Boolean).at(-1) ?? text;
+  }
+  return normalizeDisplayLabel(text, {
+    siteContext: ACTIVE_SITE_PROFILE,
+    inputUrl: ACTIVE_SITE_PROFILE?.baseUrl ?? ACTIVE_SITE_PROFILE?.inputUrl ?? null,
+    url: ACTIVE_SITE_PROFILE?.baseUrl ?? ACTIVE_SITE_PROFILE?.inputUrl ?? null,
+    pageType: 'category-page',
+    kind: 'category-link-group',
+  }) || text;
+}
+
+function extractJableCategoryTaxonomyFromHtml(html, pageUrl) {
+  if (!html || !/jable\.tv\/categories\//iu.test(String(pageUrl ?? ''))) {
+    return [];
+  }
+
+  const groups = [];
+  const groupPattern = /<div class="title-box">\s*<h2 class="h3-md">([\s\S]*?)<\/h2>\s*<\/div>\s*<div class="row gutter-20 pb-3">([\s\S]*?)(?=<div class="title-box">|<\/nav>)/giu;
+  for (const match of html.matchAll(groupPattern)) {
+    const groupLabel = normalizeJableTaxonomyLabel(match[1]);
+    if (!groupLabel || groupLabel === '選片') {
+      continue;
+    }
+
+    const tags = [];
+    const tagPattern = /<a class="tag text-light" href="([^"]+)">([\s\S]*?)<\/a>/giu;
+    for (const tagMatch of match[2].matchAll(tagPattern)) {
+      const href = normalizeUrlNoFragment(new URL(decodeHtmlEntities(tagMatch[1]), pageUrl).toString());
+      const label = normalizeJableTaxonomyLabel(tagMatch[2]);
+      if (!href || !label) {
+        continue;
+      }
+      tags.push({
+        label,
+        href,
+      });
+    }
+
+    const dedupedTags = [];
+    const seenHrefs = new Set();
+    for (const tag of tags) {
+      if (seenHrefs.has(tag.href)) {
+        continue;
+      }
+      seenHrefs.add(tag.href);
+      dedupedTags.push(tag);
+    }
+    if (dedupedTags.length === 0) {
+      continue;
+    }
+
+    groups.push({
+      groupLabel,
+      tags: dedupedTags,
+    });
+  }
+
+  return groups;
+}
+
 function matchesExactPath(pathname, values = []) {
   const normalizedPath = String(pathname || '/').toLowerCase();
   return values.some((value) => String(value || '').toLowerCase() === normalizedPath);
@@ -245,10 +342,35 @@ function matchesPathPrefix(pathname, values = []) {
   });
 }
 
+function matchesDetailPath(pathname, values = [], categoryPrefixes = []) {
+  const normalizedPath = String(pathname || '/').toLowerCase();
+  return values.some((value) => {
+    const normalizedValue = String(value || '').toLowerCase();
+    if (!normalizedValue || !(normalizedPath === normalizedValue || normalizedPath.startsWith(normalizedValue))) {
+      return false;
+    }
+    if (normalizedPath !== normalizedValue) {
+      return true;
+    }
+    return !categoryPrefixes.some((categoryPrefix) => String(categoryPrefix || '').toLowerCase() === normalizedValue);
+  });
+}
+
 function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
   const pageTypes = siteProfile?.pageTypes ?? null;
   if (!pageTypes) {
     return null;
+  }
+
+  const profileHost = String(siteProfile?.host ?? '').toLowerCase();
+  if (profileHost === 'jable.tv') {
+    const modelsPathKind = classifyJableModelsPath(pathname);
+    if (modelsPathKind === 'list') {
+      return 'author-list-page';
+    }
+    if (modelsPathKind === 'detail') {
+      return 'author-page';
+    }
   }
   if (matchesExactPath(pathname, pageTypes.homeExact) || matchesPathPrefix(pathname, pageTypes.homePrefixes)) {
     return 'home';
@@ -256,10 +378,10 @@ function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
   if (matchesPathPrefix(pathname, pageTypes.searchResultsPrefixes)) {
     return 'search-results-page';
   }
-  if (matchesPathPrefix(pathname, pageTypes.contentDetailPrefixes)) {
+  if (matchesDetailPath(pathname, pageTypes.contentDetailPrefixes, pageTypes.categoryPrefixes)) {
     return 'book-detail-page';
   }
-  if (matchesPathPrefix(pathname, pageTypes.authorPrefixes)) {
+  if (matchesDetailPath(pathname, pageTypes.authorPrefixes, pageTypes.categoryPrefixes)) {
     return 'author-page';
   }
   if (matchesPathPrefix(pathname, pageTypes.chapterPrefixes)) {
@@ -345,7 +467,7 @@ function inferStateType(pageType, elementStates) {
   if (pageType === 'auth-page') {
     return 'auth-form';
   }
-  if (pageType === 'home' || pageType === 'category-page' || pageType === 'book-detail-page' || pageType === 'author-page' || pageType === 'history-page' || pageType === 'search-results-page' || pageType === 'chapter-page') {
+  if (pageType === 'home' || pageType === 'category-page' || pageType === 'author-list-page' || pageType === 'book-detail-page' || pageType === 'author-page' || pageType === 'history-page' || pageType === 'search-results-page' || pageType === 'chapter-page') {
     return 'navigation';
   }
   if (toArray(elementStates).some((elementState) => ['tab-group', 'details-toggle', 'expanded-toggle', 'menu-button', 'dialog-open'].includes(elementState.kind))) {
@@ -406,6 +528,22 @@ function extractTitleLead(title) {
 
 function extractCanonicalLabelFromState(stateRecord, kind) {
   const pageType = inferPageTypeFromUrl(stateRecord?.finalUrl);
+  if (String(ACTIVE_SITE_PROFILE?.host ?? '').toLowerCase() === 'jable.tv') {
+    const normalizedFromState = normalizeDisplayLabel(stateRecord?.title, {
+      siteContext: ACTIVE_SITE_PROFILE,
+      inputUrl: stateRecord?.inputUrl ?? stateRecord?.finalUrl ?? null,
+      url: stateRecord?.finalUrl ?? null,
+      pageType,
+      queryText: stateRecord?.pageFacts?.queryText ?? null,
+      kind,
+    });
+    if (kind === 'category-link-group' && pageType === 'author-list-page') {
+      return normalizedFromState ?? '演员列表';
+    }
+    if (normalizedFromState && ['category-link-group', 'author-link-group', 'content-link-group'].includes(kind)) {
+      return normalizedFromState;
+    }
+  }
   if (kind === 'content-link-group' && pageType === 'book-detail-page') {
     return extractTitleLead(stateRecord?.title);
   }
@@ -1330,7 +1468,7 @@ function finalizeElements(elementsByKey) {
       elementId,
       kind: group.kind,
       elementName: group.kind === 'search-form-group'
-        ? 'Search Form'
+        ? kindTitle('search-form-group')
         : chapterGroupLabel
           ? `Chapter Links (${chapterGroupLabel})`
           : buildElementName(group.kind, members),
@@ -1389,10 +1527,18 @@ function buildTriggerDrivenCandidate(stateRecord) {
   const href = normalizeUrlNoFragment(trigger.href ?? trigger.locator?.href);
   const sourceBookTitle = stateRecord?.pageFacts?.bookTitle ?? null;
   const canonicalLabel = extractCanonicalLabelFromState(stateRecord, kind);
-  const label = safeNodeLabel(
+  const rawLabel = safeNodeLabel(
     firstNonEmpty([canonicalLabel, trigger.label, trigger.locator?.label, trigger.locator?.textSnippet]),
     href || trigger.locator?.domPath || `${kind}-member`,
   );
+  const label = normalizeDisplayLabel(rawLabel, {
+    siteContext: ACTIVE_SITE_PROFILE,
+    inputUrl: stateRecord?.inputUrl ?? stateRecord?.finalUrl ?? href ?? null,
+    url: href ?? stateRecord?.finalUrl ?? null,
+    pageType: href ? inferPageTypeFromUrl(href, ACTIVE_SITE_PROFILE) : stateRecord?.pageType ?? null,
+    queryText: stateRecord?.pageFacts?.queryText ?? trigger.queryText ?? null,
+    kind,
+  }) || rawLabel;
   const domPath = trigger.locator?.domPath || '';
   return {
     kind,
@@ -2107,6 +2253,83 @@ function findStateByFinalUrl(states, targetUrl) {
   return states.find((state) => normalizeUrlNoFragment(state.finalUrl) === normalizedTarget) ?? null;
 }
 
+async function augmentWithJableCategoryTaxonomy({ elements, states, warnings }) {
+  const siteHost = String(ACTIVE_SITE_PROFILE?.host ?? '').toLowerCase();
+  if (siteHost !== 'jable.tv') {
+    return;
+  }
+
+  const categoryState = states.find((state) => normalizePathname(state.finalUrl) === '/categories/');
+  if (!categoryState?.files?.html || !await pathExists(categoryState.files.html)) {
+    return;
+  }
+
+  let html = null;
+  try {
+    html = await readFile(categoryState.files.html, 'utf8');
+  } catch (error) {
+    warnings.push(buildWarning('jable_category_taxonomy_read_failed', `Failed to read jable category HTML: ${error.message}`, {
+      stateId: categoryState.stateId,
+      htmlPath: categoryState.files.html,
+    }));
+    return;
+  }
+
+  const categoryTaxonomy = extractJableCategoryTaxonomyFromHtml(html, categoryState.finalUrl);
+  if (categoryTaxonomy.length === 0) {
+    warnings.push(buildWarning('jable_category_taxonomy_empty', 'No category taxonomy links were extracted from the jable /categories/ page.', {
+      stateId: categoryState.stateId,
+      htmlPath: categoryState.files.html,
+    }));
+    return;
+  }
+
+  const flattenedTags = [];
+  for (const group of categoryTaxonomy) {
+    for (const tag of group.tags) {
+      flattenedTags.push({
+        ...tag,
+        groupLabel: group.groupLabel,
+      });
+    }
+  }
+
+  ensureStatePageFacts(categoryState, {
+    categoryTaxonomy,
+    categoryGroups: categoryTaxonomy.map((group) => group.groupLabel),
+    categoryTagCount: flattenedTags.length,
+    categoryTags: flattenedTags.map((tag) => ({
+      groupLabel: tag.groupLabel,
+      label: tag.label,
+      href: tag.href,
+    })),
+  }, 'category-page');
+
+  const categoryElement = ensureSyntheticElement(elements, 'category-link-group', '分类链接', 'site-category-links');
+  pushElementEvidence(categoryElement, categoryState.stateId, 'safe-nav-link');
+  for (const tag of flattenedTags) {
+    appendMemberToElement(categoryElement, {
+      memberId: buildBookContentMemberId(categoryElement.elementId, `href:${tag.href}`),
+      label: tag.label,
+      matchKey: `href:${tag.href}`,
+      locator: {
+        primary: 'href',
+        role: 'link',
+        href: tag.href,
+        label: tag.label,
+        textSnippet: `${tag.groupLabel} ${tag.label}`,
+        domPath: `nav.categories > section:${tag.groupLabel} > a:${tag.label}`,
+      },
+      domPath: `nav.categories > section:${tag.groupLabel} > a:${tag.label}`,
+      sourceStateIds: [categoryState.stateId],
+    });
+  }
+
+  categoryElement.members.sort(compareMembers);
+  categoryElement.evidence.stateIds.sort(compareNullableStrings);
+  categoryElement.evidence.triggerKinds.sort(compareNullableStrings);
+}
+
 async function loadChaptersForBook(book) {
   if (!book?.chaptersFile || !(await pathExists(book.chaptersFile))) {
     return [];
@@ -2629,6 +2852,11 @@ export async function analyzeStates(inputUrl, options = {}) {
     edges,
     bookContentArtifacts,
     generatedAt: layout.generatedAt,
+  });
+  await augmentWithJableCategoryTaxonomy({
+    elements,
+    states,
+    warnings,
   });
   const siteProfile = buildSiteProfile(inputUrl, baseUrl, layout.generatedAt, elements, states, bookContentArtifacts);
 

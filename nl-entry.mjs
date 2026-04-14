@@ -223,6 +223,10 @@ Object.assign(INTENT_LANGUAGE_LABELS, {
     canonical: '打开女优页',
     aliases: ['打开女优页', '查看女优', '进入女优页', '打开演员页'],
   },
+  'list-category-videos': {
+    canonical: '分类榜单查询',
+    aliases: ['分类榜单查询', '标签榜单查询', '分类推荐查询', '标签推荐查询', '分类前几条', '标签前几条'],
+  },
 });
 
 Object.assign(ELEMENT_KIND_LABELS, {
@@ -254,6 +258,11 @@ function getHostnameFromUrl(inputUrl) {
 function isMoodyzHost(inputUrl) {
   const host = getHostnameFromUrl(inputUrl).replace(/^www\./i, '');
   return host === 'moodyz.com';
+}
+
+function isJableHost(inputUrl) {
+  const host = getHostnameFromUrl(inputUrl).replace(/^www\./i, '');
+  return host === 'jable.tv';
 }
 
 const DEFAULT_SITE_SEMANTICS = {
@@ -367,10 +376,101 @@ const MOODYZ_SITE_SEMANTICS = {
   ],
 };
 
+const JABLE_SITE_SEMANTICS = {
+  siteKey: 'jable',
+  intentLabels: {
+    ...INTENT_LANGUAGE_LABELS,
+    'search-video': {
+      canonical: '搜索影片',
+      aliases: ['搜索影片', '搜索视频', '查找影片', '搜索番号', '搜番号', '找影片'],
+    },
+    'open-video': {
+      canonical: '打开影片',
+      aliases: ['打开影片', '查看影片', '打开视频', '查看视频', '打开番号', '进入影片'],
+    },
+    'open-model': {
+      canonical: '打开演员页',
+      aliases: ['打开演员页', '查看演员页', '打开女優页', '查看女優页', '打开模特页'],
+    },
+    'open-category': {
+      canonical: '打开分类页',
+      aliases: ['打开分类', '查看分类', '打开标签', '查看标签', '打开热门', '查看热门', '打开最新更新', '查看最新更新', '打开演员列表', '查看演员列表'],
+    },
+    'list-category-videos': {
+      canonical: '分类榜单查询',
+      aliases: [
+        '分类榜单查询',
+        '标签榜单查询',
+        '分类推荐',
+        '标签推荐',
+        '分类前几条',
+        '标签前几条',
+        '近期最佳推荐',
+        '最近更新前几条',
+        '最多观看前几条',
+        '最高收藏前几条',
+      ],
+    },
+  },
+  elementLabels: {
+    ...ELEMENT_KIND_LABELS,
+    'content-link-group': {
+      canonical: '影片',
+      aliases: ['影片', '视频', '番号', '影片详情', '视频页'],
+    },
+    'author-link-group': {
+      canonical: '演员',
+      aliases: ['演员', '女優', '模特', '演员页', '女優页'],
+    },
+    'search-form-group': {
+      canonical: '搜索影片',
+      aliases: ['搜索影片', '搜索视频', '搜番号', '搜索'],
+    },
+    'category-link-group': {
+      canonical: '分类列表',
+      aliases: ['分类', '分类页', '标签', '标签页', '热门', '最新更新', '演员列表', '搜索结果'],
+    },
+    'utility-link-group': {
+      canonical: '功能页',
+      aliases: ['功能页', '搜索页'],
+    },
+  },
+  statusExamples: {
+    ...ZH_STATUS_QUERY_EXAMPLES,
+    'category-link-group': ['当前打开的是哪个分类页', '现在是在标签页还是热门页', '当前是在演员列表还是最新更新'],
+    'content-link-group': ['当前打开的是哪部影片', '现在在看哪个番号', '当前页是哪部视频详情'],
+    'author-link-group': ['当前打开的是哪个演员页', '现在在看哪个女優', '当前页是哪位演员详情'],
+    'search-form-group': ['当前搜索的是哪部影片', '现在的搜索词是什么', '现在检索的是哪个番号'],
+  },
+  searchQueryNouns: ['影片', '视频', '番号', '演员', '女優', '分类', '标签', '热门', '最新更新'],
+  clarificationRules: [
+    {
+      clarificationRuleId: `clar_${createSha256('jable-category-target-unknown').slice(0, 12)}`,
+      case: 'category-target-unknown',
+      when: {
+        match: 'jable-taxonomy-target-not-found',
+      },
+      response: {
+        mode: 'ask',
+        questionTemplate: '这个分类或标签当前不在已抽取 taxonomy 里。要不要换成更接近的已知标签或一级分类组？',
+        candidateLimit: 8,
+        candidateSource: 'observed-values',
+      },
+      recovery: {
+        expectedSlot: 'targetMemberId',
+        resumeMode: 're-run-entry-rules',
+      },
+    },
+  ],
+};
+
 function resolveSiteSemantics(baseUrl, siteProfileDocument = null) {
   const profileHost = getHostnameFromUrl(siteProfileDocument?.baseUrl ?? siteProfileDocument?.inputUrl ?? '').replace(/^www\./i, '');
   if (isMoodyzHost(baseUrl) || profileHost === 'moodyz.com') {
     return MOODYZ_SITE_SEMANTICS;
+  }
+  if (isJableHost(baseUrl) || profileHost === 'jable.tv') {
+    return JABLE_SITE_SEMANTICS;
   }
   return DEFAULT_SITE_SEMANTICS;
 }
@@ -417,6 +517,67 @@ function normalizeAliasText(value) {
     .replace(/[，。！？、；：,.!?;:()[\]{}<>《》【】“”‘’"'`~]+/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
+}
+
+const JABLE_TRADITIONAL_TO_SIMPLIFIED = new Map([
+  ['絲', '丝'], ['過', '过'], ['襪', '袜'], ['運', '运'], ['裝', '装'], ['鏡', '镜'], ['獸', '兽'],
+  ['漁', '渔'], ['紗', '纱'], ['僕', '仆'], ['帶', '带'], ['點', '点'], ['電', '电'], ['處', '处'],
+  ['獄', '狱'], ['溫', '温'], ['圖', '图'], ['書', '书'], ['館', '馆'], ['顏', '颜'], ['腳', '脚'],
+  ['風', '风'], ['醫', '医'], ['護', '护'], ['隊', '队'], ['經', '经'], ['屬', '属'], ['貞', '贞'],
+  ['復', '复'], ['齡', '龄'], ['藥', '药'], ['體', '体'], ['貧', '贫'], ['紋', '纹'], ['髮', '发'],
+  ['調', '调'], ['綑', '捆'], ['劇', '剧'], ['婦', '妇'], ['優', '优'], ['藝', '艺'], ['視', '视'],
+]);
+
+const JABLE_SIMPLIFIED_TO_TRADITIONAL = new Map(
+  [...JABLE_TRADITIONAL_TO_SIMPLIFIED.entries()].map(([traditional, simplified]) => [simplified, traditional]),
+);
+
+function mapCharacters(value, mapping) {
+  return [...String(value ?? '')].map((char) => mapping.get(char) ?? char).join('');
+}
+
+function buildJableTargetAliases(label, scopeType = 'tag') {
+  const base = cleanDisplayText(String(label ?? '').replace(/^#+/u, ''));
+  if (!base) {
+    return [];
+  }
+  const aliases = new Set([base]);
+  if (scopeType === 'tag') {
+    aliases.add(`#${base}`);
+    aliases.add(`${base}标签`);
+    aliases.add(`${base}分类`);
+    aliases.add(`${base}分類`);
+  } else if (scopeType === 'group') {
+    aliases.add(`${base}分类`);
+    aliases.add(`${base}分類`);
+    aliases.add(`按${base}`);
+  }
+  const simplified = cleanDisplayText(mapCharacters(base, JABLE_TRADITIONAL_TO_SIMPLIFIED));
+  const traditional = cleanDisplayText(mapCharacters(base, JABLE_SIMPLIFIED_TO_TRADITIONAL));
+  for (const variant of [simplified, traditional]) {
+    if (!variant || variant === base) {
+      continue;
+    }
+    aliases.add(variant);
+    if (scopeType === 'tag') {
+      aliases.add(`#${variant}`);
+      aliases.add(`${variant}标签`);
+      aliases.add(`${variant}分类`);
+      aliases.add(`${variant}分類`);
+    } else if (scopeType === 'group') {
+      aliases.add(`${variant}分类`);
+      aliases.add(`${variant}分類`);
+      aliases.add(`按${variant}`);
+    }
+  }
+  if (/^cosplay$/iu.test(base)) {
+    aliases.add('Cosplay');
+    aliases.add('cosplay');
+    aliases.add('#Cosplay');
+    aliases.add('#cosplay');
+    aliases.add('Cosplay标签');
+  }
+  return [...aliases].filter(Boolean);
 }
 
 function normalizeMatchText(value) {
@@ -1046,6 +1207,13 @@ function buildIntentContexts(artifacts, indices, semantics = DEFAULT_SITE_SEMANT
         cleanDisplayText(intent.sourceElementName),
         cleanDisplayText(element?.elementName),
       ].filter(Boolean))],
+      extraSlots: intent.intentType === 'list-category-videos'
+        ? [
+            { slotName: 'sortMode', valueType: 'enum', required: false, source: 'intent-derived', defaultValue: intent.defaults?.sortMode ?? 'combined' },
+            { slotName: 'limit', valueType: 'number', required: false, source: 'intent-derived', defaultValue: intent.defaults?.limit ?? 3 },
+            { slotName: 'scopeType', valueType: 'enum', required: false, source: 'taxonomy', defaultValue: 'tag' },
+          ]
+        : [],
       valueRecords,
       rules,
       evidenceStateIds: toArray(intent.evidence?.stateIds).sort(compareNullableStrings),
@@ -1283,6 +1451,11 @@ function buildLexicon(artifacts, contexts, exampleContext, semantics = DEFAULT_S
         const member = context.element?.members?.find((item) => item.memberId === valueRecord.value);
         builder.addAlias(entry, valueRecord.label, 'generated', valueRecord.actionable ? 5 : 4);
         builder.addAlias(entry, member?.label, 'generated', 4);
+        if (semantics.siteKey === 'jable' && ['open-category', 'list-category-videos'].includes(intent.intentType)) {
+          for (const alias of buildJableTargetAliases(valueRecord.label, valueRecord.scopeType ?? 'tag')) {
+            builder.addAlias(entry, alias, 'generated', 5);
+          }
+        }
       }
 
       const exampleKey = `${intent.intentId}::${stableValueKey(valueRecord.value)}`;
@@ -1368,6 +1541,16 @@ function buildSlotSchemaDocument(artifacts, contexts, valueLexiconRefs, generate
             .filter(Boolean)
             .sort(compareNullableStrings),
         },
+        ...toArray(context.extraSlots).map((slot) => ({
+          slotName: slot.slotName,
+          valueType: slot.valueType,
+          required: Boolean(slot.required),
+          source: slot.source,
+          defaultValue: slot.defaultValue,
+          ...(slot.slotName === 'sortMode'
+            ? { allowedValues: ['combined', 'recent', 'most-viewed', 'most-favourited'] }
+            : {}),
+        })),
       ],
       context: [
         {
@@ -1557,6 +1740,18 @@ function buildGeneratedPatternExamplesV2(context, patternType) {
     });
   }
 
+  if (semantics.siteKey === 'jable' && context.intent.intentType === 'list-category-videos') {
+    return fallbackValues.map((valueRecord, index) => {
+      const label = valueRecord.label ?? String(valueRecord.value);
+      const examples = [
+        `${label}分类，近期最佳推荐三部`,
+        `${label}标签最近更新前五条`,
+        `${label}最高收藏前三`,
+      ];
+      return patternType === 'explicit-intent' ? examples[index % examples.length] : label;
+    });
+  }
+
   return fallbackValues.map((valueRecord) => {
     const label = valueRecord.label ?? String(valueRecord.value);
     return patternType === 'explicit-intent' ? `切到${label}` : label;
@@ -1695,6 +1890,24 @@ function buildEntryRules(artifacts, contexts, lexiconRefs, patternRefs, warnings
             from: slotCapture,
             value: valueRecord.value,
           },
+          ...(context.intent.intentType === 'list-category-videos'
+            ? {
+                sortMode: {
+                  from: 'sortText',
+                  normalizeAs: 'jable-sort-mode',
+                  defaultValue: context.intent.defaults?.sortMode ?? 'combined',
+                },
+                limit: {
+                  from: 'limitText',
+                  normalizeAs: 'zh-number',
+                  defaultValue: context.intent.defaults?.limit ?? 3,
+                },
+                scopeType: {
+                  from: 'taxonomy',
+                  value: valueRecord.scopeType ?? 'tag',
+                },
+              }
+            : {}),
         },
         targetResolution: context.slotName === 'desiredValue'
           ? 'boolean-literal'
@@ -1705,7 +1918,9 @@ function buildEntryRules(artifacts, contexts, lexiconRefs, patternRefs, warnings
       const commonExpectedRuleIds = decisionRuleIds.sort(compareNullableStrings);
       const note = valueRecord.actRuleIds.length === 0
         ? 'No observed transition action for this target; only satisfied state recognition is supported.'
-        : null;
+        : context.intent.intentType === 'list-category-videos'
+          ? 'Resolve the taxonomy target, open the visible category or tag page, apply the requested sort mode, and extract the top-ranked video cards.'
+          : null;
 
       for (const variant of [
         { name: 'explicit', patternId: explicitPatternId, priority: 10 },
@@ -2009,9 +2224,12 @@ function buildGeneratedPatternExamplesV3(context, patternType, semantics = DEFAU
   if (context.slotName === 'queryText') {
     return fallbackValues.map((valueRecord) => {
       const label = valueRecord.label ?? String(valueRecord.value);
-      if (semantics.siteKey === 'moodyz') {
+      if (semantics.siteKey === 'moodyz' || semantics.siteKey === 'jable') {
         if (context.intent.intentType === 'search-work') {
           return patternType === 'explicit-intent' ? `搜索作品${label}` : label;
+        }
+        if (context.intent.intentType === 'search-video') {
+          return patternType === 'explicit-intent' ? `搜索影片${label}` : label;
         }
         return patternType === 'explicit-intent' ? `搜索${label}` : label;
       }
@@ -2032,6 +2250,17 @@ function buildGeneratedPatternExamplesV3(context, patternType, semantics = DEFAU
         return patternType === 'explicit-intent' ? `搜索作品${label}` : label;
       }
     }
+    if (semantics.siteKey === 'jable') {
+      if (context.intent.intentType === 'open-model') {
+        return patternType === 'explicit-intent' ? `打开演员页${label}` : label;
+      }
+      if (context.intent.intentType === 'open-video') {
+        return patternType === 'explicit-intent' ? `打开影片${label}` : label;
+      }
+      if (context.intent.intentType === 'search-video') {
+        return patternType === 'explicit-intent' ? `搜索影片${label}` : label;
+      }
+    }
     return patternType === 'explicit-intent' ? `打开${label}` : label;
   });
 }
@@ -2046,21 +2275,29 @@ function buildUtterancePatternsV3(artifacts, contexts, exampleContext, generated
     }
 
     const elementTerms = elementRegexTerms(context);
-    const nounTerms = semantics.siteKey === 'moodyz'
-      ? `(?:${(semantics.searchQueryNouns ?? ['作品', '女优', '演员', '番号']).map(escapeRegex).join('|')})`
+    const nounTerms = ['moodyz', 'jable'].includes(semantics.siteKey)
+      ? `(?:${(semantics.searchQueryNouns ?? ['作品', '影片', '视频', '女优', '演员', '番号']).map(escapeRegex).join('|')})`
       : '';
     const searchVerbTerms = semantics.siteKey === 'moodyz'
       ? [...ZH_SEARCH_VERBS, '搜索作品', '搜索女优', '查找作品', '查找女优', '搜作品', '搜女优']
+      : semantics.siteKey === 'jable'
+        ? [...ZH_SEARCH_VERBS, '搜索影片', '搜索视频', '搜索番号', '查找影片', '查找视频', '搜番号']
       : ZH_SEARCH_VERBS;
     const openVerbTerms = semantics.siteKey === 'moodyz'
       ? [...ZH_OPEN_VERBS, '打开作品', '查看作品', '打开女优页', '查看女优', '进入作品', '进入女优页']
+      : semantics.siteKey === 'jable'
+        ? [...ZH_OPEN_VERBS, '打开影片', '查看影片', '打开视频', '查看视频', '打开演员页', '查看演员', '打开女優页', '查看女優']
       : [...ZH_OPEN_VERBS, ...ZH_SWITCH_VERBS];
-    const explicitZhRegex = context.slotName === 'queryText'
+    const explicitZhRegex = context.intent.intentType === 'list-category-videos'
+      ? '^(?:请\\s*)?(?<targetText>.+?)(?:\\s*(?:标签|分類|分类|分类页|标签页))?(?:\\s*[,，]\\s*|\\s+)?(?:(?<sortText>近期最佳推荐|最佳推荐|推荐|最近更新|最近|近期|最多观看|最热|最高收藏|收藏最多)\\s*)?(?:(?:前)?(?<limitText>[0-9一二三四五六七八九十两]+)(?:部|条|個|个))?$'
+      : context.slotName === 'queryText'
       ? `^(?:请\\s*)?(?<verb>${searchVerbTerms.map(escapeRegex).join('|')})\\s*(?:${nounTerms}\\s*)?(?<targetText>.+?)$`
       : context.slotName === 'targetMemberId'
         ? `^(?:请\\s*)?(?<verb>${openVerbTerms.map(escapeRegex).join('|')})(?:\\s*(?:到|去|打开)?\\s*(?:${elementTerms}\\s*)?(?<targetText>.+?)\\s*(?:${elementTerms})?)$`
         : `^(?:请\\s*)?(?:(?<verb>${[...ZH_OPEN_VERBS, ...ZH_SWITCH_VERBS, '设置', '切换', '变为', '设为', '调整为'].map(escapeRegex).join('|')})\\s*)?(?<stateWord>${booleanRegexTerms(context.intent.intentType)})\\s*(?:${elementTerms})?$`;
-    const implicitRegex = context.slotName === 'targetMemberId'
+    const implicitRegex = context.intent.intentType === 'list-category-videos'
+      ? '^(?<targetText>.+?)(?:\\s*(?:标签|分類|分类))?$'
+      : context.slotName === 'targetMemberId'
       ? `^(?<targetText>.+?)(?:\\s*(?:${elementTerms}))?$`
       : context.slotName === 'queryText'
         ? `^(?:${nounTerms})?\\s*(?<targetText>.+?)$`
@@ -2074,7 +2311,13 @@ function buildUtterancePatternsV3(artifacts, contexts, exampleContext, generated
         patternType: 'explicit-intent',
         lang: 'zh',
         regex: explicitZhRegex,
-        captures: context.slotName === 'targetMemberId' || context.slotName === 'queryText'
+        captures: context.intent.intentType === 'list-category-videos'
+          ? [
+              { name: 'targetText', slotName: context.slotName },
+              { name: 'sortText', slotName: 'sortMode' },
+              { name: 'limitText', slotName: 'limit' },
+            ]
+          : context.slotName === 'targetMemberId' || context.slotName === 'queryText'
           ? [
             { name: 'verb', slotName: null },
             { name: 'targetText', slotName: context.slotName },
@@ -2180,6 +2423,17 @@ function buildClarificationRulesDocumentV2(artifacts, generatedAt, semantics = D
         cloned.response.questionTemplate = '站内没有命中该作品结果，可以换一个更具体的作品名，或者改为女优名继续搜索。';
       } else if (cloned.case === 'chapter-not-found') {
         cloned.response.questionTemplate = '没有匹配到目标章节，请提供更完整的章节标题或章节序号。';
+      }
+    }
+    if (semantics.siteKey === 'jable') {
+      if (cloned.case === 'missing-slot') {
+        cloned.response.questionTemplate = '你要找哪部影片或哪个演员？我可以列出当前有动作证据的候选项。';
+      } else if (cloned.case === 'ambiguous-target') {
+        cloned.response.questionTemplate = '这个说法可能对应多部影片或多个演员，请给我更具体的番号、片名或演员名。';
+      } else if (cloned.case === 'unsupported-target') {
+        cloned.response.questionTemplate = '这个影片或演员可以识别，但当前没有可执行的动作证据。要不要换一个已观察到可打开的目标？';
+      } else if (cloned.case === 'search-no-results') {
+        cloned.response.questionTemplate = '站内没有命中该影片结果，可以换一个更具体的番号、片名或演员名继续搜索。';
       }
     }
 

@@ -27,7 +27,7 @@ test('site registry upserts host operational metadata', async () => {
   }
 });
 
-test('site capabilities merge arrays instead of replacing them', async () => {
+test('site capabilities replace array facts with the latest host truth', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-capabilities-'));
   try {
     await upsertSiteCapabilities(workspace, 'moodyz.com', {
@@ -42,8 +42,9 @@ test('site capabilities merge arrays instead of replacing them', async () => {
     });
 
     const capabilities = JSON.parse(await readFile(buildSiteCapabilitiesPath(workspace), 'utf8'));
-    assert.deepEqual(capabilities.sites['moodyz.com'].pageTypes, ['author-page', 'category-page', 'search-results-page']);
-    assert.deepEqual(capabilities.sites['moodyz.com'].supportedIntents, ['open-actress', 'open-work', 'search-work']);
+    assert.deepEqual(capabilities.sites['moodyz.com'].pageTypes, ['author-page']);
+    assert.deepEqual(capabilities.sites['moodyz.com'].supportedIntents, ['open-actress', 'open-work']);
+    assert.deepEqual(capabilities.sites['moodyz.com'].capabilityFamilies, ['navigate-to-content', 'search-content']);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

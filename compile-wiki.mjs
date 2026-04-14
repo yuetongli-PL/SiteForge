@@ -15,10 +15,12 @@ import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
 import { appendJsonLine, appendTextFile, ensureDir, pathExists, readJsonFile, writeJsonFile, writeJsonLines, writeTextFile } from './lib/io.mjs';
 import { markdownLink as sharedMarkdownLink, renderTable as sharedRenderTable } from './lib/markdown.mjs';
+import { mdEscape } from './lib/markdown_escape.mjs';
 import { cleanText, compactSlug, compareNullableStrings, firstNonEmpty, normalizeUrlNoFragment, normalizeWhitespace, relativePath, sanitizeHost, toArray, toPosixPath, uniqueSortedPaths, uniqueSortedStrings } from './lib/normalize.mjs';
 import { buildError, buildWarning } from './lib/wiki-report.mjs';
 import { firstExistingPath, kbAbsolute, listDirectories, relativeToKb, resolveMaybeRelative } from './lib/wiki-paths.mjs';
 import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext } from './lib/site-context.mjs';
+import { displayIntentName, normalizeDisplayLabel } from './lib/site-terminology.mjs';
 import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
 import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
 
@@ -1044,7 +1046,16 @@ function buildPageDescriptors(context) {
     artifacts,
     model,
     rawResolver,
+    siteContext,
   } = context;
+
+  const inputUrl = model.inputUrl ?? model.baseUrl ?? null;
+  const elementsById = new Map(toArray(model.elements).map((element) => [element.elementId, element]));
+  const normalizeSiteLabel = (value, options = {}) => normalizeDisplayLabel(value, {
+    siteContext,
+    inputUrl,
+    ...options,
+  }) || cleanText(value);
 
   const pages = [];
   const addPage = (descriptor) => {
@@ -1138,10 +1149,15 @@ function buildPageDescriptors(context) {
 
   for (const state of model.states) {
     const stateSlug = compactSlug(`${state.stateId}-${state.stateName}`, state.stateId, 72);
+    const stateLabel = normalizeSiteLabel(cleanText(state.stateName) || cleanText(state.title), {
+      url: state.finalUrl,
+      pageType: state.pageType,
+      queryText: state.trigger?.queryText,
+    });
     addPage(createPageDescriptor({
       pageId: `page_state_${state.stateId}`,
       kind: 'state',
-      title: `${state.stateId} ${cleanText(state.stateName)}`,
+      title: `${state.stateId} ${stateLabel}`,
       summary: `${state.sourceStatus === 'initial' ? '初始态' : '采集态'}，URL: ${state.finalUrl}`,
       pagePath: path.join(KB_DIRS.wiki, 'states', `${stateSlug}.md`),
       sourceRefs: [
@@ -1164,10 +1180,13 @@ function buildPageDescriptors(context) {
 
   for (const element of model.elements) {
     const elementSlug = compactSlug(`${element.elementId}-${element.elementName}`, element.elementId, 96);
+    const elementLabel = normalizeSiteLabel(cleanText(element.elementName), {
+      kind: element.kind,
+    });
     addPage(createPageDescriptor({
       pageId: `page_element_${element.elementId}`,
       kind: 'element',
-      title: cleanText(element.elementName),
+      title: elementLabel,
       summary: `${element.kind}，成员 ${toArray(element.members).length} 个。`,
       pagePath: path.join(KB_DIRS.wiki, 'elements', `${elementSlug}.md`),
       sourceRefs: [
@@ -1185,11 +1204,15 @@ function buildPageDescriptors(context) {
   for (const intent of model.intents) {
     const intentSlug = compactSlug(`${intent.intentId}-${intent.intentName}`, intent.intentId, 96);
     const intentDoc = model.docsByIntentId.get(intent.intentId);
+    const intentLabel = displayIntentName(intent.intentType, siteContext, inputUrl);
+    const sourceElementLabel = normalizeSiteLabel(intent.sourceElementName, {
+      kind: elementsById.get(intent.elementId)?.kind,
+    });
     addPage(createPageDescriptor({
       pageId: `page_intent_${intent.intentId}`,
       kind: 'intent',
-      title: cleanText(intent.intentName),
-      summary: `${intent.intentType}，作用于 ${intent.sourceElementName}。`,
+      title: intentLabel,
+      summary: `${intentLabel}，作用于 ${sourceElementLabel}。`,
       pagePath: path.join(KB_DIRS.wiki, 'intents', `${intentSlug}.md`),
       sourceRefs: [
         kbSourceRef(rawResolver, artifacts.abstraction.intentsPath, 'step-4-abstraction', 'json', 'intents.json'),
@@ -1211,7 +1234,7 @@ function buildPageDescriptors(context) {
     addPage(createPageDescriptor({
       pageId: `page_flow_${intent.intentId}`,
       kind: 'flow',
-      title: `${cleanText(intent.intentName)} 流程`,
+      title: `${intentLabel}流程`,
       summary: '汇总入口表达、状态约束、主路径步骤、成功判定、异常恢复与审批要求。',
       pagePath: path.join(KB_DIRS.wiki, 'flows', `${intentSlug}.md`),
       sourceRefs: [
@@ -2657,14 +2680,18 @@ export async function compileKnowledgeBase(inputUrl, options = {}) {
     { sourceRunIds }
   );
 
-  const safeActionKinds = uniqueSortedStrings(
-    toArray(model.actions)
-      .map((action) => action?.actionId ?? action?.primitive)
-      .filter(Boolean)
-      .filter((actionId) => !toArray(model.approvalRules).some((rule) => toArray(rule?.appliesTo?.actionIds).includes(actionId))),
+  const usedActionKinds = uniqueSortedStrings(
+    toArray(model.intents)
+      .map((intent) => intent?.actionId)
+      .filter(Boolean),
   );
   const approvalActionKinds = uniqueSortedStrings(
-    toArray(model.approvalRules).flatMap((rule) => toArray(rule?.appliesTo?.actionIds)),
+    toArray(model.approvalRules)
+      .flatMap((rule) => toArray(rule?.appliesTo?.actionIds))
+      .filter((actionId) => usedActionKinds.includes(actionId)),
+  );
+  const safeActionKinds = uniqueSortedStrings(
+    usedActionKinds.filter((actionId) => !approvalActionKinds.includes(actionId)),
   );
   const resolvedPrimaryArchetype = resolvePrimaryArchetypeFromSiteContext(siteContext, [model.siteProfile?.primaryArchetype]);
   const resolvedPageTypes = resolvePageTypesFromSiteContext(siteContext, [model.siteProfile?.pageTypes ?? []]);

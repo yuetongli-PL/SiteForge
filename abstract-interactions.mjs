@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { displayIntentName } from './lib/site-terminology.mjs';
 
 const DEFAULT_OPTIONS = {
   analysisManifestPath: undefined,
@@ -149,6 +150,26 @@ const ACTION_DEFINITIONS = [
     effects: ['prefer local collected novel artifact for targetMemberId', 'generate or reuse site crawler script when artifact missing'],
     locatorPreference: ['member.downloadFile', 'member.label'],
   },
+  {
+    actionId: 'query-ranking',
+    primitive: 'extract-ranked-list',
+    actionName: 'Query Ranking',
+    appliesTo: ['category-link-group'],
+    bindingSchema: {
+      elementId: 'string',
+      targetMemberId: 'string',
+      sortMode: 'string | undefined',
+      limit: 'number | undefined',
+      scopeType: 'string | undefined',
+    },
+    reads: ['activeMemberId'],
+    effects: [
+      'open category or tag page for targetMemberId',
+      'apply visible sort mode',
+      'extract ranked video cards',
+    ],
+    locatorPreference: ['label', 'locator.href', 'locator.domPath'],
+  },
 ];
 
 /**
@@ -201,6 +222,11 @@ function hostFromUrl(input) {
 function isMoodyzSite(siteProfileDocument, baseUrl) {
   const host = hostFromUrl(baseUrl);
   return host === 'moodyz.com' || host === 'www.moodyz.com' || String(siteProfileDocument?.host ?? '').toLowerCase() === 'moodyz.com';
+}
+
+function isJableSite(siteProfileDocument, baseUrl) {
+  const host = hostFromUrl(baseUrl);
+  return host === 'jable.tv' || host === 'www.jable.tv' || String(siteProfileDocument?.host ?? '').toLowerCase() === 'jable.tv';
 }
 
 function normalizeUrlNoFragment(input) {
@@ -507,6 +533,7 @@ function mergeOptions(options = {}) {
 
 function buildStateFieldSpec(elementKind, siteProfileDocument = null, baseUrl = null) {
   const moodyzSite = isMoodyzSite(siteProfileDocument, baseUrl);
+  const jableSite = isJableSite(siteProfileDocument, baseUrl);
   switch (elementKind) {
     case 'tab-group':
       return {
@@ -544,7 +571,7 @@ function buildStateFieldSpec(elementKind, siteProfileDocument = null, baseUrl = 
       };
     case 'content-link-group':
       return {
-        intentType: moodyzSite ? 'open-work' : 'open-book',
+        intentType: jableSite ? 'open-video' : moodyzSite ? 'open-work' : 'open-book',
         stateField: 'activeMemberId',
         actionId: 'navigate',
         parameter: 'targetMemberId',
@@ -552,7 +579,7 @@ function buildStateFieldSpec(elementKind, siteProfileDocument = null, baseUrl = 
       };
     case 'author-link-group':
       return {
-        intentType: moodyzSite ? 'open-actress' : 'open-author',
+        intentType: jableSite ? 'open-model' : moodyzSite ? 'open-actress' : 'open-author',
         stateField: 'activeMemberId',
         actionId: 'navigate',
         parameter: 'targetMemberId',
@@ -592,7 +619,7 @@ function buildStateFieldSpec(elementKind, siteProfileDocument = null, baseUrl = 
       };
     case 'search-form-group':
       return {
-        intentType: moodyzSite ? 'search-work' : 'search-book',
+        intentType: jableSite ? 'search-video' : moodyzSite ? 'search-work' : 'search-book',
         stateField: 'queryText',
         actionId: 'search-submit',
         parameter: 'queryText',
@@ -1094,44 +1121,285 @@ function buildEdgeObservationsForElement(element, attributedEdges) {
   };
 }
 
-function buildIntentName(intentType, element, targetParameter) {
+function buildIntentName(intentType, element, targetParameter, siteProfileDocument = null, baseUrl = null) {
+  const displayName = displayIntentName(intentType, siteProfileDocument, baseUrl);
   switch (intentType) {
-    case 'switch-tab':
-      return `Set Active Member: ${element.elementName}`;
-    case 'expand-panel':
-      return `Expand Panel: ${element.elementName}`;
-    case 'open-overlay':
-      return `Open Overlay: ${element.elementName}`;
-    case 'open-category':
-      return `Open Category: ${element.elementName}`;
-    case 'open-book':
-      return `Open Book: ${element.elementName}`;
-    case 'open-work':
-      return `Open Work: ${element.elementName}`;
-    case 'open-author':
-      return `Open Author: ${element.elementName}`;
-    case 'open-actress':
-      return `Open Actress: ${element.elementName}`;
-    case 'open-chapter':
-      return `Open Chapter: ${element.elementName}`;
-    case 'open-utility-page':
-      return `Open Utility Page: ${element.elementName}`;
-    case 'open-auth-page':
-      return `Open Auth Page: ${element.elementName}`;
-    case 'paginate-content':
-      return `Paginate Content: ${element.elementName}`;
-    case 'search-book':
-      return `Search Book: ${element.elementName}`;
-    case 'search-work':
-      return `Search Work: ${element.elementName}`;
-    case 'download-book':
-      return `Download Book: ${element.elementName}`;
+      case 'switch-tab':
+        return `Set Active Member: ${element.elementName}`;
+      case 'expand-panel':
+        return `Expand Panel: ${element.elementName}`;
+      case 'open-overlay':
+        return `Open Overlay: ${element.elementName}`;
+      case 'open-category':
+        return `${displayName || 'Open Category'}: ${element.elementName}`;
+      case 'list-category-videos':
+        return `${displayName || 'List Category Videos'}: ${element.elementName}`;
+      case 'open-book':
+        return `${displayName || 'Open Book'}: ${element.elementName}`;
+      case 'open-video':
+        return `${displayName || 'Open Video'}: ${element.elementName}`;
+      case 'open-work':
+        return `${displayName || 'Open Work'}: ${element.elementName}`;
+      case 'open-author':
+        return `${displayName || 'Open Author'}: ${element.elementName}`;
+      case 'open-model':
+        return `${displayName || 'Open Model'}: ${element.elementName}`;
+      case 'open-actress':
+        return `${displayName || 'Open Actress'}: ${element.elementName}`;
+      case 'open-chapter':
+        return `Open Chapter: ${element.elementName}`;
+      case 'open-utility-page':
+        return `${displayName || 'Open Utility Page'}: ${element.elementName}`;
+      case 'open-auth-page':
+        return `${displayName || 'Open Auth Page'}: ${element.elementName}`;
+      case 'paginate-content':
+        return `Paginate Content: ${element.elementName}`;
+      case 'search-book':
+        return `Search Book: ${element.elementName}`;
+      case 'search-video':
+        return `${displayName || 'Search Video'}: ${element.elementName}`;
+      case 'search-work':
+        return `${displayName || 'Search Work'}: ${element.elementName}`;
+      case 'download-book':
+        return `Download Book: ${element.elementName}`;
     default:
-      return `${intentType}: ${element.elementName} (${targetParameter})`;
-  }
+      return displayName ? `${displayName}: ${element.elementName}` : `${intentType}: ${element.elementName} (${targetParameter})`;
+    }
 }
 
-function buildMemberTargetDomain(element, valueObservations, edgeObservations) {
+function buildJableCategoryCanonicalLabel(label) {
+  return normalizeLabel(String(label ?? '').replace(/^#+/u, ''));
+}
+
+function collectJableCategoryTaxonomy(statesDocument) {
+  const groups = new Map();
+  for (const state of toArray(statesDocument?.states)) {
+    for (const group of toArray(state?.pageFacts?.categoryTaxonomy)) {
+      const groupLabel = normalizeWhitespace(group?.groupLabel);
+      if (!groupLabel) {
+        continue;
+      }
+      const groupEntry = groups.get(groupLabel) ?? {
+        groupLabel,
+        canonicalLabel: buildJableCategoryCanonicalLabel(groupLabel),
+        tags: new Map(),
+        stateIds: new Set(),
+      };
+      groupEntry.stateIds.add(state.stateId);
+      for (const tag of toArray(group?.tags)) {
+        const tagLabel = normalizeWhitespace(tag?.label);
+        const tagHref = normalizeUrlNoFragment(tag?.href);
+        if (!tagLabel || !tagHref) {
+          continue;
+        }
+        const tagEntry = groupEntry.tags.get(tagLabel) ?? {
+          label: tagLabel,
+          canonicalLabel: buildJableCategoryCanonicalLabel(tagLabel),
+          href: tagHref,
+        };
+        groupEntry.tags.set(tagLabel, tagEntry);
+      }
+      groups.set(groupLabel, groupEntry);
+    }
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      groupLabel: group.groupLabel,
+      canonicalLabel: group.canonicalLabel,
+      stateIds: [...group.stateIds].sort(compareNullableStrings),
+      tags: [...group.tags.values()].sort((left, right) => compareNullableStrings(left.label, right.label)),
+    }))
+    .sort((left, right) => compareNullableStrings(left.groupLabel, right.groupLabel));
+}
+
+function findElementMemberByHref(element, href) {
+  const normalizedHref = normalizeUrlNoFragment(href);
+  if (!normalizedHref) {
+    return null;
+  }
+  return toArray(element?.members).find((member) => {
+    const locatorHref = normalizeUrlNoFragment(member?.locator?.href);
+    return locatorHref && locatorHref === normalizedHref;
+  }) ?? null;
+}
+
+function buildJableCategoryRankingIntent(elementsDocument, statesDocument, intents, siteProfileDocument = null, baseUrl = null) {
+  if (!isJableSite(siteProfileDocument, baseUrl)) {
+    return null;
+  }
+
+  const categoryIntent = intents.find((intent) => intent.intentType === 'open-category' && intent.elementKind === 'category-link-group');
+  if (!categoryIntent) {
+    return null;
+  }
+
+  const categoryElement = toArray(elementsDocument?.elements).find((element) => element.elementId === categoryIntent.elementId) ?? null;
+  if (!categoryElement) {
+    return null;
+  }
+
+  const taxonomyGroups = collectJableCategoryTaxonomy(statesDocument);
+  if (taxonomyGroups.length === 0) {
+    return null;
+  }
+
+  const recordsByValue = new Map();
+  const addRecord = (record) => {
+    const key = stableValueKey(record.value);
+    const current = recordsByValue.get(key) ?? {
+      value: record.value,
+      label: record.label ?? null,
+      displayLabel: record.displayLabel ?? record.label ?? null,
+      canonicalLabel: record.canonicalLabel ?? buildJableCategoryCanonicalLabel(record.label),
+      scopeType: record.scopeType ?? null,
+      groupLabel: record.groupLabel ?? null,
+      targetUrl: record.targetUrl ?? null,
+      stateIds: new Set(),
+      edgeIds: new Set(),
+      observed: false,
+      actionable: false,
+    };
+    current.label = firstNonEmpty([record.label, current.label]);
+    current.displayLabel = firstNonEmpty([record.displayLabel, current.displayLabel, current.label]);
+    current.canonicalLabel = firstNonEmpty([record.canonicalLabel, current.canonicalLabel]);
+    current.scopeType = firstNonEmpty([record.scopeType, current.scopeType]);
+    current.groupLabel = firstNonEmpty([record.groupLabel, current.groupLabel]);
+    current.targetUrl = firstNonEmpty([record.targetUrl, current.targetUrl]);
+    current.observed = current.observed || Boolean(record.observed);
+    current.actionable = current.actionable || Boolean(record.actionable);
+    for (const stateId of toArray(record.stateIds)) {
+      current.stateIds.add(stateId);
+    }
+    for (const edgeId of toArray(record.edgeIds)) {
+      current.edgeIds.add(edgeId);
+    }
+    recordsByValue.set(key, current);
+  };
+
+  for (const group of taxonomyGroups) {
+    addRecord({
+      value: `group:${group.groupLabel}`,
+      label: group.groupLabel,
+      displayLabel: group.groupLabel,
+      canonicalLabel: group.canonicalLabel,
+      scopeType: 'group',
+      groupLabel: group.groupLabel,
+      targetUrl: normalizeUrlNoFragment(`${baseUrl ? new URL('/categories/', baseUrl).toString() : 'https://jable.tv/categories/'}`),
+      stateIds: group.stateIds,
+      observed: true,
+      actionable: true,
+      edgeIds: [],
+    });
+
+    for (const tag of group.tags) {
+      const member = findElementMemberByHref(categoryElement, tag.href);
+      const observedRecord = toArray(categoryIntent.targetDomain?.observedValues).find((item) => {
+        const memberLabel = normalizeWhitespace(item?.label);
+        return memberLabel === tag.label;
+      }) ?? null;
+      const actionableRecord = toArray(categoryIntent.targetDomain?.actionableValues).find((item) => {
+        const memberLabel = normalizeWhitespace(item?.label);
+        return memberLabel === tag.label;
+      }) ?? null;
+      addRecord({
+        value: member?.memberId ?? `tag:${tag.href}`,
+        label: tag.label,
+        displayLabel: tag.label,
+        canonicalLabel: tag.canonicalLabel,
+        scopeType: 'tag',
+        groupLabel: group.groupLabel,
+        targetUrl: tag.href,
+        stateIds: [...group.stateIds, ...toArray(observedRecord?.stateIds)],
+        edgeIds: toArray(actionableRecord?.edgeIds),
+        observed: true,
+        actionable: true,
+      });
+    }
+  }
+
+  const observedValues = [];
+  const candidateValues = [];
+  const actionableValues = [];
+  const evidenceStateIds = new Set(categoryIntent.evidence?.stateIds ?? []);
+  const evidenceEdgeIds = new Set(categoryIntent.evidence?.edgeIds ?? []);
+
+  for (const record of recordsByValue.values()) {
+    const stateIds = [...record.stateIds].sort(compareNullableStrings);
+    const edgeIds = [...record.edgeIds].sort(compareNullableStrings);
+    for (const stateId of stateIds) {
+      evidenceStateIds.add(stateId);
+    }
+    for (const edgeId of edgeIds) {
+      evidenceEdgeIds.add(edgeId);
+    }
+    observedValues.push({
+      value: record.value,
+      label: record.label,
+      displayLabel: record.displayLabel,
+      canonicalLabel: record.canonicalLabel,
+      scopeType: record.scopeType,
+      groupLabel: record.groupLabel,
+      targetUrl: record.targetUrl,
+      stateIds,
+      edgeIds,
+    });
+    candidateValues.push({
+      value: record.value,
+      label: record.label,
+      displayLabel: record.displayLabel,
+      canonicalLabel: record.canonicalLabel,
+      scopeType: record.scopeType,
+      groupLabel: record.groupLabel,
+      targetUrl: record.targetUrl,
+      observed: true,
+    });
+    actionableValues.push({
+      value: record.value,
+      label: record.label,
+      displayLabel: record.displayLabel,
+      canonicalLabel: record.canonicalLabel,
+      scopeType: record.scopeType,
+      groupLabel: record.groupLabel,
+      targetUrl: record.targetUrl,
+      edgeIds,
+    });
+  }
+
+  const sortRecords = (left, right) => (
+    compareNullableStrings(left.scopeType, right.scopeType)
+      || compareNullableStrings(left.groupLabel, right.groupLabel)
+      || compareNullableStrings(left.label, right.label)
+      || compareValue(left.value, right.value)
+  );
+
+  return {
+    intentId: `intent_${createSha256(`${categoryIntent.elementId}::list-category-videos`).slice(0, 12)}`,
+    intentType: 'list-category-videos',
+    intentName: buildIntentName('list-category-videos', categoryElement, 'targetMemberId', siteProfileDocument, baseUrl),
+    elementId: categoryIntent.elementId,
+    elementKind: categoryIntent.elementKind,
+    sourceElementName: categoryIntent.sourceElementName,
+    stateField: categoryIntent.stateField,
+    actionId: 'query-ranking',
+    defaults: {
+      sortMode: 'combined',
+      limit: 3,
+    },
+    rankingModes: ['combined', 'recent', 'most-viewed', 'most-favourited'],
+    targetDomain: {
+      parameter: 'targetMemberId',
+      observedValues: observedValues.sort(sortRecords),
+      candidateValues: candidateValues.sort(sortRecords),
+      actionableValues: actionableValues.sort(sortRecords),
+    },
+    evidence: {
+      stateIds: [...evidenceStateIds].sort(compareNullableStrings),
+      edgeIds: [...evidenceEdgeIds].sort(compareNullableStrings),
+    },
+  };
+}
+
+function buildMemberTargetDomain(element, valueObservations, edgeObservations, siteProfileDocument = null, baseUrl = null) {
   const observedKeys = new Set(valueObservations.observations.keys());
   const observedValues = [...valueObservations.observations.values()]
     .map((record) => {
@@ -1164,6 +1432,32 @@ function buildMemberTargetDomain(element, valueObservations, edgeObservations) {
       };
     })
     .sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+
+  if (isJableSite(siteProfileDocument, baseUrl) && element.kind === 'category-link-group') {
+    const actionableKeys = new Set(actionableValues.map((record) => stableValueKey(record.value)));
+    for (const candidate of candidateValues) {
+      const candidateKey = stableValueKey(candidate.value);
+      if (!actionableKeys.has(candidateKey)) {
+        actionableValues.push({
+          value: candidate.value,
+          label: candidate.label ?? null,
+          edgeIds: [],
+        });
+        actionableKeys.add(candidateKey);
+      }
+      if (!observedKeys.has(candidateKey)) {
+        observedValues.push({
+          value: candidate.value,
+          label: candidate.label ?? null,
+          stateIds: [],
+          edgeIds: [],
+        });
+        observedKeys.add(candidateKey);
+      }
+    }
+    observedValues.sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+    actionableValues.sort((left, right) => compareNullableStrings(left.label, right.label) || compareValue(left.value, right.value));
+  }
 
   return {
     parameter: 'targetMemberId',
@@ -1303,7 +1597,7 @@ function buildIntents(elementsDocument, statesDocument, indices, attributedEdges
     if (spec.parameter === 'queryText') {
       targetDomain = buildStringTargetDomain(valueObservations, edgeObservations);
     } else if (isMemberTargetElementKind(element.kind)) {
-      targetDomain = buildMemberTargetDomain(element, valueObservations, edgeObservations);
+      targetDomain = buildMemberTargetDomain(element, valueObservations, edgeObservations, siteProfileDocument, baseUrl);
     } else {
       targetDomain = buildBooleanTargetDomain(valueObservations, edgeObservations);
     }
@@ -1320,7 +1614,7 @@ function buildIntents(elementsDocument, statesDocument, indices, attributedEdges
     const intent = {
       intentId: `intent_${createSha256(`${element.elementId}::${spec.intentType}`).slice(0, 12)}`,
       intentType: spec.intentType,
-      intentName: buildIntentName(spec.intentType, element, spec.parameter),
+      intentName: buildIntentName(spec.intentType, element, spec.parameter, siteProfileDocument, baseUrl),
       elementId: element.elementId,
       elementKind: element.kind,
       sourceElementName: element.elementName,
@@ -1334,6 +1628,11 @@ function buildIntents(elementsDocument, statesDocument, indices, attributedEdges
     };
 
     intents.push(intent);
+  }
+
+  const jableRankingIntent = buildJableCategoryRankingIntent(elementsDocument, statesDocument, intents, siteProfileDocument, baseUrl);
+  if (jableRankingIntent) {
+    intents.push(jableRankingIntent);
   }
 
   intents.sort((left, right) => compareNullableStrings(left.elementKind, right.elementKind) || compareNullableStrings(left.elementId, right.elementId));
@@ -1636,6 +1935,8 @@ function buildCapabilityMatrixDocument(inputUrl, baseUrl, generatedAt, siteProfi
       stateField: intent.stateField,
       capabilityFamily: intent.intentType === 'download-book'
         ? 'download-content'
+        : intent.intentType === 'list-category-videos'
+          ? 'query-ranked-content'
         : buildStateFieldSpec(intent.elementKind)?.capabilityFamily ?? null,
       actionableTargets: toArray(intent.targetDomain?.actionableValues).map((value) => ({
         value: value.value,

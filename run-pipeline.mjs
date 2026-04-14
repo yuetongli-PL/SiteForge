@@ -1,6 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 import { capture } from './capture.mjs';
 import { expandStates } from './expand-states.mjs';
@@ -553,6 +554,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   const { url, options } = parseCliArgs(process.argv.slice(2));
   if (options.help || !url) {
     printHelp();

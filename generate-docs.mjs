@@ -4,6 +4,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const DEFAULT_OPTIONS = {
   nlEntryManifestPath: undefined,
@@ -69,7 +70,9 @@ Object.assign(INTENT_TITLE_PREFIX, {
   'open-overlay': '切换打开状态',
   'open-category': '打开分类',
   'open-book': '打开书籍',
+  'open-work': '打开作品',
   'open-author': '打开作者页',
+  'open-actress': '打开女优页',
   'open-utility-page': '打开功能页',
   'open-auth-page': '打开认证页',
   'paginate-content': '翻页',
@@ -78,12 +81,178 @@ Object.assign(INTENT_TITLE_PREFIX, {
 Object.assign(INTENT_TITLE_PREFIX, {
   'open-chapter': '打开章节',
   'search-book': '搜索书籍',
+  'search-work': '搜索作品',
 });
 
 INTENT_TITLE_PREFIX['download-book'] = '下载书籍';
 
 function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/gu, ' ').trim();
+}
+
+/* moodyz helpers (replaced below)
+function isMoodyzContext(context) {
+  return /(?:^|\.)moodyz\.com$/iu.test(String(context?.host ?? ''))
+    || /(?:^|\/)moodyz\.com(?:\/|$)/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
+}
+
+function siteIntentTitlePrefix(context, intentType) {
+  if (isMoodyzContext(context)) {
+    switch (intentType) {
+      case 'search-book':
+      case 'search-work':
+        return '鎼滅储浣滃搧';
+      case 'open-book':
+      case 'open-work':
+        return '鎵撳紑浣滃搧';
+      case 'open-author':
+      case 'open-actress':
+        return '鎵撳紑濂充紭椤?';
+      case 'download-book':
+        return '涓嬭浇浣滃搧';
+      case 'open-chapter':
+        return '鎵撳紑鍐呭椤?';
+      case 'open-category':
+        return '鎵撳紑鍒嗙被';
+      case 'open-utility-page':
+        return '鎵撳紑鍔熻兘椤?';
+      case 'open-auth-page':
+        return '鎵撳紑璁よ瘉椤?';
+      case 'paginate-content':
+        return '缈婚〉';
+      default:
+        return String(intentType ?? '');
+    }
+  }
+
+  return INTENT_TITLE_PREFIX[intentType] ?? intentType;
+}
+
+function siteTerminology(context) {
+  if (isMoodyzContext(context)) {
+    return {
+      entityLabel: '浣滃搧',
+      entityPlural: '浣滃搧',
+      personLabel: '濂充紭',
+      personPlural: '濂充紭',
+      searchLabel: '鎼滅储浣滃搧',
+      openEntityLabel: '鎵撳紑浣滃搧',
+      openPersonLabel: '鎵撳紑濂充紭椤?',
+      downloadLabel: '涓嬭浇浣滃搧',
+    };
+  }
+
+  return {
+    entityLabel: '涔︾睄',
+    entityPlural: '涔︾睄',
+    personLabel: '浣滆€?,
+    personPlural: '浣滆€?,
+    searchLabel: '鎼滅储涔︾睄',
+    openEntityLabel: '鎵撳紑涔︾睄',
+    openPersonLabel: '鎵撳紑浣滆€呴〉',
+    downloadLabel: '涓嬭浇涔︾睄',
+  };
+}
+
+*/
+
+function isMoodyzContext(context) {
+  return /(?:^|\.)moodyz\.com$/iu.test(String(context?.host ?? ''))
+    || /(?:^|\.)moodyz\.com$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
+}
+
+function siteIntentTitlePrefix(context, intentType) {
+  if (isMoodyzContext(context)) {
+    switch (intentType) {
+      case 'search-book':
+      case 'search-work':
+        return '\u641c\u7d22\u4f5c\u54c1';
+      case 'open-book':
+      case 'open-work':
+        return '\u6253\u5f00\u4f5c\u54c1';
+      case 'open-author':
+      case 'open-actress':
+        return '\u6253\u5f00\u5973\u4f18\u9875';
+      case 'download-book':
+        return '\u4e0b\u8f7d\u4f5c\u54c1';
+      case 'open-chapter':
+        return '\u6253\u5f00\u5185\u5bb9\u9875';
+      case 'open-category':
+        return '\u6253\u5f00\u5206\u7c7b';
+      case 'open-utility-page':
+        return '\u6253\u5f00\u529f\u80fd\u9875';
+      case 'open-auth-page':
+        return '\u6253\u5f00\u8ba4\u8bc1\u9875';
+      case 'paginate-content':
+        return '\u7ffb\u9875';
+      default:
+        return String(intentType ?? '');
+    }
+  }
+
+  return INTENT_TITLE_PREFIX[intentType] ?? intentType;
+}
+
+function siteTerminology(context) {
+  if (isMoodyzContext(context)) {
+    return {
+      entityLabel: '\u4f5c\u54c1',
+      entityPlural: '\u4f5c\u54c1',
+      personLabel: '\u5973\u4f18',
+      personPlural: '\u5973\u4f18',
+      searchLabel: '\u641c\u7d22\u4f5c\u54c1',
+      openEntityLabel: '\u6253\u5f00\u4f5c\u54c1',
+      openPersonLabel: '\u6253\u5f00\u5973\u4f18\u9875',
+      downloadLabel: '\u4e0b\u8f7d\u4f5c\u54c1',
+    };
+  }
+
+  return {
+    entityLabel: '\u4e66\u7c4d',
+    entityPlural: '\u4e66\u7c4d',
+    personLabel: '\u4f5c\u8005',
+    personPlural: '\u4f5c\u8005',
+    searchLabel: '\u641c\u7d22\u4e66\u7c4d',
+    openEntityLabel: '\u6253\u5f00\u4e66\u7c4d',
+    openPersonLabel: '\u6253\u5f00\u4f5c\u8005\u9875',
+    downloadLabel: '\u4e0b\u8f7d\u4e66\u7c4d',
+  };
+}
+
+function pickRecordText(record, candidateKeys) {
+  if (!record || typeof record !== 'object') {
+    return null;
+  }
+  for (const key of candidateKeys) {
+    const value = key.split('.').reduce((current, part) => current?.[part], record);
+    const text = firstNonEmpty([value]);
+    if (text) {
+      return text;
+    }
+  }
+  return null;
+}
+
+function collectNamedSamples(records, candidateKeys, limit = 6) {
+  const values = [];
+  for (const record of toArray(records)) {
+    const text = pickRecordText(record, candidateKeys);
+    if (text) {
+      values.push(text);
+    }
+  }
+  return uniqueSortedStrings(values).slice(0, limit);
+}
+
+function collectSearchQueries(records, limit = 6) {
+  const values = [];
+  for (const record of toArray(records)) {
+    const text = pickRecordText(record, ['queryText', 'query', 'keyword', 'title', 'name']);
+    if (text) {
+      values.push(text);
+    }
+  }
+  return uniqueSortedStrings(values).slice(0, limit);
 }
 
 function normalizeText(value) {
@@ -785,6 +954,34 @@ function collectEvidenceRefsForState(state) {
   return refs;
 }
 
+function localizedIntentTitleForContext(context, intent, element) {
+  const prefix = siteIntentTitlePrefix(context, intent.intentType);
+  const elementName = firstNonEmpty([element?.elementName, intent.sourceElementName]);
+  return elementName ? `${prefix}：${elementName}` : prefix;
+}
+
+function siteIntentTypeName(context, intentType) {
+  if (isMoodyzContext(context)) {
+    switch (intentType) {
+      case 'search-book':
+      case 'search-work':
+        return 'search-work';
+      case 'open-book':
+      case 'open-work':
+        return 'open-work';
+      case 'open-author':
+      case 'open-actress':
+        return 'open-actress';
+      case 'download-book':
+        return 'download-work';
+      default:
+        return String(intentType ?? '');
+    }
+  }
+
+  return String(intentType ?? '');
+}
+
 function renderEvidenceLinks(fromDir, state) {
   if (!state?.files) {
     return '_No evidence files_';
@@ -890,6 +1087,34 @@ function renderMainPathSection(context, fromDir, indices) {
   return sections.join('\n');
 }
 
+function renderMoodyzMainPathSection(context, fromDir, indices) {
+  const sections = ['## 主路径步骤', ''];
+  if (context.actionableTargets.length === 0) {
+    sections.push('_No actionable targets_');
+    return sections.join('\n');
+  }
+
+  const intentLabel = siteIntentTitlePrefix(context, context.intent.intentType);
+  for (const target of context.actionableTargets) {
+    const targetStates = target.stateIds.map((stateId) => indices.statesById.get(stateId)).filter(Boolean);
+    const exemplarState = targetStates[0] ?? null;
+    sections.push(`### 目标：${target.label}`);
+    sections.push('');
+    sections.push(`1. 解析用户输入，命中意图 \`${intentLabel}\`，并将槽位 \`${context.intent.targetDomain.parameter}\` 绑定为 \`${target.label}\`。`);
+    sections.push(`2. 先读取 \`currentElementState.${context.intent.stateField}\`。若已经等于目标值，则转到“已满足规则（noop）”。`);
+    sections.push(`3. 否则执行动作原语 \`${context.intent.actionId}\`。`);
+    sections.push(`4. 执行后按 \`decision-table:first-match\` 校验规则：${target.actRuleIds.map((ruleId) => `\`${ruleId}\``).join('、') || '无 act 规则'}`);
+    sections.push(`5. 期望落入状态：${targetStates.map((state) => `\`${state.stateId}\``).join('、') || '未知'}。`);
+    sections.push(`6. 证据校验：${targetStates.map((state) => renderEvidenceLinks(fromDir, state)).join('；') || '无目标状态证据'}`);
+    sections.push('');
+    if (exemplarState) {
+      sections.push(`成功判定：\`${context.intent.stateField}\` 应变为 \`${target.label}\`，页面 URL 期望为 \`${exemplarState.finalUrl}\`，标题期望为 “${exemplarState.title}”。`);
+      sections.push('');
+    }
+  }
+  return sections.join('\n');
+}
+
 function renderNoopSection(context) {
   const rows = context.allTargets
     .filter((target) => target.satisfiedRuleIds.length > 0)
@@ -955,11 +1180,15 @@ function renderEvidenceSection(context, fromDir, indices) {
 }
 
 function renderIntentDoc(context, artifacts, indices, fromDir) {
+  const mainPathSection = isMoodyzContext(context)
+    ? renderMoodyzMainPathSection(context, fromDir, indices)
+    : renderMainPathSection(context, fromDir, indices);
+
   return [
-    `# ${localizedIntentTitle(context.intent, context.element)}`,
+    `# ${localizedIntentTitleForContext(context, context.intent, context.element)}`,
     '',
     `- Intent ID: \`${context.intent.intentId}\``,
-    `- Intent Type: \`${context.intent.intentType}\``,
+    `- Intent Type: \`${siteIntentTypeName(context, context.intent.intentType)}\``,
     `- Element: \`${context.intent.elementId}\` (${context.element?.elementName ?? context.intent.sourceElementName})`,
     `- Action Primitive: \`${context.intent.actionId}\``,
     '',
@@ -971,7 +1200,7 @@ function renderIntentDoc(context, artifacts, indices, fromDir) {
     '',
     renderTargetStatesSection(context, fromDir),
     '',
-    renderMainPathSection(context, fromDir, indices),
+    mainPathSection,
     '',
     renderNoopSection(context),
     '',
@@ -1363,6 +1592,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

@@ -1,16 +1,19 @@
 ﻿// @ts-check
 
 import {
-  access,
-  mkdir,
-  readFile,
   readdir,
   rm,
-  writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
+import { ensureDir, findLatestRunDir, pathExists, readJsonFile, readTextFile, writeTextFile } from './lib/io.mjs';
+import { markdownLink, normalizeImportedMarkdown, renderTable, stripKbMeta } from './lib/markdown.mjs';
+import { cleanText, firstNonEmpty, hostFromUrl, normalizeWhitespace, relativePath, sanitizeHost, slugifyAscii, toArray, toPosixPath, uniqueSortedStrings } from './lib/normalize.mjs';
+import { resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext, readSiteContext } from './lib/site-context.mjs';
+import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
+import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
 
 const DEFAULT_OPTIONS = {
   kbDir: undefined,
@@ -24,29 +27,6 @@ const DEFAULT_OPTIONS = {
   nlIntentsPath: undefined,
   interactionModelPath: undefined,
 };
-
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function cleanText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
-function slugifyAscii(value, fallback = 'site-skill') {
-  const normalized = cleanText(value)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-  return normalized || fallback;
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
-}
 
 function resolveSkillName(inputUrl, explicitSkillName) {
   if (explicitSkillName) {
@@ -71,65 +51,6 @@ function resolveSkillName(inputUrl, explicitSkillName) {
   }
 }
 
-function uniqueSortedStrings(values) {
-  return [...new Set((values ?? []).filter(Boolean).map((value) => String(value)))].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
-}
-
-function toPosixPath(value) {
-  return String(value ?? '').split(path.sep).join('/');
-}
-
-function relativeLink(fromFile, toFile) {
-  return toPosixPath(path.relative(path.dirname(fromFile), toFile) || path.basename(toFile));
-}
-
-function markdownLink(label, fromFile, toFile) {
-  return `[${label}](${relativeLink(fromFile, toFile)})`;
-}
-
-function mdEscape(value) {
-  return String(value ?? '').replace(/\|/g, '\\|').replace(/\n/g, '<br>');
-}
-
-function renderTable(headers, rows) {
-  if (!rows.length) {
-    return '- none';
-  }
-  const head = `| ${headers.join(' | ')} |`;
-  const divider = `| ${headers.map(() => '---').join(' | ')} |`;
-  const body = rows.map((row) => {
-    const cells = Array.isArray(row) ? row : Object.values(row ?? {});
-    return `| ${cells.map((cell) => mdEscape(cell)).join(' | ')} |`;
-  });
-  return [head, divider, ...body].join('\n');
-}
-
-async function pathExists(targetPath) {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureDir(targetPath) {
-  await mkdir(targetPath, { recursive: true });
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
-async function readTextFile(filePath) {
-  return await readFile(filePath, 'utf8');
-}
-
-async function writeTextFile(filePath, value) {
-  await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, `${String(value).trimEnd()}\n`, 'utf8');
-}
-
 function mergeOptions(options) {
   const merged = { ...DEFAULT_OPTIONS };
   for (const [key, value] of Object.entries(options ?? {})) {
@@ -141,14 +62,6 @@ function mergeOptions(options) {
   return merged;
 }
 
-function hostFromUrl(inputUrl) {
-  try {
-    return new URL(inputUrl).host;
-  } catch {
-    return null;
-  }
-}
-
 async function listMarkdownFiles(dirPath) {
   if (!dirPath || !await pathExists(dirPath)) {
     return [];
@@ -158,30 +71,6 @@ async function listMarkdownFiles(dirPath) {
     .filter((entry) => entry.isFile() && /\.md$/iu.test(entry.name))
     .map((entry) => path.join(dirPath, entry.name))
     .sort((left, right) => left.localeCompare(right, 'en'));
-}
-
-async function findLatestRunDir(rootDir) {
-  if (!rootDir || !await pathExists(rootDir)) {
-    return null;
-  }
-  const entries = await readdir(rootDir, { withFileTypes: true });
-  const dirs = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(rootDir, entry.name))
-    .sort((left, right) => path.basename(right).localeCompare(path.basename(left), 'en'));
-  return dirs[0] ?? null;
-}
-
-function stripKbMeta(markdown) {
-  return String(markdown ?? '').replace(/<!--\s*KBMETA[\s\S]*?-->\s*/u, '');
-}
-
-function demoteHeadings(markdown, level = 1) {
-  return String(markdown ?? '').replace(/^(#{1,6})(\s+)/gmu, (_, hashes, spacing) => `${'#'.repeat(Math.min(6, hashes.length + level))}${spacing}`);
-}
-
-function normalizeImportedMarkdown(markdown) {
-  return demoteHeadings(stripKbMeta(markdown).trim(), 1);
 }
 
 function buildSourceMapper(kbDir, sourcesDocument) {
@@ -255,7 +144,7 @@ function rewriteMarkdownLinks(markdown, sourceFilePath, outputFilePath, mapToKbP
       return fullMatch;
     }
     const fragmentSuffix = fragment ? `#${fragment}` : '';
-    return `[${label}](${relativeLink(outputFilePath, mappedTarget)}${fragmentSuffix})`;
+    return `[${label}](${relativePath(outputFilePath, mappedTarget)}${fragmentSuffix})`;
   });
 }
 
@@ -297,6 +186,7 @@ async function resolveSourceInputs(url, options) {
 
   const sourcesDocument = await readJsonFile(sourcesPath);
   const pagesDocument = await readJsonFile(pagesPath);
+  const siteContext = await readSiteContext(workspaceRoot, host);
   const mapToKbPath = buildSourceMapper(kbDir, sourcesDocument);
   const rawToOriginalPath = buildRawToOriginalMapper(kbDir, sourcesDocument);
   const activeSources = new Map((sourcesDocument.activeSources ?? []).map((source) => [source.step, source]));
@@ -306,7 +196,8 @@ async function resolveSourceInputs(url, options) {
   const step5RawDir = activeSources.get('step-5-nl-entry') ? path.resolve(kbDir, activeSources.get('step-5-nl-entry').rawDir) : null;
   const step6RawDir = activeSources.get('step-6-docs') ? path.resolve(kbDir, activeSources.get('step-6-docs').rawDir) : null;
   const step7RawDir = activeSources.get('step-7-governance') ? path.resolve(kbDir, activeSources.get('step-7-governance').rawDir) : null;
-  const latestLocalBookContentDir = await findLatestRunDir(path.join(workspaceRoot, 'book-content'));
+  const latestLocalBookContentDir = await findLatestRunDir(path.join(workspaceRoot, 'book-content', host))
+    ?? await findLatestRunDir(path.join(workspaceRoot, 'book-content'));
   const stepBookContentRawDir = latestLocalBookContentDir
     ?? (activeSources.get('step-book-content') ? path.resolve(kbDir, activeSources.get('step-book-content').rawDir) : null);
 
@@ -541,6 +432,9 @@ async function resolveSourceInputs(url, options) {
     interactionModelPath,
     sourcesDocument,
     pagesDocument,
+    siteContext,
+    siteRegistryRecord: siteContext.registryRecord,
+    siteCapabilitiesRecord: siteContext.capabilitiesRecord,
     docsManifest,
     mapToKbPath,
     rawToOriginalPath,
@@ -662,6 +556,144 @@ function is22Biqu(context) {
   return context.host === 'www.22biqu.com';
 }
 
+function isMoodyz(context) {
+  return /(?:^|\.)moodyz\.com$/iu.test(String(context?.host ?? ''))
+    || /(?:^|\.)moodyz\.com$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
+}
+
+function siteTerminology(context) {
+  if (isMoodyz(context)) {
+    return {
+      entityLabel: '作品',
+      entityPlural: '作品',
+      personLabel: '女优',
+      personPlural: '女优',
+      searchLabel: '搜索作品',
+      openEntityLabel: '打开作品',
+      openPersonLabel: '打开女优页',
+      downloadLabel: '下载作品',
+      verifiedTaskLabel: '作品/女优',
+    };
+  }
+
+  return {
+    entityLabel: '书籍',
+    entityPlural: '书籍',
+    personLabel: '作者',
+    personPlural: '作者',
+    searchLabel: '搜索书籍',
+    openEntityLabel: '打开书籍',
+    openPersonLabel: '打开作者页',
+    downloadLabel: '下载书籍',
+    verifiedTaskLabel: '书籍/作者',
+  };
+}
+
+function displayIntentLabel(context, intentType) {
+  if (isMoodyz(context)) {
+    switch (intentType) {
+      case 'search-book':
+      case 'search-work':
+        return 'search-work';
+      case 'open-book':
+      case 'open-work':
+        return 'open-work';
+      case 'open-author':
+      case 'open-actress':
+        return 'open-actress';
+      case 'download-book':
+        return 'download-work';
+      case 'open-chapter':
+        return 'open-chapter';
+      case 'open-category':
+        return 'open-category';
+      case 'open-utility-page':
+        return 'open-utility-page';
+      case 'open-auth-page':
+        return 'open-auth-page';
+      default:
+        return String(intentType ?? '');
+    }
+  }
+
+  return String(intentType ?? '');
+}
+
+function pickRecordText(record, candidateKeys) {
+  if (!record || typeof record !== 'object') {
+    return null;
+  }
+  for (const key of candidateKeys) {
+    const value = key.split('.').reduce((current, part) => current?.[part], record);
+    const text = firstNonEmpty([value]);
+    if (text) {
+      return text;
+    }
+  }
+  return null;
+}
+
+function collectNamedSamples(records, candidateKeys, limit = 6) {
+  const values = [];
+  for (const record of toArray(records)) {
+    const text = pickRecordText(record, candidateKeys);
+    if (text) {
+      values.push(text);
+    }
+  }
+  return uniqueSortedStrings(values).slice(0, limit);
+}
+
+function collectSearchQueries(records, limit = 6) {
+  const values = [];
+  for (const record of toArray(records)) {
+    const text = pickRecordText(record, ['queryText', 'query', 'keyword', 'title', 'name']);
+    if (text) {
+      values.push(text);
+    }
+  }
+  return uniqueSortedStrings(values).slice(0, limit);
+}
+
+function collectIntentTargetLabels(context, intentTypes, limit = 8) {
+  const allowed = new Set(toArray(intentTypes));
+  const values = [];
+  for (const intent of toArray(context.intentsDocument?.intents)) {
+    if (!allowed.has(intent.intentType)) {
+      continue;
+    }
+    for (const candidate of toArray(intent.targetDomain?.actionableValues)) {
+      if (candidate?.label) {
+        values.push(candidate.label);
+      }
+    }
+    for (const candidate of toArray(intent.targetDomain?.candidateValues)) {
+      if (candidate?.label) {
+        values.push(candidate.label);
+      }
+    }
+  }
+  return uniqueSortedStrings(values).slice(0, limit);
+}
+
+function getIntentTypes(context) {
+  return new Set(toArray(context.intentsDocument?.intents).map((intent) => intent.intentType));
+}
+
+function collectMoodyzSamples(context) {
+  const works = collectIntentTargetLabels(context, ['open-work', 'open-book'], 8);
+  const actresses = collectIntentTargetLabels(context, ['open-actress', 'open-author'], 8);
+  const searchQueries = uniqueSortedStrings([
+    ...collectIntentTargetLabels(context, ['search-work', 'search-book'], 8),
+    ...collectSearchQueries(context.searchResultsDocument, 8),
+  ]).slice(0, 8);
+  return {
+    works,
+    actresses,
+    searchQueries,
+  };
+}
+
 function intentTitle22Biqu(intentType) {
   switch (intentType) {
     case 'search-book':
@@ -728,6 +760,61 @@ function collect22biquAuthLabels() {
   return ['用户登录', '用户注册'];
 }
 
+function renderMoodyzSkillMd(context, outputs) {
+  const safeActions = resolveSafeActions(context);
+  const terms = siteTerminology(context);
+  const samples = collectMoodyzSamples(context);
+  const intentTypes = getIntentTypes(context);
+  const supportedTasks = [
+    intentTypes.has('search-work') || intentTypes.has('search-book') ? `search ${terms.entityPlural}` : null,
+    intentTypes.has('open-work') || intentTypes.has('open-book') ? `open ${terms.entityLabel} pages` : null,
+    intentTypes.has('open-actress') || intentTypes.has('open-author') ? `open ${terms.personLabel} pages` : null,
+    intentTypes.has('open-category') ? 'open category and list pages' : null,
+    intentTypes.has('open-utility-page') ? 'open utility pages' : null,
+  ].filter(Boolean);
+  return [
+    '---',
+    `name: ${context.skillName}`,
+    `description: Instruction-only Skill for ${context.url}. Use when Codex needs to search works, open verified work or actress pages, and navigate the approved moodyz URL family.`,
+    '---',
+    '',
+    '# moodyz Skill',
+    '',
+    '## Scope',
+    '',
+    `- Site: \`${context.url}\``,
+    '- Stay inside the verified `moodyz.com` URL family.',
+    `- Safe actions: \`${safeActions.join('`, `')}\``,
+    `- Supported tasks: ${supportedTasks.join(', ') || 'query and navigate within the observed site space'}.`,
+    '',
+    '## Sample coverage',
+    '',
+    `- Works: ${samples.works.join(', ') || 'none'}`,
+    `- Actresses: ${samples.actresses.join(', ') || 'none'}`,
+    `- Search queries: ${samples.searchQueries.join(', ') || 'none'}`,
+    '',
+    '## Reading order',
+    '',
+    `1. Start with ${markdownLink('references/index.md', outputs.skillMd, outputs.indexMd)}.`,
+    `2. For task execution details, read ${markdownLink('references/flows.md', outputs.skillMd, outputs.flowsMd)}.`,
+    `3. For user utterances and slot mapping, read ${markdownLink('references/nl-intents.md', outputs.skillMd, outputs.nlIntentsMd)}.`,
+    `4. For failure handling, read ${markdownLink('references/recovery.md', outputs.skillMd, outputs.recoveryMd)}.`,
+    `5. For approval boundaries, read ${markdownLink('references/approval.md', outputs.skillMd, outputs.approvalMd)}.`,
+    `6. For the structured site model, read ${markdownLink('references/interaction-model.md', outputs.skillMd, outputs.interactionModelMd)}.`,
+    '',
+    '## Safety boundary',
+    '',
+    '- Search and public navigation are low-risk actions.',
+    '- Login or register pages may be opened, but credential submission is out of scope.',
+    '',
+    '## Do not do',
+    '',
+    '- Do not leave the verified moodyz URL family.',
+    '- Do not invent unobserved actions or side-effect flows.',
+    '- Do not submit auth forms, uploads, payments, or unknown forms without approval.',
+  ].join('\n');
+}
+
 function render22BiquSkillMd(context, outputs) {
   const safeActions = resolveSafeActions(context);
   return [
@@ -767,6 +854,168 @@ function render22BiquSkillMd(context, outputs) {
     '- Do not leave the verified 22biqu URL family.',
     '- Do not invent unobserved actions or side-effect flows.',
     '- Do not submit auth forms, uploads, payments, or unknown forms without approval.',
+  ].join('\n');
+}
+
+function renderMoodyzIndexReference(context, outputs, docsByIntent) {
+  const samples = collectMoodyzSamples(context);
+  const intents = context.intentsDocument.intents ?? [];
+  const intentTypes = getIntentTypes(context);
+  const verifiedTasks = [
+    intentTypes.has('search-work') || intentTypes.has('search-book') ? 'search works' : null,
+    intentTypes.has('open-work') || intentTypes.has('open-book') ? 'open work pages' : null,
+    intentTypes.has('open-actress') || intentTypes.has('open-author') ? 'open actress pages' : null,
+    intentTypes.has('open-category') ? 'open category and list pages' : null,
+    intentTypes.has('open-utility-page') ? 'open utility pages' : null,
+  ].filter(Boolean);
+  const rows = intents.map((intent) => ({
+    intent: displayIntentLabel(context, intent.intentType),
+    flow: docsByIntent.get(intent.intentId)
+      ? markdownLink(docsByIntent.get(intent.intentId).title ?? displayIntentLabel(context, intent.intentType), outputs.indexMd, docsByIntent.get(intent.intentId).mappedPath)
+      : '-',
+    actionableTargets: (intent.targetDomain?.actionableValues ?? []).map((value) => value.label).join(', ') || '-',
+    recognitionOnly: (intent.targetDomain?.candidateValues ?? [])
+      .filter((value) => !(intent.targetDomain?.actionableValues ?? []).some((candidate) => candidate.value === value.value))
+      .map((value) => value.label)
+      .join(', ') || '-',
+  }));
+  return [
+    '# moodyz Index',
+    '',
+    '## Site summary',
+    '',
+    `- Entry URL: \`${context.url}\``,
+    '- Site type: navigation hub + catalog detail.',
+    `- Verified tasks: ${verifiedTasks.join(', ') || 'query and navigate within the observed site space'}.`,
+    `- Work samples: ${samples.works.join(', ') || 'none'}`,
+    `- Actress samples: ${samples.actresses.join(', ') || 'none'}`,
+    `- Search samples: ${samples.searchQueries.join(', ') || 'none'}`,
+    '',
+    '## Reference navigation',
+    '',
+    `- ${markdownLink('flows.md', outputs.indexMd, outputs.flowsMd)}`,
+    `- ${markdownLink('recovery.md', outputs.indexMd, outputs.recoveryMd)}`,
+    `- ${markdownLink('approval.md', outputs.indexMd, outputs.approvalMd)}`,
+    `- ${markdownLink('nl-intents.md', outputs.indexMd, outputs.nlIntentsMd)}`,
+    `- ${markdownLink('interaction-model.md', outputs.indexMd, outputs.interactionModelMd)}`,
+    '',
+    '## Sample intent coverage',
+    '',
+    renderTable(['Intent', 'Flow Source', 'Actionable Targets', 'Recognition-only Targets'], rows),
+    '',
+    '## Download notes',
+    '',
+    '- This site skill is currently navigation-centric: it covers search, work pages, actress pages, category/list pages, and utility pages.',
+    '- There is no verified chapter-reading or full-download flow in the current observed moodyz model.',
+  ].join('\n');
+}
+
+function renderMoodyzFlowsReference(context, outputs, docsByIntent) {
+  const samples = collectMoodyzSamples(context);
+  const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
+  const sections = ['# Flows', '', '## Table of contents', ''];
+  for (const intent of intents) {
+    sections.push(`- [${displayIntentLabel(context, intent.intentType)}](#${slugifyAscii(displayIntentLabel(context, intent.intentType), intent.intentType)})`);
+  }
+  sections.push('');
+  for (const intent of intents) {
+    sections.push(`## ${displayIntentLabel(context, intent.intentType)}`);
+    sections.push('');
+    sections.push(`- Intent ID: \`${intent.intentId}\``);
+    sections.push(`- Intent Type: \`${displayIntentLabel(context, intent.intentType)}\``);
+    sections.push(`- Action: \`${intent.actionId}\``);
+    sections.push(`- Summary: ${displayIntentLabel(context, intent.intentType)}`);
+    sections.push('');
+    if (['search-work', 'search-book'].includes(displayIntentLabel(context, intent.intentType))) {
+      const queries = samples.searchQueries.length ? samples.searchQueries : samples.works.slice(0, 3);
+      sections.push(`- Example user requests: ${queries.map((query) => `\`搜索《${query}》\``).join(', ') || '`搜索作品`'}`);
+      sections.push('- Start state: any verified public page.');
+      sections.push('- Target state: a `/search/list` results page or a directly resolved work page.');
+      sections.push('- Main path: fill the search box -> submit -> open the matching result if needed.');
+      sections.push('- Success signal: the result page mentions the query or the final URL is a `/works/detail/...` page.');
+    } else if (['open-work', 'open-book'].includes(displayIntentLabel(context, intent.intentType))) {
+      const works = samples.works.slice(0, 4);
+      sections.push(`- Example user requests: ${works.map((work) => `\`打开《${work}》\``).join(', ') || '`打开作品`'}`);
+      sections.push('- Start state: home page, search results page, category page, or any verified public page.');
+      sections.push('- Target state: a work detail page.');
+      sections.push('- Main path: open the matching work link.');
+      sections.push('- Success signal: the URL matches `/works/detail/...` and the page shows the work metadata.');
+    } else if (['open-actress', 'open-author'].includes(displayIntentLabel(context, intent.intentType))) {
+      const actresses = samples.actresses.slice(0, 4);
+      sections.push(`- Example user requests: ${actresses.map((actress) => `\`打开${actress}女优页\``).join(', ') || '`打开女优页`'}`);
+      sections.push('- Start state: a work detail page or a verified public page.');
+      sections.push('- Target state: the linked actress page.');
+      sections.push('- Main path: read the actress link -> open the actress page.');
+      sections.push('- Success signal: the actress name and URL match the selected actress.');
+    }
+    sections.push('');
+  }
+  sections.push('## Notes');
+  sections.push('');
+  sections.push('- This site flow set is currently navigation-first, not chapter-download oriented.');
+  sections.push('- For live metadata questions, trust the current work detail HTML over search-engine snippets or stale cached result pages.');
+  sections.push('- Search disambiguation should separate work titles from actress names before opening a result.');
+  return sections.join('\n');
+}
+
+function renderMoodyzNlIntentsReference(context, outputs) {
+  const samples = collectMoodyzSamples(context);
+  const intentTypes = getIntentTypes(context);
+  const sections = ['# NL Intents', ''];
+  const workExamples = samples.works.slice(0, 4);
+  const actressExamples = samples.actresses.slice(0, 4);
+  const searchExamples = samples.searchQueries.slice(0, 4);
+  if (intentTypes.has('search-work') || intentTypes.has('search-book')) {
+    sections.push('## search-work', '');
+    sections.push('- Slots: `queryText`');
+    sections.push(`- Examples: ${searchExamples.map((item) => `\`搜索《${item}》\``).join(', ') || workExamples.map((item) => `\`搜索《${item}》\``).join(', ') || '`搜索作品`'}`);
+    sections.push('');
+  }
+  if (intentTypes.has('open-work') || intentTypes.has('open-book')) {
+    sections.push('## open-work', '');
+    sections.push('- Slots: `workTitle`');
+    sections.push(`- Examples: ${workExamples.map((item) => `\`打开《${item}》\``).join(', ') || '`打开作品`'}`);
+    sections.push('');
+  }
+  if (intentTypes.has('open-actress') || intentTypes.has('open-author')) {
+    sections.push('## open-actress', '');
+    sections.push('- Slots: `actressName`');
+    sections.push(`- Examples: ${actressExamples.map((item) => `\`打开${item}女优页\``).join(', ') || '`打开女优页`'}`);
+    sections.push('');
+  }
+  if (intentTypes.has('open-category')) {
+    sections.push('## open-category', '');
+    sections.push('- Slots: `targetLabel`');
+    sections.push('- Examples: `打开発売作品`, `打开作品検索`, `进入女優列表`');
+    sections.push('');
+  }
+  if (intentTypes.has('open-utility-page')) {
+    sections.push('## open-utility-page', '');
+    sections.push('- Slots: `targetLabel`');
+    sections.push('- Examples: `打开トップ`, `打开WEBディレクター募集`');
+  }
+  return sections.join('\n');
+}
+
+function renderMoodyzInteractionModelReference(context, outputs) {
+  const samples = collectMoodyzSamples(context);
+  const elementsById = buildElementsById(context);
+  const rows = (context.intentsDocument.intents ?? []).map((intent) => ({
+    intent: displayIntentLabel(context, intent.intentType),
+    element: `${intent.elementId} (${elementsById.get(intent.elementId)?.kind ?? '-'})`,
+    action: intent.actionId,
+    stateField: intent.stateField,
+  }));
+  return [
+    '# Interaction Model',
+    '',
+    '## Capability summary',
+    '',
+    `- Works: ${samples.works.join(', ') || 'none'}`,
+    `- Actresses: ${samples.actresses.join(', ') || 'none'}`,
+    `- Search queries: ${samples.searchQueries.join(', ') || 'none'}`,
+    '',
+    renderTable(['Intent', 'Element', 'Action', 'State Field'], rows),
   ].join('\n');
 }
 
@@ -1039,11 +1288,14 @@ function render22BiquInteractionModelReference(context, outputs) {
 }
 
 function resolvePrimaryArchetype(context) {
-  if (context.siteProfileDocument?.primaryArchetype) {
-    return context.siteProfileDocument.primaryArchetype;
+  const resolved = resolvePrimaryArchetypeFromSiteContext(context.siteContext, [
+    context.siteProfileDocument?.primaryArchetype,
+  ]);
+  if (resolved) {
+    return resolved;
   }
   const intentTypes = new Set((context.intentsDocument.intents ?? []).map((intent) => intent.intentType));
-  if ([...intentTypes].some((intentType) => ['open-category', 'open-book', 'open-author', 'open-chapter', 'open-utility-page', 'open-auth-page', 'paginate-content', 'search-book'].includes(intentType))) {
+  if ([...intentTypes].some((intentType) => ['open-category', 'open-book', 'open-work', 'open-author', 'open-actress', 'open-chapter', 'open-utility-page', 'open-auth-page', 'paginate-content', 'search-book', 'search-work'].includes(intentType))) {
     return 'navigation-hub';
   }
   if ([...intentTypes].some((intentType) => ['switch-tab', 'expand-panel', 'open-overlay', 'set-active-member', 'set-expanded', 'set-open'].includes(intentType))) {
@@ -1053,7 +1305,9 @@ function resolvePrimaryArchetype(context) {
 }
 
 function resolveSafeActions(context) {
-  const profileActions = uniqueSortedStrings(context.siteProfileDocument?.safeActionKinds ?? []);
+  const profileActions = resolveSafeActionKindsFromSiteContext(context.siteContext, [
+    context.siteProfileDocument?.safeActionKinds ?? [],
+  ]);
   if (profileActions.length) {
     return profileActions;
   }
@@ -1064,6 +1318,19 @@ function resolveSafeActions(context) {
   }
 
   return uniqueSortedStrings((context.actionsDocument.actions ?? []).map((action) => action.actionId));
+}
+
+function resolveCapabilityFamilies(context) {
+  return resolveCapabilityFamiliesFromSiteContext(context.siteContext, [
+    context.capabilityMatrixDocument?.capabilityFamilies ?? [],
+    context.siteProfileDocument?.capabilityFamilies ?? [],
+  ]);
+}
+
+function resolveSupportedIntents(context) {
+  return resolveSupportedIntentsFromSiteContext(context.siteContext, [
+    (context.intentsDocument?.intents ?? []).map((intent) => intent.intentType ?? intent.intentId),
+  ]);
 }
 
 function hasBookContentCoverage(context) {
@@ -1094,6 +1361,9 @@ function resolveContentArtifactPath(context, filePath) {
 }
 
 function renderSkillMd(context, outputs) {
+  if (isMoodyz(context)) {
+    return renderMoodyzSkillMd(context, outputs);
+  }
   if (is22Biqu(context)) {
     return render22BiquSkillMd(context, outputs);
   }
@@ -1101,6 +1371,8 @@ function renderSkillMd(context, outputs) {
   const intents = context.intentsDocument.intents ?? [];
   const actionableLabels = uniqueSortedStrings(intents.flatMap((intent) => (intent.targetDomain?.actionableValues ?? []).map((value) => value.label)));
   const primaryArchetype = resolvePrimaryArchetype(context);
+  const capabilityFamilies = resolveCapabilityFamilies(context);
+  const supportedIntents = resolveSupportedIntents(context);
   const safeActions = resolveSafeActions(context);
   const description = primaryArchetype === 'navigation-hub' || primaryArchetype === 'catalog-detail'
     ? `Instruction-only Skill for the observed ${context.url} navigation space.`
@@ -1116,6 +1388,9 @@ function renderSkillMd(context, outputs) {
     '## Scope',
     '',
     `- Site: \`${context.url}\``,
+    `- Primary archetype: \`${primaryArchetype}\``,
+    `- Capability families: ${capabilityFamilies.join(', ') || 'none'}`,
+    `- Supported intents: ${supportedIntents.join(', ') || 'none'}`,
     `- Safe actions: \`${safeActions.join('`, `')}\``,
     `- Actionable targets: ${actionableLabels.join(', ') || 'none'}`,
     '',
@@ -1131,6 +1406,9 @@ function renderSkillMd(context, outputs) {
 }
 
 function renderIndexReference(context, outputs, docsByIntent) {
+  if (isMoodyz(context)) {
+    return renderMoodyzIndexReference(context, outputs, docsByIntent);
+  }
   if (is22Biqu(context)) {
     return render22BiquIndexReference(context, outputs);
   }
@@ -1157,6 +1435,9 @@ function renderIndexReference(context, outputs, docsByIntent) {
 }
 
 async function renderFlowsReference(context, outputs, docsByIntent) {
+  if (isMoodyz(context)) {
+    return renderMoodyzFlowsReference(context, outputs, docsByIntent);
+  }
   if (is22Biqu(context)) {
     return render22BiquFlowsReference(context);
   }
@@ -1174,10 +1455,13 @@ async function renderFlowsReference(context, outputs, docsByIntent) {
     sections.push(`- Intent ID: \`${intent.intentId}\``);
     sections.push(`- Intent Type: \`${intent.intentType}\``);
     sections.push(`- Action: \`${intent.actionId}\``);
-    if (flowDoc?.originalPath && await pathExists(flowDoc.originalPath)) {
-      const imported = await readTextFile(flowDoc.originalPath);
+    const flowSourcePath = flowDoc
+      ? (flowDoc.originalPath && await pathExists(flowDoc.originalPath) ? flowDoc.originalPath : flowDoc.mappedPath)
+      : null;
+    if (flowSourcePath) {
+      const imported = await readTextFile(flowSourcePath);
       sections.push('');
-      sections.push(rewriteMarkdownLinks(normalizeImportedMarkdown(imported), flowDoc.originalPath, outputs.flowsMd, context.mapToKbPath, context.warnings));
+      sections.push(rewriteMarkdownLinks(normalizeImportedMarkdown(imported), flowSourcePath, outputs.flowsMd, context.mapToKbPath, context.warnings));
     }
     sections.push('');
   }
@@ -1189,7 +1473,8 @@ async function renderRecoveryReference(context, outputs) {
     return render22BiquRecoveryReference();
   }
 
-  const sourcePath = context.rawToOriginalPath(context.recoveryPath) ?? context.recoveryPath;
+  const originalPath = context.rawToOriginalPath(context.recoveryPath);
+  const sourcePath = originalPath && await pathExists(originalPath) ? originalPath : context.recoveryPath;
   const text = await readTextFile(sourcePath);
   return ['# Recovery', '', rewriteMarkdownLinks(normalizeImportedMarkdown(text), sourcePath, outputs.recoveryMd, context.mapToKbPath, context.warnings)].join('\n');
 }
@@ -1199,12 +1484,16 @@ async function renderApprovalReference(context, outputs) {
     return render22BiquApprovalReference(context);
   }
 
-  const sourcePath = context.rawToOriginalPath(context.approvalPath) ?? context.approvalPath;
+  const originalPath = context.rawToOriginalPath(context.approvalPath);
+  const sourcePath = originalPath && await pathExists(originalPath) ? originalPath : context.approvalPath;
   const text = await readTextFile(sourcePath);
   return ['# Approval', '', rewriteMarkdownLinks(normalizeImportedMarkdown(text), sourcePath, outputs.approvalMd, context.mapToKbPath, context.warnings)].join('\n');
 }
 
 async function renderNlIntentsReference(context, outputs) {
+  if (isMoodyz(context)) {
+    return renderMoodyzNlIntentsReference(context, outputs);
+  }
   if (is22Biqu(context)) {
     return render22BiquNlIntentsReference(context);
   }
@@ -1229,6 +1518,9 @@ async function renderNlIntentsReference(context, outputs) {
 }
 
 async function renderInteractionModelReference(context, outputs) {
+  if (isMoodyz(context)) {
+    return renderMoodyzInteractionModelReference(context, outputs);
+  }
   if (is22Biqu(context)) {
     return render22BiquInteractionModelReference(context, outputs);
   }
@@ -1269,6 +1561,20 @@ export async function generateSkill(url, options = {}) {
   await writeTextFile(outputs.approvalMd, await renderApprovalReference(context, outputs));
   await writeTextFile(outputs.nlIntentsMd, await renderNlIntentsReference(context, outputs));
   await writeTextFile(outputs.interactionModelMd, await renderInteractionModelReference(context, outputs));
+  await upsertSiteRegistryRecord(process.cwd(), context.host, {
+    canonicalBaseUrl: context.baseUrl ?? url,
+    repoSkillDir: skillDir,
+    latestSkillGeneratedAt: new Date().toISOString(),
+    profilePath: context.step3SourceRefs?.siteProfile ?? null,
+    knowledgeBaseDir: context.kbDir,
+  });
+  await upsertSiteCapabilities(process.cwd(), context.host, {
+    baseUrl: context.baseUrl ?? url,
+    primaryArchetype: resolvePrimaryArchetype(context),
+    pageTypes: resolvePageTypesFromSiteContext(context.siteContext, [context.siteProfileDocument?.pageTypes ?? []]),
+    capabilityFamilies: resolveCapabilityFamilies(context),
+    supportedIntents: resolveSupportedIntents(context),
+  });
 
   return {
     skillDir,
@@ -1331,6 +1637,7 @@ function printHelp() {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   const parsed = parseCliArgs(process.argv.slice(2));
   if (parsed.command === 'help') {
     printHelp();
@@ -1340,7 +1647,7 @@ async function runCli() {
     throw new Error('Missing <url>.');
   }
   const result = await generateSkill(parsed.inputUrl, parsed.options);
-  console.log(JSON.stringify(result, null, 2));
+  writeJsonStdout(result);
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

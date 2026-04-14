@@ -4,6 +4,7 @@ import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const DEFAULT_OPTIONS = {
   interactionModelPath: undefined,
@@ -1501,6 +1502,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

@@ -2,18 +2,25 @@
 
 import {
   access,
-  appendFile,
   cp,
   mkdir,
   readdir,
   readFile,
   rm,
   stat,
-  writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
+import { appendJsonLine, appendTextFile, ensureDir, pathExists, readJsonFile, writeJsonFile, writeJsonLines, writeTextFile } from './lib/io.mjs';
+import { markdownLink as sharedMarkdownLink, renderTable as sharedRenderTable } from './lib/markdown.mjs';
+import { cleanText, compactSlug, compareNullableStrings, firstNonEmpty, normalizeUrlNoFragment, normalizeWhitespace, relativePath, sanitizeHost, toArray, toPosixPath, uniqueSortedPaths, uniqueSortedStrings } from './lib/normalize.mjs';
+import { buildError, buildWarning } from './lib/wiki-report.mjs';
+import { firstExistingPath, kbAbsolute, listDirectories, relativeToKb, resolveMaybeRelative } from './lib/wiki-paths.mjs';
+import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext } from './lib/site-context.mjs';
+import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
+import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
 
 const DEFAULT_COMPILE_OPTIONS = {
   kbDir: undefined,
@@ -144,221 +151,35 @@ const REQUIRED_FILES = [
   KB_FILES.gapReportMd,
 ];
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
-function cleanText(value) {
-  return normalizeText(value)
-    .replace(/^[\s"'~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?，。！？、；：“”‘’【】（）《》]+/gu, '')
-    .replace(/[\s"'~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?，。！？、；：“”‘’【】（）《》]+$/gu, '')
-    .trim();
-}
-
-function slugifyAscii(value, fallback = 'item') {
-  const normalized = normalizeText(value)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-  return normalized || fallback;
-}
-
-function compactSlug(value, fallback = 'item', maxLength = 96) {
-  const slug = slugifyAscii(value, fallback);
-  return slug.length <= maxLength ? slug : slug.slice(0, maxLength).replace(/-+$/g, '') || fallback;
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
-}
-
-function normalizeUrlNoFragment(input) {
-  if (!input) {
-    return null;
-  }
-  try {
-    const parsed = new URL(input);
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return String(input).split('#')[0];
-  }
-}
-
 function formatTimestampForDir(date = new Date()) {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
 }
 
-function compareNullableStrings(left, right) {
-  return String(left ?? '').localeCompare(String(right ?? ''), 'en');
-}
-
-function toArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function uniqueSortedStrings(values) {
-  return [...new Set(
-    toArray(values)
-      .filter((value) => value !== undefined && value !== null)
-      .map((value) => String(value))
-      .filter(Boolean),
-  )].sort(compareNullableStrings);
-}
-
-function uniqueSortedPaths(values) {
-  return [...new Set(
-    toArray(values)
-      .filter(Boolean)
-      .map((value) => path.resolve(String(value))),
-  )].sort(compareNullableStrings);
-}
-
-function firstNonEmpty(values) {
-  for (const value of values) {
-    if (value === undefined || value === null) {
-      continue;
-    }
-    const normalized = normalizeWhitespace(value);
-    if (normalized) {
-      return normalized;
-    }
-  }
-  return null;
-}
-
-function buildWarning(code, message, details = {}) {
-  const normalizedDetails = typeof details === 'string' ? { path: details } : details;
-  return { severity: 'warning', code, message, ...normalizedDetails };
-}
-
-function buildError(code, message, details = {}) {
-  const normalizedDetails = typeof details === 'string' ? { path: details } : details;
-  return { severity: 'error', code, message, ...normalizedDetails };
-}
-
-function toPosixPath(value) {
-  return String(value ?? '').split(path.sep).join('/');
-}
-
-function relativePath(fromPath, targetPath) {
-  return toPosixPath(path.relative(path.dirname(fromPath), targetPath) || path.basename(targetPath));
-}
-
 function markdownLink(label, fromPathOrTargetPath, targetPath) {
-  if (targetPath === undefined) {
-    return `[${label}](${toPosixPath(fromPathOrTargetPath)})`;
-  }
-  return `[${label}](${relativePath(fromPathOrTargetPath, targetPath)})`;
-}
-
-function mdEscape(value) {
-  return String(value ?? '').replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+  return sharedMarkdownLink(label, fromPathOrTargetPath, targetPath);
 }
 
 function renderTable(headers, rows) {
   if (!rows.length) {
     return '_None_';
   }
-  const head = `| ${headers.join(' | ')} |`;
-  const divider = `| ${headers.map(() => '---').join(' | ')} |`;
-  const body = rows.map((row) => {
-    const cells = Array.isArray(row) ? row : Object.values(row ?? {});
-    return `| ${cells.map((cell) => mdEscape(cell)).join(' | ')} |`;
-  });
-  return [head, divider, ...body].join('\n');
-}
-
-function relativeToKb(kbDir, absolutePath) {
-  return toPosixPath(path.relative(kbDir, absolutePath));
-}
-
-function kbAbsolute(kbDir, relativeKbPath) {
-  return path.resolve(kbDir, relativeKbPath);
-}
-
-function resolveMaybeRelative(inputPath, baseDir) {
-  if (!inputPath) {
-    return null;
-  }
-  return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
-}
-
-async function pathExists(targetPath) {
-  if (!targetPath) {
-    return false;
-  }
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureDir(targetPath) {
-  await mkdir(targetPath, { recursive: true });
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
-async function writeJsonFile(filePath, value) {
-  await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  return sharedRenderTable(headers, rows);
 }
 
 async function writeJsonlFile(filePath, rows) {
-  await ensureDir(path.dirname(filePath));
-  const payload = rows.map((row) => JSON.stringify(row)).join('\n');
-  await writeFile(filePath, payload ? `${payload}\n` : '', 'utf8');
+  await writeJsonLines(filePath, rows);
 }
 
 async function writeMarkdownFile(filePath, value) {
-  await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, `${String(value).trimEnd()}\n`, 'utf8');
+  await writeTextFile(filePath, value);
 }
 
 async function appendJsonl(filePath, value) {
-  await ensureDir(path.dirname(filePath));
-  await appendFile(filePath, `${JSON.stringify(value)}\n`, 'utf8');
+  await appendJsonLine(filePath, value);
 }
 
 async function appendLogLine(filePath, value) {
-  await ensureDir(path.dirname(filePath));
-  await appendFile(filePath, `${value}\n`, 'utf8');
-}
-
-async function firstExistingPath(candidates) {
-  for (const candidate of candidates) {
-    if (!candidate?.value) {
-      continue;
-    }
-    const resolved = resolveMaybeRelative(candidate.value, candidate.baseDir);
-    if (await pathExists(resolved)) {
-      return resolved;
-    }
-  }
-  return null;
-}
-
-async function listDirectories(parentDir) {
-  if (!(await pathExists(parentDir))) {
-    return [];
-  }
-  const entries = await readdir(parentDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(parentDir, entry.name))
-    .sort(compareNullableStrings);
+  await appendTextFile(filePath, `${value}\n`);
 }
 
 async function candidateSortKey(dirPath, generatedAt) {
@@ -533,18 +354,23 @@ async function loadBookContentFromDir(dirPath) {
 }
 
 async function discoverBookContent(workspaceRoot, baseUrl) {
-  const parent = path.join(workspaceRoot, ROOT_DIRS.bookContent);
   const candidates = [];
-  for (const dirPath of await listDirectories(parent)) {
-    try {
-      const artifact = await loadBookContentFromDir(dirPath);
-      if (!sameHost(artifact.baseUrl, baseUrl)) {
-        continue;
+  const hostRoots = [...new Set([
+    path.join(workspaceRoot, ROOT_DIRS.bookContent, sanitizeHost(hostFromUrl(baseUrl) ?? '')),
+    path.join(workspaceRoot, ROOT_DIRS.bookContent),
+  ].filter(Boolean))];
+  for (const parent of hostRoots) {
+    for (const dirPath of await listDirectories(parent)) {
+      try {
+        const artifact = await loadBookContentFromDir(dirPath);
+        if (!sameHost(artifact.baseUrl, baseUrl)) {
+          continue;
+        }
+        artifact.sortKey = await candidateSortKey(dirPath, artifact.generatedAt);
+        candidates.push(artifact);
+      } catch {
+        // Ignore invalid book-content artifacts.
       }
-      artifact.sortKey = await candidateSortKey(dirPath, artifact.generatedAt);
-      candidates.push(artifact);
-    } catch {
-      // Ignore invalid book-content artifacts.
     }
   }
   candidates.sort((left, right) => right.sortKey - left.sortKey);
@@ -2804,11 +2630,13 @@ export async function compileKnowledgeBase(inputUrl, options = {}) {
   const rawResolver = createRawResolver(layout.kbDir, copiedSources);
   const sourcesDocument = buildSourceIndexDocument(artifacts.inputUrl, artifacts.baseUrl, generatedAt, copiedSources);
   const model = finalizeDataModel(buildDataModel(artifacts));
+  const siteContext = await readSiteContext(process.cwd(), artifacts.host);
   const context = {
     generatedAt,
     kbDir: layout.kbDir,
     artifacts,
     model,
+    siteContext,
     rawResolver,
   };
 
@@ -2828,6 +2656,39 @@ export async function compileKnowledgeBase(inputUrl, options = {}) {
     `Compile finished with ${pages.length} pages, ${lintReport.summary.errorCount} errors, ${lintReport.summary.warningCount} warnings.`,
     { sourceRunIds }
   );
+
+  const safeActionKinds = uniqueSortedStrings(
+    toArray(model.actions)
+      .map((action) => action?.actionId ?? action?.primitive)
+      .filter(Boolean)
+      .filter((actionId) => !toArray(model.approvalRules).some((rule) => toArray(rule?.appliesTo?.actionIds).includes(actionId))),
+  );
+  const approvalActionKinds = uniqueSortedStrings(
+    toArray(model.approvalRules).flatMap((rule) => toArray(rule?.appliesTo?.actionIds)),
+  );
+  const resolvedPrimaryArchetype = resolvePrimaryArchetypeFromSiteContext(siteContext, [model.siteProfile?.primaryArchetype]);
+  const resolvedPageTypes = resolvePageTypesFromSiteContext(siteContext, [model.siteProfile?.pageTypes ?? []]);
+  const resolvedCapabilityFamilies = resolveCapabilityFamiliesFromSiteContext(siteContext, [model.siteProfile?.capabilityFamilies ?? []]);
+  const resolvedSupportedIntents = resolveSupportedIntentsFromSiteContext(siteContext, [toArray(model.intents).map((intent) => intent.intentType ?? intent.intentId)]);
+  const resolvedSafeActionKinds = resolveSafeActionKindsFromSiteContext(siteContext, [safeActionKinds]);
+  await upsertSiteRegistryRecord(process.cwd(), artifacts.host, {
+    canonicalBaseUrl: artifacts.baseUrl,
+    siteArchetype: resolvedPrimaryArchetype,
+    profilePath: artifacts.analysis.siteProfilePath ?? null,
+    knowledgeBaseDir: layout.kbDir,
+    latestKnowledgeBaseCompileAt: generatedAt,
+    latestKnowledgeBaseSourcesPath: path.join(layout.kbDir, KB_FILES.sources),
+    latestLintSummary: lintReport.summary,
+  });
+  await upsertSiteCapabilities(process.cwd(), artifacts.host, {
+    baseUrl: artifacts.baseUrl,
+    primaryArchetype: resolvedPrimaryArchetype,
+    pageTypes: resolvedPageTypes,
+    capabilityFamilies: resolvedCapabilityFamilies,
+    supportedIntents: resolvedSupportedIntents,
+    safeActionKinds: resolvedSafeActionKinds,
+    approvalActionKinds,
+  });
 
   return {
     kbDir: layout.kbDir,
@@ -2908,6 +2769,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   const parsed = parseCliArgs(process.argv.slice(2));
   if (parsed.command === 'help') {
     printHelp();
@@ -2919,12 +2781,12 @@ async function runCli() {
       throw new Error('compile requires <url>.');
     }
     const result = await compileKnowledgeBase(parsed.inputUrl, parsed.options);
-    console.log(JSON.stringify({
+    writeJsonStdout({
       kbDir: result.kbDir,
       pages: result.pages,
       lintErrors: result.lintSummary.errorCount,
       lintWarnings: result.lintSummary.warningCount,
-    }, null, 2));
+    });
     return;
   }
 
@@ -2933,12 +2795,12 @@ async function runCli() {
       throw new Error('lint requires --kb-dir <dir>.');
     }
     const result = await lintKnowledgeBase(parsed.kbDir, parsed.options);
-    console.log(JSON.stringify({
+    writeJsonStdout({
       kbDir: parsed.kbDir,
       errors: result.lintReport.summary.errorCount,
       warnings: result.lintReport.summary.warningCount,
       passed: result.lintReport.summary.passed,
-    }, null, 2));
+    });
   }
 }
 

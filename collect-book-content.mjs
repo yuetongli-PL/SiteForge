@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +56,12 @@ function slugifyAscii(value, fallback = 'item') {
 
 function sanitizeHost(host) {
   return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
+}
+
+function hostBookContentRoot(rootDir, host) {
+  const resolved = path.resolve(rootDir);
+  const hostSlug = sanitizeHost(host);
+  return path.basename(resolved) === hostSlug ? resolved : path.join(resolved, hostSlug);
 }
 
 function formatTimestampForDir(date = new Date()) {
@@ -696,7 +703,8 @@ async function createOutputLayout(baseUrl, rootOutDir) {
       return 'unknown-host';
     }
   })();
-  const outDir = path.join(path.resolve(rootOutDir), `${formatTimestampForDir(new Date(generatedAt))}_${sanitizeHost(host)}_book-content`);
+  const hostRoot = hostBookContentRoot(rootOutDir, host);
+  const outDir = path.join(hostRoot, `${formatTimestampForDir(new Date(generatedAt))}_${sanitizeHost(host)}_book-content`);
   const booksDir = path.join(outDir, 'books');
   const downloadsDir = path.join(outDir, 'downloads');
   await mkdir(booksDir, { recursive: true });
@@ -902,6 +910,7 @@ function printHelp() {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   const parsed = parseCliArgs(process.argv.slice(2));
   if (parsed.command === 'help') {
     printHelp();

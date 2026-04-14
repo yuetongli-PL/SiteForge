@@ -5,6 +5,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const DEFAULT_OPTIONS = {
   abstractionManifestPath: undefined,
@@ -204,11 +205,183 @@ Object.assign(ELEMENT_KIND_LABELS, {
   },
 });
 
+Object.assign(ZH_STATUS_QUERY_EXAMPLES, {
+  'content-link-group': ['当前打开的是哪个作品', '现在在看哪个作品'],
+  'author-link-group': ['当前打开的是哪个女优页', '现在在哪个女优页'],
+});
+
+Object.assign(INTENT_LANGUAGE_LABELS, {
+  'search-work': {
+    canonical: '搜索作品',
+    aliases: ['搜索作品', '搜索影片', '搜索番号', '查找作品'],
+  },
+  'open-work': {
+    canonical: '打开作品',
+    aliases: ['打开作品', '查看作品', '打开影片', '查看影片', '打开番号'],
+  },
+  'open-actress': {
+    canonical: '打开女优页',
+    aliases: ['打开女优页', '查看女优', '进入女优页', '打开演员页'],
+  },
+});
+
+Object.assign(ELEMENT_KIND_LABELS, {
+  'content-link-group': {
+    canonical: '作品',
+    aliases: ['作品', '影片', '番号', '详情', '书籍', '小说'],
+  },
+  'author-link-group': {
+    canonical: '女优',
+    aliases: ['女优', '演员', '女优页', '作者', '作者页'],
+  },
+});
+
 ZH_OPEN_VERBS.push('下载', '导出');
 INTENT_LANGUAGE_LABELS['download-book'] = {
   canonical: '下载书籍',
   aliases: ['下载书籍', '下载小说', '导出小说', '保存整本', '保存全文'],
 };
+
+function getHostnameFromUrl(inputUrl) {
+  try {
+    const parsed = new URL(inputUrl);
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isMoodyzHost(inputUrl) {
+  const host = getHostnameFromUrl(inputUrl).replace(/^www\./i, '');
+  return host === 'moodyz.com';
+}
+
+const DEFAULT_SITE_SEMANTICS = {
+  siteKey: 'generic',
+  intentLabels: INTENT_LANGUAGE_LABELS,
+  elementLabels: ELEMENT_KIND_LABELS,
+  statusExamples: ZH_STATUS_QUERY_EXAMPLES,
+  searchQueryNouns: ['搜索', '查找', '搜'],
+  clarificationRules: [],
+};
+
+const MOODYZ_SITE_SEMANTICS = {
+  siteKey: 'moodyz',
+  intentLabels: {
+    ...INTENT_LANGUAGE_LABELS,
+    'search-work': {
+      canonical: '搜索作品',
+      aliases: ['搜索作品', '查找作品', '搜作品', '找作品', '搜索番号', '查找番号'],
+    },
+    'open-work': {
+      canonical: '打开作品',
+      aliases: ['打开作品', '查看作品', '进入作品', '打开影片', '查看影片', '打开番号'],
+    },
+    'open-actress': {
+      canonical: '打开女优页',
+      aliases: ['打开女优页', '查看女优', '进入女优页', '打开演员页', '查看女优页'],
+    },
+  },
+  elementLabels: {
+    ...ELEMENT_KIND_LABELS,
+    'content-link-group': {
+      canonical: '作品',
+      aliases: ['作品', '影片', '番号', '作品详情', '作品页'],
+    },
+    'author-link-group': {
+      canonical: '女优',
+      aliases: ['女优', '演员', '女优页', '女优详情', '演员页'],
+    },
+    'search-form-group': {
+      canonical: '搜索作品',
+      aliases: ['搜索作品', '查找作品', '搜作品', '找作品'],
+    },
+    'category-link-group': {
+      canonical: '作品列表',
+      aliases: ['作品列表', '按日期', '按分类', '列表', '搜索结果', '分类'],
+    },
+    'utility-link-group': {
+      canonical: '功能页',
+      aliases: ['首页', '功能页', '返回首页', '阅读记录'],
+    },
+  },
+  statusExamples: {
+    ...ZH_STATUS_QUERY_EXAMPLES,
+    'content-link-group': ['现在打开的是哪部作品', '当前在看哪部作品', '当前页是哪部作品详情'],
+    'author-link-group': ['现在打开的是哪个女优页', '当前在看哪个女优', '当前页是哪位女优详情'],
+    'search-form-group': ['当前搜索的是哪部作品', '现在的搜索词是什么', '现在检索的是哪部作品'],
+  },
+  searchQueryNouns: ['作品', '女优', '演员', '番号'],
+  clarificationRules: [
+    {
+      clarificationRuleId: `clar_${createSha256('moodyz-search-target-ambiguous').slice(0, 12)}`,
+      case: 'search-target-ambiguous',
+      when: {
+        match: 'moodyz-search-target-could-be-work-or-actress',
+      },
+      response: {
+        mode: 'ask',
+        questionTemplate: '这个名字既可能是作品，也可能是女优。你要继续按“作品”还是“女优”处理？',
+        candidateLimit: 5,
+        candidateSource: 'observed-values',
+      },
+      recovery: {
+        expectedSlot: 'queryText|targetMemberId',
+        resumeMode: 're-run-entry-rules',
+      },
+    },
+    {
+      clarificationRuleId: `clar_${createSha256('moodyz-search-results-disambiguation').slice(0, 12)}`,
+      case: 'search-result-disambiguation',
+      when: {
+        match: 'moodyz-search-result-needs-disambiguation',
+      },
+      response: {
+        mode: 'ask',
+        questionTemplate: '搜索结果里同时有作品和女优候选。你想优先筛作品还是女优？',
+        candidateLimit: 5,
+        candidateSource: 'observed-values',
+      },
+      recovery: {
+        expectedSlot: 'queryText',
+        resumeMode: 're-run-entry-rules',
+      },
+    },
+    {
+      clarificationRuleId: `clar_${createSha256('moodyz-work-actress-ambiguous').slice(0, 12)}`,
+      case: 'work-actress-ambiguous',
+      when: {
+        match: 'moodyz-target-matches-work-and-actress',
+      },
+      response: {
+        mode: 'ask',
+        questionTemplate: '这个词同时可能指向作品和女优，请明确你要打开哪一类。',
+        candidateLimit: 5,
+        candidateSource: 'observed-values',
+      },
+      recovery: {
+        expectedSlot: 'targetMemberId|queryText',
+        resumeMode: 're-run-entry-rules',
+      },
+    },
+  ],
+};
+
+function resolveSiteSemantics(baseUrl, siteProfileDocument = null) {
+  const profileHost = getHostnameFromUrl(siteProfileDocument?.baseUrl ?? siteProfileDocument?.inputUrl ?? '').replace(/^www\./i, '');
+  if (isMoodyzHost(baseUrl) || profileHost === 'moodyz.com') {
+    return MOODYZ_SITE_SEMANTICS;
+  }
+  return DEFAULT_SITE_SEMANTICS;
+}
+
+function siteAwareIntentLabel(intentType, semantics = DEFAULT_SITE_SEMANTICS) {
+  return semantics.intentLabels?.[intentType] ?? INTENT_LANGUAGE_LABELS[intentType] ?? null;
+}
+
+function siteAwareElementLabel(elementKind, semantics = DEFAULT_SITE_SEMANTICS) {
+  return semantics.elementLabels?.[elementKind] ?? ELEMENT_KIND_LABELS[elementKind] ?? null;
+}
 
 /**
  * @typedef {{
@@ -513,6 +686,8 @@ async function loadAnalysisArtifacts(analysisDirInput, baseDir, warnings) {
       analysisDir: null,
       analysisManifestPath: null,
       analysisManifest: null,
+      siteProfilePath: null,
+      siteProfileDocument: null,
       elementsDocument: { elements: [] },
       statesDocument: { states: [] },
     };
@@ -525,6 +700,8 @@ async function loadAnalysisArtifacts(analysisDirInput, baseDir, warnings) {
       analysisDir: null,
       analysisManifestPath: null,
       analysisManifest: null,
+      siteProfilePath: null,
+      siteProfileDocument: null,
       elementsDocument: { elements: [] },
       statesDocument: { states: [] },
     };
@@ -541,6 +718,10 @@ async function loadAnalysisArtifacts(analysisDirInput, baseDir, warnings) {
     { value: analysisManifest?.files?.states, baseDir },
     { value: path.join(analysisDir, STATES_FILE_NAME), baseDir: analysisDir },
   ]);
+  const siteProfilePath = await firstExistingPath([
+    { value: analysisManifest?.files?.siteProfile, baseDir },
+    { value: path.join(analysisDir, 'site-profile.json'), baseDir: analysisDir },
+  ]);
 
   if (!elementsPath) {
     warnings.push(buildWarning('analysis_elements_missing', `Missing ${ELEMENTS_FILE_NAME} in ${analysisDir}`));
@@ -553,6 +734,8 @@ async function loadAnalysisArtifacts(analysisDirInput, baseDir, warnings) {
     analysisDir,
     analysisManifestPath: (await pathExists(analysisManifestPath)) ? analysisManifestPath : null,
     analysisManifest,
+    siteProfilePath: siteProfilePath ?? null,
+    siteProfileDocument: siteProfilePath ? await readJsonFile(siteProfilePath) : null,
     elementsDocument: elementsPath ? await readJsonFile(elementsPath) : { elements: [] },
     statesDocument: statesPath ? await readJsonFile(statesPath) : { states: [] },
   };
@@ -611,6 +794,8 @@ async function loadAbstractionArtifacts(inputUrl, options) {
     analysisDir: analysisArtifacts.analysisDir,
     analysisManifestPath: analysisArtifacts.analysisManifestPath,
     analysisManifest: analysisArtifacts.analysisManifest,
+    siteProfilePath: analysisArtifacts.siteProfilePath,
+    siteProfileDocument: analysisArtifacts.siteProfileDocument,
     elementsDocument: analysisArtifacts.elementsDocument,
     statesDocument: analysisArtifacts.statesDocument,
     examplesPath: examplesArtifacts.examplesPath,
@@ -673,14 +858,15 @@ function buildIndices(artifacts) {
   };
 }
 
-function resolveIntentLabel(intent, element) {
-  const localized = INTENT_LANGUAGE_LABELS[intent.intentType];
+function resolveIntentLabel(intent, element, semantics = DEFAULT_SITE_SEMANTICS) {
+  const localized = siteAwareIntentLabel(intent.intentType, semantics);
   return firstNonEmpty([localized?.canonical, intent.intentName, element?.elementName, intent.intentId]) || intent.intentId;
 }
 
-function resolveElementCanonical(intent, element) {
+function resolveElementCanonical(intent, element, semantics = DEFAULT_SITE_SEMANTICS) {
+  const localized = siteAwareElementLabel(intent.elementKind, semantics);
   return firstNonEmpty([
-    ELEMENT_KIND_LABELS[intent.elementKind]?.canonical,
+    localized?.canonical,
     element?.elementName,
     intent.sourceElementName,
     intent.elementKind,
@@ -705,7 +891,7 @@ function collectStateDerivedLabels(intent, indices) {
   return [...labels];
 }
 
-function buildIntentContexts(artifacts, indices) {
+function buildIntentContexts(artifacts, indices, semantics = DEFAULT_SITE_SEMANTICS) {
   const contexts = [];
 
   for (const intent of toArray(artifacts.intentsDocument?.intents)) {
@@ -853,10 +1039,10 @@ function buildIntentContexts(artifacts, indices) {
           ? 'query-string'
           : 'boolean',
       action: indices.actionsById.get(intent.actionId) ?? null,
-      localizedIntentName: resolveIntentLabel(intent, element),
-      localizedElementName: resolveElementCanonical(intent, element),
+      localizedIntentName: resolveIntentLabel(intent, element, semantics),
+      localizedElementName: resolveElementCanonical(intent, element, semantics),
       localizedElementAliases: [...new Set([
-        ...toArray(ELEMENT_KIND_LABELS[intent.elementKind]?.aliases),
+        ...toArray(siteAwareElementLabel(intent.elementKind, semantics)?.aliases),
         cleanDisplayText(intent.sourceElementName),
         cleanDisplayText(element?.elementName),
       ].filter(Boolean))],
@@ -1018,7 +1204,7 @@ function derivePageLexiconTokens(baseUrl, statesDocument) {
   return [...aliases].sort(compareNullableStrings);
 }
 
-function buildLexicon(artifacts, contexts, exampleContext) {
+function buildLexicon(artifacts, contexts, exampleContext, semantics = DEFAULT_SITE_SEMANTICS) {
   const builder = createLexiconBuilder();
   const lexiconRefs = {
     verbs: new Map(),
@@ -1044,7 +1230,7 @@ function buildLexicon(artifacts, contexts, exampleContext) {
   for (const context of contexts) {
     const intent = context.intent;
     const intentEntry = builder.addEntry('intent', context.localizedIntentName, intent.intentId, 'zh');
-    for (const alias of toArray(INTENT_LANGUAGE_LABELS[intent.intentType]?.aliases)) {
+    for (const alias of toArray(siteAwareIntentLabel(intent.intentType, semantics)?.aliases)) {
       builder.addAlias(intentEntry, alias, 'generated', 4);
     }
     builder.addAlias(intentEntry, context.localizedIntentName, 'generated', 5);
@@ -1063,7 +1249,7 @@ function buildLexicon(artifacts, contexts, exampleContext) {
     }
 
     const elementEntry = builder.addEntry('element', context.localizedElementName, intent.elementId, 'zh');
-    for (const alias of toArray(ELEMENT_KIND_LABELS[intent.elementKind]?.aliases)) {
+    for (const alias of toArray(siteAwareElementLabel(intent.elementKind, semantics)?.aliases)) {
       builder.addAlias(elementEntry, alias, 'generated', 4);
     }
     for (const alias of context.localizedElementAliases) {
@@ -1802,6 +1988,221 @@ function buildClarificationRulesDocument(artifacts, generatedAt) {
   };
 }
 
+function buildGeneratedPatternExamplesV3(context, patternType, semantics = DEFAULT_SITE_SEMANTICS) {
+  const firstActionable = context.valueRecords.filter((valueRecord) => valueRecord.actionable).slice(0, 3);
+  const fallbackValues = (firstActionable.length > 0 ? firstActionable : context.valueRecords).slice(0, 3);
+
+  if (patternType === 'status-query') {
+    return semantics.statusExamples?.[context.intent.elementKind] ?? ZH_STATUS_QUERY_EXAMPLES[context.intent.elementKind] ?? ['当前状态是什么'];
+  }
+
+  if (context.slotName === 'desiredValue') {
+    return fallbackValues.map((valueRecord) => {
+      const label = BOOLEAN_ALIASES[context.intent.intentType]?.[valueRecord.value]?.canonical ?? String(valueRecord.value);
+      if (patternType !== 'explicit-intent') {
+        return label;
+      }
+      return `${label}${context.localizedElementAliases[0] ?? context.localizedElementName}`;
+    });
+  }
+
+  if (context.slotName === 'queryText') {
+    return fallbackValues.map((valueRecord) => {
+      const label = valueRecord.label ?? String(valueRecord.value);
+      if (semantics.siteKey === 'moodyz') {
+        if (context.intent.intentType === 'search-work') {
+          return patternType === 'explicit-intent' ? `搜索作品${label}` : label;
+        }
+        return patternType === 'explicit-intent' ? `搜索${label}` : label;
+      }
+      return patternType === 'explicit-intent' ? `搜索${label}` : label;
+    });
+  }
+
+  return fallbackValues.map((valueRecord) => {
+    const label = valueRecord.label ?? String(valueRecord.value);
+    if (semantics.siteKey === 'moodyz') {
+      if (context.intent.intentType === 'open-actress') {
+        return patternType === 'explicit-intent' ? `打开女优页${label}` : label;
+      }
+      if (context.intent.intentType === 'open-work') {
+        return patternType === 'explicit-intent' ? `打开作品${label}` : label;
+      }
+      if (context.intent.intentType === 'search-work') {
+        return patternType === 'explicit-intent' ? `搜索作品${label}` : label;
+      }
+    }
+    return patternType === 'explicit-intent' ? `打开${label}` : label;
+  });
+}
+
+function buildUtterancePatternsV3(artifacts, contexts, exampleContext, generatedAt, semantics = DEFAULT_SITE_SEMANTICS) {
+  const patterns = [];
+  const patternRefs = new Map();
+
+  for (const context of contexts) {
+    if (context.evidenceEdgeIds.length === 0 && context.valueRecords.every((valueRecord) => valueRecord.actRuleIds.length === 0)) {
+      continue;
+    }
+
+    const elementTerms = elementRegexTerms(context);
+    const nounTerms = semantics.siteKey === 'moodyz'
+      ? `(?:${(semantics.searchQueryNouns ?? ['作品', '女优', '演员', '番号']).map(escapeRegex).join('|')})`
+      : '';
+    const searchVerbTerms = semantics.siteKey === 'moodyz'
+      ? [...ZH_SEARCH_VERBS, '搜索作品', '搜索女优', '查找作品', '查找女优', '搜作品', '搜女优']
+      : ZH_SEARCH_VERBS;
+    const openVerbTerms = semantics.siteKey === 'moodyz'
+      ? [...ZH_OPEN_VERBS, '打开作品', '查看作品', '打开女优页', '查看女优', '进入作品', '进入女优页']
+      : [...ZH_OPEN_VERBS, ...ZH_SWITCH_VERBS];
+    const explicitZhRegex = context.slotName === 'queryText'
+      ? `^(?:请\\s*)?(?<verb>${searchVerbTerms.map(escapeRegex).join('|')})\\s*(?:${nounTerms}\\s*)?(?<targetText>.+?)$`
+      : context.slotName === 'targetMemberId'
+        ? `^(?:请\\s*)?(?<verb>${openVerbTerms.map(escapeRegex).join('|')})(?:\\s*(?:到|去|打开)?\\s*(?:${elementTerms}\\s*)?(?<targetText>.+?)\\s*(?:${elementTerms})?)$`
+        : `^(?:请\\s*)?(?:(?<verb>${[...ZH_OPEN_VERBS, ...ZH_SWITCH_VERBS, '设置', '切换', '变为', '设为', '调整为'].map(escapeRegex).join('|')})\\s*)?(?<stateWord>${booleanRegexTerms(context.intent.intentType)})\\s*(?:${elementTerms})?$`;
+    const implicitRegex = context.slotName === 'targetMemberId'
+      ? `^(?<targetText>.+?)(?:\\s*(?:${elementTerms}))?$`
+      : context.slotName === 'queryText'
+        ? `^(?:${nounTerms})?\\s*(?<targetText>.+?)$`
+        : `^(?<stateWord>${booleanRegexTerms(context.intent.intentType)})$`;
+    const statusRegex = context.intent.elementKind === 'tab-group'
+      ? '^(?:现在|当前)?(?:是|在)?(?:哪个(?:标签|栏目|分类)|当前(?:是|在)?哪个(?:标签|栏目|分类)?)$'
+      : `^(?:当前|现在).*(?:状态|是否|打开|关闭|展开|收起)|^(?:${elementTerms}).*(?:状态|是否)$`;
+
+    const patternDescriptors = [
+      {
+        patternType: 'explicit-intent',
+        lang: 'zh',
+        regex: explicitZhRegex,
+        captures: context.slotName === 'targetMemberId' || context.slotName === 'queryText'
+          ? [
+            { name: 'verb', slotName: null },
+            { name: 'targetText', slotName: context.slotName },
+          ]
+          : [
+            { name: 'verb', slotName: null },
+            { name: 'stateWord', slotName: context.slotName },
+          ],
+        priority: 10,
+      },
+      {
+        patternType: 'implicit-target',
+        lang: 'zh',
+        regex: implicitRegex,
+        captures: [
+          {
+            name: context.slotName === 'targetMemberId' || context.slotName === 'queryText' ? 'targetText' : 'stateWord',
+            slotName: context.slotName,
+          },
+        ],
+        priority: 20,
+      },
+      {
+        patternType: 'status-query',
+        lang: 'zh',
+        regex: statusRegex,
+        captures: [],
+        priority: 30,
+      },
+    ];
+
+    const exampleTexts = exampleContext.byIntent.get(context.intent.intentId) ?? [];
+    for (const descriptor of patternDescriptors) {
+      const patternId = `pat_${createSha256([
+        context.intent.intentId,
+        descriptor.patternType,
+        descriptor.lang,
+        descriptor.regex,
+      ].join('::')).slice(0, 12)}`;
+
+      const examples = [
+        ...buildGeneratedPatternExamplesV3(context, descriptor.patternType, semantics),
+        ...exampleTexts.map((item) => item.text),
+      ]
+        .map((text) => cleanDisplayText(text))
+        .filter(Boolean)
+        .filter((value, index, array) => array.indexOf(value) === index)
+        .slice(0, 8);
+
+      patterns.push({
+        patternId,
+        intentId: context.intent.intentId,
+        patternType: descriptor.patternType,
+        lang: descriptor.lang,
+        regex: descriptor.regex,
+        captures: descriptor.captures,
+        examples,
+        priority: descriptor.priority,
+      });
+      patternRefs.set(`${context.intent.intentId}::${descriptor.patternType}`, patternId);
+    }
+  }
+
+  return {
+    document: {
+      inputUrl: artifacts.inputUrl,
+      baseUrl: artifacts.baseUrl,
+      generatedAt,
+      patterns: patterns.sort((left, right) => {
+        return compareNullableStrings(left.intentId, right.intentId)
+          || left.priority - right.priority
+          || compareNullableStrings(left.patternId, right.patternId);
+      }),
+    },
+    refs: patternRefs,
+  };
+}
+
+function buildClarificationRulesDocumentV2(artifacts, generatedAt, semantics = DEFAULT_SITE_SEMANTICS) {
+  const baseDocument = buildClarificationRulesDocument(artifacts, generatedAt);
+  const seen = new Set();
+  const rules = baseDocument.rules.map((rule) => {
+    const cloned = {
+      ...rule,
+      response: {
+        ...rule.response,
+      },
+      recovery: {
+        ...rule.recovery,
+      },
+    };
+
+    if (semantics.siteKey === 'moodyz') {
+      if (cloned.case === 'missing-slot') {
+        cloned.response.questionTemplate = '你要找哪部作品或哪个女优？我可以列出当前有动作证据的候选项。';
+      } else if (cloned.case === 'ambiguous-target') {
+        cloned.response.questionTemplate = '这个说法可能对应多部作品或多个女优，请给我更具体的作品名或女优名。';
+      } else if (cloned.case === 'unsupported-target') {
+        cloned.response.questionTemplate = '这个作品或女优可以识别，但当前没有可执行的动作证据。要不要换一个已观察到可打开的目标？';
+      } else if (cloned.case === 'book-ambiguous') {
+        cloned.response.questionTemplate = '这个名字既可能是作品，也可能是女优，请明确你要打开哪一类。';
+      } else if (cloned.case === 'search-no-results') {
+        cloned.response.questionTemplate = '站内没有命中该作品结果，可以换一个更具体的作品名，或者改为女优名继续搜索。';
+      } else if (cloned.case === 'chapter-not-found') {
+        cloned.response.questionTemplate = '没有匹配到目标章节，请提供更完整的章节标题或章节序号。';
+      }
+    }
+
+    seen.add(cloned.clarificationRuleId);
+    return cloned;
+  });
+
+  const extraRules = [];
+  for (const rule of toArray(semantics.clarificationRules)) {
+    if (!seen.has(rule.clarificationRuleId)) {
+      extraRules.push(rule);
+      seen.add(rule.clarificationRuleId);
+    }
+  }
+
+  return {
+    inputUrl: baseDocument.inputUrl,
+    baseUrl: baseDocument.baseUrl,
+    generatedAt: baseDocument.generatedAt,
+    rules: [...rules, ...extraRules],
+  };
+}
+
 function buildNlEntryManifest({
   artifacts,
   layout,
@@ -1850,20 +2251,21 @@ export async function buildNlEntry(inputUrl, options = {}) {
   const settings = mergeOptions(options);
   const artifacts = await loadAbstractionArtifacts(inputUrl, settings);
   const warnings = [...artifacts.warnings];
+  const semantics = resolveSiteSemantics(artifacts.baseUrl ?? inputUrl, artifacts.siteProfileDocument);
   const indices = buildIndices(artifacts);
-  const contexts = buildIntentContexts(artifacts, indices);
+  const contexts = buildIntentContexts(artifacts, indices, semantics);
   const exampleContext = mapExamplesToContexts(contexts, artifacts.examples, warnings);
   const layout = createOutputLayout(artifacts.baseUrl ?? inputUrl, settings.outDir);
 
   await mkdir(layout.outDir, { recursive: true });
 
-  const lexicon = buildLexicon(artifacts, contexts, exampleContext);
+  const lexicon = buildLexicon(artifacts, contexts, exampleContext, semantics);
   lexicon.document.generatedAt = layout.generatedAt;
 
   const slotSchemaDocument = buildSlotSchemaDocument(artifacts, contexts, lexicon.refs.values, layout.generatedAt);
-  const utterancePatterns = buildUtterancePatternsV2(artifacts, contexts, exampleContext, layout.generatedAt);
+  const utterancePatterns = buildUtterancePatternsV3(artifacts, contexts, exampleContext, layout.generatedAt, semantics);
   const entryRulesDocument = buildEntryRules(artifacts, contexts, lexicon.refs, utterancePatterns.refs, warnings, layout.generatedAt);
-  const clarificationRulesDocument = buildClarificationRulesDocument(artifacts, layout.generatedAt);
+  const clarificationRulesDocument = buildClarificationRulesDocumentV2(artifacts, layout.generatedAt, semantics);
 
   const nlEntryManifest = buildNlEntryManifest({
     artifacts,
@@ -1970,6 +2372,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

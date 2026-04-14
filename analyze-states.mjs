@@ -3,7 +3,9 @@ import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OPTIONS = {
   statesManifestPath: undefined,
   expandedStatesDir: undefined,
@@ -37,6 +39,7 @@ const NAVIGATION_ELEMENT_KINDS = new Set([
   'form-submit-group',
   'search-form-group',
 ]);
+let ACTIVE_SITE_PROFILE = null;
 
 function createSha256(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex');
@@ -216,7 +219,86 @@ function normalizeUrlNoFragment(input) {
   }
 }
 
-function inferPageTypeFromUrl(input) {
+function normalizePathname(input) {
+  const normalized = normalizeUrlNoFragment(input);
+  if (!normalized) {
+    return '/';
+  }
+  try {
+    const parsed = new URL(normalized);
+    return parsed.pathname || '/';
+  } catch {
+    return String(normalized || '/');
+  }
+}
+
+function matchesExactPath(pathname, values = []) {
+  const normalizedPath = String(pathname || '/').toLowerCase();
+  return values.some((value) => String(value || '').toLowerCase() === normalizedPath);
+}
+
+function matchesPathPrefix(pathname, values = []) {
+  const normalizedPath = String(pathname || '/').toLowerCase();
+  return values.some((value) => {
+    const normalizedValue = String(value || '').toLowerCase();
+    return normalizedValue && (normalizedPath === normalizedValue || normalizedPath.startsWith(normalizedValue));
+  });
+}
+
+function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
+  const pageTypes = siteProfile?.pageTypes ?? null;
+  if (!pageTypes) {
+    return null;
+  }
+  if (matchesExactPath(pathname, pageTypes.homeExact) || matchesPathPrefix(pathname, pageTypes.homePrefixes)) {
+    return 'home';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.searchResultsPrefixes)) {
+    return 'search-results-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.contentDetailPrefixes)) {
+    return 'book-detail-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.authorPrefixes)) {
+    return 'author-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.chapterPrefixes)) {
+    return 'chapter-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.historyPrefixes)) {
+    return 'history-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.authPrefixes)) {
+    return 'auth-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.categoryPrefixes)) {
+    return 'category-page';
+  }
+  return null;
+}
+
+async function loadSiteProfile(baseUrl) {
+  try {
+    const parsed = new URL(baseUrl);
+    const hostnames = [parsed.hostname];
+    if (parsed.hostname.startsWith('www.')) {
+      hostnames.push(parsed.hostname.slice(4));
+    } else {
+      hostnames.push(`www.${parsed.hostname}`);
+    }
+    for (const hostname of hostnames) {
+      const profilePath = path.join(MODULE_DIR, 'profiles', `${hostname}.json`);
+      if (await pathExists(profilePath)) {
+        return await readJsonFile(profilePath);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function inferPageTypeFromUrl(input, siteProfile = ACTIVE_SITE_PROFILE) {
   const normalized = normalizeUrlNoFragment(input);
   if (!normalized) {
     return 'unknown-page';
@@ -225,6 +307,10 @@ function inferPageTypeFromUrl(input) {
   try {
     const parsed = new URL(normalized);
     const pathname = parsed.pathname || '/';
+    const profileType = inferProfilePageTypeFromPathname(pathname, siteProfile);
+    if (profileType) {
+      return profileType;
+    }
     if (pathname === '/' || pathname === '') {
       return 'home';
     }
@@ -2528,6 +2614,7 @@ export async function analyzeStates(inputUrl, options = {}) {
   }
 
   const baseUrl = topManifest.baseUrl ?? topManifest.inputUrl ?? inputUrl;
+  ACTIVE_SITE_PROFILE = await loadSiteProfile(baseUrl);
   const layout = await createOutputLayout(baseUrl, settings.outDir);
   const sourceStates = await normalizeSourceStates(topManifest, manifestPath, expandedStatesDir, warnings);
   const { analyzed, analyzedStateIds, skippedStateIds } = await buildConcreteStateObservations(sourceStates, warnings);
@@ -2673,6 +2760,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

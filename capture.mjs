@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const DEFAULT_BROWSER_PATHS = {
   win32: [
@@ -357,9 +358,6 @@ async function launchBrowser(browserPath, { headless, timeoutMs }) {
   const args = [
     `--user-data-dir=${userDataDir}`,
     '--remote-debugging-port=0',
-    '--proxy-server=direct://',
-    '--proxy-bypass-list=*',
-    '--no-proxy-server',
     '--no-first-run',
     '--no-default-browser-check',
     '--hide-scrollbars',
@@ -943,6 +941,7 @@ Options:
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

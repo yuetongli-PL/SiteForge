@@ -1,9 +1,16 @@
 // @ts-check
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
+import { pathExists, readJsonFile, writeJsonFile, writeTextFile } from './lib/io.mjs';
+import { normalizeText, normalizeUrlNoFragment, sanitizeHost } from './lib/normalize.mjs';
+import { validateProfileFile } from './lib/profile-validation.mjs';
+import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext } from './lib/site-context.mjs';
+import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
+import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_VERSION = 3;
@@ -14,56 +21,8 @@ const DEFAULT_OPTIONS = {
 };
 const HELP = 'Usage:\n  node generate-crawler-script.mjs <url> [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--profile-path <path>]';
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
-function normalizeUrlNoFragment(value) {
-  if (!value) {
-    return null;
-  }
-  try {
-    const parsed = new URL(String(value));
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return String(value).split('#')[0];
-  }
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
-}
-
 function sha(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex');
-}
-
-async function exists(targetPath) {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readJson(targetPath) {
-  return JSON.parse(await readFile(targetPath, 'utf8'));
-}
-
-async function writeJson(targetPath, payload) {
-  await mkdir(path.dirname(targetPath), { recursive: true });
-  await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-}
-
-async function writeText(targetPath, payload) {
-  await mkdir(path.dirname(targetPath), { recursive: true });
-  await writeFile(targetPath, payload, 'utf8');
 }
 
 function mergeOptions(inputUrl, options = {}) {
@@ -82,20 +41,20 @@ function mergeOptions(inputUrl, options = {}) {
 }
 
 async function loadProfile(profilePath) {
-  if (!await exists(profilePath)) {
+  if (!await pathExists(profilePath)) {
     throw new Error(`Missing site profile: ${profilePath}`);
   }
-  const raw = await readFile(profilePath, 'utf8');
+  const validation = await validateProfileFile(profilePath);
   return {
-    raw,
-    json: JSON.parse(raw),
-    hash: sha(raw),
+    raw: validation.raw,
+    json: validation.profile,
+    hash: sha(validation.raw),
   };
 }
 
 async function loadHistoricalContext(knowledgeBaseDir) {
   const root = path.join(knowledgeBaseDir, 'raw', 'step-book-content');
-  if (!await exists(root)) {
+  if (!await pathExists(root)) {
     return null;
   }
   const entries = await readdir(root, { withFileTypes: true });
@@ -105,10 +64,10 @@ async function loadHistoricalContext(knowledgeBaseDir) {
     .sort((left, right) => path.basename(right).localeCompare(path.basename(left), 'en'));
   for (const runDir of runDirs) {
     const booksPath = path.join(runDir, 'books.json');
-    if (!await exists(booksPath)) {
+    if (!await pathExists(booksPath)) {
       continue;
     }
-    const books = await readJson(booksPath);
+    const books = await readJsonFile(booksPath);
     return {
       dir: runDir,
       books,
@@ -144,27 +103,34 @@ function renderPythonScript(context) {
 }
 
 async function updateRegistry(registryPath, host, patch) {
-  const registry = await exists(registryPath)
-    ? await readJson(registryPath)
+  const registry = await pathExists(registryPath)
+    ? await readJsonFile(registryPath)
     : { generatedAt: new Date().toISOString(), hosts: {} };
   registry.generatedAt = new Date().toISOString();
   registry.hosts = registry.hosts ?? {};
   registry.hosts[host] = { ...(registry.hosts[host] ?? {}), ...patch };
-  await writeJson(registryPath, registry);
+  await writeJsonFile(registryPath, registry);
 }
 
 export async function ensureCrawlerScript(inputUrl, options = {}) {
   const settings = mergeOptions(inputUrl, options);
   const profile = await loadProfile(settings.profilePath);
   const historical = await loadHistoricalContext(settings.knowledgeBaseDir);
+  const siteContext = await readSiteContext(process.cwd(), settings.host);
   const hostDir = path.join(settings.crawlerScriptsDir, sanitizeHost(settings.host));
   const scriptPath = path.join(hostDir, 'crawler.py');
   const metaPath = path.join(hostDir, 'crawler.meta.json');
   const registryPath = path.join(settings.crawlerScriptsDir, 'registry.json');
+  const resolvedPrimaryArchetype = resolvePrimaryArchetypeFromSiteContext(siteContext, [
+    profile.json?.primaryArchetype,
+  ]);
 
-  if (await exists(scriptPath) && await exists(metaPath)) {
-    const meta = await readJson(metaPath);
+  if (await pathExists(scriptPath) && await pathExists(metaPath)) {
+    const meta = await readJsonFile(metaPath);
     if (meta.profileHash === profile.hash && Number(meta.templateVersion) === TEMPLATE_VERSION) {
+      const resolvedCapabilities = resolveCapabilityFamiliesFromSiteContext(siteContext, [
+        meta.capabilities ?? [],
+      ]);
       await updateRegistry(registryPath, settings.host, {
         host: settings.host,
         scriptPath,
@@ -175,7 +141,26 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
         scriptLanguage: 'python',
         interpreterRequired: 'pypy3',
         templateVersion: TEMPLATE_VERSION,
-        capabilities: meta.capabilities ?? [],
+        capabilities: resolvedCapabilities,
+      });
+      await upsertSiteRegistryRecord(process.cwd(), settings.host, {
+        canonicalBaseUrl: settings.baseUrl,
+        siteArchetype: resolvedPrimaryArchetype,
+        profilePath: settings.profilePath,
+        profileVersion: profile.json?.version ?? 1,
+        profileHash: profile.hash,
+        crawlerScriptPath: scriptPath,
+        crawlerMetaPath: metaPath,
+        scriptLanguage: 'python',
+        interpreterRequired: 'pypy3',
+        templateVersion: TEMPLATE_VERSION,
+        crawlerStatus: 'reused',
+      });
+      await upsertSiteCapabilities(process.cwd(), settings.host, {
+        baseUrl: settings.baseUrl,
+        primaryArchetype: resolvedPrimaryArchetype,
+        pageTypes: resolvePageTypesFromSiteContext(siteContext, [profile.json?.pageTypes ?? []]),
+        capabilityFamilies: resolvedCapabilities,
       });
       return {
         host: settings.host,
@@ -195,6 +180,10 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     profilePath: settings.profilePath,
     profile: profile.json,
     profileHash: profile.hash,
+    siteContext: {
+      registryRecord: siteContext.registryRecord,
+      capabilitiesRecord: siteContext.capabilitiesRecord,
+    },
     historicalSamples: historical
       ? {
           sourceRunDir: historical.dir,
@@ -227,9 +216,12 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     urlFamily: [settings.baseUrl],
     historicalContext: generatedContext.historicalSamples,
   };
+  const resolvedCapabilities = resolveCapabilityFamiliesFromSiteContext(siteContext, [
+    meta.capabilities ?? [],
+  ]);
 
-  await writeText(scriptPath, renderPythonScript(generatedContext));
-  await writeJson(metaPath, meta);
+  await writeTextFile(scriptPath, renderPythonScript(generatedContext));
+  await writeJsonFile(metaPath, meta);
   await updateRegistry(registryPath, settings.host, {
     host: settings.host,
     scriptPath,
@@ -240,7 +232,26 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     scriptLanguage: 'python',
     interpreterRequired: 'pypy3',
     templateVersion: TEMPLATE_VERSION,
-    capabilities: meta.capabilities,
+    capabilities: resolvedCapabilities,
+  });
+  await upsertSiteRegistryRecord(process.cwd(), settings.host, {
+    canonicalBaseUrl: settings.baseUrl,
+    siteArchetype: resolvedPrimaryArchetype,
+    profilePath: settings.profilePath,
+    profileVersion: profile.json?.version ?? 1,
+    profileHash: profile.hash,
+    crawlerScriptPath: scriptPath,
+    crawlerMetaPath: metaPath,
+    scriptLanguage: 'python',
+    interpreterRequired: 'pypy3',
+    templateVersion: TEMPLATE_VERSION,
+    crawlerStatus: 'generated',
+  });
+  await upsertSiteCapabilities(process.cwd(), settings.host, {
+    baseUrl: settings.baseUrl,
+    primaryArchetype: resolvedPrimaryArchetype,
+    pageTypes: resolvePageTypesFromSiteContext(siteContext, [profile.json?.pageTypes ?? []]),
+    capabilityFamilies: resolvedCapabilities,
   });
 
   return {
@@ -294,13 +305,14 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   const parsed = parseCliArgs(process.argv.slice(2));
   if (parsed.help) {
     process.stdout.write(`${HELP}\n`);
     return;
   }
   const result = await ensureCrawlerScript(parsed.inputUrl, parsed.options);
-  console.log(JSON.stringify(result, null, 2));
+  writeJsonStdout(result);
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-14T06:31:30.304Z",
+  "sites": {
+    "www.22biqu.com": {
+      "canonicalBaseUrl": "https://www.22biqu.com/",
+      "profilePath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\profiles\\www.22biqu.com.json",
+      "profileVersion": 3,
+      "profileHash": "f49cf0d1e1353086244207f14c478f57a32d2eb304442b222cefa35014c36f7f",
+      "crawlerScriptPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.22biqu.com\\crawler.py",
+      "crawlerMetaPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.22biqu.com\\crawler.meta.json",
+      "scriptLanguage": "python",
+      "interpreterRequired": "pypy3",
+      "templateVersion": 3,
+      "crawlerStatus": "reused",
+      "host": "www.22biqu.com",
+      "capabilityFamilies": [],
+      "updatedAt": "2026-04-14T06:31:30.209Z",
+      "bookContentRoot": "C:\\Users\\lyt-p\\.openclaw\\workspace\\downloads\\22biqu\\www.22biqu.com",
+      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com",
+      "crawlerRegistryPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\registry.json",
+      "latestDownloadMode": "crawler-reused",
+      "latestDownloadFile": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T053719440Z_www.22biqu.com_book-content\\downloads\\没钱修什么仙_.txt",
+      "latestDownloadManifest": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T053719440Z_www.22biqu.com_book-content\\book-content-manifest.json",
+      "downloadEntrypoint": "download_book.py",
+      "crawlerScriptsDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts",
+      "siteArchetype": null
+    },
+    "moodyz.com": {
+      "canonicalBaseUrl": "https://moodyz.com/works/date",
+      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\moodyz-works",
+      "latestSkillGeneratedAt": "2026-04-14T06:31:30.302Z",
+      "profilePath": null,
+      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\moodyz.com",
+      "host": "moodyz.com",
+      "capabilityFamilies": [],
+      "updatedAt": "2026-04-14T06:31:30.304Z"
+    }
+  }
+}

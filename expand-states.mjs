@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const DEFAULT_BROWSER_PATHS = {
   win32: [
@@ -270,6 +271,10 @@ function normalizeStringArray(value) {
   )];
 }
 
+function mergeStringArrays(...values) {
+  return normalizeStringArray(values.flatMap((value) => normalizeStringArray(value)));
+}
+
 function normalizeBoolean(value, flagName) {
   if (typeof value === 'boolean') {
     return value;
@@ -294,7 +299,67 @@ function normalizeNumber(value, flagName) {
   return parsed;
 }
 
-function inferPageTypeFromUrl(input) {
+function normalizePathname(input) {
+  const normalized = normalizeUrlNoFragment(input);
+  if (!normalized) {
+    return '/';
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    return parsed.pathname || '/';
+  } catch {
+    return String(normalized || '/');
+  }
+}
+
+function matchesExactPath(pathname, values = []) {
+  const normalizedPath = String(pathname || '/').toLowerCase();
+  return values.some((value) => String(value || '').toLowerCase() === normalizedPath);
+}
+
+function matchesPathPrefix(pathname, values = []) {
+  const normalizedPath = String(pathname || '/').toLowerCase();
+  return values.some((value) => {
+    const normalizedValue = String(value || '').toLowerCase();
+    return normalizedValue && (normalizedPath === normalizedValue || normalizedPath.startsWith(normalizedValue));
+  });
+}
+
+function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
+  const pageTypes = siteProfile?.pageTypes ?? null;
+  if (!pageTypes) {
+    return null;
+  }
+
+  if (matchesExactPath(pathname, pageTypes.homeExact) || matchesPathPrefix(pathname, pageTypes.homePrefixes)) {
+    return 'home';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.searchResultsPrefixes)) {
+    return 'search-results-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.contentDetailPrefixes)) {
+    return 'book-detail-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.authorPrefixes)) {
+    return 'author-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.chapterPrefixes)) {
+    return 'chapter-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.historyPrefixes)) {
+    return 'history-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.authPrefixes)) {
+    return 'auth-page';
+  }
+  if (matchesPathPrefix(pathname, pageTypes.categoryPrefixes)) {
+    return 'category-page';
+  }
+  return null;
+}
+
+function inferPageTypeFromUrl(input, siteProfile = null) {
   const normalized = normalizeUrlNoFragment(input);
   if (!normalized) {
     return 'unknown-page';
@@ -303,6 +368,10 @@ function inferPageTypeFromUrl(input) {
   try {
     const parsed = new URL(normalized);
     const pathname = parsed.pathname || '/';
+    const profileType = inferProfilePageTypeFromPathname(pathname, siteProfile);
+    if (profileType) {
+      return profileType;
+    }
     if (pathname === '/' || pathname === '') {
       return 'home';
     }
@@ -356,11 +425,19 @@ function isChapterPaginationUrl(currentUrl, nextUrl) {
 async function loadSiteProfile(baseUrl) {
   try {
     const parsed = new URL(baseUrl);
-    const profilePath = path.join(MODULE_DIR, 'profiles', `${parsed.hostname}.json`);
-    if (!(await fileExists(profilePath))) {
-      return null;
+    const hostnames = [parsed.hostname];
+    if (parsed.hostname.startsWith('www.')) {
+      hostnames.push(parsed.hostname.slice(4));
+    } else {
+      hostnames.push(`www.${parsed.hostname}`);
     }
-    return JSON.parse(await readFile(profilePath, 'utf8'));
+    for (const hostname of hostnames) {
+      const profilePath = path.join(MODULE_DIR, 'profiles', `${hostname}.json`);
+      if (await fileExists(profilePath)) {
+        return JSON.parse(await readFile(profilePath, 'utf8'));
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -504,9 +581,6 @@ async function launchBrowser(browserPath, { headless, timeoutMs }) {
   const args = [
     `--user-data-dir=${userDataDir}`,
     '--remote-debugging-port=0',
-    '--proxy-server=direct://',
-    '--proxy-bypass-list=*',
-    '--no-proxy-server',
     '--no-first-run',
     '--no-default-browser-check',
     '--hide-scrollbars',
@@ -1333,14 +1407,39 @@ function mergeOptions(options = {}) {
 
 function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = null) {
   const profileConfig = {
+    pageTypes: siteProfile?.pageTypes ?? {},
     searchFormSelectors: siteProfile?.search?.formSelectors ?? ['form[name="t_frmsearch"]', 'form[action*="/ss/"]', 'form[role="search"]'],
     searchInputSelectors: siteProfile?.search?.inputSelectors ?? ['#searchkey', 'input[name="searchkey"]', 'input[type="search"]'],
     searchSubmitSelectors: siteProfile?.search?.submitSelectors ?? ['#search_btn', 'button[type="submit"]', 'input[type="submit"]'],
+    searchQueryParamNames: Array.isArray(siteProfile?.search?.queryParamNames) ? siteProfile.search.queryParamNames : ['searchkey', 'keyword', 'q'],
     knownQueries: Array.isArray(siteProfile?.search?.knownQueries) ? siteProfile.search.knownQueries : [],
     chapterLinkSelectors: siteProfile?.bookDetail?.chapterLinkSelectors ?? ['#list a[href]', '.listmain a[href]', 'dd a[href]', '.book_last a[href]'],
     authorMetaNames: siteProfile?.bookDetail?.authorMetaNames ?? ['og:novel:author'],
     authorLinkMetaNames: siteProfile?.bookDetail?.authorLinkMetaNames ?? ['og:novel:author_link'],
     latestChapterMetaNames: siteProfile?.bookDetail?.latestChapterMetaNames ?? ['og:novel:lastest_chapter_url'],
+    detailTitleSelectors: Array.isArray(siteProfile?.contentDetail?.titleSelectors) ? siteProfile.contentDetail.titleSelectors : ['h1', '.book h1', '#bookinfo h1'],
+    detailAuthorNameSelectors: Array.isArray(siteProfile?.contentDetail?.authorNameSelectors) ? siteProfile.contentDetail.authorNameSelectors : ['a[href*="/author/"]', '.small span a'],
+    detailAuthorLinkSelectors: Array.isArray(siteProfile?.contentDetail?.authorLinkSelectors) ? siteProfile.contentDetail.authorLinkSelectors : ['a[href*="/author/"]'],
+    contentPathPrefixes: Array.isArray(siteProfile?.navigation?.contentPathPrefixes) ? siteProfile.navigation.contentPathPrefixes : [],
+    authorPathPrefixes: Array.isArray(siteProfile?.navigation?.authorPathPrefixes) ? siteProfile.navigation.authorPathPrefixes : [],
+    categoryPathPrefixes: Array.isArray(siteProfile?.navigation?.categoryPathPrefixes) ? siteProfile.navigation.categoryPathPrefixes : [],
+    utilityPathPrefixes: Array.isArray(siteProfile?.navigation?.utilityPathPrefixes) ? siteProfile.navigation.utilityPathPrefixes : [],
+    authPathPrefixes: Array.isArray(siteProfile?.navigation?.authPathPrefixes) ? siteProfile.navigation.authPathPrefixes : [],
+    categoryLabelKeywords: Array.isArray(siteProfile?.navigation?.categoryLabelKeywords) ? siteProfile.navigation.categoryLabelKeywords : [],
+    allowedHosts: Array.isArray(siteProfile?.navigation?.allowedHosts) ? siteProfile.navigation.allowedHosts : [],
+    defaultQueries: Array.isArray(siteProfile?.search?.defaultQueries) ? siteProfile.search.defaultQueries : [],
+    searchResultContentLimit: Number.isFinite(Number(siteProfile?.sampling?.searchResultContentLimit))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.searchResultContentLimit)))
+      : 1,
+    authorContentLimit: Number.isFinite(Number(siteProfile?.sampling?.authorContentLimit))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.authorContentLimit)))
+      : 4,
+    categoryContentLimit: Number.isFinite(Number(siteProfile?.sampling?.categoryContentLimit))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.categoryContentLimit)))
+      : 4,
+    fallbackContentLimitWithSearch: Number.isFinite(Number(siteProfile?.sampling?.fallbackContentLimitWithSearch))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.fallbackContentLimitWithSearch)))
+      : MAX_FALLBACK_BOOKS,
   };
   const PRIORITY = {
     'search-form': 0,
@@ -1398,8 +1497,92 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     }
   }
 
+  function textFromSelectors(selectors) {
+    for (const selector of selectors || []) {
+      try {
+        const node = document.querySelector(selector);
+        const text = normalizeText(node?.textContent || node?.innerText || '');
+        if (text) {
+          return text;
+        }
+      } catch {
+        // Ignore invalid selectors from site profile.
+      }
+    }
+    return null;
+  }
+
+  function hrefFromSelectors(selectors) {
+    for (const selector of selectors || []) {
+      try {
+        const node = document.querySelector(selector);
+        const href = node?.getAttribute?.('href');
+        if (href) {
+          return normalizeUrlLike(href);
+        }
+      } catch {
+        // Ignore invalid selectors from site profile.
+      }
+    }
+    return null;
+  }
+
+  function pathnameMatchesExact(pathname, values) {
+    const normalizedPath = String(pathname || '/').toLowerCase();
+    return (values || []).some((value) => String(value || '').toLowerCase() === normalizedPath);
+  }
+
+  function pathnameMatchesPrefix(pathname, values) {
+    const normalizedPath = String(pathname || '/').toLowerCase();
+    return (values || []).some((value) => {
+      const normalizedValue = String(value || '').toLowerCase();
+      return normalizedValue && (normalizedPath === normalizedValue || normalizedPath.startsWith(normalizedValue));
+    });
+  }
+
+  function currentPathname() {
+    try {
+      const parsed = new URL(location.href, document.baseURI);
+      return parsed.pathname || '/';
+    } catch {
+      return location.pathname || '/';
+    }
+  }
+
+  function inferProfilePageType(pathname) {
+    if (pathnameMatchesExact(pathname, profileConfig.pageTypes.homeExact) || pathnameMatchesPrefix(pathname, profileConfig.pageTypes.homePrefixes)) {
+      return 'home';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.searchResultsPrefixes)) {
+      return 'search-results-page';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.contentDetailPrefixes)) {
+      return 'book-detail-page';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.authorPrefixes)) {
+      return 'author-page';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.chapterPrefixes)) {
+      return 'chapter-page';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.historyPrefixes)) {
+      return 'history-page';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.authPrefixes)) {
+      return 'auth-page';
+    }
+    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.categoryPrefixes)) {
+      return 'category-page';
+    }
+    return null;
+  }
+
   function currentPageType() {
-    const pathname = location.pathname || '/';
+    const pathname = currentPathname();
+    const profilePageType = inferProfilePageType(pathname);
+    if (profilePageType) {
+      return profilePageType;
+    }
     if (pathname === '/' || pathname === '') {
       return 'home';
     }
@@ -1547,14 +1730,31 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
         href,
         normalizedHref: parsed.toString(),
         pathname: parsed.pathname || '/',
+        hostname: parsed.hostname || '',
       };
     } catch {
       return {
         href,
         normalizedHref: href,
         pathname: href,
+        hostname: '',
       };
     }
+  }
+
+  function isAllowedHost(hostname) {
+    const normalizedHost = String(hostname || '').toLowerCase();
+    if (!normalizedHost) {
+      return false;
+    }
+    const currentHost = String(location.hostname || '').toLowerCase();
+    if (normalizedHost === currentHost) {
+      return true;
+    }
+    if (normalizedHost === currentHost.replace(/^www\./, '') || `www.${normalizedHost}` === currentHost) {
+      return true;
+    }
+    return profileConfig.allowedHosts.some((value) => String(value || '').toLowerCase() === normalizedHost);
   }
 
   function isFormSubmit(element) {
@@ -1593,6 +1793,9 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   function isAuthCandidate(label, hrefInfo) {
     const lowerLabel = label.toLowerCase();
     const lowerHref = String(hrefInfo.pathname || hrefInfo.normalizedHref || '').toLowerCase();
+    if (pathnameMatchesPrefix(lowerHref, profileConfig.authPathPrefixes)) {
+      return true;
+    }
     return AUTH_WORDS.some((word) => lowerLabel.includes(word) || lowerHref.includes(word));
   }
 
@@ -1612,23 +1815,40 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     const lowerLabel = label.toLowerCase();
     const lowerHref = String(hrefInfo.pathname || hrefInfo.normalizedHref || '').toLowerCase();
 
-    if (lowerHref === '/' || lowerHref === '' || lowerLabel === '首页') {
+    if (
+      lowerHref === '/'
+      || lowerHref === ''
+      || lowerLabel === '首页'
+      || pathnameMatchesExact(lowerHref, profileConfig.pageTypes.homeExact)
+      || pathnameMatchesPrefix(lowerHref, profileConfig.pageTypes.homePrefixes)
+    ) {
       return 'home';
     }
     if (HISTORY_WORDS.some((word) => lowerLabel.includes(word) || lowerHref.includes(word))) {
       return 'history';
     }
-    if (lowerHref.includes('/author/')) {
+    if (pathnameMatchesPrefix(lowerHref, profileConfig.authorPathPrefixes) || lowerHref.includes('/author/')) {
       return 'author';
     }
-    if (lowerHref.includes('/fenlei/') || CATEGORY_WORDS.some((word) => lowerLabel.includes(word))) {
+    if (
+      pathnameMatchesPrefix(lowerHref, profileConfig.categoryPathPrefixes)
+      || lowerHref.includes('/fenlei/')
+      || CATEGORY_WORDS.some((word) => lowerLabel.includes(word))
+      || profileConfig.categoryLabelKeywords.some((word) => lowerLabel.includes(String(word).toLowerCase()))
+    ) {
       return 'category';
+    }
+    if (pathnameMatchesPrefix(lowerHref, profileConfig.utilityPathPrefixes)) {
+      return 'utility';
     }
     return 'utility';
   }
 
   function isContentCandidate(label, hrefInfo) {
     const lowerHref = String(hrefInfo.pathname || hrefInfo.normalizedHref || '').toLowerCase();
+    if (pathnameMatchesPrefix(lowerHref, profileConfig.contentPathPrefixes)) {
+      return true;
+    }
     if (/\/biqu\d+\/?$/i.test(lowerHref)) {
       return true;
     }
@@ -1941,6 +2161,9 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     if (!hrefInfo.normalizedHref) {
       continue;
     }
+    if (!isAllowedHost(hrefInfo.hostname)) {
+      continue;
+    }
     if (isAuthCandidate(label, hrefInfo)) {
       addCandidate(element, 'auth-link', null, { allowNavigation: true, semanticRole: 'auth' });
       continue;
@@ -1968,8 +2191,10 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   }
 
   if (pageType === 'book-detail-page') {
-    const authorName = metaContentByNames(profileConfig.authorMetaNames);
-    const authorHref = metaContentByNames(profileConfig.authorLinkMetaNames);
+    const authorName = metaContentByNames(profileConfig.authorMetaNames)
+      || textFromSelectors(profileConfig.detailAuthorNameSelectors);
+    const authorHref = metaContentByNames(profileConfig.authorLinkMetaNames)
+      || hrefFromSelectors(profileConfig.detailAuthorLinkSelectors);
     if (authorName && authorHref) {
       addSyntheticCandidate('safe-nav-link', authorName, authorHref, {
         semanticRole: 'author',
@@ -2572,6 +2797,38 @@ function pageComputeStateSignature(siteProfile = null) {
     try {
       const parsed = new URL(finalUrl, document.baseURI);
       const pathname = parsed.pathname || '/';
+      const profilePageTypes = siteProfile?.pageTypes ?? {};
+      const matchesProfilePrefix = (values) => Array.isArray(values) && values.some((value) => {
+        const normalizedValue = String(value || '').toLowerCase();
+        const normalizedPath = String(pathname || '/').toLowerCase();
+        return normalizedValue && (normalizedPath === normalizedValue || normalizedPath.startsWith(normalizedValue));
+      });
+      const matchesProfileExact = (values) => Array.isArray(values)
+        && values.some((value) => String(value || '').toLowerCase() === String(pathname || '/').toLowerCase());
+      if (matchesProfileExact(profilePageTypes.homeExact) || matchesProfilePrefix(profilePageTypes.homePrefixes)) {
+        return 'home';
+      }
+      if (matchesProfilePrefix(profilePageTypes.searchResultsPrefixes)) {
+        return 'search-results-page';
+      }
+      if (matchesProfilePrefix(profilePageTypes.contentDetailPrefixes)) {
+        return 'book-detail-page';
+      }
+      if (matchesProfilePrefix(profilePageTypes.authorPrefixes)) {
+        return 'author-page';
+      }
+      if (matchesProfilePrefix(profilePageTypes.chapterPrefixes)) {
+        return 'chapter-page';
+      }
+      if (matchesProfilePrefix(profilePageTypes.historyPrefixes)) {
+        return 'history-page';
+      }
+      if (matchesProfilePrefix(profilePageTypes.authPrefixes)) {
+        return 'auth-page';
+      }
+      if (matchesProfilePrefix(profilePageTypes.categoryPrefixes)) {
+        return 'category-page';
+      }
       if (pathname === '/' || pathname === '') {
         return 'home';
       }
@@ -2610,6 +2867,9 @@ function pageComputeStateSignature(siteProfile = null) {
       const profileResultBookSelectors = Array.isArray(siteProfile?.search?.resultBookSelectors)
         ? siteProfile.search.resultBookSelectors
         : ['.txt-list-row5 li .s2 a[href]', '.layout-co18 .txt-list a[href]'];
+      const queryParamNames = Array.isArray(siteProfile?.search?.queryParamNames)
+        ? siteProfile.search.queryParamNames
+        : ['searchkey', 'keyword', 'q'];
       const resultAnchors = [];
       for (const selector of profileResultBookSelectors) {
         try {
@@ -2626,6 +2886,12 @@ function pageComputeStateSignature(siteProfile = null) {
       const derivedQuery = (() => {
         try {
           const parsed = new URL(finalUrl, document.baseURI);
+          for (const name of queryParamNames) {
+            const value = normalizeText(parsed.searchParams.get(name) || '');
+            if (value) {
+              return value;
+            }
+          }
           const fromPath = parsed.pathname.match(/\/ss\/(.+?)(?:\.html)?$/i)?.[1] || '';
           const fromPathText = decodeURIComponent(fromPath).replace(/\.html$/i, '');
           if (normalizeText(fromPathText)) {
@@ -2637,20 +2903,46 @@ function pageComputeStateSignature(siteProfile = null) {
         return queryFromTitle;
       })();
       return {
-        queryText: normalizeText(document.querySelector('#searchkey, input[name="searchkey"]')?.value || derivedQuery),
+        queryText: normalizeText(
+          document.querySelector('#searchkey, input[name="searchkey"], input[name="keyword"], #s')?.value || derivedQuery,
+        ),
         resultCount: [...new Set(resultAnchors.map((anchor) => normalizeText(anchor.textContent || '')).filter(Boolean))].length,
         resultTitles: uniqueTexts(resultAnchors).slice(0, 20),
       };
     }
     if (pageType === 'book-detail-page') {
-      const chapterAnchors = Array.from(document.querySelectorAll('#list a[href], .listmain a[href], dd a[href], .book_last a[href]'))
-        .filter((node) => /\/biqu\d+\/\d+\.html$/i.test(node.getAttribute('href') || ''));
+      const chapterLinkSelectors = Array.isArray(siteProfile?.bookDetail?.chapterLinkSelectors)
+        ? siteProfile.bookDetail.chapterLinkSelectors
+        : ['#list a[href]', '.listmain a[href]', 'dd a[href]', '.book_last a[href]'];
+      const chapterAnchors = [];
+      for (const selector of chapterLinkSelectors) {
+        try {
+          chapterAnchors.push(...document.querySelectorAll(selector));
+        } catch {
+          // Ignore invalid selectors from site profile.
+        }
+      }
       const latestChapterLink = chapterAnchors[0] ?? null;
       return {
-        bookTitle: metaContent('og:novel:book_name') || textFromSelectors(['h1', '.book h1', '#bookinfo h1']),
-        authorName: metaContent('og:novel:author') || textFromSelectors(['a[href*="/author/"]', '.small span a']),
+        bookTitle: metaContent('og:novel:book_name')
+          || textFromSelectors(
+            Array.isArray(siteProfile?.contentDetail?.titleSelectors)
+              ? siteProfile.contentDetail.titleSelectors
+              : ['h1', '.book h1', '#bookinfo h1', 'h2'],
+          ),
+        authorName: metaContent('og:novel:author')
+          || textFromSelectors(
+            Array.isArray(siteProfile?.contentDetail?.authorNameSelectors)
+              ? siteProfile.contentDetail.authorNameSelectors
+              : ['a[href*="/author/"]', '.small span a'],
+          ),
         authorUrl: (() => {
-          const value = metaContent('og:novel:author_link') || hrefFromSelectors(['a[href*="/author/"]']);
+          const value = metaContent('og:novel:author_link')
+            || hrefFromSelectors(
+              Array.isArray(siteProfile?.contentDetail?.authorLinkSelectors)
+                ? siteProfile.contentDetail.authorLinkSelectors
+                : ['a[href*="/author/"]'],
+            );
           return value ? normalizeUrlNoFragmentLocal(value) : null;
         })(),
         chapterCount: chapterAnchors.length,
@@ -2663,7 +2955,12 @@ function pageComputeStateSignature(siteProfile = null) {
     }
     if (pageType === 'author-page') {
       return {
-        authorName: metaContent('og:novel:author') || textFromSelectors(['h1', '.author h1', '.title h1']),
+        authorName: metaContent('og:novel:author')
+          || textFromSelectors(
+            Array.isArray(siteProfile?.author?.titleSelectors)
+              ? siteProfile.author.titleSelectors
+              : ['h1', '.author h1', '.title h1', 'h2'],
+          ),
       };
     }
     if (pageType === 'chapter-page') {
@@ -2727,13 +3024,27 @@ async function waitForPostTriggerSettled(client, sessionId, settings, networkTra
 }
 
 function shouldExpandPageType(pageType) {
-  return ['home', 'category-page', 'history-page', 'search-results-page', 'book-detail-page'].includes(pageType);
+  return ['home', 'category-page', 'history-page', 'search-results-page', 'book-detail-page', 'author-page'].includes(pageType);
 }
 
-function selectTriggersForPage(pageType, triggers, settings, { includeSearchQueries = false } = {}) {
+function selectTriggersForPage(pageType, triggers, settings, siteProfile = null, { includeSearchQueries = false } = {}) {
   const selected = [];
   let bookCount = 0;
   let searchResultBookCount = 0;
+  const sampling = {
+    searchResultContentLimit: Number.isFinite(Number(siteProfile?.sampling?.searchResultContentLimit))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.searchResultContentLimit)))
+      : 1,
+    authorContentLimit: Number.isFinite(Number(siteProfile?.sampling?.authorContentLimit))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.authorContentLimit)))
+      : 4,
+    categoryContentLimit: Number.isFinite(Number(siteProfile?.sampling?.categoryContentLimit))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.categoryContentLimit)))
+      : 4,
+    fallbackContentLimitWithSearch: Number.isFinite(Number(siteProfile?.sampling?.fallbackContentLimitWithSearch))
+      ? Math.max(1, Math.floor(Number(siteProfile.sampling.fallbackContentLimitWithSearch)))
+      : MAX_FALLBACK_BOOKS,
+  };
 
   for (const trigger of triggers) {
     if (pageType === 'book-detail-page') {
@@ -2745,10 +3056,21 @@ function selectTriggersForPage(pageType, triggers, settings, { includeSearchQuer
 
     if (pageType === 'search-results-page') {
       if (trigger.kind === 'content-link') {
-        if (searchResultBookCount >= 1) {
+        if (searchResultBookCount >= sampling.searchResultContentLimit) {
           continue;
         }
         searchResultBookCount += 1;
+        selected.push(trigger);
+      }
+      continue;
+    }
+
+    if (pageType === 'author-page') {
+      if (trigger.kind === 'content-link') {
+        if (bookCount >= sampling.authorContentLimit) {
+          continue;
+        }
+        bookCount += 1;
         selected.push(trigger);
       }
       continue;
@@ -2762,7 +3084,9 @@ function selectTriggersForPage(pageType, triggers, settings, { includeSearchQuer
         continue;
       }
       if (trigger.kind === 'content-link') {
-        const bookLimit = settings.searchQueries.length > 0 ? MAX_FALLBACK_BOOKS : 4;
+        const bookLimit = settings.searchQueries.length > 0
+          ? sampling.fallbackContentLimitWithSearch
+          : sampling.categoryContentLimit;
         if (bookCount >= bookLimit) {
           continue;
         }
@@ -2836,6 +3160,10 @@ export async function expandStates(inputUrl, options = {}) {
     networkTracker = createNetworkTracker(client, sessionId);
 
     const siteProfile = await loadSiteProfile(baseUrl);
+    const effectiveSearchQueries = mergeStringArrays(
+      settings.searchQueries,
+      siteProfile?.search?.defaultQueries,
+    );
     await navigateAndWaitReady(client, sessionId, baseUrl, settings, networkTracker);
 
     const liveInitialSignature = await collectStateSignature(client, sessionId, siteProfile);
@@ -2877,13 +3205,13 @@ export async function expandStates(inputUrl, options = {}) {
       const sourceFingerprintJson = JSON.stringify(sourceSignature.fingerprint);
       const discoveryLimit = sourceSignature.pageType === 'book-detail-page'
         ? 1_000
-        : Math.max(settings.maxTriggers, settings.maxTriggers + settings.searchQueries.length);
+        : Math.max(settings.maxTriggers, settings.maxTriggers + effectiveSearchQueries.length);
       const discoveredTriggers = await callPageFunction(
         client,
         sessionId,
         pageDiscoverTriggers,
         discoveryLimit,
-        context.includeSearchQueries ? settings.searchQueries : [],
+        context.includeSearchQueries ? effectiveSearchQueries : [],
         siteProfile,
       );
       topManifest.summary.discoveredTriggers += discoveredTriggers.length;
@@ -2891,6 +3219,7 @@ export async function expandStates(inputUrl, options = {}) {
         sourceSignature.pageType,
         discoveredTriggers,
         settings,
+        siteProfile,
         { includeSearchQueries: context.includeSearchQueries },
       );
 
@@ -3206,6 +3535,7 @@ Options:
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

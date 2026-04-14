@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-14T06:31:30.308Z",
+  "sites": {
+    "www.22biqu.com": {
+      "baseUrl": "https://www.22biqu.com/",
+      "pageTypes": [],
+      "capabilityFamilies": [
+        "download-content",
+        "navigate-to-author",
+        "navigate-to-chapter",
+        "navigate-to-content",
+        "search-content"
+      ],
+      "host": "www.22biqu.com",
+      "supportedIntents": [],
+      "safeActionKinds": [],
+      "approvalActionKinds": [],
+      "updatedAt": "2026-04-14T06:31:30.225Z",
+      "primaryArchetype": null
+    },
+    "moodyz.com": {
+      "baseUrl": "https://moodyz.com/works/date",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "unknown-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "host": "moodyz.com",
+      "safeActionKinds": [],
+      "approvalActionKinds": [],
+      "updatedAt": "2026-04-14T06:31:30.308Z"
+    }
+  }
+}

@@ -21,6 +21,16 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import anyio
 import httpx
 from selectolax.parser import HTMLParser
+from site_context import (
+    read_site_context,
+    resolve_capability_families,
+    resolve_page_types,
+    resolve_primary_archetype,
+    resolve_safe_action_kinds,
+    resolve_supported_intents,
+    upsert_site_capabilities_record,
+    upsert_site_registry_record,
+)
 
 
 TARGET_SLA_MS = 10_000
@@ -114,6 +124,26 @@ def progress_log(message: str) -> None:
     sys.stderr.flush()
 
 
+def init_console_utf8() -> None:
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    os.environ.setdefault("PYTHONUTF8", "1")
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+def child_utf8_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
+    return env
+
+
 def path_exists(path_value: str | Path) -> bool:
     return Path(path_value).exists()
 
@@ -122,6 +152,14 @@ def current_run_id(host: str) -> str:
     timestamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
     milliseconds = f"{int((time.time() % 1) * 1000):03d}Z"
     return f"{timestamp}{milliseconds}_{sanitize_host(host)}_book-content"
+
+
+def host_book_content_root(root: Path, host: str) -> Path:
+    resolved = root.resolve()
+    host_slug = sanitize_host(host)
+    if resolved.name == host_slug:
+        return resolved
+    return resolved / host_slug
 
 
 def titles_match(left: Any, right: Any) -> bool:
@@ -946,8 +984,10 @@ def find_existing_artifact(
     knowledge_base_dir: Path,
     out_dir: Path,
 ) -> dict[str, Any] | None:
+    host_root = host_book_content_root(out_dir, host)
     roots = [
         knowledge_base_dir / "raw" / "step-book-content",
+        host_root,
         out_dir,
     ]
     for root in roots:
@@ -955,6 +995,10 @@ def find_existing_artifact(
             books_path = run_dir / "books.json"
             manifest_path = run_dir / "book-content-manifest.json"
             if not books_path.exists() or not manifest_path.exists():
+                continue
+            manifest = load_json(manifest_path)
+            manifest_host = sanitize_host(manifest.get("host") or urlparse(str(manifest.get("baseUrl") or "")).netloc)
+            if manifest_host and manifest_host != sanitize_host(host):
                 continue
             books = load_json(books_path)
             matched = None
@@ -1029,6 +1073,7 @@ def ensure_crawler_script(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_utf8_env(),
         check=False,
     )
     if completed.returncode != 0:
@@ -1062,6 +1107,7 @@ def run_generated_crawler(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_utf8_env(),
     )
     stdout_text, _ = completed.communicate()
     if completed.returncode != 0:
@@ -1080,7 +1126,7 @@ async def crawl_book_with_context(
     profile = context["profile"]
     base_url = context["baseUrl"]
     host = context["host"]
-    run_root = Path(out_dir or (Path.cwd() / "book-content")).resolve()
+    run_root = host_book_content_root(Path(out_dir).resolve(), host) if out_dir else host_book_content_root(Path.cwd() / "book-content", host)
 
     timeout = httpx.Timeout(8.0, connect=8.0)
     limits = httpx.Limits(
@@ -1356,6 +1402,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def cli_entry_for_generated(context: dict[str, Any]) -> None:
+    init_console_utf8()
     args = parse_args(sys.argv[1:])
     try:
         if args.metadata_only:
@@ -1389,6 +1436,7 @@ def require_pypy_runtime() -> None:
 
 
 def public_entry(args: argparse.Namespace) -> dict[str, Any]:
+    init_console_utf8()
     require_pypy_runtime()
     if not args.url:
         raise SystemExit("Missing <url>")
@@ -1400,15 +1448,42 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit(f"Invalid url: {args.url}")
 
     host = parsed.netloc
-    knowledge_base_dir = Path(args.knowledge_base_dir).resolve() if args.knowledge_base_dir else (REPO_ROOT / "knowledge-base" / sanitize_host(host)).resolve()
-    crawler_scripts_dir = Path(args.crawler_scripts_dir).resolve() if args.crawler_scripts_dir else (REPO_ROOT / "crawler-scripts").resolve()
-    out_dir = Path(args.out_dir).resolve() if args.out_dir else (REPO_ROOT / "book-content").resolve()
-    profile_path = Path(args.profile_path).resolve() if args.profile_path else (REPO_ROOT / "profiles" / f"{parsed.hostname}.json").resolve()
+    site_context = read_site_context(host, REPO_ROOT)
+    registry_record = site_context.get("registryRecord") or {}
+    capabilities_record = site_context.get("capabilitiesRecord") or {}
+    resolved_base_url = (
+        registry_record.get("canonicalBaseUrl")
+        or capabilities_record.get("baseUrl")
+        or normalize_url_no_fragment(f"{parsed.scheme}://{parsed.netloc}/")
+    )
+    knowledge_base_dir = Path(args.knowledge_base_dir).resolve() if args.knowledge_base_dir else Path(
+        registry_record.get("knowledgeBaseDir") or (REPO_ROOT / "knowledge-base" / sanitize_host(host))
+    ).resolve()
+    crawler_scripts_dir = Path(args.crawler_scripts_dir).resolve() if args.crawler_scripts_dir else Path(
+        registry_record.get("crawlerScriptsDir") or (REPO_ROOT / "crawler-scripts")
+    ).resolve()
+    out_dir = host_book_content_root(Path(args.out_dir).resolve(), host) if args.out_dir else host_book_content_root(
+        Path(registry_record.get("bookContentRoot")).resolve() if registry_record.get("bookContentRoot") else (REPO_ROOT / "book-content"),
+        host,
+    )
+    profile_path = Path(args.profile_path).resolve() if args.profile_path else Path(
+        registry_record.get("profilePath") or (REPO_ROOT / "profiles" / f"{parsed.hostname}.json")
+    ).resolve()
     context = {
         "host": host,
-        "baseUrl": normalize_url_no_fragment(f"{parsed.scheme}://{parsed.netloc}/"),
+        "baseUrl": resolved_base_url,
         "profile": load_json(profile_path),
+        "siteContext": site_context,
     }
+    resolved_primary_archetype = resolve_primary_archetype(site_context, context["profile"].get("primaryArchetype"))
+    resolved_capability_families = resolve_capability_families(
+        site_context,
+        context["profile"].get("capabilityFamilies"),
+        ["download-content"],
+    )
+    resolved_page_types = resolve_page_types(site_context, context["profile"].get("pageTypes"))
+    resolved_supported_intents = resolve_supported_intents(site_context, ["download-book"])
+    resolved_safe_action_kinds = resolve_safe_action_kinds(site_context)
 
     if args.metadata_only:
         return anyio.run(
@@ -1430,6 +1505,27 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
         )
         if artifact:
             progress_log(f"[download] artifact hit: {artifact['downloadFile']}")
+            upsert_site_registry_record(host, {
+                "canonicalBaseUrl": context["baseUrl"],
+                "siteArchetype": resolved_primary_archetype,
+                "bookContentRoot": str(out_dir),
+                "knowledgeBaseDir": str(knowledge_base_dir),
+                "latestDownloadMode": artifact.get("mode"),
+                "latestDownloadFile": artifact.get("downloadFile"),
+                "latestDownloadManifest": artifact.get("manifestPath"),
+                "downloadEntrypoint": "download_book.py",
+                "interpreterRequired": "pypy3",
+                "crawlerScriptsDir": str(crawler_scripts_dir),
+                "capabilityFamilies": resolved_capability_families,
+            }, REPO_ROOT)
+            upsert_site_capabilities_record(host, {
+                "baseUrl": context["baseUrl"],
+                "primaryArchetype": resolved_primary_archetype,
+                "pageTypes": resolved_page_types,
+                "capabilityFamilies": resolved_capability_families,
+                "supportedIntents": resolved_supported_intents,
+                "safeActionKinds": resolved_safe_action_kinds,
+            }, REPO_ROOT)
             return artifact
 
     progress_log(f"[download] ensure crawler script for host={host}")
@@ -1452,6 +1548,29 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
     synced_manifest_path = synced_run_dir / "book-content-manifest.json"
     synced_download_file = synced_run_dir / Path(crawl_result["downloadFile"]).resolve().relative_to(local_run_dir)
     refresh_registry_usage(Path(crawler["registryPath"]), host, crawler["status"])
+    upsert_site_registry_record(host, {
+        "canonicalBaseUrl": context["baseUrl"],
+        "siteArchetype": resolved_primary_archetype,
+        "bookContentRoot": str(out_dir),
+        "knowledgeBaseDir": str(knowledge_base_dir),
+        "crawlerScriptPath": crawler["scriptPath"],
+        "crawlerRegistryPath": crawler["registryPath"],
+        "latestDownloadMode": "crawler-generated" if crawler["status"] == "generated" else "crawler-reused",
+        "latestDownloadFile": str(synced_download_file),
+        "latestDownloadManifest": str(synced_manifest_path),
+        "downloadEntrypoint": "download_book.py",
+        "interpreterRequired": "pypy3",
+        "crawlerScriptsDir": str(crawler_scripts_dir),
+        "capabilityFamilies": resolved_capability_families,
+    }, REPO_ROOT)
+    upsert_site_capabilities_record(host, {
+        "baseUrl": context["baseUrl"],
+        "primaryArchetype": resolved_primary_archetype,
+        "pageTypes": resolved_page_types,
+        "capabilityFamilies": resolved_capability_families,
+        "supportedIntents": resolved_supported_intents,
+        "safeActionKinds": resolved_safe_action_kinds,
+    }, REPO_ROOT)
 
     return {
         "host": host,
@@ -1469,6 +1588,7 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main() -> None:
+    init_console_utf8()
     args = parse_args(sys.argv[1:])
     if args.context_json:
         context = load_json(args.context_json)

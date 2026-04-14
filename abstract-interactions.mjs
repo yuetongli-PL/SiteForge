@@ -5,6 +5,7 @@ import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { initializeCliUtf8 } from './lib/cli.mjs';
 
 const DEFAULT_OPTIONS = {
   analysisManifestPath: undefined,
@@ -187,6 +188,19 @@ function normalizeText(value) {
 
 function normalizeLabel(value) {
   return normalizeText(value).toLowerCase();
+}
+
+function hostFromUrl(input) {
+  try {
+    return new URL(String(input ?? '')).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isMoodyzSite(siteProfileDocument, baseUrl) {
+  const host = hostFromUrl(baseUrl);
+  return host === 'moodyz.com' || host === 'www.moodyz.com' || String(siteProfileDocument?.host ?? '').toLowerCase() === 'moodyz.com';
 }
 
 function normalizeUrlNoFragment(input) {
@@ -491,7 +505,8 @@ function mergeOptions(options = {}) {
   };
 }
 
-function buildStateFieldSpec(elementKind) {
+function buildStateFieldSpec(elementKind, siteProfileDocument = null, baseUrl = null) {
+  const moodyzSite = isMoodyzSite(siteProfileDocument, baseUrl);
   switch (elementKind) {
     case 'tab-group':
       return {
@@ -529,7 +544,7 @@ function buildStateFieldSpec(elementKind) {
       };
     case 'content-link-group':
       return {
-        intentType: 'open-book',
+        intentType: moodyzSite ? 'open-work' : 'open-book',
         stateField: 'activeMemberId',
         actionId: 'navigate',
         parameter: 'targetMemberId',
@@ -537,7 +552,7 @@ function buildStateFieldSpec(elementKind) {
       };
     case 'author-link-group':
       return {
-        intentType: 'open-author',
+        intentType: moodyzSite ? 'open-actress' : 'open-author',
         stateField: 'activeMemberId',
         actionId: 'navigate',
         parameter: 'targetMemberId',
@@ -577,7 +592,7 @@ function buildStateFieldSpec(elementKind) {
       };
     case 'search-form-group':
       return {
-        intentType: 'search-book',
+        intentType: moodyzSite ? 'search-work' : 'search-book',
         stateField: 'queryText',
         actionId: 'search-submit',
         parameter: 'queryText',
@@ -1091,8 +1106,12 @@ function buildIntentName(intentType, element, targetParameter) {
       return `Open Category: ${element.elementName}`;
     case 'open-book':
       return `Open Book: ${element.elementName}`;
+    case 'open-work':
+      return `Open Work: ${element.elementName}`;
     case 'open-author':
       return `Open Author: ${element.elementName}`;
+    case 'open-actress':
+      return `Open Actress: ${element.elementName}`;
     case 'open-chapter':
       return `Open Chapter: ${element.elementName}`;
     case 'open-utility-page':
@@ -1103,6 +1122,8 @@ function buildIntentName(intentType, element, targetParameter) {
       return `Paginate Content: ${element.elementName}`;
     case 'search-book':
       return `Search Book: ${element.elementName}`;
+    case 'search-work':
+      return `Search Work: ${element.elementName}`;
     case 'download-book':
       return `Download Book: ${element.elementName}`;
     default:
@@ -1251,12 +1272,12 @@ function buildBooleanTargetDomain(valueObservations, edgeObservations) {
   };
 }
 
-function buildIntents(elementsDocument, statesDocument, indices, attributedEdges, warnings) {
+function buildIntents(elementsDocument, statesDocument, indices, attributedEdges, warnings, siteProfileDocument = null, baseUrl = null) {
   const intents = [];
   const skippedElements = [];
 
   for (const element of toArray(elementsDocument.elements).sort((left, right) => compareNullableStrings(left.elementId, right.elementId))) {
-    const spec = buildStateFieldSpec(element.kind);
+    const spec = buildStateFieldSpec(element.kind, siteProfileDocument, baseUrl);
     if (!spec) {
       skippedElements.push(element.elementId);
       warnings.push(buildWarning('element_kind_unmapped', `Skipping ${element.elementId}; unsupported element kind ${element.kind}`, {
@@ -1327,7 +1348,10 @@ function buildDownloadIntent(artifacts, intents, indices, warnings) {
     return null;
   }
 
-  const contentIntent = intents.find((intent) => intent.intentType === 'open-book' && intent.elementKind === 'content-link-group') ?? null;
+  const contentIntent = intents.find((intent) => intent.elementKind === 'content-link-group' && (
+    intent.intentType === 'open-book'
+      || intent.intentType === 'open-work'
+  )) ?? null;
   if (!contentIntent) {
     warnings.push(buildWarning('download_intent_skipped', 'Skipping download-book intent; no content-link-group intent available.', {}));
     return null;
@@ -1634,7 +1658,15 @@ export async function abstractInteractions(inputUrl, options = {}) {
   const indices = buildIndices(artifacts.elementsDocument, artifacts.statesDocument, artifacts.transitionsDocument);
   const fallbackContext = await createFallbackContext(artifacts, indices, warnings);
   const attributedEdges = await attributeEdgesToTargets(artifacts, indices, fallbackContext, warnings);
-  const { intents, skippedElements } = buildIntents(artifacts.elementsDocument, artifacts.statesDocument, indices, attributedEdges, warnings);
+  const { intents, skippedElements } = buildIntents(
+    artifacts.elementsDocument,
+    artifacts.statesDocument,
+    indices,
+    attributedEdges,
+    warnings,
+    artifacts.siteProfileDocument,
+    artifacts.baseUrl,
+  );
   const downloadIntent = buildDownloadIntent(artifacts, intents, indices, warnings);
   if (downloadIntent) {
     intents.push(downloadIntent);
@@ -1763,6 +1795,7 @@ function parseCliArgs(argv) {
 }
 
 async function runCli() {
+  initializeCliUtf8();
   try {
     const { url, options } = parseCliArgs(process.argv.slice(2));
     if (options.help || !url) {

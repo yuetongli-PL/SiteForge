@@ -1,12 +1,26 @@
 // @ts-check
 
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { pathExists, readJsonFile, writeJsonFile } from './lib/io.mjs';
+import {
+  loadOptionalManifest,
+  resolveStageFile,
+  resolveStageFiles,
+  resolveStageInput,
+} from './lib/pipeline/artifacts/index.mjs';
+import {
+  buildRunManifest,
+  getManifestArtifactDir,
+  getManifestArtifactPath,
+  getManifestRunContext,
+} from './lib/pipeline/run-manifest.mjs';
 import { displayIntentName } from './lib/site-terminology.mjs';
+import { firstExistingPath } from './lib/wiki-paths.mjs';
 
 const DEFAULT_OPTIONS = {
   analysisManifestPath: undefined,
@@ -278,34 +292,6 @@ function firstNonEmpty(values) {
   return null;
 }
 
-async function pathExists(targetPath) {
-  if (!targetPath) {
-    return false;
-  }
-
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
-async function writeJsonFile(filePath, value) {
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
-function resolveMaybeRelative(inputPath, baseDir) {
-  if (!inputPath) {
-    return null;
-  }
-  return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
-}
-
 function buildWarning(code, message, details = {}) {
   return {
     code,
@@ -333,86 +319,48 @@ function stableValueKey(value) {
   return typeof value === 'boolean' ? `bool:${value}` : `str:${String(value ?? '')}`;
 }
 
-async function firstExistingPath(candidates) {
-  for (const candidate of candidates) {
-    if (!candidate?.value) {
-      continue;
-    }
-    const resolved = resolveMaybeRelative(candidate.value, candidate.baseDir);
-    if (await pathExists(resolved)) {
-      return resolved;
-    }
-  }
-  return null;
-}
-
 async function resolveAnalysisInput(options) {
-  if (options.analysisManifestPath) {
-    const analysisManifestPath = path.resolve(options.analysisManifestPath);
-    if (!(await pathExists(analysisManifestPath))) {
-      throw new Error(`Analysis manifest not found: ${analysisManifestPath}`);
-    }
-    return {
-      analysisManifestPath,
-      analysisDir: path.dirname(analysisManifestPath),
-    };
-  }
-
-  if (!options.analysisDir) {
-    throw new Error('Pass analysisManifestPath, --analysis-manifest, analysisDir, or --analysis-dir.');
-  }
-
-  const analysisDir = path.resolve(options.analysisDir);
-  if (!(await pathExists(analysisDir))) {
-    throw new Error(`Analysis directory not found: ${analysisDir}`);
-  }
-
-  const candidateManifest = path.join(analysisDir, ANALYSIS_MANIFEST_NAME);
+  const { manifestPath: analysisManifestPath, dir: analysisDir } = await resolveStageInput(options, {
+    manifestOption: 'analysisManifestPath',
+    dirOption: 'analysisDir',
+    manifestName: ANALYSIS_MANIFEST_NAME,
+    missingArgsMessage: 'Pass analysisManifestPath, --analysis-manifest, analysisDir, or --analysis-dir.',
+    missingManifestMessagePrefix: 'Analysis manifest not found: ',
+    missingDirMessagePrefix: 'Analysis directory not found: ',
+  });
   return {
-    analysisManifestPath: (await pathExists(candidateManifest)) ? candidateManifest : null,
+    analysisManifestPath,
     analysisDir,
   };
 }
 
 async function resolveAnalysisFiles(analysisDir, analysisManifest) {
   const manifestDir = analysisManifest ? path.dirname(analysisManifest.__path) : analysisDir;
+  const files = await resolveStageFiles({
+    manifest: analysisManifest,
+    manifestDir,
+    dir: analysisDir,
+    files: {
+      elementsPath: { manifestField: 'elements', defaultFileName: ELEMENTS_FILE_NAME },
+      statesPath: { manifestField: 'states', defaultFileName: STATES_FILE_NAME },
+      transitionsPath: { manifestField: 'transitions', defaultFileName: TRANSITIONS_FILE_NAME },
+      siteProfilePath: { manifestField: 'siteProfile', defaultFileName: SITE_PROFILE_FILE_NAME },
+    },
+  });
 
-  const elementsPath = await firstExistingPath([
-    { value: analysisManifest?.files?.elements, baseDir: manifestDir },
-    { value: path.join(analysisDir, ELEMENTS_FILE_NAME), baseDir: analysisDir },
-  ]);
-  const statesPath = await firstExistingPath([
-    { value: analysisManifest?.files?.states, baseDir: manifestDir },
-    { value: path.join(analysisDir, STATES_FILE_NAME), baseDir: analysisDir },
-  ]);
-  const transitionsPath = await firstExistingPath([
-    { value: analysisManifest?.files?.transitions, baseDir: manifestDir },
-    { value: path.join(analysisDir, TRANSITIONS_FILE_NAME), baseDir: analysisDir },
-  ]);
-  const siteProfilePath = await firstExistingPath([
-    { value: analysisManifest?.files?.siteProfile, baseDir: manifestDir },
-    { value: path.join(analysisDir, SITE_PROFILE_FILE_NAME), baseDir: analysisDir },
-  ]);
-
-  if (!elementsPath || !statesPath || !transitionsPath) {
+  if (!files.elementsPath || !files.statesPath || !files.transitionsPath) {
     throw new Error(`Analysis artifacts missing under ${analysisDir}`);
   }
 
-  return {
-    elementsPath,
-    statesPath,
-    transitionsPath,
-    siteProfilePath,
-  };
+  return files;
 }
 
 async function loadAnalysisArtifacts(options) {
   const { analysisManifestPath, analysisDir } = await resolveAnalysisInput(options);
   const warnings = [];
 
-  let analysisManifest = null;
-  if (analysisManifestPath) {
-    analysisManifest = await readJsonFile(analysisManifestPath);
+  let analysisManifest = await loadOptionalManifest(analysisManifestPath);
+  if (analysisManifest) {
     analysisManifest.__path = analysisManifestPath;
   }
 
@@ -424,14 +372,15 @@ async function loadAnalysisArtifacts(options) {
   ]);
   const siteProfileDocument = files.siteProfilePath ? await readJsonFile(files.siteProfilePath).catch(() => null) : null;
 
-  const baseUrl = analysisManifest?.baseUrl ?? statesDocument.baseUrl ?? elementsDocument.baseUrl ?? transitionsDocument.baseUrl ?? options.url ?? null;
-  const inputUrl = analysisManifest?.inputUrl ?? statesDocument.inputUrl ?? elementsDocument.inputUrl ?? transitionsDocument.inputUrl ?? options.url;
+  const manifestRun = getManifestRunContext(analysisManifest, { inputUrl: options.url ?? null });
+  const baseUrl = manifestRun.baseUrl ?? statesDocument.baseUrl ?? elementsDocument.baseUrl ?? transitionsDocument.baseUrl ?? options.url ?? null;
+  const inputUrl = manifestRun.inputUrl ?? statesDocument.inputUrl ?? elementsDocument.inputUrl ?? transitionsDocument.inputUrl ?? options.url;
 
   let expandedStatesDir = null;
   if (options.expandedStatesDir) {
     expandedStatesDir = path.resolve(options.expandedStatesDir);
-  } else if (analysisManifest?.source?.expandedStatesDir) {
-    expandedStatesDir = resolveMaybeRelative(analysisManifest.source.expandedStatesDir, analysisDir);
+  } else {
+    expandedStatesDir = getManifestArtifactDir(analysisManifest, 'expandedStates', analysisDir);
   }
 
   if (expandedStatesDir && !(await pathExists(expandedStatesDir))) {
@@ -445,12 +394,8 @@ async function loadAnalysisArtifacts(options) {
   let bookContentManifestPath = null;
   let bookContentManifest = null;
   let bookContentBooksDocument = [];
-  if (analysisManifest?.source?.bookContentDir) {
-    bookContentDir = resolveMaybeRelative(analysisManifest.source.bookContentDir, analysisDir);
-  }
-  if (analysisManifest?.source?.bookContentManifest) {
-    bookContentManifestPath = resolveMaybeRelative(analysisManifest.source.bookContentManifest, analysisDir);
-  }
+  bookContentDir = getManifestArtifactDir(analysisManifest, 'bookContent', analysisDir);
+  bookContentManifestPath = getManifestArtifactPath(analysisManifest, 'bookContent', 'manifest', analysisDir);
   if (!bookContentManifestPath && bookContentDir) {
     const candidateManifest = path.join(bookContentDir, BOOK_CONTENT_MANIFEST_NAME);
     if (await pathExists(candidateManifest)) {
@@ -460,10 +405,13 @@ async function loadAnalysisArtifacts(options) {
   if (bookContentManifestPath && await pathExists(bookContentManifestPath)) {
     try {
       bookContentManifest = await readJsonFile(bookContentManifestPath);
-      const booksPath = await firstExistingPath([
-        { value: bookContentManifest?.files?.books, baseDir: bookContentDir ?? path.dirname(bookContentManifestPath) },
-        { value: path.join(bookContentDir ?? path.dirname(bookContentManifestPath), BOOK_CONTENT_FILE_NAMES.books), baseDir: bookContentDir ?? path.dirname(bookContentManifestPath) },
-      ]);
+      const booksPath = await resolveStageFile({
+        manifest: bookContentManifest,
+        manifestDir: bookContentDir ?? path.dirname(bookContentManifestPath),
+        dir: bookContentDir ?? path.dirname(bookContentManifestPath),
+        manifestField: 'books',
+        defaultFileName: BOOK_CONTENT_FILE_NAMES.books,
+      });
       if (booksPath) {
         bookContentBooksDocument = await readJsonFile(booksPath);
       }
@@ -2155,18 +2103,26 @@ function buildAbstractionManifest({
   usedFallbackEvidence,
   warnings,
 }) {
-  return {
+  return buildRunManifest({
     inputUrl,
     baseUrl,
     generatedAt,
     outDir,
-    source: {
-      analysisManifest: artifacts.analysisManifestPath,
-      analysisDir: artifacts.analysisDir,
-      expandedStatesDir: artifacts.expandedStatesDir,
-      bookContentDir: artifacts.bookContentDir,
-      bookContentManifest: artifacts.bookContentManifestPath,
-      usedFallbackEvidence,
+    upstream: {
+      analysis: {
+        manifest: artifacts.analysisManifestPath,
+        dir: artifacts.analysisDir,
+      },
+      expandedStates: {
+        dir: artifacts.expandedStatesDir,
+      },
+      bookContent: {
+        manifest: artifacts.bookContentManifestPath,
+        dir: artifacts.bookContentDir,
+      },
+      flags: {
+        usedFallbackEvidence,
+      },
     },
     summary: {
       inputElements: toArray(artifacts.elementsDocument.elements).length,
@@ -2189,5 +2145,5 @@ function buildAbstractionManifest({
       manifest: path.join(outDir, 'abstraction-manifest.json'),
     },
     warnings,
-  };
+  });
 }

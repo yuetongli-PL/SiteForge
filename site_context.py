@@ -96,18 +96,27 @@ def resolve_primary_archetype(site_context: dict[str, Any], *fallbacks: Any) -> 
     return None
 
 
+def _resolve_fallback_values(*fallbacks: Any) -> list[str]:
+    values: list[Any] = []
+    for fallback in fallbacks:
+        if isinstance(fallback, (list, tuple, set)):
+            values.extend(list(fallback))
+        elif fallback is not None:
+            values.append(fallback)
+    return unique_sorted_strings(values)
+
+
 def _resolve_string_list(site_context: dict[str, Any], capabilities_key: str, registry_key: str | None = None, *fallbacks: Any) -> list[str]:
+    fallback_values = _resolve_fallback_values(*fallbacks)
+    if fallback_values:
+        return fallback_values
+
     values: list[Any] = []
     capabilities_record = site_context.get("capabilitiesRecord") or {}
     registry_record = site_context.get("registryRecord") or {}
     values.extend(capabilities_record.get(capabilities_key, []) or [])
     if registry_key:
         values.extend(registry_record.get(registry_key, []) or [])
-    for fallback in fallbacks:
-        if isinstance(fallback, (list, tuple, set)):
-            values.extend(list(fallback))
-        elif fallback is not None:
-            values.append(fallback)
     return unique_sorted_strings(values)
 
 

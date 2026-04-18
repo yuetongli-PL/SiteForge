@@ -12,17 +12,20 @@ import {
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { enrichBilibiliPageFactsForState, summarizeBilibiliKnowledgeFacts } from './lib/bilibili-surfacing.mjs';
 import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
 import { appendJsonLine, appendTextFile, ensureDir, pathExists, readJsonFile, writeJsonFile, writeJsonLines, writeTextFile } from './lib/io.mjs';
-import { markdownLink as sharedMarkdownLink, renderTable as sharedRenderTable } from './lib/markdown.mjs';
+import { markdownLink, renderTable as sharedRenderTable } from './lib/markdown.mjs';
 import { mdEscape } from './lib/markdown_escape.mjs';
 import { cleanText, compactSlug, compareNullableStrings, firstNonEmpty, normalizeUrlNoFragment, normalizeWhitespace, relativePath, sanitizeHost, toArray, toPosixPath, uniqueSortedPaths, uniqueSortedStrings } from './lib/normalize.mjs';
 import { buildError, buildWarning } from './lib/wiki-report.mjs';
 import { firstExistingPath, kbAbsolute, listDirectories, relativeToKb, resolveMaybeRelative } from './lib/wiki-paths.mjs';
-import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext } from './lib/site-context.mjs';
+import { readSiteContext } from './lib/site-context.mjs';
 import { displayIntentName, normalizeDisplayLabel } from './lib/site-terminology.mjs';
-import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
-import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
+import { writeKnowledgeBaseSchemaFiles } from './lib/kb-build/schema-files.mjs';
+import { buildLintSummary, classifyGapWarnings, writeKnowledgeBaseLintReports } from './lib/kb-build/lint-report.mjs';
+import { syncKnowledgeBaseSiteMetadata } from './lib/kb-build/site-metadata.mjs';
+import { publishKnowledgeBase } from './lib/publish/kb/publisher.mjs';
 
 const DEFAULT_COMPILE_OPTIONS = {
   kbDir: undefined,
@@ -157,31 +160,11 @@ function formatTimestampForDir(date = new Date()) {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
 }
 
-function markdownLink(label, fromPathOrTargetPath, targetPath) {
-  return sharedMarkdownLink(label, fromPathOrTargetPath, targetPath);
-}
-
 function renderTable(headers, rows) {
   if (!rows.length) {
     return '_None_';
   }
   return sharedRenderTable(headers, rows);
-}
-
-async function writeJsonlFile(filePath, rows) {
-  await writeJsonLines(filePath, rows);
-}
-
-async function writeMarkdownFile(filePath, value) {
-  await writeTextFile(filePath, value);
-}
-
-async function appendJsonl(filePath, value) {
-  await appendJsonLine(filePath, value);
-}
-
-async function appendLogLine(filePath, value) {
-  await appendTextFile(filePath, `${value}\n`);
 }
 
 async function candidateSortKey(dirPath, generatedAt) {
@@ -232,6 +215,10 @@ function hostFromUrl(input) {
 
 function sameHost(left, right) {
   return sanitizeHost(hostFromUrl(left) ?? '') === sanitizeHost(hostFromUrl(right) ?? '');
+}
+
+function isBilibiliKnowledgeBase(baseUrl) {
+  return sanitizeHost(hostFromUrl(baseUrl) ?? '') === 'www.bilibili.com';
 }
 
 async function loadCaptureFromDir(dirPath) {
@@ -651,9 +638,11 @@ async function resolveCompileArtifacts(inputUrl, options) {
     throw new Error('Unable to resolve step-2 expanded-state artifacts.');
   }
 
-  const bookContent = options.bookContentDir
-    ? await loadBookContentFromDir(path.resolve(options.bookContentDir))
-    : await discoverBookContent(workspaceRoot, baseUrl);
+  const bookContent = options.skipBookContent
+    ? null
+    : options.bookContentDir
+      ? await loadBookContentFromDir(path.resolve(options.bookContentDir))
+      : await discoverBookContent(workspaceRoot, baseUrl);
 
   const capture = options.captureDir
     ? await loadCaptureFromDir(path.resolve(options.captureDir))
@@ -741,8 +730,8 @@ async function appendKbEvent(kbDir, eventType, status, message, extra = {}) {
     message,
     ...extra,
   };
-  await appendJsonl(path.join(kbDir, KB_FILES.events), event);
-  await appendLogLine(path.join(kbDir, KB_FILES.activity), `KBLOG|${timestamp}|${eventType}|${status}|${message}`);
+  await appendJsonLine(path.join(kbDir, KB_FILES.events), event);
+  await appendTextFile(path.join(kbDir, KB_FILES.activity), `KBLOG|${timestamp}|${eventType}|${status}|${message}\n`);
   return event;
 }
 
@@ -850,7 +839,10 @@ function summarizeRiskEvidence(rule) {
 
 function buildDataModel(artifacts) {
   const elements = toArray(artifacts.analysis.elementsDocument?.elements);
-  const states = toArray(artifacts.analysis.statesDocument?.states);
+  const states = toArray(artifacts.analysis.statesDocument?.states).map((state) => ({
+    ...state,
+    pageFacts: state?.pageFacts ? { ...state.pageFacts } : state?.pageFacts ?? null,
+  }));
   const transitionNodes = toArray(artifacts.analysis.transitionsDocument?.nodes);
   const edges = toArray(artifacts.analysis.transitionsDocument?.edges);
   const siteProfile = artifacts.analysis.siteProfileDocument ?? null;
@@ -867,6 +859,28 @@ function buildDataModel(artifacts) {
   const riskCategories = toArray(artifacts.governance.riskTaxonomyDocument?.categories);
   const approvalRules = toArray(artifacts.governance.approvalRulesDocument?.rules);
   const recoveryRules = toArray(artifacts.governance.recoveryRulesDocument?.rules);
+
+  if (isBilibiliKnowledgeBase(artifacts.baseUrl)) {
+    const statesById = new Map(states.map((state) => [state.stateId, state]));
+    const outgoingEdgesByStateId = new Map();
+    for (const edge of edges) {
+      if (!edge?.fromState) {
+        continue;
+      }
+      if (!outgoingEdgesByStateId.has(edge.fromState)) {
+        outgoingEdgesByStateId.set(edge.fromState, []);
+      }
+      outgoingEdgesByStateId.get(edge.fromState).push(edge);
+    }
+    for (const state of states) {
+      state.pageFacts = enrichBilibiliPageFactsForState(state, {
+        outgoingEdges: outgoingEdgesByStateId.get(state.stateId) ?? [],
+        statesById,
+      });
+      state.pageFactHighlights = buildBilibiliStateAttributeFacts(state.pageFacts);
+    }
+  }
+
   return {
     elements,
     states,
@@ -1090,6 +1104,11 @@ function buildPageDescriptors(context) {
       kbSourceRef(rawResolver, artifacts.docs.manifestPath, 'step-6-docs', 'manifest', '文档清单'),
     ],
     relatedIds: ['page_comparison_state_coverage'],
+    attributes: isBilibiliKnowledgeBase(artifacts.baseUrl)
+      ? {
+          bilibiliFacts: summarizeBilibiliKnowledgeFacts(model.states),
+        }
+      : {},
   }));
 
   addPage(createPageDescriptor({
@@ -1158,7 +1177,7 @@ function buildPageDescriptors(context) {
       pageId: `page_state_${state.stateId}`,
       kind: 'state',
       title: `${state.stateId} ${stateLabel}`,
-      summary: `${state.sourceStatus === 'initial' ? '初始态' : '采集态'}，URL: ${state.finalUrl}`,
+      summary: `${state.sourceStatus === 'initial' ? 'Initial state' : 'Captured state'}, URL: ${state.finalUrl}`,
       pagePath: path.join(KB_DIRS.wiki, 'states', `${stateSlug}.md`),
       sourceRefs: [
         kbSourceRef(rawResolver, state.files?.html, 'step-2-expanded', 'html', `${state.stateId} HTML`),
@@ -1174,6 +1193,7 @@ function buildPageDescriptors(context) {
         finalUrl: state.finalUrl,
         sourceStatus: state.sourceStatus,
         dedupKey: state.dedupKey,
+        bilibiliFacts: buildBilibiliStateAttributeFacts(state.pageFacts),
       },
     }));
   }
@@ -1184,10 +1204,10 @@ function buildPageDescriptors(context) {
       kind: element.kind,
     });
     addPage(createPageDescriptor({
-      pageId: `page_element_${element.elementId}`,
       kind: 'element',
+      pageId: `page_element_${element.elementId}`,
       title: elementLabel,
-      summary: `${element.kind}，成员 ${toArray(element.members).length} 个。`,
+      summary: `${element.kind}, members ${toArray(element.members).length}.`,
       pagePath: path.join(KB_DIRS.wiki, 'elements', `${elementSlug}.md`),
       sourceRefs: [
         kbSourceRef(rawResolver, artifacts.analysis.elementsPath, 'step-3-analysis', 'json', 'elements.json'),
@@ -1212,7 +1232,7 @@ function buildPageDescriptors(context) {
       pageId: `page_intent_${intent.intentId}`,
       kind: 'intent',
       title: intentLabel,
-      summary: `${intentLabel}，作用于 ${sourceElementLabel}。`,
+      summary: `${intentLabel}, applies to ${sourceElementLabel}.`,
       pagePath: path.join(KB_DIRS.wiki, 'intents', `${intentSlug}.md`),
       sourceRefs: [
         kbSourceRef(rawResolver, artifacts.abstraction.intentsPath, 'step-4-abstraction', 'json', 'intents.json'),
@@ -1263,8 +1283,8 @@ function buildPageDescriptors(context) {
     addPage(createPageDescriptor({
       pageId: `page_risk_${risk.riskCode}`,
       kind: 'risk',
-      title: `${cleanText(risk.title)} 风险`,
-      summary: `${risk.severity} 风险；默认恢复策略：${risk.defaultRecovery}。`,
+      title: `${cleanText(risk.title)} risk`,
+      summary: `${risk.severity} risk; default recovery: ${risk.defaultRecovery}.`,
       pagePath: path.join(KB_DIRS.wiki, 'risks', `${compactSlug(risk.riskCode, 'risk', 64)}.md`),
       sourceRefs: [
         kbSourceRef(rawResolver, artifacts.governance.riskTaxonomyPath, 'step-7-governance', 'json', 'risk-taxonomy.json'),
@@ -1323,12 +1343,169 @@ function renderAliasesList(model, memberId) {
   return uniqueSortedStrings(aliases);
 }
 
+function buildBilibiliStateAttributeFacts(pageFacts) {
+  if (!pageFacts) {
+    return null;
+  }
+  const featuredAuthorCards = toArray(pageFacts.featuredAuthorCards).slice(0, 5).map((author) => ({
+    name: author?.name ?? null,
+    url: author?.url ?? null,
+    mid: author?.mid ?? null,
+    authorSubpage: author?.authorSubpage ?? null,
+    cardKind: author?.cardKind ?? null,
+  }));
+  const featuredContentCards = toArray(pageFacts.featuredContentCards).slice(0, 5).map((card) => ({
+    title: card?.title ?? null,
+    url: card?.url ?? null,
+    bvid: card?.bvid ?? null,
+    authorMid: card?.authorMid ?? null,
+    contentType: card?.contentType ?? null,
+  }));
+  const featuredAuthors = (featuredAuthorCards.length > 0 ? featuredAuthorCards : toArray(pageFacts.featuredAuthors)).slice(0, 5).map((author) => ({
+    name: author?.name ?? null,
+    url: author?.url ?? null,
+    mid: author?.mid ?? null,
+  }));
+  const facts = {
+    bv: pageFacts.bv ?? pageFacts.bvid ?? null,
+    authorMid: pageFacts.authorMid ?? null,
+    searchFamily: pageFacts.searchFamily ?? null,
+    queryText: pageFacts.queryText ?? null,
+    contentType: pageFacts.contentType ?? null,
+    firstResultContentType: pageFacts.firstResultContentType ?? pageFacts.resultContentTypes?.[0] ?? null,
+    authorSubpage: pageFacts.authorSubpage ?? null,
+    authenticatedReadOnlySurface: pageFacts.authenticatedReadOnlySurface === true,
+    categoryName: pageFacts.categoryName ?? null,
+    categoryPath: pageFacts.categoryPath ?? null,
+    featuredAuthorCount: Number(pageFacts.featuredAuthorCount ?? featuredAuthors.length ?? 0) || 0,
+    featuredAuthorCards,
+    featuredAuthors,
+    featuredContentCount: Number(pageFacts.featuredContentCount ?? featuredContentCards.length ?? 0) || 0,
+    featuredContentCards,
+  };
+  return Object.values(facts).some((value) => (
+    Array.isArray(value) ? value.length > 0 : value !== null && value !== ''
+  )) ? facts : null;
+}
+
+function renderBilibiliOverviewFacts(model) {
+  const summary = summarizeBilibiliKnowledgeFacts(model.states);
+  if (
+    summary.videoCodes.length === 0
+    && summary.authorMids.length === 0
+    && summary.searchFamilies.length === 0
+    && summary.featuredAuthors.length === 0
+    && summary.authenticatedSurfaceKinds.length === 0
+    && summary.featuredContentCards.length === 0
+  ) {
+    return [];
+  }
+  const featuredCardSummary = summary.featuredContentCards
+    .slice(0, 5)
+    .map((card) => {
+      const parts = [
+        card.title ?? null,
+        card.bvid ? `BV ${card.bvid}` : null,
+        card.authorMid ? `MID ${card.authorMid}` : null,
+      ].filter(Boolean);
+      return parts.join(' | ');
+    })
+    .filter(Boolean);
+  const featuredAuthorSummary = summary.featuredAuthors
+    .slice(0, 5)
+    .map((author) => {
+      const parts = [
+        author.name ?? null,
+        author.mid ? `MID ${author.mid}` : null,
+      ].filter(Boolean);
+      return parts.join(' | ');
+    })
+    .filter(Boolean);
+  const authenticatedSurfaceRows = toArray(summary.authenticatedSurfaceSummaries)
+    .slice(0, 5)
+    .map((surface) => ({
+      authorSubpage: mdEscape(cleanText(surface.authorSubpage) || '-'),
+      featuredAuthors: String(Number.isFinite(surface.featuredAuthorCount) ? surface.featuredAuthorCount : 0),
+      featuredContent: String(Number.isFinite(surface.featuredContentCount) ? surface.featuredContentCount : 0),
+      antiCrawlSignals: toArray(surface.antiCrawlSignals).map((value) => cleanText(value)).filter(Boolean).join(', ') || '-',
+      state: mdEscape(cleanText(surface.stateId) || '-'),
+    }));
+  return [
+    '## Surfaced bilibili facts',
+    '',
+    `- Video codes: ${summary.videoCodes.join(', ') || '-'}`,
+    `- Author mids: ${summary.authorMids.join(', ') || '-'}`,
+    `- Search families: ${summary.searchFamilies.join(', ') || '-'}`,
+    `- Authenticated session active during compilation: ${summary.authenticatedSessionObserved ? 'yes' : 'no'}`,
+    `- Authenticated read-only surfaces: ${summary.authenticatedSurfaceKinds.join(', ') || '-'}`,
+    `- Featured authors: ${featuredAuthorSummary.join(' ; ') || '-'}`,
+    `- Featured content cards: ${featuredCardSummary.join(' ; ') || '-'}`,
+    '',
+    '### Authenticated surface summaries',
+    '',
+    authenticatedSurfaceRows.length > 0
+      ? renderTable(['Author Subpage', 'Featured Authors', 'Featured Content', 'Anti-crawl Signals', 'State'], authenticatedSurfaceRows)
+      : '- No authenticated surface summaries.',
+    '',
+  ];
+}
+
+function renderBilibiliStateFacts(pageFacts) {
+  if (!pageFacts) {
+    return [];
+  }
+  const rows = [];
+  if (pageFacts.bv ?? pageFacts.bvid) {
+    rows.push(`- BV: \`${pageFacts.bv ?? pageFacts.bvid}\``);
+  }
+  if (pageFacts.authorMid) {
+    rows.push(`- Author MID: \`${pageFacts.authorMid}\``);
+  }
+  if (pageFacts.queryText) {
+    rows.push(`- Search query: ${mdEscape(pageFacts.queryText)}`);
+  }
+  if (pageFacts.searchFamily) {
+    rows.push(`- Search family: \`${pageFacts.searchFamily}\``);
+  }
+  if (pageFacts.authenticatedReadOnlySurface) {
+    rows.push('- Authenticated read-only surface: yes');
+  }
+  if (pageFacts.authorSubpage) {
+    rows.push(`- Author subpage: \`${pageFacts.authorSubpage}\``);
+  }
+  const featuredAuthors = toArray(pageFacts.featuredAuthors);
+  if (featuredAuthors.length > 0) {
+    rows.push(`- Featured authors: ${featuredAuthors.map((author) => {
+      const parts = [
+        author?.name ?? null,
+        author?.mid ? `MID ${author.mid}` : null,
+      ].filter(Boolean);
+      return mdEscape(parts.join(' | '));
+    }).join(' ; ')}`);
+  }
+  const featuredCards = toArray(pageFacts.featuredContentCards);
+  if (featuredCards.length > 0) {
+    rows.push(`- Featured content cards: ${featuredCards.map((card) => {
+      const parts = [
+        card?.title ?? null,
+        card?.bvid ? `BV ${card.bvid}` : null,
+        card?.authorMid ? `MID ${card.authorMid}` : null,
+      ].filter(Boolean);
+      return mdEscape(parts.join(' | '));
+    }).join(' ; ')}`);
+  }
+  if (Number.isFinite(pageFacts.resultCount)) {
+    rows.push(`- Result count: ${pageFacts.resultCount}`);
+  }
+  return rows.length > 0 ? ['## Page facts', '', ...rows, ''] : [];
+}
+
 function renderReadmePage(page, context, pagesById) {
   const { model, artifacts } = context;
   const sections = [
     '# 知识库总览',
     '',
-    '这个知识库将第 1–7 步的一次性分析产物编译为可维护、可导航、可追溯的本地知识底座。',
+    '这个知识库将 1-7 步的分析产物编译为可维护、可导航、可追溯的本地知识底座。',
     '',
     '## 站点摘要',
     '',
@@ -1348,7 +1525,6 @@ function renderReadmePage(page, context, pagesById) {
     `- ${pageRefById(pagesById, 'page_comparison_state_coverage', page.path)}`,
     '',
     '## 类别入口',
-    '',
     `- 状态页：${collectPageIdsByKind([...pagesById.values()], 'state').length} 个`,
     `- 元素页：${collectPageIdsByKind([...pagesById.values()], 'element').length} 个`,
     `- 意图页：${collectPageIdsByKind([...pagesById.values()], 'intent').length} 个`,
@@ -1376,6 +1552,37 @@ function renderOverviewPage(page, context, pagesById) {
     element: pageRefById(pagesById, `page_element_${intent.elementId}`, page.path),
     actionableTargets: toArray(intent.targetDomain?.actionableValues).length,
   }));
+  const searchFactRows = model.states
+    .filter((state) => state.pageFactHighlights?.searchFamily)
+    .map((state) => ({
+      state: pageRefById(pagesById, `page_state_${state.stateId}`, page.path),
+      family: state.pageFactHighlights.searchFamily,
+      query: cleanText(state.pageFacts?.queryText) || '-',
+      firstResultType: cleanText(state.pageFactHighlights.firstResultContentType) || '-',
+    }));
+  const identityFactRows = model.states
+    .filter((state) => state.pageFactHighlights?.bvid || state.pageFactHighlights?.authorMid)
+    .map((state) => ({
+      state: pageRefById(pagesById, `page_state_${state.stateId}`, page.path),
+      semanticPageType: cleanText(state.semanticPageType ?? state.pageType) || '-',
+      bvid: cleanText(state.pageFactHighlights?.bvid) || '-',
+      authorMid: cleanText(state.pageFactHighlights?.authorMid) || '-',
+      contentType: cleanText(state.pageFactHighlights?.contentType) || '-',
+    }));
+  const featuredCardRows = model.states
+    .filter((state) => toArray(state.pageFactHighlights?.featuredContentCards).length > 0)
+    .map((state) => ({
+      state: pageRefById(pagesById, `page_state_${state.stateId}`, page.path),
+      cards: toArray(state.pageFactHighlights?.featuredContentCards)
+        .map((card) => {
+          const title = cleanText(card?.title) || cleanText(card?.bvid) || cleanText(card?.url) || '-';
+          const suffix = [cleanText(card?.contentType), cleanText(card?.authorMid)].filter(Boolean).join(' / ');
+          return suffix ? `${title} (${suffix})` : title;
+        })
+        .slice(0, 3)
+        .join('; '),
+      count: String(state.pageFactHighlights?.featuredContentCardCount ?? toArray(state.pageFactHighlights?.featuredContentCards).length),
+    }));
   return [
     '# 站点总览',
     '',
@@ -1398,6 +1605,21 @@ function renderOverviewPage(page, context, pagesById) {
     '',
     renderTable(['Intent', 'Type', 'Element', 'Actionable Targets'], rows),
     '',
+    '## Observed Page Facts',
+    '',
+    searchFactRows.length > 0
+      ? renderTable(['State', 'Search Family', 'Query', 'First Result Type'], searchFactRows)
+      : '- No search-family facts observed.',
+    '',
+    identityFactRows.length > 0
+      ? renderTable(['State', 'Semantic Page Type', 'BV', 'UP Mid', 'Content Type'], identityFactRows)
+      : '- No identity facts observed.',
+    '',
+    featuredCardRows.length > 0
+      ? renderTable(['State', 'Featured Cards', 'Count'], featuredCardRows)
+      : '- No featured content cards observed.',
+    '',
+    ...renderBilibiliOverviewFacts(model),
     '## 关键入口',
     '',
     `- ${pageRefById(pagesById, 'page_comparison_state_coverage', page.path)}`,
@@ -1428,7 +1650,7 @@ function renderInteractionModelPage(page, context, pagesById) {
     '',
     '本页说明从 DOM/状态证据到元素、状态、转移、意图和动作原语的建模链路。',
     '',
-    '## 元素组',
+    '## 元素',
     '',
     renderTable(['Element', 'Kind', 'Members', 'Evidence States'], elementRows),
     '',
@@ -1466,6 +1688,7 @@ function renderInteractionModelPageEnhanced(page, context, pagesById) {
       archetypes: uniqueSortedStrings(model.siteProfile.archetypes).join(', ') || '-',
       capabilities: uniqueSortedStrings(model.siteProfile.capabilityFamilies).join(', ') || '-',
       pageTypes: uniqueSortedStrings(model.siteProfile.pageTypes).join(', ') || '-',
+      semanticPageTypes: uniqueSortedStrings(model.siteProfile.semanticPageTypes).join(', ') || '-',
       confidence: model.siteProfile.confidence ?? '-',
     }]
     : [];
@@ -1483,10 +1706,10 @@ function renderInteractionModelPageEnhanced(page, context, pagesById) {
     '## Site Profile',
     '',
     siteProfileRows.length > 0
-      ? renderTable(['Primary Archetype', 'Archetypes', 'Capability Families', 'Page Types', 'Confidence'], siteProfileRows)
+      ? renderTable(['Primary Archetype', 'Archetypes', 'Capability Families', 'Page Types', 'Semantic Page Types', 'Confidence'], siteProfileRows)
       : 'No site-profile.json available.',
     '',
-    '## 元素组',
+    '## 元素',
     '',
     renderTable(['Element', 'Kind', 'Members', 'Evidence States'], elementRows),
     '',
@@ -1527,7 +1750,7 @@ function renderNlEntryPage(page, context) {
   return [
     '# 自然语言入口',
     '',
-    '本页汇总别名词典、槽位定义、表达模式与入口规则，说明用户语言如何被映射到可执行计划。',
+    '本页汇总别名词典、槽位定义、表达模式与入口规则，说明用户语句如何被映射到可执行计划。',
     '',
     '## 表达模式',
     '',
@@ -1644,6 +1867,56 @@ function renderStatePage(page, context, pagesById) {
     kind: elementState.kind,
     value: describeElementState(elementState),
   }));
+  const factRows = [];
+  if (state.semanticPageType) {
+    factRows.push({ field: 'Semantic Page Type', value: `\`${state.semanticPageType}\`` });
+  }
+  if (state.pageFactHighlights?.searchFamily) {
+    factRows.push({ field: 'Search Family', value: `\`${state.pageFactHighlights.searchFamily}\`` });
+  }
+  if (state.pageFactHighlights?.bvid) {
+    factRows.push({ field: 'BV', value: `\`${state.pageFactHighlights.bvid}\`` });
+  }
+  if (state.pageFactHighlights?.authorMid) {
+    factRows.push({ field: 'UP Mid', value: `\`${state.pageFactHighlights.authorMid}\`` });
+  }
+  if (state.pageFactHighlights?.contentType) {
+    factRows.push({ field: 'Content Type', value: `\`${state.pageFactHighlights.contentType}\`` });
+  }
+  if (state.pageFactHighlights?.authorSubpage) {
+    factRows.push({ field: 'Author Subpage', value: `\`${state.pageFactHighlights.authorSubpage}\`` });
+  }
+  if (state.pageFactHighlights?.featuredAuthorCount) {
+    factRows.push({ field: 'Featured Author Count', value: String(state.pageFactHighlights.featuredAuthorCount) });
+  }
+  const featuredAuthors = toArray(state.pageFactHighlights?.featuredAuthors).map((author) => {
+    const parts = [
+      author?.name ?? null,
+      author?.mid ? `MID ${author.mid}` : null,
+    ].filter(Boolean);
+    return parts.join(' | ');
+  }).filter(Boolean);
+  if (featuredAuthors.length > 0) {
+    factRows.push({ field: 'Featured Authors', value: featuredAuthors.map((value) => mdEscape(value)).join(' ; ') });
+  }
+  const featuredAuthorCards = toArray(state.pageFactHighlights?.featuredAuthorCards).map((author) => ({
+    name: mdEscape(cleanText(author?.name) || '-'),
+    mid: cleanText(author?.mid) || '-',
+    url: mdEscape(cleanText(author?.url) || '-'),
+    authorSubpage: cleanText(author?.authorSubpage) || cleanText(state.pageFactHighlights?.authorSubpage) || '-',
+  }));
+  if (state.pageFactHighlights?.categoryName) {
+    factRows.push({ field: 'Category', value: mdEscape(state.pageFactHighlights.categoryName) });
+  }
+  if (state.pageFactHighlights?.categoryPath) {
+    factRows.push({ field: 'Category Path', value: `\`${state.pageFactHighlights.categoryPath}\`` });
+  }
+  const featuredCards = toArray(state.pageFactHighlights?.featuredContentCards).map((card) => ({
+    title: mdEscape(cleanText(card?.title) || cleanText(card?.bvid) || cleanText(card?.url) || '-'),
+    contentType: cleanText(card?.contentType) || '-',
+    bvid: cleanText(card?.bvid) || '-',
+    authorMid: cleanText(card?.authorMid) || '-',
+  }));
   return [
     `# ${mdEscape(page.title)}`,
     '',
@@ -1664,6 +1937,217 @@ function renderStatePage(page, context, pagesById) {
     renderRelatedPageList(page, pagesById, page.path),
     '',
     '## 证据引用',
+    '',
+    renderSourceRefList(page, page.path),
+  ].join('\n');
+}
+
+function renderStatePageEnhancedDraft(page, context, pagesById) {
+  const { model } = context;
+  const stateId = page.attributes.stateId;
+  const state = model.statesById.get(stateId);
+  const edge = model.edgesByObservedStateId.get(stateId);
+  const elementRows = toArray(state.elementStates).map((elementState) => ({
+    element: pageRefById(pagesById, `page_element_${elementState.elementId}`, page.path),
+    kind: elementState.kind,
+    value: describeElementState(elementState),
+  }));
+  const factRows = [];
+  if (state.semanticPageType) {
+    factRows.push({ field: 'Semantic Page Type', value: `\`${state.semanticPageType}\`` });
+  }
+  if (state.pageFactHighlights?.searchFamily) {
+    factRows.push({ field: 'Search Family', value: `\`${state.pageFactHighlights.searchFamily}\`` });
+  }
+  if (state.pageFacts?.queryText) {
+    factRows.push({ field: 'Search Query', value: mdEscape(state.pageFacts.queryText) });
+  }
+  if (state.pageFactHighlights?.bvid) {
+    factRows.push({ field: 'BV', value: `\`${state.pageFactHighlights.bvid}\`` });
+  }
+  if (state.pageFactHighlights?.authorMid) {
+    factRows.push({ field: 'UP Mid', value: `\`${state.pageFactHighlights.authorMid}\`` });
+  }
+  if (state.pageFactHighlights?.contentType) {
+    factRows.push({ field: 'Content Type', value: `\`${state.pageFactHighlights.contentType}\`` });
+  }
+  if (state.pageFactHighlights?.authorSubpage) {
+    factRows.push({ field: 'Author Subpage', value: `\`${state.pageFactHighlights.authorSubpage}\`` });
+  }
+  if (state.pageFactHighlights?.featuredAuthorCount) {
+    factRows.push({ field: 'Featured Author Count', value: String(state.pageFactHighlights.featuredAuthorCount) });
+  }
+  const featuredAuthors = toArray(state.pageFactHighlights?.featuredAuthors).map((author) => {
+    const parts = [
+      author?.name ?? null,
+      author?.mid ? `MID ${author.mid}` : null,
+    ].filter(Boolean);
+    return parts.join(' | ');
+  }).filter(Boolean);
+  if (featuredAuthors.length > 0) {
+    factRows.push({ field: 'Featured Authors', value: featuredAuthors.map((value) => mdEscape(value)).join(' ; ') });
+  }
+  if (state.pageFactHighlights?.categoryName) {
+    factRows.push({ field: 'Category', value: mdEscape(state.pageFactHighlights.categoryName) });
+  }
+  if (state.pageFactHighlights?.categoryPath) {
+    factRows.push({ field: 'Category Path', value: `\`${state.pageFactHighlights.categoryPath}\`` });
+  }
+  if (Number.isFinite(state.pageFacts?.resultCount)) {
+    factRows.push({ field: 'Result Count', value: String(state.pageFacts.resultCount) });
+  }
+  const featuredCards = toArray(state.pageFactHighlights?.featuredContentCards).map((card) => ({
+    title: mdEscape(cleanText(card?.title) || cleanText(card?.bvid) || cleanText(card?.url) || '-'),
+    contentType: cleanText(card?.contentType) || '-',
+    bvid: cleanText(card?.bvid) || '-',
+    authorMid: cleanText(card?.authorMid) || '-',
+  }));
+  return [
+    `# ${mdEscape(page.title)}`,
+    '',
+    '## 状态信息',
+    '',
+    `- Source Status：\`${state.sourceStatus}\``,
+    `- Final URL：\`${state.finalUrl}\``,
+    `- Title：${mdEscape(state.title ?? '-')}`,
+    `- Captured At：\`${state.capturedAt ?? '-'}\``,
+    edge ? `- 进入触发：${mdEscape(edge.trigger?.label ?? edge.stateName ?? edge.observedStateId)}` : '- 进入触发：初始状态',
+    '',
+    ...(factRows.length > 0
+      ? [
+          '## Page facts',
+          '',
+          renderTable(['Field', 'Value'], factRows),
+          '',
+        ]
+      : []),
+    ...(featuredCards.length > 0
+      ? [
+          '## Featured content cards',
+          '',
+          renderTable(['Title', 'Content Type', 'BV', 'UP Mid'], featuredCards),
+          '',
+        ]
+      : []),
+    '## 元素状态',
+    '',
+    renderTable(['Element', 'Kind', 'Value'], elementRows),
+    '',
+    '## 关联页面',
+    '',
+    renderRelatedPageList(page, pagesById, page.path),
+    '',
+    '## 证据引用',
+    '',
+    renderSourceRefList(page, page.path),
+  ].join('\n');
+}
+
+function renderStatePageEnhanced(page, context, pagesById) {
+  const { model } = context;
+  const stateId = page.attributes.stateId;
+  const state = model.statesById.get(stateId);
+  const edge = model.edgesByObservedStateId.get(stateId);
+  const elementRows = toArray(state.elementStates).map((elementState) => ({
+    element: pageRefById(pagesById, `page_element_${elementState.elementId}`, page.path),
+    kind: elementState.kind,
+    value: describeElementState(elementState),
+  }));
+  const factRows = [];
+  if (state.semanticPageType) {
+    factRows.push({ field: 'Semantic Page Type', value: `\`${state.semanticPageType}\`` });
+  }
+  if (state.pageFactHighlights?.searchFamily) {
+    factRows.push({ field: 'Search Family', value: `\`${state.pageFactHighlights.searchFamily}\`` });
+  }
+  if (state.pageFacts?.queryText) {
+    factRows.push({ field: 'Search Query', value: mdEscape(state.pageFacts.queryText) });
+  }
+  if (state.pageFactHighlights?.bvid) {
+    factRows.push({ field: 'BV', value: `\`${state.pageFactHighlights.bvid}\`` });
+  }
+  if (state.pageFactHighlights?.authorMid) {
+    factRows.push({ field: 'UP Mid', value: `\`${state.pageFactHighlights.authorMid}\`` });
+  }
+  if (state.pageFactHighlights?.contentType) {
+    factRows.push({ field: 'Content Type', value: `\`${state.pageFactHighlights.contentType}\`` });
+  }
+  if (state.pageFactHighlights?.authorSubpage) {
+    factRows.push({ field: 'Author Subpage', value: `\`${state.pageFactHighlights.authorSubpage}\`` });
+  }
+  if (state.pageFactHighlights?.featuredAuthorCount) {
+    factRows.push({ field: 'Featured Author Count', value: String(state.pageFactHighlights.featuredAuthorCount) });
+  }
+  const featuredAuthors = toArray(state.pageFactHighlights?.featuredAuthors).map((author) => {
+    const parts = [
+      author?.name ?? null,
+      author?.mid ? `MID ${author.mid}` : null,
+    ].filter(Boolean);
+    return parts.join(' | ');
+  }).filter(Boolean);
+  if (featuredAuthors.length > 0) {
+    factRows.push({ field: 'Featured Authors', value: featuredAuthors.map((value) => mdEscape(value)).join(' ; ') });
+  }
+  if (state.pageFactHighlights?.categoryName) {
+    factRows.push({ field: 'Category', value: mdEscape(state.pageFactHighlights.categoryName) });
+  }
+  if (state.pageFactHighlights?.categoryPath) {
+    factRows.push({ field: 'Category Path', value: `\`${state.pageFactHighlights.categoryPath}\`` });
+  }
+  if (Number.isFinite(state.pageFacts?.resultCount)) {
+    factRows.push({ field: 'Result Count', value: String(state.pageFacts.resultCount) });
+  }
+  const featuredCards = toArray(state.pageFactHighlights?.featuredContentCards).map((card) => ({
+    title: mdEscape(cleanText(card?.title) || cleanText(card?.bvid) || cleanText(card?.url) || '-'),
+    contentType: cleanText(card?.contentType) || '-',
+    bvid: cleanText(card?.bvid) || '-',
+    authorMid: cleanText(card?.authorMid) || '-',
+  }));
+  const featuredAuthorCards = toArray(state.pageFactHighlights?.featuredAuthorCards).map((author) => ({
+    name: mdEscape(cleanText(author?.name) || '-'),
+    mid: cleanText(author?.mid) || '-',
+    url: mdEscape(cleanText(author?.url) || '-'),
+    authorSubpage: cleanText(author?.authorSubpage) || cleanText(state.pageFactHighlights?.authorSubpage) || '-',
+  }));
+
+  return [
+    `# ${mdEscape(page.title)}`,
+    '',
+    '## State Information',
+    '',
+    `- Source Status: \`${state.sourceStatus}\``,
+    `- Final URL: \`${state.finalUrl}\``,
+    `- Title: ${mdEscape(state.title ?? '-')}`,
+    `- Captured At: \`${state.capturedAt ?? '-'}\``,
+    edge ? `- Entry Trigger: ${mdEscape(edge.trigger?.label ?? edge.stateName ?? edge.observedStateId)}` : '- Entry Trigger: initial state',
+    '',
+    '## Observed Page Facts',
+    '',
+    factRows.length > 0
+      ? renderTable(['Field', 'Value'], factRows)
+      : '- No surfaced page facts.',
+    '',
+    '## Featured Content Cards',
+    '',
+    featuredCards.length > 0
+      ? renderTable(['Title', 'Content Type', 'BV', 'UP Mid'], featuredCards)
+      : '- No featured content cards.',
+    '',
+    '## Featured Author Cards',
+    '',
+    featuredAuthorCards.length > 0
+      ? renderTable(['Name', 'MID', 'Author URL', 'Author Subpage'], featuredAuthorCards)
+      : '- No featured author cards.',
+    '',
+    '## Element States',
+    '',
+    renderTable(['Element', 'Kind', 'Value'], elementRows),
+    '',
+    '## Related Pages',
+    '',
+    renderRelatedPageList(page, pagesById, page.path),
+    '',
+    '## Source References',
     '',
     renderSourceRefList(page, page.path),
   ].join('\n');
@@ -1857,8 +2341,8 @@ function renderFlowPage(page, context, pagesById) {
     ),
     '',
     '## 适用前提',
-    '',
-    `- 当前页面需要能识别元素 ${pageRefById(pagesById, `page_element_${intent.elementId}`, page.path)}。`,
+    `- Current page must resolve source element ${pageRefById(pagesById, `page_element_${intent.elementId}`, page.path)}.`,
+    '- Runtime must provide `currentElementState`.',
     `- 运行时需要提供 \`currentElementState\`。`,
     '',
     '## 起始状态',
@@ -1892,7 +2376,6 @@ function renderFlowPage(page, context, pagesById) {
     '## 入口规则',
     '',
     entryRows.length ? renderTable(['Mode', 'Resolution', 'Decision Rules'], entryRows) : '- 无',
-    '',
     '## 关联证据 / 状态引用',
     '',
     (() => {
@@ -1991,7 +2474,7 @@ function renderPageContent(page, context, pagesById) {
   } else if (page.pageId === 'page_comparison_state_coverage') {
     body = renderStateCoveragePage(page, context, pagesById);
   } else if (page.kind === 'state') {
-    body = renderStatePage(page, context, pagesById);
+    body = renderStatePageEnhanced(page, context, pagesById);
   } else if (page.kind === 'element') {
     body = renderElementPage(page, context, pagesById);
   } else if (page.kind === 'intent') {
@@ -2048,168 +2531,17 @@ function buildSiteMapDocument(inputUrl, baseUrl, generatedAt, pages, sourcesDocu
   };
 }
 
-function buildNamingRulesDocument() {
-  return {
-    titleLanguage: 'zh-primary',
-    slugMode: 'ascii',
-    pageIdPattern: '^page_[a-z0-9_]+$',
-    fileRules: {
-      wiki: 'Markdown files under wiki/, slug uses ASCII and hyphen.',
-      raw: 'Copied immutable source artifacts under raw/.',
-      indexes: 'Derived from pages.json only; do not hand-edit category indexes.',
-    },
-  };
-}
-
-function buildEvidenceRulesDocument() {
-  return {
-    evidenceRoot: 'raw/',
-    allowedKinds: ['html', 'snapshot', 'screenshot', 'manifest', 'json', 'markdown'],
-    linkPolicy: {
-      rawOnly: true,
-      forbidUpstreamAbsolutePaths: true,
-      requireExistingTargets: true,
-    },
-    pagePolicy: {
-      requireKbMeta: true,
-      requireSourceRefs: false,
-      requireUpdatedAt: true,
-    },
-  };
-}
-
-function buildIndexEntrySchema() {
-  return {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    type: 'object',
-    required: ['pageId', 'kind', 'title', 'summary', 'path', 'updatedAt', 'sourceRefs', 'relatedIds'],
-    properties: {
-      pageId: { type: 'string' },
-      kind: { type: 'string' },
-      title: { type: 'string' },
-      summary: { type: 'string' },
-      path: { type: 'string' },
-      updatedAt: { type: 'string' },
-      sourceRefs: { type: 'array' },
-      relatedIds: { type: 'array' },
-      attributes: { type: 'object' },
-    },
-  };
-}
-
-function buildWikiPageSchema() {
-  return {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    type: 'object',
-    required: ['pageId', 'kind', 'title', 'summary', 'path', 'updatedAt', 'sourceRefs', 'relatedIds'],
-    properties: {
-      pageId: { type: 'string' },
-      kind: { type: 'string' },
-      title: { type: 'string' },
-      summary: { type: 'string' },
-      path: { type: 'string' },
-      updatedAt: { type: 'string' },
-      sourceRefs: { type: 'array' },
-      relatedIds: { type: 'array' },
-      attributes: { type: 'object' },
-    },
-  };
-}
-
-function buildLintReportSchema() {
-  return {
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    type: 'object',
-    required: ['kbDir', 'generatedAt', 'summary', 'errors', 'warnings'],
-    properties: {
-      kbDir: { type: 'string' },
-      generatedAt: { type: 'string' },
-      summary: { type: 'object' },
-      errors: { type: 'array' },
-      warnings: { type: 'array' },
-    },
-  };
-}
-
-function renderAgentsMd() {
-  return [
-    '# AGENTS.md',
-    '',
-    '## Rules',
-    '',
-    '- `raw/` is immutable evidence. Read it, but do not modify it.',
-    '- Start with `index/` when answering questions; drill into `wiki/` and `raw/` only as needed.',
-    '- Every wiki update must preserve evidence traceability back to `raw/`.',
-    '- After any wiki maintenance, run `node compile-wiki.mjs lint --kb-dir <kb-dir>`.',
-    '- Category indexes are projections of `index/pages.json`; do not hand-edit them independently.',
-  ].join('\n');
-}
-
-function renderTemplateIntent() {
-  return [
-    '# Intent Page Template',
-    '',
-    '## 意图定义',
-    '',
-    '## 槽位',
-    '',
-    '## 表达模式',
-    '',
-    '## 值域',
-    '',
-    '## 证据引用',
-  ].join('\n');
-}
-
-function renderTemplateState() {
-  return [
-    '# State Page Template',
-    '',
-    '## 状态信息',
-    '',
-    '## 元素状态',
-    '',
-    '## 证据引用',
-  ].join('\n');
-}
-
-function renderTemplateRisk() {
-  return [
-    '# Risk Page Template',
-    '',
-    '## 风险定义',
-    '',
-    '## 触发条件',
-    '',
-    '## 审批检查点',
-    '',
-    '## 证据引用',
-  ].join('\n');
-}
-
-async function writeSchemaFiles(kbDir) {
-  await writeMarkdownFile(path.join(kbDir, KB_FILES.agents), renderAgentsMd());
-  await writeMarkdownFile(path.join(kbDir, KB_FILES.intentTemplate), renderTemplateIntent());
-  await writeMarkdownFile(path.join(kbDir, KB_FILES.stateTemplate), renderTemplateState());
-  await writeMarkdownFile(path.join(kbDir, KB_FILES.riskTemplate), renderTemplateRisk());
-  await writeJsonFile(path.join(kbDir, KB_FILES.namingRules), buildNamingRulesDocument());
-  await writeJsonFile(path.join(kbDir, KB_FILES.evidenceRules), buildEvidenceRulesDocument());
-  await writeJsonFile(path.join(kbDir, KB_FILES.indexSchema), buildIndexEntrySchema());
-  await writeJsonFile(path.join(kbDir, KB_FILES.wikiSchema), buildWikiPageSchema());
-  await writeJsonFile(path.join(kbDir, KB_FILES.lintSchema), buildLintReportSchema());
-}
-
 async function writePagesAndIndexes(context, pages, sourcesDocument) {
   const { kbDir, generatedAt, artifacts } = context;
   const pagesById = buildPagesById(pages);
   for (const page of pages) {
     const content = renderPageContent(page, context, pagesById);
-    await writeMarkdownFile(path.join(kbDir, page.path), content);
+    await writeTextFile(path.join(kbDir, page.path), content);
   }
 
   const pagesIndex = buildPageIndexes(artifacts.inputUrl, artifacts.baseUrl, generatedAt, pages);
   await writeJsonFile(path.join(kbDir, KB_FILES.pages), pagesIndex);
-  await writeJsonlFile(path.join(kbDir, KB_FILES.pagesJsonl), pagesIndex.pages);
+  await writeJsonLines(path.join(kbDir, KB_FILES.pagesJsonl), pagesIndex.pages);
   await writeJsonFile(path.join(kbDir, KB_FILES.states), {
     inputUrl: artifacts.inputUrl,
     baseUrl: artifacts.baseUrl,
@@ -2302,83 +2634,6 @@ function resolveMarkdownTarget(currentFile, href) {
   return path.resolve(path.dirname(currentFile), withoutQuery);
 }
 
-function buildLintSummary(errors, warnings) {
-  const orphanPageCount = warnings.filter((warning) => warning.code === 'orphan-page').length;
-  return {
-    passed: errors.length === 0,
-    errorCount: errors.length,
-    warningCount: warnings.length,
-    orphanPageCount,
-  };
-}
-
-function renderLintReportMarkdown(report) {
-  return [
-    '# Lint Report',
-    '',
-    `- Generated At: \`${report.generatedAt}\``,
-    `- KB Dir: \`${report.kbDir}\``,
-    `- Passed: \`${String(Boolean(report.summary.passed))}\``,
-    `- Errors: ${report.summary.errorCount}`,
-    `- Warnings: ${report.summary.warningCount}`,
-    '',
-    '## Errors',
-    '',
-    report.errors.length
-      ? renderTable(
-        ['Code', 'Message', 'Path'],
-        report.errors.map((item) => ({
-          code: item.code,
-          message: mdEscape(item.message),
-          path: item.path ? `\`${toPosixPath(item.path)}\`` : '-',
-        }))
-      )
-      : '- 无',
-    '',
-    '## Warnings',
-    '',
-    report.warnings.length
-      ? renderTable(
-        ['Code', 'Message', 'Path'],
-        report.warnings.map((item) => ({
-          code: item.code,
-          message: mdEscape(item.message),
-          path: item.path ? `\`${toPosixPath(item.path)}\`` : '-',
-        }))
-      )
-      : '- 无',
-  ].join('\n');
-}
-
-function renderGapReportMarkdown(report) {
-  const sections = [
-    '# Gap Report',
-    '',
-    `- Generated At: \`${report.generatedAt}\``,
-    `- KB Dir: \`${report.kbDir}\``,
-    '',
-  ];
-  for (const [section, items] of Object.entries(report.groups)) {
-    sections.push(`## ${section}`);
-    sections.push('');
-    if (!items.length) {
-      sections.push('- 无');
-      sections.push('');
-      continue;
-    }
-    sections.push(renderTable(
-      ['Code', 'Message', 'Path'],
-      items.map((item) => ({
-        code: item.code,
-        message: mdEscape(item.message),
-        path: item.path ? `\`${toPosixPath(item.path)}\`` : '-',
-      }))
-    ));
-    sections.push('');
-  }
-  return sections.join('\n');
-}
-
 function comparePageSets(expectedEntries, actualEntries) {
   const expectedIds = new Set(expectedEntries.map((entry) => entry.pageId));
   const actualIds = new Set(actualEntries.map((entry) => entry.pageId));
@@ -2396,36 +2651,6 @@ function validateCategoryIndex(kind, indexEntries, pageEntries, errors, indexPat
   for (const pageId of comparison.extra) {
     errors.push(buildError('index-mismatch', `${kind} index has unexpected page ${pageId}.`, indexPath));
   }
-}
-
-function classifyGapWarnings(warnings) {
-  const groups = {
-    orphanPages: [],
-    missingSummaries: [],
-    thinConceptPages: [],
-    missingSourceRefs: [],
-    evidenceGaps: [],
-    pendingRiskConfirmations: [],
-    other: [],
-  };
-  for (const warning of warnings) {
-    if (warning.code === 'orphan-page') {
-      groups.orphanPages.push(warning);
-    } else if (warning.code === 'missing-summary') {
-      groups.missingSummaries.push(warning);
-    } else if (warning.code === 'thin-concept-page') {
-      groups.thinConceptPages.push(warning);
-    } else if (warning.code === 'missing-source-refs') {
-      groups.missingSourceRefs.push(warning);
-    } else if (warning.code === 'evidence-gap') {
-      groups.evidenceGaps.push(warning);
-    } else if (warning.code === 'risk-context-thin') {
-      groups.pendingRiskConfirmations.push(warning);
-    } else {
-      groups.other.push(warning);
-    }
-  }
-  return groups;
 }
 
 export async function lintKnowledgeBase(kbDir, options = {}) {
@@ -2579,10 +2804,7 @@ export async function lintKnowledgeBase(kbDir, options = {}) {
   };
 
   await ensureDir(reportDir);
-  await writeJsonFile(path.join(reportDir, path.basename(KB_FILES.lintReportJson)), lintReport);
-  await writeMarkdownFile(path.join(reportDir, path.basename(KB_FILES.lintReportMd)), renderLintReportMarkdown(lintReport));
-  await writeJsonFile(path.join(reportDir, path.basename(KB_FILES.gapReportJson)), gapReport);
-  await writeMarkdownFile(path.join(reportDir, path.basename(KB_FILES.gapReportMd)), renderGapReportMarkdown(gapReport));
+  await writeKnowledgeBaseLintReports(reportDir, KB_FILES, lintReport, gapReport);
 
   if (kb) {
     const updatedSiteMap = buildSiteMapDocument(
@@ -2611,119 +2833,26 @@ export async function lintKnowledgeBase(kbDir, options = {}) {
 
 export async function compileKnowledgeBase(inputUrl, options = {}) {
   const mergedOptions = mergeCompileOptions(options);
-  const artifacts = await resolveCompileArtifacts(inputUrl, mergedOptions);
-  const layout = buildKbLayout(artifacts.baseUrl, mergedOptions.kbDir);
-  const generatedAt = new Date().toISOString();
-  await initializeKnowledgeBaseDirs(layout);
-
-  const sourceRunIds = buildSourceRunIds([
-    artifacts.capture,
-    artifacts.expanded,
-    artifacts.bookContent,
-    artifacts.analysis,
-    artifacts.abstraction,
-    artifacts.nlEntry,
-    artifacts.docs,
-    artifacts.governance,
-  ]);
-
-  await appendKbEvent(layout.kbDir, 'compile_start', 'running', `Starting compile for ${artifacts.baseUrl}.`, { sourceRunIds });
-
-  const copiedSources = await copyRawSources(layout.kbDir, [
-    artifacts.capture,
-    artifacts.expanded,
-    ...(artifacts.bookContent ? [artifacts.bookContent] : []),
-    artifacts.analysis,
-    artifacts.abstraction,
-    artifacts.nlEntry,
-    artifacts.docs,
-    artifacts.governance,
-  ]);
-
-  for (const source of copiedSources) {
-    await appendKbEvent(
-      layout.kbDir,
-      source.reused ? 'reuse_raw_artifact' : 'copy_raw_artifact',
-      'success',
-      `${source.reused ? 'Reused' : 'Copied'} ${source.step} from ${source.dir}.`,
-      { sourceRunIds }
-    );
-  }
-
-  const rawResolver = createRawResolver(layout.kbDir, copiedSources);
-  const sourcesDocument = buildSourceIndexDocument(artifacts.inputUrl, artifacts.baseUrl, generatedAt, copiedSources);
-  const model = finalizeDataModel(buildDataModel(artifacts));
-  const siteContext = await readSiteContext(process.cwd(), artifacts.host);
-  const context = {
-    generatedAt,
-    kbDir: layout.kbDir,
-    artifacts,
-    model,
-    siteContext,
-    rawResolver,
-  };
-
-  await writeSchemaFiles(layout.kbDir);
-  const pages = buildPageDescriptors(context);
-  await writePagesAndIndexes(context, pages, sourcesDocument);
-
-  const { lintReport, gapReport } = await lintKnowledgeBase(layout.kbDir, {
-    reportDir: layout.reportsDir,
-    failOnWarnings: false,
+  return publishKnowledgeBase(inputUrl, mergedOptions, {
+    cwd: process.cwd(),
+    kbFiles: KB_FILES,
+    resolveCompileArtifacts,
+    readSiteContext,
+    buildKbLayout,
+    initializeKnowledgeBaseDirs,
+    buildSourceRunIds,
+    appendKbEvent,
+    copyRawSources,
+    createRawResolver,
+    buildSourceIndexDocument,
+    buildDataModel,
+    finalizeDataModel,
+    writeKnowledgeBaseSchemaFiles,
+    buildPageDescriptors,
+    writePagesAndIndexes,
+    lintKnowledgeBase,
+    syncKnowledgeBaseSiteMetadata,
   });
-
-  await appendKbEvent(
-    layout.kbDir,
-    'compile_complete',
-    lintReport.summary.passed ? 'success' : 'failed',
-    `Compile finished with ${pages.length} pages, ${lintReport.summary.errorCount} errors, ${lintReport.summary.warningCount} warnings.`,
-    { sourceRunIds }
-  );
-
-  const usedActionKinds = uniqueSortedStrings(
-    toArray(model.intents)
-      .map((intent) => intent?.actionId)
-      .filter(Boolean),
-  );
-  const approvalActionKinds = uniqueSortedStrings(
-    toArray(model.approvalRules)
-      .flatMap((rule) => toArray(rule?.appliesTo?.actionIds))
-      .filter((actionId) => usedActionKinds.includes(actionId)),
-  );
-  const safeActionKinds = uniqueSortedStrings(
-    usedActionKinds.filter((actionId) => !approvalActionKinds.includes(actionId)),
-  );
-  const resolvedPrimaryArchetype = resolvePrimaryArchetypeFromSiteContext(siteContext, [model.siteProfile?.primaryArchetype]);
-  const resolvedPageTypes = resolvePageTypesFromSiteContext(siteContext, [model.siteProfile?.pageTypes ?? []]);
-  const resolvedCapabilityFamilies = resolveCapabilityFamiliesFromSiteContext(siteContext, [model.siteProfile?.capabilityFamilies ?? []]);
-  const resolvedSupportedIntents = resolveSupportedIntentsFromSiteContext(siteContext, [toArray(model.intents).map((intent) => intent.intentType ?? intent.intentId)]);
-  const resolvedSafeActionKinds = resolveSafeActionKindsFromSiteContext(siteContext, [safeActionKinds]);
-  await upsertSiteRegistryRecord(process.cwd(), artifacts.host, {
-    canonicalBaseUrl: artifacts.baseUrl,
-    siteArchetype: resolvedPrimaryArchetype,
-    profilePath: artifacts.analysis.siteProfilePath ?? null,
-    knowledgeBaseDir: layout.kbDir,
-    latestKnowledgeBaseCompileAt: generatedAt,
-    latestKnowledgeBaseSourcesPath: path.join(layout.kbDir, KB_FILES.sources),
-    latestLintSummary: lintReport.summary,
-  });
-  await upsertSiteCapabilities(process.cwd(), artifacts.host, {
-    baseUrl: artifacts.baseUrl,
-    primaryArchetype: resolvedPrimaryArchetype,
-    pageTypes: resolvedPageTypes,
-    capabilityFamilies: resolvedCapabilityFamilies,
-    supportedIntents: resolvedSupportedIntents,
-    safeActionKinds: resolvedSafeActionKinds,
-    approvalActionKinds,
-  });
-
-  return {
-    kbDir: layout.kbDir,
-    generatedAt,
-    pages: pages.length,
-    lintSummary: lintReport.summary,
-    gapGroups: Object.fromEntries(Object.entries(gapReport.groups).map(([key, value]) => [key, value.length])),
-  };
 }
 
 function printHelp() {

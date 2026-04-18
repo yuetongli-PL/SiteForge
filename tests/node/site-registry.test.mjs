@@ -4,8 +4,29 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { buildSiteCapabilitiesPath, upsertSiteCapabilities } from '../../lib/site-capabilities.mjs';
-import { buildSiteRegistryPath, upsertSiteRegistryRecord } from '../../lib/site-registry.mjs';
+import { buildSiteCapabilitiesPath, readSiteCapabilities, upsertSiteCapabilities } from '../../lib/site-capabilities.mjs';
+import { buildSiteRegistryPath, readSiteRegistry, upsertSiteRegistryRecord } from '../../lib/site-registry.mjs';
+
+test('site registry and capabilities return default empty documents before first write', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-index-defaults-'));
+  try {
+    const registry = await readSiteRegistry(workspace);
+    const capabilities = await readSiteCapabilities(workspace);
+
+    assert.deepEqual(registry, {
+      version: 1,
+      generatedAt: null,
+      sites: {},
+    });
+    assert.deepEqual(capabilities, {
+      version: 1,
+      generatedAt: null,
+      sites: {},
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test('site registry upserts host operational metadata', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-registry-'));
@@ -80,6 +101,39 @@ test('site registry and capabilities keep hosts isolated', async () => {
 
     assert.deepEqual(capabilities.sites['www.22biqu.com'].supportedIntents, ['download-book']);
     assert.deepEqual(capabilities.sites['moodyz.com'].supportedIntents, ['open-actress', 'open-work']);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('site index upserts sanitize hosts and normalize array fields by module strategy', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-index-normalize-'));
+  try {
+    await upsertSiteRegistryRecord(workspace, 'moodyz com', {
+      capabilityFamilies: ['search-content', 'navigate-to-author', 'search-content'],
+    });
+    await upsertSiteRegistryRecord(workspace, 'moodyz com', {
+      capabilityFamilies: ['navigate-to-content'],
+    });
+    await upsertSiteCapabilities(workspace, 'moodyz com', {
+      capabilityFamilies: ['search-content', 'navigate-to-author', 'search-content'],
+      supportedIntents: ['open-work', 'open-work'],
+    });
+    await upsertSiteCapabilities(workspace, 'moodyz com', {
+      capabilityFamilies: ['navigate-to-content'],
+    });
+
+    const registry = JSON.parse(await readFile(buildSiteRegistryPath(workspace), 'utf8'));
+    const capabilities = JSON.parse(await readFile(buildSiteCapabilitiesPath(workspace), 'utf8'));
+
+    assert.deepEqual(Object.keys(registry.sites), ['moodyz-com']);
+    assert.deepEqual(registry.sites['moodyz-com'].capabilityFamilies, [
+      'navigate-to-author',
+      'navigate-to-content',
+      'search-content',
+    ]);
+    assert.deepEqual(capabilities.sites['moodyz-com'].capabilityFamilies, ['navigate-to-content']);
+    assert.deepEqual(capabilities.sites['moodyz-com'].supportedIntents, ['open-work']);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

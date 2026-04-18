@@ -1,39 +1,11 @@
-import { spawn } from 'node:child_process';
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { initializeCliUtf8 } from './lib/cli.mjs';
 
-const DEFAULT_BROWSER_PATHS = {
-  win32: [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    'C:\\Program Files\\Google\\Chrome for Testing\\chrome.exe',
-    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome for Testing', 'chrome.exe'),
-    'C:\\Program Files\\Chromium\\Application\\chrome.exe',
-    path.join(os.homedir(), 'AppData', 'Local', 'Chromium', 'Application', 'chrome.exe'),
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-  ],
-  darwin: [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-  ],
-  linux: [
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/snap/bin/chromium',
-    '/usr/bin/microsoft-edge',
-    '/usr/bin/microsoft-edge-stable',
-  ],
-};
+import { initializeCliUtf8 } from './lib/cli.mjs';
+import { NETWORK_IDLE_QUIET_MS, openBrowserSession } from './lib/browser-runtime/session.mjs';
+import { ensureAuthenticatedSession, resolveSiteBrowserSessionOptions } from './lib/site-auth.mjs';
 
 const DEFAULT_OPTIONS = {
   outDir: path.resolve(process.cwd(), 'captures'),
@@ -49,194 +21,13 @@ const DEFAULT_OPTIONS = {
     deviceScaleFactor: 1,
   },
   userAgent: undefined,
+  profilePath: undefined,
+  siteProfile: null,
+  reuseLoginState: undefined,
+  browserProfileRoot: undefined,
+  userDataDir: undefined,
+  autoLogin: undefined,
 };
-
-const SNAPSHOT_STYLES = ['display', 'visibility', 'opacity', 'position', 'z-index'];
-const NETWORK_IDLE_QUIET_MS = 500;
-const DEVTOOLS_POLL_INTERVAL_MS = 100;
-const NETWORK_IDLE_POLL_INTERVAL_MS = 100;
-
-class CdpClient {
-  constructor(wsUrl, { timeoutMs = DEFAULT_OPTIONS.timeoutMs } = {}) {
-    this.wsUrl = wsUrl;
-    this.defaultTimeoutMs = timeoutMs;
-    this.ws = null;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.listeners = new Set();
-    this.closed = false;
-  }
-
-  async connect() {
-    if (this.ws) {
-      return;
-    }
-
-    await new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.wsUrl);
-      let settled = false;
-
-      const cleanup = () => {
-        ws.removeEventListener('open', onOpen);
-        ws.removeEventListener('error', onError);
-      };
-
-      const onOpen = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        this.ws = ws;
-        ws.addEventListener('message', (event) => this.#handleMessage(event));
-        ws.addEventListener('close', (event) => this.#handleClose(event));
-        ws.addEventListener('error', (event) => this.#handleSocketError(event));
-        resolve();
-      };
-
-      const onError = (event) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        reject(new Error(`Failed to connect to CDP websocket: ${event?.message ?? 'unknown error'}`));
-      };
-
-      ws.addEventListener('open', onOpen);
-      ws.addEventListener('error', onError);
-    });
-  }
-
-  async send(method, params = {}, sessionId, timeoutMs = this.defaultTimeoutMs) {
-    if (!this.ws || this.closed) {
-      throw new Error('CDP socket is not connected');
-    }
-
-    const id = this.nextId++;
-    const payload = { id, method, params };
-    if (sessionId) {
-      payload.sessionId = sessionId;
-    }
-
-    return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`CDP timeout for ${method}`));
-      }, timeoutMs);
-
-      this.pending.set(id, { resolve, reject, timer, method });
-      this.ws.send(JSON.stringify(payload));
-    });
-  }
-
-  on(method, handler, { sessionId } = {}) {
-    const listener = { method, handler, sessionId: sessionId ?? null };
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  waitForEvent(method, { sessionId, predicate, timeoutMs = this.defaultTimeoutMs } = {}) {
-    return new Promise((resolve, reject) => {
-      let timer = null;
-      const off = this.on(
-        method,
-        (event) => {
-          try {
-            if (predicate && !predicate(event.params, event)) {
-              return;
-            }
-            clearTimeout(timer);
-            off();
-            resolve(event);
-          } catch (error) {
-            clearTimeout(timer);
-            off();
-            reject(error);
-          }
-        },
-        { sessionId },
-      );
-
-      timer = setTimeout(() => {
-        off();
-        reject(new Error(`Timed out waiting for event ${method}`));
-      }, timeoutMs);
-    });
-  }
-
-  close() {
-    if (!this.ws || this.closed) {
-      return;
-    }
-    this.closed = true;
-    this.ws.close();
-  }
-
-  #handleMessage(event) {
-    let message;
-    try {
-      message = JSON.parse(typeof event.data === 'string' ? event.data : Buffer.from(event.data).toString('utf8'));
-    } catch (error) {
-      return;
-    }
-
-    if (typeof message.id === 'number') {
-      const pending = this.pending.get(message.id);
-      if (!pending) {
-        return;
-      }
-      clearTimeout(pending.timer);
-      this.pending.delete(message.id);
-      if (message.error) {
-        pending.reject(new Error(`CDP ${pending.method} failed: ${message.error.message}`));
-      } else {
-        pending.resolve(message.result);
-      }
-      return;
-    }
-
-    if (!message.method) {
-      return;
-    }
-
-    const sessionId = message.sessionId ?? null;
-    for (const listener of this.listeners) {
-      if (listener.method !== message.method) {
-        continue;
-      }
-      if (listener.sessionId !== null && listener.sessionId !== sessionId) {
-        continue;
-      }
-      listener.handler({ method: message.method, params: message.params ?? {}, sessionId });
-    }
-  }
-
-  #handleClose(event) {
-    if (this.closed) {
-      return;
-    }
-    this.closed = true;
-    const error = new Error(`CDP socket closed: ${event.code} ${event.reason || ''}`.trim());
-    for (const [id, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-      this.pending.delete(id);
-    }
-  }
-
-  #handleSocketError(_event) {
-    if (this.closed) {
-      return;
-    }
-  }
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function createError(code, message) {
   return { code, message };
@@ -279,226 +70,6 @@ function formatTimestampForDir(date = new Date()) {
 
 function sanitizeHost(host) {
   return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
-}
-
-async function fileExists(filePath) {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function detectBrowserPath() {
-  const envCandidates = [process.env.BROWSER_PATH, process.env.CHROME_PATH, process.env.CHROMIUM_PATH].filter(Boolean);
-  const platformCandidates = DEFAULT_BROWSER_PATHS[process.platform] ?? [];
-  for (const candidate of [...envCandidates, ...platformCandidates]) {
-    if (await fileExists(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-async function waitForDevToolsPort(userDataDir, browserProcess, timeoutMs, getLaunchError = () => null) {
-  const filePath = path.join(userDataDir, 'DevToolsActivePort');
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const launchError = getLaunchError();
-    if (launchError) {
-      throw launchError;
-    }
-
-    if (browserProcess.exitCode !== null) {
-      throw new Error(`Browser exited before DevTools became ready (code ${browserProcess.exitCode})`);
-    }
-
-    try {
-      const content = await readFile(filePath, 'utf8');
-      const [portLine] = content.trim().split(/\r?\n/);
-      const port = Number(portLine);
-      if (Number.isInteger(port) && port > 0) {
-        return port;
-      }
-    } catch {
-      // Keep polling until the file is populated.
-    }
-    await delay(DEVTOOLS_POLL_INTERVAL_MS);
-  }
-
-  throw new Error('Timed out waiting for DevToolsActivePort');
-}
-
-async function waitForBrowserWsUrl(port, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`, {
-        signal: AbortSignal.timeout(Math.max(1, Math.min(2_000, timeoutMs))),
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        if (payload?.webSocketDebuggerUrl) {
-          return payload.webSocketDebuggerUrl;
-        }
-      }
-    } catch {
-      // Browser is still warming up.
-    }
-    await delay(DEVTOOLS_POLL_INTERVAL_MS);
-  }
-
-  throw new Error('Timed out waiting for browser websocket endpoint');
-}
-
-async function launchBrowser(browserPath, { headless, timeoutMs }) {
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'capture-browser-'));
-  const args = [
-    `--user-data-dir=${userDataDir}`,
-    '--remote-debugging-port=0',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--hide-scrollbars',
-    '--disable-gpu',
-    '--disable-popup-blocking',
-    '--disable-background-networking',
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-sync',
-    '--metrics-recording-only',
-    '--mute-audio',
-    'about:blank',
-  ];
-
-  if (headless) {
-    args.unshift('--headless=new');
-  }
-
-  const browserProcess = spawn(browserPath, args, {
-    stdio: ['ignore', 'ignore', 'pipe'],
-    windowsHide: true,
-  });
-
-  let stderr = '';
-  let launchError = null;
-  browserProcess.stderr?.setEncoding('utf8');
-  browserProcess.stderr?.on('data', (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-8_192);
-  });
-
-  browserProcess.once('error', (error) => {
-    launchError = error;
-  });
-
-  try {
-    if (launchError) {
-      throw launchError;
-    }
-    const port = await waitForDevToolsPort(userDataDir, browserProcess, timeoutMs, () => launchError);
-    if (launchError) {
-      throw launchError;
-    }
-    const wsUrl = await waitForBrowserWsUrl(port, timeoutMs);
-    return { browserProcess, userDataDir, port, wsUrl, stderr };
-  } catch (error) {
-    await shutdownBrowser(browserProcess, userDataDir);
-    throw new Error(`${error.message}${stderr ? `\n${stderr.trim()}` : ''}`.trim());
-  }
-}
-
-async function shutdownBrowser(browserProcess, userDataDir) {
-  if (browserProcess && browserProcess.exitCode === null) {
-    browserProcess.kill();
-    await Promise.race([
-      new Promise((resolve) => browserProcess.once('exit', resolve)),
-      delay(2_000),
-    ]);
-    if (browserProcess.exitCode === null) {
-      browserProcess.kill('SIGKILL');
-      await Promise.race([
-        new Promise((resolve) => browserProcess.once('exit', resolve)),
-        delay(2_000),
-      ]);
-    }
-  }
-
-  if (userDataDir) {
-    await rm(userDataDir, { recursive: true, force: true });
-  }
-}
-
-function createNetworkTracker(client, sessionId) {
-  const inflight = new Set();
-  let lastActivityAt = Date.now();
-
-  const markActivity = () => {
-    lastActivityAt = Date.now();
-  };
-
-  const offRequest = client.on(
-    'Network.requestWillBeSent',
-    ({ params }) => {
-      if (!params?.requestId) {
-        return;
-      }
-      inflight.add(params.requestId);
-      markActivity();
-    },
-    { sessionId },
-  );
-
-  const finishRequest = ({ params }) => {
-    if (!params?.requestId) {
-      return;
-    }
-    inflight.delete(params.requestId);
-    markActivity();
-  };
-
-  const offFinished = client.on('Network.loadingFinished', finishRequest, { sessionId });
-  const offFailed = client.on('Network.loadingFailed', finishRequest, { sessionId });
-
-  return {
-    async waitForIdle({ quietMs, timeoutMs }) {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (inflight.size === 0 && Date.now() - lastActivityAt >= quietMs) {
-          return;
-        }
-        await delay(NETWORK_IDLE_POLL_INTERVAL_MS);
-      }
-      throw new Error(`Timed out waiting for network idle (${inflight.size} inflight requests remained)`);
-    },
-    dispose() {
-      offRequest();
-      offFinished();
-      offFailed();
-    },
-  };
-}
-
-async function evaluateValue(client, sessionId, expression) {
-  const result = await client.send(
-    'Runtime.evaluate',
-    {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    },
-    sessionId,
-  );
-
-  if (result.exceptionDetails) {
-    throw new Error(`Evaluation failed for expression: ${expression}`);
-  }
-
-  return result.result?.value;
-}
-
-async function getFrameTree(client, sessionId) {
-  return await client.send('Page.getFrameTree', {}, sessionId);
 }
 
 function summarizeForStdout(manifest) {
@@ -587,10 +158,25 @@ function mergeOptions(options = {}) {
   };
 
   merged.outDir = path.resolve(merged.outDir);
+  if (merged.profilePath) {
+    merged.profilePath = path.resolve(merged.profilePath);
+  }
+  if (merged.browserProfileRoot) {
+    merged.browserProfileRoot = path.resolve(merged.browserProfileRoot);
+  }
+  if (merged.userDataDir) {
+    merged.userDataDir = path.resolve(merged.userDataDir);
+  }
   merged.timeoutMs = normalizeNumber(merged.timeoutMs, 'timeoutMs');
   merged.idleMs = normalizeNumber(merged.idleMs, 'idleMs');
   merged.headless = normalizeBoolean(merged.headless, 'headless');
   merged.fullPage = normalizeBoolean(merged.fullPage, 'fullPage');
+  if (merged.reuseLoginState !== undefined) {
+    merged.reuseLoginState = normalizeBoolean(merged.reuseLoginState, 'reuseLoginState');
+  }
+  if (merged.autoLogin !== undefined) {
+    merged.autoLogin = normalizeBoolean(merged.autoLogin, 'autoLogin');
+  }
   merged.waitUntil = normalizeWaitUntil(merged.waitUntil);
   merged.viewport = {
     width: normalizeNumber(merged.viewport.width, 'viewport.width'),
@@ -601,8 +187,127 @@ function mergeOptions(options = {}) {
   return merged;
 }
 
+export function resolveCaptureSettings(inputUrl, options = {}) {
+  return {
+    inputUrl,
+    settings: mergeOptions(options),
+  };
+}
+
+function buildCaptureWaitPolicy(settings) {
+  return {
+    useLoadEvent: true,
+    useNetworkIdle: settings.waitUntil === 'networkidle',
+    networkQuietMs: NETWORK_IDLE_QUIET_MS,
+    networkIdleTimeoutMs: settings.timeoutMs,
+    documentReadyTimeoutMs: settings.timeoutMs,
+    domQuietTimeoutMs: settings.timeoutMs,
+    idleMs: settings.idleMs,
+  };
+}
+
+async function createCaptureSession(settings, inputUrl) {
+  if (typeof settings.runtimeFactory === 'function') {
+    return await settings.runtimeFactory(settings, {
+      inputUrl,
+      purpose: 'capture',
+    });
+  }
+
+  const authContext = await resolveSiteBrowserSessionOptions(inputUrl, settings, {
+    profilePath: settings.profilePath,
+    siteProfile: settings.siteProfile,
+  });
+  const session = await openBrowserSession({
+    ...settings,
+    userDataDir: authContext.userDataDir,
+    cleanupUserDataDirOnShutdown: authContext.cleanupUserDataDirOnShutdown,
+    startupUrl: inputUrl,
+  }, {
+    userDataDirPrefix: 'capture-browser-',
+  });
+  const shouldEnsureAuth = Boolean(authContext.authConfig)
+    && (authContext.reuseLoginState || settings.autoLogin === true || authContext.authConfig.autoLoginByDefault);
+  if (shouldEnsureAuth) {
+    session.siteAuth = await ensureAuthenticatedSession(session, inputUrl, settings, {
+      authContext,
+    });
+  }
+  return session;
+}
+
+export async function openInitialPage(session, settings) {
+  const parsedUrl = new URL(settings.inputUrl);
+  await session.navigateAndWait(parsedUrl.toString(), buildCaptureWaitPolicy(settings));
+  return parsedUrl;
+}
+
+export async function capturePageEvidence(session, policy) {
+  const result = {
+    evidence: {},
+    artifactCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    result.evidence.html = await session.captureHtml();
+    result.artifactCount += 1;
+  } catch (error) {
+    result.errors.push(createError('HTML_CAPTURE_FAILED', error.message));
+  }
+
+  try {
+    result.evidence.snapshot = await session.captureSnapshot();
+    result.artifactCount += 1;
+  } catch (error) {
+    result.errors.push(createError('SNAPSHOT_CAPTURE_FAILED', error.message));
+  }
+
+  try {
+    const screenshot = await session.captureScreenshot({
+      fullPage: policy.fullPage,
+      allowViewportFallback: true,
+    });
+    result.evidence.screenshotBase64 = screenshot.data;
+    result.artifactCount += 1;
+    if (screenshot.usedViewportFallback) {
+      result.warnings.push(
+        createError(
+          'SCREENSHOT_FALLBACK',
+          `Full-page screenshot failed and viewport screenshot was used instead: ${screenshot.primaryError?.message ?? 'unknown error'}`,
+        ),
+      );
+    }
+  } catch (error) {
+    result.errors.push(createError('SCREENSHOT_CAPTURE_FAILED', error.message));
+  }
+
+  return result;
+}
+
+export async function writeCaptureArtifacts(layout, captureResult) {
+  const writes = [];
+  if (Object.prototype.hasOwnProperty.call(captureResult.evidence, 'html')) {
+    writes.push(writeFile(layout.htmlPath, captureResult.evidence.html ?? '', 'utf8'));
+  }
+  if (Object.prototype.hasOwnProperty.call(captureResult.evidence, 'snapshot')) {
+    writes.push(writeFile(layout.snapshotPath, JSON.stringify(captureResult.evidence.snapshot, null, 2), 'utf8'));
+  }
+  if (captureResult.evidence.screenshotBase64) {
+    writes.push(writeFile(layout.screenshotPath, Buffer.from(captureResult.evidence.screenshotBase64, 'base64')));
+  }
+  await Promise.all(writes);
+}
+
+export async function writeCaptureManifest(manifest) {
+  await writeManifest(manifest);
+}
+
 export async function capture(inputUrl, options = {}) {
-  const settings = mergeOptions(options);
+  const { settings } = resolveCaptureSettings(inputUrl, options);
+  settings.inputUrl = inputUrl;
+
   const layout = await createOutputLayout(inputUrl, settings.outDir);
   const manifest = buildManifest({
     inputUrl,
@@ -616,168 +321,41 @@ export async function capture(inputUrl, options = {}) {
   });
 
   let artifactCount = 0;
-  let browserProcess = null;
-  let userDataDir = null;
-  let client = null;
-  let targetId = null;
-  let sessionId = null;
-  let networkTracker = null;
+  let session = null;
+  let parsedUrl;
 
   try {
-    let parsedUrl;
     try {
       parsedUrl = new URL(inputUrl);
-    } catch (error) {
+    } catch {
       setManifestError(manifest, 'INVALID_INPUT', `Invalid URL: ${inputUrl}`);
-      await writeManifest(manifest);
+      await writeCaptureManifest(manifest);
       return manifest;
     }
 
-    const browserPath = settings.browserPath ? path.resolve(settings.browserPath) : await detectBrowserPath();
-    if (!browserPath) {
-      setManifestError(
-        manifest,
-        'BROWSER_NOT_FOUND',
-        'No Chromium/Chrome executable found. Pass browserPath or --browser-path explicitly.',
-      );
-      await writeManifest(manifest);
-      return manifest;
-    }
+    session = await createCaptureSession(settings, inputUrl);
+    await openInitialPage(session, settings);
 
-    const browserInfo = await launchBrowser(browserPath, settings);
-    browserProcess = browserInfo.browserProcess;
-    userDataDir = browserInfo.userDataDir;
-
-    client = new CdpClient(browserInfo.wsUrl, { timeoutMs: settings.timeoutMs });
-    await client.connect();
-
-    const targetResult = await client.send('Target.createTarget', { url: 'about:blank' });
-    targetId = targetResult.targetId;
-
-    const attachResult = await client.send('Target.attachToTarget', { targetId, flatten: true });
-    sessionId = attachResult.sessionId;
-
-    await client.send('Page.enable', {}, sessionId);
-    await client.send('Runtime.enable', {}, sessionId);
-    await client.send('Network.enable', {}, sessionId);
-    await client.send('Page.setLifecycleEventsEnabled', { enabled: true }, sessionId);
-
-    if (settings.userAgent) {
-      await client.send('Emulation.setUserAgentOverride', { userAgent: settings.userAgent }, sessionId);
-    }
-
-    await client.send(
-      'Emulation.setDeviceMetricsOverride',
-      {
-        width: settings.viewport.width,
-        height: settings.viewport.height,
-        deviceScaleFactor: settings.viewport.deviceScaleFactor,
-        mobile: false,
-      },
-      sessionId,
-    );
-
-    networkTracker = createNetworkTracker(client, sessionId);
-
-    const loadPromise = client.waitForEvent('Page.loadEventFired', {
-      sessionId,
-      timeoutMs: settings.timeoutMs,
+    const captureResult = await capturePageEvidence(session, {
+      fullPage: settings.fullPage,
     });
+    artifactCount = captureResult.artifactCount;
+    await writeCaptureArtifacts(layout, captureResult);
 
-    const navigateResult = await client.send('Page.navigate', { url: parsedUrl.toString() }, sessionId);
-    if (navigateResult.errorText) {
-      throw new Error(`Navigation failed: ${navigateResult.errorText}`);
+    for (const warning of captureResult.warnings) {
+      setManifestError(manifest, warning.code, warning.message);
     }
-
-    await loadPromise;
-
-    if (settings.waitUntil === 'networkidle') {
-      await networkTracker.waitForIdle({
-        quietMs: NETWORK_IDLE_QUIET_MS,
-        timeoutMs: settings.timeoutMs,
-      });
-    }
-
-    if (settings.idleMs > 0) {
-      await delay(settings.idleMs);
+    for (const error of captureResult.errors) {
+      setManifestError(manifest, error.code, error.message);
     }
 
     try {
-      const html = await evaluateValue(client, sessionId, 'document.documentElement.outerHTML');
-      await writeFile(layout.htmlPath, html ?? '', 'utf8');
-      artifactCount += 1;
-    } catch (error) {
-      setManifestError(manifest, 'HTML_CAPTURE_FAILED', error.message);
-    }
-
-    try {
-      const snapshot = await client.send(
-        'DOMSnapshot.captureSnapshot',
-        {
-          computedStyles: SNAPSHOT_STYLES,
-          includeDOMRects: true,
-          includePaintOrder: true,
-        },
-        sessionId,
-      );
-      await writeFile(layout.snapshotPath, JSON.stringify(snapshot, null, 2), 'utf8');
-      artifactCount += 1;
-    } catch (error) {
-      setManifestError(manifest, 'SNAPSHOT_CAPTURE_FAILED', error.message);
-    }
-
-    try {
-      const screenshot = await client.send(
-        'Page.captureScreenshot',
-        {
-          format: 'png',
-          captureBeyondViewport: settings.fullPage,
-          fromSurface: true,
-        },
-        sessionId,
-      );
-      await writeFile(layout.screenshotPath, Buffer.from(screenshot.data, 'base64'));
-      artifactCount += 1;
-    } catch (error) {
-      if (settings.fullPage) {
-        try {
-          const fallback = await client.send(
-            'Page.captureScreenshot',
-            {
-              format: 'png',
-              captureBeyondViewport: false,
-              fromSurface: true,
-            },
-            sessionId,
-          );
-          await writeFile(layout.screenshotPath, Buffer.from(fallback.data, 'base64'));
-          artifactCount += 1;
-          setManifestError(
-            manifest,
-            'SCREENSHOT_FALLBACK',
-            `Full-page screenshot failed and viewport screenshot was used instead: ${error.message}`,
-          );
-        } catch (fallbackError) {
-          setManifestError(manifest, 'SCREENSHOT_CAPTURE_FAILED', fallbackError.message);
-        }
-      } else {
-        setManifestError(manifest, 'SCREENSHOT_CAPTURE_FAILED', error.message);
-      }
-    }
-
-    try {
-      const [frameTree, title, innerWidth, innerHeight] = await Promise.all([
-        getFrameTree(client, sessionId),
-        evaluateValue(client, sessionId, 'document.title'),
-        evaluateValue(client, sessionId, 'window.innerWidth'),
-        evaluateValue(client, sessionId, 'window.innerHeight'),
-      ]);
-
-      manifest.finalUrl = frameTree?.frameTree?.frame?.url ?? parsedUrl.toString();
-      manifest.title = title ?? '';
-      if (typeof innerWidth === 'number' && typeof innerHeight === 'number') {
-        manifest.page.viewportWidth = innerWidth;
-        manifest.page.viewportHeight = innerHeight;
+      const metadata = await session.getPageMetadata(parsedUrl.toString());
+      manifest.finalUrl = metadata.finalUrl ?? parsedUrl.toString();
+      manifest.title = metadata.title ?? '';
+      if (typeof metadata.viewportWidth === 'number' && typeof metadata.viewportHeight === 'number') {
+        manifest.page.viewportWidth = metadata.viewportWidth;
+        manifest.page.viewportHeight = metadata.viewportHeight;
       }
     } catch (error) {
       manifest.finalUrl = manifest.finalUrl ?? parsedUrl.toString();
@@ -785,30 +363,19 @@ export async function capture(inputUrl, options = {}) {
     }
 
     manifest.status = manifest.error ? (artifactCount > 0 ? 'partial' : 'failed') : 'success';
-    await writeManifest(manifest);
+    await writeCaptureManifest(manifest);
     return manifest;
   } catch (error) {
-    setManifestError(manifest, 'CAPTURE_FAILED', error.message);
+    setManifestError(manifest, error?.code ?? 'CAPTURE_FAILED', error.message);
     manifest.status = artifactCount > 0 ? 'partial' : 'failed';
     try {
-      await writeManifest(manifest);
+      await writeCaptureManifest(manifest);
     } catch {
       // Preserve the original failure for the caller.
     }
     return manifest;
   } finally {
-    networkTracker?.dispose();
-
-    if (client && targetId) {
-      try {
-        await client.send('Target.closeTarget', { targetId });
-      } catch {
-        // Browser shutdown will clean up if the target is already gone.
-      }
-    }
-
-    client?.close();
-    await shutdownBrowser(browserProcess, userDataDir);
+    await session?.close?.();
   }
 }
 
@@ -869,6 +436,27 @@ function parseCliArgs(argv) {
       continue;
     }
 
+    if (current.startsWith('--profile-path')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.profilePath = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current.startsWith('--browser-profile-root')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.browserProfileRoot = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current.startsWith('--user-data-dir')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.userDataDir = value;
+      index = nextIndex;
+      continue;
+    }
+
     if (current.startsWith('--timeout')) {
       const { value, nextIndex } = readValue(current, index);
       options.timeoutMs = value;
@@ -914,6 +502,30 @@ function parseCliArgs(argv) {
       continue;
     }
 
+    if (current === '--reuse-login-state' || current.startsWith('--reuse-login-state=')) {
+      const { value, nextIndex } = readOptionalBooleanValue(current, index);
+      options.reuseLoginState = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current === '--no-reuse-login-state') {
+      options.reuseLoginState = false;
+      continue;
+    }
+
+    if (current === '--auto-login' || current.startsWith('--auto-login=')) {
+      const { value, nextIndex } = readOptionalBooleanValue(current, index);
+      options.autoLogin = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current === '--no-auto-login') {
+      options.autoLogin = false;
+      continue;
+    }
+
     throw new Error(`Unknown option: ${current}`);
   }
 
@@ -927,11 +539,18 @@ function printHelp() {
 Options:
   --out-dir <path>         Output root directory
   --browser-path <path>    Explicit Chromium/Chrome executable path
+  --profile-path <path>    Explicit site profile for auth/session defaults
+  --browser-profile-root <path> Root directory for persistent browser profiles
+  --user-data-dir <path>   Explicit Chromium user-data-dir to reuse
   --timeout <ms>           Overall timeout for CDP operations
   --wait-until <mode>      load | networkidle
   --idle-ms <ms>           Extra delay after readiness before capture
   --full-page              Force full-page screenshot
   --no-full-page           Disable full-page screenshot
+  --reuse-login-state      Reuse a persistent per-site browser profile
+  --no-reuse-login-state   Disable persistent login-state reuse
+  --auto-login             Best-effort credential login when credentials exist
+  --no-auto-login          Disable credential auto-login
   --headless               Run browser headless (default)
   --no-headless            Run browser with a visible window
   --help                   Show this help

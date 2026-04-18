@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-14T12:52:42.952Z",
+  "generatedAt": "2026-04-18T10:28:17.319Z",
   "sites": {
     "www.22biqu.com": {
       "canonicalBaseUrl": "https://www.22biqu.com/",
@@ -62,6 +62,49 @@
       "latestSkillGeneratedAt": "2026-04-14T12:52:42.947Z",
       "latestRankingQueryAt": "2026-04-14T12:52:08.447Z",
       "rankingQueryEntrypoint": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\query-jable-ranking.mjs"
+    },
+    "www.bilibili.com": {
+      "canonicalBaseUrl": "https://www.bilibili.com/",
+      "siteArchetype": "catalog-detail",
+      "profilePath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\profiles\\www.bilibili.com.json",
+      "profileVersion": 1,
+      "profileHash": "3c13a23d3af0ec23400f29d637ecfd6a38d3ececb0a6947d35b946ef63c1272e",
+      "crawlerScriptPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.bilibili.com\\crawler.py",
+      "crawlerMetaPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.bilibili.com\\crawler.meta.json",
+      "scriptLanguage": "python",
+      "interpreterRequired": "pypy3",
+      "templateVersion": 3,
+      "crawlerStatus": "generated",
+      "host": "www.bilibili.com",
+      "capabilityFamilies": [],
+      "updatedAt": "2026-04-17T17:41:05.816Z",
+      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.bilibili.com",
+      "latestKnowledgeBaseCompileAt": "2026-04-17T16:57:39.881Z",
+      "latestKnowledgeBaseSourcesPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.bilibili.com\\index\\sources.json",
+      "latestLintSummary": {
+        "passed": true,
+        "errorCount": 0,
+        "warningCount": 13,
+        "orphanPageCount": 7
+      },
+      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\bilibili",
+      "latestSkillGeneratedAt": "2026-04-17T16:59:15.655Z"
+    },
+    "example.com": {
+      "canonicalBaseUrl": "https://example.com/",
+      "siteArchetype": "catalog-detail",
+      "profilePath": "C:\\Users\\lyt-p\\AppData\\Local\\Temp\\bwk-crawler-navigation-meta-XiOSiB\\example.com.json",
+      "profileVersion": 1,
+      "profileHash": "a6476671a42937eb0b41c20048a53244547ec03173581abc2b05f2ae6d6c8e3d",
+      "crawlerScriptPath": "C:\\Users\\lyt-p\\AppData\\Local\\Temp\\bwk-crawler-navigation-meta-XiOSiB\\crawler-scripts\\example.com\\crawler.py",
+      "crawlerMetaPath": "C:\\Users\\lyt-p\\AppData\\Local\\Temp\\bwk-crawler-navigation-meta-XiOSiB\\crawler-scripts\\example.com\\crawler.meta.json",
+      "scriptLanguage": "python",
+      "interpreterRequired": "pypy3",
+      "templateVersion": 3,
+      "crawlerStatus": "generated",
+      "host": "example.com",
+      "capabilityFamilies": [],
+      "updatedAt": "2026-04-18T10:28:17.319Z"
     }
   }
 }

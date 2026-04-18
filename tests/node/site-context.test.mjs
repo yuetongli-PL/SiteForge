@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 
-import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext } from '../../lib/site-context.mjs';
+import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext } from '../../lib/site-context.mjs';
 import { upsertSiteCapabilities } from '../../lib/site-capabilities.mjs';
 import { upsertSiteRegistryRecord } from '../../lib/site-registry.mjs';
 
@@ -58,6 +58,8 @@ test('site context fallback arrays override stale stored capability arrays', asy
     assert.deepEqual(resolveCapabilityFamiliesFromSiteContext(context, [['query-ranked-content']]), ['query-ranked-content']);
     assert.deepEqual(resolveSupportedIntentsFromSiteContext(context, [['list-category-videos']]), ['list-category-videos']);
     assert.deepEqual(resolveSafeActionKindsFromSiteContext(context, [['navigate', 'query-ranking']]), ['navigate', 'query-ranking']);
+    assert.deepEqual(resolvePageTypesFromSiteContext(context, [['ranking-page']]), ['ranking-page']);
+    assert.deepEqual(resolveCapabilityFamiliesFromSiteContext(context, []), ['navigate-to-content', 'search-content']);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

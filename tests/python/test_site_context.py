@@ -8,7 +8,10 @@ from pathlib import Path
 from site_context import (
     read_site_context,
     resolve_capability_families,
+    resolve_page_types,
     resolve_primary_archetype,
+    resolve_safe_action_kinds,
+    resolve_supported_intents,
     upsert_site_capabilities_record,
     upsert_site_registry_record,
 )
@@ -44,6 +47,40 @@ class SiteContextTests(unittest.TestCase):
             context = read_site_context("example.com", root)
             self.assertEqual("example.com", context["host"])
             self.assertEqual("catalog-detail", resolve_primary_archetype(context))
+            self.assertEqual(
+                ["navigate-to-content", "search-content"],
+                resolve_capability_families(context),
+            )
+
+    def test_fallback_arrays_override_stale_stored_arrays(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            upsert_site_capabilities_record("jable.tv", {
+                "baseUrl": "https://jable.tv/",
+                "capabilityFamilies": ["navigate-to-content", "search-content"],
+                "supportedIntents": ["download-book", "open-video"],
+                "safeActionKinds": ["download-book", "navigate"],
+                "pageTypes": ["book-detail-page", "category-page"],
+            }, root)
+
+            context = read_site_context("jable.tv", root)
+
+            self.assertEqual(
+                ["query-ranked-content"],
+                resolve_capability_families(context, ["query-ranked-content"]),
+            )
+            self.assertEqual(
+                ["list-category-videos"],
+                resolve_supported_intents(context, ["list-category-videos"]),
+            )
+            self.assertEqual(
+                ["navigate", "query-ranking"],
+                resolve_safe_action_kinds(context, ["navigate", "query-ranking"]),
+            )
+            self.assertEqual(
+                ["ranking-page"],
+                resolve_page_types(context, ["ranking-page"]),
+            )
             self.assertEqual(
                 ["navigate-to-content", "search-content"],
                 resolve_capability_families(context),

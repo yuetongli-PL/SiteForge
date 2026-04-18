@@ -13,347 +13,57 @@ import { generateDocs } from './generate-docs.mjs';
 import { buildGovernance } from './govern-interactions.mjs';
 import { compileKnowledgeBase } from './compile-wiki.mjs';
 import { generateSkill } from './generate-skill.mjs';
+import { executePipeline } from './lib/pipeline/engine.mjs';
+import { normalizePipelineOptions, toBoolean } from './lib/pipeline/options.mjs';
+import { PIPELINE_STAGE_SPECS, summarizePipelineStages } from './lib/pipeline/stage-spec.mjs';
 
-const DEFAULT_OPTIONS = {
-  browserPath: undefined,
-  headless: true,
-  timeoutMs: 30_000,
-  waitUntil: 'load',
-  idleMs: 1_000,
-  fullPage: true,
-  viewport: undefined,
-  userAgent: undefined,
-  maxTriggers: 12,
-  searchQueries: [],
-  examplesPath: undefined,
-  captureOutDir: path.resolve(process.cwd(), 'captures'),
-  expandedOutDir: path.resolve(process.cwd(), 'expanded-states'),
-  bookContentOutDir: path.resolve(process.cwd(), 'book-content'),
-  analysisOutDir: path.resolve(process.cwd(), 'state-analysis'),
-  abstractionOutDir: path.resolve(process.cwd(), 'interaction-abstraction'),
-  nlEntryOutDir: path.resolve(process.cwd(), 'nl-entry'),
-  docsOutDir: path.resolve(process.cwd(), 'operation-docs'),
-  governanceOutDir: path.resolve(process.cwd(), 'governance'),
-  kbDir: undefined,
-  skillOutDir: undefined,
-  skillName: undefined,
-  strict: true,
+const PIPELINE_STAGE_IMPLS = {
+  capture,
+  expandStates,
+  collectBookContent,
+  analyzeStates,
+  abstractInteractions,
+  buildNlEntry,
+  generateDocs,
+  buildGovernance,
+  compileKnowledgeBase,
+  generateSkill,
 };
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function slugifyAscii(value, fallback = '') {
-  const normalized = normalizeWhitespace(value)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-  return normalized || fallback;
-}
-
-function toBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  const normalized = normalizeWhitespace(value).toLowerCase();
-  if (['true', '1', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['false', '0', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
-}
-
-function resolveSkillName(inputUrl, explicitSkillName) {
-  if (explicitSkillName) {
-    return slugifyAscii(explicitSkillName, 'site-skill');
+function resolvePipelineRuntime(runtime = {}) {
+  if (
+    !runtime
+    || Array.isArray(runtime)
+    || typeof runtime !== 'object'
+    || (!('stageImpls' in runtime) && !('stageSpecs' in runtime))
+  ) {
+    return {
+      stageSpecs: PIPELINE_STAGE_SPECS,
+      stageImpls: runtime ?? PIPELINE_STAGE_IMPLS,
+    };
   }
 
-  try {
-    const parsed = new URL(inputUrl);
-    const hostLabels = parsed.hostname
-      .split('.')
-      .map((label) => normalizeWhitespace(label).toLowerCase())
-      .filter(Boolean)
-      .filter((label) => !['www', 'm'].includes(label));
-
-    const baseLabel = slugifyAscii(hostLabels[0], 'site');
-    const firstSegment = parsed.pathname
-      .split('/')
-      .map((segment) => normalizeWhitespace(segment))
-      .find(Boolean);
-    const segmentSlug = firstSegment ? slugifyAscii(firstSegment, '') : '';
-    return segmentSlug ? `${baseLabel}-${segmentSlug}` : baseLabel;
-  } catch {
-    return 'site-skill';
-  }
-}
-
-function mergeOptions(options = {}) {
-  const merged = {
-    ...DEFAULT_OPTIONS,
-    ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)),
-  };
-
-  const pathKeys = [
-    'captureOutDir',
-    'expandedOutDir',
-    'bookContentOutDir',
-    'analysisOutDir',
-    'abstractionOutDir',
-    'nlEntryOutDir',
-    'docsOutDir',
-    'governanceOutDir',
-    'kbDir',
-    'skillOutDir',
-    'examplesPath',
-    'browserPath',
-  ];
-
-  for (const key of pathKeys) {
-    if (merged[key]) {
-      merged[key] = path.resolve(merged[key]);
-    }
-  }
-
-  merged.timeoutMs = Number(merged.timeoutMs);
-  merged.idleMs = Number(merged.idleMs);
-  merged.maxTriggers = Number(merged.maxTriggers);
-  merged.searchQueries = Array.isArray(merged.searchQueries)
-    ? merged.searchQueries.map((value) => normalizeWhitespace(value)).filter(Boolean)
-    : (merged.searchQueries ? [normalizeWhitespace(merged.searchQueries)].filter(Boolean) : []);
-  merged.headless = toBoolean(merged.headless, 'headless');
-  merged.fullPage = toBoolean(merged.fullPage, 'fullPage');
-  merged.strict = toBoolean(merged.strict, 'strict');
-  merged.skillName = resolveSkillName(options.url ?? '', merged.skillName);
-  return merged;
-}
-
-function summarizeCapture(manifest) {
   return {
-    status: 'success',
-    outDir: manifest.outDir,
-    finalUrl: manifest.finalUrl,
-    title: manifest.title,
-    capturedAt: manifest.capturedAt,
+    stageSpecs: runtime.stageSpecs ?? PIPELINE_STAGE_SPECS,
+    stageImpls: runtime.stageImpls ?? PIPELINE_STAGE_IMPLS,
   };
 }
 
-function summarizeExpanded(manifest) {
-  return {
-    status: 'success',
-    outDir: manifest.outDir,
-    discoveredTriggers: manifest.summary?.discoveredTriggers ?? 0,
-    attemptedTriggers: manifest.summary?.attemptedTriggers ?? 0,
-    capturedStates: manifest.summary?.capturedStates ?? 0,
-    duplicateStates: manifest.summary?.duplicateStates ?? 0,
-    noopTriggers: manifest.summary?.noopTriggers ?? 0,
-    failedTriggers: manifest.summary?.failedTriggers ?? 0,
-  };
-}
-
-function summarizeManifestStage(manifest) {
-  return {
-    status: 'success',
-    outDir: manifest.outDir,
-    summary: manifest.summary ?? {},
-  };
-}
-
-function summarizeBookContent(manifest) {
-  return {
-    status: 'success',
-    outDir: manifest.outDir,
-    summary: manifest.summary ?? {},
-    negativeQueries: manifest.negativeQueries ?? [],
-  };
-}
-
-function summarizeKnowledgeBase(result) {
-  return {
-    status: 'success',
-    kbDir: result.kbDir,
-    pages: result.pages,
-    lintSummary: result.lintSummary,
-    gapGroups: result.gapGroups,
-  };
-}
-
-function summarizeSkill(result) {
-  return {
-    status: 'success',
-    skillDir: result.skillDir,
-    skillName: result.skillName,
-    references: result.references,
-    warnings: result.warnings,
-  };
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isTransientLockError(error) {
-  const message = error?.message ? String(error.message) : String(error);
-  return /EBUSY|resource busy or locked|lockfile/i.test(message);
-}
-
-async function runStage(stageName, action) {
-  try {
-    return await action();
-  } catch (error) {
-    const message = error?.message ? String(error.message) : String(error);
-    throw new Error(`[${stageName}] ${message}`);
-  }
-}
-
-async function runStageWithRetry(stageName, action, { attempts = 2, retryDelayMs = 1_500 } = {}) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await runStage(stageName, action);
-    } catch (error) {
-      lastError = error;
-      if (attempt >= attempts || !isTransientLockError(error)) {
-        throw error;
-      }
-      await delay(retryDelayMs);
-    }
-  }
-  throw lastError;
-}
-
-function ensureCaptureSucceeded(manifest) {
-  if (manifest?.status !== 'success') {
-    const errorCode = manifest?.error?.code ? `${manifest.error.code}: ` : '';
-    const errorMessage = manifest?.error?.message ?? `Capture returned status ${manifest?.status ?? 'unknown'}`;
-    throw new Error(`${errorCode}${errorMessage}`);
-  }
-}
-
-export async function runPipeline(inputUrl, options = {}) {
-  const settings = mergeOptions({ ...options, url: inputUrl });
-  const generatedAt = new Date().toISOString();
-
-  const captureManifest = await runStageWithRetry('capture', async () => {
-    const manifest = await capture(inputUrl, {
-      outDir: settings.captureOutDir,
-      browserPath: settings.browserPath,
-      headless: settings.headless,
-      timeoutMs: settings.timeoutMs,
-      waitUntil: settings.waitUntil,
-      idleMs: settings.idleMs,
-      fullPage: settings.fullPage,
-      viewport: settings.viewport,
-      userAgent: settings.userAgent,
-    });
-    ensureCaptureSucceeded(manifest);
-    return manifest;
+export async function runPipeline(inputUrl, options = {}, runtime = PIPELINE_STAGE_IMPLS) {
+  const settings = normalizePipelineOptions(inputUrl, options);
+  const { stageSpecs, stageImpls } = resolvePipelineRuntime(runtime);
+  const { generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
+    stageSpecs,
+    stageImpls,
   });
-
-  const expandedManifest = await runStageWithRetry('expanded', async () => expandStates(inputUrl, {
-    initialManifestPath: captureManifest.files.manifest,
-    outDir: settings.expandedOutDir,
-    browserPath: settings.browserPath,
-    headless: settings.headless,
-    timeoutMs: settings.timeoutMs,
-    waitUntil: settings.waitUntil,
-    idleMs: settings.idleMs,
-    fullPage: settings.fullPage,
-    viewport: settings.viewport,
-    userAgent: settings.userAgent,
-    maxTriggers: settings.maxTriggers,
-    searchQueries: settings.searchQueries,
-  }));
-
-  const bookContentManifest = await runStage('bookContent', async () => collectBookContent(inputUrl, {
-    expandedStatesDir: expandedManifest.outDir,
-    outDir: settings.bookContentOutDir,
-    searchQueries: settings.searchQueries,
-  }));
-
-  const analysisManifest = await runStage('analysis', async () => analyzeStates(inputUrl, {
-    expandedStatesDir: expandedManifest.outDir,
-    bookContentDir: bookContentManifest.outDir,
-    outDir: settings.analysisOutDir,
-  }));
-
-  const abstractionManifest = await runStage('abstraction', async () => abstractInteractions(inputUrl, {
-    analysisDir: analysisManifest.outDir,
-    expandedStatesDir: expandedManifest.outDir,
-    outDir: settings.abstractionOutDir,
-  }));
-
-  const nlEntryManifest = await runStage('nlEntry', async () => buildNlEntry(inputUrl, {
-    abstractionDir: abstractionManifest.outDir,
-    analysisDir: analysisManifest.outDir,
-    examplesPath: settings.examplesPath,
-    outDir: settings.nlEntryOutDir,
-  }));
-
-  const docsManifest = await runStage('docs', async () => generateDocs(inputUrl, {
-    nlEntryDir: nlEntryManifest.outDir,
-    abstractionDir: abstractionManifest.outDir,
-    analysisDir: analysisManifest.outDir,
-    expandedStatesDir: expandedManifest.outDir,
-    outDir: settings.docsOutDir,
-  }));
-
-  const governanceResult = await runStage('governance', async () => buildGovernance(inputUrl, {
-    docsDir: docsManifest.outDir,
-    nlEntryDir: nlEntryManifest.outDir,
-    abstractionDir: abstractionManifest.outDir,
-    analysisDir: analysisManifest.outDir,
-    expandedStatesDir: expandedManifest.outDir,
-    outDir: settings.governanceOutDir,
-  }));
-
-  const knowledgeBaseResult = await runStage('knowledgeBase', async () => compileKnowledgeBase(inputUrl, {
-    captureDir: captureManifest.outDir,
-    expandedStatesDir: expandedManifest.outDir,
-    bookContentDir: bookContentManifest.outDir,
-    analysisDir: analysisManifest.outDir,
-    abstractionDir: abstractionManifest.outDir,
-    nlEntryDir: nlEntryManifest.outDir,
-    docsDir: docsManifest.outDir,
-    governanceDir: governanceResult.outDir,
-    kbDir: settings.kbDir,
-    strict: settings.strict,
-  }));
-
-  const skillResult = await runStage('skill', async () => generateSkill(inputUrl, {
-    kbDir: knowledgeBaseResult.kbDir,
-    outDir: settings.skillOutDir,
-    skillName: settings.skillName,
-  }));
 
   return {
     inputUrl,
     generatedAt,
-    kbDir: knowledgeBaseResult.kbDir,
-    skillDir: skillResult.skillDir,
-    skillName: skillResult.skillName,
-    stages: {
-      capture: summarizeCapture(captureManifest),
-      expanded: summarizeExpanded(expandedManifest),
-      bookContent: summarizeBookContent(bookContentManifest),
-      analysis: summarizeManifestStage(analysisManifest),
-      abstraction: summarizeManifestStage(abstractionManifest),
-      nlEntry: summarizeManifestStage(nlEntryManifest),
-      docs: summarizeManifestStage(docsManifest),
-      governance: {
-        status: 'success',
-        outDir: governanceResult.outDir,
-        summary: governanceResult.summary ?? {},
-      },
-      knowledgeBase: summarizeKnowledgeBase(knowledgeBaseResult),
-      skill: summarizeSkill(skillResult),
-    },
+    kbDir: stageResults.knowledgeBase.kbDir,
+    skillDir: stageResults.skill.skillDir,
+    skillName: stageResults.skill.skillName,
+    stages: summarizePipelineStages(stageResults),
   };
 }
 
@@ -363,10 +73,13 @@ function printHelp() {
 
 Options:
   --browser-path <path>        Explicit Chromium/Chrome executable path
+  --browser-profile-root <path> Root directory for persistent browser profiles
+  --user-data-dir <path>       Explicit Chromium user-data-dir to reuse
   --timeout <ms>               Overall timeout for browser steps
   --wait-until <mode>          load | networkidle
   --idle-ms <ms>               Extra delay after readiness before capture
   --max-triggers <n>           Maximum discovered triggers to expand
+  --max-captured-states <n>    Maximum newly captured states during expansion
   --search-query <text>        Repeatable search query seed for site search
   --examples <path>            Optional example utterance JSON file
   --capture-out-dir <dir>      Root output directory for step 1
@@ -381,6 +94,10 @@ Options:
   --skill-out-dir <dir>        Final skill directory
   --skill-name <name>          Override default skill name
   --strict <true|false>        Strict mode for compileKnowledgeBase
+  --reuse-login-state          Reuse a persistent per-site browser profile
+  --no-reuse-login-state       Disable persistent login-state reuse
+  --auto-login                 Best-effort credential login when credentials exist
+  --no-auto-login              Disable credential auto-login
   --headless                   Run browser headless (default)
   --no-headless                Run browser with a visible window
   --full-page                  Force full-page screenshot (default)
@@ -422,6 +139,18 @@ function parseCliArgs(argv) {
         index = nextIndex;
         break;
       }
+      case '--browser-profile-root': {
+        const { value, nextIndex } = readValue(current, index);
+        options.browserProfileRoot = value;
+        index = nextIndex;
+        break;
+      }
+      case '--user-data-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.userDataDir = value;
+        index = nextIndex;
+        break;
+      }
       case '--timeout': {
         const { value, nextIndex } = readValue(current, index);
         options.timeoutMs = Number(value);
@@ -443,6 +172,12 @@ function parseCliArgs(argv) {
       case '--max-triggers': {
         const { value, nextIndex } = readValue(current, index);
         options.maxTriggers = Number(value);
+        index = nextIndex;
+        break;
+      }
+      case '--max-captured-states': {
+        const { value, nextIndex } = readValue(current, index);
+        options.maxCapturedStates = Number(value);
         index = nextIndex;
         break;
       }
@@ -535,6 +270,18 @@ function parseCliArgs(argv) {
         break;
       case '--no-headless':
         options.headless = false;
+        break;
+      case '--reuse-login-state':
+        options.reuseLoginState = true;
+        break;
+      case '--no-reuse-login-state':
+        options.reuseLoginState = false;
+        break;
+      case '--auto-login':
+        options.autoLogin = true;
+        break;
+      case '--no-auto-login':
+        options.autoLogin = false;
         break;
       case '--full-page':
         options.fullPage = true;

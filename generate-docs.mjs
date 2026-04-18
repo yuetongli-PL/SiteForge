@@ -1,10 +1,23 @@
 // @ts-check
 
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { ensureDir, pathExists, readJsonFile, writeJsonFile, writeTextFile } from './lib/io.mjs';
+import {
+  loadOptionalManifest,
+  resolveLinkedArtifactManifest,
+  resolveNamedManifest,
+  resolveStageFiles,
+  resolveStageInput,
+} from './lib/pipeline/artifacts/index.mjs';
+import {
+  buildRunManifest,
+  getManifestArtifactDir,
+  getManifestRunContext,
+} from './lib/pipeline/run-manifest.mjs';
+import { resolveMaybeRelative } from './lib/wiki-paths.mjs';
 
 const DEFAULT_OPTIONS = {
   nlEntryManifestPath: undefined,
@@ -365,50 +378,6 @@ function buildWarning(code, message, details = {}) {
   };
 }
 
-async function pathExists(targetPath) {
-  if (!targetPath) {
-    return false;
-  }
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveMaybeRelative(inputPath, baseDir) {
-  if (!inputPath) {
-    return null;
-  }
-  return path.isAbsolute(inputPath) ? inputPath : path.resolve(baseDir, inputPath);
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
-async function writeJsonFile(filePath, value) {
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
-async function writeMarkdownFile(filePath, value) {
-  await writeFile(filePath, `${String(value).trimEnd()}\n`, 'utf8');
-}
-
-async function firstExistingPath(candidates) {
-  for (const candidate of candidates) {
-    if (!candidate?.value) {
-      continue;
-    }
-    const resolved = resolveMaybeRelative(candidate.value, candidate.baseDir);
-    if (await pathExists(resolved)) {
-      return resolved;
-    }
-  }
-  return null;
-}
-
 function mergeOptions(options) {
   return {
     ...DEFAULT_OPTIONS,
@@ -418,29 +387,16 @@ function mergeOptions(options) {
 }
 
 async function resolveNlEntryInput(options) {
-  if (options.nlEntryManifestPath) {
-    const nlEntryManifestPath = path.resolve(options.nlEntryManifestPath);
-    if (!(await pathExists(nlEntryManifestPath))) {
-      throw new Error(`NL entry manifest not found: ${nlEntryManifestPath}`);
-    }
-    return {
-      nlEntryManifestPath,
-      nlEntryDir: path.dirname(nlEntryManifestPath),
-    };
-  }
-
-  if (!options.nlEntryDir) {
-    throw new Error('Pass nlEntryManifestPath, --nl-entry-manifest, nlEntryDir, or --nl-entry-dir.');
-  }
-
-  const nlEntryDir = path.resolve(options.nlEntryDir);
-  if (!(await pathExists(nlEntryDir))) {
-    throw new Error(`NL entry directory not found: ${nlEntryDir}`);
-  }
-
-  const nlEntryManifestPath = path.join(nlEntryDir, NL_ENTRY_MANIFEST_NAME);
+  const { manifestPath: nlEntryManifestPath, dir: nlEntryDir } = await resolveStageInput(options, {
+    manifestOption: 'nlEntryManifestPath',
+    dirOption: 'nlEntryDir',
+    manifestName: NL_ENTRY_MANIFEST_NAME,
+    missingArgsMessage: 'Pass nlEntryManifestPath, --nl-entry-manifest, nlEntryDir, or --nl-entry-dir.',
+    missingManifestMessagePrefix: 'NL entry manifest not found: ',
+    missingDirMessagePrefix: 'NL entry directory not found: ',
+  });
   return {
-    nlEntryManifestPath: (await pathExists(nlEntryManifestPath)) ? nlEntryManifestPath : null,
+    nlEntryManifestPath,
     nlEntryDir,
   };
 }
@@ -448,120 +404,114 @@ async function resolveNlEntryInput(options) {
 async function resolveChainedArtifacts(inputUrl, options) {
   const warnings = [];
   const { nlEntryManifestPath, nlEntryDir } = await resolveNlEntryInput(options);
-  const nlEntryManifest = nlEntryManifestPath ? await readJsonFile(nlEntryManifestPath) : null;
+  const nlEntryManifest = await loadOptionalManifest(nlEntryManifestPath);
 
-  const aliasLexiconPath = await firstExistingPath([
-    { value: nlEntryManifest?.files?.aliasLexicon, baseDir: nlEntryDir },
-    { value: path.join(nlEntryDir, NL_ENTRY_FILE_NAMES.aliasLexicon), baseDir: nlEntryDir },
-  ]);
-  const slotSchemaPath = await firstExistingPath([
-    { value: nlEntryManifest?.files?.slotSchema, baseDir: nlEntryDir },
-    { value: path.join(nlEntryDir, NL_ENTRY_FILE_NAMES.slotSchema), baseDir: nlEntryDir },
-  ]);
-  const utterancePatternsPath = await firstExistingPath([
-    { value: nlEntryManifest?.files?.utterancePatterns, baseDir: nlEntryDir },
-    { value: path.join(nlEntryDir, NL_ENTRY_FILE_NAMES.utterancePatterns), baseDir: nlEntryDir },
-  ]);
-  const entryRulesPath = await firstExistingPath([
-    { value: nlEntryManifest?.files?.entryRules, baseDir: nlEntryDir },
-    { value: path.join(nlEntryDir, NL_ENTRY_FILE_NAMES.entryRules), baseDir: nlEntryDir },
-  ]);
-  const clarificationRulesPath = await firstExistingPath([
-    { value: nlEntryManifest?.files?.clarificationRules, baseDir: nlEntryDir },
-    { value: path.join(nlEntryDir, NL_ENTRY_FILE_NAMES.clarificationRules), baseDir: nlEntryDir },
-  ]);
+  const nlEntryFiles = await resolveStageFiles({
+    manifest: nlEntryManifest,
+    manifestDir: nlEntryDir,
+    dir: nlEntryDir,
+    files: {
+      aliasLexiconPath: { manifestField: 'aliasLexicon', defaultFileName: NL_ENTRY_FILE_NAMES.aliasLexicon },
+      slotSchemaPath: { manifestField: 'slotSchema', defaultFileName: NL_ENTRY_FILE_NAMES.slotSchema },
+      utterancePatternsPath: { manifestField: 'utterancePatterns', defaultFileName: NL_ENTRY_FILE_NAMES.utterancePatterns },
+      entryRulesPath: { manifestField: 'entryRules', defaultFileName: NL_ENTRY_FILE_NAMES.entryRules },
+      clarificationRulesPath: { manifestField: 'clarificationRules', defaultFileName: NL_ENTRY_FILE_NAMES.clarificationRules },
+    },
+  });
 
-  if (!aliasLexiconPath || !slotSchemaPath || !utterancePatternsPath || !entryRulesPath || !clarificationRulesPath) {
+  if (!nlEntryFiles.aliasLexiconPath || !nlEntryFiles.slotSchemaPath || !nlEntryFiles.utterancePatternsPath || !nlEntryFiles.entryRulesPath || !nlEntryFiles.clarificationRulesPath) {
     throw new Error(`Fifth-step input is incomplete under ${nlEntryDir}`);
   }
 
-  const aliasLexiconDocument = await readJsonFile(aliasLexiconPath);
-  const slotSchemaDocument = await readJsonFile(slotSchemaPath);
-  const utterancePatternsDocument = await readJsonFile(utterancePatternsPath);
-  const entryRulesDocument = await readJsonFile(entryRulesPath);
-  const clarificationRulesDocument = await readJsonFile(clarificationRulesPath);
+  const aliasLexiconDocument = await readJsonFile(nlEntryFiles.aliasLexiconPath);
+  const slotSchemaDocument = await readJsonFile(nlEntryFiles.slotSchemaPath);
+  const utterancePatternsDocument = await readJsonFile(nlEntryFiles.utterancePatternsPath);
+  const entryRulesDocument = await readJsonFile(nlEntryFiles.entryRulesPath);
+  const clarificationRulesDocument = await readJsonFile(nlEntryFiles.clarificationRulesPath);
 
-  const abstractionDir = path.resolve(options.abstractionDir ?? resolveMaybeRelative(nlEntryManifest?.source?.abstractionDir, nlEntryDir) ?? nlEntryDir);
+  const abstractionDir = path.resolve(options.abstractionDir ?? getManifestArtifactDir(nlEntryManifest, 'abstraction', nlEntryDir) ?? nlEntryDir);
   if (!(await pathExists(abstractionDir))) {
     throw new Error(`Abstraction directory not found: ${abstractionDir}`);
   }
 
-  const abstractionManifestPath = await firstExistingPath([
-    { value: nlEntryManifest?.source?.abstractionManifest, baseDir: nlEntryDir },
-    { value: path.join(abstractionDir, ABSTRACTION_MANIFEST_NAME), baseDir: abstractionDir },
-  ]);
-  const abstractionManifest = abstractionManifestPath ? await readJsonFile(abstractionManifestPath) : null;
+  const abstractionManifestPath = await resolveLinkedArtifactManifest({
+    manifest: nlEntryManifest,
+    artifactName: 'abstraction',
+    baseDir: nlEntryDir,
+    artifactDir: abstractionDir,
+    manifestName: ABSTRACTION_MANIFEST_NAME,
+  });
+  const abstractionManifest = await loadOptionalManifest(abstractionManifestPath);
 
-  const intentsPath = await firstExistingPath([
-    { value: abstractionManifest?.files?.intents, baseDir: abstractionDir },
-    { value: path.join(abstractionDir, ABSTRACTION_FILE_NAMES.intents), baseDir: abstractionDir },
-  ]);
-  const actionsPath = await firstExistingPath([
-    { value: abstractionManifest?.files?.actions, baseDir: abstractionDir },
-    { value: path.join(abstractionDir, ABSTRACTION_FILE_NAMES.actions), baseDir: abstractionDir },
-  ]);
-  const decisionTablePath = await firstExistingPath([
-    { value: abstractionManifest?.files?.decisionTable, baseDir: abstractionDir },
-    { value: path.join(abstractionDir, ABSTRACTION_FILE_NAMES.decisionTable), baseDir: abstractionDir },
-  ]);
+  const abstractionFiles = await resolveStageFiles({
+    manifest: abstractionManifest,
+    manifestDir: abstractionDir,
+    dir: abstractionDir,
+    files: {
+      intentsPath: { manifestField: 'intents', defaultFileName: ABSTRACTION_FILE_NAMES.intents },
+      actionsPath: { manifestField: 'actions', defaultFileName: ABSTRACTION_FILE_NAMES.actions },
+      decisionTablePath: { manifestField: 'decisionTable', defaultFileName: ABSTRACTION_FILE_NAMES.decisionTable },
+    },
+  });
 
-  if (!intentsPath || !actionsPath || !decisionTablePath) {
+  if (!abstractionFiles.intentsPath || !abstractionFiles.actionsPath || !abstractionFiles.decisionTablePath) {
     throw new Error(`Fourth-step input is incomplete under ${abstractionDir}`);
   }
 
-  const intentsDocument = await readJsonFile(intentsPath);
-  const actionsDocument = await readJsonFile(actionsPath);
-  const decisionTableDocument = await readJsonFile(decisionTablePath);
+  const intentsDocument = await readJsonFile(abstractionFiles.intentsPath);
+  const actionsDocument = await readJsonFile(abstractionFiles.actionsPath);
+  const decisionTableDocument = await readJsonFile(abstractionFiles.decisionTablePath);
 
   const analysisDir = path.resolve(
     options.analysisDir
-      ?? resolveMaybeRelative(abstractionManifest?.source?.analysisDir, abstractionDir)
-      ?? resolveMaybeRelative(nlEntryManifest?.source?.analysisDir, nlEntryDir)
+      ?? getManifestArtifactDir(abstractionManifest, 'analysis', abstractionDir)
+      ?? getManifestArtifactDir(nlEntryManifest, 'analysis', nlEntryDir)
       ?? abstractionDir,
   );
   if (!(await pathExists(analysisDir))) {
     throw new Error(`Analysis directory not found: ${analysisDir}`);
   }
 
-  const analysisManifestPath = await firstExistingPath([
-    { value: abstractionManifest?.source?.analysisManifest, baseDir: abstractionDir },
-    { value: path.join(analysisDir, ANALYSIS_MANIFEST_NAME), baseDir: analysisDir },
-  ]);
-  const analysisManifest = analysisManifestPath ? await readJsonFile(analysisManifestPath) : null;
+  const analysisManifestPath = await resolveLinkedArtifactManifest({
+    manifest: abstractionManifest,
+    artifactName: 'analysis',
+    baseDir: abstractionDir,
+    artifactDir: analysisDir,
+    manifestName: ANALYSIS_MANIFEST_NAME,
+  });
+  const analysisManifest = await loadOptionalManifest(analysisManifestPath);
 
-  const elementsPath = await firstExistingPath([
-    { value: analysisManifest?.files?.elements, baseDir: analysisDir },
-    { value: path.join(analysisDir, ANALYSIS_FILE_NAMES.elements), baseDir: analysisDir },
-  ]);
-  const statesPath = await firstExistingPath([
-    { value: analysisManifest?.files?.states, baseDir: analysisDir },
-    { value: path.join(analysisDir, ANALYSIS_FILE_NAMES.states), baseDir: analysisDir },
-  ]);
-  const transitionsPath = await firstExistingPath([
-    { value: analysisManifest?.files?.transitions, baseDir: analysisDir },
-    { value: path.join(analysisDir, ANALYSIS_FILE_NAMES.transitions), baseDir: analysisDir },
-  ]);
+  const analysisFiles = await resolveStageFiles({
+    manifest: analysisManifest,
+    manifestDir: analysisDir,
+    dir: analysisDir,
+    files: {
+      elementsPath: { manifestField: 'elements', defaultFileName: ANALYSIS_FILE_NAMES.elements },
+      statesPath: { manifestField: 'states', defaultFileName: ANALYSIS_FILE_NAMES.states },
+      transitionsPath: { manifestField: 'transitions', defaultFileName: ANALYSIS_FILE_NAMES.transitions },
+    },
+  });
 
-  if (!elementsPath || !statesPath || !transitionsPath) {
+  if (!analysisFiles.elementsPath || !analysisFiles.statesPath || !analysisFiles.transitionsPath) {
     throw new Error(`Third-step input is incomplete under ${analysisDir}`);
   }
 
-  const elementsDocument = await readJsonFile(elementsPath);
-  const statesDocument = await readJsonFile(statesPath);
-  const transitionsDocument = await readJsonFile(transitionsPath);
+  const elementsDocument = await readJsonFile(analysisFiles.elementsPath);
+  const statesDocument = await readJsonFile(analysisFiles.statesPath);
+  const transitionsDocument = await readJsonFile(analysisFiles.transitionsPath);
 
   const expandedStatesDir = options.expandedStatesDir
     ? path.resolve(options.expandedStatesDir)
-    : resolveMaybeRelative(abstractionManifest?.source?.expandedStatesDir, abstractionDir)
-      ?? resolveMaybeRelative(analysisManifest?.source?.expandedStatesDir, analysisDir)
+    : getManifestArtifactDir(abstractionManifest, 'expandedStates', abstractionDir)
+      ?? getManifestArtifactDir(analysisManifest, 'expandedStates', analysisDir)
       ?? null;
 
   let statesManifestPath = null;
   let statesManifest = null;
   if (expandedStatesDir && (await pathExists(expandedStatesDir))) {
     for (const candidate of STATES_MANIFEST_CANDIDATES) {
-      const candidatePath = path.join(expandedStatesDir, candidate);
-      if (await pathExists(candidatePath)) {
+      const candidatePath = await resolveNamedManifest(expandedStatesDir, [candidate]);
+      if (candidatePath) {
         statesManifestPath = candidatePath;
         statesManifest = await readJsonFile(candidatePath);
         break;
@@ -572,10 +522,13 @@ async function resolveChainedArtifacts(inputUrl, options) {
     }
   }
 
+  const nlEntryRun = getManifestRunContext(nlEntryManifest);
+  const abstractionRun = getManifestRunContext(abstractionManifest);
+  const analysisRun = getManifestRunContext(analysisManifest);
   const baseUrl = normalizeUrlNoFragment(firstNonEmpty([
-    nlEntryManifest?.baseUrl,
-    abstractionManifest?.baseUrl,
-    analysisManifest?.baseUrl,
+    nlEntryRun.baseUrl,
+    abstractionRun.baseUrl,
+    analysisRun.baseUrl,
     inputUrl,
   ])) ?? inputUrl;
 
@@ -585,11 +538,11 @@ async function resolveChainedArtifacts(inputUrl, options) {
     nlEntryDir,
     nlEntryManifestPath,
     nlEntryManifest,
-    aliasLexiconPath,
-    slotSchemaPath,
-    utterancePatternsPath,
-    entryRulesPath,
-    clarificationRulesPath,
+    aliasLexiconPath: nlEntryFiles.aliasLexiconPath,
+    slotSchemaPath: nlEntryFiles.slotSchemaPath,
+    utterancePatternsPath: nlEntryFiles.utterancePatternsPath,
+    entryRulesPath: nlEntryFiles.entryRulesPath,
+    clarificationRulesPath: nlEntryFiles.clarificationRulesPath,
     aliasLexiconDocument,
     slotSchemaDocument,
     utterancePatternsDocument,
@@ -598,18 +551,18 @@ async function resolveChainedArtifacts(inputUrl, options) {
     abstractionDir,
     abstractionManifestPath,
     abstractionManifest,
-    intentsPath,
-    actionsPath,
-    decisionTablePath,
+    intentsPath: abstractionFiles.intentsPath,
+    actionsPath: abstractionFiles.actionsPath,
+    decisionTablePath: abstractionFiles.decisionTablePath,
     intentsDocument,
     actionsDocument,
     decisionTableDocument,
     analysisDir,
     analysisManifestPath,
     analysisManifest,
-    elementsPath,
-    statesPath,
-    transitionsPath,
+    elementsPath: analysisFiles.elementsPath,
+    statesPath: analysisFiles.statesPath,
+    transitionsPath: analysisFiles.transitionsPath,
     elementsDocument,
     statesDocument,
     transitionsDocument,
@@ -1424,20 +1377,28 @@ function buildDocsManifest({
   documents,
   warnings,
 }) {
-  return {
+  return buildRunManifest({
     inputUrl: artifacts.inputUrl,
     baseUrl: artifacts.baseUrl,
     generatedAt: layout.generatedAt,
     outDir: layout.outDir,
-    source: {
-      nlEntryManifest: artifacts.nlEntryManifestPath,
-      nlEntryDir: artifacts.nlEntryDir,
-      abstractionManifest: artifacts.abstractionManifestPath,
-      abstractionDir: artifacts.abstractionDir,
-      analysisManifest: artifacts.analysisManifestPath,
-      analysisDir: artifacts.analysisDir,
-      expandedStatesDir: artifacts.expandedStatesDir,
-      statesManifest: artifacts.statesManifestPath,
+    upstream: {
+      nlEntry: {
+        manifest: artifacts.nlEntryManifestPath,
+        dir: artifacts.nlEntryDir,
+      },
+      abstraction: {
+        manifest: artifacts.abstractionManifestPath,
+        dir: artifacts.abstractionDir,
+      },
+      analysis: {
+        manifest: artifacts.analysisManifestPath,
+        dir: artifacts.analysisDir,
+      },
+      expandedStates: {
+        manifest: artifacts.statesManifestPath,
+        dir: artifacts.expandedStatesDir,
+      },
     },
     summary: {
       inputIntents: toArray(artifacts.intentsDocument?.intents).length,
@@ -1457,7 +1418,7 @@ function buildDocsManifest({
     },
     documents,
     warnings,
-  };
+  });
 }
 
 function summarizeForStdout(manifest) {
@@ -1477,9 +1438,9 @@ export async function generateDocs(inputUrl, options = {}) {
   const contexts = buildIntentDocsModel(artifacts, indices);
   const layout = createOutputLayout(artifacts.baseUrl ?? inputUrl, settings.outDir);
 
-  await mkdir(layout.outDir, { recursive: true });
-  await mkdir(layout.intentsDir, { recursive: true });
-  await mkdir(layout.recoveryDir, { recursive: true });
+  await ensureDir(layout.outDir);
+  await ensureDir(layout.intentsDir);
+  await ensureDir(layout.recoveryDir);
 
   const intentDocRecords = [];
 
@@ -1487,7 +1448,7 @@ export async function generateDocs(inputUrl, options = {}) {
     const fileName = buildIntentDocFileName(context.intent);
     const docPath = path.join(layout.intentsDir, fileName);
     const markdown = renderIntentDoc(context, artifacts, indices, path.dirname(docPath));
-    await writeMarkdownFile(docPath, markdown);
+    await writeTextFile(docPath, markdown);
     intentDocRecords.push({
       docId: `doc_${context.intent.intentId}`,
       type: 'intent',
@@ -1505,11 +1466,11 @@ export async function generateDocs(inputUrl, options = {}) {
   const actionsMarkdown = renderActionsDoc(artifacts);
   const recoveryMarkdown = renderRecoveryDoc(artifacts);
 
-  await writeMarkdownFile(layout.readmePath, readmeMarkdown);
-  await writeMarkdownFile(layout.glossaryPath, glossaryMarkdown);
-  await writeMarkdownFile(layout.stateMapPath, stateMapMarkdown);
-  await writeMarkdownFile(layout.actionsPath, actionsMarkdown);
-  await writeMarkdownFile(layout.recoveryPath, recoveryMarkdown);
+  await writeTextFile(layout.readmePath, readmeMarkdown);
+  await writeTextFile(layout.glossaryPath, glossaryMarkdown);
+  await writeTextFile(layout.stateMapPath, stateMapMarkdown);
+  await writeTextFile(layout.actionsPath, actionsMarkdown);
+  await writeTextFile(layout.recoveryPath, recoveryMarkdown);
 
   const documentRecords = [
     {

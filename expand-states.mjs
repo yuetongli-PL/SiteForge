@@ -1,41 +1,13 @@
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
-import { access, copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { access, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { openBrowserSession } from './lib/browser-runtime/session.mjs';
+import { ensureAuthenticatedSession, inspectLoginState, resolveSiteBrowserSessionOptions } from './lib/site-auth.mjs';
 import { classifyJableModelsPath } from './lib/site-path-classifiers.mjs';
-
-const DEFAULT_BROWSER_PATHS = {
-  win32: [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    'C:\\Program Files\\Google\\Chrome for Testing\\chrome.exe',
-    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome for Testing', 'chrome.exe'),
-    'C:\\Program Files\\Chromium\\Application\\chrome.exe',
-    path.join(os.homedir(), 'AppData', 'Local', 'Chromium', 'Application', 'chrome.exe'),
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-  ],
-  darwin: [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-  ],
-  linux: [
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/snap/bin/chromium',
-    '/usr/bin/microsoft-edge',
-    '/usr/bin/microsoft-edge-stable',
-  ],
-};
+import { isContentDetailPageType as isSharedContentDetailPageType } from './lib/sites/page-types.mjs';
 
 const DEFAULT_OPTIONS = {
   initialManifestPath: undefined,
@@ -54,200 +26,27 @@ const DEFAULT_OPTIONS = {
   },
   userAgent: undefined,
   maxTriggers: 12,
+  maxCapturedStates: Number.POSITIVE_INFINITY,
   searchQueries: [],
   captureChapterArtifacts: false,
+  profilePath: undefined,
+  siteProfile: null,
+  reuseLoginState: undefined,
+  browserProfileRoot: undefined,
+  userDataDir: undefined,
+  autoLogin: undefined,
 };
 
-const SNAPSHOT_STYLES = ['display', 'visibility', 'opacity', 'position', 'z-index'];
-const NETWORK_IDLE_QUIET_MS = 500;
 const DOM_QUIET_MS = 500;
-const DEVTOOLS_POLL_INTERVAL_MS = 100;
-const NETWORK_IDLE_POLL_INTERVAL_MS = 100;
-const DOCUMENT_READY_POLL_INTERVAL_MS = 100;
 const MAX_FALLBACK_BOOKS = 1;
 const CHAPTER_CHAIN_LIMIT = 100;
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const EXPAND_HELPER_NAMESPACE = '__BWS_EXPAND__';
+const SAME_DOCUMENT_TRIGGER_KINDS = new Set(['details-toggle', 'expanded-toggle', 'tab', 'menu-button', 'dialog-open']);
+const DIRECT_NAVIGATION_TRIGGER_KINDS = new Set(['safe-nav-link', 'content-link', 'pagination-link', 'auth-link', 'chapter-link']);
 
-class CdpClient {
-  constructor(wsUrl, { timeoutMs = DEFAULT_OPTIONS.timeoutMs } = {}) {
-    this.wsUrl = wsUrl;
-    this.defaultTimeoutMs = timeoutMs;
-    this.ws = null;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.listeners = new Set();
-    this.closed = false;
-  }
-
-  async connect() {
-    if (this.ws) {
-      return;
-    }
-
-    await new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.wsUrl);
-      let settled = false;
-
-      const cleanup = () => {
-        ws.removeEventListener('open', onOpen);
-        ws.removeEventListener('error', onError);
-      };
-
-      const onOpen = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        this.ws = ws;
-        ws.addEventListener('message', (event) => this.#handleMessage(event));
-        ws.addEventListener('close', (event) => this.#handleClose(event));
-        ws.addEventListener('error', (event) => this.#handleSocketError(event));
-        resolve();
-      };
-
-      const onError = (event) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        reject(new Error(`Failed to connect to CDP websocket: ${event?.message ?? 'unknown error'}`));
-      };
-
-      ws.addEventListener('open', onOpen);
-      ws.addEventListener('error', onError);
-    });
-  }
-
-  async send(method, params = {}, sessionId, timeoutMs = this.defaultTimeoutMs) {
-    if (!this.ws || this.closed) {
-      throw new Error('CDP socket is not connected');
-    }
-
-    const id = this.nextId++;
-    const payload = { id, method, params };
-    if (sessionId) {
-      payload.sessionId = sessionId;
-    }
-
-    return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`CDP timeout for ${method}`));
-      }, timeoutMs);
-
-      this.pending.set(id, { resolve, reject, timer, method });
-      this.ws.send(JSON.stringify(payload));
-    });
-  }
-
-  on(method, handler, { sessionId } = {}) {
-    const listener = { method, handler, sessionId: sessionId ?? null };
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  waitForEvent(method, { sessionId, predicate, timeoutMs = this.defaultTimeoutMs } = {}) {
-    return new Promise((resolve, reject) => {
-      let timer = null;
-      const off = this.on(
-        method,
-        (event) => {
-          try {
-            if (predicate && !predicate(event.params, event)) {
-              return;
-            }
-            clearTimeout(timer);
-            off();
-            resolve(event);
-          } catch (error) {
-            clearTimeout(timer);
-            off();
-            reject(error);
-          }
-        },
-        { sessionId },
-      );
-
-      timer = setTimeout(() => {
-        off();
-        reject(new Error(`Timed out waiting for event ${method}`));
-      }, timeoutMs);
-    });
-  }
-
-  close() {
-    if (!this.ws || this.closed) {
-      return;
-    }
-    this.closed = true;
-    this.ws.close();
-  }
-
-  #handleMessage(event) {
-    let message;
-    try {
-      message = JSON.parse(typeof event.data === 'string' ? event.data : Buffer.from(event.data).toString('utf8'));
-    } catch {
-      return;
-    }
-
-    if (typeof message.id === 'number') {
-      const pending = this.pending.get(message.id);
-      if (!pending) {
-        return;
-      }
-      clearTimeout(pending.timer);
-      this.pending.delete(message.id);
-      if (message.error) {
-        pending.reject(new Error(`CDP ${pending.method} failed: ${message.error.message}`));
-      } else {
-        pending.resolve(message.result);
-      }
-      return;
-    }
-
-    if (!message.method) {
-      return;
-    }
-
-    const sessionId = message.sessionId ?? null;
-    for (const listener of this.listeners) {
-      if (listener.method !== message.method) {
-        continue;
-      }
-      if (listener.sessionId !== null && listener.sessionId !== sessionId) {
-        continue;
-      }
-      listener.handler({ method: message.method, params: message.params ?? {}, sessionId });
-    }
-  }
-
-  #handleClose(event) {
-    if (this.closed) {
-      return;
-    }
-    this.closed = true;
-    const error = new Error(`CDP socket closed: ${event.code} ${event.reason || ''}`.trim());
-    for (const [id, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-      this.pending.delete(id);
-    }
-  }
-
-  #handleSocketError(_event) {
-    if (this.closed) {
-      return;
-    }
-  }
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function isContentDetailPageType(pageType) {
+  return isSharedContentDetailPageType(pageType);
 }
 
 function createError(code, message) {
@@ -274,6 +73,10 @@ function normalizeStringArray(value) {
 
 function mergeStringArrays(...values) {
   return normalizeStringArray(values.flatMap((value) => normalizeStringArray(value)));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeBoolean(value, flagName) {
@@ -327,11 +130,25 @@ function matchesPathPrefix(pathname, values = []) {
   });
 }
 
-function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
+function normalizeHostname(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isBilibiliSearchHost(hostname) {
+  return normalizeHostname(hostname) === 'search.bilibili.com';
+}
+
+function isBilibiliSpaceHost(hostname) {
+  return normalizeHostname(hostname) === 'space.bilibili.com';
+}
+
+function inferProfilePageTypeFromPathname(pathname, siteProfile = null, currentHostname = '') {
   const pageTypes = siteProfile?.pageTypes ?? null;
   if (!pageTypes) {
     return null;
   }
+  const normalizedCurrentHost = normalizeHostname(currentHostname || siteProfile?.host || '');
+  const isBilibiliProfile = normalizeHostname(siteProfile?.host) === 'www.bilibili.com';
 
   if (String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv') {
     const modelsPathKind = classifyJableModelsPath(pathname);
@@ -346,7 +163,10 @@ function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
   if (matchesExactPath(pathname, pageTypes.homeExact) || matchesPathPrefix(pathname, pageTypes.homePrefixes)) {
     return 'home';
   }
-  if (matchesPathPrefix(pathname, pageTypes.searchResultsPrefixes)) {
+  if (
+    (!isBilibiliProfile || isBilibiliSearchHost(normalizedCurrentHost))
+    && matchesPathPrefix(pathname, pageTypes.searchResultsPrefixes)
+  ) {
     return 'search-results-page';
   }
   if (matchesPathPrefix(pathname, pageTypes.contentDetailPrefixes)) {
@@ -354,6 +174,12 @@ function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
   }
   if (matchesPathPrefix(pathname, pageTypes.authorPrefixes)) {
     return 'author-page';
+  }
+  if (
+    (matchesExactPath(pathname, pageTypes.authorListExact) || matchesPathPrefix(pathname, pageTypes.authorListPrefixes))
+    && (!isBilibiliProfile || isBilibiliSpaceHost(normalizedCurrentHost))
+  ) {
+    return 'author-list-page';
   }
   if (matchesPathPrefix(pathname, pageTypes.chapterPrefixes)) {
     return 'chapter-page';
@@ -379,9 +205,18 @@ function inferPageTypeFromUrl(input, siteProfile = null) {
   try {
     const parsed = new URL(normalized);
     const pathname = parsed.pathname || '/';
-    const profileType = inferProfilePageTypeFromPathname(pathname, siteProfile);
+    const profileType = inferProfilePageTypeFromPathname(pathname, siteProfile, parsed.hostname);
     if (profileType) {
       return profileType;
+    }
+    if (isBilibiliSearchHost(parsed.hostname) && /^\/(?:all|video|bangumi|upuser)(?:\/|$)/i.test(pathname)) {
+      return 'search-results-page';
+    }
+  if (isBilibiliSpaceHost(parsed.hostname) && /^\/\d+\/(?:(?:upload\/)?video|dynamic|fans\/follow|fans\/fans)(?:\/|$)?/i.test(pathname)) {
+    return 'author-list-page';
+  }
+    if (isBilibiliSpaceHost(parsed.hostname) && /^\/\d+(?:\/|$)?/i.test(pathname)) {
+      return 'author-page';
     }
     if (pathname === '/' || pathname === '') {
       return 'home';
@@ -413,6 +248,600 @@ function inferPageTypeFromUrl(input, siteProfile = null) {
   }
 }
 
+export function derivePageFacts({
+  pageType,
+  siteProfile = null,
+  finalUrl = '',
+  title = '',
+  queryInputValue = '',
+  textFromSelectors = () => null,
+  hrefFromSelectors = () => null,
+  textsFromSelectors = () => [],
+  hrefsFromSelectors = () => [],
+  metaContent = () => null,
+  normalizeUrl = (value) => normalizeUrlNoFragment(value),
+  documentText = '',
+  extractStructuredBilibiliAuthorCards = null,
+} = {}) {
+  const normalizeText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const normalizeHost = (value) => String(value ?? '').trim().toLowerCase();
+  const uniqueValues = (values) => [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
+  const normalizedFinalUrl = normalizeUrl(finalUrl) || normalizeText(finalUrl);
+  const profileHost = normalizeHost(siteProfile?.host ?? '');
+  const currentHostname = (() => {
+    try {
+      return normalizeHost(new URL(normalizedFinalUrl).hostname);
+    } catch {
+      return profileHost;
+    }
+  })();
+  const isBilibiliProfile = ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(profileHost)
+    || ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(currentHostname);
+  const readDocumentText = (() => {
+    let cached = null;
+    return () => {
+      if (cached !== null) {
+        return cached;
+      }
+      cached = normalizeText(typeof documentText === 'function' ? documentText() : documentText);
+      return cached;
+    };
+  })();
+  const readText = (selectors = []) => normalizeText(textFromSelectors(selectors)) || null;
+  const readHref = (selectors = []) => {
+    const value = hrefFromSelectors(selectors);
+    return value ? normalizeUrl(value) : null;
+  };
+  const readTexts = (selectors = [], limit = 20) => uniqueValues(textsFromSelectors(selectors)).slice(0, limit);
+  const readHrefs = (selectors = [], limit = 20) => uniqueValues(hrefsFromSelectors(selectors).map((value) => normalizeUrl(value))).slice(0, limit);
+  const readPattern = (patterns = []) => {
+    const source = readDocumentText();
+    for (const pattern of patterns) {
+      const matched = source.match(pattern);
+      const value = normalizeText(matched?.[1] ?? '');
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  };
+  const parsedUrl = (() => {
+    try {
+      return new URL(normalizedFinalUrl || finalUrl);
+    } catch {
+      return null;
+    }
+  })();
+  const pathname = parsedUrl?.pathname || '/';
+  const bilibiliContentTypeFromUrl = (value) => {
+    const normalizedValue = normalizeText(value);
+    if (!normalizedValue) {
+      return null;
+    }
+    if (/\/bangumi\/play\//iu.test(normalizedValue)) {
+      return 'bangumi';
+    }
+    if (/\/video\/BV[0-9A-Za-z]+/iu.test(normalizedValue)) {
+      return 'video';
+    }
+    if (/space\.bilibili\.com\/\d+/iu.test(normalizedValue) || /\/upuser(?:\/|$)/iu.test(normalizedValue)) {
+      return 'author';
+    }
+    return null;
+  };
+  const bilibiliBvidFromUrl = (value) => normalizeText(value?.match(/\/video\/(BV[0-9A-Za-z]+)/u)?.[1] || '') || null;
+  const bilibiliMidFromUrl = (value) => normalizeText(value?.match(/space\.bilibili\.com\/(\d+)/u)?.[1] || '') || null;
+  const bilibiliAuthorSubpageFromPath = (value) => {
+    const matched = String(value || '').match(/^\/\d+(?:\/([^?#]+))?/u);
+    const normalized = normalizeText(String(matched?.[1] || '').replace(/^\/+|\/+$/gu, ''));
+    if (!normalized) {
+      return 'home';
+    }
+    if (normalized === 'fans/follow') {
+      return 'follow';
+    }
+    if (normalized === 'fans/fans') {
+      return 'fans';
+    }
+    return normalized;
+  };
+  const normalizeBilibiliAuthorCard = (card = {}, authorSubpage = null) => {
+    const name = normalizeText(card.name);
+    const url = card.url ? normalizeUrl(card.url) : null;
+    const mid = normalizeText(card.mid) || bilibiliMidFromUrl(url);
+    if (!name && !url && !mid) {
+      return null;
+    }
+    return {
+      name: name || null,
+      url: url || null,
+      mid: mid || null,
+      authorSubpage: normalizeText(card.authorSubpage) || authorSubpage || null,
+      cardKind: normalizeText(card.cardKind) || 'author',
+    };
+  };
+  const normalizeBilibiliContentCard = (card = {}, fallbackAuthorMid = null) => {
+    const url = card.url ? normalizeUrl(card.url) : null;
+    const titleValue = normalizeText(card.title);
+    const bvid = normalizeText(card.bvid) || bilibiliBvidFromUrl(url);
+    const authorMid = normalizeText(card.authorMid) || fallbackAuthorMid || null;
+    const contentType = normalizeText(card.contentType) || bilibiliContentTypeFromUrl(url);
+    const authorUrl = card.authorUrl ? normalizeUrl(card.authorUrl) : null;
+    const authorName = normalizeText(card.authorName);
+    if (!titleValue && !url && !bvid && !authorMid) {
+      return null;
+    }
+    return {
+      title: titleValue || null,
+      url: url || null,
+      bvid: bvid || null,
+      authorMid: authorMid || null,
+      contentType: contentType || null,
+      authorUrl: authorUrl || null,
+      authorName: authorName || null,
+    };
+  };
+  const dedupeBilibiliAuthorCards = (cards = [], authorSubpage = null) => {
+    const seen = new Set();
+    const result = [];
+    for (const rawCard of cards) {
+      const card = normalizeBilibiliAuthorCard(rawCard, authorSubpage);
+      if (!card) {
+        continue;
+      }
+      const key = card.mid
+        ? `mid::${card.mid}`
+        : card.url
+          ? `url::${card.url}`
+          : `name::${card.name}`;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(card);
+    }
+    return result.slice(0, 16);
+  };
+  const dedupeBilibiliContentCards = (cards = [], fallbackAuthorMid = null) => {
+    const seen = new Set();
+    const result = [];
+    for (const rawCard of cards) {
+      const card = normalizeBilibiliContentCard(rawCard, fallbackAuthorMid);
+      if (!card) {
+        continue;
+      }
+      const key = card.bvid
+        ? `bvid::${card.bvid}`
+        : card.url
+          ? `url::${card.url}`
+          : `title::${card.title}::${card.authorMid}`;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(card);
+    }
+    return result.slice(0, 12);
+  };
+  const detectBilibiliAntiCrawlSignals = () => {
+    const source = readDocumentText();
+    if (!source) {
+      return [];
+    }
+    const signals = [];
+    const patterns = [
+      ['rate-limit', /\u8bbf\u95ee\u9891\u7e41/u],
+      ['verify', /\u5b89\u5168\u9a8c\u8bc1/u],
+      ['slide-verify', /\u6ed1\u52a8\u9a8c\u8bc1/u],
+      ['captcha', /captcha/iu],
+      ['risk-control', /\u98ce\u63a7/u],
+      ['retry-later', /\u8bf7\u7a0d\u540e\u518d\u8bd5/u],
+    ];
+    for (const [label, pattern] of patterns) {
+      if (pattern.test(source)) {
+        signals.push(label);
+      }
+    }
+    return signals;
+  };
+  const normalizeBilibiliTitleText = (value, kind = 'generic') => {
+    const normalizedValue = normalizeText(value);
+    if (!normalizedValue) {
+      return null;
+    }
+
+    let cleaned = normalizedValue
+      .replace(/\s*[-_]\s*(?:哔哩哔哩|bilibili).*$/iu, '')
+      .replace(/\s*[|｜]\s*(?:哔哩哔哩|bilibili).*$/iu, '')
+      .replace(/\s*-\s*[^-]*个人主页.*$/iu, '')
+      .trim();
+
+    if (kind === 'author') {
+      const authorMatch = cleaned.match(/^(.+?)的个人空间(?:[-_].*)?$/u);
+      if (authorMatch?.[1]) {
+        cleaned = normalizeText(authorMatch[1]);
+      }
+    }
+
+    return normalizeText(cleaned) || null;
+  };
+  const bilibiliCategoryNameFromPath = (value) => {
+    const normalizedPath = String(value || '').toLowerCase();
+    if (normalizedPath.startsWith('/v/popular/')) {
+      return '热门';
+    }
+    if (normalizedPath.startsWith('/anime/')) {
+      return '番剧';
+    }
+    if (normalizedPath.startsWith('/movie/')) {
+      return '电影';
+    }
+    if (normalizedPath.startsWith('/guochuang/')) {
+      return '国创';
+    }
+    if (normalizedPath.startsWith('/tv/')) {
+      return '电视剧';
+    }
+    if (normalizedPath.startsWith('/variety/')) {
+      return '综艺';
+    }
+    if (normalizedPath.startsWith('/documentary/')) {
+      return '纪录片';
+    }
+    if (normalizedPath.startsWith('/knowledge/')) {
+      return '知识';
+    }
+    if (normalizedPath.startsWith('/music/')) {
+      return '音乐';
+    }
+    if (normalizedPath.startsWith('/game/')) {
+      return '游戏';
+    }
+    if (normalizedPath.startsWith('/food/')) {
+      return '美食';
+    }
+    if (normalizedPath.startsWith('/sports/')) {
+      return '运动';
+    }
+    if (normalizedPath.startsWith('/c/')) {
+      return '分区';
+    }
+    return null;
+  };
+
+  if (pageType === 'search-results-page') {
+    const profileResultTitleSelectors = Array.isArray(siteProfile?.search?.resultTitleSelectors)
+      ? siteProfile.search.resultTitleSelectors
+      : ['.layout-co18 .layout-tit', '.layout2 .layout-tit'];
+    const profileResultBookSelectors = Array.isArray(siteProfile?.search?.resultBookSelectors)
+      ? siteProfile.search.resultBookSelectors
+      : ['.txt-list-row5 li .s2 a[href]', '.layout-co18 .txt-list a[href]'];
+    const queryParamNames = Array.isArray(siteProfile?.search?.queryParamNames)
+      ? siteProfile.search.queryParamNames
+      : ['searchkey', 'keyword', 'q'];
+    const resultTitles = readTexts(profileResultBookSelectors, 20);
+    const resultUrls = readHrefs(profileResultBookSelectors, 20);
+    const queryFromTitle = (() => {
+      const headingText = readText(profileResultTitleSelectors) || normalizeText(title);
+      const matched = headingText.match(/^(.*?)\s*[-_]\s*(?:哔哩哔哩|bilibili)/iu)
+        || headingText.match(/(?:搜索|search)\s*[:："“”]*\s*(.+?)(?:\s*[-_]|$)/iu);
+      return normalizeText(matched?.[1] || '');
+    })();
+    const derivedQuery = (() => {
+      if (parsedUrl) {
+        for (const name of queryParamNames) {
+          const value = normalizeText(parsedUrl.searchParams.get(name) || '');
+          if (value) {
+            return value;
+          }
+        }
+        const fromPath = parsedUrl.pathname.match(/\/ss\/(.+?)(?:\.html)?$/i)?.[1] || '';
+        const fromPathText = decodeURIComponent(fromPath).replace(/\.html$/i, '');
+        if (normalizeText(fromPathText)) {
+          return normalizeText(fromPathText);
+        }
+      }
+      return queryFromTitle;
+    })();
+    const facts = {
+      queryText: normalizeText(queryInputValue || derivedQuery) || null,
+      resultCount: Math.max(resultUrls.length, resultTitles.length),
+      resultTitles,
+    };
+    if (isBilibiliProfile) {
+      const resultAuthorUrls = readHrefs([
+        'a[href*="//space.bilibili.com/"]',
+        'a[href*="space.bilibili.com/"]',
+      ], 20);
+      const searchSection = pathname.split('/').filter(Boolean)[0] || 'all';
+      const resultEntries = resultUrls.slice(0, 12).map((value, index) => ({
+        title: resultTitles[index] ?? null,
+        url: value,
+        contentType: bilibiliContentTypeFromUrl(value),
+        bvid: bilibiliBvidFromUrl(value),
+        authorUrl: resultAuthorUrls[index] ?? null,
+        authorMid: bilibiliMidFromUrl(resultAuthorUrls[index] ?? ''),
+      }));
+      facts.resultUrls = resultUrls;
+      facts.searchSection = searchSection;
+      facts.firstResultTitle = resultTitles[0] ?? null;
+      facts.firstResultUrl = resultUrls[0] ?? null;
+      facts.firstResultContentType = bilibiliContentTypeFromUrl(resultUrls[0] ?? '');
+      facts.resultEntries = resultEntries;
+      facts.resultContentTypes = resultUrls
+        .map((value) => bilibiliContentTypeFromUrl(value))
+        .filter(Boolean)
+        .slice(0, 20);
+      facts.resultAuthorUrls = resultAuthorUrls;
+      facts.resultAuthorMids = resultAuthorUrls
+        .map((value) => bilibiliMidFromUrl(value))
+        .filter(Boolean)
+        .slice(0, 20);
+      facts.resultBvids = resultUrls
+        .map((value) => bilibiliBvidFromUrl(value))
+        .filter(Boolean)
+        .slice(0, 10);
+    }
+    return facts;
+  }
+
+  if (isContentDetailPageType(pageType)) {
+    const chapterLinkSelectors = Array.isArray(siteProfile?.bookDetail?.chapterLinkSelectors)
+      ? siteProfile.bookDetail.chapterLinkSelectors
+      : ['#list a[href]', '.listmain a[href]', 'dd a[href]', '.book_last a[href]'];
+    const chapterUrls = readHrefs(chapterLinkSelectors, 200);
+    const genericBookTitle = metaContent('og:novel:book_name')
+      || readText(
+        Array.isArray(siteProfile?.contentDetail?.titleSelectors)
+          ? siteProfile.contentDetail.titleSelectors
+          : ['h1', '.book h1', '#bookinfo h1', 'h2'],
+      );
+    const genericAuthorName = metaContent('og:novel:author')
+      || readText(
+        Array.isArray(siteProfile?.contentDetail?.authorNameSelectors)
+          ? siteProfile.contentDetail.authorNameSelectors
+          : ['a[href*="/author/"]', '.small span a'],
+      );
+    const genericAuthorUrl = (() => {
+      const value = metaContent('og:novel:author_link')
+        || readHref(
+          Array.isArray(siteProfile?.contentDetail?.authorLinkSelectors)
+            ? siteProfile.contentDetail.authorLinkSelectors
+            : ['a[href*="/author/"]'],
+        );
+      return value ? normalizeUrl(value) : null;
+    })();
+    const facts = {
+      bookTitle: genericBookTitle,
+      authorName: genericAuthorName,
+      authorUrl: genericAuthorUrl,
+      chapterCount: chapterUrls.length,
+      latestChapterTitle: readText(['.book_last a', '#list a']),
+      latestChapterUrl: (() => {
+        const value = metaContent('og:novel:lastest_chapter_url') || chapterUrls[0] || '';
+        return value ? normalizeUrl(value) : null;
+      })(),
+    };
+    if (isBilibiliProfile) {
+      const bilibiliTitle = normalizeBilibiliTitleText(genericBookTitle, 'content')
+        || readText(['h1.video-title', 'h1', '.video-title', '.media-title'])
+        || normalizeBilibiliTitleText(title, 'content');
+      const authorUrl = genericAuthorUrl
+        || readHref(['a.up-name[href*="space.bilibili.com/"]', '.video-owner-card a[href*="space.bilibili.com/"]', 'a[href*="space.bilibili.com/"]']);
+      const bvid = normalizedFinalUrl.match(/\/video\/(BV[0-9A-Za-z]+)/u)?.[1]
+        || readPattern([/"bvid"\s*:\s*"([^"]+)"/u, /"bvid":"([^"]+)"/u]);
+      const aid = readPattern([/"aid"\s*:\s*(\d+)/u, /"aid":"?(\d+)"?/u]);
+      const authorMid = authorUrl?.match(/space\.bilibili\.com\/(\d+)/u)?.[1]
+        || pathname.match(/^\/(?:bangumi\/play\/|video\/)?(\d+)$/u)?.[1]
+        || readPattern([/"mid"\s*:\s*(\d+)/u, /"mid":"?(\d+)"?/u]);
+      const publishedAt = metaContent('og:video:release_date')
+        || metaContent('article:published_time')
+        || readText(['time', '.pubdate-text', '.video-publish time', '[class*="pubdate"]']);
+      const categoryName = readText([
+        '.video-info-detail a',
+        '.video-detail-title a',
+        '.first-channel',
+        'a[href*="/v/"]',
+      ]);
+      const seasonId = readPattern([/"season_id"\s*:\s*(\d+)/u, /"seasonId"\s*:\s*(\d+)/u]);
+      const episodeId = pathname.match(/\/bangumi\/play\/ep(\d+)/u)?.[1]
+        || readPattern([/"ep_id"\s*:\s*(\d+)/u, /"episode_id"\s*:\s*(\d+)/u, /"epId"\s*:\s*(\d+)/u]);
+      const seriesTitle = readText([
+        '.media-title',
+        '.media-info-title',
+        '.media-right .title',
+        '.mediainfo_mediaTitle',
+      ]);
+      const episodeTitle = readText([
+        'h1.video-title',
+        '.video-title',
+        '.ep-info-title',
+        'h1',
+      ]);
+      const tagNames = readTexts([
+        '.tag-link',
+        '.video-tag-link',
+        'a[href*="/v/topic/detail"]',
+        'a[href*="/v/tag/"]',
+      ], 12);
+      facts.bookTitle = bilibiliTitle;
+      facts.contentTitle = bilibiliTitle;
+      facts.contentType = pathname.startsWith('/bangumi/play/') ? 'bangumi' : 'video';
+      facts.bvid = bvid ?? null;
+      facts.aid = aid ?? null;
+      facts.authorName = normalizeBilibiliTitleText(genericAuthorName, 'author')
+        || readText(['a.up-name', '.up-name', '.up-detail-top .up-name', '.video-owner-card .name']);
+      facts.authorUrl = authorUrl ?? null;
+      facts.authorMid = authorMid ?? null;
+      facts.publishedAt = publishedAt ?? null;
+      facts.categoryName = normalizeBilibiliTitleText(categoryName, 'generic') ?? null;
+      facts.seasonId = seasonId ?? null;
+      facts.episodeId = episodeId ?? null;
+      facts.seriesTitle = normalizeBilibiliTitleText(seriesTitle, 'content') ?? null;
+      facts.episodeTitle = (facts.contentType === 'bangumi' ? (episodeTitle || bilibiliTitle) : null) ?? null;
+      facts.tagNames = tagNames;
+    }
+    return facts;
+  }
+
+  if (pageType === 'author-page' || pageType === 'author-list-page') {
+    const genericAuthorName = metaContent('og:novel:author')
+      || readText(
+        Array.isArray(siteProfile?.author?.titleSelectors)
+          ? siteProfile.author.titleSelectors
+          : ['h1', '.author h1', '.title h1', 'h2'],
+      );
+    const facts = {
+      authorName: genericAuthorName,
+    };
+    if (isBilibiliProfile) {
+      const authorUrls = readHrefs([
+        'a[href*="space.bilibili.com/"]',
+      ], 16).filter((value) => value !== normalizedFinalUrl);
+      const authorNames = readTexts([
+        'a[href*="space.bilibili.com/"] .name',
+        'a[href*="space.bilibili.com/"] .up-name',
+        'a[href*="space.bilibili.com/"]',
+      ], 16).filter((value) => value !== facts.authorName);
+      const workUrls = readHrefs(
+        Array.isArray(siteProfile?.author?.workLinkSelectors)
+          ? siteProfile.author.workLinkSelectors
+          : ['a[href*="/video/BV"]'],
+        12,
+      );
+      const workTitles = readTexts(
+        Array.isArray(siteProfile?.author?.workLinkSelectors)
+          ? siteProfile.author.workLinkSelectors
+          : ['a[href*="/video/BV"]'],
+        12,
+      );
+      facts.authorName = normalizeBilibiliTitleText(genericAuthorName, 'author')
+        || readText(['h1', '.nickname', '.up-name', '.h-name'])
+        || normalizeBilibiliTitleText(title, 'author');
+      facts.authorMid = pathname.match(/^\/(\d+)(?:\/|$)/u)?.[1]
+        || readPattern([/"mid"\s*:\s*(\d+)/u, /"mid":"?(\d+)"?/u]);
+      facts.authorUrl = normalizedFinalUrl || null;
+      facts.authorSubpage = bilibiliAuthorSubpageFromPath(pathname);
+      facts.authorSubpagePath = pathname;
+      const extractedCards = typeof extractStructuredBilibiliAuthorCards === 'function'
+        ? extractStructuredBilibiliAuthorCards({
+          pageType,
+          siteProfile,
+          finalUrl: normalizedFinalUrl,
+          pathname,
+          authorMid: facts.authorMid,
+          authorName: facts.authorName,
+          authorSubpage: facts.authorSubpage,
+        })
+        : null;
+      const featuredAuthorCards = dedupeBilibiliAuthorCards(
+        extractedCards?.authorCards?.length > 0
+          ? extractedCards.authorCards
+          : authorUrls.map((url, index) => ({
+            url,
+            mid: bilibiliMidFromUrl(url),
+            name: authorNames[index] ?? null,
+          })),
+        facts.authorSubpage,
+      );
+      const featuredContentCards = dedupeBilibiliContentCards(
+        extractedCards?.contentCards?.length > 0
+          ? extractedCards.contentCards
+          : workUrls.map((url, index) => ({
+            url,
+            title: workTitles[index] ?? null,
+            bvid: bilibiliBvidFromUrl(url),
+            authorMid: facts.authorMid,
+            contentType: bilibiliContentTypeFromUrl(url),
+            authorUrl: facts.authorUrl,
+            authorName: facts.authorName,
+          })),
+        facts.authorMid,
+      );
+      facts.featuredAuthorCards = featuredAuthorCards;
+      facts.featuredAuthors = featuredAuthorCards.map((card) => ({
+        name: card.name,
+        url: card.url,
+        mid: card.mid,
+      }));
+      facts.featuredAuthorUrls = featuredAuthorCards.map((card) => card.url).filter(Boolean);
+      facts.featuredAuthorNames = featuredAuthorCards.map((card) => card.name).filter(Boolean);
+      facts.featuredAuthorMids = featuredAuthorCards.map((card) => card.mid).filter(Boolean);
+      facts.featuredAuthorCount = featuredAuthorCards.length;
+      facts.featuredContentCards = featuredContentCards;
+      facts.featuredContentUrls = featuredContentCards.map((card) => card.url).filter(Boolean);
+      facts.featuredContentTitles = featuredContentCards.map((card) => card.title).filter(Boolean);
+      facts.featuredContentCount = featuredContentCards.length;
+      facts.featuredContentTypes = featuredContentCards.map((card) => card.contentType).filter(Boolean);
+      facts.featuredContentBvids = featuredContentCards.map((card) => card.bvid).filter(Boolean);
+      facts.featuredContentAuthorMids = featuredContentCards.map((card) => card.authorMid).filter(Boolean);
+      const antiCrawlSignals = detectBilibiliAntiCrawlSignals();
+      if (antiCrawlSignals.length > 0) {
+        facts.antiCrawlDetected = true;
+        facts.antiCrawlSignals = antiCrawlSignals;
+      }
+    }
+    return facts;
+  }
+
+  if (pageType === 'category-page') {
+    const facts = {
+      categoryName: normalizeBilibiliTitleText(readText(['h1', '.channel-title', '.page-title']), 'generic')
+        || bilibiliCategoryNameFromPath(pathname),
+    };
+    if (isBilibiliProfile) {
+      const featuredContentUrls = readHrefs([
+        'a[href*="//www.bilibili.com/video/"]',
+        'a[href*="/video/"]',
+        'a[href*="//www.bilibili.com/bangumi/play/"]',
+        'a[href*="/bangumi/play/"]',
+      ], 16);
+      const featuredContentTitles = readTexts([
+        'a[href*="//www.bilibili.com/video/"]',
+        'a[href*="/video/"]',
+        'a[href*="//www.bilibili.com/bangumi/play/"]',
+        'a[href*="/bangumi/play/"]',
+      ], 16);
+      facts.categoryName = facts.categoryName || bilibiliCategoryNameFromPath(pathname);
+      facts.categoryPath = pathname;
+      facts.featuredContentUrls = featuredContentUrls;
+      facts.featuredContentTitles = featuredContentTitles;
+      facts.featuredContentTypes = featuredContentUrls
+        .map((value) => bilibiliContentTypeFromUrl(value))
+        .filter(Boolean)
+        .slice(0, 16);
+      facts.featuredContentCount = featuredContentUrls.length;
+      facts.featuredContentBvids = featuredContentUrls
+        .map((value) => bilibiliBvidFromUrl(value))
+        .filter(Boolean)
+        .slice(0, 10);
+      facts.rankingLabels = readTexts([
+        '.rank-item .num',
+        '.popular-rank .num',
+        '.rank-wrap .rank-num',
+        '.hot-list .rank',
+      ], 12);
+    }
+    return facts;
+  }
+
+  if (pageType === 'chapter-page') {
+    const contentText = normalizeText(readDocumentText());
+    return {
+      bookTitle: readText(['#info_url', '.crumbs a[href*="/biqu"]', '.bread-crumbs a[href*="/biqu"]']),
+      authorName: metaContent('og:novel:author'),
+      chapterTitle: readText(['.reader-main .title', 'h1.title', '.content_read h1', 'h1']),
+      chapterHref: normalizedFinalUrl,
+      prevChapterUrl: readHref(['#prev_url', 'a#prev_url']),
+      nextChapterUrl: readHref(['#next_url', 'a#next_url']),
+      bodyTextLength: contentText.length,
+      bodyExcerpt: contentText.slice(0, 160) || null,
+    };
+  }
+
+  return null;
+}
+
 function isJableSiteProfile(siteProfile = null, baseUrl = '') {
   const profileHost = String(siteProfile?.host ?? '').toLowerCase();
   const urlHost = (() => {
@@ -425,6 +854,153 @@ function isJableSiteProfile(siteProfile = null, baseUrl = '') {
   return profileHost === 'jable.tv' || profileHost === 'www.jable.tv' || urlHost === 'jable.tv' || urlHost === 'www.jable.tv';
 }
 
+function isMoodyzSiteProfile(siteProfile = null, baseUrl = '') {
+  const profileHost = String(siteProfile?.host ?? '').toLowerCase();
+  const urlHost = (() => {
+    try {
+      return new URL(String(baseUrl || '')).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  return profileHost === 'moodyz.com' || profileHost === 'www.moodyz.com' || urlHost === 'moodyz.com' || urlHost === 'www.moodyz.com';
+}
+
+function isBilibiliSiteProfile(siteProfile = null, baseUrl = '') {
+  const allowedHosts = new Set(['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com']);
+  const profileHost = String(siteProfile?.host ?? '').toLowerCase();
+  const urlHost = (() => {
+    try {
+      return new URL(String(baseUrl || '')).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  return allowedHosts.has(profileHost) || allowedHosts.has(urlHost);
+}
+
+function buildBilibiliWaitPolicy(settings, pageType, { directNavigation = false, trigger = null } = {}) {
+  if (!['search-results-page', 'author-page', 'author-list-page', 'category-page'].includes(pageType) && !isContentDetailPageType(pageType)) {
+    return null;
+  }
+
+  const triggerKind = String(trigger?.kind ?? '');
+  const isSearch = pageType === 'search-results-page';
+  const isDetail = isContentDetailPageType(pageType);
+  const isAuthor = pageType === 'author-page' || pageType === 'author-list-page';
+  const isAuthorList = pageType === 'author-list-page';
+
+  return {
+    useLoadEvent: false,
+    useNetworkIdle: false,
+    documentReadyTimeoutMs: Math.min(settings.timeoutMs, directNavigation ? (isAuthorList ? 7_200 : 6_000) : (isAuthorList ? 9_000 : 8_000)),
+    domQuietTimeoutMs: Math.min(
+      settings.timeoutMs,
+      directNavigation
+        ? (isSearch ? 1_600 : isDetail ? 1_900 : isAuthorList ? 2_800 : isAuthor ? 1_800 : 2_000)
+        : (isSearch ? 2_000 : isDetail ? 2_400 : isAuthorList ? 3_400 : isAuthor ? 2_100 : 2_300),
+    ),
+    domQuietMs:
+      triggerKind === 'content-link'
+        ? 120
+        : triggerKind === 'safe-nav-link' && isAuthor
+          ? 140
+          : triggerKind === 'search-form'
+            ? 160
+            : isSearch
+              ? 170
+              : isDetail
+                ? 180
+                : isAuthorList
+                  ? 210
+                  : 170,
+    idleMs: Math.min(settings.idleMs, directNavigation ? (isAuthorList ? 220 : 120) : (isAuthorList ? 260 : 150)),
+  };
+}
+
+async function waitForSelectorMatches(session, selectors, {
+  minCount = 1,
+  timeoutMs = 2_000,
+  pollMs = 100,
+  settleMs = 150,
+} = {}) {
+  const normalizedSelectors = normalizeStringArray(selectors);
+  if (normalizedSelectors.length === 0) {
+    return false;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const matchCount = await session.callPageFunction((innerSelectors) => innerSelectors.reduce((count, selector) => {
+        try {
+          return count + document.querySelectorAll(selector).length;
+        } catch {
+          return count;
+        }
+      }, 0), normalizedSelectors);
+      if (Number(matchCount) >= minCount) {
+        if (settleMs > 0) {
+          await sleep(settleMs);
+        }
+        return true;
+      }
+    } catch {
+      // Ignore transient evaluation failures while the page is still hydrating.
+    }
+    await sleep(pollMs);
+  }
+
+  return false;
+}
+
+function resolveBilibiliReadySelectors(siteProfile, pageType) {
+  const defaultContentSelectors = [
+    'a[href*="www.bilibili.com/video/"]',
+    'a[href*="/video/BV"]',
+    'a[href*="www.bilibili.com/bangumi/play/"]',
+    'a[href*="/bangumi/play/"]',
+  ];
+  if (pageType === 'search-results-page') {
+    return siteProfile?.search?.resultBookSelectors ?? defaultContentSelectors;
+  }
+  if (pageType === 'author-page' || pageType === 'author-list-page' || pageType === 'category-page') {
+    return siteProfile?.author?.workLinkSelectors ?? defaultContentSelectors;
+  }
+  if (isContentDetailPageType(pageType)) {
+    return siteProfile?.contentDetail?.authorLinkSelectors ?? ['a[href*="space.bilibili.com/"]'];
+  }
+  return [];
+}
+
+function resolveBilibiliReadyWaitOptions(pageType) {
+  if (pageType === 'author-list-page') {
+    return { timeoutMs: 6_500, pollMs: 140, settleMs: 220 };
+  }
+  if (pageType === 'author-page' || pageType === 'category-page' || pageType === 'search-results-page') {
+    return { timeoutMs: 2_800, pollMs: 100, settleMs: 160 };
+  }
+  if (isContentDetailPageType(pageType)) {
+    return { timeoutMs: 2_200, pollMs: 100, settleMs: 140 };
+  }
+  return null;
+}
+
+async function ensureSiteSpecificReadyMarkers(session, siteProfile = null, url = '') {
+  if (!isBilibiliSiteProfile(siteProfile, url)) {
+    return;
+  }
+
+  const pageType = inferPageTypeFromUrl(url, siteProfile);
+  const selectors = resolveBilibiliReadySelectors(siteProfile, pageType);
+  const waitOptions = resolveBilibiliReadyWaitOptions(pageType);
+  if (!waitOptions || selectors.length === 0) {
+    return;
+  }
+
+  await waitForSelectorMatches(session, selectors, waitOptions);
+}
+
 function resolveNavigationWaitPolicy(settings, siteProfile = null, baseUrl = '') {
   if (isJableSiteProfile(siteProfile, baseUrl)) {
     return {
@@ -435,6 +1011,28 @@ function resolveNavigationWaitPolicy(settings, siteProfile = null, baseUrl = '')
       domQuietMs: 150,
       idleMs: Math.min(settings.idleMs, 250),
     };
+  }
+
+  if (isMoodyzSiteProfile(siteProfile, baseUrl)) {
+    const pageType = inferPageTypeFromUrl(baseUrl, siteProfile);
+    if (['category-page', 'search-results-page', 'author-page', 'author-list-page'].includes(pageType) || isContentDetailPageType(pageType)) {
+      return {
+        useLoadEvent: false,
+        useNetworkIdle: false,
+        documentReadyTimeoutMs: Math.min(settings.timeoutMs, 8_000),
+        domQuietTimeoutMs: Math.min(settings.timeoutMs, 2_500),
+        domQuietMs: 200,
+        idleMs: Math.min(settings.idleMs, 150),
+      };
+    }
+  }
+
+  if (isBilibiliSiteProfile(siteProfile, baseUrl)) {
+    const pageType = inferPageTypeFromUrl(baseUrl, siteProfile);
+    const policy = buildBilibiliWaitPolicy(settings, pageType);
+    if (policy) {
+      return policy;
+    }
   }
 
   return {
@@ -467,7 +1065,13 @@ function isChapterPaginationUrl(currentUrl, nextUrl) {
   return normalizeUrlNoFragment(currentUrl) !== normalizeUrlNoFragment(nextUrl);
 }
 
-async function loadSiteProfile(baseUrl) {
+async function loadSiteProfile(baseUrl, explicitProfilePath = null, explicitSiteProfile = null) {
+  if (explicitSiteProfile && typeof explicitSiteProfile === 'object') {
+    return explicitSiteProfile;
+  }
+  if (explicitProfilePath && await fileExists(explicitProfilePath)) {
+    return JSON.parse(await readFile(explicitProfilePath, 'utf8'));
+  }
   try {
     const parsed = new URL(baseUrl);
     const hostnames = [parsed.hostname];
@@ -537,6 +1141,107 @@ function hashFingerprint(fingerprint) {
   return createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex');
 }
 
+function bilibiliBvidFromUrl(input) {
+  const value = normalizeUrlNoFragment(input);
+  if (!value) {
+    return null;
+  }
+  return String(value).match(/\/video\/(BV[0-9A-Za-z]+)/u)?.[1] ?? null;
+}
+
+function buildPageFactsSyntheticTriggers(pageType, pageFacts = null) {
+  if (!pageFacts || typeof pageFacts !== 'object') {
+    return [];
+  }
+
+  const buildLinkTrigger = (kind, href, {
+    label = null,
+    semanticRole = 'content',
+    primary = 'page-facts',
+    ordinal = 9_000,
+  } = {}) => {
+    const normalizedHref = normalizeUrlNoFragment(href);
+    if (!normalizedHref) {
+      return null;
+    }
+    return {
+      kind,
+      label: label || bilibiliBvidFromUrl(normalizedHref) || normalizedHref,
+      locator: {
+        primary,
+        id: null,
+        ariaControls: null,
+        role: kind.endsWith('link') ? 'link' : null,
+        label: label || bilibiliBvidFromUrl(normalizedHref) || normalizedHref,
+        tagName: 'a',
+        href: normalizedHref,
+        textSnippet: label || bilibiliBvidFromUrl(normalizedHref) || normalizedHref,
+        domPath: null,
+        inputName: null,
+        formAction: null,
+        submitSelector: null,
+      },
+      controlledTarget: null,
+      href: normalizedHref,
+      queryText: null,
+      semanticRole,
+      ordinal,
+    };
+  };
+
+  const urlEntries = [];
+  if (pageType === 'search-results-page') {
+    for (const href of pageFacts.resultUrls ?? []) {
+      urlEntries.push(buildLinkTrigger('content-link', href, { semanticRole: 'content', ordinal: 9_100 }));
+    }
+  }
+  if (['author-page', 'author-list-page', 'category-page'].includes(pageType)) {
+    for (const href of pageFacts.featuredContentUrls ?? []) {
+      urlEntries.push(buildLinkTrigger('content-link', href, { semanticRole: 'content', ordinal: 9_200 }));
+    }
+  }
+  if (pageType === 'author-list-page') {
+    for (const href of pageFacts.featuredAuthorUrls ?? []) {
+      urlEntries.push(buildLinkTrigger('safe-nav-link', href, { semanticRole: 'author', ordinal: 9_250 }));
+    }
+  }
+  if (isContentDetailPageType(pageType) && pageFacts.authorUrl) {
+    urlEntries.push(buildLinkTrigger('safe-nav-link', pageFacts.authorUrl, {
+      semanticRole: 'author',
+      label: pageFacts.authorName || 'Author Page',
+      ordinal: 9_300,
+    }));
+  }
+
+  return urlEntries.filter(Boolean);
+}
+
+function mergeDiscoveredTriggers(discoveredTriggers, syntheticTriggers) {
+  const merged = [...(Array.isArray(discoveredTriggers) ? discoveredTriggers : [])];
+  const seen = new Set(merged.map((trigger) => JSON.stringify([
+    trigger?.kind ?? null,
+    normalizeUrlNoFragment(trigger?.href ?? trigger?.locator?.href ?? null),
+    trigger?.queryText ?? null,
+    trigger?.semanticRole ?? null,
+  ])));
+
+  for (const trigger of syntheticTriggers) {
+    const dedupeKey = JSON.stringify([
+      trigger?.kind ?? null,
+      normalizeUrlNoFragment(trigger?.href ?? trigger?.locator?.href ?? null),
+      trigger?.queryText ?? null,
+      trigger?.semanticRole ?? null,
+    ]);
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    merged.push(trigger);
+  }
+
+  return merged;
+}
+
 function resolveManifestLinkedPath(manifestPath, linkedPath) {
   if (!linkedPath) {
     return linkedPath;
@@ -556,338 +1261,48 @@ async function fileExists(filePath) {
   }
 }
 
-async function detectBrowserPath() {
-  const envCandidates = [process.env.BROWSER_PATH, process.env.CHROME_PATH, process.env.CHROMIUM_PATH].filter(Boolean);
-  const platformCandidates = DEFAULT_BROWSER_PATHS[process.platform] ?? [];
-  for (const candidate of [...envCandidates, ...platformCandidates]) {
-    if (await fileExists(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
+function pageWaitForDomQuiet(innerQuietMs, innerTimeoutMs) {
+  return new Promise((resolve) => {
+    const root = document.documentElement || document.body || document;
+    const start = performance.now();
+    let lastMutationAt = start;
+    let settled = false;
 
-async function waitForDevToolsPort(userDataDir, browserProcess, timeoutMs, getLaunchError = () => null) {
-  const filePath = path.join(userDataDir, 'DevToolsActivePort');
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const launchError = getLaunchError();
-    if (launchError) {
-      throw launchError;
-    }
-
-    if (browserProcess.exitCode !== null) {
-      throw new Error(`Browser exited before DevTools became ready (code ${browserProcess.exitCode})`);
-    }
-
-    try {
-      const content = await readFile(filePath, 'utf8');
-      const [portLine] = content.trim().split(/\r?\n/);
-      const port = Number(portLine);
-      if (Number.isInteger(port) && port > 0) {
-        return port;
-      }
-    } catch {
-      // Keep polling until the file is populated.
-    }
-
-    await delay(DEVTOOLS_POLL_INTERVAL_MS);
-  }
-
-  throw new Error('Timed out waiting for DevToolsActivePort');
-}
-
-async function waitForBrowserWsUrl(port, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`, {
-        signal: AbortSignal.timeout(Math.max(1, Math.min(2_000, timeoutMs))),
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        if (payload?.webSocketDebuggerUrl) {
-          return payload.webSocketDebuggerUrl;
-        }
-      }
-    } catch {
-      // Browser is still warming up.
-    }
-
-    await delay(DEVTOOLS_POLL_INTERVAL_MS);
-  }
-
-  throw new Error('Timed out waiting for browser websocket endpoint');
-}
-
-async function launchBrowser(browserPath, { headless, timeoutMs }) {
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'expand-states-browser-'));
-  const args = [
-    `--user-data-dir=${userDataDir}`,
-    '--remote-debugging-port=0',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--hide-scrollbars',
-    '--disable-gpu',
-    '--disable-popup-blocking',
-    '--disable-background-networking',
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-sync',
-    '--metrics-recording-only',
-    '--mute-audio',
-    'about:blank',
-  ];
-
-  if (headless) {
-    args.unshift('--headless=new');
-  }
-
-  const browserProcess = spawn(browserPath, args, {
-    stdio: ['ignore', 'ignore', 'pipe'],
-    windowsHide: true,
-  });
-
-  let stderr = '';
-  let launchError = null;
-  browserProcess.stderr?.setEncoding('utf8');
-  browserProcess.stderr?.on('data', (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-8_192);
-  });
-
-  browserProcess.once('error', (error) => {
-    launchError = error;
-  });
-
-  try {
-    const port = await waitForDevToolsPort(userDataDir, browserProcess, timeoutMs, () => launchError);
-    const wsUrl = await waitForBrowserWsUrl(port, timeoutMs);
-    return { browserProcess, userDataDir, port, wsUrl, stderr };
-  } catch (error) {
-    await shutdownBrowser(browserProcess, userDataDir);
-    throw new Error(`${error.message}${stderr ? `\n${stderr.trim()}` : ''}`.trim());
-  }
-}
-
-async function shutdownBrowser(browserProcess, userDataDir) {
-  if (browserProcess && browserProcess.exitCode === null) {
-    browserProcess.kill();
-    await Promise.race([
-      new Promise((resolve) => browserProcess.once('exit', resolve)),
-      delay(2_000),
-    ]);
-    if (browserProcess.exitCode === null) {
-      browserProcess.kill('SIGKILL');
-      await Promise.race([
-        new Promise((resolve) => browserProcess.once('exit', resolve)),
-        delay(2_000),
-      ]);
-    }
-  }
-
-  if (userDataDir) {
-    await rm(userDataDir, { recursive: true, force: true });
-  }
-}
-
-function createNetworkTracker(client, sessionId) {
-  const inflight = new Set();
-  let lastActivityAt = Date.now();
-
-  const markActivity = () => {
-    lastActivityAt = Date.now();
-  };
-
-  const offRequest = client.on(
-    'Network.requestWillBeSent',
-    ({ params }) => {
-      if (!params?.requestId) {
+    const finish = (reason) => {
+      if (settled) {
         return;
       }
-      inflight.add(params.requestId);
-      markActivity();
-    },
-    { sessionId },
-  );
-
-  const finishRequest = ({ params }) => {
-    if (!params?.requestId) {
-      return;
-    }
-    inflight.delete(params.requestId);
-    markActivity();
-  };
-
-  const offFinished = client.on('Network.loadingFinished', finishRequest, { sessionId });
-  const offFailed = client.on('Network.loadingFailed', finishRequest, { sessionId });
-
-  return {
-    async waitForIdle({ quietMs, timeoutMs }) {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (inflight.size === 0 && Date.now() - lastActivityAt >= quietMs) {
-          return;
-        }
-        await delay(NETWORK_IDLE_POLL_INTERVAL_MS);
-      }
-      throw new Error(`Timed out waiting for network idle (${inflight.size} inflight requests remained)`);
-    },
-    dispose() {
-      offRequest();
-      offFinished();
-      offFailed();
-    },
-  };
-}
-
-function formatEvaluationError(result, fallback) {
-  return (
-    result?.exceptionDetails?.exception?.description ||
-    result?.exceptionDetails?.text ||
-    fallback ||
-    'Page evaluation failed'
-  );
-}
-
-async function evaluateValue(client, sessionId, expression) {
-  const result = await client.send(
-    'Runtime.evaluate',
-    {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    },
-    sessionId,
-  );
-
-  if (result.exceptionDetails) {
-    throw new Error(formatEvaluationError(result, `Evaluation failed for expression: ${expression}`));
-  }
-
-  return result.result?.value;
-}
-
-async function callPageFunction(client, sessionId, fn, ...args) {
-  const serializedArgs = args.map((arg) => JSON.stringify(arg)).join(', ');
-  const expression = `(${fn.toString()})(${serializedArgs})`;
-  const result = await client.send(
-    'Runtime.evaluate',
-    {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    },
-    sessionId,
-  );
-
-  if (result.exceptionDetails) {
-    throw new Error(formatEvaluationError(result, `Page function failed: ${fn.name || 'anonymous'}`));
-  }
-
-  return result.result?.value;
-}
-
-async function waitForDocumentReady(client, sessionId, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const readyState = await evaluateValue(client, sessionId, 'document.readyState');
-      if (readyState === 'interactive' || readyState === 'complete') {
-        return readyState;
-      }
-    } catch {
-      // Navigation may still be in progress.
-    }
-    await delay(DOCUMENT_READY_POLL_INTERVAL_MS);
-  }
-
-  throw new Error('Timed out waiting for document ready');
-}
-
-async function waitForDomQuiet(client, sessionId, quietMs, timeoutMs) {
-  return await callPageFunction(
-    client,
-    sessionId,
-    function pageWaitForDomQuiet(innerQuietMs, innerTimeoutMs) {
-      return new Promise((resolve) => {
-        const root = document.documentElement || document.body || document;
-        const start = performance.now();
-        let lastMutationAt = start;
-        let settled = false;
-
-        const finish = (reason) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          observer.disconnect();
-          clearInterval(interval);
-          clearTimeout(timeoutHandle);
-          resolve({
-            reason,
-            elapsedMs: Math.round(performance.now() - start),
-          });
-        };
-
-        const observer = new MutationObserver(() => {
-          lastMutationAt = performance.now();
-        });
-
-        observer.observe(root, {
-          attributes: true,
-          childList: true,
-          subtree: true,
-          characterData: true,
-        });
-
-        const interval = setInterval(() => {
-          if (performance.now() - lastMutationAt >= innerQuietMs) {
-            finish('quiet');
-          }
-        }, 50);
-
-        const timeoutHandle = setTimeout(() => {
-          finish('timeout');
-        }, innerTimeoutMs);
+      settled = true;
+      observer.disconnect();
+      clearInterval(interval);
+      clearTimeout(timeoutHandle);
+      resolve({
+        reason,
+        elapsedMs: Math.round(performance.now() - start),
       });
-    },
-    quietMs,
-    timeoutMs,
-  );
-}
+    };
 
-async function navigateAndWaitReady(client, sessionId, url, settings, networkTracker, siteProfile = null) {
-  const waitPolicy = resolveNavigationWaitPolicy(settings, siteProfile, url);
-  const loadPromise = waitPolicy.useLoadEvent
-    ? client.waitForEvent('Page.loadEventFired', {
-      sessionId,
-      timeoutMs: waitPolicy.documentReadyTimeoutMs,
-    })
-    : null;
-
-  const navigateResult = await client.send('Page.navigate', { url }, sessionId);
-  if (navigateResult.errorText) {
-    throw new Error(`Navigation failed: ${navigateResult.errorText}`);
-  }
-
-  if (loadPromise) {
-    await loadPromise;
-  } else {
-    await waitForDocumentReady(client, sessionId, waitPolicy.documentReadyTimeoutMs);
-    await waitForDomQuiet(client, sessionId, waitPolicy.domQuietMs, waitPolicy.domQuietTimeoutMs);
-  }
-
-  if (waitPolicy.useNetworkIdle) {
-    await networkTracker.waitForIdle({
-      quietMs: NETWORK_IDLE_QUIET_MS,
-      timeoutMs: settings.timeoutMs,
+    const observer = new MutationObserver(() => {
+      lastMutationAt = performance.now();
     });
-  }
 
-  if (waitPolicy.idleMs > 0) {
-    await delay(waitPolicy.idleMs);
-  }
+    observer.observe(root, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    const interval = setInterval(() => {
+      if (performance.now() - lastMutationAt >= innerQuietMs) {
+        finish('quiet');
+      }
+    }, 50);
+
+    const timeoutHandle = setTimeout(() => {
+      finish('timeout');
+    }, innerTimeoutMs);
+  });
 }
 
 function buildStateFiles(stateDir) {
@@ -985,7 +1400,7 @@ function pageExtractChapterPayload(siteProfile = null) {
   };
 }
 
-async function captureChapterArtifacts({ client, sessionId, stateDir, currentUrl, settings, siteProfile }) {
+async function captureChapterArtifacts({ session, stateDir, currentUrl, settings, siteProfile }) {
   const files = buildStateFiles(stateDir);
   const pages = [];
   const chunks = [];
@@ -1001,12 +1416,10 @@ async function captureChapterArtifacts({ client, sessionId, stateDir, currentUrl
     visited.add(normalizedCursor);
 
     if (index > 0) {
-      await navigateAndWaitReady(client, sessionId, normalizedCursor, settings, {
-        waitForIdle: async () => undefined,
-      }, siteProfile);
+      await navigateAndWaitReady(session, normalizedCursor, settings, siteProfile);
     }
 
-    const payload = await callPageFunction(client, sessionId, pageExtractChapterPayload, siteProfile);
+    const payload = await extractChapterPayload(session, siteProfile);
     lastPayload = payload;
     pages.push({
       index: index + 1,
@@ -1078,6 +1491,7 @@ function buildTopLevelManifest(inputUrl, baseUrl, layout) {
       noopTriggers: 0,
       failedTriggers: 0,
     },
+    budget: null,
     warnings: [],
     states: [],
   };
@@ -1146,8 +1560,7 @@ async function resolveInitialManifest(options) {
 }
 
 async function captureCurrentState({
-  client,
-  sessionId,
+  session,
   inputUrl,
   stateId,
   fromState,
@@ -1168,7 +1581,7 @@ async function captureCurrentState({
   await mkdir(stateDir, { recursive: true });
 
   try {
-    const html = await evaluateValue(client, sessionId, 'document.documentElement.outerHTML');
+    const html = await session.captureHtml();
     await writeFile(files.html, html ?? '', 'utf8');
   } catch (error) {
     hardFailure = createError('HTML_CAPTURE_FAILED', error.message);
@@ -1176,15 +1589,7 @@ async function captureCurrentState({
 
   if (!hardFailure) {
     try {
-      const snapshot = await client.send(
-        'DOMSnapshot.captureSnapshot',
-        {
-          computedStyles: SNAPSHOT_STYLES,
-          includeDOMRects: true,
-          includePaintOrder: true,
-        },
-        sessionId,
-      );
+      const snapshot = await session.captureSnapshot();
       await writeFile(files.snapshot, JSON.stringify(snapshot, null, 2), 'utf8');
     } catch (error) {
       hardFailure = createError('SNAPSHOT_CAPTURE_FAILED', error.message);
@@ -1193,47 +1598,26 @@ async function captureCurrentState({
 
   if (!hardFailure) {
     try {
-      const screenshot = await client.send(
-        'Page.captureScreenshot',
-        {
-          format: 'png',
-          captureBeyondViewport: settings.fullPage,
-          fromSurface: true,
-        },
-        sessionId,
-      );
+      const screenshot = await session.captureScreenshot({
+        fullPage: settings.fullPage,
+        allowViewportFallback: true,
+      });
       await writeFile(files.screenshot, Buffer.from(screenshot.data, 'base64'));
-    } catch (error) {
-      if (settings.fullPage) {
-        try {
-          const fallback = await client.send(
-            'Page.captureScreenshot',
-            {
-              format: 'png',
-              captureBeyondViewport: false,
-              fromSurface: true,
-            },
-            sessionId,
-          );
-          await writeFile(files.screenshot, Buffer.from(fallback.data, 'base64'));
-          warning = createError(
-            'SCREENSHOT_FALLBACK',
-            `Full-page screenshot failed and viewport screenshot was used instead: ${error.message}`,
-          );
-        } catch (fallbackError) {
-          hardFailure = createError('SCREENSHOT_CAPTURE_FAILED', fallbackError.message);
-        }
-      } else {
-        hardFailure = createError('SCREENSHOT_CAPTURE_FAILED', error.message);
+      if (screenshot.usedViewportFallback) {
+        warning = createError(
+          'SCREENSHOT_FALLBACK',
+          `Full-page screenshot failed and viewport screenshot was used instead: ${screenshot.primaryError?.message ?? 'unknown error'}`,
+        );
       }
+    } catch (error) {
+      hardFailure = createError('SCREENSHOT_CAPTURE_FAILED', error.message);
     }
   }
 
   if (!hardFailure && settings.captureChapterArtifacts && pageMetadata.pageType === 'chapter-page') {
     try {
       const chapterArtifacts = await captureChapterArtifacts({
-        client,
-        sessionId,
+        session,
         stateDir,
         currentUrl: pageMetadata.finalUrl,
         settings,
@@ -1442,12 +1826,30 @@ function mergeOptions(options = {}) {
   if (merged.initialEvidenceDir) {
     merged.initialEvidenceDir = path.resolve(merged.initialEvidenceDir);
   }
+  if (merged.profilePath) {
+    merged.profilePath = path.resolve(merged.profilePath);
+  }
+  if (merged.browserProfileRoot) {
+    merged.browserProfileRoot = path.resolve(merged.browserProfileRoot);
+  }
+  if (merged.userDataDir) {
+    merged.userDataDir = path.resolve(merged.userDataDir);
+  }
   merged.timeoutMs = normalizeNumber(merged.timeoutMs, 'timeoutMs');
   merged.idleMs = normalizeNumber(merged.idleMs, 'idleMs');
   merged.headless = normalizeBoolean(merged.headless, 'headless');
   merged.fullPage = normalizeBoolean(merged.fullPage, 'fullPage');
+  if (merged.reuseLoginState !== undefined) {
+    merged.reuseLoginState = normalizeBoolean(merged.reuseLoginState, 'reuseLoginState');
+  }
+  if (merged.autoLogin !== undefined) {
+    merged.autoLogin = normalizeBoolean(merged.autoLogin, 'autoLogin');
+  }
   merged.waitUntil = normalizeWaitUntil(merged.waitUntil);
   merged.maxTriggers = Math.max(0, Math.floor(normalizeNumber(merged.maxTriggers, 'maxTriggers')));
+  merged.maxCapturedStates = Number.isFinite(Number(merged.maxCapturedStates))
+    ? Math.max(0, Math.floor(normalizeNumber(merged.maxCapturedStates, 'maxCapturedStates')))
+    : Number.POSITIVE_INFINITY;
   merged.searchQueries = normalizeStringArray(merged.searchQueries);
   merged.viewport = {
     width: normalizeNumber(merged.viewport.width, 'viewport.width'),
@@ -1459,6 +1861,10 @@ function mergeOptions(options = {}) {
 }
 
 function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = null) {
+  function isContentDetailPageType(pageType) {
+    return pageType === 'book-detail-page' || pageType === 'content-detail-page';
+  }
+
   const profileConfig = {
     pageTypes: siteProfile?.pageTypes ?? {},
     searchFormSelectors: siteProfile?.search?.formSelectors ?? ['form[name="t_frmsearch"]', 'form[action*="/ss/"]', 'form[role="search"]'],
@@ -1473,6 +1879,8 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     detailTitleSelectors: Array.isArray(siteProfile?.contentDetail?.titleSelectors) ? siteProfile.contentDetail.titleSelectors : ['h1', '.book h1', '#bookinfo h1'],
     detailAuthorNameSelectors: Array.isArray(siteProfile?.contentDetail?.authorNameSelectors) ? siteProfile.contentDetail.authorNameSelectors : ['a[href*="/author/"]', '.small span a'],
     detailAuthorLinkSelectors: Array.isArray(siteProfile?.contentDetail?.authorLinkSelectors) ? siteProfile.contentDetail.authorLinkSelectors : ['a[href*="/author/"]'],
+    searchResultBookSelectors: Array.isArray(siteProfile?.search?.resultBookSelectors) ? siteProfile.search.resultBookSelectors : [],
+    authorWorkLinkSelectors: Array.isArray(siteProfile?.author?.workLinkSelectors) ? siteProfile.author.workLinkSelectors : [],
     contentPathPrefixes: Array.isArray(siteProfile?.navigation?.contentPathPrefixes) ? siteProfile.navigation.contentPathPrefixes : [],
     authorPathPrefixes: Array.isArray(siteProfile?.navigation?.authorPathPrefixes) ? siteProfile.navigation.authorPathPrefixes : [],
     categoryPathPrefixes: Array.isArray(siteProfile?.navigation?.categoryPathPrefixes) ? siteProfile.navigation.categoryPathPrefixes : [],
@@ -1625,6 +2033,8 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   }
 
   function inferProfilePageType(pathname) {
+    const normalizedLocationHost = String(location.hostname || '').trim().toLowerCase();
+    const isBilibiliProfile = ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(String(siteProfile?.host ?? '').toLowerCase());
     if (String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv') {
       const modelsPathKind = classifyJableModelsPathLocal(pathname);
       if (modelsPathKind === 'list') {
@@ -1637,11 +2047,21 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     if (pathnameMatchesExact(pathname, profileConfig.pageTypes.homeExact) || pathnameMatchesPrefix(pathname, profileConfig.pageTypes.homePrefixes)) {
       return 'home';
     }
-    if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.searchResultsPrefixes)) {
+    if (
+      (!isBilibiliProfile || normalizedLocationHost === 'search.bilibili.com')
+      && pathnameMatchesPrefix(pathname, profileConfig.pageTypes.searchResultsPrefixes)
+    ) {
       return 'search-results-page';
     }
     if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.contentDetailPrefixes)) {
       return 'book-detail-page';
+    }
+    if (
+      isBilibiliProfile
+      && normalizedLocationHost === 'space.bilibili.com'
+      && /^\/\d+\/(?:(?:upload\/)?video|dynamic|fans\/follow|fans\/fans)(?:\/|$)?/i.test(pathname)
+    ) {
+      return 'author-list-page';
     }
     if (pathnameMatchesPrefix(pathname, profileConfig.pageTypes.authorPrefixes)) {
       return 'author-page';
@@ -1663,9 +2083,19 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
 
   function currentPageType() {
     const pathname = currentPathname();
+    const hostname = String(location.hostname || '').trim().toLowerCase();
     const profilePageType = inferProfilePageType(pathname);
     if (profilePageType) {
       return profilePageType;
+    }
+    if (hostname === 'search.bilibili.com' && /^\/(?:all|video|bangumi|upuser)(?:\/|$)/i.test(pathname)) {
+      return 'search-results-page';
+    }
+  if (hostname === 'space.bilibili.com' && /^\/\d+\/(?:(?:upload\/)?video|dynamic|fans\/follow|fans\/fans)(?:\/|$)?/i.test(pathname)) {
+    return 'author-list-page';
+  }
+    if (hostname === 'space.bilibili.com' && /^\/\d+(?:\/|$)?/i.test(pathname)) {
+      return 'author-page';
     }
     if (pathname === '/' || pathname === '') {
       return 'home';
@@ -1898,6 +2328,7 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   function semanticRoleForSafeNav(label, hrefInfo) {
     const lowerLabel = label.toLowerCase();
     const lowerHref = String(hrefInfo.pathname || hrefInfo.normalizedHref || '').toLowerCase();
+    const lowerHostname = String(hrefInfo.hostname || '').toLowerCase();
 
     if (isJableSite) {
       const modelsPathKind = classifyJableModelsPathLocal(lowerHref);
@@ -1907,6 +2338,17 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
       if (modelsPathKind === 'detail') {
         return 'author';
       }
+    }
+
+    if (
+      lowerHostname === 'space.bilibili.com'
+      && (
+        String(siteProfile?.host ?? '').toLowerCase() === 'www.bilibili.com'
+        || String(siteProfile?.host ?? '').toLowerCase() === 'space.bilibili.com'
+        || String(siteProfile?.host ?? '').toLowerCase() === 'search.bilibili.com'
+      )
+    ) {
+      return 'author';
     }
 
     if (
@@ -2077,6 +2519,7 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
   const seen = new Map();
 
   function buildRecord(kind, label, locator, controlledTarget, extra = {}) {
+    const isKnownQueryContent = kind === 'content-link' && locator?.primary === 'known-query';
     return {
       kind,
       label,
@@ -2086,8 +2529,8 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
       queryText: extra.queryText ?? null,
       semanticRole: extra.semanticRole || 'unknown',
       ordinal: candidates.length + 1,
-      _priority: PRIORITY[kind] ?? 99,
-      _semanticPriority: SEMANTIC_PRIORITY[extra.semanticRole || 'unknown'] ?? 99,
+      _priority: isKnownQueryContent ? -1 : (PRIORITY[kind] ?? 99),
+      _semanticPriority: isKnownQueryContent ? -1 : (SEMANTIC_PRIORITY[extra.semanticRole || 'unknown'] ?? 99),
       _labelQuality: labelQuality(label, locator),
     };
   }
@@ -2160,6 +2603,7 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
 
   const pageType = currentPageType();
   const isJableSite = String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv';
+  const isBilibiliSite = ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(String(siteProfile?.host ?? '').toLowerCase());
 
   function shouldKeepCandidateForCurrentPage(candidate) {
     if (!isJableSite) {
@@ -2170,7 +2614,7 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
       return true;
     }
 
-    if (pageType === 'book-detail-page') {
+    if (isContentDetailPageType(pageType)) {
       if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'author') {
         return true;
       }
@@ -2211,7 +2655,7 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
       return KIND_QUOTA[candidate.kind] ?? maxTriggers;
     }
 
-    if (pageType === 'book-detail-page') {
+    if (isContentDetailPageType(pageType)) {
       if (candidate.kind === 'safe-nav-link' && candidate.semanticRole === 'author') {
         return 2;
       }
@@ -2366,7 +2810,7 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
       addCandidate(element, 'pagination-link', null, { allowNavigation: true, semanticRole: 'pagination' });
       continue;
     }
-    if (pageType === 'book-detail-page' && isChapterCandidate(hrefInfo)) {
+    if (isContentDetailPageType(pageType) && isChapterCandidate(hrefInfo)) {
       addCandidate(element, 'chapter-link', null, { allowNavigation: true, semanticRole: 'chapter' });
       continue;
     }
@@ -2380,20 +2824,61 @@ function pageDiscoverTriggers(maxTriggers, searchQueries = [], siteProfile = nul
     });
   }
 
+  const isBilibiliProfile = ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(String(siteProfile?.host ?? '').toLowerCase());
+  if (isBilibiliProfile && ['search-results-page', 'author-page', 'author-list-page', 'category-page'].includes(pageType)) {
+    const selectorGroups = [];
+    if (pageType === 'search-results-page') {
+      selectorGroups.push(...profileConfig.searchResultBookSelectors);
+    }
+    if (pageType === 'author-page' || pageType === 'author-list-page' || pageType === 'category-page') {
+      selectorGroups.push(...profileConfig.authorWorkLinkSelectors);
+    }
+
+    const seenAnchors = new Set();
+    for (const selector of selectorGroups) {
+      try {
+        for (const anchor of document.querySelectorAll(selector)) {
+          if (!(anchor instanceof HTMLAnchorElement)) {
+            continue;
+          }
+          const hrefInfo = hrefPathInfo(anchor);
+          if (!hrefInfo.normalizedHref || !isAllowedHost(hrefInfo.hostname) || !isContentCandidate(getLabel(anchor), hrefInfo)) {
+            continue;
+          }
+          const dedupeKey = `${hrefInfo.normalizedHref}::${buildDomPath(anchor)}`;
+          if (seenAnchors.has(dedupeKey)) {
+            continue;
+          }
+          seenAnchors.add(dedupeKey);
+          const label = getLabel(anchor) || hrefInfo.normalizedHref;
+          addSyntheticCandidate('content-link', label, hrefInfo.normalizedHref, {
+            semanticRole: 'content',
+            primary: 'href-direct',
+            id: anchor.id || null,
+            domPath: buildDomPath(anchor),
+            textSnippet: label,
+          });
+        }
+      } catch {
+        // Ignore selector issues from site profile and fall back to generic link discovery.
+      }
+    }
+  }
+
   for (const element of document.querySelectorAll('button[type="submit"], input[type="submit"], input[type="image"]')) {
     addCandidate(element, 'form-submit', null, { allowSubmit: true, semanticRole: 'submit' });
   }
 
-  if (pageType === 'book-detail-page') {
+  if (isContentDetailPageType(pageType)) {
     const authorName = metaContentByNames(profileConfig.authorMetaNames)
       || textFromSelectors(profileConfig.detailAuthorNameSelectors);
     const authorHref = metaContentByNames(profileConfig.authorLinkMetaNames)
       || hrefFromSelectors(profileConfig.detailAuthorLinkSelectors);
-    if (authorName && authorHref) {
-      addSyntheticCandidate('safe-nav-link', authorName, authorHref, {
+    if (authorHref) {
+      addSyntheticCandidate('safe-nav-link', authorName || 'Author Page', authorHref, {
         semanticRole: 'author',
         primary: 'href-direct',
-        textSnippet: authorName,
+        textSnippet: authorName || 'Author Page',
       });
     }
 
@@ -2494,6 +2979,8 @@ function pageExecuteTrigger(trigger, siteProfile = null) {
     searchFormSelectors: siteProfile?.search?.formSelectors ?? ['form[name="t_frmsearch"]', 'form[action*="/ss/"]', 'form[role="search"]'],
     searchInputSelectors: siteProfile?.search?.inputSelectors ?? ['#searchkey', 'input[name="searchkey"]', 'input[type="search"]'],
     searchSubmitSelectors: siteProfile?.search?.submitSelectors ?? ['#search_btn', 'button[type="submit"]', 'input[type="submit"]'],
+    searchQueryParamNames: Array.isArray(siteProfile?.search?.queryParamNames) ? siteProfile.search.queryParamNames : ['searchkey', 'keyword', 'q'],
+    profileHost: String(siteProfile?.host ?? '').toLowerCase(),
   };
 
   function normalizeText(value) {
@@ -2703,6 +3190,63 @@ function pageExecuteTrigger(trigger, siteProfile = null) {
     };
   }
 
+  function buildSearchNavigationUrl(queryText, search) {
+    const form = search.form instanceof HTMLFormElement ? search.form : search.input?.form ?? null;
+    const method = normalizeText(form?.getAttribute('method') || 'get').toLowerCase();
+    if (method && method !== 'get') {
+      return null;
+    }
+
+    const inputName = normalizeText(
+      search.input?.getAttribute('name')
+      || locator.inputName
+      || profileConfig.searchQueryParamNames[0]
+      || 'searchkey',
+    );
+    if (!inputName) {
+      return null;
+    }
+
+    let action = form?.getAttribute('action') || locator.formAction || trigger?.href || location.href;
+    if (!normalizeText(action) && (profileConfig.profileHost === 'www.bilibili.com' || location.hostname === 'www.bilibili.com')) {
+      action = 'https://search.bilibili.com/all';
+    }
+    if (normalizeUrlLike(action) === normalizeUrlLike(location.href) && (profileConfig.profileHost === 'www.bilibili.com' || location.hostname === 'www.bilibili.com')) {
+      action = 'https://search.bilibili.com/all';
+    }
+    const targetUrl = normalizeUrlLike(action);
+    if (!targetUrl) {
+      return null;
+    }
+
+    try {
+      const url = new URL(targetUrl, document.baseURI);
+      if (form instanceof HTMLFormElement) {
+        for (const element of Array.from(form.elements)) {
+          if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) {
+            continue;
+          }
+          const name = normalizeText(element.getAttribute('name') || '');
+          if (!name || name === inputName) {
+            continue;
+          }
+          if (element instanceof HTMLInputElement && ['submit', 'button', 'image', 'file'].includes(element.type)) {
+            continue;
+          }
+          if ((element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) && element.value) {
+            url.searchParams.set(name, element.value);
+          } else if (element instanceof HTMLSelectElement && element.value) {
+            url.searchParams.set(name, element.value);
+          }
+        }
+      }
+      url.searchParams.set(inputName, queryText);
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+
   if (trigger?.kind === 'search-form') {
     const queryText = normalizeText(trigger.queryText || locator.textSnippet || '');
     const search = findSearchFormElements();
@@ -2720,6 +3264,20 @@ function pageExecuteTrigger(trigger, siteProfile = null) {
     }
 
     try {
+      const directUrl = buildSearchNavigationUrl(queryText, search);
+      if (directUrl) {
+        location.assign(directUrl);
+        return {
+          clicked: true,
+          label: queryText,
+          tagName: 'form',
+          role: 'search',
+          submitted: true,
+          directNavigation: true,
+          navigationUrl: directUrl,
+        };
+      }
+
       if (search.input) {
         search.input.focus();
         search.input.value = queryText;
@@ -2818,6 +3376,14 @@ function pageExecuteTrigger(trigger, siteProfile = null) {
 function pageComputeStateSignature(siteProfile = null) {
   function normalizeText(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isContentDetailPageTypeLocal(pageType) {
+    return pageType === 'book-detail-page' || pageType === 'content-detail-page';
+  }
+
+  function normalizeHostnameLocal(value) {
+    return String(value ?? '').trim().toLowerCase();
   }
 
   function classifyJableModelsPathLocal(pathname) {
@@ -2950,6 +3516,37 @@ function pageComputeStateSignature(siteProfile = null) {
     return null;
   }
 
+  function textsFromSelectors(selectors) {
+    const values = [];
+    for (const selector of selectors) {
+      try {
+        values.push(
+          ...Array.from(document.querySelectorAll(selector)).map((node) => normalizeText(node?.textContent || node?.innerText || '')),
+        );
+      } catch {
+        // Ignore invalid selectors from site profile.
+      }
+    }
+    return uniqueSorted(values.filter(Boolean));
+  }
+
+  function hrefsFromSelectors(selectors) {
+    const values = [];
+    for (const selector of selectors) {
+      try {
+        values.push(
+          ...Array.from(document.querySelectorAll(selector))
+            .map((node) => normalizeText(node?.getAttribute?.('href') || ''))
+            .filter(Boolean)
+            .map((value) => normalizeUrlNoFragmentLocal(value)),
+        );
+      } catch {
+        // Ignore invalid selectors from site profile.
+      }
+    }
+    return uniqueSorted(values.filter(Boolean));
+  }
+
   function metaContent(name) {
     return normalizeText(
       document.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.getAttribute('content') || '',
@@ -3018,11 +3615,310 @@ function pageComputeStateSignature(siteProfile = null) {
 
   const finalUrl = normalizeUrlNoFragmentLocal(location.href);
   const title = document.title || '';
+  const parsedFinalUrl = (() => {
+    try {
+      return new URL(finalUrl, document.baseURI);
+    } catch {
+      return null;
+    }
+  })();
+  const pathname = parsedFinalUrl?.pathname || '/';
+  const bilibiliContentTypeFromUrlLocal = (value) => {
+    const normalizedValue = normalizeText(value);
+    if (!normalizedValue) {
+      return null;
+    }
+    if (/\/bangumi\/play\//iu.test(normalizedValue)) {
+      return 'bangumi';
+    }
+    if (/\/video\/BV[0-9A-Za-z]+/iu.test(normalizedValue)) {
+      return 'video';
+    }
+    if (/space\.bilibili\.com\/\d+/iu.test(normalizedValue) || /\/upuser(?:\/|$)/iu.test(normalizedValue)) {
+      return 'author';
+    }
+    return null;
+  };
+  const bilibiliBvidFromUrlLocal = (value) => normalizeText(value?.match(/\/video\/(BV[0-9A-Za-z]+)/u)?.[1] || '') || null;
+  const bilibiliMidFromUrlLocal = (value) => normalizeText(value?.match(/space\.bilibili\.com\/(\d+)/u)?.[1] || '') || null;
+  const bilibiliAuthorSubpageFromPathLocal = (value) => {
+    const matched = String(value || '').match(/^\/\d+(?:\/([^?#]+))?/u);
+    const normalized = normalizeText(String(matched?.[1] || '').replace(/^\/+|\/+$/gu, ''));
+    if (!normalized) {
+      return 'home';
+    }
+    if (normalized === 'fans/follow') {
+      return 'follow';
+    }
+    if (normalized === 'fans/fans') {
+      return 'fans';
+    }
+    return normalized;
+  };
+  const normalizeBilibiliAuthorCardLocal = (card = {}, authorSubpage = null) => {
+    const name = normalizeText(card.name);
+    const url = card.url ? normalizeUrlNoFragmentLocal(card.url) : null;
+    const mid = normalizeText(card.mid) || bilibiliMidFromUrlLocal(url);
+    if (!name && !url && !mid) {
+      return null;
+    }
+    return {
+      name: name || null,
+      url: url || null,
+      mid: mid || null,
+      authorSubpage: normalizeText(card.authorSubpage) || authorSubpage || null,
+      cardKind: normalizeText(card.cardKind) || 'author',
+    };
+  };
+  const normalizeBilibiliContentCardLocal = (card = {}, fallbackAuthorMid = null) => {
+    const url = card.url ? normalizeUrlNoFragmentLocal(card.url) : null;
+    const titleValue = normalizeText(card.title);
+    const bvid = normalizeText(card.bvid) || bilibiliBvidFromUrlLocal(url);
+    const authorMid = normalizeText(card.authorMid) || fallbackAuthorMid || null;
+    const contentType = normalizeText(card.contentType) || bilibiliContentTypeFromUrlLocal(url);
+    const authorUrl = card.authorUrl ? normalizeUrlNoFragmentLocal(card.authorUrl) : null;
+    const authorName = normalizeText(card.authorName);
+    if (!titleValue && !url && !bvid && !authorMid) {
+      return null;
+    }
+    return {
+      title: titleValue || null,
+      url: url || null,
+      bvid: bvid || null,
+      authorMid: authorMid || null,
+      contentType: contentType || null,
+      authorUrl: authorUrl || null,
+      authorName: authorName || null,
+    };
+  };
+  const dedupeBilibiliAuthorCardsLocal = (cards = [], authorSubpage = null) => {
+    const seen = new Set();
+    const result = [];
+    for (const rawCard of cards) {
+      const card = normalizeBilibiliAuthorCardLocal(rawCard, authorSubpage);
+      if (!card) {
+        continue;
+      }
+      const key = card.mid
+        ? `mid::${card.mid}`
+        : card.url
+          ? `url::${card.url}`
+          : `name::${card.name}`;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(card);
+    }
+    return result.slice(0, 16);
+  };
+  const dedupeBilibiliContentCardsLocal = (cards = [], fallbackAuthorMid = null) => {
+    const seen = new Set();
+    const result = [];
+    for (const rawCard of cards) {
+      const card = normalizeBilibiliContentCardLocal(rawCard, fallbackAuthorMid);
+      if (!card) {
+        continue;
+      }
+      const key = card.bvid
+        ? `bvid::${card.bvid}`
+        : card.url
+          ? `url::${card.url}`
+          : `title::${card.title}::${card.authorMid}`;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(card);
+    }
+    return result.slice(0, 12);
+  };
+  const extractBilibiliAuthorSurfaceCardsLocal = ({ currentAuthorMid = null, currentAuthorName = null, authorSubpage = null } = {}) => {
+    const containerSelectors = [
+      '.bili-dyn-list__item',
+      '.bili-dyn-item',
+      '.bili-space-video',
+      '.video-page-card',
+      '.video-page-card-small',
+      '.small-item',
+      '.bili-video-card',
+      '.list-item',
+      '.card',
+      'article',
+      'li',
+    ];
+    const contentSelector = 'a[href*="/video/"], a[href*="/bangumi/play/"]';
+    const authorSelector = 'a[href*="space.bilibili.com/"]';
+    const titleSelectors = [
+      '[title]',
+      '.title',
+      '.bili-video-card__info--tit',
+      '.bili-video-card__info--title',
+      '.video-name',
+      '.name',
+    ];
+    const nameSelectors = ['.name', '.up-name', '.nickname', '[data-user-name]'];
+    const isHeaderLike = (node) => Boolean(node?.closest?.('header, nav, [class*="header"], [class*="nav"]'));
+    const findContainer = (node) => {
+      for (const selector of containerSelectors) {
+        const match = node?.closest?.(selector);
+        if (match instanceof Element && !isHeaderLike(match) && isVisible(match)) {
+          return match;
+        }
+      }
+      const parent = node?.parentElement;
+      return parent instanceof Element && !isHeaderLike(parent) ? parent : null;
+    };
+    const readAuthorNameFromContainer = (container, authorLink) => {
+      for (const selector of nameSelectors) {
+        const node = container.querySelector(selector);
+        const value = normalizeText(node?.textContent || node?.getAttribute?.('title') || '');
+        if (value) {
+          return value;
+        }
+      }
+      return normalizeText(authorLink?.textContent || authorLink?.getAttribute?.('title') || '');
+    };
+    const readContentTitleFromContainer = (container, contentLink) => {
+      for (const selector of titleSelectors) {
+        const node = container.querySelector(selector);
+        const value = normalizeText(node?.getAttribute?.('title') || node?.textContent || '');
+        if (value) {
+          return value;
+        }
+      }
+      return normalizeText(contentLink?.getAttribute?.('title') || contentLink?.textContent || '');
+    };
+    const registerContainer = (collection, node) => {
+      const container = findContainer(node);
+      if (container instanceof Element && !collection.includes(container)) {
+        collection.push(container);
+      }
+    };
+
+    const containers = [];
+    for (const node of Array.from(document.querySelectorAll(contentSelector))) {
+      registerContainer(containers, node);
+    }
+    for (const node of Array.from(document.querySelectorAll(authorSelector))) {
+      registerContainer(containers, node);
+    }
+
+    const authorCards = [];
+    const contentCards = [];
+    for (const container of containers) {
+      const contentLink = Array.from(container.querySelectorAll(contentSelector))
+        .find((node) => isVisible(node) && normalizeUrlNoFragmentLocal(node.getAttribute?.('href') || ''));
+      const contentUrl = normalizeUrlNoFragmentLocal(contentLink?.getAttribute?.('href') || '');
+      const authorLink = Array.from(container.querySelectorAll(authorSelector))
+        .find((node) => {
+          if (!isVisible(node)) {
+            return false;
+          }
+          const href = normalizeUrlNoFragmentLocal(node.getAttribute?.('href') || '');
+          const mid = bilibiliMidFromUrlLocal(href);
+          if (!href || mid === currentAuthorMid) {
+            return false;
+          }
+          return true;
+        });
+      const authorUrl = normalizeUrlNoFragmentLocal(authorLink?.getAttribute?.('href') || '');
+      const authorMid = bilibiliMidFromUrlLocal(authorUrl);
+      const authorName = readAuthorNameFromContainer(container, authorLink) || currentAuthorName || null;
+      if (authorUrl || authorName || authorMid) {
+        authorCards.push({
+          name: authorName,
+          url: authorUrl || null,
+          mid: authorMid || null,
+          authorSubpage,
+        });
+      }
+      if (contentUrl) {
+        contentCards.push({
+          title: readContentTitleFromContainer(container, contentLink),
+          url: contentUrl,
+          bvid: bilibiliBvidFromUrlLocal(contentUrl),
+          authorMid: authorMid || currentAuthorMid || null,
+          authorUrl: authorUrl || null,
+          authorName,
+          contentType: bilibiliContentTypeFromUrlLocal(contentUrl),
+        });
+      }
+    }
+    return {
+      authorCards: dedupeBilibiliAuthorCardsLocal(authorCards, authorSubpage),
+      contentCards: dedupeBilibiliContentCardsLocal(contentCards, currentAuthorMid),
+    };
+  };
+  const detectBilibiliAntiCrawlSignalsLocal = () => {
+    const source = normalizeText(document.body?.innerText || document.documentElement?.innerText || '');
+    if (!source) {
+      return [];
+    }
+    const signals = [];
+    const patterns = [
+      ['rate-limit', /\u8bbf\u95ee\u9891\u7e41/u],
+      ['verify', /\u5b89\u5168\u9a8c\u8bc1/u],
+      ['slide-verify', /\u6ed1\u52a8\u9a8c\u8bc1/u],
+      ['captcha', /captcha/iu],
+      ['risk-control', /\u98ce\u63a7/u],
+      ['retry-later', /\u8bf7\u7a0d\u540e\u518d\u8bd5/u],
+    ];
+    for (const [label, pattern] of patterns) {
+      if (pattern.test(source)) {
+        signals.push(label);
+      }
+    }
+    return signals;
+  };
+  const bilibiliCategoryNameFromPathLocal = (value) => {
+    const normalizedPath = String(value || '').toLowerCase();
+    if (normalizedPath.startsWith('/v/popular/')) {
+      return '热门';
+    }
+    if (normalizedPath.startsWith('/anime/')) {
+      return '番剧';
+    }
+    if (normalizedPath.startsWith('/movie/')) {
+      return '电影';
+    }
+    if (normalizedPath.startsWith('/guochuang/')) {
+      return '国创';
+    }
+    if (normalizedPath.startsWith('/tv/')) {
+      return '电视剧';
+    }
+    if (normalizedPath.startsWith('/variety/')) {
+      return '综艺';
+    }
+    if (normalizedPath.startsWith('/documentary/')) {
+      return '纪录片';
+    }
+    if (normalizedPath.startsWith('/knowledge/')) {
+      return '知识';
+    }
+    if (normalizedPath.startsWith('/music/')) {
+      return '音乐';
+    }
+    if (normalizedPath.startsWith('/game/')) {
+      return '游戏';
+    }
+    if (normalizedPath.startsWith('/food/')) {
+      return '美食';
+    }
+    if (normalizedPath.startsWith('/sports/')) {
+      return '运动';
+    }
+    if (normalizedPath.startsWith('/c/')) {
+      return '分区';
+    }
+    return null;
+  };
   const pageType = (() => {
     try {
-      const parsed = new URL(finalUrl, document.baseURI);
-      const pathname = parsed.pathname || '/';
       const profilePageTypes = siteProfile?.pageTypes ?? {};
+      const normalizedLocationHost = normalizeHostnameLocal(location.hostname);
+      const isBilibiliProfile = ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''));
       const matchesProfilePrefix = (values) => Array.isArray(values) && values.some((value) => {
         const normalizedValue = String(value || '').toLowerCase();
         const normalizedPath = String(pathname || '/').toLowerCase();
@@ -3042,11 +3938,21 @@ function pageComputeStateSignature(siteProfile = null) {
           return 'author-page';
         }
       }
-      if (matchesProfilePrefix(profilePageTypes.searchResultsPrefixes)) {
+      if (
+        (!isBilibiliProfile || normalizedLocationHost === 'search.bilibili.com')
+        && matchesProfilePrefix(profilePageTypes.searchResultsPrefixes)
+      ) {
         return 'search-results-page';
       }
       if (matchesProfilePrefix(profilePageTypes.contentDetailPrefixes)) {
         return 'book-detail-page';
+      }
+      if (
+        isBilibiliProfile
+        && normalizedLocationHost === 'space.bilibili.com'
+        && /^\/\d+\/(?:(?:upload\/)?video|dynamic|fans\/follow|fans\/fans)(?:\/|$)?/i.test(pathname)
+      ) {
+        return 'author-list-page';
       }
       if (matchesProfilePrefix(profilePageTypes.authorPrefixes)) {
         return 'author-page';
@@ -3065,6 +3971,15 @@ function pageComputeStateSignature(siteProfile = null) {
       }
       if (pathname === '/' || pathname === '') {
         return 'home';
+      }
+      if (normalizedLocationHost === 'search.bilibili.com' && /^\/(?:all|video|bangumi|upuser)(?:\/|$)/i.test(pathname)) {
+        return 'search-results-page';
+      }
+  if (normalizedLocationHost === 'space.bilibili.com' && /^\/\d+\/(?:(?:upload\/)?video|dynamic|fans\/follow|fans\/fans)(?:\/|$)?/i.test(pathname)) {
+    return 'author-list-page';
+  }
+      if (normalizedLocationHost === 'space.bilibili.com' && /^\/\d+(?:\/|$)?/i.test(pathname)) {
+        return 'author-page';
       }
       if (/\/ss(?:\/|$)/i.test(pathname)) {
         return 'search-results-page';
@@ -3136,15 +4051,62 @@ function pageComputeStateSignature(siteProfile = null) {
         }
         return queryFromTitle;
       })();
-      return {
-        queryText: normalizeText(
-          document.querySelector('#searchkey, input[name="searchkey"], input[name="keyword"], #s')?.value || derivedQuery,
+      const queryText = normalizeText(
+        document.querySelector('#searchkey, input[name="searchkey"], input[name="keyword"], #s')?.value || derivedQuery,
+      );
+      const resultTitles = uniqueTexts(resultAnchors).slice(0, 20);
+      const resultUrls = uniqueSorted(
+        resultAnchors
+          .map((anchor) => normalizeText(anchor?.getAttribute?.('href') || ''))
+          .filter(Boolean)
+          .map((href) => normalizeUrlNoFragmentLocal(href)),
+      ).slice(0, 20);
+      const facts = {
+        queryText,
+        resultCount: Math.max(
+          resultUrls.length,
+          [...new Set(resultAnchors.map((anchor) => normalizeText(anchor.textContent || '')).filter(Boolean))].length,
         ),
-        resultCount: [...new Set(resultAnchors.map((anchor) => normalizeText(anchor.textContent || '')).filter(Boolean))].length,
-        resultTitles: uniqueTexts(resultAnchors).slice(0, 20),
+        resultTitles,
       };
+      if (['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''))) {
+        const resultAuthorUrls = uniqueSorted(
+          Array.from(document.querySelectorAll('a[href*="space.bilibili.com/"]'))
+            .map((anchor) => normalizeText(anchor?.getAttribute?.('href') || ''))
+            .filter(Boolean)
+            .map((href) => normalizeUrlNoFragmentLocal(href)),
+        ).slice(0, 20);
+        const resultEntries = resultUrls.slice(0, 12).map((value, index) => ({
+          title: resultTitles[index] ?? null,
+          url: value,
+          contentType: bilibiliContentTypeFromUrlLocal(value),
+          bvid: bilibiliBvidFromUrlLocal(value),
+          authorUrl: resultAuthorUrls[index] ?? null,
+          authorMid: bilibiliMidFromUrlLocal(resultAuthorUrls[index] ?? ''),
+        }));
+        facts.resultUrls = resultUrls;
+        facts.searchSection = pathname.split('/').filter(Boolean)[0] || 'all';
+        facts.firstResultTitle = resultTitles[0] ?? null;
+        facts.firstResultUrl = resultUrls[0] ?? null;
+        facts.firstResultContentType = bilibiliContentTypeFromUrlLocal(resultUrls[0] ?? '');
+        facts.resultEntries = resultEntries;
+        facts.resultContentTypes = resultUrls
+          .map((value) => bilibiliContentTypeFromUrlLocal(value))
+          .filter(Boolean)
+          .slice(0, 20);
+        facts.resultAuthorUrls = resultAuthorUrls;
+        facts.resultAuthorMids = resultAuthorUrls
+          .map((value) => bilibiliMidFromUrlLocal(value))
+          .filter(Boolean)
+          .slice(0, 20);
+        facts.resultBvids = resultUrls
+          .map((value) => bilibiliBvidFromUrlLocal(value))
+          .filter(Boolean)
+          .slice(0, 10);
+      }
+      return facts;
     }
-    if (pageType === 'book-detail-page') {
+    if (isContentDetailPageTypeLocal(pageType)) {
       const chapterLinkSelectors = Array.isArray(siteProfile?.bookDetail?.chapterLinkSelectors)
         ? siteProfile.bookDetail.chapterLinkSelectors
         : ['#list a[href]', '.listmain a[href]', 'dd a[href]', '.book_last a[href]'];
@@ -3157,7 +4119,7 @@ function pageComputeStateSignature(siteProfile = null) {
         }
       }
       const latestChapterLink = chapterAnchors[0] ?? null;
-      return {
+      const facts = {
         bookTitle: metaContent('og:novel:book_name')
           || textFromSelectors(
             Array.isArray(siteProfile?.contentDetail?.titleSelectors)
@@ -3186,9 +4148,75 @@ function pageComputeStateSignature(siteProfile = null) {
           return value ? normalizeUrlNoFragmentLocal(value) : null;
         })(),
       };
+      if (['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''))) {
+        const bilibiliAuthorUrl = facts.authorUrl
+          || hrefFromSelectors([
+            'a.up-name[href*="space.bilibili.com/"]',
+            '.video-owner-card a[href*="space.bilibili.com/"]',
+            'a[href*="space.bilibili.com/"]',
+          ]);
+        const tagTexts = textsFromSelectors([
+          '.tag-link',
+          '.video-tag-link',
+          'a[href*="/v/topic/detail"]',
+          'a[href*="/v/tag/"]',
+        ]).slice(0, 12);
+        const scriptText = [
+          document.documentElement?.innerText || '',
+          ...Array.from(document.scripts || []).map((node) => node.textContent || ''),
+        ].join('\n');
+        const scriptMatch = (pattern) => normalizeText(scriptText.match(pattern)?.[1] || '') || null;
+        const bilibiliTitle = facts.bookTitle
+          || textFromSelectors(['h1.video-title', 'h1', '.video-title', '.media-title'])
+          || normalizeText(String(title || '').replace(/\s*[-_].*$/, ''));
+        const seasonId = scriptMatch(/"season_id"\s*:\s*(\d+)/u) || scriptMatch(/"seasonId"\s*:\s*(\d+)/u);
+        const episodeId = pathname.match(/\/bangumi\/play\/ep(\d+)/u)?.[1]
+          || scriptMatch(/"ep_id"\s*:\s*(\d+)/u)
+          || scriptMatch(/"episode_id"\s*:\s*(\d+)/u)
+          || scriptMatch(/"epId"\s*:\s*(\d+)/u);
+        const seriesTitle = textFromSelectors([
+          '.media-title',
+          '.media-info-title',
+          '.media-right .title',
+          '.mediainfo_mediaTitle',
+        ]);
+        const episodeTitle = textFromSelectors([
+          'h1.video-title',
+          '.video-title',
+          '.ep-info-title',
+          'h1',
+        ]);
+        facts.bookTitle = bilibiliTitle;
+        facts.contentTitle = bilibiliTitle;
+        facts.contentType = pathname.startsWith('/bangumi/play/') ? 'bangumi' : 'video';
+        facts.bvid = finalUrl.match(/\/video\/(BV[0-9A-Za-z]+)/u)?.[1] || scriptMatch(/"bvid"\s*:\s*"([^"]+)"/u);
+        facts.aid = scriptMatch(/"aid"\s*:\s*(\d+)/u) || scriptMatch(/"aid":"?(\d+)"?/u);
+        facts.authorName = facts.authorName
+          || textFromSelectors(['a.up-name', '.up-name', '.up-detail-top .up-name', '.video-owner-card .name']);
+        facts.authorUrl = bilibiliAuthorUrl ?? null;
+        facts.authorMid = bilibiliAuthorUrl?.match(/space\.bilibili\.com\/(\d+)/u)?.[1]
+          || scriptMatch(/"mid"\s*:\s*(\d+)/u)
+          || scriptMatch(/"mid":"?(\d+)"?/u);
+        facts.publishedAt = metaContent('og:video:release_date')
+          || metaContent('article:published_time')
+          || textFromSelectors(['time', '.pubdate-text', '.video-publish time', '[class*="pubdate"]'])
+          || null;
+        facts.categoryName = textFromSelectors([
+          '.video-info-detail a',
+          '.video-detail-title a',
+          '.first-channel',
+          'a[href*="/v/"]',
+        ]);
+        facts.seasonId = seasonId ?? null;
+        facts.episodeId = episodeId ?? null;
+        facts.seriesTitle = seriesTitle ?? null;
+        facts.episodeTitle = (facts.contentType === 'bangumi' ? (episodeTitle || bilibiliTitle) : null) ?? null;
+        facts.tagNames = tagTexts;
+      }
+      return facts;
     }
-    if (pageType === 'author-page') {
-      return {
+    if (pageType === 'author-page' || pageType === 'author-list-page') {
+      const facts = {
         authorName: metaContent('og:novel:author')
           || textFromSelectors(
             Array.isArray(siteProfile?.author?.titleSelectors)
@@ -3196,6 +4224,125 @@ function pageComputeStateSignature(siteProfile = null) {
               : ['h1', '.author h1', '.title h1', 'h2'],
           ),
       };
+      if (['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''))) {
+        const featuredAuthorUrls = hrefsFromSelectors(['a[href*="space.bilibili.com/"]'])
+          .filter((value) => value !== finalUrl)
+          .slice(0, 16);
+        const featuredAuthorNames = textsFromSelectors([
+          'a[href*="space.bilibili.com/"] .name',
+          'a[href*="space.bilibili.com/"] .up-name',
+          'a[href*="space.bilibili.com/"]',
+        ])
+          .filter((value) => value !== facts.authorName)
+          .slice(0, 16);
+        const featuredContentUrls = hrefsFromSelectors(
+          Array.isArray(siteProfile?.author?.workLinkSelectors)
+            ? siteProfile.author.workLinkSelectors
+            : ['a[href*="/video/BV"]'],
+        ).slice(0, 12);
+        const featuredContentTitles = textsFromSelectors(
+          Array.isArray(siteProfile?.author?.workLinkSelectors)
+            ? siteProfile.author.workLinkSelectors
+            : ['a[href*="/video/BV"]'],
+        ).slice(0, 12);
+        facts.authorName = facts.authorName
+          || textFromSelectors(['h1', '.nickname', '.up-name', '.h-name'])
+          || normalizeText(String(title || '').replace(/\s*[-_].*$/, ''));
+        facts.authorMid = pathname.match(/^\/(\d+)(?:\/|$)/u)?.[1] || null;
+        facts.authorUrl = finalUrl;
+        facts.authorSubpage = bilibiliAuthorSubpageFromPathLocal(pathname);
+        facts.authorSubpagePath = pathname;
+        const extractedCards = extractBilibiliAuthorSurfaceCardsLocal({
+          currentAuthorMid: facts.authorMid,
+          currentAuthorName: facts.authorName,
+          authorSubpage: facts.authorSubpage,
+        });
+        const authorCards = dedupeBilibiliAuthorCardsLocal(
+          extractedCards.authorCards.length > 0
+            ? extractedCards.authorCards
+            : featuredAuthorUrls.map((value, index) => ({
+              url: value,
+              mid: bilibiliMidFromUrlLocal(value),
+              name: featuredAuthorNames[index] || null,
+              authorSubpage: facts.authorSubpage,
+            })),
+          facts.authorSubpage,
+        );
+        const contentCards = dedupeBilibiliContentCardsLocal(
+          extractedCards.contentCards.length > 0
+            ? extractedCards.contentCards
+            : featuredContentUrls.map((value, index) => ({
+              url: value,
+              title: featuredContentTitles[index] || null,
+              bvid: bilibiliBvidFromUrlLocal(value),
+              authorMid: facts.authorMid,
+              authorUrl: facts.authorUrl,
+              authorName: facts.authorName,
+              contentType: bilibiliContentTypeFromUrlLocal(value),
+            })),
+          facts.authorMid,
+        );
+        facts.featuredAuthorCards = authorCards;
+        facts.featuredAuthors = authorCards.map((card) => ({
+          name: card.name,
+          url: card.url,
+          mid: card.mid,
+        }));
+        facts.featuredAuthorUrls = authorCards.map((card) => card.url).filter(Boolean);
+        facts.featuredAuthorNames = authorCards.map((card) => card.name).filter(Boolean);
+        facts.featuredAuthorMids = authorCards.map((card) => card.mid).filter(Boolean);
+        facts.featuredAuthorCount = authorCards.length;
+        facts.featuredContentCards = contentCards;
+        facts.featuredContentUrls = contentCards.map((card) => card.url).filter(Boolean);
+        facts.featuredContentTitles = contentCards.map((card) => card.title).filter(Boolean);
+        facts.featuredContentCount = contentCards.length;
+        facts.featuredContentTypes = contentCards.map((card) => card.contentType).filter(Boolean);
+        facts.featuredContentBvids = contentCards.map((card) => card.bvid).filter(Boolean);
+        facts.featuredContentAuthorMids = contentCards.map((card) => card.authorMid).filter(Boolean);
+        const antiCrawlSignals = detectBilibiliAntiCrawlSignalsLocal();
+        if (antiCrawlSignals.length > 0) {
+          facts.antiCrawlDetected = true;
+          facts.antiCrawlSignals = antiCrawlSignals;
+        }
+      }
+      return facts;
+    }
+    if (pageType === 'category-page') {
+      const facts = {
+        categoryName: textFromSelectors(['h1', '.channel-title', '.page-title']) || bilibiliCategoryNameFromPathLocal(pathname),
+      };
+      if (['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''))) {
+        const featuredContentUrls = uniqueSorted(
+          Array.from(document.querySelectorAll('a[href*="/video/"], a[href*="/bangumi/play/"]'))
+            .map((anchor) => normalizeText(anchor?.getAttribute?.('href') || ''))
+            .filter(Boolean)
+            .map((href) => normalizeUrlNoFragmentLocal(href)),
+        ).slice(0, 16);
+        const featuredContentTitles = textsFromSelectors([
+          'a[href*="/video/"]',
+          'a[href*="/bangumi/play/"]',
+        ]).slice(0, 16);
+        facts.categoryName = facts.categoryName || bilibiliCategoryNameFromPathLocal(pathname);
+        facts.categoryPath = pathname;
+        facts.featuredContentUrls = featuredContentUrls;
+        facts.featuredContentTitles = featuredContentTitles;
+        facts.featuredContentTypes = featuredContentUrls
+          .map((value) => bilibiliContentTypeFromUrlLocal(value))
+          .filter(Boolean)
+          .slice(0, 16);
+        facts.featuredContentCount = featuredContentUrls.length;
+        facts.featuredContentBvids = featuredContentUrls
+          .map((value) => bilibiliBvidFromUrlLocal(value))
+          .filter(Boolean)
+          .slice(0, 10);
+        facts.rankingLabels = textsFromSelectors([
+          '.rank-item .num',
+          '.popular-rank .num',
+          '.rank-wrap .rank-num',
+          '.hot-list .rank',
+        ]).slice(0, 12);
+      }
+      return facts;
     }
     if (pageType === 'chapter-page') {
       const contentText = normalizeText(
@@ -3239,27 +4386,294 @@ function pageComputeStateSignature(siteProfile = null) {
   };
 }
 
-async function collectStateSignature(client, sessionId, siteProfile = null) {
-  return await callPageFunction(client, sessionId, pageComputeStateSignature, siteProfile);
+function createExpandHelperBundleSource(namespace = EXPAND_HELPER_NAMESPACE) {
+  return `(() => {
+    const root = globalThis;
+    const MAX_FALLBACK_BOOKS = ${JSON.stringify(MAX_FALLBACK_BOOKS)};
+    const existing = root[${JSON.stringify(namespace)}];
+    if (existing && existing.__version === 1) {
+      return existing;
+    }
+    const api = {
+      __version: 1,
+      pageWaitForDomQuiet: ${pageWaitForDomQuiet.toString()},
+      pageDiscoverTriggers: ${pageDiscoverTriggers.toString()},
+      pageExecuteTrigger: ${pageExecuteTrigger.toString()},
+      pageComputeStateSignature: ${pageComputeStateSignature.toString()},
+      pageExtractChapterPayload: ${pageExtractChapterPayload.toString()},
+    };
+    root[${JSON.stringify(namespace)}] = api;
+    return api;
+  })()`;
 }
 
-async function waitForPostTriggerSettled(client, sessionId, settings, networkTracker, siteProfile = null, currentUrl = '') {
-  const waitPolicy = resolveNavigationWaitPolicy(settings, siteProfile, currentUrl);
-  await waitForDocumentReady(client, sessionId, waitPolicy.documentReadyTimeoutMs);
-  await waitForDomQuiet(client, sessionId, waitPolicy.domQuietMs, waitPolicy.domQuietTimeoutMs);
-  if (waitPolicy.useNetworkIdle) {
-    await networkTracker.waitForIdle({
-      quietMs: NETWORK_IDLE_QUIET_MS,
-      timeoutMs: settings.timeoutMs,
+const EXPAND_HELPER_BUNDLE_SOURCE = createExpandHelperBundleSource();
+
+function prefersDirectNavigation(trigger) {
+  return Boolean(trigger?.href) && DIRECT_NAVIGATION_TRIGGER_KINDS.has(trigger?.kind);
+}
+
+function requiresSourceDom(trigger) {
+  return !prefersDirectNavigation(trigger);
+}
+
+function isSameDocumentTrigger(trigger) {
+  return SAME_DOCUMENT_TRIGGER_KINDS.has(trigger?.kind);
+}
+
+function buildSameDocumentWaitPolicy(settings, siteProfile = null, currentUrl = '') {
+  const basePolicy = resolveNavigationWaitPolicy(settings, siteProfile, currentUrl);
+  return {
+    ...basePolicy,
+    useLoadEvent: false,
+    useNetworkIdle: false,
+    documentReadyTimeoutMs: Math.min(settings.timeoutMs, basePolicy.documentReadyTimeoutMs ?? settings.timeoutMs),
+    domQuietTimeoutMs: Math.min(settings.timeoutMs, basePolicy.domQuietTimeoutMs ?? settings.timeoutMs),
+    domQuietMs: Math.min(basePolicy.domQuietMs ?? DOM_QUIET_MS, 150),
+    idleMs: Math.min(basePolicy.idleMs ?? settings.idleMs, 150),
+  };
+}
+
+async function callExpandHelper(session, methodName, fallbackFn, ...args) {
+  return await session.invokeHelperMethod(methodName, args, {
+    namespace: EXPAND_HELPER_NAMESPACE,
+    bundleSource: EXPAND_HELPER_BUNDLE_SOURCE,
+    fallbackFn,
+  });
+}
+
+function resolveBilibiliAuthorWarmupUrl(url, siteProfile = null) {
+  if (!isBilibiliSiteProfile(siteProfile, url)) {
+    return null;
+  }
+  const pageType = inferPageTypeFromUrl(url, siteProfile);
+  if (pageType !== 'author-list-page') {
+    return null;
+  }
+  try {
+    const parsed = new URL(String(url || ''));
+    if (parsed.hostname !== 'space.bilibili.com') {
+      return null;
+    }
+    const matchedMid = parsed.pathname.match(/^\/(\d+)\//u)?.[1] ?? parsed.pathname.match(/^\/(\d+)(?:\/|$)/u)?.[1] ?? null;
+    if (!matchedMid) {
+      return null;
+    }
+    return `https://space.bilibili.com/${matchedMid}`;
+  } catch {
+    return null;
+  }
+}
+
+function shouldRetryBilibiliAuthorList(signature, targetUrl) {
+  const pageType = String(signature?.pageType ?? '');
+  if (pageType !== 'author-list-page') {
+    return false;
+  }
+  const pageFacts = signature?.pageFacts ?? {};
+  if (pageFacts.antiCrawlDetected === true) {
+    return true;
+  }
+  const authorSubpage = String(pageFacts.authorSubpage ?? '').toLowerCase();
+  if (!['video', 'dynamic', 'follow', 'fans'].includes(authorSubpage)) {
+    return false;
+  }
+  const featuredAuthorCount = Number(pageFacts.featuredAuthorCount ?? toArray(pageFacts.featuredAuthorUrls).length ?? 0) || 0;
+  const featuredContentCount = Number(pageFacts.featuredContentCount ?? toArray(pageFacts.featuredContentUrls).length ?? 0) || 0;
+  if (featuredAuthorCount > 0 || featuredContentCount > 0) {
+    return false;
+  }
+  const title = String(signature?.title ?? '');
+  if (!title.trim()) {
+    return true;
+  }
+  return /(登录|验证码|安全验证|稍后再试|频繁)/iu.test(title);
+}
+
+async function tryWarmBilibiliAuthorListNavigation(session, url, settings, siteProfile = null, trigger = null) {
+  const warmupUrl = resolveBilibiliAuthorWarmupUrl(url, siteProfile);
+  if (!warmupUrl) {
+    return false;
+  }
+
+  const currentMetadata = await session.getPageMetadata();
+  const currentUrl = normalizeUrlNoFragment(currentMetadata?.finalUrl ?? '');
+  if (currentUrl !== normalizeUrlNoFragment(warmupUrl)) {
+    await session.navigateAndWait(warmupUrl, resolveNavigationWaitPolicy(settings, siteProfile, warmupUrl));
+    await ensureSiteSpecificReadyMarkers(session, siteProfile, warmupUrl);
+  }
+
+  await session.navigateAndWait(
+    url,
+    resolveDirectNavigationWaitPolicy(settings, siteProfile, url, trigger),
+    { referrer: warmupUrl },
+  );
+  await ensureSiteSpecificReadyMarkers(session, siteProfile, url);
+
+  const firstSignature = await collectStateSignature(session, siteProfile);
+  if (shouldRetryBilibiliAuthorList(firstSignature, url)) {
+    await session.navigateAndWait(warmupUrl, resolveNavigationWaitPolicy(settings, siteProfile, warmupUrl));
+    await ensureSiteSpecificReadyMarkers(session, siteProfile, warmupUrl);
+    await session.navigateAndWait(
+      url,
+      resolveDirectNavigationWaitPolicy(settings, siteProfile, url, trigger),
+      { referrer: warmupUrl },
+    );
+    await ensureSiteSpecificReadyMarkers(session, siteProfile, url);
+  }
+  return true;
+}
+
+async function navigateAndWaitReady(session, url, settings, siteProfile = null) {
+  if (await tryWarmBilibiliAuthorListNavigation(session, url, settings, siteProfile)) {
+    return;
+  }
+  await session.navigateAndWait(url, resolveNavigationWaitPolicy(settings, siteProfile, url));
+  await ensureSiteSpecificReadyMarkers(session, siteProfile, url);
+}
+
+async function collectStateSignature(session, siteProfile = null) {
+  const signature = await callExpandHelper(session, 'pageComputeStateSignature', pageComputeStateSignature, siteProfile);
+  if (!signature?.pageFacts || !isBilibiliSiteProfile(siteProfile, signature.finalUrl)) {
+    return signature;
+  }
+  if (
+    signature.pageType !== 'author-list-page'
+    || !['dynamic', 'follow', 'fans'].includes(String(signature.pageFacts.authorSubpage ?? ''))
+  ) {
+    return signature;
+  }
+  const authSession = siteProfile?.authSession ?? null;
+  const authConfig = authSession ? {
+    loginUrl: String(authSession.loginUrl ?? '').trim() || null,
+    loginIndicatorSelectors: Array.isArray(authSession.loginIndicatorSelectors) ? authSession.loginIndicatorSelectors : [],
+    loggedOutIndicatorSelectors: Array.isArray(authSession.loggedOutIndicatorSelectors) ? authSession.loggedOutIndicatorSelectors : [],
+    usernameSelectors: Array.isArray(authSession.usernameSelectors) ? authSession.usernameSelectors : [],
+    passwordSelectors: Array.isArray(authSession.passwordSelectors) ? authSession.passwordSelectors : [],
+    challengeSelectors: Array.isArray(authSession.challengeSelectors) ? authSession.challengeSelectors : [],
+  } : null;
+  if (!authConfig) {
+    return signature;
+  }
+  try {
+    const loginState = await inspectLoginState(session, authConfig);
+    signature.pageFacts = {
+      ...signature.pageFacts,
+      loginStateDetected: loginState?.loginStateDetected === true || loginState?.loggedIn === true,
+      identityConfirmed: loginState?.identityConfirmed === true,
+      identitySource: loginState?.identitySource ?? null,
+      authenticatedSessionConfirmed: loginState?.identityConfirmed === true,
+    };
+  } catch {
+    // Keep the captured page facts even if login-state inspection is unavailable.
+  }
+  return signature;
+}
+
+async function discoverPageTriggers(session, discoveryLimit, searchQueries = [], siteProfile = null) {
+  return await callExpandHelper(
+    session,
+    'pageDiscoverTriggers',
+    pageDiscoverTriggers,
+    discoveryLimit,
+    searchQueries,
+    siteProfile,
+  );
+}
+
+async function extractChapterPayload(session, siteProfile = null) {
+  return await callExpandHelper(session, 'pageExtractChapterPayload', pageExtractChapterPayload, siteProfile);
+}
+
+function resolveDirectNavigationWaitPolicy(settings, siteProfile, url, trigger = null) {
+  const pageType = inferPageTypeFromUrl(url, siteProfile);
+  if (isMoodyzSiteProfile(siteProfile, url) && (['category-page', 'search-results-page', 'author-page', 'author-list-page'].includes(pageType) || isContentDetailPageType(pageType))) {
+    return {
+      useLoadEvent: false,
+      useNetworkIdle: false,
+      documentReadyTimeoutMs: Math.min(settings.timeoutMs, 6_000),
+      domQuietTimeoutMs: Math.min(settings.timeoutMs, 1_500),
+      domQuietMs: trigger?.kind === 'content-link' ? 120 : 180,
+      idleMs: Math.min(settings.idleMs, 120),
+    };
+  }
+  if (isBilibiliSiteProfile(siteProfile, url)) {
+    const policy = buildBilibiliWaitPolicy(settings, pageType, { directNavigation: true, trigger });
+    if (policy) {
+      return policy;
+    }
+  }
+  return resolveNavigationWaitPolicy(settings, siteProfile, url);
+}
+
+async function executeTrigger(session, trigger, siteProfile, settings) {
+  if (prefersDirectNavigation(trigger)) {
+    if (!(await tryWarmBilibiliAuthorListNavigation(session, trigger.href, settings, siteProfile, trigger))) {
+      await session.navigateAndWait(trigger.href, resolveDirectNavigationWaitPolicy(settings, siteProfile, trigger.href, trigger));
+    }
+    return {
+      clicked: true,
+      label: trigger.label || trigger.href,
+      tagName: trigger?.locator?.tagName || 'a',
+      role: trigger?.locator?.role || 'link',
+      directNavigation: true,
+      alreadySettled: true,
+      navigationUrl: trigger.href,
+    };
+  }
+
+  return await callExpandHelper(session, 'pageExecuteTrigger', pageExecuteTrigger, trigger, siteProfile);
+}
+
+function resolvePostTriggerWaitPolicy(trigger, executeResult, settings, siteProfile = null, currentUrl = '') {
+  if (executeResult?.alreadySettled) {
+    return null;
+  }
+  if (isSameDocumentTrigger(trigger) && !executeResult?.directNavigation && !executeResult?.submitted) {
+    return buildSameDocumentWaitPolicy(settings, siteProfile, currentUrl);
+  }
+  if (trigger?.kind === 'search-form' && isBilibiliSiteProfile(siteProfile, executeResult?.navigationUrl || currentUrl)) {
+    return buildBilibiliWaitPolicy(settings, 'search-results-page', {
+      directNavigation: Boolean(executeResult?.directNavigation),
+      trigger,
     });
   }
-  if (waitPolicy.idleMs > 0) {
-    await delay(waitPolicy.idleMs);
+  return resolveNavigationWaitPolicy(settings, siteProfile, executeResult?.navigationUrl || currentUrl);
+}
+
+async function waitForPostTriggerSettled(session, settings, trigger, executeResult, siteProfile = null, currentUrl = '') {
+  const waitPolicy = resolvePostTriggerWaitPolicy(trigger, executeResult, settings, siteProfile, currentUrl);
+  if (!waitPolicy) {
+    return;
+  }
+  await session.waitForSettled(waitPolicy);
+}
+
+function createBudgetState(settings) {
+  return {
+    maxTriggers: settings.maxTriggers,
+    maxCapturedStates: Number.isFinite(settings.maxCapturedStates) ? settings.maxCapturedStates : null,
+    hit: false,
+    stopReason: null,
+  };
+}
+
+function markBudgetStop(topManifest, reason) {
+  if (!topManifest.budget) {
+    return;
+  }
+  if (!topManifest.budget.hit) {
+    topManifest.budget.hit = true;
+    topManifest.budget.stopReason = reason;
+  }
+  if (!topManifest.warnings.includes(reason)) {
+    topManifest.warnings.push(reason);
   }
 }
 
 function shouldExpandPageType(pageType) {
-  return ['home', 'category-page', 'author-list-page', 'history-page', 'search-results-page', 'book-detail-page', 'author-page'].includes(pageType);
+  return ['home', 'category-page', 'author-list-page', 'history-page', 'search-results-page', 'author-page'].includes(pageType)
+    || isContentDetailPageType(pageType);
 }
 
 function selectTriggersForPage(pageType, triggers, settings, siteProfile = null, { includeSearchQueries = false } = {}) {
@@ -3283,11 +4697,12 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
       : MAX_FALLBACK_BOOKS,
   };
   const isJableSite = String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv';
+  const isBilibiliSite = isBilibiliSiteProfile(siteProfile);
   const pageSelectionLimit = (() => {
     if (!isJableSite) {
       return Number.POSITIVE_INFINITY;
     }
-    if (pageType === 'book-detail-page') {
+    if (isContentDetailPageType(pageType)) {
       return 1;
     }
     if (pageType === 'author-page') {
@@ -3346,18 +4761,21 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
         }
         return 9;
       }
-      if (pageType === 'home' || pageType === 'category-page') {
+      if (['home', 'category-page', 'history-page', 'unknown-page'].includes(pageType)) {
         if (trigger.kind === 'search-form') {
           return 0;
         }
-        if (trigger.kind === 'safe-nav-link' && ['category', 'utility', 'home'].includes(trigger.semanticRole)) {
+        if (trigger.kind === 'content-link' && trigger.locator?.primary === 'known-query') {
           return 1;
         }
-        if (trigger.kind === 'content-link') {
+        if (trigger.kind === 'safe-nav-link' && ['category', 'utility', 'home'].includes(trigger.semanticRole)) {
           return 2;
         }
-        if (trigger.kind === 'pagination-link') {
+        if (trigger.kind === 'content-link') {
           return 3;
+        }
+        if (trigger.kind === 'pagination-link') {
+          return 4;
         }
         return 9;
       }
@@ -3377,7 +4795,12 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
       break;
     }
 
-    if (pageType === 'book-detail-page') {
+    if (SAME_DOCUMENT_TRIGGER_KINDS.has(trigger.kind)) {
+      selected.push(trigger);
+      continue;
+    }
+
+    if (isContentDetailPageType(pageType)) {
       if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author') {
         selected.push(trigger);
       }
@@ -3386,7 +4809,8 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
 
     if (pageType === 'search-results-page') {
       if (trigger.kind === 'content-link') {
-        if (searchResultBookCount >= sampling.searchResultContentLimit) {
+        const searchLimit = isBilibiliSite ? 1 : sampling.searchResultContentLimit;
+        if (searchResultBookCount >= searchLimit) {
           continue;
         }
         searchResultBookCount += 1;
@@ -3400,7 +4824,9 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
 
     if (pageType === 'author-page') {
       if (trigger.kind === 'content-link') {
-        const authorLimit = isJableSite
+        const authorLimit = isBilibiliSite
+          ? 1
+          : isJableSite
           ? Math.min(sampling.authorContentLimit, 2)
           : sampling.authorContentLimit;
         if (bookCount >= authorLimit) {
@@ -3422,6 +4848,20 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
         }
         safeNavCount += 1;
         selected.push(trigger);
+        continue;
+      }
+      if (trigger.kind === 'content-link') {
+        const authorLimit = isBilibiliSite
+          ? 1
+          : isJableSite
+          ? Math.min(sampling.authorContentLimit, 2)
+          : sampling.authorContentLimit;
+        if (bookCount >= authorLimit) {
+          continue;
+        }
+        bookCount += 1;
+        selected.push(trigger);
+        continue;
       }
       if (isJableSite && trigger.kind === 'pagination-link') {
         selected.push(trigger);
@@ -3441,6 +4881,13 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
         continue;
       }
         if (trigger.kind === 'content-link') {
+          if (
+            pageType === 'home'
+            && isBilibiliSiteProfile(siteProfile)
+            && trigger.locator?.primary === 'known-query'
+          ) {
+            continue;
+          }
           const bookLimit = settings.searchQueries.length > 0
             ? (isJableSite ? Math.min(sampling.fallbackContentLimitWithSearch, 2) : sampling.fallbackContentLimitWithSearch)
             : (isJableSite ? Math.min(sampling.categoryContentLimit, 2) : sampling.categoryContentLimit);
@@ -3452,6 +4899,16 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
           continue;
         }
         if (trigger.kind === 'safe-nav-link') {
+          if (pageType === 'home' && isBilibiliSiteProfile(siteProfile) && settings.searchQueries.length > 0) {
+            continue;
+          }
+          if (
+            settings.searchQueries.length > 0
+            && bookCount > 0
+            && ['category', 'home'].includes(trigger.semanticRole)
+          ) {
+            continue;
+          }
           if (isJableSite) {
             if (!['category', 'home', 'utility'].includes(trigger.semanticRole)) {
               continue;
@@ -3473,70 +4930,98 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
   return selected;
 }
 
+async function createExpandSession(settings, inputUrl) {
+  if (typeof settings.runtimeFactory === 'function') {
+    return await settings.runtimeFactory(settings, {
+      inputUrl,
+      purpose: 'expand-states',
+    });
+  }
+
+  const authContext = await resolveSiteBrowserSessionOptions(inputUrl, settings, {
+    profilePath: settings.profilePath,
+    siteProfile: settings.siteProfile,
+  });
+  const session = await openBrowserSession({
+    ...settings,
+    userDataDir: authContext.userDataDir,
+    cleanupUserDataDirOnShutdown: authContext.cleanupUserDataDirOnShutdown,
+    startupUrl: inputUrl,
+  }, {
+    userDataDirPrefix: 'expand-states-browser-',
+  });
+  const shouldEnsureAuth = Boolean(authContext.authConfig)
+    && (authContext.reuseLoginState || settings.autoLogin === true || authContext.authConfig.autoLoginByDefault);
+  if (shouldEnsureAuth) {
+    session.siteAuth = await ensureAuthenticatedSession(session, inputUrl, settings, {
+      authContext,
+    });
+  }
+  return session;
+}
+
+async function loadSourceContext({
+  session,
+  context,
+  settings,
+  siteProfile,
+  effectiveSearchQueries,
+  topManifest,
+}) {
+  await navigateAndWaitReady(session, context.sourceUrl, settings, siteProfile);
+  const sourceSignature = await collectStateSignature(session, siteProfile);
+  const sourceFingerprintJson = JSON.stringify(sourceSignature.fingerprint);
+  const discoveryLimit = isContentDetailPageType(sourceSignature.pageType)
+    ? 1_000
+    : Math.max(settings.maxTriggers, settings.maxTriggers + effectiveSearchQueries.length);
+  const discoveredTriggers = await discoverPageTriggers(
+    session,
+    discoveryLimit,
+    context.includeSearchQueries ? effectiveSearchQueries : [],
+    siteProfile,
+  );
+  const mergedTriggers = mergeDiscoveredTriggers(
+    discoveredTriggers,
+    buildPageFactsSyntheticTriggers(sourceSignature.pageType, sourceSignature.pageFacts),
+  );
+  topManifest.summary.discoveredTriggers += mergedTriggers.length;
+
+  return {
+    ...context,
+    pageType: sourceSignature.pageType,
+    sourceSignature,
+    sourceFingerprintJson,
+    discoveredTriggers: mergedTriggers,
+    triggers: selectTriggersForPage(
+      sourceSignature.pageType,
+      mergedTriggers,
+      settings,
+      siteProfile,
+      { includeSearchQueries: context.includeSearchQueries },
+    ),
+  };
+}
+
 export async function expandStates(inputUrl, options = {}) {
   const settings = mergeOptions(options);
   const { manifest: initialManifest } = await resolveInitialManifest(settings);
   const baseUrl = initialManifest.finalUrl || inputUrl;
   const layout = await createExpandOutputLayout(baseUrl, inputUrl, settings.outDir);
   const topManifest = buildTopLevelManifest(inputUrl, baseUrl, layout);
+  topManifest.budget = createBudgetState(settings);
 
-  let browserProcess = null;
-  let userDataDir = null;
-  let client = null;
-  let targetId = null;
-  let sessionId = null;
-  let networkTracker = null;
+  let session = null;
   let stateCounter = 1;
 
   try {
-    const browserPath = settings.browserPath ? path.resolve(settings.browserPath) : await detectBrowserPath();
-    if (!browserPath) {
-      throw new Error('No Chromium/Chrome executable found. Pass browserPath or --browser-path explicitly.');
-    }
+    session = await createExpandSession(settings, inputUrl);
+    const siteProfile = await loadSiteProfile(baseUrl, settings.profilePath, settings.siteProfile);
+    const effectiveSearchQueries = settings.searchQueries.length > 0
+      ? mergeStringArrays(settings.searchQueries)
+      : mergeStringArrays(siteProfile?.search?.defaultQueries);
+    await navigateAndWaitReady(session, baseUrl, settings, siteProfile);
 
-    const browserInfo = await launchBrowser(browserPath, settings);
-    browserProcess = browserInfo.browserProcess;
-    userDataDir = browserInfo.userDataDir;
-
-    client = new CdpClient(browserInfo.wsUrl, { timeoutMs: settings.timeoutMs });
-    await client.connect();
-
-    const targetResult = await client.send('Target.createTarget', { url: 'about:blank' });
-    targetId = targetResult.targetId;
-
-    const attachResult = await client.send('Target.attachToTarget', { targetId, flatten: true });
-    sessionId = attachResult.sessionId;
-
-    await client.send('Page.enable', {}, sessionId);
-    await client.send('Runtime.enable', {}, sessionId);
-    await client.send('Network.enable', {}, sessionId);
-    await client.send('Page.setLifecycleEventsEnabled', { enabled: true }, sessionId);
-
-    if (settings.userAgent) {
-      await client.send('Emulation.setUserAgentOverride', { userAgent: settings.userAgent }, sessionId);
-    }
-
-    await client.send(
-      'Emulation.setDeviceMetricsOverride',
-      {
-        width: settings.viewport.width,
-        height: settings.viewport.height,
-        deviceScaleFactor: settings.viewport.deviceScaleFactor,
-        mobile: false,
-      },
-      sessionId,
-    );
-
-    networkTracker = createNetworkTracker(client, sessionId);
-
-    const siteProfile = await loadSiteProfile(baseUrl);
-    const effectiveSearchQueries = mergeStringArrays(
-      settings.searchQueries,
-      siteProfile?.search?.defaultQueries,
-    );
-    await navigateAndWaitReady(client, sessionId, baseUrl, settings, networkTracker, siteProfile);
-
-    const liveInitialSignature = await collectStateSignature(client, sessionId, siteProfile);
+    const liveInitialSignature = await collectStateSignature(session, siteProfile);
     const initialDedupKey = hashFingerprint(liveInitialSignature.fingerprint);
 
     if (normalizeUrlNoFragment(initialManifest.finalUrl) !== normalizeUrlNoFragment(liveInitialSignature.finalUrl)) {
@@ -3564,36 +5049,41 @@ export async function expandStates(inputUrl, options = {}) {
     const expandedStates = new Set();
 
     while (expansionQueue.length > 0) {
+      if (topManifest.summary.capturedStates >= settings.maxCapturedStates) {
+        markBudgetStop(
+          topManifest,
+          `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
+        );
+        break;
+      }
+
       const context = expansionQueue.shift();
       if (!context || expandedStates.has(context.stateId)) {
         continue;
       }
       expandedStates.add(context.stateId);
 
-      await navigateAndWaitReady(client, sessionId, context.sourceUrl, settings, networkTracker, siteProfile);
-      const sourceSignature = await collectStateSignature(client, sessionId, siteProfile);
-      const sourceFingerprintJson = JSON.stringify(sourceSignature.fingerprint);
-      const discoveryLimit = sourceSignature.pageType === 'book-detail-page'
-        ? 1_000
-        : Math.max(settings.maxTriggers, settings.maxTriggers + effectiveSearchQueries.length);
-      const discoveredTriggers = await callPageFunction(
-        client,
-        sessionId,
-        pageDiscoverTriggers,
-        discoveryLimit,
-        context.includeSearchQueries ? effectiveSearchQueries : [],
-        siteProfile,
-      );
-      topManifest.summary.discoveredTriggers += discoveredTriggers.length;
-      const triggers = selectTriggersForPage(
-        sourceSignature.pageType,
-        discoveredTriggers,
+      const sourceContext = await loadSourceContext({
+        session,
+        context,
         settings,
         siteProfile,
-        { includeSearchQueries: context.includeSearchQueries },
-      );
+        effectiveSearchQueries,
+        topManifest,
+      });
 
-      for (const trigger of triggers) {
+      let restoreSourceBeforeNextTrigger = false;
+      for (let triggerIndex = 0; triggerIndex < sourceContext.triggers.length; triggerIndex += 1) {
+        if (topManifest.summary.capturedStates >= settings.maxCapturedStates) {
+          markBudgetStop(
+            topManifest,
+            `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
+          );
+          break;
+        }
+
+        const trigger = sourceContext.triggers[triggerIndex];
+        const nextTrigger = sourceContext.triggers[triggerIndex + 1] ?? null;
         topManifest.summary.attemptedTriggers += 1;
         const stateId = nextStateId(stateCounter);
         stateCounter += 1;
@@ -3601,9 +5091,12 @@ export async function expandStates(inputUrl, options = {}) {
         const attemptedAt = new Date().toISOString();
 
         try {
-          await navigateAndWaitReady(client, sessionId, context.sourceUrl, settings, networkTracker, siteProfile);
+          if (restoreSourceBeforeNextTrigger) {
+            await navigateAndWaitReady(session, context.sourceUrl, settings, siteProfile);
+            restoreSourceBeforeNextTrigger = false;
+          }
 
-          const executeResult = await callPageFunction(client, sessionId, pageExecuteTrigger, trigger, siteProfile);
+          const executeResult = await executeTrigger(session, trigger, siteProfile, settings);
           if (!executeResult?.clicked) {
             topManifest.summary.failedTriggers += 1;
             topManifest.states.push(
@@ -3623,13 +5116,16 @@ export async function expandStates(inputUrl, options = {}) {
             continue;
           }
 
-          await waitForPostTriggerSettled(client, sessionId, settings, networkTracker, siteProfile, context.sourceUrl);
+          await waitForPostTriggerSettled(session, settings, trigger, executeResult, siteProfile, context.sourceUrl);
+          await ensureSiteSpecificReadyMarkers(session, siteProfile, executeResult?.navigationUrl || context.sourceUrl);
 
-          const postSignature = await collectStateSignature(client, sessionId, siteProfile);
+          const postSignature = await collectStateSignature(session, siteProfile);
           const dedupKey = hashFingerprint(postSignature.fingerprint);
           const postFingerprintJson = JSON.stringify(postSignature.fingerprint);
+          const changedFromSource = postFingerprintJson !== sourceContext.sourceFingerprintJson;
+          restoreSourceBeforeNextTrigger = changedFromSource && Boolean(nextTrigger && requiresSourceDom(nextTrigger));
 
-          if (postFingerprintJson === sourceFingerprintJson) {
+          if (!changedFromSource) {
             topManifest.summary.noopTriggers += 1;
             topManifest.states.push(
               createStateIndexEntry({
@@ -3671,25 +5167,31 @@ export async function expandStates(inputUrl, options = {}) {
           }
 
           const stateDir = path.join(layout.statesDir, `${stateId}_${slugify(stateName, stateId)}`);
-      const stateManifest = await captureCurrentState({
-        client,
-        sessionId,
-        inputUrl,
+          const stateManifest = await captureCurrentState({
+            session,
+            inputUrl,
             stateId,
             fromState: context.stateId,
             stateName,
             dedupKey,
             trigger,
-        stateDir,
-        pageMetadata: postSignature,
-        settings,
-        siteProfile,
-      });
+            stateDir,
+            pageMetadata: postSignature,
+            settings,
+            siteProfile,
+          });
 
           if (stateManifest.status === 'captured') {
             topManifest.summary.capturedStates += 1;
             capturedDedupKeys.set(dedupKey, stateId);
-            if (shouldExpandPageType(postSignature.pageType)) {
+            if (topManifest.summary.capturedStates >= settings.maxCapturedStates) {
+              markBudgetStop(
+                topManifest,
+                `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
+              );
+              topManifest.states.push(topLevelStateEntryFromManifest(stateManifest));
+              break;
+            } else if (shouldExpandPageType(postSignature.pageType)) {
               expansionQueue.push({
                 stateId,
                 sourceUrl: postSignature.finalUrl,
@@ -3702,6 +5204,7 @@ export async function expandStates(inputUrl, options = {}) {
 
           topManifest.states.push(topLevelStateEntryFromManifest(stateManifest));
         } catch (error) {
+          restoreSourceBeforeNextTrigger = Boolean(nextTrigger && requiresSourceDom(nextTrigger));
           topManifest.summary.failedTriggers += 1;
           topManifest.states.push(
             createStateIndexEntry({
@@ -3728,18 +5231,7 @@ export async function expandStates(inputUrl, options = {}) {
     await writeTopLevelManifest(layout.manifestPath, topManifest);
     throw error;
   } finally {
-    networkTracker?.dispose();
-
-    if (client && targetId) {
-      try {
-        await client.send('Target.closeTarget', { targetId });
-      } catch {
-        // Browser shutdown will clean up if the target is already gone.
-      }
-    }
-
-    client?.close();
-    await shutdownBrowser(browserProcess, userDataDir);
+    await session?.close?.();
   }
 }
 
@@ -3814,6 +5306,27 @@ function parseCliArgs(argv) {
       continue;
     }
 
+    if (current.startsWith('--profile-path')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.profilePath = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current.startsWith('--browser-profile-root')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.browserProfileRoot = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current.startsWith('--user-data-dir')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.userDataDir = value;
+      index = nextIndex;
+      continue;
+    }
+
     if (current.startsWith('--timeout')) {
       const { value, nextIndex } = readValue(current, index);
       options.timeoutMs = value;
@@ -3838,6 +5351,13 @@ function parseCliArgs(argv) {
     if (current.startsWith('--max-triggers')) {
       const { value, nextIndex } = readValue(current, index);
       options.maxTriggers = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current.startsWith('--max-captured-states')) {
+      const { value, nextIndex } = readValue(current, index);
+      options.maxCapturedStates = value;
       index = nextIndex;
       continue;
     }
@@ -3873,6 +5393,30 @@ function parseCliArgs(argv) {
       continue;
     }
 
+    if (current === '--reuse-login-state' || current.startsWith('--reuse-login-state=')) {
+      const { value, nextIndex } = readOptionalBooleanValue(current, index);
+      options.reuseLoginState = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current === '--no-reuse-login-state') {
+      options.reuseLoginState = false;
+      continue;
+    }
+
+    if (current === '--auto-login' || current.startsWith('--auto-login=')) {
+      const { value, nextIndex } = readOptionalBooleanValue(current, index);
+      options.autoLogin = value;
+      index = nextIndex;
+      continue;
+    }
+
+    if (current === '--no-auto-login') {
+      options.autoLogin = false;
+      continue;
+    }
+
     throw new Error(`Unknown option: ${current}`);
   }
 
@@ -3889,13 +5433,21 @@ Options:
   --initial-dir <path>      Initial capture directory containing manifest.json
   --out-dir <path>          Output root directory
   --browser-path <path>     Explicit Chromium/Chrome executable path
+  --profile-path <path>     Explicit site profile for auth/session defaults
+  --browser-profile-root <path> Root directory for persistent browser profiles
+  --user-data-dir <path>    Explicit Chromium user-data-dir to reuse
   --timeout <ms>            Overall timeout for CDP operations
   --wait-until <mode>       load | networkidle
   --idle-ms <ms>            Extra delay after readiness before capture
   --max-triggers <n>        Maximum discovered triggers to expand
+  --max-captured-states <n> Maximum additional captured states beyond the initial state
   --search-query <text>     Repeatable search query seed injected into site search
   --full-page               Force full-page screenshot
   --no-full-page            Disable full-page screenshot
+  --reuse-login-state       Reuse a persistent per-site browser profile
+  --no-reuse-login-state    Disable persistent login-state reuse
+  --auto-login              Best-effort credential login when credentials exist
+  --no-auto-login           Disable credential auto-login
   --headless                Run browser headless (default)
   --no-headless             Run browser with a visible window
   --help                    Show this help

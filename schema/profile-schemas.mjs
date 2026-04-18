@@ -1,5 +1,11 @@
 // @ts-check
 
+import {
+  PROFILE_ARCHETYPES,
+  resolveLegacyProfileArchetype,
+  resolveProfileArchetype,
+} from '../lib/sites/archetypes.mjs';
+
 function nonEmptyString(extra = {}) {
   return {
     type: 'string',
@@ -14,6 +20,14 @@ function integer(min = 0, extra = {}) {
     min,
     ...extra,
   };
+}
+
+function integerConst(value) {
+  return integer(value, {
+    validate(input) {
+      return input === value ? null : `must equal ${value}`;
+    },
+  });
 }
 
 function stringArray(options = {}) {
@@ -51,6 +65,86 @@ const knownQuerySchema = {
   },
 };
 
+const validationSamplesSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    videoSearchQuery: nonEmptyString(),
+    videoDetailUrl: absoluteHttpUrl,
+    authorUrl: absoluteHttpUrl,
+    authorVideosUrl: absoluteHttpUrl,
+    authorDynamicUrl: absoluteHttpUrl,
+    collectionUrl: absoluteHttpUrl,
+    channelUrl: absoluteHttpUrl,
+    categoryPopularUrl: absoluteHttpUrl,
+    categoryAnimeUrl: absoluteHttpUrl,
+    bangumiDetailUrl: absoluteHttpUrl,
+  },
+};
+
+const authValidationSamplesSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    dynamicUrl: absoluteHttpUrl,
+    followListUrl: absoluteHttpUrl,
+    fansListUrl: absoluteHttpUrl,
+    favoriteListUrl: absoluteHttpUrl,
+    watchLaterUrl: absoluteHttpUrl,
+  },
+};
+
+const authSessionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['loginUrl', 'postLoginUrl'],
+  properties: {
+    loginUrl: absoluteHttpUrl,
+    postLoginUrl: absoluteHttpUrl,
+    reuseLoginStateByDefault: { type: 'boolean' },
+    autoLoginByDefault: { type: 'boolean' },
+    usernameEnv: nonEmptyString(),
+    passwordEnv: nonEmptyString(),
+    loginIndicatorSelectors: stringArray({ minItems: 1 }),
+    loggedOutIndicatorSelectors: stringArray({ minItems: 1 }),
+    passwordLoginTabSelectors: stringArray({ minItems: 1 }),
+    usernameSelectors: stringArray({ minItems: 1 }),
+    passwordSelectors: stringArray({ minItems: 1 }),
+    submitSelectors: stringArray({ minItems: 1 }),
+    challengeSelectors: stringArray({ minItems: 1 }),
+    authRequiredAuthorSubpages: stringArray({ minItems: 1 }),
+    authRequiredPathPrefixes: stringArray({ minItems: 1 }),
+  },
+};
+
+const downloaderSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    defaultOutputRoot: nonEmptyString(),
+    requiresLoginForHighestQuality: { type: 'boolean' },
+    authorVideoListPathPrefixes: stringArray({ minItems: 1 }),
+    favoriteListPathPrefixes: stringArray({ minItems: 1 }),
+    watchLaterPathPrefixes: stringArray({ minItems: 1 }),
+    collectionPathPrefixes: stringArray({ minItems: 1 }),
+    channelPathPrefixes: stringArray({ minItems: 1 }),
+    maxBatchItems: integer(1),
+    playlistPageSize: integer(1),
+    defaultContainer: nonEmptyString(),
+    defaultNamingStrategy: nonEmptyString(),
+    qualityPolicy: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        targetHeight: integer(144),
+        targetCodec: nonEmptyString(),
+        defaultContainer: nonEmptyString(),
+        fallbackPolicy: nonEmptyString(),
+      },
+    },
+  },
+};
+
 const searchSchema = {
   type: 'object',
   additionalProperties: false,
@@ -69,7 +163,7 @@ const searchSchema = {
     resultTitleSelectors: stringArray({ minItems: 1 }),
     resultBookSelectors: stringArray({ minItems: 1 }),
     queryParamNames: stringArray({ minItems: 1 }),
-    defaultQueries: stringArray({ minItems: 1 }),
+    defaultQueries: stringArray(),
     knownQueries: {
       type: 'array',
       minItems: 0,
@@ -111,14 +205,118 @@ const pageTypesSchema = {
   },
 };
 
-const twentyTwoBiquSchema = {
-  id: 'profile/www.22biqu.com/v1',
+function baseProfileProperties(archetype) {
+  return {
+    host: nonEmptyString(),
+    version: integer(1),
+    archetype: nonEmptyString({ const: archetype }),
+    schemaVersion: integerConst(1),
+    primaryArchetype: nonEmptyString(),
+  };
+}
+
+const navigationCatalogSchema = {
+  id: 'profile/navigation-catalog/v1',
   type: 'object',
   additionalProperties: false,
-  required: ['host', 'version', 'search', 'bookDetail', 'chapter'],
+  required: [
+    'host',
+    'version',
+    'archetype',
+    'schemaVersion',
+    'pageTypes',
+    'search',
+    'sampling',
+    'navigation',
+    'contentDetail',
+    'author',
+  ],
   properties: {
-    host: nonEmptyString({ const: 'www.22biqu.com' }),
-    version: integer(1),
+    ...baseProfileProperties(PROFILE_ARCHETYPES.NAVIGATION_CATALOG),
+    pageTypes: pageTypesSchema,
+    search: searchSchema,
+    validationSamples: validationSamplesSchema,
+    authValidationSamples: authValidationSamplesSchema,
+    authSession: authSessionSchema,
+    downloader: downloaderSchema,
+    pipeline: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        skipBookContent: { type: 'boolean' },
+      },
+    },
+    sampling: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'searchResultContentLimit',
+        'authorContentLimit',
+        'categoryContentLimit',
+        'fallbackContentLimitWithSearch',
+      ],
+      properties: {
+        searchResultContentLimit: integer(1),
+        authorContentLimit: integer(1),
+        categoryContentLimit: integer(1),
+        fallbackContentLimitWithSearch: integer(1),
+      },
+    },
+    navigation: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'allowedHosts',
+        'contentPathPrefixes',
+        'authorPathPrefixes',
+        'authorListPathPrefixes',
+        'authorDetailPathPrefixes',
+        'categoryPathPrefixes',
+        'utilityPathPrefixes',
+        'authPathPrefixes',
+        'categoryLabelKeywords',
+      ],
+      properties: {
+        allowedHosts: stringArray({ minItems: 1 }),
+        contentPathPrefixes: stringArray({ minItems: 1 }),
+        authorPathPrefixes: stringArray({ minItems: 1 }),
+        authorListPathPrefixes: stringArray(),
+        authorDetailPathPrefixes: stringArray(),
+        categoryPathPrefixes: stringArray({ minItems: 1 }),
+        utilityPathPrefixes: stringArray({ minItems: 1 }),
+        authPathPrefixes: stringArray(),
+        categoryLabelKeywords: stringArray({ minItems: 1 }),
+      },
+    },
+    contentDetail: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['titleSelectors', 'authorNameSelectors', 'authorLinkSelectors'],
+      properties: {
+        titleSelectors: stringArray({ minItems: 1 }),
+        authorNameSelectors: stringArray({ minItems: 1 }),
+        authorLinkSelectors: stringArray({ minItems: 1 }),
+      },
+    },
+    author: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['titleSelectors', 'workLinkSelectors'],
+      properties: {
+        titleSelectors: stringArray({ minItems: 1 }),
+        workLinkSelectors: stringArray({ minItems: 1 }),
+      },
+    },
+  },
+};
+
+const chapterContentSchema = {
+  id: 'profile/chapter-content/v1',
+  type: 'object',
+  additionalProperties: false,
+  required: ['host', 'version', 'archetype', 'schemaVersion', 'search', 'bookDetail', 'chapter'],
+  properties: {
+    ...baseProfileProperties(PROFILE_ARCHETYPES.CHAPTER_CONTENT),
     search: searchSchema,
     bookDetail: {
       type: 'object',
@@ -182,178 +380,12 @@ const twentyTwoBiquSchema = {
   },
 };
 
-const moodyzSchema = {
-  id: 'profile/moodyz.com/v1',
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'host',
-    'version',
-    'pageTypes',
-    'search',
-    'sampling',
-    'navigation',
-    'contentDetail',
-    'author',
-  ],
-  properties: {
-    host: nonEmptyString({ const: 'moodyz.com' }),
-    version: integer(1),
-    pageTypes: pageTypesSchema,
-    search: searchSchema,
-    sampling: {
-      type: 'object',
-      additionalProperties: false,
-      required: [
-        'searchResultContentLimit',
-        'authorContentLimit',
-        'categoryContentLimit',
-        'fallbackContentLimitWithSearch',
-      ],
-      properties: {
-        searchResultContentLimit: integer(1),
-        authorContentLimit: integer(1),
-        categoryContentLimit: integer(1),
-        fallbackContentLimitWithSearch: integer(1),
-      },
-    },
-    navigation: {
-      type: 'object',
-      additionalProperties: false,
-      required: [
-        'allowedHosts',
-        'contentPathPrefixes',
-        'authorPathPrefixes',
-        'authorListPathPrefixes',
-        'authorDetailPathPrefixes',
-        'categoryPathPrefixes',
-        'utilityPathPrefixes',
-        'authPathPrefixes',
-        'categoryLabelKeywords',
-      ],
-      properties: {
-        allowedHosts: stringArray({ minItems: 1 }),
-        contentPathPrefixes: stringArray({ minItems: 1 }),
-        authorPathPrefixes: stringArray({ minItems: 1 }),
-        authorListPathPrefixes: stringArray(),
-        authorDetailPathPrefixes: stringArray(),
-        categoryPathPrefixes: stringArray({ minItems: 1 }),
-        utilityPathPrefixes: stringArray({ minItems: 1 }),
-        authPathPrefixes: stringArray(),
-        categoryLabelKeywords: stringArray({ minItems: 1 }),
-      },
-    },
-    contentDetail: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['titleSelectors', 'authorNameSelectors', 'authorLinkSelectors'],
-      properties: {
-        titleSelectors: stringArray({ minItems: 1 }),
-        authorNameSelectors: stringArray({ minItems: 1 }),
-        authorLinkSelectors: stringArray({ minItems: 1 }),
-      },
-    },
-    author: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['titleSelectors', 'workLinkSelectors'],
-      properties: {
-        titleSelectors: stringArray({ minItems: 1 }),
-        workLinkSelectors: stringArray({ minItems: 1 }),
-      },
-    },
-  },
-};
-
-const jableSchema = {
-  id: 'profile/jable.tv/v1',
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'host',
-    'version',
-    'pageTypes',
-    'search',
-    'sampling',
-    'navigation',
-    'contentDetail',
-    'author',
-  ],
-  properties: {
-    host: nonEmptyString({ const: 'jable.tv' }),
-    version: integer(1),
-    pageTypes: pageTypesSchema,
-    search: searchSchema,
-    sampling: {
-      type: 'object',
-      additionalProperties: false,
-      required: [
-        'searchResultContentLimit',
-        'authorContentLimit',
-        'categoryContentLimit',
-        'fallbackContentLimitWithSearch',
-      ],
-      properties: {
-        searchResultContentLimit: integer(1),
-        authorContentLimit: integer(1),
-        categoryContentLimit: integer(1),
-        fallbackContentLimitWithSearch: integer(1),
-      },
-    },
-    navigation: {
-      type: 'object',
-      additionalProperties: false,
-      required: [
-        'allowedHosts',
-        'contentPathPrefixes',
-        'authorPathPrefixes',
-        'authorListPathPrefixes',
-        'authorDetailPathPrefixes',
-        'categoryPathPrefixes',
-        'utilityPathPrefixes',
-        'authPathPrefixes',
-        'categoryLabelKeywords',
-      ],
-      properties: {
-        allowedHosts: stringArray({ minItems: 1 }),
-        contentPathPrefixes: stringArray({ minItems: 1 }),
-        authorPathPrefixes: stringArray({ minItems: 1 }),
-        authorListPathPrefixes: stringArray(),
-        authorDetailPathPrefixes: stringArray(),
-        categoryPathPrefixes: stringArray({ minItems: 1 }),
-        utilityPathPrefixes: stringArray({ minItems: 1 }),
-        authPathPrefixes: stringArray(),
-        categoryLabelKeywords: stringArray({ minItems: 1 }),
-      },
-    },
-    contentDetail: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['titleSelectors', 'authorNameSelectors', 'authorLinkSelectors'],
-      properties: {
-        titleSelectors: stringArray({ minItems: 1 }),
-        authorNameSelectors: stringArray({ minItems: 1 }),
-        authorLinkSelectors: stringArray({ minItems: 1 }),
-      },
-    },
-    author: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['titleSelectors', 'workLinkSelectors'],
-      properties: {
-        titleSelectors: stringArray({ minItems: 1 }),
-        workLinkSelectors: stringArray({ minItems: 1 }),
-      },
-    },
-  },
-};
-
 export const PROFILE_SCHEMAS = Object.freeze({
-  'www.22biqu.com': twentyTwoBiquSchema,
-  'moodyz.com': moodyzSchema,
-  'jable.tv': jableSchema,
+  [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: navigationCatalogSchema,
+  [PROFILE_ARCHETYPES.CHAPTER_CONTENT]: chapterContentSchema,
 });
 
-export function resolveProfileSchema(host) {
-  return PROFILE_SCHEMAS[host] ?? null;
+export function resolveProfileSchema(input) {
+  const archetype = resolveProfileArchetype(input) ?? resolveLegacyProfileArchetype(input);
+  return archetype ? (PROFILE_SCHEMAS[archetype] ?? null) : null;
 }

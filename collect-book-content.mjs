@@ -1,9 +1,10 @@
 ﻿import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile, access, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from './lib/cli.mjs';
+import { ensureDir, firstExistingPath, pathExists, readJsonFile, writeJsonFile, writeTextFile } from './lib/io.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -133,47 +134,11 @@ function isSameChapterChain(left, right) {
   return Boolean(leftBase && rightBase && leftBase === rightBase);
 }
 
-async function pathExists(targetPath) {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
-async function writeJsonFile(filePath, value) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
-async function writeTextFile(filePath, value) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${String(value).trimEnd()}\n`, 'utf8');
-}
-
-async function fileExists(targetPath) {
-  return await pathExists(targetPath);
-}
-
-async function firstExistingPath(paths) {
-  for (const candidate of paths) {
-    if (candidate && await pathExists(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
 async function loadSiteProfile(inputUrl) {
   try {
     const parsed = new URL(inputUrl);
     const profilePath = path.join(MODULE_DIR, 'profiles', `${parsed.hostname}.json`);
-    if (!await fileExists(profilePath)) {
+    if (!await pathExists(profilePath)) {
       return null;
     }
     return await readJsonFile(profilePath);
@@ -707,8 +672,8 @@ async function createOutputLayout(baseUrl, rootOutDir) {
   const outDir = path.join(hostRoot, `${formatTimestampForDir(new Date(generatedAt))}_${sanitizeHost(host)}_book-content`);
   const booksDir = path.join(outDir, 'books');
   const downloadsDir = path.join(outDir, 'downloads');
-  await mkdir(booksDir, { recursive: true });
-  await mkdir(downloadsDir, { recursive: true });
+  await ensureDir(booksDir);
+  await ensureDir(downloadsDir);
   return {
     generatedAt,
     outDir,

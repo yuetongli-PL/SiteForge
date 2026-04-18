@@ -11,10 +11,17 @@ import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
 import { ensureDir, findLatestRunDir, pathExists, readJsonFile, readTextFile, writeTextFile } from './lib/io.mjs';
 import { markdownLink, normalizeImportedMarkdown, renderTable, stripKbMeta } from './lib/markdown.mjs';
 import { cleanText, firstNonEmpty, hostFromUrl, normalizeWhitespace, relativePath, sanitizeHost, slugifyAscii, toArray, toPosixPath, uniqueSortedStrings } from './lib/normalize.mjs';
-import { resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, resolveSupportedIntentsFromSiteContext, readSiteContext } from './lib/site-context.mjs';
+import { renderKnownSiteDocument } from './lib/render/skill/site-renderers.mjs';
+import { resolvePrimaryArchetypeFromSiteContext, resolveSafeActionKindsFromSiteContext, readSiteContext } from './lib/site-context.mjs';
+import { isContentDetailPageType, resolveConfiguredPageTypes } from './lib/sites/page-types.mjs';
+import { resolveProfilePathForUrl } from './lib/sites/profiles.mjs';
 import { displayIntentName as sharedDisplayIntentName, normalizeDisplayLabel, resolveSiteTerminology } from './lib/site-terminology.mjs';
 import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
 import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
+import { publishSkill } from './lib/publish/skill/publisher.mjs';
+
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = MODULE_DIR;
 
 const DEFAULT_OPTIONS = {
   kbDir: undefined,
@@ -188,6 +195,14 @@ async function resolveSourceInputs(url, options) {
   const sourcesDocument = await readJsonFile(sourcesPath);
   const pagesDocument = await readJsonFile(pagesPath);
   const siteContext = await readSiteContext(workspaceRoot, host);
+  const workspaceProfilesDir = path.join(workspaceRoot, 'profiles');
+  const fallbackProfilesDir = path.join(REPO_ROOT, 'profiles');
+  const liveProfilePath = await pathExists(resolveProfilePathForUrl(url, { profilesDir: workspaceProfilesDir }))
+    ? resolveProfilePathForUrl(url, { profilesDir: workspaceProfilesDir })
+    : resolveProfilePathForUrl(url, { profilesDir: fallbackProfilesDir });
+  const liveSiteProfileDocument = liveProfilePath && await pathExists(liveProfilePath)
+    ? await readJsonFile(liveProfilePath)
+    : null;
   const mapToKbPath = buildSourceMapper(kbDir, sourcesDocument);
   const rawToOriginalPath = buildRawToOriginalMapper(kbDir, sourcesDocument);
   const activeSources = new Map((sourcesDocument.activeSources ?? []).map((source) => [source.step, source]));
@@ -420,8 +435,17 @@ async function resolveSourceInputs(url, options) {
     ? [...resolutionKinds][0]
     : `mixed:${[...resolutionKinds].sort().join('+')}`;
 
+  const baseUrl = firstNonEmpty([
+    sourcesDocument?.baseUrl,
+    sourcesDocument?.inputUrl,
+    siteContext?.registryRecord?.canonicalBaseUrl,
+    url,
+  ]) ?? url;
+
   return {
     url,
+    baseUrl,
+    workspaceRoot,
     host,
     kbDir,
     wikiIndexPath,
@@ -449,6 +473,7 @@ async function resolveSourceInputs(url, options) {
     statesDocument,
     transitionsDocument,
     siteProfileDocument,
+    liveSiteProfileDocument,
     aliasLexiconDocument,
     slotSchemaDocument,
     utterancePatternsDocument,
@@ -459,6 +484,41 @@ async function resolveSourceInputs(url, options) {
     authorsContentDocument,
     searchResultsDocument,
     bookContentRawDir: stepBookContentRawDir,
+    step3SourceRefs: {
+      step: 'step-3-analysis',
+      key: 'analysis',
+      dir: step3RawDir,
+      files: {
+        siteProfile: analysisFiles.siteProfile,
+      },
+    },
+    step4SourceRefs: {
+      step: 'step-4-abstraction',
+      key: 'abstraction',
+      dir: step4RawDir,
+    },
+    step5SourceRefs: {
+      step: 'step-5-nl-entry',
+      key: 'nl-entry',
+      dir: step5RawDir,
+    },
+    step6SourceRefs: {
+      step: 'step-6-docs',
+      key: 'docs',
+      dir: step6RawDir,
+      manifestPath: docsManifestPath,
+    },
+    step7SourceRefs: {
+      step: 'step-7-governance',
+      key: 'governance',
+      dir: step7RawDir,
+    },
+    stepBookContentSourceRefs: stepBookContentRawDir ? {
+      step: 'step-book-content',
+      key: 'book-content',
+      dir: stepBookContentRawDir,
+      files: bookContentFiles,
+    } : null,
   };
 }
 
@@ -567,6 +627,11 @@ function isJable(context) {
     || /(?:^|\.)jable\.tv$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
 }
 
+function isBilibili(context) {
+  return /(?:^|\.)bilibili\.com$/iu.test(String(context?.host ?? ''))
+    || /(?:^|\.)bilibili\.com$/iu.test(String(context?.baseUrl ?? context?.url ?? ''));
+}
+
 function siteTerminology(context) {
   return resolveSiteTerminology(context.siteContext, context.url);
 }
@@ -629,7 +694,11 @@ function collectStateDisplayTitles(context, pageTypes, limit = 8) {
   const allowedPageTypes = new Set(toArray(pageTypes));
   const values = [];
   for (const state of toArray(context.statesDocument?.states)) {
-    if (!allowedPageTypes.has(state?.pageType)) {
+    const statePageType = String(state?.pageType ?? '');
+    const matchesAllowedPageType = allowedPageTypes.has(statePageType)
+      || (allowedPageTypes.has('content-detail-page') && isContentDetailPageType(statePageType))
+      || (allowedPageTypes.has('book-detail-page') && statePageType === 'content-detail-page');
+    if (!matchesAllowedPageType) {
       continue;
     }
     const normalized = normalizeDisplayLabel(state?.title, {
@@ -717,6 +786,167 @@ function collectJableSamples(context) {
     categories,
     categoryGroups: taxonomyGroups,
     searchQueries,
+  };
+}
+
+function formatBilibiliCategoryPrefix(prefix) {
+  const value = cleanText(prefix);
+  switch (value) {
+    case '/v/popular/':
+      return '热门 (/v/popular/)';
+    case '/anime/':
+      return '番剧 (/anime/)';
+    case '/movie/':
+      return '电影 (/movie/)';
+    case '/guochuang/':
+      return '国创 (/guochuang/)';
+    case '/tv/':
+      return '电视剧 (/tv/)';
+    case '/variety/':
+      return '综艺 (/variety/)';
+    case '/documentary/':
+      return '纪录片 (/documentary/)';
+    case '/c/':
+      return '分区索引 (/c/)';
+    default:
+      return value;
+  }
+}
+
+function uniqueOrderedStrings(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values ?? []) {
+    const normalized = cleanText(value);
+    if (!normalized) {
+      continue;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function bilibiliBvidFromValue(value) {
+  const raw = cleanText(value);
+  if (!raw) {
+    return null;
+  }
+  const matched = raw.match(/\b(BV[0-9A-Za-z]{10,})\b/u)
+    || raw.match(/\/video\/(BV[0-9A-Za-z]{10,})/iu);
+  return cleanText(matched?.[1]);
+}
+
+function bilibiliMidFromValue(value) {
+  const raw = cleanText(value);
+  if (!raw) {
+    return null;
+  }
+  const matched = raw.match(/space\.bilibili\.com\/(\d+)/iu)
+    || raw.match(/(?:^|\/)(\d{6,})(?:\/video)?$/u);
+  return cleanText(matched?.[1]);
+}
+
+function formatBilibiliUpSample(value) {
+  const mid = bilibiliMidFromValue(value);
+  return mid ? `UP ${mid}` : null;
+}
+
+function collectBilibiliSamples(context) {
+  const validationSamples = {
+    ...(context.siteProfileDocument?.validationSamples ?? {}),
+    ...(context.liveSiteProfileDocument?.validationSamples ?? {}),
+  };
+  const categoryPathPrefixes = uniqueSortedStrings([
+    ...toArray(context.siteProfileDocument?.navigation?.categoryPathPrefixes),
+    ...toArray(context.siteProfileDocument?.pageTypes?.categoryPrefixes),
+    ...toArray(context.liveSiteProfileDocument?.navigation?.categoryPathPrefixes),
+    ...toArray(context.liveSiteProfileDocument?.pageTypes?.categoryPrefixes),
+  ]);
+  const states = toArray(context.statesDocument?.states);
+  const detailUrls = states
+    .map((state) => cleanText(state?.finalUrl))
+    .filter(Boolean);
+  const videoCodes = uniqueOrderedStrings([
+    bilibiliBvidFromValue(validationSamples.videoDetailUrl),
+    bilibiliBvidFromValue(validationSamples.videoSearchQuery),
+    ...toArray(context.siteProfileDocument?.search?.defaultQueries).map(bilibiliBvidFromValue),
+    ...collectIntentTargetLabels(context, ['open-video', 'open-book', 'open-work'], 10).map(bilibiliBvidFromValue),
+    ...detailUrls.map(bilibiliBvidFromValue),
+    ...states.map((state) => bilibiliBvidFromValue(state?.pageFacts?.bvid)),
+  ]).slice(0, 8);
+  const videoTitles = uniqueSortedStrings([
+    ...collectIntentTargetLabels(context, ['open-video', 'open-book', 'open-work'], 10),
+    ...collectStateDisplayTitles(context, ['book-detail-page', 'content-detail-page'], 12),
+  ]).filter(Boolean).slice(0, 8);
+  const videos = (videoCodes.length ? videoCodes : videoTitles).slice(0, 8);
+  const upProfileIds = uniqueOrderedStrings([
+    formatBilibiliUpSample(validationSamples.authorUrl),
+    formatBilibiliUpSample(validationSamples.authorVideosUrl),
+    ...collectIntentTargetLabels(context, ['open-author', 'open-up', 'open-model', 'open-actress'], 10).map(formatBilibiliUpSample),
+    ...states.map((state) => formatBilibiliUpSample(state?.pageFacts?.authorUrl)),
+    ...states.map((state) => formatBilibiliUpSample(state?.pageFacts?.authorMid)),
+    ...detailUrls.map(formatBilibiliUpSample),
+  ]).slice(0, 8);
+  const upProfileTitles = uniqueSortedStrings([
+    ...collectIntentTargetLabels(context, ['open-author', 'open-up', 'open-model', 'open-actress'], 10),
+    ...collectStateDisplayTitles(context, ['author-page'], 12),
+  ]).filter(Boolean).slice(0, 8);
+  const upProfiles = (upProfileIds.length ? upProfileIds : upProfileTitles).slice(0, 8);
+  const defaultQueries = toArray(context.siteProfileDocument?.search?.defaultQueries)
+    .map((item) => cleanText(item))
+    .filter(Boolean);
+  const searchQueries = uniqueOrderedStrings([
+    cleanText(validationSamples.videoSearchQuery),
+    ...defaultQueries,
+    ...collectIntentTargetLabels(context, ['search-video', 'search-book', 'search-work'], 10)
+      .map((value) => (bilibiliBvidFromValue(value) ? cleanText(value) : null)),
+  ]).slice(0, 4);
+  const categoryEntries = uniqueSortedStrings([
+    ...categoryPathPrefixes.map(formatBilibiliCategoryPrefix),
+  ]).filter(Boolean);
+  const allowedHosts = uniqueSortedStrings([
+    ...toArray(context.siteProfileDocument?.navigation?.allowedHosts),
+    ...toArray(context.siteContext?.profile?.navigation?.allowedHosts),
+  ]);
+  const bangumiEntries = uniqueSortedStrings([
+    cleanText(validationSamples.bangumiDetailUrl),
+    ...states
+      .filter((state) => String(state?.pageFacts?.contentType ?? '') === 'bangumi' || String(state?.finalUrl ?? '').includes('/bangumi/play/'))
+      .map((state) => cleanText(state?.finalUrl)),
+  ]).filter(Boolean).slice(0, 4);
+  const authorSubpages = uniqueSortedStrings([
+    cleanText(validationSamples.authorVideosUrl),
+    ...states
+      .map((state) => cleanText(state?.finalUrl))
+      .filter((value) => /space\.bilibili\.com\/\d+\/video/iu.test(String(value || ''))),
+  ]).filter(Boolean).slice(0, 4);
+  const validatedCategoryUrls = uniqueSortedStrings([
+    cleanText(validationSamples.categoryPopularUrl),
+    cleanText(validationSamples.categoryAnimeUrl),
+  ]).filter(Boolean).slice(0, 6);
+  return {
+    videos,
+    upProfiles,
+    searchQueries,
+    categoryEntries: (categoryEntries.length ? categoryEntries : [
+      '热门 (/v/popular/)',
+      '番剧 (/anime/)',
+      '电影 (/movie/)',
+      '国创 (/guochuang/)',
+    ]).slice(0, 8),
+    allowedHosts: (allowedHosts.length ? allowedHosts : [
+      'www.bilibili.com',
+      'search.bilibili.com',
+      'space.bilibili.com',
+    ]).slice(0, 8),
+    bangumiEntries,
+    authorSubpages,
+    validatedCategoryUrls,
   };
 }
 
@@ -811,692 +1041,67 @@ function collect22biquAuthLabels() {
 }
 
 function renderMoodyzSkillMd(context, outputs) {
-  const safeActions = resolveSafeActions(context);
-  const terms = siteTerminology(context);
-  const samples = collectMoodyzSamples(context);
-  const intentTypes = getIntentTypes(context);
-  const supportedTasks = [
-    intentTypes.has('search-work') || intentTypes.has('search-book') ? `search ${terms.entityPlural}` : null,
-    intentTypes.has('open-work') || intentTypes.has('open-book') ? `open ${terms.entityLabel} pages` : null,
-    intentTypes.has('open-actress') || intentTypes.has('open-author') ? `open ${terms.personLabel} pages` : null,
-    intentTypes.has('open-category') ? 'open category and list pages' : null,
-    intentTypes.has('open-utility-page') ? 'open utility pages' : null,
-  ].filter(Boolean);
-  return [
-    '---',
-    `name: ${context.skillName}`,
-    `description: Instruction-only Skill for ${context.url}. Use when Codex needs to search works, open verified work or actress pages, and navigate the approved moodyz URL family.`,
-    '---',
-    '',
-    '# moodyz Skill',
-    '',
-    '## Scope',
-    '',
-    `- Site: \`${context.url}\``,
-    '- Stay inside the verified `moodyz.com` URL family.',
-    `- Safe actions: \`${safeActions.join('`, `')}\``,
-    `- Supported tasks: ${supportedTasks.join(', ') || 'query and navigate within the observed site space'}.`,
-    '',
-    '## Sample coverage',
-    '',
-    `- Works: ${samples.works.join(', ') || 'none'}`,
-    `- Actresses: ${samples.actresses.join(', ') || 'none'}`,
-    `- Search queries: ${samples.searchQueries.join(', ') || 'none'}`,
-    '',
-    '## Reading order',
-    '',
-    `1. Start with ${markdownLink('references/index.md', outputs.skillMd, outputs.indexMd)}.`,
-    `2. For task execution details, read ${markdownLink('references/flows.md', outputs.skillMd, outputs.flowsMd)}.`,
-    `3. For user utterances and slot mapping, read ${markdownLink('references/nl-intents.md', outputs.skillMd, outputs.nlIntentsMd)}.`,
-    `4. For failure handling, read ${markdownLink('references/recovery.md', outputs.skillMd, outputs.recoveryMd)}.`,
-    `5. For approval boundaries, read ${markdownLink('references/approval.md', outputs.skillMd, outputs.approvalMd)}.`,
-    `6. For the structured site model, read ${markdownLink('references/interaction-model.md', outputs.skillMd, outputs.interactionModelMd)}.`,
-    '',
-    '## Safety boundary',
-    '',
-    '- Search and public navigation are low-risk actions.',
-    '- Login or register pages may be opened, but credential submission is out of scope.',
-    '',
-    '## Do not do',
-    '',
-    '- Do not leave the verified moodyz URL family.',
-    '- Do not invent unobserved actions or side-effect flows.',
-    '- Do not submit auth forms, uploads, payments, or unknown forms without approval.',
-  ].join('\n');
+  return renderKnownSiteDocument('moodyz', 'skill', buildKnownSiteRenderInput(context, outputs));
 }
 
 function renderJableSkillMd(context, outputs) {
-  const safeActions = resolveSafeActions(context);
-  const terms = siteTerminology(context);
-  const samples = collectJableSamples(context);
-  const intentTypes = getIntentTypes(context);
-  const supportedTasks = [
-    intentTypes.has('search-video') || intentTypes.has('search-book') ? '搜索影片' : null,
-    intentTypes.has('open-video') || intentTypes.has('open-book') ? '打开影片页' : null,
-    intentTypes.has('open-model') || intentTypes.has('open-author') ? '打开演员页' : null,
-    intentTypes.has('open-category') ? '打开分类或标签页' : null,
-    intentTypes.has('list-category-videos') ? '按分类或标签提取前 N 条榜单' : null,
-    intentTypes.has('open-utility-page') ? '打开功能页' : null,
-  ].filter(Boolean);
-  return [
-    '---',
-    `name: ${context.skillName}`,
-    `description: Instruction-only Skill for ${context.url}. Use when Codex needs to search videos, open verified video or actor pages, navigate the approved jable URL family, or extract objective top-N lists from verified category and tag pages.`,
-    '---',
-    '',
-    '# jable Skill',
-    '',
-    '## Scope',
-    '',
-    `- Site: \`${context.url}\``,
-    '- Stay inside the verified `jable.tv` URL family.',
-    `- Safe actions: \`${safeActions.join('`, `')}\``,
-    `- Supported tasks: ${supportedTasks.join('、') || '在已观测站点空间内查询和导航'}.`,
-    '- Ranking query entrypoint: `node query-jable-ranking.mjs <url> --query "<自然语言请求>"`.',
-    '',
-    '## Sample coverage',
-    '',
-    `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
-    `- 演员样本: ${samples.models.join(', ') || 'none'}`,
-    `- 搜索样本: ${samples.searchQueries.join(', ') || 'none'}`,
-    `- 分类组: ${samples.categoryGroups.map((group) => `${group.groupLabel}(${group.tags.length})`).join('、') || 'none'}`,
-    '',
-    '## Reading order',
-    '',
-    `1. Start with ${markdownLink('references/index.md', outputs.skillMd, outputs.indexMd)}.`,
-    `2. For task execution details, read ${markdownLink('references/flows.md', outputs.skillMd, outputs.flowsMd)}.`,
-    `3. For user utterances and slot mapping, read ${markdownLink('references/nl-intents.md', outputs.skillMd, outputs.nlIntentsMd)}.`,
-    `4. For failure handling, read ${markdownLink('references/recovery.md', outputs.skillMd, outputs.recoveryMd)}.`,
-    `5. For approval boundaries, read ${markdownLink('references/approval.md', outputs.skillMd, outputs.approvalMd)}.`,
-    `6. For the structured site model, read ${markdownLink('references/interaction-model.md', outputs.skillMd, outputs.interactionModelMd)}.`,
-    '',
-    '## Safety boundary',
-    '',
-    '- Search and public navigation are low-risk actions.',
-    '- “推荐/最佳”统一解释为站内公开排序结果，不做主观推荐。',
-    '- 一级分类组查询默认按组内所有标签页聚合、去重后取前 N 条。',
-    '- Keep answers inside verified video, actor, category, tag, and search pages.',
-    '- No downloads, purchases, auth submission, or off-site navigation are in scope.',
-    '',
-    '## Do not do',
-    '',
-    '- Do not leave the verified jable URL family.',
-    '- Do not invent unobserved actions or side-effect flows.',
-    '- Do not submit auth forms, uploads, payments, or unknown forms without approval.',
-  ].join('\n');
+  return renderKnownSiteDocument('jable', 'skill', buildKnownSiteRenderInput(context, outputs));
 }
 
 function render22BiquSkillMd(context, outputs) {
-  const safeActions = resolveSafeActions(context);
-  return [
-    '---',
-    `name: ${context.skillName}`,
-    `description: Instruction-only Skill for ${context.url}. Use when Codex needs to search books, open verified book or author pages, read chapter text, or download a full public novel while staying inside the approved 22biqu URL family.`,
-    '---',
-    '',
-    '# 22biqu Skill',
-    '',
-    '## Scope',
-    '',
-    `- Site: \`${context.url}\``,
-    '- Stay inside the verified `www.22biqu.com` URL family.',
-    `- Safe actions: \`${safeActions.join('`, `')}\``,
-    '- Supported tasks: search books, open book directories, open author pages, open chapter pages, and download full public novels.',
-    '- Download entrypoint: `pypy3 download_book.py`.',
-    '',
-    '## Reading order',
-    '',
-    `1. Start with ${markdownLink('references/index.md', outputs.skillMd, outputs.indexMd)}.`,
-    `2. For task execution details, read ${markdownLink('references/flows.md', outputs.skillMd, outputs.flowsMd)}.`,
-    `3. For user utterances and slot mapping, read ${markdownLink('references/nl-intents.md', outputs.skillMd, outputs.nlIntentsMd)}.`,
-    `4. For failure handling, read ${markdownLink('references/recovery.md', outputs.skillMd, outputs.recoveryMd)}.`,
-    `5. For approval boundaries, read ${markdownLink('references/approval.md', outputs.skillMd, outputs.approvalMd)}.`,
-    `6. For the structured site model, read ${markdownLink('references/interaction-model.md', outputs.skillMd, outputs.interactionModelMd)}.`,
-    '',
-    '## Safety boundary',
-    '',
-    '- Search and public chapter fetching are low-risk actions.',
-    '- Login or register pages may be opened, but credential submission is out of scope.',
-    '- Prefer returning a local full-book TXT if one already exists.',
-    '- If no valid local artifact exists, reuse or generate the host crawler and download again.',
-    '',
-    '## Do not do',
-    '',
-    '- Do not leave the verified 22biqu URL family.',
-    '- Do not invent unobserved actions or side-effect flows.',
-    '- Do not submit auth forms, uploads, payments, or unknown forms without approval.',
-  ].join('\n');
+  return renderKnownSiteDocument('22biqu', 'skill', buildKnownSiteRenderInput(context, outputs));
+}
+
+function renderBilibiliSkillMd(context, outputs) {
+  return renderKnownSiteDocument('bilibili', 'skill', buildKnownSiteRenderInput(context, outputs));
 }
 
 function renderMoodyzIndexReference(context, outputs, docsByIntent) {
-  const samples = collectMoodyzSamples(context);
-  const intents = context.intentsDocument.intents ?? [];
-  const intentTypes = getIntentTypes(context);
-  const verifiedTasks = [
-    intentTypes.has('search-work') || intentTypes.has('search-book') ? 'search works' : null,
-    intentTypes.has('open-work') || intentTypes.has('open-book') ? 'open work pages' : null,
-    intentTypes.has('open-actress') || intentTypes.has('open-author') ? 'open actress pages' : null,
-    intentTypes.has('open-category') ? 'open category and list pages' : null,
-    intentTypes.has('open-utility-page') ? 'open utility pages' : null,
-  ].filter(Boolean);
-  const rows = intents.map((intent) => ({
-    intent: displayIntentLabel(context, intent.intentType),
-    flow: docsByIntent.get(intent.intentId)
-      ? markdownLink(docsByIntent.get(intent.intentId).title ?? displayIntentLabel(context, intent.intentType), outputs.indexMd, docsByIntent.get(intent.intentId).mappedPath)
-      : '-',
-    actionableTargets: (intent.targetDomain?.actionableValues ?? []).map((value) => value.label).join(', ') || '-',
-    recognitionOnly: (intent.targetDomain?.candidateValues ?? [])
-      .filter((value) => !(intent.targetDomain?.actionableValues ?? []).some((candidate) => candidate.value === value.value))
-      .map((value) => value.label)
-      .join(', ') || '-',
-  }));
-  return [
-    '# moodyz Index',
-    '',
-    '## Site summary',
-    '',
-    `- Entry URL: \`${context.url}\``,
-    '- Site type: navigation hub + catalog detail.',
-    `- Verified tasks: ${verifiedTasks.join(', ') || 'query and navigate within the observed site space'}.`,
-    `- Work samples: ${samples.works.join(', ') || 'none'}`,
-    `- Actress samples: ${samples.actresses.join(', ') || 'none'}`,
-    `- Search samples: ${samples.searchQueries.join(', ') || 'none'}`,
-    '',
-    '## Reference navigation',
-    '',
-    `- ${markdownLink('flows.md', outputs.indexMd, outputs.flowsMd)}`,
-    `- ${markdownLink('recovery.md', outputs.indexMd, outputs.recoveryMd)}`,
-    `- ${markdownLink('approval.md', outputs.indexMd, outputs.approvalMd)}`,
-    `- ${markdownLink('nl-intents.md', outputs.indexMd, outputs.nlIntentsMd)}`,
-    `- ${markdownLink('interaction-model.md', outputs.indexMd, outputs.interactionModelMd)}`,
-    '',
-    '## Sample intent coverage',
-    '',
-    renderTable(['Intent', 'Flow Source', 'Actionable Targets', 'Recognition-only Targets'], rows),
-    '',
-    '## Download notes',
-    '',
-    '- This site skill is currently navigation-centric: it covers search, work pages, actress pages, category/list pages, and utility pages.',
-    '- There is no verified chapter-reading or full-download flow in the current observed moodyz model.',
-  ].join('\n');
+  return renderKnownSiteDocument('moodyz', 'index', buildKnownSiteRenderInput(context, outputs, docsByIntent));
 }
 
 function renderJableIndexReference(context, outputs, docsByIntent) {
-  const samples = collectJableSamples(context);
-  const intents = context.intentsDocument.intents ?? [];
-  const intentTypes = getIntentTypes(context);
-  const verifiedTasks = [
-    intentTypes.has('search-video') || intentTypes.has('search-book') ? '搜索影片' : null,
-    intentTypes.has('open-video') || intentTypes.has('open-book') ? '打开影片页' : null,
-    intentTypes.has('open-model') || intentTypes.has('open-author') ? '打开演员页' : null,
-    intentTypes.has('open-category') ? '打开分类或标签页' : null,
-    intentTypes.has('list-category-videos') ? '按分类或标签提取榜单' : null,
-    intentTypes.has('open-utility-page') ? '打开功能页' : null,
-  ].filter(Boolean);
-  const jableDisplayTargetsByIntent = new Map([
-    ['open-video', samples.videos],
-    ['open-book', samples.videos],
-    ['open-work', samples.videos],
-    ['open-model', samples.models],
-    ['open-author', samples.models],
-    ['open-actress', samples.models],
-    ['open-category', samples.categories],
-    ['list-category-videos', samples.categories],
-    ['search-video', samples.searchQueries],
-    ['search-book', samples.searchQueries],
-    ['search-work', samples.searchQueries],
-  ]);
-  const rows = intents.map((intent) => ({
-    intent: displayIntentLabel(context, intent.intentType),
-    flow: docsByIntent.get(intent.intentId)
-      ? markdownLink(displayIntentLabel(context, intent.intentType), outputs.indexMd, docsByIntent.get(intent.intentId).mappedPath)
-      : '-',
-    actionableTargets: (jableDisplayTargetsByIntent.get(intent.intentType) ?? (intent.targetDomain?.actionableValues ?? []).map((value) => normalizeDisplayLabel(value.label, {
-      siteContext: context.siteContext,
-      inputUrl: context.url,
-    }))).join(', ') || '-',
-    recognitionOnly: (intent.targetDomain?.candidateValues ?? [])
-      .filter((value) => !(intent.targetDomain?.actionableValues ?? []).some((candidate) => candidate.value === value.value))
-      .map((value) => normalizeDisplayLabel(value.label, {
-        siteContext: context.siteContext,
-        inputUrl: context.url,
-      }))
-      .join(', ') || '-',
-  }));
-  return [
-    '# jable Index',
-    '',
-    '## Site summary',
-    '',
-    `- Entry URL: \`${context.url}\``,
-    '- Site type: navigation hub + catalog detail.',
-    `- Verified tasks: ${verifiedTasks.join('、') || '在已观测站点空间内查询和导航'}.`,
-    `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
-    `- 演员样本: ${samples.models.join(', ') || 'none'}`,
-    `- 分类样本: ${samples.categories.join(', ') || 'none'}`,
-    ...(
-      samples.categoryGroups.length > 0
-        ? [
-            '- 分类树摘要:',
-            ...samples.categoryGroups.map((group) => `  - ${group.groupLabel}: ${group.tags.slice(0, 8).join(', ')}${group.tags.length > 8 ? ` 等 ${group.tags.length} 个标签` : ''}`),
-          ]
-        : []
-    ),
-    `- 搜索样本: ${samples.searchQueries.join(', ') || 'none'}`,
-    '',
-    '## Reference navigation',
-    '',
-    `- ${markdownLink('flows.md', outputs.indexMd, outputs.flowsMd)}`,
-    `- ${markdownLink('recovery.md', outputs.indexMd, outputs.recoveryMd)}`,
-    `- ${markdownLink('approval.md', outputs.indexMd, outputs.approvalMd)}`,
-    `- ${markdownLink('nl-intents.md', outputs.indexMd, outputs.nlIntentsMd)}`,
-    `- ${markdownLink('interaction-model.md', outputs.indexMd, outputs.interactionModelMd)}`,
-    '',
-    '## Sample intent coverage',
-    '',
-    renderTable(['Intent', 'Flow Source', 'Actionable Targets', 'Recognition-only Targets'], rows),
-    '',
-    '## Notes',
-    '',
-    '- 当前站点 Skill 以导航为主：覆盖搜索、影片页、演员页、分类/标签页和功能页。',
-    '- 新增榜单型查询：可以按任一已抽取 taxonomy 标签或一级分类组，返回站内前 N 条公开结果。',
-    '- 实际执行入口：`node query-jable-ranking.mjs https://jable.tv/ --query "<请求>"`。',
-    '- “推荐/最佳”默认解释为站内综合排序，不输出主观推荐话术。',
-    '- 当前已观测的 jable 模型里，没有已验证的下载或长文本阅读流程。',
-  ].join('\n');
+  return renderKnownSiteDocument('jable', 'index', buildKnownSiteRenderInput(context, outputs, docsByIntent));
 }
 
 function renderMoodyzFlowsReference(context, outputs, docsByIntent) {
-  const samples = collectMoodyzSamples(context);
-  const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
-  const sections = ['# Flows', '', '## Table of contents', ''];
-  for (const intent of intents) {
-    sections.push(`- [${displayIntentLabel(context, intent.intentType)}](#${slugifyAscii(displayIntentLabel(context, intent.intentType), intent.intentType)})`);
-  }
-  sections.push('');
-  for (const intent of intents) {
-    sections.push(`## ${displayIntentLabel(context, intent.intentType)}`);
-    sections.push('');
-    sections.push(`- Intent ID: \`${intent.intentId}\``);
-    sections.push(`- Intent Type: \`${displayIntentLabel(context, intent.intentType)}\``);
-    sections.push(`- Action: \`${intent.actionId}\``);
-    sections.push(`- Summary: ${displayIntentLabel(context, intent.intentType)}`);
-    sections.push('');
-    if (['search-work', 'search-book'].includes(displayIntentLabel(context, intent.intentType))) {
-      const queries = samples.searchQueries.length ? samples.searchQueries : samples.works.slice(0, 3);
-      sections.push(`- Example user requests: ${queries.map((query) => `\`搜索《${query}》\``).join(', ') || '`搜索作品`'}`);
-      sections.push('- Start state: any verified public page.');
-      sections.push('- Target state: a `/search/list` results page or a directly resolved work page.');
-      sections.push('- Main path: fill the search box -> submit -> open the matching result if needed.');
-      sections.push('- Success signal: the result page mentions the query or the final URL is a `/works/detail/...` page.');
-    } else if (['open-work', 'open-book'].includes(displayIntentLabel(context, intent.intentType))) {
-      const works = samples.works.slice(0, 4);
-      sections.push(`- Example user requests: ${works.map((work) => `\`打开《${work}》\``).join(', ') || '`打开作品`'}`);
-      sections.push('- Start state: home page, search results page, category page, or any verified public page.');
-      sections.push('- Target state: a work detail page.');
-      sections.push('- Main path: open the matching work link.');
-      sections.push('- Success signal: the URL matches `/works/detail/...` and the page shows the work metadata.');
-    } else if (['open-actress', 'open-author'].includes(displayIntentLabel(context, intent.intentType))) {
-      const actresses = samples.actresses.slice(0, 4);
-      sections.push(`- Example user requests: ${actresses.map((actress) => `\`打开${actress}女优页\``).join(', ') || '`打开女优页`'}`);
-      sections.push('- Start state: a work detail page or a verified public page.');
-      sections.push('- Target state: the linked actress page.');
-      sections.push('- Main path: read the actress link -> open the actress page.');
-      sections.push('- Success signal: the actress name and URL match the selected actress.');
-    }
-    sections.push('');
-  }
-  sections.push('## Notes');
-  sections.push('');
-  sections.push('- This site flow set is currently navigation-first, not chapter-download oriented.');
-  sections.push('- For live metadata questions, trust the current work detail HTML over search-engine snippets or stale cached result pages.');
-  sections.push('- Search disambiguation should separate work titles from actress names before opening a result.');
-  return sections.join('\n');
+  return renderKnownSiteDocument('moodyz', 'flows', buildKnownSiteRenderInput(context, outputs, docsByIntent));
 }
 
 function renderJableFlowsReference(context, outputs, docsByIntent) {
-  const samples = collectJableSamples(context);
-  const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
-  const sections = ['# Flows', '', '## Table of contents', ''];
-  for (const intent of intents) {
-    sections.push(`- [${displayIntentLabel(context, intent.intentType)}](#${slugifyAscii(displayIntentLabel(context, intent.intentType), intent.intentType)})`);
-  }
-  sections.push('');
-  for (const intent of intents) {
-    const label = displayIntentLabel(context, intent.intentType);
-    sections.push(`## ${label}`);
-    sections.push('');
-    sections.push(`- Intent ID: \`${intent.intentId}\``);
-    sections.push(`- Intent Type: \`${label}\``);
-    sections.push(`- Action: \`${intent.actionId}\``);
-    sections.push(`- Summary: ${label}`);
-    sections.push('');
-    if (label === '搜索影片') {
-      const queries = samples.searchQueries.length ? samples.searchQueries : samples.videos.slice(0, 3);
-      sections.push(`- Example user requests: ${queries.map((query) => `\`搜索${query}\``).join(', ') || '`搜索影片`'}`);
-      sections.push('- Start state: any verified public page.');
-      sections.push('- Target state: a `/search/` results page or a directly resolved `/videos/...` page.');
-      sections.push('- Main path: fill the search box -> submit -> open the matching video result if needed.');
-      sections.push('- Success signal: the result page mentions the query or the final URL matches `/videos/...`.');
-      sections.push('- Disambiguation rule: prefer exact code matches such as `JUR-652` over fuzzy title fragments.');
-    } else if (label === '打开影片') {
-      const videos = samples.videos.slice(0, 4);
-      sections.push(`- Example user requests: ${videos.map((video) => `\`打开${video}\``).join(', ') || '`打开影片`'}`);
-      sections.push('- Start state: home page, search results page, category page, or any verified public page.');
-      sections.push('- Target state: a `/videos/...` detail page.');
-      sections.push('- Main path: open the matching video link.');
-      sections.push('- Success signal: the final URL matches `/videos/...` and the page shows video metadata.');
-    } else if (label === '打开演员页') {
-      const models = samples.models.slice(0, 4);
-      sections.push(`- Example user requests: ${models.map((model) => `\`打开${model}演员页\``).join(', ') || '`打开演员页`'}`);
-      sections.push('- Start state: a video detail page or a verified public page.');
-      sections.push('- Target state: the linked `/models/...` page.');
-      sections.push('- Main path: read the model link -> open the model page.');
-      sections.push('- Success signal: the model name and URL match the selected model.');
-    } else if (label === '打开分类页') {
-      const categories = samples.categories.slice(0, 4);
-      sections.push(`- Example user requests: ${categories.map((item) => `\`打开${item}\``).join(', ') || '`打开标签页`, `进入热门列表`, `打开分类页`'}`);
-      sections.push('- Start state: home page or a verified public page.');
-      sections.push('- Target state: a category, tag, hot, or list page.');
-      sections.push('- Main path: open the matching navigation link.');
-      sections.push('- Success signal: the final URL stays inside `/categories/`, `/tags/`, `/hot/`, or `/latest-updates/`.');
-      if (samples.categoryGroups.length > 0) {
-        sections.push(`- Known taxonomy groups: ${samples.categoryGroups.map((group) => `${group.groupLabel}(${group.tags.length})`).join('、')}`);
-      }
-    } else if (label === '分类榜单查询') {
-      const groups = samples.categoryGroups.slice(0, 3).map((group) => group.groupLabel);
-      const tags = samples.categories.slice(0, 3);
-      sections.push(`- Example user requests: ${[
-        tags[0] ? `\`${tags[0]}分类，近期最佳推荐三部\`` : null,
-        tags[1] ? `\`${tags[1]}标签最近更新前五条\`` : null,
-        groups[0] ? `\`${groups[0]}分类最高收藏前三\`` : null,
-      ].filter(Boolean).join(', ') || '`黑丝分类，近期最佳推荐三部`'}`);
-      sections.push('- Start state: home page, category page, tag page, or any verified public page.');
-      sections.push('- Target state: a ranked result list extracted from a verified tag page or a taxonomy group aggregate.');
-      sections.push('- Main path: resolve the taxonomy target -> open the visible tag or category page -> switch to the requested on-site sort mode -> extract the top N cards.');
-      sections.push('- Sort semantics: “推荐/最佳/近期最佳” => 综合排序; “最近/近期” => 最近更新; “最多观看/最热” => 最多觀看; “最高收藏/收藏最多” => 最高收藏。');
-      sections.push('- Group aggregation: when the user targets a first-level category group, aggregate the visible top cards from all tags in that group, dedupe by video URL, then rank the merged set.');
-      sections.push('- Success signal: return the requested number of ranked cards with title, link, actor names, and any visible metric.');
-    } else if (label === '打开功能页') {
-      sections.push('- Example user requests: `打开搜索页`, `进入搜索结果页`');
-      sections.push('- Start state: any verified public page.');
-      sections.push('- Target state: a low-risk utility page such as `/search/`.');
-      sections.push('- Main path: open the utility link.');
-      sections.push('- Success signal: the requested utility page opens without side effects.');
-    }
-    sections.push('');
-  }
-  sections.push('## Notes');
-  sections.push('');
-  sections.push('- 这组流程以导航为主，不包含下载动作。');
-  sections.push('- 搜索消歧时，优先区分番号、影片标题和演员名称。');
-  sections.push('- 询问元数据时，以实时 `/videos/...` 和 `/models/...` 页面为准。');
-  return sections.join('\n');
+  return renderKnownSiteDocument('jable', 'flows', buildKnownSiteRenderInput(context, outputs, docsByIntent));
 }
 
 function renderMoodyzNlIntentsReference(context, outputs) {
-  const samples = collectMoodyzSamples(context);
-  const intentTypes = getIntentTypes(context);
-  const sections = ['# NL Intents', ''];
-  const workExamples = samples.works.slice(0, 4);
-  const actressExamples = samples.actresses.slice(0, 4);
-  const searchExamples = samples.searchQueries.slice(0, 4);
-  if (intentTypes.has('search-work') || intentTypes.has('search-book')) {
-    sections.push('## search-work', '');
-    sections.push('- Slots: `queryText`');
-    sections.push(`- Examples: ${searchExamples.map((item) => `\`搜索《${item}》\``).join(', ') || workExamples.map((item) => `\`搜索《${item}》\``).join(', ') || '`搜索作品`'}`);
-    sections.push('');
-  }
-  if (intentTypes.has('open-work') || intentTypes.has('open-book')) {
-    sections.push('## open-work', '');
-    sections.push('- Slots: `workTitle`');
-    sections.push(`- Examples: ${workExamples.map((item) => `\`打开《${item}》\``).join(', ') || '`打开作品`'}`);
-    sections.push('');
-  }
-  if (intentTypes.has('open-actress') || intentTypes.has('open-author')) {
-    sections.push('## open-actress', '');
-    sections.push('- Slots: `actressName`');
-    sections.push(`- Examples: ${actressExamples.map((item) => `\`打开${item}女优页\``).join(', ') || '`打开女优页`'}`);
-    sections.push('');
-  }
-  if (intentTypes.has('open-category')) {
-    sections.push('## open-category', '');
-    sections.push('- Slots: `targetLabel`');
-    sections.push('- Examples: `打开発売作品`, `打开作品検索`, `进入女優列表`');
-    sections.push('');
-  }
-  if (intentTypes.has('open-utility-page')) {
-    sections.push('## open-utility-page', '');
-    sections.push('- Slots: `targetLabel`');
-    sections.push('- Examples: `打开トップ`, `打开WEBディレクター募集`');
-  }
-  return sections.join('\n');
+  return renderKnownSiteDocument('moodyz', 'nlIntents', buildKnownSiteRenderInput(context, outputs));
 }
 
 function renderJableNlIntentsReference(context) {
-  const samples = collectJableSamples(context);
-  const intentTypes = getIntentTypes(context);
-  const sections = ['# NL Intents', ''];
-  const videoExamples = samples.videos.slice(0, 4);
-  const modelExamples = samples.models.slice(0, 4);
-  const searchExamples = samples.searchQueries.slice(0, 4);
-  if (intentTypes.has('search-video') || intentTypes.has('search-book')) {
-    sections.push('## 搜索影片', '');
-    sections.push('- Slots: `queryText`');
-    sections.push(`- Examples: ${searchExamples.map((item) => `\`搜索${item}\``).join(', ') || videoExamples.map((item) => `\`搜索${item}\``).join(', ') || '`搜索影片`'}`);
-    sections.push('- Notes: prefer exact video codes or exact titles when available.');
-    sections.push('');
-  }
-  if (intentTypes.has('open-video') || intentTypes.has('open-book')) {
-    sections.push('## 打开影片', '');
-    sections.push('- Slots: `videoTitle`');
-    sections.push(`- Examples: ${videoExamples.map((item) => `\`打开${item}\``).join(', ') || '`打开影片`'}`);
-    sections.push('');
-  }
-  if (intentTypes.has('open-model') || intentTypes.has('open-author')) {
-    sections.push('## 打开演员页', '');
-    sections.push('- Slots: `actorName`');
-    sections.push(`- Examples: ${modelExamples.map((item) => `\`打开${item}演员页\``).join(', ') || '`打开演员页`'}`);
-    sections.push('');
-  }
-  if (intentTypes.has('open-category')) {
-    sections.push('## 打开分类页', '');
-    sections.push('- Slots: `targetLabel`');
-    sections.push(`- Examples: ${samples.categories.slice(0, 4).map((item) => `\`打开${item}\``).join(', ') || '`打开热门列表`, `进入标签页`, `打开分类页`'}`);
-    if (samples.categoryGroups.length > 0) {
-      sections.push(`- Groups: ${samples.categoryGroups.map((group) => `${group.groupLabel}（${group.tags.slice(0, 5).join('、')}${group.tags.length > 5 ? '…' : ''}）`).join('；')}`);
-    }
-    sections.push('');
-  }
-  if (intentTypes.has('list-category-videos')) {
-    sections.push('## 分类榜单查询', '');
-    sections.push('- Slots: `targetLabel`, `sortMode`, `limit`, `scopeType`');
-    sections.push(`- Examples: ${[
-      samples.categories[0] ? `\`${samples.categories[0]}分类，近期最佳推荐三部\`` : null,
-      samples.categories[1] ? `\`${samples.categories[1]}标签最近更新前五条\`` : null,
-      samples.categoryGroups[0] ? `\`${samples.categoryGroups[0].groupLabel}分类最高收藏前三\`` : null,
-    ].filter(Boolean).join(', ') || '`黑丝分类，近期最佳推荐三部`'}`);
-    sections.push('- Sort defaults: `推荐/最佳/近期最佳 => 综合排序`; `最近/近期 => 最近更新`; `最多观看/最热 => 最多觀看`; `最高收藏/收藏最多 => 最高收藏`。');
-    sections.push('- Scope: supports all extracted taxonomy tags and all first-level category groups.');
-    sections.push('- Execution: `node query-jable-ranking.mjs https://jable.tv/ --query "<请求>"`.');
-    sections.push('');
-  }
-  if (intentTypes.has('open-utility-page')) {
-    sections.push('## 打开功能页', '');
-    sections.push('- Slots: `targetLabel`');
-    sections.push('- Examples: `打开搜索页`, `进入搜索结果页`');
-  }
-  return sections.join('\n');
+  return renderKnownSiteDocument('jable', 'nlIntents', buildKnownSiteRenderInput(context, null));
 }
 
 function renderMoodyzInteractionModelReference(context, outputs) {
-  const samples = collectMoodyzSamples(context);
-  const elementsById = buildElementsById(context);
-  const rows = (context.intentsDocument.intents ?? []).map((intent) => ({
-    intent: displayIntentLabel(context, intent.intentType),
-    element: `${intent.elementId} (${elementsById.get(intent.elementId)?.kind ?? '-'})`,
-    action: intent.actionId,
-    stateField: intent.stateField,
-  }));
-  return [
-    '# Interaction Model',
-    '',
-    '## Capability summary',
-    '',
-    `- Works: ${samples.works.join(', ') || 'none'}`,
-    `- Actresses: ${samples.actresses.join(', ') || 'none'}`,
-    `- Search queries: ${samples.searchQueries.join(', ') || 'none'}`,
-    '',
-    renderTable(['Intent', 'Element', 'Action', 'State Field'], rows),
-  ].join('\n');
+  return renderKnownSiteDocument('moodyz', 'interactionModel', buildKnownSiteRenderInput(context, outputs));
 }
 
 function renderJableInteractionModelReference(context) {
-  const samples = collectJableSamples(context);
-  const elementsById = buildElementsById(context);
-  const rows = (context.intentsDocument.intents ?? []).map((intent) => ({
-    intent: displayIntentLabel(context, intent.intentType),
-    element: `${intent.elementId} (${elementsById.get(intent.elementId)?.kind ?? '-'})`,
-    action: intent.actionId,
-    stateField: intent.stateField,
-  }));
-  return [
-    '# Interaction Model',
-    '',
-    '## Capability summary',
-    '',
-    `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
-    `- 演员样本: ${samples.models.join(', ') || 'none'}`,
-    `- 搜索样本: ${samples.searchQueries.join(', ') || 'none'}`,
-    `- 分类组: ${samples.categoryGroups.map((group) => `${group.groupLabel}(${group.tags.length})`).join('、') || 'none'}`,
-    '',
-    renderTable(['Intent', 'Element', 'Action', 'State Field'], rows),
-  ].join('\n');
+  return renderKnownSiteDocument('jable', 'interactionModel', buildKnownSiteRenderInput(context, null));
 }
 
 function render22BiquIndexReference(context, outputs) {
-  const books = collect22biquKnownBooks(context);
-  const authors = collect22biquKnownAuthors(context);
-  const categories = collect22biquCategoryLabels();
-  const utility = collect22biquUtilityLabels();
-  const auth = collect22biquAuthLabels();
-  const bookContent = summarizeBookContent(context);
-  return [
-    '# 22biqu Index',
-    '',
-    '## Site summary',
-    '',
-    `- Entry URL: \`${context.url}\``,
-    '- Site type: navigation hub + catalog detail.',
-    '- Verified tasks: search books, open directories, open author pages, open chapter text, download full public novels.',
-    `- Category examples: ${categories.join(', ')}`,
-    `- Utility pages: ${utility.join(', ')}`,
-    `- Auth pages: ${auth.join(', ')}`,
-    `- Known books: ${books.join(', ') || 'none'}`,
-    `- Known authors: ${authors.join(', ') || 'none'}`,
-    `- Latest full-book coverage: ${bookContent.books.length ? `${bookContent.books.length} book(s), ${bookContent.chapterCount} chapter(s)` : 'none'}`,
-    '',
-    '## Reference navigation',
-    '',
-    `- ${markdownLink('flows.md', outputs.indexMd, outputs.flowsMd)}`,
-    `- ${markdownLink('recovery.md', outputs.indexMd, outputs.recoveryMd)}`,
-    `- ${markdownLink('approval.md', outputs.indexMd, outputs.approvalMd)}`,
-    `- ${markdownLink('nl-intents.md', outputs.indexMd, outputs.nlIntentsMd)}`,
-    `- ${markdownLink('interaction-model.md', outputs.indexMd, outputs.interactionModelMd)}`,
-    '',
-    '## Download notes',
-    '',
-    '- First try a local full-book TXT.',
-    '- If no valid local artifact exists, reuse or generate `crawler-scripts/www.22biqu.com/crawler.py`.',
-    '- Download now uses full paginated directory parsing plus concurrent chapter fetches.',
-    '- The downloader writes `.part` files during execution and finalizes the TXT and JSON files at the end.',
-  ].join('\n');
+  return renderKnownSiteDocument('22biqu', 'index', buildKnownSiteRenderInput(context, outputs));
 }
 
-function render22BiquFlowsReference(context) {
-  const intents = [...(context.intentsDocument.intents ?? [])]
-    .sort((left, right) => String(left.intentType).localeCompare(String(right.intentType), 'en'));
-  const books = collect22biquKnownBooks(context);
-  const authors = collect22biquKnownAuthors(context);
-  const categories = collect22biquCategoryLabels();
-  const bookExample = books[0] ?? '玄鉴仙族';
-  const authorExample = authors[0] ?? '季越人';
-  const sections = [
-    '# Flows',
-    '',
-    '## Table of contents',
-    '',
-    ...intents.map((intent) => `- [${intentTitle22Biqu(intent.intentType)}](#${slugifyAscii(intentTitle22Biqu(intent.intentType), intent.intentType)})`),
-    '',
-  ];
-  for (const intent of intents) {
-    sections.push(`## ${intentTitle22Biqu(intent.intentType)}`);
-    sections.push('');
-    sections.push(`- Intent ID: \`${intent.intentId}\``);
-    sections.push(`- Intent Type: \`${intent.intentType}\``);
-    sections.push(`- Action: \`${intent.actionId}\``);
-    sections.push(`- Summary: ${intentSummary22Biqu(intent.intentType)}`);
-    sections.push('');
-    if (intent.intentType === 'search-book') {
-      sections.push(`- Example user requests: \`搜索《${bookExample}》\`, \`搜索${authorExample}\``);
-      sections.push('- Start state: any verified public page.');
-      sections.push('- Target state: a `/ss/` search results page or a directly resolved book directory.');
-      sections.push('- Main path: fill the search box -> submit -> open the matching result if needed.');
-      sections.push('- Success signal: the result page mentions the query or the final URL is a `/biqu.../` directory page.');
-      sections.push('- Freshness rule: search results are only for discovery; if the user asks for author, latest chapter, update time, or "多久更新", fetch the live `/biqu.../` directory page before answering.');
-    } else if (intent.intentType === 'open-book') {
-      sections.push(`- Example user requests: \`打开《${bookExample}》\``);
-      sections.push('- Start state: home page, search results page, or any verified public page.');
-      sections.push('- Target state: a book directory page.');
-      sections.push('- Main path: open the matching book link.');
-      sections.push('- Success signal: the URL matches `/biqu.../` and the page shows a chapter directory.');
-    } else if (intent.intentType === 'open-author') {
-      sections.push(`- Example user requests: \`打开${authorExample}作者页\``);
-      sections.push(`- Start state: the directory page for \`${bookExample}\`.`);
-      sections.push('- Target state: the linked author page.');
-      sections.push('- Main path: read the author link -> open the author page.');
-      sections.push('- Success signal: the author name and URL match the selected author.');
-    } else if (intent.intentType === 'open-chapter') {
-      sections.push(`- Example user requests: \`打开《${bookExample}》第一章\`, \`读取《${bookExample}》第1454章正文\``);
-      sections.push(`- Start state: the directory page for \`${bookExample}\`.`);
-      sections.push('- Target state: a chapter page with readable public text.');
-      sections.push('- Main path: locate the chapter link -> open the chapter page -> read the body text.');
-      sections.push('- Success signal: chapter title matches the target and body text length is positive.');
-    } else if (intent.intentType === 'download-book') {
-      sections.push(`- Example user requests: \`下载《${bookExample}》\``);
-      sections.push('- Start state: any verified public page, or a known book directory page.');
-      sections.push('- Target state: a local full-book TXT exists.');
-      sections.push('- Main path: check local artifact -> if missing, run `pypy3 download_book.py` -> parse the paginated directory -> fetch chapters concurrently -> output a pretty TXT.');
-      sections.push('- No-op rule: if a complete local TXT already exists, return it directly.');
-      sections.push('- Success signal: `book-content/<run>/downloads/<book-title>.txt` exists.');
-    } else if (intent.intentType === 'open-category') {
-      sections.push(`- Example user requests: \`打开${categories[0]}\`, \`进入${categories[1]}\``);
-      sections.push('- Start state: home page.');
-      sections.push('- Target state: a category page.');
-      sections.push('- Main path: click the category navigation link.');
-      sections.push('- Success signal: the final URL matches the chosen category path.');
-    } else if (intent.intentType === 'open-utility-page') {
-      sections.push('- Example user requests: `打开阅读记录`');
-      sections.push('- Start state: home page.');
-      sections.push('- Target state: a low-risk utility page.');
-      sections.push('- Main path: click the utility link.');
-      sections.push('- Success signal: the utility page is open without triggering auth submission.');
-    } else if (intent.intentType === 'open-auth-page') {
-      sections.push('- Example user requests: `打开登录页`, `打开注册页`');
-      sections.push('- Start state: home page.');
-      sections.push('- Target state: a login or register page.');
-      sections.push('- Main path: navigate only; do not submit credentials.');
-      sections.push('- Success signal: the auth page opens.');
-    }
-    sections.push('');
-  }
-  sections.push('## Notes');
-  sections.push('');
-  sections.push('- Download now prefers full paginated directory parsing and concurrent chapter fetches.');
-  sections.push('- `.part` files are written during download so progress is visible before finalization.');
-  sections.push('- For live metadata questions, trust the current book directory HTML over search-engine snippets or cached result pages.');
-  sections.push('- Prefer `og:novel:lastest_chapter_name` and `og:novel:update_time` from the directory page when present.');
-  return sections.join('\n');
+function render22BiquFlowsReference(context, outputs) {
+  return renderKnownSiteDocument('22biqu', 'flows', buildKnownSiteRenderInput(context, outputs));
+}
+
+function renderBilibiliIndexReference(context, outputs, docsByIntent) {
+  return renderKnownSiteDocument('bilibili', 'index', buildKnownSiteRenderInput(context, outputs, docsByIntent));
+}
+
+function renderBilibiliFlowsReference(context, outputs, docsByIntent) {
+  return renderKnownSiteDocument('bilibili', 'flows', buildKnownSiteRenderInput(context, outputs, docsByIntent));
 }
 
 function render22BiquRecoveryReference() {
@@ -1548,98 +1153,50 @@ function render22BiquApprovalReference(context) {
 }
 
 function render22BiquNlIntentsReference(context) {
-  const books = collect22biquKnownBooks(context);
-  const authors = collect22biquKnownAuthors(context);
-  const bookExample = books[0] ?? '玄鉴仙族';
-  const authorExample = authors[0] ?? '季越人';
-  const categories = collect22biquCategoryLabels();
-  return [
-    '# NL Intents',
-    '',
-    '## search-book',
-    '',
-    '- Slots: `queryText`',
-    `- Examples: \`搜索《${bookExample}》\`, \`搜索夜无疆\`, \`搜索${authorExample}\``,
-    '',
-    '## open-book',
-    '',
-    '- Slots: `bookTitle`',
-    `- Examples: \`打开《${bookExample}》\``,
-    '',
-    '## open-author',
-    '',
-    '- Slots: `authorName`',
-    `- Examples: \`打开${authorExample}作者页\``,
-    '',
-    '## open-chapter',
-    '',
-    '- Slots: `bookTitle` + `chapterRef`',
-    `- Examples: \`打开《${bookExample}》第一章\`, \`读取《${bookExample}》第1454章正文\``,
-    '',
-    '## download-book',
-    '',
-    '- Slots: `bookTitle`',
-    `- Examples: \`下载《${bookExample}》\``,
-    '- Behavior: return a local full-book TXT when available; otherwise call the PyPy downloader.',
-    '',
-    '## open-category',
-    '',
-    `- Examples: \`打开${categories[0]}\`, \`进入${categories[1]}\``,
-    '',
-    '## open-utility-page',
-    '',
-    '- Examples: `打开阅读记录`',
-    '',
-    '## open-auth-page',
-    '',
-    '- Examples: `打开登录页`, `打开注册页`',
-    '- Navigation only; auth form submission is out of scope.',
-  ].join('\n');
+  return renderKnownSiteDocument('22biqu', 'nlIntents', buildKnownSiteRenderInput(context, null));
 }
 
 function render22BiquInteractionModelReference(context, outputs) {
-  const safeActions = resolveSafeActions(context);
-  const books = collect22biquKnownBooks(context);
-  const authors = collect22biquKnownAuthors(context);
-  const bookContent = summarizeBookContent(context);
-  const latestDownload = bookContent.books.length
-    ? markdownLink('latest full-book artifact', outputs.interactionModelMd, resolveContentArtifactPath(context, bookContent.books[0].downloadFile))
-    : 'none';
-  return [
-    '# Interaction Model',
-    '',
-    '## Site profile',
-    '',
-    '- Archetype: `navigation-hub` + `catalog-detail`',
-    '- URL family: `https://www.22biqu.com/`',
-    `- Safe actions: \`${safeActions.join('`, `')}\``,
-    '',
-    '## Verified capabilities',
-    '',
-    '| Capability | Description |',
-    '| --- | --- |',
-    '| search-book | Submit a site search and enter the `/ss/` result page. |',
-    '| open-book | Open a `/biqu.../` book directory page. |',
-    '| open-author | Open the linked author page from a book directory. |',
-    '| open-chapter | Open a chapter page and read the body text. |',
-    '| download-book | Download a full public novel and emit a pretty TXT. |',
-    '| live-book-metadata | Read author/latest chapter/update time from the live directory HTML. |',
-    '',
-    '## Download path',
-    '',
-    '- Entrypoint: `pypy3 download_book.py`',
-    '- Metadata path: `pypy3 download_book.py <url> --book-title "<title>" --metadata-only`',
-    '- Directory strategy: parse paginated directory pages first, then fetch chapters concurrently.',
-    '- Concurrency: chapter fetch concurrency is currently `64`; chapter sub-pages are still ordered serially inside each chapter.',
-    '- Output strategy: write `.part` files during execution, then finalize TXT and JSON outputs.',
-    '- Freshness rule: for author/latest chapter/update time, trust the live `/biqu.../` directory page and its `og:novel:*` metadata over search-engine snippets.',
-    '',
-    '## Verified examples',
-    '',
-    `- Books: ${books.join(', ') || 'none'}`,
-    `- Authors: ${authors.join(', ') || 'none'}`,
-    `- Latest download: ${latestDownload}`,
-  ].join('\n');
+  return renderKnownSiteDocument('22biqu', 'interactionModel', buildKnownSiteRenderInput(context, outputs));
+}
+
+function renderBilibiliNlIntentsReference(context) {
+  return renderKnownSiteDocument('bilibili', 'nlIntents', buildKnownSiteRenderInput(context, null));
+}
+
+function renderBilibiliInteractionModelReference(context, outputs) {
+  return renderKnownSiteDocument('bilibili', 'interactionModel', buildKnownSiteRenderInput(context, outputs));
+}
+
+function buildKnownSiteRenderInput(context, outputs, docsByIntent = new Map()) {
+  return {
+    context,
+    outputs,
+    docsByIntent,
+    helpers: {
+      markdownLink,
+      renderTable,
+      slugifyAscii,
+      normalizeDisplayLabel,
+      siteTerminology,
+      displayIntentLabel,
+      getIntentTypes,
+      collectMoodyzSamples,
+      collectJableSamples,
+      collectBilibiliSamples,
+      collect22biquKnownBooks,
+      collect22biquKnownAuthors,
+      collect22biquCategoryLabels,
+      collect22biquUtilityLabels,
+      collect22biquAuthLabels,
+      intentTitle22Biqu,
+      intentSummary22Biqu,
+      buildElementsById,
+      resolveSafeActions,
+      summarizeBookContent,
+      resolveContentArtifactPath,
+    },
+  };
 }
 
 function resolvePrimaryArchetype(context) {
@@ -1696,16 +1253,79 @@ function resolveSafeActions(context) {
 }
 
 function resolveCapabilityFamilies(context) {
-  return resolveCapabilityFamiliesFromSiteContext(context.siteContext, [
-    context.capabilityMatrixDocument?.capabilityFamilies ?? [],
-    context.siteProfileDocument?.capabilityFamilies ?? [],
-  ]);
+  const configuredPageTypes = new Set(resolveConfiguredPageTypes(context.siteProfileDocument));
+  const host = String(context.siteContext?.host ?? hostFromUrl(context.url) ?? '').toLowerCase();
+  const mappedIntentTypes = new Set(resolveSupportedIntents(context));
+  const intentTypes = new Set(
+    (context.intentsDocument?.intents ?? [])
+      .map((intent) => intent.intentType ?? intent.intentId)
+      .filter(Boolean),
+  );
+  const capabilityFamilies = new Set(context.capabilityMatrixDocument?.capabilityFamilies ?? []);
+
+  if ([...mappedIntentTypes].some((intentType) => String(intentType).startsWith('search-'))) {
+    capabilityFamilies.add('search-content');
+  }
+  if (['open-book', 'open-work', 'open-video'].some((intentType) => mappedIntentTypes.has(intentType) || intentTypes.has(intentType))) {
+    capabilityFamilies.add('navigate-to-content');
+  }
+  if (['open-author', 'open-actress', 'open-model', 'open-up'].some((intentType) => mappedIntentTypes.has(intentType) || intentTypes.has(intentType))) {
+    capabilityFamilies.add('navigate-to-author');
+  }
+  if (mappedIntentTypes.has('open-category') || mappedIntentTypes.has('list-category-videos') || intentTypes.has('open-category') || intentTypes.has('list-category-videos')) {
+    capabilityFamilies.add('navigate-to-category');
+  }
+  if (mappedIntentTypes.has('open-utility-page') || intentTypes.has('open-utility-page')) {
+    capabilityFamilies.add('navigate-to-utility-page');
+  }
+  if (mappedIntentTypes.has('open-chapter') || intentTypes.has('open-chapter')) {
+    capabilityFamilies.add('navigate-to-chapter');
+  }
+  if (mappedIntentTypes.has('download-book') || intentTypes.has('download-book')) {
+    capabilityFamilies.add('download-content');
+  }
+
+  if (!configuredPageTypes.has('chapter-page')) {
+    capabilityFamilies.delete('navigate-to-chapter');
+    if (host !== 'jable.tv' && host !== 'moodyz.com' && host !== 'www.bilibili.com') {
+      capabilityFamilies.delete('download-content');
+    }
+  }
+  if (!configuredPageTypes.has('category-page')) {
+    capabilityFamilies.delete('navigate-to-category');
+  }
+
+  return uniqueSortedStrings([...capabilityFamilies]);
+}
+
+function remapSupportedIntent(intentType, context) {
+  const host = String(context.siteContext?.host ?? hostFromUrl(context.url) ?? '').toLowerCase();
+  switch (host) {
+    case 'www.bilibili.com':
+    case 'search.bilibili.com':
+    case 'space.bilibili.com':
+      if (intentType === 'search-book' || intentType === 'search-work') {
+        return 'search-video';
+      }
+      if (intentType === 'open-book' || intentType === 'open-work') {
+        return 'open-video';
+      }
+      if (intentType === 'open-actress' || intentType === 'open-model' || intentType === 'open-up') {
+        return 'open-author';
+      }
+      return intentType;
+    default:
+      return intentType;
+  }
 }
 
 function resolveSupportedIntents(context) {
-  return resolveSupportedIntentsFromSiteContext(context.siteContext, [
-    (context.intentsDocument?.intents ?? []).map((intent) => intent.intentType ?? intent.intentId),
-  ]);
+  return uniqueSortedStrings(
+    (context.intentsDocument?.intents ?? [])
+      .map((intent) => intent.intentType ?? intent.intentId)
+      .filter(Boolean)
+      .map((intentType) => remapSupportedIntent(intentType, context)),
+  );
 }
 
 function hasBookContentCoverage(context) {
@@ -1744,6 +1364,9 @@ function renderSkillMd(context, outputs) {
   }
   if (is22Biqu(context)) {
     return render22BiquSkillMd(context, outputs);
+  }
+  if (isBilibili(context)) {
+    return renderBilibiliSkillMd(context, outputs);
   }
 
   const intents = context.intentsDocument.intents ?? [];
@@ -1793,6 +1416,9 @@ function renderIndexReference(context, outputs, docsByIntent) {
   if (is22Biqu(context)) {
     return render22BiquIndexReference(context, outputs);
   }
+  if (isBilibili(context)) {
+    return renderBilibiliIndexReference(context, outputs, docsByIntent);
+  }
 
   const intents = context.intentsDocument.intents ?? [];
   const flowLinks = intents.map((intent) => {
@@ -1823,7 +1449,10 @@ async function renderFlowsReference(context, outputs, docsByIntent) {
     return renderMoodyzFlowsReference(context, outputs, docsByIntent);
   }
   if (is22Biqu(context)) {
-    return render22BiquFlowsReference(context);
+    return render22BiquFlowsReference(context, outputs);
+  }
+  if (isBilibili(context)) {
+    return renderBilibiliFlowsReference(context, outputs, docsByIntent);
   }
 
   const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
@@ -1884,6 +1513,9 @@ async function renderNlIntentsReference(context, outputs) {
   if (is22Biqu(context)) {
     return render22BiquNlIntentsReference(context);
   }
+  if (isBilibili(context)) {
+    return renderBilibiliNlIntentsReference(context);
+  }
 
   const patternsByIntent = buildPatternsByIntent(context);
   const sections = ['# NL Intents', ''];
@@ -1914,6 +1546,9 @@ async function renderInteractionModelReference(context, outputs) {
   if (is22Biqu(context)) {
     return render22BiquInteractionModelReference(context, outputs);
   }
+  if (isBilibili(context)) {
+    return renderBilibiliInteractionModelReference(context, outputs);
+  }
 
   const elementsById = buildElementsById(context);
   return [
@@ -1934,52 +1569,29 @@ async function renderInteractionModelReference(context, outputs) {
 
 export async function generateSkill(url, options = {}) {
   const mergedOptions = mergeOptions({ ...options, url });
-  const context = await resolveSourceInputs(url, mergedOptions);
-  context.skillName = mergedOptions.skillName;
-  context.siteDisplayName = mergedOptions.skillName;
-  const skillDir = path.resolve(mergedOptions.outDir ?? path.join(process.cwd(), 'skills', mergedOptions.skillName));
-  const outputs = buildOutputPaths(skillDir);
-  await rm(skillDir, { recursive: true, force: true });
-  await ensureDir(outputs.referencesDir);
-
-  const docsByIntent = collectFlowDocs(context);
-
-  await writeTextFile(outputs.skillMd, renderSkillMd(context, outputs));
-  await writeTextFile(outputs.indexMd, renderIndexReference(context, outputs, docsByIntent));
-  await writeTextFile(outputs.flowsMd, await renderFlowsReference(context, outputs, docsByIntent));
-  await writeTextFile(outputs.recoveryMd, await renderRecoveryReference(context, outputs));
-  await writeTextFile(outputs.approvalMd, await renderApprovalReference(context, outputs));
-  await writeTextFile(outputs.nlIntentsMd, await renderNlIntentsReference(context, outputs));
-  await writeTextFile(outputs.interactionModelMd, await renderInteractionModelReference(context, outputs));
-  await upsertSiteRegistryRecord(process.cwd(), context.host, {
-    canonicalBaseUrl: context.baseUrl ?? url,
-    repoSkillDir: skillDir,
-    latestSkillGeneratedAt: new Date().toISOString(),
-    profilePath: context.step3SourceRefs?.siteProfile ?? null,
-    knowledgeBaseDir: context.kbDir,
+  return publishSkill(url, mergedOptions, {
+    cwd: process.cwd(),
+    resolveSourceInputs,
+    buildOutputPaths,
+    collectFlowDocs,
+    renderSkillMd,
+    renderIndexReference,
+    renderFlowsReference,
+    renderRecoveryReference,
+    renderApprovalReference,
+    renderNlIntentsReference,
+    renderInteractionModelReference,
+    rm,
+    ensureDir,
+    writeTextFile,
+    upsertSiteRegistryRecord,
+    upsertSiteCapabilities,
+    resolvePrimaryArchetype,
+    resolveCapabilityFamilies,
+    resolveSupportedIntents,
+    toPosixPath,
+    uniqueSortedStrings,
   });
-  await upsertSiteCapabilities(process.cwd(), context.host, {
-    baseUrl: context.baseUrl ?? url,
-    primaryArchetype: resolvePrimaryArchetype(context),
-    pageTypes: resolvePageTypesFromSiteContext(context.siteContext, [context.siteProfileDocument?.pageTypes ?? []]),
-    capabilityFamilies: resolveCapabilityFamilies(context),
-    supportedIntents: resolveSupportedIntents(context),
-  });
-
-  return {
-    skillDir,
-    skillName: mergedOptions.skillName,
-    references: [
-      toPosixPath(path.relative(skillDir, outputs.indexMd)),
-      toPosixPath(path.relative(skillDir, outputs.flowsMd)),
-      toPosixPath(path.relative(skillDir, outputs.recoveryMd)),
-      toPosixPath(path.relative(skillDir, outputs.approvalMd)),
-      toPosixPath(path.relative(skillDir, outputs.nlIntentsMd)),
-      toPosixPath(path.relative(skillDir, outputs.interactionModelMd)),
-    ],
-    sourceLayout: context.sourceLayout,
-    warnings: uniqueSortedStrings(context.warnings),
-  };
 }
 function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {

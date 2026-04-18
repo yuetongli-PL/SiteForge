@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 
 import { displayIntentName, normalizeDisplayLabel, resolveSiteTerminology } from '../../lib/site-terminology.mjs';
 
+test('resolveSiteTerminology returns bilibili video and up labels', () => {
+  const terms = resolveSiteTerminology({ host: 'www.bilibili.com' }, 'https://www.bilibili.com/');
+  assert.equal(terms.entityLabel, '视频');
+  assert.equal(terms.personLabel, 'UP主');
+});
+
+test('displayIntentName localizes bilibili intents', () => {
+  assert.equal(displayIntentName('search-video', { host: 'www.bilibili.com' }, 'https://www.bilibili.com/'), '搜索视频');
+  assert.equal(displayIntentName('open-video', { host: 'www.bilibili.com' }, 'https://www.bilibili.com/'), '打开视频');
+  assert.equal(displayIntentName('open-author', { host: 'www.bilibili.com' }, 'https://www.bilibili.com/'), '打开UP主主页');
+});
+
 test('resolveSiteTerminology returns jable Chinese labels', () => {
   const terms = resolveSiteTerminology({ host: 'jable.tv' }, 'https://jable.tv/');
   assert.equal(terms.entityLabel, '影片');

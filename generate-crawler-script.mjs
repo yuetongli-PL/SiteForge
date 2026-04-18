@@ -1,5 +1,4 @@
 // @ts-check
-import { createHash } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -7,10 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8, writeJsonStdout } from './lib/cli.mjs';
 import { pathExists, readJsonFile, writeJsonFile, writeTextFile } from './lib/io.mjs';
 import { normalizeText, normalizeUrlNoFragment, sanitizeHost } from './lib/normalize.mjs';
-import { validateProfileFile } from './lib/profile-validation.mjs';
-import { readSiteContext, resolveCapabilityFamiliesFromSiteContext, resolvePageTypesFromSiteContext, resolvePrimaryArchetypeFromSiteContext } from './lib/site-context.mjs';
-import { upsertSiteRegistryRecord } from './lib/site-registry.mjs';
-import { upsertSiteCapabilities } from './lib/site-capabilities.mjs';
+import {
+  readSiteContext,
+  resolveCapabilityFamiliesFromSiteContext,
+  resolvePrimaryArchetypeFromSiteContext,
+} from './lib/sites/context.mjs';
+import { PROFILE_ARCHETYPES, resolveProfileArchetype, resolveProfilePrimaryArchetype } from './lib/sites/archetypes.mjs';
+import { resolveConfiguredPageTypes } from './lib/sites/page-types.mjs';
+import { loadValidatedProfileForUrl } from './lib/sites/profiles.mjs';
+import { upsertSiteCapabilities, upsertSiteRegistryRecord } from './lib/sites/repository.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_VERSION = 3;
@@ -20,10 +24,6 @@ const DEFAULT_OPTIONS = {
   profilePath: undefined,
 };
 const HELP = 'Usage:\n  node generate-crawler-script.mjs <url> [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--profile-path <path>]';
-
-function sha(value) {
-  return createHash('sha256').update(String(value), 'utf8').digest('hex');
-}
 
 function mergeOptions(inputUrl, options = {}) {
   const parsed = new URL(inputUrl);
@@ -38,18 +38,6 @@ function mergeOptions(inputUrl, options = {}) {
     ? path.resolve(merged.profilePath)
     : path.join(MODULE_DIR, 'profiles', `${parsed.hostname}.json`);
   return merged;
-}
-
-async function loadProfile(profilePath) {
-  if (!await pathExists(profilePath)) {
-    throw new Error(`Missing site profile: ${profilePath}`);
-  }
-  const validation = await validateProfileFile(profilePath);
-  return {
-    raw: validation.raw,
-    json: validation.profile,
-    hash: sha(validation.raw),
-  };
 }
 
 async function loadHistoricalContext(knowledgeBaseDir) {
@@ -112,9 +100,84 @@ async function updateRegistry(registryPath, host, patch) {
   await writeJsonFile(registryPath, registry);
 }
 
+function deriveCrawlerCapabilities(profile) {
+  const resolvedArchetype = resolveProfileArchetype(profile);
+  if (resolvedArchetype === PROFILE_ARCHETYPES.CHAPTER_CONTENT) {
+    return [
+      'search-content',
+      'navigate-to-content',
+      'navigate-to-author',
+      'navigate-to-chapter',
+      'download-content',
+    ];
+  }
+
+  const capabilities = ['search-content'];
+  if ((profile?.navigation?.contentPathPrefixes ?? []).length || (profile?.pageTypes?.contentDetailPrefixes ?? []).length) {
+    capabilities.push('navigate-to-content');
+  }
+  if (
+    (profile?.navigation?.authorPathPrefixes ?? []).length
+    || (profile?.navigation?.authorDetailPathPrefixes ?? []).length
+    || (profile?.pageTypes?.authorPrefixes ?? []).length
+    || (profile?.pageTypes?.authorDetailPrefixes ?? []).length
+  ) {
+    capabilities.push('navigate-to-author');
+  }
+  if ((profile?.navigation?.categoryPathPrefixes ?? []).length || (profile?.pageTypes?.categoryPrefixes ?? []).length) {
+    capabilities.push('navigate-to-category');
+  }
+  if ((profile?.navigation?.utilityPathPrefixes ?? []).length) {
+    capabilities.push('navigate-to-utility-page');
+  }
+  capabilities.push('switch-in-page-state');
+  return [...new Set(capabilities)];
+}
+
+function deriveCrawlerPageTypes(profile) {
+  return resolveConfiguredPageTypes(profile);
+}
+
+function deriveSupportedIntents(profile, host) {
+  const resolvedArchetype = resolveProfileArchetype(profile);
+  const normalizedHost = String(host ?? profile?.host ?? '').toLowerCase();
+  if (resolvedArchetype === PROFILE_ARCHETYPES.CHAPTER_CONTENT) {
+    return ['download-book'];
+  }
+
+  const intents = [];
+  if (normalizedHost === 'www.bilibili.com' || normalizedHost === 'search.bilibili.com' || normalizedHost === 'space.bilibili.com') {
+    intents.push('search-video', 'open-video', 'open-author');
+  } else if (normalizedHost === 'jable.tv') {
+    intents.push('search-video', 'open-video', 'open-model');
+  } else if (normalizedHost === 'moodyz.com') {
+    intents.push('search-work', 'open-work', 'open-actress');
+  } else {
+    intents.push('search-book', 'open-book', 'open-author');
+  }
+
+  if ((profile?.navigation?.categoryPathPrefixes ?? []).length || (profile?.pageTypes?.categoryPrefixes ?? []).length) {
+    intents.push('open-category');
+  }
+  if ((profile?.navigation?.utilityPathPrefixes ?? []).length) {
+    intents.push('open-utility-page');
+  }
+  return [...new Set(intents)];
+}
+
+function deriveSafeActionKinds() {
+  return ['navigate'];
+}
+
+function deriveApprovalActionKinds(profile) {
+  return Array.isArray(profile?.search?.formSelectors) && profile.search.formSelectors.length ? ['search-submit'] : [];
+}
+
 export async function ensureCrawlerScript(inputUrl, options = {}) {
   const settings = mergeOptions(inputUrl, options);
-  const profile = await loadProfile(settings.profilePath);
+  const profile = await loadValidatedProfileForUrl(inputUrl, {
+    profilePath: settings.profilePath,
+  });
   const historical = await loadHistoricalContext(settings.knowledgeBaseDir);
   const siteContext = await readSiteContext(process.cwd(), settings.host);
   const hostDir = path.join(settings.crawlerScriptsDir, sanitizeHost(settings.host));
@@ -122,15 +185,23 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
   const metaPath = path.join(hostDir, 'crawler.meta.json');
   const registryPath = path.join(settings.crawlerScriptsDir, 'registry.json');
   const resolvedPrimaryArchetype = resolvePrimaryArchetypeFromSiteContext(siteContext, [
-    profile.json?.primaryArchetype,
+    resolveProfilePrimaryArchetype(profile.json),
   ]);
+  const derivedCapabilities = deriveCrawlerCapabilities(profile.json);
+  const derivedPageTypes = deriveCrawlerPageTypes(profile.json);
+  const derivedSupportedIntents = deriveSupportedIntents(profile.json, settings.host);
+  const derivedSafeActionKinds = deriveSafeActionKinds();
+  const derivedApprovalActionKinds = deriveApprovalActionKinds(profile.json);
 
   if (await pathExists(scriptPath) && await pathExists(metaPath)) {
     const meta = await readJsonFile(metaPath);
     if (meta.profileHash === profile.hash && Number(meta.templateVersion) === TEMPLATE_VERSION) {
-      const resolvedCapabilities = resolveCapabilityFamiliesFromSiteContext(siteContext, [
-        meta.capabilities ?? [],
-      ]);
+      if (JSON.stringify(meta.capabilities ?? []) !== JSON.stringify(derivedCapabilities)) {
+        meta.capabilities = derivedCapabilities;
+        meta.generatedAt = new Date().toISOString();
+        await writeJsonFile(metaPath, meta);
+      }
+      const resolvedCapabilities = resolveCapabilityFamiliesFromSiteContext(siteContext, [derivedCapabilities]);
       await updateRegistry(registryPath, settings.host, {
         host: settings.host,
         scriptPath,
@@ -159,8 +230,11 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
       await upsertSiteCapabilities(process.cwd(), settings.host, {
         baseUrl: settings.baseUrl,
         primaryArchetype: resolvedPrimaryArchetype,
-        pageTypes: resolvePageTypesFromSiteContext(siteContext, [profile.json?.pageTypes ?? []]),
+        pageTypes: derivedPageTypes,
         capabilityFamilies: resolvedCapabilities,
+        supportedIntents: derivedSupportedIntents,
+        safeActionKinds: derivedSafeActionKinds,
+        approvalActionKinds: derivedApprovalActionKinds,
       });
       return {
         host: settings.host,
@@ -205,20 +279,12 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     profilePath: settings.profilePath,
     profileHash: profile.hash,
     profileVersion: profile.json?.version ?? 1,
-    capabilities: [
-      'search-content',
-      'navigate-to-content',
-      'navigate-to-author',
-      'navigate-to-chapter',
-      'download-content',
-    ],
+    capabilities: derivedCapabilities,
     dependencies: ['httpx', 'selectolax', 'anyio'],
     urlFamily: [settings.baseUrl],
     historicalContext: generatedContext.historicalSamples,
   };
-  const resolvedCapabilities = resolveCapabilityFamiliesFromSiteContext(siteContext, [
-    meta.capabilities ?? [],
-  ]);
+  const resolvedCapabilities = resolveCapabilityFamiliesFromSiteContext(siteContext, [derivedCapabilities]);
 
   await writeTextFile(scriptPath, renderPythonScript(generatedContext));
   await writeJsonFile(metaPath, meta);
@@ -250,8 +316,11 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
   await upsertSiteCapabilities(process.cwd(), settings.host, {
     baseUrl: settings.baseUrl,
     primaryArchetype: resolvedPrimaryArchetype,
-    pageTypes: resolvePageTypesFromSiteContext(siteContext, [profile.json?.pageTypes ?? []]),
+    pageTypes: derivedPageTypes,
     capabilityFamilies: resolvedCapabilities,
+    supportedIntents: derivedSupportedIntents,
+    safeActionKinds: derivedSafeActionKinds,
+    approvalActionKinds: derivedApprovalActionKinds,
   });
 
   return {

@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +9,18 @@ import download_book
 
 
 class DownloadBookTests(unittest.TestCase):
+    def test_cli_help_is_available_without_pypy_runtime(self):
+        completed = subprocess.run(
+            [sys.executable, str(Path(download_book.__file__).resolve()), "--help"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Download a full public novel as pretty TXT.", completed.stdout)
+        self.assertIn("--book-title", completed.stdout)
+
     def test_host_book_content_root_scopes_by_host(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "book-content"

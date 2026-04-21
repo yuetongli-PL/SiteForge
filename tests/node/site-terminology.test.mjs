@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { displayIntentName, normalizeDisplayLabel, resolveSiteTerminology } from '../../lib/site-terminology.mjs';
+import { displayIntentName, normalizeDisplayLabel, resolveSiteTerminology } from '../../src/sites/core/terminology.mjs';
 
 test('resolveSiteTerminology returns bilibili video and up labels', () => {
   const terms = resolveSiteTerminology({ host: 'www.bilibili.com' }, 'https://www.bilibili.com/');

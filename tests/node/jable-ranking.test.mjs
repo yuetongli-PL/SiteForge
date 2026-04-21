@@ -7,7 +7,7 @@ import {
   parseJableVideoCardsFromHtml,
   resolveJableRankingTarget,
   resolveJableSortMode,
-} from '../../lib/jable-ranking.mjs';
+} from '../../src/sites/jable/queries/ranking.mjs';
 
 test('normalizeJableRankingLabel folds simplified and traditional labels', () => {
   assert.equal(normalizeJableRankingLabel('黑丝分类'), '黑丝');

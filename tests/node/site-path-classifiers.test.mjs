@@ -5,7 +5,7 @@ import {
   classifyJableModelsPath,
   isJableModelsDetailPath,
   isJableModelsListPath,
-} from '../../lib/site-path-classifiers.mjs';
+} from '../../src/sites/core/site-path-classifiers.mjs';
 
 test('classifyJableModelsPath distinguishes list and detail pages', () => {
   assert.equal(classifyJableModelsPath('/models/'), 'list');

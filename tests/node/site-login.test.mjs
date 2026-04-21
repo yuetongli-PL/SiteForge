@@ -20,6 +20,32 @@ function createResolvedProfile(workspace) {
   };
 }
 
+function createDouyinResolvedProfile() {
+  return {
+    profile: {
+      host: 'www.douyin.com',
+      authValidationSamples: {
+        selfPostsUrl: 'https://www.douyin.com/user/self?showTab=post',
+        likesUrl: 'https://www.douyin.com/user/self?showTab=like',
+        followFeedUrl: 'https://www.douyin.com/follow?tab=feed',
+      },
+      authSession: {
+        loginUrl: 'https://www.douyin.com/',
+        postLoginUrl: 'https://www.douyin.com/',
+        verificationUrl: 'https://www.douyin.com/user/self?showTab=like',
+        keepaliveUrl: 'https://www.douyin.com/follow?tab=feed',
+        keepaliveIntervalMinutes: 120,
+        cooldownMinutesAfterRisk: 120,
+        preferVisibleBrowserForAuthenticatedFlows: true,
+        requireStableNetworkForAuthenticatedFlows: true,
+        autoLoginByDefault: true,
+      },
+    },
+    warnings: [],
+    filePath: path.resolve('profiles/www.douyin.com.json'),
+  };
+}
+
 function createResolvedBrowserOptions(workspace) {
   return {
     reuseLoginState: true,
@@ -28,6 +54,25 @@ function createResolvedBrowserOptions(workspace) {
     authConfig: {
       loginUrl: 'https://passport.bilibili.com/login',
       postLoginUrl: 'https://www.bilibili.com/',
+    },
+  };
+}
+
+function createDouyinResolvedBrowserOptions(workspace) {
+  return {
+    reuseLoginState: true,
+    userDataDir: path.join(workspace, 'profiles', 'douyin.com'),
+    cleanupUserDataDirOnShutdown: false,
+    authConfig: {
+      loginUrl: 'https://www.douyin.com/',
+      postLoginUrl: 'https://www.douyin.com/',
+      verificationUrl: 'https://www.douyin.com/user/self?showTab=like',
+      keepaliveUrl: 'https://www.douyin.com/follow?tab=feed',
+      keepaliveIntervalMinutes: 120,
+      cooldownMinutesAfterRisk: 120,
+      preferVisibleBrowserForAuthenticatedFlows: true,
+      requireStableNetworkForAuthenticatedFlows: true,
+      autoLoginByDefault: true,
     },
   };
 }
@@ -117,6 +162,15 @@ test('siteLogin writes identity-aware report fields for authenticated sessions',
     assert.equal(report.auth.reopenVerificationPassed, true);
     assert.equal(report.auth.persistenceVerified, true);
     assert.equal(report.auth.shutdownMode, 'graceful');
+    assert.equal(report.site.runtimePurpose, 'login');
+    assert.equal(report.auth.runtimeUrl, 'https://www.bilibili.com/');
+    assert.equal(report.auth.warmupSummary?.attempted, false);
+    assert.equal(report.auth.keepaliveUrl, null);
+    assert.equal(report.auth.keepaliveIntervalMinutes, null);
+    assert.equal(report.auth.cooldownMinutesAfterRisk, null);
+    assert.equal(report.auth.preferVisibleBrowserForAuthenticatedFlows, false);
+    assert.equal(report.auth.requireStableNetworkForAuthenticatedFlows, false);
+    assert.equal(report.auth.sessionHealthSummary?.successfulLogins, 1);
     assert.equal(report.site.userDataDir, path.join(workspace, 'profiles', 'bilibili.com'));
     assert.equal(report.site.browserStartUrl, 'https://www.bilibili.com/');
     assert.equal(report.site.browserAttachedVia, 'existing-target');
@@ -436,7 +490,7 @@ test('siteLogin does not report session-reused when reopen verification fails', 
     assert.equal(report.auth.status, 'authenticated');
     assert.equal(report.auth.reopenVerificationPassed, false);
     assert.equal(report.auth.persistenceVerified, false);
-    assert.match(report.warnings.join('\n'), /could not confirm bilibili login persistence/u);
+    assert.match(report.warnings.join('\n'), /could not confirm persisted login state/u);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -592,6 +646,368 @@ test('siteLogin reports challenge-required without claiming identity confirmatio
     assert.equal(report.auth.status, 'challenge-required');
     assert.equal(report.auth.identityConfirmed, false);
     assert.match(report.warnings.join('\n'), /additional verification/u);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('siteLogin defaults reports under runs/sites/site-login when outDir is omitted', async () => {
+  let reportJsonPath = null;
+
+  try {
+    const report = await siteLogin('https://www.bilibili.com/', {
+      profilePath: path.resolve('profiles/www.bilibili.com.json'),
+      manualLoginTimeoutMs: 1_000,
+      waitForManualLogin: false,
+      autoLogin: true,
+    }, {
+      async resolveSiteAuthProfile() {
+        return createResolvedProfile(process.cwd());
+      },
+      async resolveSiteBrowserSessionOptions() {
+        return createResolvedBrowserOptions(process.cwd());
+      },
+      async inspectPersistentProfileHealth() {
+        return {
+          healthy: true,
+          warnings: [],
+        };
+      },
+      async openBrowserSession() {
+        return {
+          browserStartUrl: 'https://passport.bilibili.com/login',
+          browserAttachedVia: 'created-target',
+          async navigateAndWait() {},
+          async close() {
+            return {
+              shutdownMode: 'graceful',
+              profileFlush: { stable: true },
+            };
+          },
+        };
+      },
+      async ensureAuthenticatedSession() {
+        return {
+          status: 'authenticated',
+          credentials: { source: 'none' },
+          persistenceVerified: true,
+          challengeRequired: false,
+          runtimeUrl: 'https://www.bilibili.com/',
+          autoLoginAttempted: false,
+          autoLoginSucceeded: false,
+          loginStateDetected: 'logged-in',
+          identityConfirmed: true,
+          warnings: [],
+        };
+      },
+      async inspectLoginState() {
+        return {
+          status: 'logged-in',
+          detected: 'logged-in',
+          identityConfirmed: true,
+          antiCrawlSignals: [],
+        };
+      },
+      async prepareSiteSessionGovernance() {
+        return {
+          policyDecision: {
+            allowed: true,
+            riskCauseCode: null,
+            riskAction: null,
+          },
+          lease: null,
+        };
+      },
+      async finalizeSiteSessionGovernance() {
+        return {
+          riskCauseCode: null,
+          riskAction: null,
+          profileQuarantined: false,
+        };
+      },
+      async releaseSessionLease() {},
+    });
+
+    reportJsonPath = report.reports?.json ?? null;
+    assert.ok(reportJsonPath);
+    assert.match(reportJsonPath, /[\\/]runs[\\/]sites[\\/]site-login[\\/]/u);
+  } finally {
+    if (reportJsonPath) {
+      await rm(path.dirname(reportJsonPath), { recursive: true, force: true });
+    }
+  }
+});
+
+test('siteLogin uses the Douyin verification URL for non-interactive startup and persistence checks', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-douyin-verification-'));
+  const startupUrls = [];
+
+  try {
+    const report = await siteLogin('https://www.douyin.com/?recommend=1', {
+      outDir: workspace,
+      profilePath: path.resolve('profiles/www.douyin.com.json'),
+      waitForManualLogin: false,
+      autoLogin: false,
+    }, {
+      async resolveSiteAuthProfile() {
+        return createDouyinResolvedProfile();
+      },
+      async resolveSiteBrowserSessionOptions() {
+        return createDouyinResolvedBrowserOptions(workspace);
+      },
+      async inspectPersistentProfileHealth() {
+        return {
+          healthy: true,
+          warnings: [],
+        };
+      },
+      async openBrowserSession() {
+        startupUrls.push(arguments[0]?.startupUrl ?? null);
+        return {
+          browserStartUrl: arguments[0]?.startupUrl ?? null,
+          browserAttachedVia: 'existing-target',
+          async navigateAndWait() {},
+          async close() {
+            return {
+              shutdownMode: 'graceful',
+              profileFlush: { stable: true },
+            };
+          },
+        };
+      },
+      async ensureAuthenticatedSession() {
+        return {
+          status: 'already-authenticated',
+          credentials: null,
+          challengeRequired: false,
+          loginState: {
+            currentUrl: 'https://www.douyin.com/user/self?showTab=like',
+            title: 'douyin',
+            loggedIn: true,
+            loginStateDetected: true,
+            identityConfirmed: true,
+            identitySource: 'selector:a[href*="/user/self"] img',
+          },
+        };
+      },
+      async inspectLoginState() {
+        return {
+          currentUrl: 'https://www.douyin.com/user/self?showTab=like',
+          title: 'douyin',
+          loggedIn: true,
+          loginStateDetected: true,
+          identityConfirmed: true,
+          identitySource: 'selector:a[href*="/user/self"] img',
+        };
+      },
+      async waitForAuthenticatedSession() {
+        throw new Error('manual wait should not be used');
+      },
+    });
+
+    assert.equal(report.auth.status, 'session-reused');
+    assert.equal(report.auth.reopenVerificationPassed, true);
+    assert.equal(report.auth.persistenceVerified, true);
+    assert.equal(report.site.runtimePurpose, 'login');
+    assert.equal(report.auth.runtimeUrl, 'https://www.douyin.com/user/self?showTab=like');
+    assert.equal(report.auth.warmupSummary?.attempted, false);
+    assert.equal(report.auth.keepaliveUrl, 'https://www.douyin.com/follow?tab=feed');
+    assert.equal(report.auth.keepaliveIntervalMinutes, 120);
+    assert.equal(report.auth.cooldownMinutesAfterRisk, 120);
+    assert.equal(report.auth.preferVisibleBrowserForAuthenticatedFlows, true);
+    assert.equal(report.auth.requireStableNetworkForAuthenticatedFlows, true);
+    assert.equal(report.auth.verificationUrl, 'https://www.douyin.com/user/self?showTab=like');
+    assert.equal(report.site.userDataDir, path.join(workspace, 'profiles', 'douyin.com'));
+    assert.deepEqual(startupUrls, [
+      'https://www.douyin.com/user/self?showTab=like',
+      'https://www.douyin.com/user/self?showTab=like',
+    ]);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('siteLogin reuses Douyin verification startup and can auto-restore auth after reopening the browser', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-douyin-auto-restore-'));
+  const startupUrls = [];
+  let authAttempts = 0;
+
+  try {
+    const report = await siteLogin('https://www.douyin.com/?recommend=1', {
+      outDir: workspace,
+      profilePath: path.resolve('profiles/www.douyin.com.json'),
+      waitForManualLogin: false,
+      autoLogin: true,
+    }, {
+      async resolveSiteAuthProfile() {
+        return createDouyinResolvedProfile();
+      },
+      async resolveSiteBrowserSessionOptions() {
+        return createDouyinResolvedBrowserOptions(workspace);
+      },
+      async inspectPersistentProfileHealth() {
+        return {
+          healthy: true,
+          warnings: [],
+        };
+      },
+      async openBrowserSession() {
+        startupUrls.push(arguments[0]?.startupUrl ?? null);
+        return {
+          browserStartUrl: arguments[0]?.startupUrl ?? null,
+          browserAttachedVia: 'created-target',
+          async navigateAndWait() {},
+          async close() {
+            return {
+              shutdownMode: 'graceful',
+              profileFlush: { stable: true },
+            };
+          },
+        };
+      },
+      async ensureAuthenticatedSession() {
+        authAttempts += 1;
+        return {
+          status: 'authenticated',
+          credentials: {
+            source: 'env:DOUYIN_USERNAME/DOUYIN_PASSWORD',
+          },
+          challengeRequired: false,
+          loginState: {
+            currentUrl: 'https://www.douyin.com/user/self?showTab=like',
+            title: 'douyin',
+            loggedIn: true,
+            loginStateDetected: true,
+            identityConfirmed: true,
+            identitySource: 'selector:a[href*="/user/self"] img',
+          },
+        };
+      },
+      async inspectLoginState() {
+        return {
+          currentUrl: 'https://www.douyin.com/user/self?showTab=like',
+          title: 'douyin',
+          loggedIn: true,
+          loginStateDetected: true,
+          identityConfirmed: true,
+          identitySource: 'selector:a[href*="/user/self"] img',
+        };
+      },
+      async waitForAuthenticatedSession() {
+        throw new Error('manual wait should not be used');
+      },
+    });
+
+    assert.equal(report.auth.status, 'authenticated');
+    assert.equal(report.auth.reopenVerificationPassed, true);
+    assert.equal(report.auth.persistenceVerified, true);
+    assert.equal(report.auth.credentialsSource, 'env:DOUYIN_USERNAME/DOUYIN_PASSWORD');
+    assert.equal(report.site.runtimePurpose, 'login');
+    assert.equal(report.auth.runtimeUrl, 'https://www.douyin.com/user/self?showTab=like');
+    assert.equal(report.auth.warmupSummary?.attempted, false);
+    assert.equal(report.auth.keepaliveUrl, 'https://www.douyin.com/follow?tab=feed');
+    assert.equal(report.auth.keepaliveIntervalMinutes, 120);
+    assert.equal(report.auth.cooldownMinutesAfterRisk, 120);
+    assert.equal(report.auth.preferVisibleBrowserForAuthenticatedFlows, true);
+    assert.equal(report.auth.requireStableNetworkForAuthenticatedFlows, true);
+    assert.equal(authAttempts, 2);
+    assert.deepEqual(startupUrls, [
+      'https://www.douyin.com/user/self?showTab=like',
+      'https://www.douyin.com/user/self?showTab=like',
+    ]);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('siteLogin uses the Douyin keepalive URL for keepalive runtime startup and persistence checks', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-douyin-keepalive-runtime-'));
+  const startupUrls = [];
+
+  try {
+    const report = await siteLogin('https://www.douyin.com/?recommend=1', {
+      outDir: workspace,
+      profilePath: path.resolve('profiles/www.douyin.com.json'),
+      waitForManualLogin: false,
+      autoLogin: false,
+      runtimePurpose: 'keepalive',
+    }, {
+      async resolveSiteAuthProfile() {
+        return createDouyinResolvedProfile();
+      },
+      async resolveSiteBrowserSessionOptions() {
+        return createDouyinResolvedBrowserOptions(workspace);
+      },
+      async inspectPersistentProfileHealth() {
+        return {
+          healthy: true,
+          warnings: [],
+        };
+      },
+      async openBrowserSession() {
+        startupUrls.push(arguments[0]?.startupUrl ?? null);
+        return {
+          browserStartUrl: arguments[0]?.startupUrl ?? null,
+          browserAttachedVia: 'existing-target',
+          async navigateAndWait() {},
+          async close() {
+            return {
+              shutdownMode: 'graceful',
+              profileFlush: { stable: true },
+            };
+          },
+        };
+      },
+      async ensureAuthenticatedSession() {
+        return {
+          status: 'already-authenticated',
+          credentials: null,
+          challengeRequired: false,
+          loginState: {
+            currentUrl: 'https://www.douyin.com/follow?tab=feed',
+            title: 'douyin keepalive',
+            loggedIn: true,
+            loginStateDetected: true,
+            identityConfirmed: true,
+            identitySource: 'selector:a[href*="/user/self"] img',
+          },
+        };
+      },
+      async inspectLoginState() {
+        return {
+          currentUrl: 'https://www.douyin.com/follow?tab=feed',
+          title: 'douyin keepalive',
+          loggedIn: true,
+          loginStateDetected: true,
+          identityConfirmed: true,
+          identitySource: 'selector:a[href*="/user/self"] img',
+        };
+      },
+      async waitForAuthenticatedSession() {
+        throw new Error('manual wait should not be used');
+      },
+    });
+
+    assert.equal(report.site.runtimePurpose, 'keepalive');
+    assert.equal(report.site.browserStartUrl, 'https://www.douyin.com/');
+    assert.equal(report.auth.runtimeUrl, 'https://www.douyin.com/follow?tab=feed');
+    assert.equal(report.auth.warmupSummary?.attempted, true);
+    assert.equal(report.auth.warmupSummary?.completed, true);
+    assert.deepEqual(report.auth.warmupSummary?.urls, [
+      'https://www.douyin.com/',
+      'https://www.douyin.com/follow?tab=feed',
+    ]);
+    assert.equal(report.auth.keepaliveUrl, 'https://www.douyin.com/follow?tab=feed');
+    assert.equal(report.auth.keepaliveIntervalMinutes, 120);
+    assert.equal(report.auth.cooldownMinutesAfterRisk, 120);
+    assert.equal(report.auth.preferVisibleBrowserForAuthenticatedFlows, true);
+    assert.equal(report.auth.requireStableNetworkForAuthenticatedFlows, true);
+    assert.equal(report.auth.verificationUrl, 'https://www.douyin.com/follow?tab=feed');
+    assert.equal(report.auth.sessionHealthSummary?.successfulKeepalives, 1);
+    assert.deepEqual(startupUrls, [
+      'https://www.douyin.com/',
+      'https://www.douyin.com/',
+    ]);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

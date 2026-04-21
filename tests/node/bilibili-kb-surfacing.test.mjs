@@ -5,9 +5,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
-import { analyzeStates } from '../../analyze-states.mjs';
-import { compileKnowledgeBase } from '../../compile-wiki.mjs';
-import { enrichBilibiliPageFactsForState, summarizeBilibiliKnowledgeFacts } from '../../lib/bilibili-surfacing.mjs';
+import { analyzeStates } from '../../src/entrypoints/pipeline/analyze-states.mjs';
+import { compileKnowledgeBase } from '../../src/entrypoints/pipeline/compile-wiki.mjs';
+import { enrichBilibiliPageFactsForState, summarizeBilibiliKnowledgeFacts } from '../../src/sites/bilibili/model/surfacing.mjs';
 
 function rewritePaths(value, fromDir, toDir) {
   if (Array.isArray(value)) {

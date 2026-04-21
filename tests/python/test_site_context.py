@@ -1,27 +1,45 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from site_context import (
-    read_site_context,
-    resolve_capability_families,
-    resolve_page_types,
-    resolve_primary_archetype,
-    resolve_safe_action_kinds,
-    resolve_supported_intents,
-    upsert_site_capabilities_record,
-    upsert_site_registry_record,
+def load_internal_module(module_name: str, relative_path: str):
+    module_path = Path(__file__).resolve().parents[2] / relative_path
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+site_context = load_internal_module(
+    "test_site_context_module",
+    "src/sites/catalog/python/site_context.py",
 )
+build_site_capabilities_path = site_context.build_site_capabilities_path
+build_site_registry_path = site_context.build_site_registry_path
+read_site_context = site_context.read_site_context
+resolve_capability_families = site_context.resolve_capability_families
+resolve_page_types = site_context.resolve_page_types
+resolve_primary_archetype = site_context.resolve_primary_archetype
+resolve_safe_action_kinds = site_context.resolve_safe_action_kinds
+resolve_supported_intents = site_context.resolve_supported_intents
+upsert_site_capabilities_record = site_context.upsert_site_capabilities_record
+upsert_site_registry_record = site_context.upsert_site_registry_record
 
 
 class SiteContextTests(unittest.TestCase):
     def test_read_site_context_merges_isolated_host_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            (root / "site-registry.json").write_text(json.dumps({
+            build_site_registry_path(root).parent.mkdir(parents=True, exist_ok=True)
+            build_site_registry_path(root).write_text(json.dumps({
                 "version": 1,
                 "generatedAt": None,
                 "sites": {
@@ -32,7 +50,7 @@ class SiteContextTests(unittest.TestCase):
                     }
                 },
             }, ensure_ascii=False, indent=2), encoding="utf-8")
-            (root / "site-capabilities.json").write_text(json.dumps({
+            build_site_capabilities_path(root).write_text(json.dumps({
                 "version": 1,
                 "generatedAt": None,
                 "sites": {
@@ -99,12 +117,14 @@ class SiteContextTests(unittest.TestCase):
                 "supportedIntents": ["download-book"],
             }, root)
 
-            registry = json.loads((root / "site-registry.json").read_text(encoding="utf-8"))
-            capabilities = json.loads((root / "site-capabilities.json").read_text(encoding="utf-8"))
+            registry = json.loads(build_site_registry_path(root).read_text(encoding="utf-8"))
+            capabilities = json.loads(build_site_capabilities_path(root).read_text(encoding="utf-8"))
             self.assertIn("www.22biqu.com", registry["sites"])
             self.assertIn("www.22biqu.com", capabilities["sites"])
             self.assertEqual(["download-content"], registry["sites"]["www.22biqu.com"]["capabilityFamilies"])
             self.assertEqual(["download-book"], capabilities["sites"]["www.22biqu.com"]["supportedIntents"])
+            self.assertFalse((root / "site-registry.json").exists())
+            self.assertFalse((root / "site-capabilities.json").exists())
 
 
 if __name__ == "__main__":

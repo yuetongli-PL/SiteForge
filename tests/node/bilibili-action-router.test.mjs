@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planBilibiliAction, runBilibiliAction } from '../../lib/bilibili-action-router.mjs';
+import { planBilibiliAction, runBilibiliAction } from '../../src/sites/bilibili/actions/router.mjs';
 
 test('planBilibiliAction routes public bilibili pages to the built-in browser', async () => {
   const plan = await planBilibiliAction({
@@ -80,6 +80,7 @@ test('planBilibiliAction routes watch-later downloads through login bootstrap wh
 });
 
 test('runBilibiliAction triggers site-login before authenticated downloads', async () => {
+  let capturedArgs = null;
   const result = await runBilibiliAction({
     action: 'download',
     items: ['https://www.bilibili.com/watchlater/#/list'],
@@ -105,7 +106,8 @@ test('runBilibiliAction triggers site-login before authenticated downloads', asy
         },
       };
     },
-    async spawnJsonCommand() {
+    async spawnJsonCommand(_command, args) {
+      capturedArgs = args;
       return {
         code: 0,
         stdout: JSON.stringify({ summary: { total: 1 }, usedLoginState: true }),
@@ -118,4 +120,5 @@ test('runBilibiliAction triggers site-login before authenticated downloads', asy
   assert.equal(result.plan.route, 'download-after-login');
   assert.equal(result.reasonCode, 'download-started');
   assert.equal(result.loginReport.auth.status, 'session-reused');
+  assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/bilibili\/download\/python\/bilibili\.py$/u);
 });

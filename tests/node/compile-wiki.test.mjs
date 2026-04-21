@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
-import { compileKnowledgeBase, lintKnowledgeBase } from '../../compile-wiki.mjs';
+import { compileKnowledgeBase, lintKnowledgeBase } from '../../src/entrypoints/pipeline/compile-wiki.mjs';
 
 function rewritePaths(value, fromDir, toDir) {
   if (Array.isArray(value)) {
@@ -120,6 +120,9 @@ test('compileKnowledgeBase builds a new knowledge base from explicit raw stage d
 
     assert.ok(Array.isArray(pagesIndex.pages));
     assert.ok(pagesIndex.pages.length > 0);
+    assert.ok(pagesIndex.pages.some((page) => page.pageId === 'page_readme'));
+    assert.ok(pagesIndex.pages.some((page) => page.pageId.startsWith('page_state_')));
+    assert.ok(pagesIndex.pages.some((page) => page.pageId.startsWith('page_intent_')));
     assert.ok(Array.isArray(sourcesIndex.activeSources));
     assert.ok(sourcesIndex.activeSources.length >= 7);
     assert.match(readme, /^<!--\s*KBMETA/u);

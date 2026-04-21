@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import path from 'node:path';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 
 import {
   buildRunManifest,
@@ -9,7 +11,12 @@ import {
   getManifestArtifactPath,
   getManifestArtifactValue,
   getManifestRunContext,
-} from '../../lib/pipeline/run-manifest.mjs';
+} from '../../src/pipeline/engine/run-manifest.mjs';
+import {
+  resolveLinkedArtifactManifest,
+  resolveNamedManifest,
+  resolveStageInput,
+} from '../../src/pipeline/artifacts/index.mjs';
 
 test('buildRunManifest preserves legacy source compatibility from upstream artifacts', () => {
   const manifest = buildRunManifest({
@@ -114,4 +121,81 @@ test('run-manifest resolves artifact paths relative to a base directory', () => 
     getManifestArtifactDir(manifest, 'docs', baseDir),
     path.resolve(baseDir, 'docs\\run-1'),
   );
+});
+
+test('resolveNamedManifest dual-reads a legacy pipeline dir when caller provides runs path', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-runs-dual-read-manifest-'));
+
+  try {
+    const legacyDir = path.join(workspace, 'captures', 'run-1');
+    await mkdir(legacyDir, { recursive: true });
+    const legacyManifestPath = path.join(legacyDir, 'capture-manifest.json');
+    await writeFile(legacyManifestPath, '{}');
+
+    const resolved = await resolveNamedManifest(
+      path.join(workspace, 'runs', 'pipeline', 'captures', 'run-1'),
+      ['capture-manifest.json'],
+    );
+
+    assert.equal(resolved, legacyManifestPath);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('resolveStageInput dual-reads a runs pipeline dir when caller provides legacy path', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-runs-dual-read-input-'));
+
+  try {
+    const runsDir = path.join(workspace, 'runs', 'pipeline', 'expanded-states', 'run-1');
+    await mkdir(runsDir, { recursive: true });
+    const runsManifestPath = path.join(runsDir, 'states-manifest.json');
+    await writeFile(runsManifestPath, '{}');
+
+    const resolved = await resolveStageInput({
+      expandedStatesDir: path.join(workspace, 'expanded-states', 'run-1'),
+    }, {
+      manifestOption: 'expandedStatesManifest',
+      dirOption: 'expandedStatesDir',
+      manifestName: 'states-manifest.json',
+      missingArgsMessage: 'missing',
+      missingManifestMessagePrefix: 'manifest:',
+      missingDirMessagePrefix: 'dir:',
+    });
+
+    assert.equal(resolved.dir, runsDir);
+    assert.equal(resolved.manifestPath, runsManifestPath);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('resolveLinkedArtifactManifest dual-reads opposite runs/legacy layouts from manifest source paths', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-runs-dual-read-linked-'));
+
+  try {
+    const runsDir = path.join(workspace, 'runs', 'pipeline', 'state-analysis', 'run-1');
+    await mkdir(runsDir, { recursive: true });
+    const runsManifestPath = path.join(runsDir, 'analysis-manifest.json');
+    await writeFile(runsManifestPath, '{}');
+
+    const manifest = {
+      source: {
+        analysisDir: path.join('state-analysis', 'run-1'),
+        analysisManifest: path.join('state-analysis', 'run-1', 'analysis-manifest.json'),
+      },
+    };
+
+    const resolved = await resolveLinkedArtifactManifest({
+      manifest,
+      artifactName: 'analysis',
+      baseDir: workspace,
+      artifactDir: path.join(workspace, 'state-analysis', 'run-1'),
+      manifestName: 'analysis-manifest.json',
+    });
+
+    assert.equal(resolved, runsManifestPath);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });

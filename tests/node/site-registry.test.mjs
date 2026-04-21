@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { buildSiteCapabilitiesPath, readSiteCapabilities, upsertSiteCapabilities } from '../../lib/site-capabilities.mjs';
-import { buildSiteRegistryPath, readSiteRegistry, upsertSiteRegistryRecord } from '../../lib/site-registry.mjs';
+import { buildSiteCapabilitiesPath, readSiteCapabilities, upsertSiteCapabilities } from '../../src/sites/catalog/capabilities.mjs';
+import { buildSiteRegistryPath, readSiteRegistry, upsertSiteRegistryRecord } from '../../src/sites/catalog/registry.mjs';
 
 test('site registry and capabilities return default empty documents before first write', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-index-defaults-'));
@@ -33,6 +33,8 @@ test('site registry upserts host operational metadata', async () => {
   try {
     await upsertSiteRegistryRecord(workspace, 'www.22biqu.com', {
       canonicalBaseUrl: 'https://www.22biqu.com/',
+      siteKey: '22biqu',
+      adapterId: 'chapter-content',
       crawlerScriptPath: 'crawler-scripts/www.22biqu.com/crawler.py',
       knowledgeBaseDir: 'knowledge-base/www.22biqu.com',
     });
@@ -42,6 +44,8 @@ test('site registry upserts host operational metadata', async () => {
 
     const registry = JSON.parse(await readFile(buildSiteRegistryPath(workspace), 'utf8'));
     assert.equal(registry.sites['www.22biqu.com'].canonicalBaseUrl, 'https://www.22biqu.com/');
+    assert.equal(registry.sites['www.22biqu.com'].siteKey, '22biqu');
+    assert.equal(registry.sites['www.22biqu.com'].adapterId, 'chapter-content');
     assert.equal(registry.sites['www.22biqu.com'].latestDownloadMode, 'artifact-hit');
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -53,6 +57,8 @@ test('site capabilities replace array facts with the latest host truth', async (
   try {
     await upsertSiteCapabilities(workspace, 'moodyz.com', {
       baseUrl: 'https://moodyz.com/',
+      siteKey: 'moodyz',
+      adapterId: 'moodyz',
       pageTypes: ['category-page', 'search-results-page'],
       capabilityFamilies: ['search-content', 'navigate-to-content'],
       supportedIntents: ['search-work'],
@@ -63,6 +69,8 @@ test('site capabilities replace array facts with the latest host truth', async (
     });
 
     const capabilities = JSON.parse(await readFile(buildSiteCapabilitiesPath(workspace), 'utf8'));
+    assert.equal(capabilities.sites['moodyz.com'].siteKey, 'moodyz');
+    assert.equal(capabilities.sites['moodyz.com'].adapterId, 'moodyz');
     assert.deepEqual(capabilities.sites['moodyz.com'].pageTypes, ['author-page']);
     assert.deepEqual(capabilities.sites['moodyz.com'].supportedIntents, ['open-actress', 'open-work']);
     assert.deepEqual(capabilities.sites['moodyz.com'].capabilityFamilies, ['navigate-to-content', 'search-content']);

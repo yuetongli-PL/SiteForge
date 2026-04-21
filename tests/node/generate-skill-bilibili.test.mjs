@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { generateSkill } from '../../generate-skill.mjs';
+import { generateSkill } from '../../src/entrypoints/pipeline/generate-skill.mjs';
 
 function normalizeEol(value) {
   return String(value).replace(/\r\n/g, '\n');

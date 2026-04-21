@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseNaturalLanguageSiteLoginRequest } from '../../lib/site-login-natural.mjs';
+import { parseNaturalLanguageSiteLoginRequest } from '../../src/infra/auth/site-login-natural.mjs';
 import { runNaturalLanguageSiteLogin } from '../../scripts/nl-site-login.mjs';
 
 test('parseNaturalLanguageSiteLoginRequest resolves bilibili aliases and inline credentials', () => {

@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BrowserSession } from '../../lib/browser-runtime/session.mjs';
+import { BrowserSession } from '../../src/infra/browser/session.mjs';
 import {
   AUTHENTICATED_BILIBILI_BENCHMARKS,
   DEFAULT_CAPTURE_EXPAND_BENCHMARKS,
   buildBenchmarkReport,
   renderBenchmarkMarkdown,
   summarizeSessionMetrics,
-} from '../../lib/browser-runtime/benchmark-report.mjs';
+} from '../../src/infra/browser/benchmark-report.mjs';
 
 test('BrowserSession metrics count protocol and helper activity without changing caller APIs', async () => {
   const sentMethods = [];

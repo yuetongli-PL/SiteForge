@@ -2,9 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { siteDoctor } from '../../scripts/site-doctor.mjs';
+
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
+
+test('site-doctor download preflight points at canonical internal python entrypoints', async () => {
+  const source = await readFile(path.join(REPO_ROOT, 'src', 'entrypoints', 'sites', 'site-doctor.mjs'), 'utf8');
+  assert.match(source, /src', 'sites', 'bilibili', 'download', 'python', 'bilibili\.py'/u);
+  assert.match(source, /src', 'sites', 'chapter-content', 'download', 'python', 'book\.py'/u);
+  assert.doesNotMatch(source, /download_bilibili\.py|download_book\.py/u);
+});
 
 function createDownloadableNavigationProfile(host = 'videos.example.com') {
   return {

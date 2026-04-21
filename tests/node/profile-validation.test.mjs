@@ -4,12 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 
-import { ensureCrawlerScript } from '../../generate-crawler-script.mjs';
+import { ensureCrawlerScript } from '../../src/entrypoints/pipeline/generate-crawler-script.mjs';
 import {
   ProfileValidationError,
   validateProfileFile,
   validateProfileObject,
-} from '../../lib/profile-validation.mjs';
+} from '../../src/sites/core/profile-validation.mjs';
 
 function createNavigationProfile(overrides = {}) {
   return {
@@ -74,6 +74,7 @@ test('validateProfileFile accepts the checked-in profiles', async () => {
   const moodyz = await validateProfileFile(path.resolve('profiles/moodyz.com.json'));
   const jable = await validateProfileFile(path.resolve('profiles/jable.tv.json'));
   const bilibili = await validateProfileFile(path.resolve('profiles/www.bilibili.com.json'));
+  const douyin = await validateProfileFile(path.resolve('profiles/www.douyin.com.json'));
 
   assert.equal(twentyTwoBiqu.valid, true);
   assert.equal(twentyTwoBiqu.host, 'www.22biqu.com');
@@ -109,6 +110,39 @@ test('validateProfileFile accepts the checked-in profiles', async () => {
   assert.ok(bilibili.profile.downloader.watchLaterPathPrefixes.length > 0);
   assert.ok(bilibili.profile.downloader.collectionPathPrefixes.length > 0);
   assert.ok(bilibili.profile.downloader.channelPathPrefixes.length > 0);
+  assert.equal(douyin.valid, true);
+  assert.equal(douyin.host, 'www.douyin.com');
+  assert.equal(douyin.archetype, 'navigation-catalog');
+  assert.equal(douyin.profile.pipeline.skipBookContent, true);
+  assert.equal(douyin.profile.validationSamples.videoSearchQuery, '新闻');
+  assert.equal(douyin.profile.validationSamples.videoDetailUrl, 'https://www.douyin.com/video/7487317288315258152');
+  assert.equal(douyin.profile.validationSamples.authorVideosUrl, 'https://www.douyin.com/user/MS4wLjABAAAAD_rgoQxZRb5ZZdRaJIEEaRVq2h3_1YwTXfUhFGJPDhL0-oL-nDOYSn-y_wsCnjsZ?showTab=post');
+  assert.equal(douyin.profile.authValidationSamples.selfPostsUrl, 'https://www.douyin.com/user/self?showTab=post');
+  assert.equal(douyin.profile.authValidationSamples.likesUrl, 'https://www.douyin.com/user/self?showTab=like');
+  assert.equal(douyin.profile.authValidationSamples.followUsersUrl, 'https://www.douyin.com/follow?tab=user');
+  assert.equal(douyin.profile.authSession.loginUrl, 'https://www.douyin.com/');
+  assert.equal(douyin.profile.authSession.postLoginUrl, 'https://www.douyin.com/');
+  assert.equal(douyin.profile.authSession.verificationUrl, 'https://www.douyin.com/user/self?showTab=like');
+  assert.equal(douyin.profile.authSession.keepaliveUrl, 'https://www.douyin.com/user/self?showTab=like');
+  assert.equal(douyin.profile.authSession.keepaliveIntervalMinutes, 120);
+  assert.equal(douyin.profile.authSession.cooldownMinutesAfterRisk, 120);
+  assert.equal(douyin.profile.authSession.preferVisibleBrowserForAuthenticatedFlows, true);
+  assert.equal(douyin.profile.authSession.requireStableNetworkForAuthenticatedFlows, true);
+  assert.equal(douyin.profile.authSession.reuseLoginStateByDefault, true);
+  assert.equal(douyin.profile.authSession.autoLoginByDefault, true);
+  assert.equal(douyin.profile.authSession.credentialTarget, 'BrowserWikiSkill:douyin.com');
+  assert.equal(douyin.profile.authSession.usernameEnv, 'DOUYIN_USERNAME');
+  assert.equal(douyin.profile.authSession.passwordEnv, 'DOUYIN_PASSWORD');
+  assert.ok(Array.isArray(douyin.profile.authSession.loginEntrySelectors));
+  assert.ok(douyin.profile.authSession.loginEntrySelectors.length > 0);
+  assert.ok(Array.isArray(douyin.profile.authSession.usernameSelectors));
+  assert.ok(Array.isArray(douyin.profile.authSession.passwordSelectors));
+  assert.ok(Array.isArray(douyin.profile.authSession.submitSelectors));
+  assert.deepEqual(douyin.profile.authSession.authRequiredPathPrefixes, ['/user/self', '/follow']);
+  assert.equal(douyin.profile.downloader.requiresLoginForHighestQuality, true);
+  assert.equal(douyin.profile.downloader.defaultContainer, 'mp4');
+  assert.ok(Array.isArray(douyin.profile.downloader.authorVideoListPathPrefixes));
+  assert.ok(douyin.profile.downloader.authorVideoListPathPrefixes.length > 0);
 });
 
 test('validateProfileObject rejects missing required fields with path details', () => {
@@ -224,6 +258,74 @@ test('validateProfileObject accepts expanded downloader source samples and path 
   assert.equal(result.profile.validationSamples.channelUrl, 'https://example.com/channel/77/');
   assert.equal(result.profile.authValidationSamples.favoriteListUrl, 'https://example.com/favorites/1001/');
   assert.equal(result.profile.authValidationSamples.watchLaterUrl, 'https://example.com/watchlater/');
+});
+
+test('validateProfileObject accepts mixed auth validation sample keys and authSession verificationUrl', () => {
+  const result = validateProfileObject(createNavigationProfile({
+    validationSamples: {
+      videoSearchQuery: '\u65b0\u95fb',
+      videoDetailUrl: 'https://example.com/video/7487317288315258152',
+      authorUrl: 'https://example.com/user/public-author',
+      authorVideosUrl: 'https://example.com/user/public-author?showTab=post',
+    },
+    authValidationSamples: {
+      likesUrl: 'https://example.com/user/self?showTab=like',
+      selfPostsUrl: 'https://example.com/user/self?showTab=post',
+      favoriteListUrl: 'https://example.com/favorites/1001/',
+      customReadonlyUrl: 'https://example.com/user/self?showTab=custom',
+    },
+    authSession: {
+      loginUrl: 'https://example.com/',
+      postLoginUrl: 'https://example.com/',
+      verificationUrl: 'https://example.com/user/self?showTab=like',
+      keepaliveUrl: 'https://example.com/user/self?showTab=like',
+      keepaliveIntervalMinutes: 15,
+      cooldownMinutesAfterRisk: 30,
+      preferVisibleBrowserForAuthenticatedFlows: true,
+      requireStableNetworkForAuthenticatedFlows: true,
+      reuseLoginStateByDefault: true,
+      autoLoginByDefault: false,
+      loginIndicatorSelectors: ['.avatar img'],
+      loggedOutIndicatorSelectors: ['.login-button'],
+      challengeSelectors: ['.captcha'],
+      authRequiredPathPrefixes: ['/user/self', '/follow'],
+    },
+  }), {
+    expectedHost: 'example.com',
+    source: 'example.com.json',
+  });
+
+  assert.equal(result.valid, true);
+  assert.equal(result.profile.authSession.verificationUrl, 'https://example.com/user/self?showTab=like');
+  assert.equal(result.profile.authSession.keepaliveUrl, 'https://example.com/user/self?showTab=like');
+  assert.equal(result.profile.authSession.keepaliveIntervalMinutes, 15);
+  assert.equal(result.profile.authSession.cooldownMinutesAfterRisk, 30);
+  assert.equal(result.profile.authSession.preferVisibleBrowserForAuthenticatedFlows, true);
+  assert.equal(result.profile.authSession.requireStableNetworkForAuthenticatedFlows, true);
+  assert.equal(result.profile.authValidationSamples.likesUrl, 'https://example.com/user/self?showTab=like');
+  assert.equal(result.profile.authValidationSamples.favoriteListUrl, 'https://example.com/favorites/1001/');
+  assert.equal(result.profile.authValidationSamples.customReadonlyUrl, 'https://example.com/user/self?showTab=custom');
+});
+
+test('validateProfileObject rejects non-positive authSession risk-governance intervals with stable field paths', () => {
+  assert.throws(() => validateProfileObject(createNavigationProfile({
+    authSession: {
+      loginUrl: 'https://example.com/',
+      postLoginUrl: 'https://example.com/',
+      keepaliveUrl: 'https://example.com/user/self?showTab=like',
+      keepaliveIntervalMinutes: 0,
+      cooldownMinutesAfterRisk: 30,
+      preferVisibleBrowserForAuthenticatedFlows: true,
+      requireStableNetworkForAuthenticatedFlows: true,
+    },
+  }), {
+    expectedHost: 'example.com',
+    source: 'example.com.json',
+  }), (error) => {
+    assert.ok(error instanceof ProfileValidationError);
+    assert.match(error.message, /profile\.authSession\.keepaliveIntervalMinutes: must be greater than or equal to 1/u);
+    return true;
+  });
 });
 
 test('validateProfileObject rejects empty expanded downloader source path arrays with stable field paths', () => {

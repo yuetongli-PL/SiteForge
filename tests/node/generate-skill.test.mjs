@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { generateSkill } from '../../generate-skill.mjs';
+import { generateSkill } from '../../src/entrypoints/pipeline/generate-skill.mjs';
 
 function normalizeEol(value) {
   return String(value).replace(/\r\n/g, '\n');
@@ -42,7 +42,7 @@ test('generateSkill produces stable jable skill documents from the checked-in kn
 
     assert.match(skillMd, /^---\nname: jable\n/su);
     assert.match(skillMd, /\n# jable Skill\n/su);
-    assert.match(skillMd, /Ranking query entrypoint: `node query-jable-ranking\.mjs <url> --query "<自然语言请求>"`\./u);
+    assert.match(skillMd, /Ranking query entrypoint: `node src\/entrypoints\/sites\/jable-ranking\.mjs <url> --query "<自然语言请求>"`\./u);
     assert.match(skillMd, /## Sample coverage/u);
     assert.match(skillMd, /## Safety boundary/u);
     assert.match(skillMd, /搜索影片、打开影片页、打开演员页、打开分类或标签页、按分类或标签提取前 N 条榜单/u);
@@ -50,7 +50,7 @@ test('generateSkill produces stable jable skill documents from the checked-in kn
     assert.match(indexMd, /^# jable Index\n/su);
     assert.match(indexMd, /## Sample intent coverage/u);
     assert.match(indexMd, /当前站点 Skill 以导航为主：覆盖搜索、影片页、演员页、分类\/标签页和功能页。/u);
-    assert.match(indexMd, /node query-jable-ranking\.mjs https:\/\/jable\.tv\/ --query "<请求>"/u);
+    assert.match(indexMd, /node src\/entrypoints\/sites\/jable-ranking\.mjs https:\/\/jable\.tv\/ --query "<请求>"/u);
     assert.match(indexMd, /\| 打开演员页 \| \[[^\]]+\]\([^)]+knowledge-base\/jable\.tv\/raw\/step-6-docs\/[^)]+\) \|/u);
     assert.match(indexMd, /\| 分类榜单查询 \| \[[^\]]+\]\([^)]+knowledge-base\/jable\.tv\/raw\/step-6-docs\/[^)]+\) \|/u);
 
@@ -150,7 +150,7 @@ test('generateSkill produces stable 22biqu skill documents from the checked-in k
     assert.match(skillMd, /^---\nname: 22biqu\n/su);
     assert.match(skillMd, /\n# 22biqu Skill\n/su);
     assert.match(skillMd, /Instruction-only Skill for https:\/\/www\.22biqu\.com\//u);
-    assert.match(skillMd, /Download entrypoint: `pypy3 download_book\.py`\./u);
+    assert.match(skillMd, /Download entrypoint: `pypy3 src\/sites\/chapter-content\/download\/python\/book\.py`\./u);
     assert.match(skillMd, /search books, open book directories, open author pages, open chapter pages, and download full public novels/u);
 
     assert.match(indexMd, /^# 22biqu Index\n/su);
@@ -160,7 +160,7 @@ test('generateSkill produces stable 22biqu skill documents from the checked-in k
 
     assert.match(flowsMd, /^# Flows\n/su);
     assert.match(flowsMd, /## Download full book/u);
-    assert.match(flowsMd, /Main path: check local artifact -> if missing, run `pypy3 download_book\.py`/u);
+    assert.match(flowsMd, /Main path: check local artifact -> if missing, run `pypy3 src\/sites\/chapter-content\/download\/python\/book\.py`/u);
     assert.match(flowsMd, /## Search book/u);
     assert.match(flowsMd, /Freshness rule: search results are only for discovery/u);
   } finally {

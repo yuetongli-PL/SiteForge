@@ -4,7 +4,7 @@ import {
   PROFILE_ARCHETYPES,
   resolveLegacyProfileArchetype,
   resolveProfileArchetype,
-} from '../lib/sites/archetypes.mjs';
+} from '../src/sites/core/archetypes.mjs';
 
 function nonEmptyString(extra = {}) {
   return {
@@ -84,13 +84,32 @@ const validationSamplesSchema = {
 
 const authValidationSamplesSchema = {
   type: 'object',
-  additionalProperties: false,
+  additionalProperties: true,
   properties: {
     dynamicUrl: absoluteHttpUrl,
     followListUrl: absoluteHttpUrl,
     fansListUrl: absoluteHttpUrl,
     favoriteListUrl: absoluteHttpUrl,
     watchLaterUrl: absoluteHttpUrl,
+    selfPostsUrl: absoluteHttpUrl,
+    likesUrl: absoluteHttpUrl,
+    collectionsUrl: absoluteHttpUrl,
+    historyUrl: absoluteHttpUrl,
+    followFeedUrl: absoluteHttpUrl,
+    followUsersUrl: absoluteHttpUrl,
+  },
+  validate(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return 'must be an object';
+    }
+    const errors = [];
+    for (const [key, sampleUrl] of Object.entries(value)) {
+      const result = absoluteHttpUrl.validate(sampleUrl);
+      if (result) {
+        errors.push(`${key}: ${result}`);
+      }
+    }
+    return errors;
   },
 };
 
@@ -101,11 +120,19 @@ const authSessionSchema = {
   properties: {
     loginUrl: absoluteHttpUrl,
     postLoginUrl: absoluteHttpUrl,
+    verificationUrl: absoluteHttpUrl,
+    keepaliveUrl: absoluteHttpUrl,
+    keepaliveIntervalMinutes: integer(1),
+    cooldownMinutesAfterRisk: integer(1),
+    preferVisibleBrowserForAuthenticatedFlows: { type: 'boolean' },
+    requireStableNetworkForAuthenticatedFlows: { type: 'boolean' },
     reuseLoginStateByDefault: { type: 'boolean' },
     autoLoginByDefault: { type: 'boolean' },
+    credentialTarget: nonEmptyString(),
     usernameEnv: nonEmptyString(),
     passwordEnv: nonEmptyString(),
     loginIndicatorSelectors: stringArray({ minItems: 1 }),
+    loginEntrySelectors: stringArray({ minItems: 1 }),
     loggedOutIndicatorSelectors: stringArray({ minItems: 1 }),
     passwordLoginTabSelectors: stringArray({ minItems: 1 }),
     usernameSelectors: stringArray({ minItems: 1 }),

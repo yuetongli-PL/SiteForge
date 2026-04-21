@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { readJsonFile } from '../../lib/io.mjs';
-import { derivePageFacts } from '../../expand-states.mjs';
+import { readJsonFile } from '../../src/infra/io.mjs';
+import { derivePageFacts } from '../../src/entrypoints/pipeline/expand-states.mjs';
 
 function createSelectorReaders({ textMap = {}, hrefMap = {}, textsMap = {}, hrefsMap = {}, metaMap = {} } = {}) {
   return {

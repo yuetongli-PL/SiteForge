@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import subprocess
 import sys
@@ -5,7 +6,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import download_book
+def load_internal_module(module_name: str, relative_path: str):
+    module_path = Path(__file__).resolve().parents[2] / relative_path
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+download_book = load_internal_module(
+    "test_download_book_module",
+    "src/sites/chapter-content/download/python/book.py",
+)
 
 
 class DownloadBookTests(unittest.TestCase):

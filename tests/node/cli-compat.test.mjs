@@ -22,13 +22,13 @@ function parseJsonStdout(result) {
 }
 
 test('run-pipeline CLI keeps help and missing-url behavior compatible', async () => {
-  const help = runNodeCli('run-pipeline.mjs', ['--help']);
+  const help = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), ['--help']);
   assert.equal(help.status, 0);
-  assert.match(help.stdout, /Usage:\s+node run-pipeline\.mjs <url>/u);
+  assert.match(help.stdout, /Usage:\s+node src[\\/]entrypoints[\\/]pipeline[\\/]run-pipeline\.mjs <url>/u);
 
-  const missingUrl = runNodeCli('run-pipeline.mjs', []);
+  const missingUrl = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), []);
   assert.equal(missingUrl.status, 1);
-  assert.match(missingUrl.stdout, /Usage:\s+node run-pipeline\.mjs <url>/u);
+  assert.match(missingUrl.stdout, /Usage:\s+node src[\\/]entrypoints[\\/]pipeline[\\/]run-pipeline\.mjs <url>/u);
 });
 
 test('compile-wiki CLI lint command returns JSON summary', async () => {
@@ -37,7 +37,7 @@ test('compile-wiki CLI lint command returns JSON summary', async () => {
   try {
     const kbDir = path.join(repoRoot, 'knowledge-base', 'jable.tv');
     const reportDir = path.join(workspace, 'reports');
-    const result = runNodeCli('compile-wiki.mjs', ['lint', '--kb-dir', kbDir, '--report-dir', reportDir], {
+    const result = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'compile-wiki.mjs'), ['lint', '--kb-dir', kbDir, '--report-dir', reportDir], {
       cwd: workspace,
     });
 
@@ -57,7 +57,7 @@ test('generate-skill CLI returns the expected summary shape', async () => {
 
   try {
     const result = runNodeCli(
-      'generate-skill.mjs',
+      path.join('src', 'entrypoints', 'pipeline', 'generate-skill.mjs'),
       [
         'https://jable.tv/',
         '--kb-dir',
@@ -91,9 +91,9 @@ test('generate-skill CLI returns the expected summary shape', async () => {
 test('site-doctor and site-scaffold CLIs expose stable help output', () => {
   const doctorHelp = runNodeCli(path.join('scripts', 'site-doctor.mjs'), ['--help']);
   assert.equal(doctorHelp.status, 0);
-  assert.match(doctorHelp.stdout, /node scripts[\\/]site-doctor\.mjs <url>/u);
+  assert.match(doctorHelp.stdout, /node src[\\/]entrypoints[\\/]sites[\\/]site-doctor\.mjs <url>/u);
 
   const scaffoldHelp = runNodeCli(path.join('scripts', 'site-scaffold.mjs'), ['--help']);
   assert.equal(scaffoldHelp.status, 0);
-  assert.match(scaffoldHelp.stdout, /node scripts[\\/]site-scaffold\.mjs <url> --archetype/u);
+  assert.match(scaffoldHelp.stdout, /node src[\\/]entrypoints[\\/]sites[\\/]site-scaffold\.mjs <url> --archetype/u);
 });

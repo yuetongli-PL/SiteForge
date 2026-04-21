@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 
-import { resolveBilibiliOpenDecision } from '../../lib/bilibili-open.mjs';
+import { resolveBilibiliOpenDecision } from '../../src/sites/bilibili/navigation/open.mjs';
 import { openBilibiliPage } from '../../scripts/open-bilibili-page.mjs';
 
 function createAuthProfile() {

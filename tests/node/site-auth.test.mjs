@@ -4,18 +4,29 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 
-import { readJsonFile } from '../../lib/io.mjs';
+import { readJsonFile } from '../../src/infra/io.mjs';
 import {
   derivePersistentProfileKey,
   inspectPersistentProfileHealth,
   resolvePersistentUserDataDir,
-} from '../../lib/browser-runtime/profile-store.mjs';
-import { resolveSiteBrowserSessionOptions } from '../../lib/site-auth.mjs';
+} from '../../src/infra/browser/profile-store.mjs';
+import {
+  resolveAuthKeepaliveUrl,
+  resolveAuthVerificationUrl,
+  resolveCredentialSource,
+  resolveSiteBrowserSessionOptions,
+} from '../../src/infra/auth/site-auth.mjs';
 
 test('derivePersistentProfileKey groups bilibili subdomains under the same persistent profile key', () => {
   assert.equal(derivePersistentProfileKey('https://www.bilibili.com/'), 'bilibili.com');
   assert.equal(derivePersistentProfileKey('https://search.bilibili.com/video?keyword=BV1WjDDBGE3p'), 'bilibili.com');
   assert.equal(derivePersistentProfileKey('https://space.bilibili.com/1202350411/video'), 'bilibili.com');
+});
+
+test('derivePersistentProfileKey keeps Douyin URLs on the shared douyin.com profile key', () => {
+  assert.equal(derivePersistentProfileKey('https://www.douyin.com/?recommend=1'), 'douyin.com');
+  assert.equal(derivePersistentProfileKey('https://www.douyin.com/user/self?showTab=like'), 'douyin.com');
+  assert.equal(derivePersistentProfileKey('https://www.douyin.com/follow?tab=user'), 'douyin.com');
 });
 
 test('resolvePersistentUserDataDir keeps bilibili subdomains on one shared directory', () => {
@@ -43,6 +54,201 @@ test('resolveSiteBrowserSessionOptions honors bilibili authSession defaults', as
   assert.equal(sessionOptions.userDataDir, path.resolve('tmp-browser-profiles', 'bilibili.com'));
   assert.equal(sessionOptions.cleanupUserDataDirOnShutdown, false);
   assert.equal(sessionOptions.authConfig.loginUrl, 'https://passport.bilibili.com/login');
+});
+
+test('resolveSiteBrowserSessionOptions honors Douyin auth session defaults', async () => {
+  const siteProfile = await readJsonFile(path.resolve('profiles/www.douyin.com.json'));
+  const sessionOptions = await resolveSiteBrowserSessionOptions('https://www.douyin.com/?recommend=1', {
+    browserProfileRoot: path.resolve('tmp-browser-profiles'),
+  }, {
+    siteProfile,
+    profilePath: path.resolve('profiles/www.douyin.com.json'),
+  });
+
+  assert.equal(sessionOptions.reuseLoginState, true);
+  assert.equal(sessionOptions.userDataDir, path.resolve('tmp-browser-profiles', 'douyin.com'));
+  assert.equal(sessionOptions.cleanupUserDataDirOnShutdown, false);
+  assert.equal(sessionOptions.authConfig.loginUrl, 'https://www.douyin.com/');
+  assert.equal(sessionOptions.authConfig.postLoginUrl, 'https://www.douyin.com/');
+  assert.equal(sessionOptions.authConfig.verificationUrl, 'https://www.douyin.com/user/self?showTab=like');
+  assert.equal(sessionOptions.authConfig.autoLoginByDefault, true);
+  assert.equal(sessionOptions.authConfig.credentialTarget, 'BrowserWikiSkill:douyin.com');
+  assert.equal(sessionOptions.authConfig.usernameEnv, 'DOUYIN_USERNAME');
+  assert.equal(sessionOptions.authConfig.passwordEnv, 'DOUYIN_PASSWORD');
+  assert.ok(Array.isArray(sessionOptions.authConfig.loginEntrySelectors));
+  assert.ok(sessionOptions.authConfig.loginEntrySelectors.length > 0);
+  assert.deepEqual(sessionOptions.authConfig.authRequiredPathPrefixes, ['/user/self', '/follow']);
+  assert.equal(sessionOptions.authConfig.keepaliveUrl, 'https://www.douyin.com/user/self?showTab=like');
+  assert.equal(sessionOptions.authConfig.keepaliveIntervalMinutes, 120);
+  assert.equal(sessionOptions.authConfig.cooldownMinutesAfterRisk, 120);
+  assert.equal(sessionOptions.authConfig.preferVisibleBrowserForAuthenticatedFlows, true);
+  assert.equal(sessionOptions.authConfig.requireStableNetworkForAuthenticatedFlows, true);
+});
+
+test('resolveCredentialSource prefers Windows Credential Manager before environment variables', async () => {
+  process.env.DOUYIN_USERNAME = 'env-user';
+  process.env.DOUYIN_PASSWORD = 'env-pass';
+  try {
+    const credentials = await resolveCredentialSource({
+      host: 'www.douyin.com',
+      credentialTarget: 'BrowserWikiSkill:douyin.com',
+      usernameEnv: 'DOUYIN_USERNAME',
+      passwordEnv: 'DOUYIN_PASSWORD',
+    }, {}, {
+      getWindowsCredential: async () => ({
+        found: true,
+        username: 'stored-user',
+        password: 'stored-pass',
+      }),
+    });
+
+    assert.equal(credentials.available, true);
+    assert.equal(credentials.source, 'wincred:BrowserWikiSkill:douyin.com');
+    assert.equal(credentials.username, 'stored-user');
+    assert.equal(credentials.password, 'stored-pass');
+  } finally {
+    delete process.env.DOUYIN_USERNAME;
+    delete process.env.DOUYIN_PASSWORD;
+  }
+});
+
+test('resolveCredentialSource falls back to environment variables when WinCred has no stored secret', async () => {
+  process.env.DOUYIN_USERNAME = 'env-user';
+  process.env.DOUYIN_PASSWORD = 'env-pass';
+  try {
+    const credentials = await resolveCredentialSource({
+      host: 'www.douyin.com',
+      credentialTarget: 'BrowserWikiSkill:douyin.com',
+      usernameEnv: 'DOUYIN_USERNAME',
+      passwordEnv: 'DOUYIN_PASSWORD',
+    }, {}, {
+      getWindowsCredential: async () => ({
+        found: false,
+      }),
+    });
+
+    assert.equal(credentials.available, true);
+    assert.equal(credentials.source, 'env:DOUYIN_USERNAME/DOUYIN_PASSWORD');
+    assert.equal(credentials.username, 'env-user');
+    assert.equal(credentials.password, 'env-pass');
+  } finally {
+    delete process.env.DOUYIN_USERNAME;
+    delete process.env.DOUYIN_PASSWORD;
+  }
+});
+
+test('resolveAuthVerificationUrl supports explicit verification URLs and legacy auth sample fallbacks', () => {
+  const douyinProfile = {
+    profile: {
+      host: 'www.douyin.com',
+      authValidationSamples: {
+        selfPostsUrl: 'https://www.douyin.com/user/self?showTab=post',
+        likesUrl: 'https://www.douyin.com/user/self?showTab=like',
+        followFeedUrl: 'https://www.douyin.com/follow?tab=feed',
+      },
+      authSession: {
+        loginUrl: 'https://www.douyin.com/',
+        postLoginUrl: 'https://www.douyin.com/',
+        verificationUrl: 'https://www.douyin.com/user/self?showTab=like',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthVerificationUrl('https://www.douyin.com/?recommend=1', douyinProfile),
+    'https://www.douyin.com/user/self?showTab=like',
+  );
+
+  const douyinWithoutExplicitVerification = {
+    profile: {
+      host: 'www.douyin.com',
+      authValidationSamples: {
+        followFeedUrl: 'https://www.douyin.com/follow?tab=feed',
+        selfPostsUrl: 'https://www.douyin.com/user/self?showTab=post',
+        likesUrl: 'https://www.douyin.com/user/self?showTab=like',
+      },
+      authSession: {
+        loginUrl: 'https://www.douyin.com/',
+        postLoginUrl: 'https://www.douyin.com/',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthVerificationUrl('https://www.douyin.com/?recommend=1', douyinWithoutExplicitVerification),
+    'https://www.douyin.com/user/self?showTab=like',
+  );
+
+  const bilibiliProfile = {
+    profile: {
+      host: 'www.bilibili.com',
+      authValidationSamples: {
+        watchLaterUrl: 'https://www.bilibili.com/watchlater/#/list',
+        dynamicUrl: 'https://space.bilibili.com/1202350411/dynamic',
+      },
+      authSession: {
+        loginUrl: 'https://passport.bilibili.com/login',
+        postLoginUrl: 'https://www.bilibili.com/',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthVerificationUrl('https://www.bilibili.com/', bilibiliProfile),
+    'https://space.bilibili.com/1202350411/dynamic',
+  );
+});
+
+test('resolveAuthKeepaliveUrl prefers keepaliveUrl then falls back through verification defaults', () => {
+  const douyinWithKeepalive = {
+    profile: {
+      host: 'www.douyin.com',
+      authValidationSamples: {
+        selfPostsUrl: 'https://www.douyin.com/user/self?showTab=post',
+        likesUrl: 'https://www.douyin.com/user/self?showTab=like',
+      },
+      authSession: {
+        loginUrl: 'https://www.douyin.com/',
+        postLoginUrl: 'https://www.douyin.com/',
+        verificationUrl: 'https://www.douyin.com/user/self?showTab=like',
+        keepaliveUrl: 'https://www.douyin.com/follow?tab=feed',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthKeepaliveUrl('https://www.douyin.com/?recommend=1', douyinWithKeepalive),
+    'https://www.douyin.com/follow?tab=feed',
+  );
+
+  const douyinWithoutKeepalive = {
+    profile: {
+      host: 'www.douyin.com',
+      authValidationSamples: {
+        followFeedUrl: 'https://www.douyin.com/follow?tab=feed',
+        likesUrl: 'https://www.douyin.com/user/self?showTab=like',
+      },
+      authSession: {
+        loginUrl: 'https://www.douyin.com/',
+        postLoginUrl: 'https://www.douyin.com/',
+        verificationUrl: 'https://www.douyin.com/user/self?showTab=like',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthKeepaliveUrl('https://www.douyin.com/?recommend=1', douyinWithoutKeepalive),
+    'https://www.douyin.com/user/self?showTab=like',
+  );
+
+  const bilibiliWithoutSamples = {
+    profile: {
+      host: 'www.bilibili.com',
+      authSession: {
+        loginUrl: 'https://passport.bilibili.com/login',
+        postLoginUrl: 'https://www.bilibili.com/',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthKeepaliveUrl('https://www.bilibili.com/', bilibiliWithoutSamples),
+    'https://www.bilibili.com/',
+  );
 });
 
 test('inspectPersistentProfileHealth flags crashed Chrome profiles as unhealthy', async () => {

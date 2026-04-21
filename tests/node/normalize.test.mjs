@@ -11,7 +11,7 @@ import {
   sanitizeHost,
   slugifyAscii,
   uniqueSortedStrings,
-} from '../../lib/normalize.mjs';
+} from '../../src/shared/normalize.mjs';
 
 test('normalizeText folds whitespace and NFKC', () => {
   assert.equal(normalizeText('  ＡＢＣ　123  '), 'ABC 123');

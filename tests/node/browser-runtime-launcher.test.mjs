@@ -9,8 +9,8 @@ import {
   cleanupUserDataDir,
   parseDevToolsActivePortContent,
   shutdownBrowser,
-} from '../../lib/browser-runtime/launcher.mjs';
-import { waitForPersistentProfileFlush } from '../../lib/browser-runtime/profile-store.mjs';
+} from '../../src/infra/browser/launcher.mjs';
+import { waitForPersistentProfileFlush } from '../../src/infra/browser/profile-store.mjs';
 
 test('cleanupUserDataDir retries transient lock errors and does not throw', async () => {
   let attempts = 0;

@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 _tmp_*.html
 tmp-*.html
+tmp-*.txt
 tmp-*.log
 *.encoding-bak
 book-content/
@@ -18,3 +19,4 @@ archive/benchmarks/
 archive/site-doctor/
 archive/site-login/
 archive/intermediate-*/
+runs/

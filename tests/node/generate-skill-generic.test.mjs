@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
-import { generateSkill } from '../../generate-skill.mjs';
+import { generateSkill } from '../../src/entrypoints/pipeline/generate-skill.mjs';
 
 async function writeJson(filePath, payload) {
   await mkdir(path.dirname(filePath), { recursive: true });

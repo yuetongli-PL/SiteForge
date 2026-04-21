@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 
-import { runPipeline } from '../../run-pipeline.mjs';
-import { PIPELINE_STAGE_SPECS } from '../../lib/pipeline/stage-spec.mjs';
+import { runPipeline } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
+import { PIPELINE_STAGE_SPECS } from '../../src/pipeline/engine/stage-spec.mjs';
 
 function buildStageDir(workspace, name) {
   return path.join(workspace, name);
@@ -476,6 +476,179 @@ test('runPipeline does not retry non-transient stage failures', async () => {
       /\[capture\] hard failure/u,
     );
     assert.equal(attempts, 1);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline defaults stage output roots to runs-aware directories', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-default-runs-'));
+  const calls = [];
+
+  const stageImpls = createSuccessfulStageImpls(workspace, {
+    async capture(url, options) {
+      calls.push({ stage: 'capture', options });
+      return {
+        status: 'success',
+        outDir: buildStageDir(workspace, 'capture'),
+        files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+        finalUrl: url,
+        title: 'Smoke Capture',
+        capturedAt: '2026-04-15T00:00:00.000Z',
+      };
+    },
+    async expandStates(_url, options) {
+      calls.push({ stage: 'expanded', options });
+      return {
+        outDir: buildStageDir(workspace, 'expanded'),
+        summary: {
+          discoveredTriggers: 0,
+          attemptedTriggers: 0,
+          capturedStates: 1,
+          duplicateStates: 0,
+          noopTriggers: 0,
+          failedTriggers: 0,
+        },
+      };
+    },
+    async collectBookContent(_url, options) {
+      calls.push({ stage: 'bookContent', options });
+      return {
+        outDir: buildStageDir(workspace, 'book-content'),
+        summary: { books: 0 },
+        negativeQueries: [],
+      };
+    },
+    async analyzeStates(_url, options) {
+      calls.push({ stage: 'analysis', options });
+      return {
+        outDir: buildStageDir(workspace, 'analysis'),
+        summary: { states: 1 },
+      };
+    },
+    async abstractInteractions(_url, options) {
+      calls.push({ stage: 'abstraction', options });
+      return {
+        outDir: buildStageDir(workspace, 'abstraction'),
+        summary: { intents: 1 },
+      };
+    },
+    async buildNlEntry(_url, options) {
+      calls.push({ stage: 'nlEntry', options });
+      return {
+        outDir: buildStageDir(workspace, 'nl-entry'),
+        summary: { entryRules: 1 },
+      };
+    },
+    async generateDocs(_url, options) {
+      calls.push({ stage: 'docs', options });
+      return {
+        outDir: buildStageDir(workspace, 'docs'),
+        summary: { documents: 1 },
+      };
+    },
+    async buildGovernance(_url, options) {
+      calls.push({ stage: 'governance', options });
+      return {
+        outDir: buildStageDir(workspace, 'governance'),
+        summary: { risks: 1 },
+      };
+    },
+    async compileKnowledgeBase(_url, options) {
+      calls.push({ stage: 'knowledgeBase', options });
+      return {
+        kbDir: buildStageDir(workspace, 'kb'),
+        pages: 1,
+        lintSummary: { warnings: 0, errors: 0 },
+        gapGroups: [],
+      };
+    },
+    async generateSkill(_url, options) {
+      calls.push({ stage: 'skill', options });
+      return {
+        skillDir: buildStageDir(workspace, 'skill'),
+        skillName: 'jable-videos',
+        references: [],
+        warnings: [],
+      };
+    },
+  });
+
+  try {
+    await runPipeline('https://www.douyin.com/?recommend=1', {}, stageImpls);
+
+    const findCall = (name) => calls.find((entry) => entry.stage === name);
+    assert.equal(findCall('capture').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'captures'));
+    assert.equal(findCall('expanded').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'expanded-states'));
+    assert.equal(findCall('bookContent'), undefined);
+    assert.equal(findCall('analysis').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'state-analysis'));
+    assert.equal(findCall('abstraction').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'interaction-abstraction'));
+    assert.equal(findCall('nlEntry').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'nl-entry'));
+    assert.equal(findCall('docs').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'operation-docs'));
+    assert.equal(findCall('governance').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'governance'));
+    assert.equal(findCall('knowledgeBase').options.outDir, undefined);
+    assert.equal(findCall('skill').options.outDir, undefined);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline runs authenticated keepalive preflight before executing stages when a runtime helper is provided', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-preflight-'));
+  const calls = [];
+
+  try {
+    const runtime = {
+      stageSpecs: PIPELINE_STAGE_SPECS,
+      stageImpls: createSuccessfulStageImpls(workspace, {
+        async capture(url, options) {
+          calls.push({ stage: 'capture', url, options });
+          return {
+            status: 'success',
+            outDir: buildStageDir(workspace, 'capture'),
+            files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+            finalUrl: url,
+            title: 'Preflight Capture',
+            capturedAt: '2026-04-15T00:00:00.000Z',
+          };
+        },
+      }),
+      async preflightKeepalive(url, options) {
+        calls.push({ stage: 'preflightKeepalive', url, options });
+        return {
+          attempted: true,
+          ran: true,
+          trigger: 'keepalive-window',
+          reason: 'within-preflight-threshold',
+          thresholdMinutes: 15,
+          sessionHealthSummaryAfter: {
+            keepaliveDue: false,
+            successfulKeepalives: 5,
+          },
+          keepaliveReport: {
+            keepalive: {
+              status: 'kept-alive',
+            },
+            reports: {
+              json: path.join(workspace, 'keepalive', 'report.json'),
+              markdown: path.join(workspace, 'keepalive', 'report.md'),
+            },
+          },
+        };
+      },
+    };
+
+    const result = await runPipeline('https://www.douyin.com/?recommend=1', {
+      reuseLoginState: true,
+      autoLogin: true,
+    }, runtime);
+
+    assert.equal(calls[0].stage, 'preflightKeepalive');
+    assert.equal(calls[1].stage, 'capture');
+    assert.equal(result.authKeepalive.ran, true);
+    assert.equal(result.authKeepalive.trigger, 'keepalive-window');
+    assert.equal(result.authKeepalive.status, 'kept-alive');
+    assert.equal(result.authKeepalive.sessionHealthSummary?.successfulKeepalives, 5);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { openBrowserSession } from '../../lib/browser-runtime/session.mjs';
+import { BrowserSession, openBrowserSession } from '../../src/infra/browser/session.mjs';
 
 class FakeCdpClient {
   constructor(_wsUrl, _options = {}) {
@@ -226,4 +226,209 @@ test('openBrowserSession falls back to launching a fresh browser when DevToolsAc
   } finally {
     await session.close();
   }
+});
+
+test('openBrowserSession retries a transient browser startup failure before DevTools becomes ready', async () => {
+  let launchCalls = 0;
+
+  const session = await openBrowserSession({
+    headless: false,
+    timeoutMs: 500,
+    fullPage: false,
+    viewport: {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+    },
+    userDataDir: 'C:\\profiles\\douyin.com',
+    cleanupUserDataDirOnShutdown: false,
+    startupUrl: 'https://www.douyin.com/',
+  }, {}, {
+    detectBrowserPath: async () => 'C:\\Chrome\\chrome.exe',
+    readExistingBrowserDevTools: async () => null,
+    launchBrowser: async () => {
+      launchCalls += 1;
+      if (launchCalls === 1) {
+        throw new Error('Browser exited before DevTools became ready (code 0)');
+      }
+      return {
+        browserProcess: null,
+        userDataDir: 'C:\\profiles\\douyin.com',
+        cleanupUserDataDirOnShutdown: false,
+        wsUrl: 'ws://127.0.0.1:9224/devtools/browser/retry',
+        startupUrl: 'https://www.douyin.com/',
+      };
+    },
+    CdpClient: class extends FakeCdpClient {
+      constructor(wsUrl, options) {
+        super(wsUrl, options);
+        this.targetInfos = [{ targetId: 'retry-target-1', type: 'page', url: 'https://www.douyin.com/' }];
+      }
+    },
+  });
+
+  try {
+    assert.equal(launchCalls, 2);
+    assert.equal(session.targetId, 'retry-target-1');
+    assert.equal(session.browserAttachedVia, 'existing-target');
+  } finally {
+    await session.close();
+  }
+});
+
+test('openBrowserSession retries a transient CDP socket failure during target attachment', async () => {
+  let launchCalls = 0;
+  let clientConstructions = 0;
+
+  const session = await openBrowserSession({
+    headless: false,
+    timeoutMs: 500,
+    fullPage: false,
+    viewport: {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+    },
+    userDataDir: 'C:\\profiles\\douyin.com',
+    cleanupUserDataDirOnShutdown: false,
+    startupUrl: 'https://www.douyin.com/',
+    sessionOpenRetries: 2,
+  }, {}, {
+    detectBrowserPath: async () => 'C:\\Chrome\\chrome.exe',
+    readExistingBrowserDevTools: async () => null,
+    launchBrowser: async () => {
+      launchCalls += 1;
+      return {
+        browserProcess: null,
+        userDataDir: 'C:\\profiles\\douyin.com',
+        cleanupUserDataDirOnShutdown: false,
+        wsUrl: `ws://127.0.0.1:9224/devtools/browser/retry-${launchCalls}`,
+        startupUrl: 'https://www.douyin.com/',
+      };
+    },
+    CdpClient: class extends FakeCdpClient {
+      constructor(wsUrl, options) {
+        super(wsUrl, options);
+        clientConstructions += 1;
+        this.wsUrl = wsUrl;
+        this.targetInfos = [{ targetId: 'retry-target-2', type: 'page', url: 'https://www.douyin.com/' }];
+      }
+
+      async send(method, params = {}, sessionId) {
+        if (clientConstructions === 1 && method === 'Target.attachToTarget') {
+          throw new Error('CDP socket closed: 1006');
+        }
+        return await super.send(method, params, sessionId);
+      }
+    },
+  });
+
+  try {
+    assert.equal(launchCalls, 2);
+    assert.equal(session.targetId, 'retry-target-2');
+    assert.equal(session.browserAttachedVia, 'existing-target');
+  } finally {
+    await session.close();
+  }
+});
+
+test('openBrowserSession does not attach to an unrelated existing page when startupUrl is a specific URL', async () => {
+  let clientInstance = null;
+
+  const session = await openBrowserSession({
+    headless: false,
+    timeoutMs: 20,
+    fullPage: false,
+    viewport: {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+    },
+    startupUrl: 'https://www.douyin.com/?recommend=1',
+  }, {}, {
+    detectBrowserPath: async () => 'C:\\Chrome\\chrome.exe',
+    launchBrowser: async () => ({
+      browserProcess: null,
+      userDataDir: 'C:\\profiles\\douyin.com',
+      cleanupUserDataDirOnShutdown: false,
+      wsUrl: 'ws://127.0.0.1:9225/devtools/browser/test',
+      startupUrl: 'https://www.douyin.com/?recommend=1',
+    }),
+    CdpClient: class extends FakeCdpClient {
+      constructor(wsUrl, options) {
+        super(wsUrl, options);
+        this.targetInfos = [{ targetId: 'existing-follow-tab', type: 'page', url: 'https://www.douyin.com/follow?tab=user' }];
+        clientInstance = this;
+      }
+    },
+  });
+
+  try {
+    assert.equal(session.targetId, 'created-target-1');
+    assert.equal(session.browserAttachedVia, 'created-target');
+    const createTargetCall = clientInstance.calls.find((call) => call.method === 'Target.createTarget');
+    assert.deepEqual(createTargetCall?.params, {
+      url: 'https://www.douyin.com/?recommend=1',
+    });
+  } finally {
+    await session.close();
+  }
+});
+
+test('BrowserSession evaluateValue retries a transient Runtime.evaluate timeout once', async () => {
+  let attempts = 0;
+  const session = new BrowserSession({
+    client: {
+      async send(method, params) {
+        attempts += 1;
+        assert.equal(method, 'Runtime.evaluate');
+        assert.equal(params.expression, 'document.title');
+        if (attempts === 1) {
+          throw new Error('CDP timeout for Runtime.evaluate');
+        }
+        return {
+          result: {
+            value: 'Douyin',
+          },
+        };
+      },
+    },
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    timeoutMs: 50,
+    networkTracker: { dispose() {} },
+  });
+
+  const value = await session.evaluateValue('document.title');
+  assert.equal(value, 'Douyin');
+  assert.equal(attempts, 2);
+});
+
+test('BrowserSession callPageFunction retries a transient Runtime.evaluate timeout once', async () => {
+  let attempts = 0;
+  const session = new BrowserSession({
+    client: {
+      async send(method, params) {
+        attempts += 1;
+        assert.equal(method, 'Runtime.evaluate');
+        assert.match(params.expression, /^\(\(\) => 7\)\(\)$/);
+        if (attempts === 1) {
+          throw new Error('CDP timeout for Runtime.evaluate');
+        }
+        return {
+          result: {
+            value: 7,
+          },
+        };
+      },
+    },
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    timeoutMs: 50,
+    networkTracker: { dispose() {} },
+  });
+
+  const value = await session.callPageFunction(() => 7);
+  assert.equal(value, 7);
+  assert.equal(attempts, 2);
 });

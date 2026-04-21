@@ -139,6 +139,8 @@ const authSessionSchema = {
     passwordSelectors: stringArray({ minItems: 1 }),
     submitSelectors: stringArray({ minItems: 1 }),
     challengeSelectors: stringArray({ minItems: 1 }),
+    validationSamplePriority: stringArray({ minItems: 1 }),
+    reusableSessionSignals: stringArray({ minItems: 1 }),
     authRequiredAuthorSubpages: stringArray({ minItems: 1 }),
     authRequiredPathPrefixes: stringArray({ minItems: 1 }),
   },

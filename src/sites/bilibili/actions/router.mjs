@@ -5,9 +5,10 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { inspectPersistentProfileHealth } from '../../../infra/browser/profile-store.mjs';
-import { resolveSiteBrowserSessionOptions } from '../../../infra/auth/site-auth.mjs';
-import { siteLogin } from '../../../infra/auth/site-login-service.mjs';
+import {
+  bootstrapReusableSiteSession,
+  inspectRequestReusableSiteSession,
+} from '../../../infra/auth/site-login-service.mjs';
 import { openBilibiliPageInLocalBrowser, resolveBilibiliOpenDecision } from '../navigation/open.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -16,10 +17,6 @@ const BILIBILI_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'bil
 const BILIBILI_DOWNLOAD_PYTHON_ENTRY_LABEL = 'src/sites/bilibili/download/python/bilibili.py';
 const BILIBILI_HOME_URL = 'https://www.bilibili.com/';
 const BV_PATTERN = /^BV[0-9A-Za-z]+$/u;
-
-function normalizeBoolean(value, defaultValue = false) {
-  return typeof value === 'boolean' ? value : defaultValue;
-}
 
 function normalizeText(value) {
   return String(value ?? '').trim();
@@ -78,36 +75,6 @@ function buildLoginFailureResult(plan, report) {
   };
 }
 
-function definedEntries(input) {
-  return Object.fromEntries(
-    Object.entries(input || {}).filter(([, value]) => value !== undefined),
-  );
-}
-
-async function inspectReusableBilibiliSession(request, deps = {}) {
-  const sessionOptions = await (deps.resolveSiteBrowserSessionOptions ?? resolveSiteBrowserSessionOptions)(
-    request.targetUrl || BILIBILI_HOME_URL,
-    {
-      browserProfileRoot: request.browserProfileRoot,
-      userDataDir: request.userDataDir,
-      reuseLoginState: request.reuseLoginState ?? true,
-    },
-    {
-      profilePath: request.profilePath,
-      siteProfile: request.siteProfile,
-    },
-  );
-  const profileHealth = sessionOptions.userDataDir
-    ? await (deps.inspectPersistentProfileHealth ?? inspectPersistentProfileHealth)(sessionOptions.userDataDir)
-    : null;
-  return {
-    authAvailable: Boolean(sessionOptions.reuseLoginState && profileHealth?.usableForCookies),
-    userDataDir: sessionOptions.userDataDir ?? null,
-    profileHealth,
-    profilePath: sessionOptions.authProfile?.filePath ?? null,
-  };
-}
-
 export async function planBilibiliAction(request, deps = {}) {
   const action = normalizeText(request?.action) || 'open';
   const reuseLoginState = request?.reuseLoginState !== false;
@@ -124,7 +91,12 @@ export async function planBilibiliAction(request, deps = {}) {
       deps.openDecisionDeps ?? {},
     );
     const sessionState = decision.authRequired
-      ? await inspectReusableBilibiliSession({ ...request, reuseLoginState }, deps)
+      ? await (deps.inspectRequestReusableSiteSession ?? inspectRequestReusableSiteSession)(
+        request.targetUrl || BILIBILI_HOME_URL,
+        request,
+        deps,
+        { reuseLoginState },
+      )
       : { authAvailable: false, userDataDir: null, profileHealth: null, profilePath: decision.profilePath ?? null };
     return {
       action,
@@ -147,7 +119,12 @@ export async function planBilibiliAction(request, deps = {}) {
     const classifications = items.map(classifyDownloadInput);
     const authRequired = classifications.some((item) => item.authRequired);
     const sessionState = authRequired
-      ? await inspectReusableBilibiliSession({ ...request, targetUrl: BILIBILI_HOME_URL, reuseLoginState }, deps)
+      ? await (deps.inspectRequestReusableSiteSession ?? inspectRequestReusableSiteSession)(
+        BILIBILI_HOME_URL,
+        request,
+        deps,
+        { reuseLoginState },
+      )
       : { authAvailable: false, userDataDir: null, profileHealth: null, profilePath: request.profilePath ?? null };
     return {
       action,
@@ -181,7 +158,12 @@ export async function planBilibiliAction(request, deps = {}) {
     };
   }
   if (action === 'login') {
-    const sessionState = await inspectReusableBilibiliSession({ ...request, targetUrl: request.targetUrl || BILIBILI_HOME_URL, reuseLoginState }, deps);
+    const sessionState = await (deps.inspectRequestReusableSiteSession ?? inspectRequestReusableSiteSession)(
+      request.targetUrl || BILIBILI_HOME_URL,
+      request,
+      deps,
+      { reuseLoginState },
+    );
     return {
       action,
       targetUrl: request.targetUrl || BILIBILI_HOME_URL,
@@ -308,23 +290,18 @@ export async function runBilibiliAction(request, deps = {}) {
   if (plan.action === 'open') {
     let loginReport = null;
     if (plan.route === 'site-login') {
-      loginReport = await (deps.siteLogin ?? siteLogin)(
+      const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
         request.targetUrl || BILIBILI_HOME_URL,
-        definedEntries({
-          profilePath: request.profilePath,
-          browserPath: request.browserPath,
-          browserProfileRoot: request.browserProfileRoot,
-          userDataDir: request.userDataDir,
-          reuseLoginState: request.reuseLoginState ?? true,
+        request,
+        deps,
+        {
           autoLogin: true,
           headless: false,
           waitForManualLogin: true,
-          outDir: request.outDir,
-          timeoutMs: request.timeoutMs,
-        }),
-        deps.siteLoginDeps ?? {},
+        },
       );
-      if ((loginReport?.auth?.persistenceVerified) !== true) {
+      loginReport = loginBootstrap.report;
+      if (!loginBootstrap.ok) {
         return buildLoginFailureResult(plan, loginReport);
       }
     }
@@ -353,24 +330,19 @@ export async function runBilibiliAction(request, deps = {}) {
   }
 
   if (plan.action === 'login') {
-    const loginReport = await (deps.siteLogin ?? siteLogin)(
+    const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
       request.targetUrl || BILIBILI_HOME_URL,
-      definedEntries({
-        profilePath: request.profilePath,
-        browserPath: request.browserPath,
-        browserProfileRoot: request.browserProfileRoot,
-        userDataDir: request.userDataDir,
-        reuseLoginState: request.reuseLoginState ?? true,
+      request,
+      deps,
+      {
         autoLogin: true,
         headless: false,
         waitForManualLogin: true,
-        outDir: request.outDir,
-        timeoutMs: request.timeoutMs,
-      }),
-      deps.siteLoginDeps ?? {},
+      },
     );
+    const loginReport = loginBootstrap.report;
     return {
-      ok: loginReport?.auth?.persistenceVerified === true,
+      ok: loginBootstrap.ok,
       action: 'login',
       plan,
       reasonCode: loginReport?.auth?.status ?? 'login-failed',
@@ -381,23 +353,18 @@ export async function runBilibiliAction(request, deps = {}) {
   if (plan.action === 'download') {
     let loginReport = null;
     if (plan.route === 'download-after-login') {
-      loginReport = await (deps.siteLogin ?? siteLogin)(
+      const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
         BILIBILI_HOME_URL,
-        definedEntries({
-          profilePath: request.profilePath,
-          browserPath: request.browserPath,
-          browserProfileRoot: request.browserProfileRoot,
-          userDataDir: request.userDataDir,
-          reuseLoginState: request.reuseLoginState ?? true,
+        request,
+        deps,
+        {
           autoLogin: true,
           headless: false,
           waitForManualLogin: true,
-          outDir: request.outDir,
-          timeoutMs: request.timeoutMs,
-        }),
-        deps.siteLoginDeps ?? {},
+        },
       );
-      if ((loginReport?.auth?.persistenceVerified) !== true) {
+      loginReport = loginBootstrap.report;
+      if (!loginBootstrap.ok) {
         return buildLoginFailureResult(plan, loginReport);
       }
     }

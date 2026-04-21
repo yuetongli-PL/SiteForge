@@ -3,13 +3,9 @@ import process from 'node:process';
 
 import { validateProfileFile } from '../../sites/core/profile-validation.mjs';
 import { maybeLoadValidatedProfileForUrl } from '../../sites/core/profiles.mjs';
-import { resolvePersistentUserDataDir } from '../browser/profile-store.mjs';
+import { inspectPersistentProfileHealth, resolvePersistentUserDataDir } from '../browser/profile-store.mjs';
 import { normalizeText } from '../../shared/normalize.mjs';
 import { getWindowsCredential, resolveWindowsCredentialTarget } from './windows-credential-manager.mjs';
-import {
-  DOUYIN_AUTH_VALIDATION_SAMPLE_PRIORITY,
-  isDouyinSiteProfile,
-} from '../../sites/douyin/model/site.mjs';
 
 export const DEFAULT_LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
 
@@ -115,76 +111,6 @@ export async function resolveCredentialSource(authConfig, options = {}, deps = {
   };
 }
 
-function defaultLoggedOutSelectors() {
-  return [
-    '.go-login-btn',
-    '.header-login-entry',
-    '.login-btn',
-    'a[href*="passport.bilibili.com/login"]',
-  ];
-}
-
-function defaultLoggedInSelectors() {
-  return [
-    'a[href*="space.bilibili.com/"] img',
-    '.bili-avatar img',
-    '.header-entry-mini img',
-    '.header-avatar-wrap--container img',
-    '.v-img.avatar',
-  ];
-}
-
-function defaultLoginEntrySelectors() {
-  return [
-    'button[aria-label*="登录"]',
-    'button[class*="login"]',
-    '[data-e2e*="login"]',
-    '[class*="login"] button',
-    '[class*="login"]',
-  ];
-}
-
-function defaultPasswordLoginTabSelectors() {
-  return [
-    '.tabs_wp > div:first-child',
-  ];
-}
-
-function defaultUsernameSelectors() {
-  return [
-    '.tab__form input[type="text"]:not(.body__captcha-input)',
-    'input[placeholder*="账号"]',
-    'input[name="username"]',
-    'input[type="email"]',
-  ];
-}
-
-function defaultPasswordSelectors() {
-  return [
-    '.tab__form input[type="password"]',
-    'input[placeholder*="密码"]',
-    'input[name="password"]',
-  ];
-}
-
-function defaultSubmitSelectors() {
-  return [
-    '.btn_primary',
-    'button[type="submit"]',
-    'input[type="submit"]',
-  ];
-}
-
-function defaultChallengeSelectors() {
-  return [
-    '.body__captcha-input',
-    '[class*="captcha"]',
-    '[class*="geetest"]',
-    '[class*="verify"]',
-    'input[placeholder*="图片"]',
-  ];
-}
-
 function buildResolvedAuthConfig(profile = null) {
   const authConfig = profile?.authSession ?? null;
   if (!authConfig) {
@@ -214,16 +140,19 @@ function buildResolvedAuthConfig(profile = null) {
     passwordSelectors: normalizeSelectors(authConfig.passwordSelectors),
     submitSelectors: normalizeSelectors(authConfig.submitSelectors),
     challengeSelectors: normalizeSelectors(authConfig.challengeSelectors),
+    validationSamplePriority: normalizeSelectors(authConfig.validationSamplePriority),
+    reusableSessionSignals: normalizeSelectors(authConfig.reusableSessionSignals),
     authRequiredAuthorSubpages: normalizeSelectors(authConfig.authRequiredAuthorSubpages),
     authRequiredPathPrefixes: normalizeSelectors(authConfig.authRequiredPathPrefixes),
   };
 }
 
-function resolveAuthValidationSamplePriority(inputUrl, siteProfile = null) {
-  if (isDouyinSiteProfile(siteProfile, inputUrl)) {
-    return DOUYIN_AUTH_VALIDATION_SAMPLE_PRIORITY;
+function resolveAuthValidationSamplePriority(_inputUrl, siteProfile = null) {
+  const resolvedAuthConfig = buildResolvedAuthConfig(siteProfile);
+  if (resolvedAuthConfig?.validationSamplePriority?.length) {
+    return resolvedAuthConfig.validationSamplePriority;
   }
-  return ['dynamicUrl', 'followListUrl', 'fansListUrl', 'favoriteListUrl', 'watchLaterUrl'];
+  return Object.keys(siteProfile?.authValidationSamples ?? {});
 }
 
 export function resolveAuthVerificationUrl(inputUrl, authProfile = null, authConfig = null) {
@@ -534,24 +463,94 @@ export async function resolveSiteBrowserSessionOptions(inputUrl, settings = {}, 
   };
 }
 
+function hasNoMissingProfilePaths(profileHealth) {
+  return profileHealth.exists === true
+    && Array.isArray(profileHealth.missingPaths)
+    && profileHealth.missingPaths.length === 0;
+}
+
+function resolveReusableSessionSignals({ authConfig = null, siteProfile = null } = {}) {
+  const resolvedAuthConfig = authConfig ?? buildResolvedAuthConfig(siteProfile);
+  if (resolvedAuthConfig?.reusableSessionSignals?.length) {
+    return resolvedAuthConfig.reusableSessionSignals;
+  }
+  return ['usableForCookies'];
+}
+
+export function isReusableLoginStateAvailable(profileHealth, { authConfig = null, siteProfile = null } = {}) {
+  if (!profileHealth || typeof profileHealth !== 'object') {
+    return false;
+  }
+
+  for (const signal of resolveReusableSessionSignals({ authConfig, siteProfile })) {
+    switch (signal) {
+      case 'usableForCookies':
+        if (profileHealth.usableForCookies === true) {
+          return true;
+        }
+        break;
+      case 'healthy':
+        if (profileHealth.healthy === true) {
+          return true;
+        }
+        break;
+      case 'loginStateLikelyAvailable':
+        if (profileHealth.loginStateLikelyAvailable === true) {
+          return true;
+        }
+        break;
+      case 'presentWithoutMissingPaths':
+        if (hasNoMissingProfilePaths(profileHealth)) {
+          return true;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
+export async function inspectReusableSiteSession(inputUrl, settings = {}, options = {}, deps = {}) {
+  const sessionOptions = await (deps.resolveSiteBrowserSessionOptions ?? resolveSiteBrowserSessionOptions)(
+    inputUrl,
+    settings,
+    options,
+  );
+  const profileHealth = sessionOptions.userDataDir
+    ? await (deps.inspectPersistentProfileHealth ?? inspectPersistentProfileHealth)(sessionOptions.userDataDir)
+    : null;
+  const authAvailable = Boolean(
+    sessionOptions.reuseLoginState
+    && isReusableLoginStateAvailable(profileHealth, {
+      authConfig: sessionOptions.authConfig ?? null,
+      siteProfile: sessionOptions.siteProfile ?? null,
+    }),
+  );
+
+  return {
+    authAvailable,
+    reusableProfile: authAvailable,
+    userDataDir: sessionOptions.userDataDir ?? null,
+    profileHealth,
+    profilePath: sessionOptions.authProfile?.filePath ?? null,
+    authProfile: sessionOptions.authProfile ?? null,
+    siteProfile: sessionOptions.siteProfile ?? null,
+    authConfig: sessionOptions.authConfig ?? null,
+    reuseLoginState: sessionOptions.reuseLoginState === true,
+    cleanupUserDataDirOnShutdown: sessionOptions.cleanupUserDataDirOnShutdown === true,
+    sessionOptions,
+  };
+}
+
 export async function inspectLoginState(session, authConfig) {
   return await session.callPageFunction(pageInspectLoginState, {
     loginUrl: authConfig.loginUrl,
-    loginIndicatorSelectors: authConfig.loginIndicatorSelectors.length > 0
-      ? authConfig.loginIndicatorSelectors
-      : defaultLoggedInSelectors(),
-    loggedOutIndicatorSelectors: authConfig.loggedOutIndicatorSelectors.length > 0
-      ? authConfig.loggedOutIndicatorSelectors
-      : defaultLoggedOutSelectors(),
-    usernameSelectors: authConfig.usernameSelectors.length > 0
-      ? authConfig.usernameSelectors
-      : defaultUsernameSelectors(),
-    passwordSelectors: authConfig.passwordSelectors.length > 0
-      ? authConfig.passwordSelectors
-      : defaultPasswordSelectors(),
-    challengeSelectors: authConfig.challengeSelectors.length > 0
-      ? authConfig.challengeSelectors
-      : defaultChallengeSelectors(),
+    loginIndicatorSelectors: authConfig.loginIndicatorSelectors,
+    loggedOutIndicatorSelectors: authConfig.loggedOutIndicatorSelectors,
+    usernameSelectors: authConfig.usernameSelectors,
+    passwordSelectors: authConfig.passwordSelectors,
+    challengeSelectors: authConfig.challengeSelectors,
   });
 }
 
@@ -603,27 +602,13 @@ export async function attemptCredentialLogin(session, authConfig, credentials, s
   const attempt = await session.callPageFunction(pageAttemptCredentialLogin, {
     loginEntrySelectors: authConfig.loginEntrySelectors.length > 0
       ? authConfig.loginEntrySelectors
-      : (authConfig.loggedOutIndicatorSelectors.length > 0
-        ? authConfig.loggedOutIndicatorSelectors
-        : defaultLoginEntrySelectors()),
-    loggedOutIndicatorSelectors: authConfig.loggedOutIndicatorSelectors.length > 0
-      ? authConfig.loggedOutIndicatorSelectors
-      : defaultLoggedOutSelectors(),
-    passwordLoginTabSelectors: authConfig.passwordLoginTabSelectors.length > 0
-      ? authConfig.passwordLoginTabSelectors
-      : defaultPasswordLoginTabSelectors(),
-    usernameSelectors: authConfig.usernameSelectors.length > 0
-      ? authConfig.usernameSelectors
-      : defaultUsernameSelectors(),
-    passwordSelectors: authConfig.passwordSelectors.length > 0
-      ? authConfig.passwordSelectors
-      : defaultPasswordSelectors(),
-    submitSelectors: authConfig.submitSelectors.length > 0
-      ? authConfig.submitSelectors
-      : defaultSubmitSelectors(),
-    challengeSelectors: authConfig.challengeSelectors.length > 0
-      ? authConfig.challengeSelectors
-      : defaultChallengeSelectors(),
+      : authConfig.loggedOutIndicatorSelectors,
+    loggedOutIndicatorSelectors: authConfig.loggedOutIndicatorSelectors,
+    passwordLoginTabSelectors: authConfig.passwordLoginTabSelectors,
+    usernameSelectors: authConfig.usernameSelectors,
+    passwordSelectors: authConfig.passwordSelectors,
+    submitSelectors: authConfig.submitSelectors,
+    challengeSelectors: authConfig.challengeSelectors,
   }, credentials);
 
   if (attempt?.status !== 'submitted') {

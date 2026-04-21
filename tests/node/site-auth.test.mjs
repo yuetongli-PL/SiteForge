@@ -11,9 +11,13 @@ import {
   resolvePersistentUserDataDir,
 } from '../../src/infra/browser/profile-store.mjs';
 import {
+  attemptCredentialLogin,
   resolveAuthKeepaliveUrl,
   resolveAuthVerificationUrl,
   resolveCredentialSource,
+  inspectLoginState,
+  inspectReusableSiteSession,
+  isReusableLoginStateAvailable,
   resolveSiteBrowserSessionOptions,
 } from '../../src/infra/auth/site-auth.mjs';
 
@@ -83,6 +87,180 @@ test('resolveSiteBrowserSessionOptions honors Douyin auth session defaults', asy
   assert.equal(sessionOptions.authConfig.cooldownMinutesAfterRisk, 120);
   assert.equal(sessionOptions.authConfig.preferVisibleBrowserForAuthenticatedFlows, true);
   assert.equal(sessionOptions.authConfig.requireStableNetworkForAuthenticatedFlows, true);
+  assert.deepEqual(sessionOptions.authConfig.reusableSessionSignals, [
+    'usableForCookies',
+    'healthy',
+    'loginStateLikelyAvailable',
+    'presentWithoutMissingPaths',
+  ]);
+});
+
+test('isReusableLoginStateAvailable stays strict when the profile requires cookie-backed reuse', () => {
+  assert.equal(
+    isReusableLoginStateAvailable(
+      {
+        usableForCookies: false,
+        healthy: true,
+        exists: true,
+        missingPaths: [],
+      },
+      {
+        authConfig: {
+          reusableSessionSignals: ['usableForCookies'],
+        },
+      },
+    ),
+    false,
+  );
+  assert.equal(
+    isReusableLoginStateAvailable(
+      { usableForCookies: true },
+      {
+        authConfig: {
+          reusableSessionSignals: ['usableForCookies'],
+        },
+      },
+    ),
+    true,
+  );
+});
+
+test('isReusableLoginStateAvailable honors profile-configured fallback health signals', () => {
+  assert.equal(
+    isReusableLoginStateAvailable(
+      {
+        healthy: true,
+        exists: true,
+        missingPaths: [],
+      },
+      {
+        authConfig: {
+          reusableSessionSignals: ['usableForCookies', 'healthy', 'loginStateLikelyAvailable', 'presentWithoutMissingPaths'],
+        },
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    isReusableLoginStateAvailable(
+      {
+        healthy: false,
+        exists: true,
+        missingPaths: ['Cookies'],
+        loginStateLikelyAvailable: false,
+      },
+      {
+        authConfig: {
+          reusableSessionSignals: ['usableForCookies', 'healthy', 'loginStateLikelyAvailable', 'presentWithoutMissingPaths'],
+        },
+      },
+    ),
+    false,
+  );
+});
+
+test('inspectReusableSiteSession reuses shared session inspection and exposes auth availability', async () => {
+  const sessionState = await inspectReusableSiteSession('https://www.douyin.com/?recommend=1', {
+    browserProfileRoot: path.resolve('tmp-browser-profiles'),
+    reuseLoginState: true,
+  }, {
+    siteProfile: {
+      host: 'www.douyin.com',
+      authSession: {
+        reuseLoginStateByDefault: true,
+      },
+    },
+    profilePath: path.resolve('profiles/www.douyin.com.json'),
+  }, {
+    async resolveSiteBrowserSessionOptions() {
+      return {
+        reuseLoginState: true,
+        userDataDir: 'C:/profiles/douyin.com',
+        cleanupUserDataDirOnShutdown: false,
+        authProfile: { filePath: 'profiles/www.douyin.com.json' },
+        siteProfile: { host: 'www.douyin.com' },
+        authConfig: {
+          loginUrl: 'https://www.douyin.com/',
+          reusableSessionSignals: ['usableForCookies', 'healthy', 'loginStateLikelyAvailable', 'presentWithoutMissingPaths'],
+        },
+      };
+    },
+    async inspectPersistentProfileHealth() {
+      return {
+        healthy: true,
+        exists: true,
+        missingPaths: [],
+      };
+    },
+  });
+
+  assert.equal(sessionState.authAvailable, true);
+  assert.equal(sessionState.reusableProfile, true);
+  assert.equal(sessionState.userDataDir, 'C:/profiles/douyin.com');
+  assert.equal(sessionState.profilePath, 'profiles/www.douyin.com.json');
+  assert.equal(sessionState.authConfig.loginUrl, 'https://www.douyin.com/');
+});
+
+test('inspectLoginState forwards profile selectors without infra fallback defaults', async () => {
+  let capturedConfig = null;
+  const result = await inspectLoginState({
+    async callPageFunction(_fn, config) {
+      capturedConfig = config;
+      return { loggedIn: false };
+    },
+  }, {
+    loginUrl: 'https://www.example.com/login',
+    loginIndicatorSelectors: [],
+    loggedOutIndicatorSelectors: ['.login'],
+    usernameSelectors: [],
+    passwordSelectors: [],
+    challengeSelectors: [],
+  });
+
+  assert.deepEqual(capturedConfig, {
+    loginUrl: 'https://www.example.com/login',
+    loginIndicatorSelectors: [],
+    loggedOutIndicatorSelectors: ['.login'],
+    usernameSelectors: [],
+    passwordSelectors: [],
+    challengeSelectors: [],
+  });
+  assert.equal(result.loggedIn, false);
+});
+
+test('attemptCredentialLogin uses only profile-provided selector families', async () => {
+  let capturedConfig = null;
+  const result = await attemptCredentialLogin({
+    async navigateAndWait() {},
+    async callPageFunction(_fn, config) {
+      capturedConfig = config;
+      return { status: 'fields-not-found' };
+    },
+  }, {
+    loginUrl: 'https://www.example.com/login',
+    loginEntrySelectors: [],
+    loggedOutIndicatorSelectors: ['.login'],
+    passwordLoginTabSelectors: [],
+    usernameSelectors: [],
+    passwordSelectors: [],
+    submitSelectors: [],
+    challengeSelectors: [],
+    postLoginUrl: 'https://www.example.com/',
+  }, {
+    username: 'user',
+    password: 'pass',
+  });
+
+  assert.deepEqual(capturedConfig, {
+    loginEntrySelectors: ['.login'],
+    loggedOutIndicatorSelectors: ['.login'],
+    passwordLoginTabSelectors: [],
+    usernameSelectors: [],
+    passwordSelectors: [],
+    submitSelectors: [],
+    challengeSelectors: [],
+  });
+  assert.equal(result.status, 'fields-not-found');
 });
 
 test('resolveCredentialSource prefers Windows Credential Manager before environment variables', async () => {
@@ -169,6 +347,7 @@ test('resolveAuthVerificationUrl supports explicit verification URLs and legacy 
       authSession: {
         loginUrl: 'https://www.douyin.com/',
         postLoginUrl: 'https://www.douyin.com/',
+        validationSamplePriority: ['likesUrl', 'selfPostsUrl', 'followFeedUrl'],
       },
     },
   };
@@ -183,16 +362,36 @@ test('resolveAuthVerificationUrl supports explicit verification URLs and legacy 
       authValidationSamples: {
         watchLaterUrl: 'https://www.bilibili.com/watchlater/#/list',
         dynamicUrl: 'https://space.bilibili.com/1202350411/dynamic',
+        followListUrl: 'https://space.bilibili.com/1202350411/fans/follow',
       },
       authSession: {
         loginUrl: 'https://passport.bilibili.com/login',
         postLoginUrl: 'https://www.bilibili.com/',
+        validationSamplePriority: ['followListUrl', 'dynamicUrl', 'watchLaterUrl'],
       },
     },
   };
   assert.equal(
     resolveAuthVerificationUrl('https://www.bilibili.com/', bilibiliProfile),
-    'https://space.bilibili.com/1202350411/dynamic',
+    'https://space.bilibili.com/1202350411/fans/follow',
+  );
+
+  const genericFallbackProfile = {
+    profile: {
+      host: 'www.example.com',
+      authValidationSamples: {
+        firstUrl: 'https://www.example.com/first',
+        secondUrl: 'https://www.example.com/second',
+      },
+      authSession: {
+        loginUrl: 'https://www.example.com/login',
+        postLoginUrl: 'https://www.example.com/',
+      },
+    },
+  };
+  assert.equal(
+    resolveAuthVerificationUrl('https://www.example.com/', genericFallbackProfile),
+    'https://www.example.com/first',
   );
 });
 
@@ -227,7 +426,7 @@ test('resolveAuthKeepaliveUrl prefers keepaliveUrl then falls back through verif
       authSession: {
         loginUrl: 'https://www.douyin.com/',
         postLoginUrl: 'https://www.douyin.com/',
-        verificationUrl: 'https://www.douyin.com/user/self?showTab=like',
+        validationSamplePriority: ['likesUrl', 'followFeedUrl'],
       },
     },
   };

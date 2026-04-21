@@ -7,12 +7,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { inspectPersistentProfileHealth } from '../../../infra/browser/profile-store.mjs';
 import { enumerateDouyinAuthorVideos } from '../download/enumerator.mjs';
 import { queryDouyinFollow } from '../queries/follow-query.mjs';
 import { resolveDouyinMediaBatch } from '../queries/media-resolver.mjs';
-import { resolveSiteBrowserSessionOptions } from '../../../infra/auth/site-auth.mjs';
-import { siteLogin } from '../../../infra/auth/site-login-service.mjs';
+import {
+  bootstrapReusableSiteSession,
+  inspectRequestReusableSiteSession,
+} from '../../../infra/auth/site-login-service.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
@@ -312,37 +313,6 @@ function buildLoginFailureResult(plan, report) {
   };
 }
 
-async function inspectReusableDouyinSession(request, deps = {}) {
-  const sessionOptions = await (deps.resolveSiteBrowserSessionOptions ?? resolveSiteBrowserSessionOptions)(
-    request.targetUrl || DOUYIN_HOME_URL,
-    {
-      browserProfileRoot: request.browserProfileRoot,
-      userDataDir: request.userDataDir,
-      reuseLoginState: request.reuseLoginState ?? true,
-    },
-    {
-      profilePath: request.profilePath,
-      siteProfile: request.siteProfile,
-    },
-  );
-  const profileHealth = sessionOptions.userDataDir
-    ? await (deps.inspectPersistentProfileHealth ?? inspectPersistentProfileHealth)(sessionOptions.userDataDir)
-    : null;
-  const reusableProfile = profileHealth?.usableForCookies !== undefined && profileHealth?.usableForCookies !== null
-    ? Boolean(profileHealth.usableForCookies)
-    : profileHealth?.healthy === true
-      ? true
-      : profileHealth?.exists === true && Array.isArray(profileHealth?.missingPaths) && profileHealth.missingPaths.length === 0
-        ? true
-        : profileHealth?.loginStateLikelyAvailable === true;
-  return {
-    authAvailable: Boolean(sessionOptions.reuseLoginState && reusableProfile),
-    userDataDir: sessionOptions.userDataDir ?? null,
-    profileHealth,
-    profilePath: sessionOptions.authProfile?.filePath ?? null,
-  };
-}
-
 export async function planDouyinAction(request, deps = {}) {
   const action = normalizeText(request?.action) || 'download';
   const reuseLoginState = request?.reuseLoginState !== false;
@@ -357,7 +327,12 @@ export async function planDouyinAction(request, deps = {}) {
       const firstUnknown = classifications.find((item) => item.inputKind === 'unknown');
       throw new Error(`Unsupported Douyin download input: ${firstUnknown?.source ?? 'unknown'}`);
     }
-    const sessionState = await inspectReusableDouyinSession({ ...request, targetUrl: DOUYIN_HOME_URL, reuseLoginState }, deps);
+    const sessionState = await (deps.inspectRequestReusableSiteSession ?? inspectRequestReusableSiteSession)(
+      DOUYIN_HOME_URL,
+      request,
+      deps,
+      { reuseLoginState },
+    );
     return {
       action,
       items,
@@ -375,7 +350,12 @@ export async function planDouyinAction(request, deps = {}) {
     };
   }
   if (action === 'login') {
-    const sessionState = await inspectReusableDouyinSession({ ...request, targetUrl: request.targetUrl || DOUYIN_HOME_URL, reuseLoginState }, deps);
+    const sessionState = await (deps.inspectRequestReusableSiteSession ?? inspectRequestReusableSiteSession)(
+      request.targetUrl || DOUYIN_HOME_URL,
+      request,
+      deps,
+      { reuseLoginState },
+    );
     return {
       action,
       targetUrl: request.targetUrl || DOUYIN_HOME_URL,
@@ -646,17 +626,17 @@ export async function runDouyinAction(request, deps = {}) {
   const plan = await planDouyinAction(request, deps);
   const normalizedHeadless = request.headless ?? false;
   if (plan.action === 'login') {
-    const report = await (deps.siteLogin ?? siteLogin)(plan.targetUrl, {
-      profilePath: request.profilePath,
-      browserPath: request.browserPath,
-      browserProfileRoot: request.browserProfileRoot,
-      userDataDir: request.userDataDir,
-      reuseLoginState: request.reuseLoginState !== false,
-      autoLogin: request.allowAutoLoginBootstrap !== false,
-      headless: normalizedHeadless,
-    });
+    const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
+      plan.targetUrl,
+      request,
+      deps,
+      {
+        headless: normalizedHeadless,
+      },
+    );
+    const report = loginBootstrap.report;
     return {
-      ok: report?.auth?.persistenceVerified === true || report?.auth?.status === 'session-reused',
+      ok: loginBootstrap.ok,
       action: 'login',
       reasonCode: 'login-finished',
       plan,
@@ -666,17 +646,16 @@ export async function runDouyinAction(request, deps = {}) {
 
   let loginReport = null;
   if (plan.route === 'download-after-login') {
-    loginReport = await (deps.siteLogin ?? siteLogin)(DOUYIN_HOME_URL, {
-      profilePath: request.profilePath,
-      browserPath: request.browserPath,
-      browserProfileRoot: request.browserProfileRoot,
-      userDataDir: request.userDataDir,
-      reuseLoginState: request.reuseLoginState !== false,
-      autoLogin: request.allowAutoLoginBootstrap !== false,
-      headless: normalizedHeadless,
-    });
-    const loginReady = loginReport?.auth?.persistenceVerified === true || loginReport?.auth?.status === 'session-reused';
-    if (!loginReady) {
+    const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
+      DOUYIN_HOME_URL,
+      request,
+      deps,
+      {
+        headless: normalizedHeadless,
+      },
+    );
+    loginReport = loginBootstrap.report;
+    if (!loginBootstrap.ok) {
       return buildLoginFailureResult(plan, loginReport);
     }
   }

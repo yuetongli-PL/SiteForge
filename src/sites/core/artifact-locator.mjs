@@ -30,6 +30,7 @@ export async function resolveArtifactLocatorContext({
   url = null,
   host = null,
   siteContext = null,
+  siteMetadataOptions = null,
   profile = null,
   canonicalBaseUrl = null,
 } = {}) {
@@ -37,7 +38,7 @@ export async function resolveArtifactLocatorContext({
   const requestedHostKey = normalizeHostKey(host ?? resolvedInputUrl);
   const resolvedSiteContext = siteContext
     ?? (requestedHostKey || resolvedInputUrl
-      ? await readSiteContext(workspaceRoot, requestedHostKey ?? resolvedInputUrl)
+      ? await readSiteContext(workspaceRoot, requestedHostKey ?? resolvedInputUrl, siteMetadataOptions ?? {})
       : null);
   const resolvedCanonicalBaseUrl = firstNonEmpty([
     canonicalBaseUrl,
@@ -71,6 +72,7 @@ export async function resolveArtifactLocatorContext({
 
   return {
     workspaceRoot,
+    siteMetadataOptions,
     inputUrl: resolvedInputUrl || null,
     baseUrl: baseUrl ?? null,
     requestedHostKey,

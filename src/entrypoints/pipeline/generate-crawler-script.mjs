@@ -73,20 +73,24 @@ function renderPythonScript(context) {
     'from __future__ import annotations',
     '',
     'import base64',
+    'import importlib.util',
     'import json',
     'import sys',
     'from pathlib import Path',
     '',
     'REPO_ROOT = Path(__file__).resolve().parents[2]',
-    'if str(REPO_ROOT) not in sys.path:',
-    '    sys.path.insert(0, str(REPO_ROOT))',
+    'BOOK_MODULE_PATH = REPO_ROOT / "src" / "sites" / "chapter-content" / "download" / "python" / "book.py"',
     '',
-    'from download_book import cli_entry_for_generated',
+    'spec = importlib.util.spec_from_file_location("bws_chapter_content_book_generated", BOOK_MODULE_PATH)',
+    'if spec is None or spec.loader is None:',
+    '    raise RuntimeError(f"Unable to load generated crawler entrypoint from {BOOK_MODULE_PATH}")',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
     '',
     `GENERATED_CONTEXT = json.loads(base64.b64decode(${JSON.stringify(contextJsonBase64)}).decode("utf-8"))`,
     '',
     'if __name__ == "__main__":',
-    '    cli_entry_for_generated(GENERATED_CONTEXT)',
+    '    module.cli_entry_for_generated(GENERATED_CONTEXT)',
     '',
   ].join('\n');
 }
@@ -182,7 +186,7 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     profilePath: settings.profilePath,
   });
   const historical = await loadHistoricalContext(settings.knowledgeBaseDir);
-  const siteContext = await readSiteContext(process.cwd(), settings.host);
+  const siteContext = await readSiteContext(process.cwd(), settings.host, settings.siteMetadataOptions ?? {});
   const hostDir = path.join(settings.crawlerScriptsDir, sanitizeHost(settings.host));
   const scriptPath = path.join(hostDir, 'crawler.py');
   const metaPath = path.join(hostDir, 'crawler.meta.json');
@@ -229,7 +233,7 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
         interpreterRequired: 'pypy3',
         templateVersion: TEMPLATE_VERSION,
         crawlerStatus: 'reused',
-      });
+      }, settings.siteMetadataOptions ?? {});
       await upsertSiteCapabilities(process.cwd(), settings.host, {
         baseUrl: settings.baseUrl,
         primaryArchetype: resolvedPrimaryArchetype,
@@ -238,7 +242,7 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
         supportedIntents: derivedSupportedIntents,
         safeActionKinds: derivedSafeActionKinds,
         approvalActionKinds: derivedApprovalActionKinds,
-      });
+      }, settings.siteMetadataOptions ?? {});
       return {
         host: settings.host,
         scriptPath,
@@ -315,7 +319,7 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     interpreterRequired: 'pypy3',
     templateVersion: TEMPLATE_VERSION,
     crawlerStatus: 'generated',
-  });
+  }, settings.siteMetadataOptions ?? {});
   await upsertSiteCapabilities(process.cwd(), settings.host, {
     baseUrl: settings.baseUrl,
     primaryArchetype: resolvedPrimaryArchetype,
@@ -324,7 +328,7 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
     supportedIntents: derivedSupportedIntents,
     safeActionKinds: derivedSafeActionKinds,
     approvalActionKinds: derivedApprovalActionKinds,
-  });
+  }, settings.siteMetadataOptions ?? {});
 
   return {
     host: settings.host,

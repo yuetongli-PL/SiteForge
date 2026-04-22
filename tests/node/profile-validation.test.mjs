@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { ensureCrawlerScript } from '../../src/entrypoints/pipeline/generate-crawler-script.mjs';
 import {
@@ -10,6 +10,7 @@ import {
   validateProfileFile,
   validateProfileObject,
 } from '../../src/sites/core/profile-validation.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 function createNavigationProfile(overrides = {}) {
   return {
@@ -398,6 +399,8 @@ test('validateProfileObject rejects unknown archetypes with stable field paths',
 test('ensureCrawlerScript fails fast when profile validation fails', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-profile-validation-'));
   const invalidProfilePath = path.join(workspace, 'moodyz.com.json');
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     await writeFile(invalidProfilePath, `${JSON.stringify({
@@ -420,9 +423,11 @@ test('ensureCrawlerScript fails fast when profile validation fails', async () =>
         profilePath: invalidProfilePath,
         crawlerScriptsDir: path.join(workspace, 'crawler-scripts'),
         knowledgeBaseDir: path.join(workspace, 'knowledge-base'),
+        siteMetadataOptions: metadataSandbox.siteMetadataOptions,
       }),
       /profile\.pageTypes: is required/,
     );
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -431,6 +436,8 @@ test('ensureCrawlerScript fails fast when profile validation fails', async () =>
 test('ensureCrawlerScript derives navigation capabilities and page types from the profile archetype', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-crawler-navigation-meta-'));
   const profilePath = path.join(workspace, 'example.com.json');
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     await writeFile(profilePath, `${JSON.stringify(createNavigationProfile(), null, 2)}\n`, 'utf8');
@@ -439,6 +446,7 @@ test('ensureCrawlerScript derives navigation capabilities and page types from th
       profilePath,
       crawlerScriptsDir: path.join(workspace, 'crawler-scripts'),
       knowledgeBaseDir: path.join(workspace, 'knowledge-base'),
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     });
 
     assert.deepEqual(result.meta.capabilities, [
@@ -450,6 +458,32 @@ test('ensureCrawlerScript derives navigation capabilities and page types from th
       'switch-in-page-state',
     ]);
     assert.doesNotMatch(JSON.stringify(result.meta.capabilities), /download-content|navigate-to-chapter/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('ensureCrawlerScript emits a chapter-content crawler that loads the canonical internal downloader module', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-crawler-chapter-content-'));
+  const crawlerScriptsDir = path.join(workspace, 'crawler-scripts');
+  const knowledgeBaseDir = path.join(workspace, 'knowledge-base');
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
+
+  try {
+    const result = await ensureCrawlerScript('https://www.22biqu.com/', {
+      crawlerScriptsDir,
+      knowledgeBaseDir,
+      profilePath: path.resolve('profiles/www.22biqu.com.json'),
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
+    });
+
+    const crawlerSource = await readFile(result.scriptPath, 'utf8');
+    assert.match(crawlerSource, /BOOK_MODULE_PATH = REPO_ROOT \/ "src" \/ "sites" \/ "chapter-content" \/ "download" \/ "python" \/ "book\.py"/u);
+    assert.match(crawlerSource, /module\.cli_entry_for_generated\(GENERATED_CONTEXT\)/u);
+    assert.doesNotMatch(crawlerSource, /from download_book import cli_entry_for_generated/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

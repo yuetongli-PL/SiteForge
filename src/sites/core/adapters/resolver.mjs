@@ -102,6 +102,7 @@ export async function resolveSite({
   profile = null,
   profilePath = null,
   siteContext = null,
+  siteMetadataOptions = null,
 } = {}) {
   const resolvedHost = resolveHost({ host, inputUrl, siteContext, profile });
   const loadedProfile = profile
@@ -109,7 +110,7 @@ export async function resolveSite({
     : inputUrl
       ? await maybeLoadValidatedProfileForUrl(inputUrl, { profilePath })
       : await maybeLoadValidatedProfileForHost(resolvedHost, { profilePath });
-  const resolvedContext = siteContext ?? await readSiteContext(workspaceRoot, resolvedHost || inputUrl);
+  const resolvedContext = siteContext ?? await readSiteContext(workspaceRoot, resolvedHost || inputUrl, siteMetadataOptions ?? {});
   const adapter = resolveSiteAdapter({
     host: resolvedHost,
     inputUrl,

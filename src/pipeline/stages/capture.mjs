@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
 import { NETWORK_IDLE_QUIET_MS, openBrowserSession } from '../../infra/browser/session.mjs';
 import { ensureAuthenticatedSession, resolveSiteBrowserSessionOptions } from '../../infra/auth/site-auth.mjs';
+import { mergeRuntimeEvidence } from '../../shared/runtime-evidence.mjs';
+import { deriveDouyinAntiCrawlReasonCode, detectDouyinAntiCrawlSignals } from '../../sites/douyin/model/diagnosis.mjs';
+import { resolveDouyinHeadlessDefault } from '../../sites/douyin/model/site.mjs';
 
 const DEFAULT_OPTIONS = {
   outDir: path.resolve(process.cwd(), 'captures'),
@@ -31,6 +34,97 @@ const DEFAULT_OPTIONS = {
 
 function createError(code, message) {
   return { code, message };
+}
+
+function isDouyinSiteProfile(siteProfile = null, inputUrl = '') {
+  const profileHost = String(siteProfile?.host ?? '').toLowerCase();
+  if (profileHost === 'www.douyin.com' || profileHost === 'douyin.com') {
+    return true;
+  }
+  try {
+    const parsed = new URL(inputUrl);
+    return parsed.hostname === 'www.douyin.com' || parsed.hostname === 'douyin.com';
+  } catch {
+    return false;
+  }
+}
+
+function isTransientCaptureBootstrapError(error) {
+  const message = String(error?.message ?? '');
+  return /CDP timeout for Runtime\.evaluate/iu.test(message)
+    || /CDP socket closed/iu.test(message)
+    || /WebSocket is not open/iu.test(message)
+    || /Target closed/iu.test(message)
+    || /Inspector\.detached/iu.test(message)
+    || /ECONNRESET|EPIPE|socket hang up/iu.test(message);
+}
+
+async function closeSessionQuietly(session) {
+  try {
+    await session?.close?.();
+  } catch {
+    // Keep the original failure for the caller.
+  }
+}
+
+function pageInspectRuntimeSurface() {
+  const rootText = document.body?.innerText || document.documentElement?.innerText || '';
+  return {
+    title: document.title || '',
+    documentText: rootText,
+    readyCount: [
+      ...document.querySelectorAll('input[placeholder*="搜索"], input[type="search"], form[role="search"], a[href*="/video/"], a[href*="/user/"]'),
+    ].length,
+    pageType: 'unknown-page',
+  };
+}
+
+async function inspectCaptureRuntime(session, inputUrl, siteProfile = null) {
+  if (!isDouyinSiteProfile(siteProfile, inputUrl)) {
+    return {
+      pageFacts: null,
+      runtimeEvidence: null,
+      error: null,
+    };
+  }
+
+  try {
+    const inspection = await session.callPageFunction(pageInspectRuntimeSurface);
+    const antiCrawlSignals = detectDouyinAntiCrawlSignals({
+      title: inspection?.title,
+      documentText: inspection?.documentText,
+    });
+    if (antiCrawlSignals.length === 0) {
+      return {
+        pageFacts: null,
+        runtimeEvidence: null,
+        error: null,
+      };
+    }
+
+    const antiCrawlReasonCode = deriveDouyinAntiCrawlReasonCode(antiCrawlSignals);
+    const normalized = mergeRuntimeEvidence({
+      antiCrawlDetected: true,
+      antiCrawlSignals,
+      antiCrawlReasonCode,
+    }, null, {
+      antiCrawlReasonCode,
+    });
+    return {
+      pageFacts: normalized.pageFacts,
+      runtimeEvidence: normalized.runtimeEvidence,
+      error: createError(
+        'ANTI_CRAWL_CHALLENGE',
+        `Detected Douyin anti-crawl challenge while capturing ${inputUrl}: ${antiCrawlSignals.join(', ')}`,
+      ),
+    };
+  } catch {
+    return {
+      pageFacts: null,
+      runtimeEvidence: null,
+      error: null,
+    };
+  }
 }
 
 function normalizeWaitUntil(value) {
@@ -94,8 +188,8 @@ function buildManifest({
 }) {
   return {
     inputUrl,
-    finalUrl: null,
-    title: null,
+    finalUrl: inputUrl,
+    title: '',
     capturedAt,
     status: 'failed',
     outDir,
@@ -109,6 +203,8 @@ function buildManifest({
       viewportWidth: viewport.width,
       viewportHeight: viewport.height,
     },
+    pageFacts: null,
+    runtimeEvidence: null,
     error: null,
   };
 }
@@ -147,7 +243,7 @@ async function createOutputLayout(inputUrl, outDir) {
   };
 }
 
-function mergeOptions(options = {}) {
+function mergeOptions(inputUrl = '', options = {}) {
   const merged = {
     ...DEFAULT_OPTIONS,
     ...options,
@@ -166,6 +262,9 @@ function mergeOptions(options = {}) {
   }
   if (merged.userDataDir) {
     merged.userDataDir = path.resolve(merged.userDataDir);
+  }
+  if (!Object.prototype.hasOwnProperty.call(options, 'headless')) {
+    merged.headless = resolveDouyinHeadlessDefault(inputUrl, DEFAULT_OPTIONS.headless);
   }
   merged.timeoutMs = normalizeNumber(merged.timeoutMs, 'timeoutMs');
   merged.idleMs = normalizeNumber(merged.idleMs, 'idleMs');
@@ -190,7 +289,7 @@ function mergeOptions(options = {}) {
 export function resolveCaptureSettings(inputUrl, options = {}) {
   return {
     inputUrl,
-    settings: mergeOptions(options),
+    settings: mergeOptions(inputUrl, options),
   };
 }
 
@@ -321,7 +420,6 @@ export async function capture(inputUrl, options = {}) {
   });
 
   let artifactCount = 0;
-  let session = null;
   let parsedUrl;
 
   try {
@@ -333,40 +431,67 @@ export async function capture(inputUrl, options = {}) {
       return manifest;
     }
 
-    session = await createCaptureSession(settings, inputUrl);
-    await openInitialPage(session, settings);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let session = null;
+      try {
+        session = await createCaptureSession(settings, inputUrl);
+        await openInitialPage(session, settings);
 
-    const captureResult = await capturePageEvidence(session, {
-      fullPage: settings.fullPage,
-    });
-    artifactCount = captureResult.artifactCount;
-    await writeCaptureArtifacts(layout, captureResult);
+        const runtimeInspection = await inspectCaptureRuntime(session, inputUrl, settings.siteProfile);
+        if (runtimeInspection.pageFacts) {
+          manifest.pageFacts = runtimeInspection.pageFacts;
+        }
+        if (runtimeInspection.runtimeEvidence) {
+          manifest.runtimeEvidence = runtimeInspection.runtimeEvidence;
+        }
+        if (runtimeInspection.error) {
+          setManifestError(manifest, runtimeInspection.error.code, runtimeInspection.error.message);
+        }
 
-    for (const warning of captureResult.warnings) {
-      setManifestError(manifest, warning.code, warning.message);
-    }
-    for (const error of captureResult.errors) {
-      setManifestError(manifest, error.code, error.message);
-    }
+        const captureResult = await capturePageEvidence(session, {
+          fullPage: settings.fullPage,
+        });
+        artifactCount = captureResult.artifactCount;
+        await writeCaptureArtifacts(layout, captureResult);
 
-    try {
-      const metadata = await session.getPageMetadata(parsedUrl.toString());
-      manifest.finalUrl = metadata.finalUrl ?? parsedUrl.toString();
-      manifest.title = metadata.title ?? '';
-      if (typeof metadata.viewportWidth === 'number' && typeof metadata.viewportHeight === 'number') {
-        manifest.page.viewportWidth = metadata.viewportWidth;
-        manifest.page.viewportHeight = metadata.viewportHeight;
+        for (const warning of captureResult.warnings) {
+          setManifestError(manifest, warning.code, warning.message);
+        }
+        for (const error of captureResult.errors) {
+          setManifestError(manifest, error.code, error.message);
+        }
+
+        try {
+          const metadata = await session.getPageMetadata(parsedUrl.toString());
+          manifest.finalUrl = metadata.finalUrl ?? parsedUrl.toString();
+          manifest.title = metadata.title ?? '';
+          if (typeof metadata.viewportWidth === 'number' && typeof metadata.viewportHeight === 'number') {
+            manifest.page.viewportWidth = metadata.viewportWidth;
+            manifest.page.viewportHeight = metadata.viewportHeight;
+          }
+        } catch (error) {
+          manifest.finalUrl = parsedUrl.toString();
+          manifest.title = manifest.title ?? '';
+          setManifestError(manifest, 'PAGE_METADATA_FAILED', error.message);
+        }
+
+        manifest.status = manifest.error ? (artifactCount > 0 ? 'partial' : 'failed') : 'success';
+        await writeCaptureManifest(manifest);
+        await closeSessionQuietly(session);
+        return manifest;
+      } catch (error) {
+        await closeSessionQuietly(session);
+        const shouldRetry = attempt === 0 && isTransientCaptureBootstrapError(error);
+        if (shouldRetry) {
+          continue;
+        }
+        throw error;
       }
-    } catch (error) {
-      manifest.finalUrl = manifest.finalUrl ?? parsedUrl.toString();
-      setManifestError(manifest, 'PAGE_METADATA_FAILED', error.message);
     }
-
-    manifest.status = manifest.error ? (artifactCount > 0 ? 'partial' : 'failed') : 'success';
-    await writeCaptureManifest(manifest);
-    return manifest;
   } catch (error) {
     setManifestError(manifest, error?.code ?? 'CAPTURE_FAILED', error.message);
+    manifest.finalUrl = parsedUrl?.toString?.() ?? inputUrl;
+    manifest.title = manifest.title ?? '';
     manifest.status = artifactCount > 0 ? 'partial' : 'failed';
     try {
       await writeCaptureManifest(manifest);
@@ -374,8 +499,6 @@ export async function capture(inputUrl, options = {}) {
       // Preserve the original failure for the caller.
     }
     return manifest;
-  } finally {
-    await session?.close?.();
   }
 }
 
@@ -551,7 +674,7 @@ Options:
   --no-reuse-login-state   Disable persistent login-state reuse
   --auto-login             Best-effort credential login when credentials exist
   --no-auto-login          Disable credential auto-login
-  --headless               Run browser headless (default)
+  --headless               Run browser headless (default except visible-by-default Douyin flows)
   --no-headless            Run browser with a visible window
   --help                   Show this help
 `;

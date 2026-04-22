@@ -11,6 +11,9 @@ from typing import Any
 SITE_REGISTRY_FILE_NAME = "site-registry.json"
 SITE_CAPABILITIES_FILE_NAME = "site-capabilities.json"
 SITE_CONFIG_DIRECTORY_NAME = "config"
+SITE_RUNTIME_METADATA_DIRECTORY_NAME = "runs/site-metadata"
+SITE_RUNTIME_REGISTRY_FILE_NAME = "site-registry.runtime.json"
+SITE_RUNTIME_CAPABILITIES_FILE_NAME = "site-capabilities.runtime.json"
 
 
 def sanitize_host(host: str) -> str:
@@ -64,12 +67,42 @@ def build_site_capabilities_path(repo_root: str | Path) -> Path:
     return Path(repo_root).resolve() / SITE_CONFIG_DIRECTORY_NAME / SITE_CAPABILITIES_FILE_NAME
 
 
+def build_site_runtime_registry_path(repo_root: str | Path) -> Path:
+    return Path(repo_root).resolve() / SITE_RUNTIME_METADATA_DIRECTORY_NAME / SITE_RUNTIME_REGISTRY_FILE_NAME
+
+
+def build_site_runtime_capabilities_path(repo_root: str | Path) -> Path:
+    return Path(repo_root).resolve() / SITE_RUNTIME_METADATA_DIRECTORY_NAME / SITE_RUNTIME_CAPABILITIES_FILE_NAME
+
+
+def _merge_documents(stable_document: dict[str, Any], runtime_document: dict[str, Any]) -> dict[str, Any]:
+    merged_sites: dict[str, Any] = {}
+    site_keys = set((stable_document.get("sites") or {}).keys()) | set((runtime_document.get("sites") or {}).keys())
+    for site_key in site_keys:
+        merged_sites[site_key] = {
+            **((stable_document.get("sites") or {}).get(site_key) or {}),
+            **((runtime_document.get("sites") or {}).get(site_key) or {}),
+            "host": site_key,
+        }
+    return {
+        **(stable_document or {}),
+        "generatedAt": runtime_document.get("generatedAt") or stable_document.get("generatedAt"),
+        "sites": merged_sites,
+    }
+
+
 def read_site_registry(repo_root: str | Path) -> dict[str, Any]:
-    return _load_json_document(build_site_registry_path(repo_root))
+    return _merge_documents(
+        _load_json_document(build_site_registry_path(repo_root)),
+        _load_json_document(build_site_runtime_registry_path(repo_root)),
+    )
 
 
 def read_site_capabilities(repo_root: str | Path) -> dict[str, Any]:
-    return _load_json_document(build_site_capabilities_path(repo_root))
+    return _merge_documents(
+        _load_json_document(build_site_capabilities_path(repo_root)),
+        _load_json_document(build_site_runtime_capabilities_path(repo_root)),
+    )
 
 
 def read_site_context(host: str, repo_root: str | Path) -> dict[str, Any]:
@@ -139,32 +172,65 @@ def resolve_safe_action_kinds(site_context: dict[str, Any], *fallbacks: Any) -> 
 
 def upsert_site_registry_record(host: str, patch: dict[str, Any], repo_root: str | Path) -> dict[str, Any]:
     registry_path = build_site_registry_path(repo_root)
-    registry = read_site_registry(repo_root)
+    runtime_registry_path = build_site_runtime_registry_path(repo_root)
+    registry = _load_json_document(registry_path)
+    runtime_registry = _load_json_document(runtime_registry_path)
     host_key = sanitize_host(host)
     previous = registry.get("sites", {}).get(host_key, {})
+    runtime_previous = runtime_registry.get("sites", {}).get(host_key, {})
+    stable_keys = {
+        "canonicalBaseUrl",
+        "siteKey",
+        "adapterId",
+        "siteArchetype",
+        "downloadEntrypoint",
+        "interpreterRequired",
+        "scriptLanguage",
+        "templateVersion",
+        "rankingQueryEntrypoint",
+        "repoSkillDir",
+        "crawlerScriptsDir",
+        "capabilityFamilies",
+    }
+    stable_patch = {key: value for key, value in patch.items() if key in stable_keys}
+    runtime_patch = {key: value for key, value in patch.items() if key not in stable_keys}
     next_record = {
         **previous,
-        **patch,
+        **stable_patch,
         "host": host_key,
         "capabilityFamilies": unique_sorted_strings([
             *(previous.get("capabilityFamilies", []) or []),
-            *(patch.get("capabilityFamilies", []) or []),
+            *(stable_patch.get("capabilityFamilies", []) or []),
         ]),
-        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    registry["generatedAt"] = next_record["updatedAt"]
     registry.setdefault("sites", {})
     registry["sites"][host_key] = next_record
+    runtime_record = {
+        **runtime_previous,
+        **runtime_patch,
+        "host": host_key,
+        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    runtime_registry["generatedAt"] = runtime_record["updatedAt"]
+    runtime_registry.setdefault("sites", {})
+    runtime_registry["sites"][host_key] = runtime_record
     _write_json_document(registry_path, registry)
+    _write_json_document(runtime_registry_path, runtime_registry)
     return {
         "registryPath": str(registry_path),
-        "record": next_record,
+        "runtimeRegistryPath": str(runtime_registry_path),
+        "record": {
+            **next_record,
+            **runtime_record,
+        },
     }
 
 
 def upsert_site_capabilities_record(host: str, patch: dict[str, Any], repo_root: str | Path) -> dict[str, Any]:
     capabilities_path = build_site_capabilities_path(repo_root)
-    document = read_site_capabilities(repo_root)
+    runtime_capabilities_path = build_site_runtime_capabilities_path(repo_root)
+    document = _load_json_document(capabilities_path)
+    runtime_document = _load_json_document(runtime_capabilities_path)
     host_key = sanitize_host(host)
     previous = document.get("sites", {}).get(host_key, {})
     next_record = {
@@ -176,13 +242,24 @@ def upsert_site_capabilities_record(host: str, patch: dict[str, Any], repo_root:
         "supportedIntents": unique_sorted_strings([*(previous.get("supportedIntents", []) or []), *(patch.get("supportedIntents", []) or [])]),
         "safeActionKinds": unique_sorted_strings([*(previous.get("safeActionKinds", []) or []), *(patch.get("safeActionKinds", []) or [])]),
         "approvalActionKinds": unique_sorted_strings([*(previous.get("approvalActionKinds", []) or []), *(patch.get("approvalActionKinds", []) or [])]),
-        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    document["generatedAt"] = next_record["updatedAt"]
     document.setdefault("sites", {})
     document["sites"][host_key] = next_record
+    runtime_record = {
+        **(runtime_document.get("sites", {}).get(host_key, {}) or {}),
+        "host": host_key,
+        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    runtime_document["generatedAt"] = runtime_record["updatedAt"]
+    runtime_document.setdefault("sites", {})
+    runtime_document["sites"][host_key] = runtime_record
     _write_json_document(capabilities_path, document)
+    _write_json_document(runtime_capabilities_path, runtime_document)
     return {
         "capabilitiesPath": str(capabilities_path),
-        "record": next_record,
+        "runtimeCapabilitiesPath": str(runtime_capabilities_path),
+        "record": {
+            **next_record,
+            **runtime_record,
+        },
     }

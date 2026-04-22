@@ -276,7 +276,7 @@ function parseCliArgs(argv) {
 
 function printHelp() {
   process.stdout.write(`Usage:
-  node scripts/benchmark-capture-expand.mjs [options]
+  node tools/benchmark-capture-expand.mjs [options]
 
 Options:
   --out-dir <path>           Report output directory

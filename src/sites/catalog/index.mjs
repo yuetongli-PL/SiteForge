@@ -60,15 +60,28 @@ export function createSiteIndexStore({
   directoryName = null,
   arrayFieldModes = {},
   resultPathKey = 'documentPath',
+  trackTimestamps = true,
 }) {
   const relativePath = directoryName ? path.join(directoryName, fileName) : fileName;
 
-  function buildPath(workspaceRoot = process.cwd()) {
+  function buildPath(workspaceRoot = process.cwd(), pathOptions = {}) {
+    const explicitPath = typeof pathOptions?.documentPath === 'string' && pathOptions.documentPath.trim()
+      ? pathOptions.documentPath
+      : null;
+    if (explicitPath) {
+      return path.resolve(explicitPath);
+    }
+    const explicitConfigDir = typeof pathOptions?.configDir === 'string' && pathOptions.configDir.trim()
+      ? pathOptions.configDir
+      : null;
+    if (explicitConfigDir) {
+      return path.resolve(explicitConfigDir, path.basename(relativePath));
+    }
     return path.resolve(workspaceRoot, relativePath);
   }
 
-  async function read(workspaceRoot = process.cwd()) {
-    const documentPath = buildPath(workspaceRoot);
+  async function read(workspaceRoot = process.cwd(), pathOptions = {}) {
+    const documentPath = buildPath(workspaceRoot, pathOptions);
     if (!await pathExists(documentPath)) {
       return cloneDefaultDocument();
     }
@@ -76,18 +89,22 @@ export function createSiteIndexStore({
     return normalizeDocument(document);
   }
 
-  async function upsert(workspaceRoot, host, patch) {
-    const documentPath = buildPath(workspaceRoot);
-    const document = await read(workspaceRoot);
+  async function upsert(workspaceRoot, host, patch, pathOptions = {}) {
+    const documentPath = buildPath(workspaceRoot, pathOptions);
+    const document = await read(workspaceRoot, pathOptions);
     const hostKey = sanitizeHost(host);
     const previous = document.sites?.[hostKey] ?? {};
-    const updatedAt = new Date().toISOString();
+    const updatedAt = trackTimestamps ? new Date().toISOString() : null;
     const record = {
       ...normalizeRecord(previous, patch, hostKey, arrayFieldModes),
-      updatedAt,
     };
+    if (trackTimestamps) {
+      record.updatedAt = updatedAt;
+    }
 
-    document.generatedAt = updatedAt;
+    if (trackTimestamps) {
+      document.generatedAt = updatedAt;
+    }
     document.sites = {
       ...(document.sites ?? {}),
       [hostKey]: record,

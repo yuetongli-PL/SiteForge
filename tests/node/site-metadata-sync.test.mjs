@@ -9,6 +9,7 @@ import { readJsonFile } from '../../src/infra/io.mjs';
 import { syncPublishedSiteMetadata } from '../../src/skills/generation/sync-site-metadata.mjs';
 import { buildSiteCapabilitiesPath } from '../../src/sites/catalog/capabilities.mjs';
 import { buildSiteRegistryPath } from '../../src/sites/catalog/registry.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 function createSiteContext(siteKey, adapterId) {
   return {
@@ -24,6 +25,8 @@ function createSiteContext(siteKey, adapterId) {
 
 test('syncKnowledgeBaseSiteMetadata prefers canonical site identity from siteContext', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-metadata-sync-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     await syncKnowledgeBaseSiteMetadata({
@@ -53,15 +56,17 @@ test('syncKnowledgeBaseSiteMetadata prefers canonical site identity from siteCon
         approvalRules: [],
       },
       siteProfilePath: path.join(workspace, 'profiles', 'www.douyin.com.json'),
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     });
 
-    const registry = await readJsonFile(buildSiteRegistryPath(workspace));
-    const capabilities = await readJsonFile(buildSiteCapabilitiesPath(workspace));
+    const registry = await readJsonFile(buildSiteRegistryPath(workspace, metadataSandbox.siteMetadataOptions));
+    const capabilities = await readJsonFile(buildSiteCapabilitiesPath(workspace, metadataSandbox.siteMetadataOptions));
 
     assert.equal(registry.sites['example.invalid'].siteKey, 'douyin');
     assert.equal(registry.sites['example.invalid'].adapterId, 'douyin');
     assert.equal(capabilities.sites['example.invalid'].siteKey, 'douyin');
     assert.equal(capabilities.sites['example.invalid'].adapterId, 'douyin');
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

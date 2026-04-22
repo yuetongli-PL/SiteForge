@@ -29,7 +29,7 @@ export async function syncPublishedSiteMetadata(kind, payload, deps) {
       latestSkillGeneratedAt: generatedAt,
       profilePath: payload.profilePath ?? null,
       knowledgeBaseDir: payload.kbDir,
-    });
+    }, payload.siteMetadataOptions ?? {});
     await deps.upsertSiteCapabilities(payload.cwd, payload.host, {
       baseUrl: payload.baseUrl ?? payload.inputUrl,
       siteKey: resolvedIdentity.siteKey,
@@ -38,7 +38,7 @@ export async function syncPublishedSiteMetadata(kind, payload, deps) {
       pageTypes: resolvePageTypesFromSiteContext(payload.siteContext, [resolveConfiguredPageTypes(payload.siteProfile)]),
       capabilityFamilies: payload.capabilityFamilies,
       supportedIntents: payload.supportedIntents,
-    });
+    }, payload.siteMetadataOptions ?? {});
     return;
   }
 

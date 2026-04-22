@@ -17,7 +17,11 @@ function createArtifactRef(source) {
 
 export async function resolveKnowledgeBasePublisherInput(inputUrl, options, deps) {
   const artifacts = await deps.resolveCompileArtifacts(inputUrl, options);
-  const siteContext = await deps.readSiteContext(artifacts.workspaceRoot, artifacts.host);
+  const siteContext = await deps.readSiteContext(
+    artifacts.workspaceRoot,
+    artifacts.host,
+    options.siteMetadataOptions ?? {},
+  );
   return {
     kind: 'knowledge-base',
     run: {

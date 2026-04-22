@@ -1714,12 +1714,18 @@ function buildPageFactHighlights(pageType, pageFacts) {
       highlights.featuredAuthorCount = Number(pageFacts.featuredAuthorCount ?? featuredAuthors.length) || featuredAuthors.length;
       highlights.featuredAuthorMids = featuredAuthors.map((author) => author.mid).filter(Boolean);
     }
+    if (pageFacts.featuredAuthorComplete !== undefined) {
+      highlights.featuredAuthorComplete = pageFacts.featuredAuthorComplete === true;
+    }
     if (featuredAuthorCards.length > 0) {
       highlights.featuredAuthorCards = featuredAuthorCards;
     }
     if (mergedCards.length > 0) {
       highlights.featuredContentCards = mergedCards;
       highlights.featuredContentCardCount = Number(pageFacts.featuredContentCount ?? mergedCards.length) || mergedCards.length;
+    }
+    if (pageFacts.featuredContentComplete !== undefined) {
+      highlights.featuredContentComplete = pageFacts.featuredContentComplete === true;
     }
   }
 
@@ -1735,6 +1741,9 @@ function buildPageFactHighlights(pageType, pageFacts) {
     if (mergedCards.length > 0) {
       highlights.featuredContentCards = mergedCards;
       highlights.featuredContentCardCount = Number(pageFacts.featuredContentCount ?? mergedCards.length) || mergedCards.length;
+    }
+    if (pageFacts.featuredContentComplete !== undefined) {
+      highlights.featuredContentComplete = pageFacts.featuredContentComplete === true;
     }
   }
 

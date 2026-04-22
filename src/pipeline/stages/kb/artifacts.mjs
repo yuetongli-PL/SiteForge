@@ -397,6 +397,7 @@ export async function resolveCompileArtifacts(inputUrl, options) {
   const inputLocator = await resolveArtifactLocatorContext({
     workspaceRoot,
     inputUrl,
+    siteMetadataOptions: options.siteMetadataOptions ?? null,
   });
 
   const docs = options.docsManifestPath
@@ -415,6 +416,7 @@ export async function resolveCompileArtifacts(inputUrl, options) {
     inputUrl,
     baseUrl,
     siteContext: inputLocator.siteContext ?? null,
+    siteMetadataOptions: options.siteMetadataOptions ?? null,
   });
   const host = inputLocator.hostKey ?? artifactLocator.hostKey ?? 'unknown-host';
 

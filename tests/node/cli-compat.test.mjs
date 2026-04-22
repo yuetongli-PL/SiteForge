@@ -6,6 +6,9 @@ import process from 'node:process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
+import { buildExampleStageSpec, compileFixtureKnowledgeBase } from './kb-test-fixtures.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
+
 const repoRoot = process.cwd();
 
 function runNodeCli(scriptName, args, options = {}) {
@@ -33,9 +36,11 @@ test('run-pipeline CLI keeps help and missing-url behavior compatible', async ()
 
 test('compile-wiki CLI lint command returns JSON summary', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-cli-compile-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
 
   try {
-    const kbDir = path.join(repoRoot, 'knowledge-base', 'jable.tv');
+    const fixture = await compileFixtureKnowledgeBase(workspace, buildExampleStageSpec());
+    const kbDir = fixture.kbDir;
     const reportDir = path.join(workspace, 'reports');
     const result = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'compile-wiki.mjs'), ['lint', '--kb-dir', kbDir, '--report-dir', reportDir], {
       cwd: workspace,
@@ -47,6 +52,7 @@ test('compile-wiki CLI lint command returns JSON summary', async () => {
     assert.equal(typeof payload.passed, 'boolean');
     assert.ok(Number.isInteger(payload.errors));
     assert.ok(Number.isInteger(payload.warnings));
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -54,26 +60,29 @@ test('compile-wiki CLI lint command returns JSON summary', async () => {
 
 test('generate-skill CLI returns the expected summary shape', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-cli-skill-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
 
   try {
+    const spec = buildExampleStageSpec();
+    const fixture = await compileFixtureKnowledgeBase(workspace, spec);
     const result = runNodeCli(
       path.join('src', 'entrypoints', 'pipeline', 'generate-skill.mjs'),
       [
-        'https://jable.tv/',
+        spec.inputUrl,
         '--kb-dir',
-        path.join(repoRoot, 'knowledge-base', 'jable.tv'),
+        fixture.kbDir,
         '--out-dir',
-        path.join(workspace, 'skills', 'jable-cli'),
+        path.join(workspace, 'skills', 'example-cli'),
         '--skill-name',
-        'jable-cli',
+        'example-cli',
       ],
       { cwd: workspace },
     );
 
     assert.equal(result.status, 0, result.stderr);
     const payload = parseJsonStdout(result);
-    assert.equal(payload.skillName, 'jable-cli');
-    assert.equal(path.basename(payload.skillDir), 'jable-cli');
+    assert.equal(payload.skillName, 'example-cli');
+    assert.equal(path.basename(payload.skillDir), 'example-cli');
     assert.deepEqual(payload.references, [
       'references/index.md',
       'references/flows.md',
@@ -83,6 +92,7 @@ test('generate-skill CLI returns the expected summary shape', async () => {
       'references/interaction-model.md',
     ]);
     assert.ok(Array.isArray(payload.warnings));
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

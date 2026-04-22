@@ -328,10 +328,11 @@ export async function acquireSessionLease(userDataDir, options = {}) {
   await ensureDir(path.dirname(filePath));
   const waitForAvailabilityMs = normalizePositiveNumber(options.waitForAvailabilityMs, 0);
   const pollIntervalMs = normalizePositiveNumber(options.pollIntervalMs, SESSION_LEASE_POLL_INTERVAL_MS);
+  const waitStartedAt = Date.now();
   const deadlineAt = Date.now() + waitForAvailabilityMs;
-  let waitedMs = 0;
 
   while (true) {
+    const waitedMs = Date.now() - waitStartedAt;
     const existingLease = await readJsonFileOrNull(filePath);
     if (!(existingLease?.leaseId && existingLease.pid && isProcessAlive(Number(existingLease.pid)))) {
       const lease = {
@@ -370,7 +371,6 @@ export async function acquireSessionLease(userDataDir, options = {}) {
 
     const sleepMs = Math.min(pollIntervalMs, Math.max(1, deadlineAt - Date.now()));
     await new Promise((resolve) => setTimeout(resolve, sleepMs));
-    waitedMs += sleepMs;
   }
 }
 

@@ -336,7 +336,7 @@ export async function queryJableRanking(url, options = {}) {
     latestRankingQueryAt: new Date().toISOString(),
     rankingQueryEntrypoint: entrypointPath,
     knowledgeBaseDir: taxonomyBundle.kbDir,
-  });
+  }, runtimeOptions.siteMetadataOptions ?? {});
   await upsertSiteCapabilities(runtimeOptions.workspaceRoot, host, {
     baseUrl: 'https://jable.tv/',
     primaryArchetype: 'catalog-detail',
@@ -349,7 +349,7 @@ export async function queryJableRanking(url, options = {}) {
     rankingModes: SUPPORTED_RANKING_MODES,
     categoryTaxonomySupported: true,
     rankingQueryEntrypoint: entrypointPath,
-  });
+  }, runtimeOptions.siteMetadataOptions ?? {});
   return {
     ok: true,
     baseUrl: 'https://jable.tv/',

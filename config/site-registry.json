@@ -1,137 +1,36 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-21T15:38:03.319Z",
+  "generatedAt": null,
   "sites": {
     "www.22biqu.com": {
       "canonicalBaseUrl": "https://www.22biqu.com/",
-      "profilePath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\profiles\\www.22biqu.com.json",
-      "profileVersion": 3,
-      "profileHash": "f49cf0d1e1353086244207f14c478f57a32d2eb304442b222cefa35014c36f7f",
-      "crawlerScriptPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.22biqu.com\\crawler.py",
-      "crawlerMetaPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.22biqu.com\\crawler.meta.json",
-      "scriptLanguage": "python",
-      "interpreterRequired": "pypy3",
-      "templateVersion": 3,
-      "crawlerStatus": "reused",
       "host": "www.22biqu.com",
-      "capabilityFamilies": [
-        "download-content",
-        "navigate-to-author",
-        "navigate-to-chapter",
-        "navigate-to-content",
-        "search-content"
-      ],
-      "updatedAt": "2026-04-14T10:55:42Z",
-      "bookContentRoot": "C:\\Users\\lyt-p\\.openclaw\\workspace\\downloads\\22biqu\\book_77085\\www.22biqu.com",
-      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com",
-      "crawlerRegistryPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\registry.json",
-      "latestDownloadMode": "crawler-reused",
-      "latestDownloadFile": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T105511079Z_www.22biqu.com_book-content\\downloads\\青山.txt",
-      "latestDownloadManifest": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.22biqu.com\\raw\\step-book-content\\20260414T105511079Z_www.22biqu.com_book-content\\book-content-manifest.json",
-      "downloadEntrypoint": "download_book.py",
-      "crawlerScriptsDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts",
-      "siteArchetype": null
+      "downloadEntrypoint": "src/sites/chapter-content/download/python/book.py",
+      "crawlerScriptsDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts"
     },
     "moodyz.com": {
       "canonicalBaseUrl": "https://moodyz.com/works/date",
       "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\moodyz-works",
-      "latestSkillGeneratedAt": "2026-04-14T06:31:30.302Z",
-      "profilePath": null,
-      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\moodyz.com",
-      "host": "moodyz.com",
-      "capabilityFamilies": [],
-      "updatedAt": "2026-04-14T06:31:30.304Z"
+      "host": "moodyz.com"
     },
     "jable.tv": {
       "canonicalBaseUrl": "https://jable.tv/",
       "siteArchetype": "catalog-detail",
-      "profilePath": null,
-      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\jable.tv",
-      "latestKnowledgeBaseCompileAt": "2026-04-14T12:29:29.206Z",
-      "latestKnowledgeBaseSourcesPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\jable.tv\\index\\sources.json",
-      "latestLintSummary": {
-        "passed": true,
-        "errorCount": 0,
-        "warningCount": 9,
-        "orphanPageCount": 7
-      },
       "host": "jable.tv",
-      "capabilityFamilies": [],
-      "updatedAt": "2026-04-14T12:52:42.952Z",
       "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\jable",
-      "latestSkillGeneratedAt": "2026-04-14T12:52:42.947Z",
-      "latestRankingQueryAt": "2026-04-14T12:52:08.447Z",
       "rankingQueryEntrypoint": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\query-jable-ranking.mjs"
     },
     "www.bilibili.com": {
       "canonicalBaseUrl": "https://www.bilibili.com/",
       "siteArchetype": "catalog-detail",
-      "profilePath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\profiles\\www.bilibili.com.json",
-      "profileVersion": 1,
-      "profileHash": "3c13a23d3af0ec23400f29d637ecfd6a38d3ececb0a6947d35b946ef63c1272e",
-      "crawlerScriptPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.bilibili.com\\crawler.py",
-      "crawlerMetaPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.bilibili.com\\crawler.meta.json",
-      "scriptLanguage": "python",
-      "interpreterRequired": "pypy3",
-      "templateVersion": 3,
-      "crawlerStatus": "generated",
       "host": "www.bilibili.com",
-      "capabilityFamilies": [],
-      "updatedAt": "2026-04-17T17:41:05.816Z",
-      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.bilibili.com",
-      "latestKnowledgeBaseCompileAt": "2026-04-17T16:57:39.881Z",
-      "latestKnowledgeBaseSourcesPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.bilibili.com\\index\\sources.json",
-      "latestLintSummary": {
-        "passed": true,
-        "errorCount": 0,
-        "warningCount": 13,
-        "orphanPageCount": 7
-      },
-      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\bilibili",
-      "latestSkillGeneratedAt": "2026-04-17T16:59:15.655Z"
-    },
-    "example.com": {
-      "canonicalBaseUrl": "https://example.com/",
-      "siteArchetype": "catalog-detail",
-      "profilePath": "C:\\Users\\lyt-p\\AppData\\Local\\Temp\\bwk-crawler-navigation-meta-SYIP3F\\example.com.json",
-      "profileVersion": 1,
-      "profileHash": "a6476671a42937eb0b41c20048a53244547ec03173581abc2b05f2ae6d6c8e3d",
-      "crawlerScriptPath": "C:\\Users\\lyt-p\\AppData\\Local\\Temp\\bwk-crawler-navigation-meta-SYIP3F\\crawler-scripts\\example.com\\crawler.py",
-      "crawlerMetaPath": "C:\\Users\\lyt-p\\AppData\\Local\\Temp\\bwk-crawler-navigation-meta-SYIP3F\\crawler-scripts\\example.com\\crawler.meta.json",
-      "scriptLanguage": "python",
-      "interpreterRequired": "pypy3",
-      "templateVersion": 3,
-      "crawlerStatus": "generated",
-      "host": "example.com",
-      "capabilityFamilies": [],
-      "updatedAt": "2026-04-21T15:38:03.319Z"
+      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\bilibili"
     },
     "www.douyin.com": {
       "canonicalBaseUrl": "https://www.douyin.com/?recommend=1",
       "siteArchetype": "catalog-detail",
-      "profilePath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.douyin.com\\raw\\step-3-analysis\\20260418T150134515Z_www.douyin.com_analysis\\site-profile.json",
-      "profileVersion": 1,
-      "profileHash": "bd8d694b52adfa2166f15391c501cf7edbef2b35de9adbf12ef5667e8a380818",
-      "crawlerScriptPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.douyin.com\\crawler.py",
-      "crawlerMetaPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\crawler-scripts\\www.douyin.com\\crawler.meta.json",
-      "scriptLanguage": "python",
-      "interpreterRequired": "pypy3",
-      "templateVersion": 3,
-      "crawlerStatus": "generated",
       "host": "www.douyin.com",
-      "capabilityFamilies": [],
-      "updatedAt": "2026-04-19T11:47:06.630Z",
-      "knowledgeBaseDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.douyin.com",
-      "latestKnowledgeBaseCompileAt": "2026-04-18T15:01:35.125Z",
-      "latestKnowledgeBaseSourcesPath": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\www.douyin.com\\index\\sources.json",
-      "latestLintSummary": {
-        "passed": true,
-        "errorCount": 0,
-        "warningCount": 13,
-        "orphanPageCount": 7
-      },
-      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\douyin",
-      "latestSkillGeneratedAt": "2026-04-19T11:47:06.627Z"
+      "repoSkillDir": "C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\douyin"
     }
   }
 }

@@ -42,6 +42,15 @@ class DownloadBookTests(unittest.TestCase):
             scoped = download_book.host_book_content_root(root, "www.22biqu.com")
             self.assertEqual(scoped, root / "www.22biqu.com")
 
+    def test_load_json_accepts_utf8_bom(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload_path = Path(tmp) / "context.json"
+            payload_path.write_text('{"host":"www.22biqu.com"}', encoding="utf-8-sig")
+
+            loaded = download_book.load_json(payload_path)
+
+            self.assertEqual(loaded["host"], "www.22biqu.com")
+
     def test_validate_artifact_accepts_full_pretty_txt(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)

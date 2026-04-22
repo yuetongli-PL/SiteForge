@@ -6,6 +6,7 @@ import process from 'node:process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { generateSkill } from '../../src/entrypoints/pipeline/generate-skill.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 async function writeJson(filePath, payload) {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -160,6 +161,8 @@ function normalizeEol(value) {
 test('generateSkill produces a generic navigation skill without site-specific renderers', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-generate-skill-generic-'));
   const previousCwd = process.cwd();
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     const kbDir = await createGenericKnowledgeBaseFixture(workspace);
@@ -169,6 +172,7 @@ test('generateSkill produces a generic navigation skill without site-specific re
       kbDir,
       outDir: path.join(workspace, 'out', 'example-skill'),
       skillName: 'example-skill',
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     });
 
     assert.equal(result.skillName, 'example-skill');
@@ -193,6 +197,7 @@ test('generateSkill produces a generic navigation skill without site-specific re
     assert.match(flowsMd, /^# Flows\n/su);
     assert.match(flowsMd, /## Search work/u);
     assert.match(flowsMd, /## Open work/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     process.chdir(previousCwd);
     await rm(workspace, { recursive: true, force: true });

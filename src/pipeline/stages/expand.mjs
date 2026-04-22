@@ -6,13 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { ensureAuthenticatedSession, inspectLoginState, resolveSiteBrowserSessionOptions } from '../../infra/auth/site-auth.mjs';
+import { mergeRuntimeEvidence } from '../../shared/runtime-evidence.mjs';
 import { inferPageTypeFromUrl, isContentDetailPageType as isSharedContentDetailPageType } from '../../sites/core/page-types.mjs';
+import { deriveBilibiliAntiCrawlReasonCode } from '../../sites/bilibili/model/diagnosis.mjs';
 import { canonicalizeDouyinAuthorUrl, canonicalizeDouyinVideoUrl } from '../../sites/douyin/download/enumerator.mjs';
 import { normalizeDouyinPublishFields, parseDouyinCreateTimeMapFromHtml } from '../../sites/douyin/queries/follow-query.mjs';
 import {
   deriveDouyinAntiCrawlReasonCode,
   detectDouyinAntiCrawlSignals,
   normalizeDouyinAuthorSubpage,
+  resolveDouyinReadySelectors,
 } from '../../sites/douyin/model/diagnosis.mjs';
 import { resolveDouyinAuthorSubpageFromUrl } from '../../sites/douyin/model/site.mjs';
 
@@ -48,6 +51,7 @@ const DOM_QUIET_MS = 500;
 const MAX_FALLBACK_BOOKS = 1;
 const CHAPTER_CHAIN_LIMIT = 100;
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 const EXPAND_HELPER_NAMESPACE = '__BWS_EXPAND__';
 const SAME_DOCUMENT_TRIGGER_KINDS = new Set(['details-toggle', 'expanded-toggle', 'tab', 'menu-button', 'dialog-open']);
 const DIRECT_NAVIGATION_TRIGGER_KINDS = new Set(['safe-nav-link', 'content-link', 'pagination-link', 'auth-link', 'chapter-link']);
@@ -58,6 +62,52 @@ function isContentDetailPageType(pageType) {
 
 function createError(code, message) {
   return { code, message };
+}
+
+function isTransientRuntimeEvaluateTimeout(error) {
+  return /CDP timeout for Runtime\.evaluate/iu.test(String(error?.message ?? ''));
+}
+
+function isTransientExpandBootstrapError(error) {
+  const message = String(error?.message ?? '');
+  return isTransientRuntimeEvaluateTimeout(error)
+    || /CDP socket closed/iu.test(message)
+    || /WebSocket is not open/iu.test(message)
+    || /Target closed/iu.test(message)
+    || /Inspector\.detached/iu.test(message)
+    || /ECONNRESET|EPIPE|socket hang up/iu.test(message);
+}
+
+function isDocumentReadyTimeout(error) {
+  return /Timed out waiting for document ready/iu.test(String(error?.message ?? ''));
+}
+
+async function closeSessionQuietly(session) {
+  try {
+    await session?.close?.();
+  } catch {
+    // Preserve the original failure.
+  }
+}
+
+function normalizePageEvidence(pageFacts = null, runtimeEvidence = null, options = {}) {
+  return mergeRuntimeEvidence(pageFacts, runtimeEvidence, options);
+}
+
+function normalizeStateSignature(signature = null, options = {}) {
+  if (!signature || typeof signature !== 'object') {
+    return signature;
+  }
+  const normalizedEvidence = normalizePageEvidence(
+    signature.pageFacts ?? null,
+    signature.runtimeEvidence ?? null,
+    options,
+  );
+  return {
+    ...signature,
+    pageFacts: normalizedEvidence.pageFacts,
+    runtimeEvidence: normalizedEvidence.runtimeEvidence,
+  };
 }
 
 function normalizeWaitUntil(value) {
@@ -129,6 +179,7 @@ export function derivePageFacts({
   const normalizeText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
   const normalizeHost = (value) => String(value ?? '').trim().toLowerCase();
   const uniqueValues = (values) => [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
+  const finalizeFacts = (facts, options = {}) => normalizePageEvidence(facts, null, options).pageFacts;
   const normalizedFinalUrl = normalizeUrl(finalUrl) || normalizeText(finalUrl);
   const profileHost = normalizeHost(siteProfile?.host ?? '');
   const currentHostname = (() => {
@@ -512,7 +563,7 @@ export function derivePageFacts({
         .filter(Boolean)
         .slice(0, 10);
     }
-    return facts;
+    return finalizeFacts(facts);
   }
 
   if (isContentDetailPageType(pageType)) {
@@ -527,12 +578,12 @@ export function derivePageFacts({
       const authorName = readText(['a[href*="/user/"]:not([href*="/user/self"])'])
         || embeddedAuthor?.authorName
         || null;
-      return {
+      return finalizeFacts({
         contentTitle: readText(['h1']) || normalizeText(title) || null,
         authorName,
         authorUrl,
         authorUserId,
-      };
+      });
     }
     const chapterLinkSelectors = Array.isArray(siteProfile?.bookDetail?.chapterLinkSelectors)
       ? siteProfile.bookDetail.chapterLinkSelectors
@@ -629,7 +680,7 @@ export function derivePageFacts({
       facts.episodeTitle = (facts.contentType === 'bangumi' ? (episodeTitle || bilibiliTitle) : null) ?? null;
       facts.tagNames = tagNames;
     }
-    return facts;
+    return finalizeFacts(facts);
   }
 
   if (pageType === 'author-page' || pageType === 'author-list-page') {
@@ -685,7 +736,9 @@ export function derivePageFacts({
         facts.antiCrawlSignals = antiCrawlSignals;
         facts.antiCrawlReasonCode = deriveDouyinAntiCrawlReasonCode(antiCrawlSignals);
       }
-      return facts;
+      return finalizeFacts(facts, {
+        antiCrawlReasonCode: facts.antiCrawlReasonCode ?? null,
+      });
     }
     const genericAuthorName = metaContent('og:novel:author')
       || readText(
@@ -781,9 +834,12 @@ export function derivePageFacts({
       if (antiCrawlSignals.length > 0) {
         facts.antiCrawlDetected = true;
         facts.antiCrawlSignals = antiCrawlSignals;
+        facts.antiCrawlReasonCode = deriveBilibiliAntiCrawlReasonCode(antiCrawlSignals);
       }
     }
-    return facts;
+    return finalizeFacts(facts, {
+      antiCrawlReasonCode: facts.antiCrawlReasonCode ?? null,
+    });
   }
 
   if (pageType === 'category-page') {
@@ -824,12 +880,12 @@ export function derivePageFacts({
         '.hot-list .rank',
       ], 12);
     }
-    return facts;
+    return finalizeFacts(facts);
   }
 
   if (pageType === 'chapter-page') {
     const contentText = normalizeText(readDocumentText());
-    return {
+    return finalizeFacts({
       bookTitle: readText(['#info_url', '.crumbs a[href*="/biqu"]', '.bread-crumbs a[href*="/biqu"]']),
       authorName: metaContent('og:novel:author'),
       chapterTitle: readText(['.reader-main .title', 'h1.title', '.content_read h1', 'h1']),
@@ -838,7 +894,7 @@ export function derivePageFacts({
       nextChapterUrl: readHref(['#next_url', 'a#next_url']),
       bodyTextLength: contentText.length,
       bodyExcerpt: contentText.slice(0, 160) || null,
-    };
+    });
   }
 
   return null;
@@ -866,6 +922,18 @@ function isMoodyzSiteProfile(siteProfile = null, baseUrl = '') {
     }
   })();
   return profileHost === 'moodyz.com' || profileHost === 'www.moodyz.com' || urlHost === 'moodyz.com' || urlHost === 'www.moodyz.com';
+}
+
+function isDouyinSiteProfile(siteProfile = null, baseUrl = '') {
+  const profileHost = String(siteProfile?.host ?? '').toLowerCase();
+  const urlHost = (() => {
+    try {
+      return new URL(String(baseUrl || '')).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  return profileHost === 'douyin.com' || profileHost === 'www.douyin.com' || urlHost === 'douyin.com' || urlHost === 'www.douyin.com';
 }
 
 function isBilibiliSiteProfile(siteProfile = null, baseUrl = '') {
@@ -989,11 +1057,26 @@ function resolveBilibiliReadyWaitOptions(pageType) {
 }
 
 async function ensureSiteSpecificReadyMarkers(session, siteProfile = null, url = '') {
+  const pageType = inferPageTypeFromUrl(url, siteProfile);
+
+  if (isDouyinSiteProfile(siteProfile, url)) {
+    const selectors = resolveDouyinReadySelectors(pageType);
+    if (selectors.length === 0) {
+      return;
+    }
+    await waitForSelectorMatches(session, selectors, {
+      minCount: 1,
+      timeoutMs: 6_000,
+      pollMs: 120,
+      settleMs: 180,
+    });
+    return;
+  }
+
   if (!isBilibiliSiteProfile(siteProfile, url)) {
     return;
   }
 
-  const pageType = inferPageTypeFromUrl(url, siteProfile);
   const selectors = resolveBilibiliReadySelectors(siteProfile, pageType);
   const waitOptions = resolveBilibiliReadyWaitOptions(pageType);
   if (!waitOptions || selectors.length === 0) {
@@ -1083,7 +1166,7 @@ async function loadSiteProfile(baseUrl, explicitProfilePath = null, explicitSite
       hostnames.push(`www.${parsed.hostname}`);
     }
     for (const hostname of hostnames) {
-      const profilePath = path.join(MODULE_DIR, 'profiles', `${hostname}.json`);
+      const profilePath = path.join(REPO_ROOT, 'profiles', `${hostname}.json`);
       if (await fileExists(profilePath)) {
         return JSON.parse(await readFile(profilePath, 'utf8'));
       }
@@ -1545,10 +1628,13 @@ async function resolveInitialManifest(options) {
     screenshot: resolveManifestLinkedPath(manifestPath, manifest.files.screenshot),
     manifest: manifestPath,
   };
-
+  const missingFiles = [];
   for (const [name, filePath] of Object.entries(normalizedFiles)) {
+    if (name === 'manifest') {
+      continue;
+    }
     if (!filePath || !(await fileExists(filePath))) {
-      throw new Error(`Initial manifest file is missing: ${name}`);
+      missingFiles.push(name);
     }
   }
 
@@ -1558,6 +1644,7 @@ async function resolveInitialManifest(options) {
       ...manifest,
       files: normalizedFiles,
     },
+    missingFiles,
   };
 }
 
@@ -1578,7 +1665,9 @@ async function captureCurrentState({
   const capturedAt = new Date().toISOString();
   let hardFailure = null;
   let warning = null;
-  let pageFacts = pageMetadata.pageFacts ?? null;
+  const normalizedEvidence = normalizePageEvidence(pageMetadata.pageFacts ?? null, pageMetadata.runtimeEvidence ?? null);
+  let pageFacts = normalizedEvidence.pageFacts;
+  const runtimeEvidence = normalizedEvidence.runtimeEvidence;
 
   await mkdir(stateDir, { recursive: true });
 
@@ -1665,6 +1754,7 @@ async function captureCurrentState({
       viewportHeight: pageMetadata.viewportHeight,
     },
     pageFacts,
+    runtimeEvidence,
     error: hardFailure ?? warning,
   };
 
@@ -1672,15 +1762,35 @@ async function captureCurrentState({
   return manifest;
 }
 
-async function copyInitialState(initialManifest, layout, dedupKey) {
+async function materializeInitialStateArtifact(sourcePath, destinationPath, kind, missingFiles = []) {
+  if (!missingFiles.includes(kind) && sourcePath && await fileExists(sourcePath)) {
+    await copyFile(sourcePath, destinationPath);
+    return;
+  }
+  if (kind === 'html') {
+    await writeFile(destinationPath, '', 'utf8');
+    return;
+  }
+  if (kind === 'snapshot') {
+    await writeFile(destinationPath, `${JSON.stringify({ documents: [] }, null, 2)}\n`, 'utf8');
+    return;
+  }
+  await writeFile(destinationPath, Buffer.alloc(0));
+}
+
+async function copyInitialState(initialManifest, layout, dedupKey, liveInitialSignature = null, missingFiles = []) {
   const stateId = 's0000';
   const stateDir = path.join(layout.statesDir, `${stateId}_initial`);
   const files = buildStateFiles(stateDir);
+  const normalizedEvidence = normalizePageEvidence(
+    liveInitialSignature?.pageFacts ?? initialManifest.pageFacts ?? null,
+    liveInitialSignature?.runtimeEvidence ?? null,
+  );
 
   await mkdir(stateDir, { recursive: true });
-  await copyFile(initialManifest.files.html, files.html);
-  await copyFile(initialManifest.files.snapshot, files.snapshot);
-  await copyFile(initialManifest.files.screenshot, files.screenshot);
+  await materializeInitialStateArtifact(initialManifest.files.html, files.html, 'html', missingFiles);
+  await materializeInitialStateArtifact(initialManifest.files.snapshot, files.snapshot, 'snapshot', missingFiles);
+  await materializeInitialStateArtifact(initialManifest.files.screenshot, files.screenshot, 'screenshot', missingFiles);
 
   const manifest = {
     state_id: stateId,
@@ -1689,17 +1799,18 @@ async function copyInitialState(initialManifest, layout, dedupKey) {
     dedup_key: dedupKey,
     trigger: null,
     inputUrl: initialManifest.inputUrl,
-    finalUrl: initialManifest.finalUrl,
-    title: initialManifest.title,
+    finalUrl: liveInitialSignature?.finalUrl ?? initialManifest.finalUrl,
+    title: liveInitialSignature?.title ?? initialManifest.title,
     capturedAt: initialManifest.capturedAt,
     status: 'initial',
     outDir: stateDir,
     files,
     page: {
-      viewportWidth: initialManifest.page?.viewportWidth ?? null,
-      viewportHeight: initialManifest.page?.viewportHeight ?? null,
+      viewportWidth: liveInitialSignature?.viewportWidth ?? initialManifest.page?.viewportWidth ?? null,
+      viewportHeight: liveInitialSignature?.viewportHeight ?? initialManifest.page?.viewportHeight ?? null,
     },
-    pageFacts: initialManifest.pageFacts ?? null,
+    pageFacts: normalizedEvidence.pageFacts,
+    runtimeEvidence: normalizedEvidence.runtimeEvidence,
     error: null,
     source_manifest_path: initialManifest.files.manifest,
   };
@@ -1722,6 +1833,7 @@ function topLevelStateEntryFromManifest(manifest) {
     duplicate_of: null,
     files: manifest.files,
     pageFacts: manifest.pageFacts ?? null,
+    runtimeEvidence: manifest.runtimeEvidence ?? null,
     error: manifest.error,
   };
 }
@@ -1739,6 +1851,7 @@ function createStateIndexEntry({
   duplicateOf = null,
   files = emptyFiles(),
   pageFacts = null,
+  runtimeEvidence = null,
   error = null,
 }) {
   return {
@@ -1754,6 +1867,7 @@ function createStateIndexEntry({
     duplicate_of: duplicateOf,
     files,
     pageFacts,
+    runtimeEvidence,
     error,
   };
 }
@@ -3643,6 +3757,100 @@ function pageComputeStateSignature(siteProfile = null) {
   };
   const bilibiliBvidFromUrlLocal = (value) => normalizeText(value?.match(/\/video\/(BV[0-9A-Za-z]+)/u)?.[1] || '') || null;
   const bilibiliMidFromUrlLocal = (value) => normalizeText(value?.match(/space\.bilibili\.com\/(\d+)/u)?.[1] || '') || null;
+  const douyinVideoIdFromUrlLocal = (value) => normalizeText(value?.match(/\/video\/(\d+)/u)?.[1] || '') || null;
+  const canonicalizeDouyinAuthorUrlLocal = (value) => {
+    const normalized = normalizeUrlNoFragmentLocal(value);
+    return /\/user\/[^/?#]+/iu.test(normalized) && !/\/user\/self(?:[/?#]|$)/iu.test(normalized) ? normalized : null;
+  };
+  const canonicalizeDouyinVideoUrlLocal = (value) => {
+    const normalized = normalizeUrlNoFragmentLocal(value);
+    return /\/video\/\d+/iu.test(normalized) ? normalized : null;
+  };
+  const normalizeDouyinAuthorSubpageLocal = (value, fallback = 'home') => {
+    const normalized = normalizeText(String(value || '').replace(/^\/+|\/+$/gu, '')).toLowerCase();
+    if (!normalized) {
+      return fallback;
+    }
+    if (normalized === 'favorite') {
+      return 'collect';
+    }
+    if (normalized === 'watch_history' || normalized === 'record') {
+      return 'history';
+    }
+    if (normalized === 'feed') {
+      return 'follow-feed';
+    }
+    if (normalized === 'user' || normalized === 'users') {
+      return 'follow-users';
+    }
+    return normalized;
+  };
+  const detectDouyinAntiCrawlSignalsLocal = ({ title = '', documentText = '' } = {}) => {
+    const source = normalizeText([title, documentText].filter(Boolean).join(' ')).toLowerCase();
+    if (!source) {
+      return [];
+    }
+    const signals = [];
+    if (/captcha|verify|challenge/u.test(source) || /\u9a8c\u8bc1\u7801/u.test(source) || /\u4e2d\u95f4\u9875/u.test(source) || /middle_page_loading/u.test(source)) {
+      signals.push('verify');
+    }
+    if (/captcha/u.test(source)) {
+      signals.push('captcha');
+    }
+    if (/challenge/u.test(source) || /\u4e2d\u95f4\u9875/u.test(source)) {
+      signals.push('challenge');
+    }
+    if (/rate[- ]?limit|too[- ]?many/u.test(source) || /\u9891\u7e41/u.test(source) || /\u7a0d\u540e\u518d\u8bd5/u.test(source)) {
+      signals.push('rate-limit');
+    }
+    if (/middle_page_loading/u.test(source)) {
+      signals.push('middle-page-loading');
+    }
+    return [...new Set(signals)];
+  };
+  const deriveDouyinAntiCrawlReasonCodeLocal = (signals = []) => {
+    const normalized = [...new Set(signals.map((value) => normalizeText(value).toLowerCase()).filter(Boolean))];
+    if (normalized.some((value) => /verify|captcha|middle|middle-page-loading/u.test(value))) {
+      return 'anti-crawl-verify';
+    }
+    if (normalized.some((value) => /rate|too[- ]?many|\u9891\u7e41|\u7a0d\u540e\u518d\u8bd5/u.test(value))) {
+      return 'anti-crawl-rate-limit';
+    }
+    return normalized.length > 0 ? 'anti-crawl-challenge' : null;
+  };
+  const deriveBilibiliAntiCrawlReasonCodeLocal = (signals = []) => {
+    const normalized = [...new Set(signals.map((value) => normalizeText(value).toLowerCase()).filter(Boolean))];
+    if (normalized.some((signal) => /verify|challenge|captcha|\u767b\u5f55\u6821\u9a8c|\u5b89\u5168\u9a8c\u8bc1/u.test(signal))) {
+      return 'anti-crawl-verify';
+    }
+    if (normalized.some((signal) => /rate|\u9891\u7e41|\u7a0d\u540e\u518d\u8bd5|too[- ]many|\u98ce\u63a7/u.test(signal))) {
+      return 'anti-crawl-rate-limit';
+    }
+    return normalized.length > 0 ? 'anti-crawl' : null;
+  };
+  const buildDouyinContentCardsLocal = (urls = [], titles = [], currentAuthor = {}) => {
+    const canonicalUrls = [...new Set(urls.map((value) => canonicalizeDouyinVideoUrlLocal(value)).filter(Boolean))].slice(0, 32);
+    return canonicalUrls.map((url, index) => ({
+      title: normalizeText(titles[index] || '') || null,
+      url,
+      videoId: douyinVideoIdFromUrlLocal(url),
+      authorName: currentAuthor?.authorName ?? null,
+      authorUrl: currentAuthor?.authorUrl ?? null,
+      authorUserId: currentAuthor?.authorUserId ?? null,
+      contentType: 'video',
+      publishedAt: null,
+      publishedDayKey: null,
+    }));
+  };
+  const buildDouyinAuthorCardsLocal = (urls = [], names = []) => {
+    const canonicalUrls = [...new Set(urls.map((value) => canonicalizeDouyinAuthorUrlLocal(value)).filter(Boolean))].slice(0, 32);
+    return canonicalUrls.map((url, index) => ({
+      name: normalizeText(names[index] || '') || null,
+      url,
+      userId: normalizeText(url.match(/\/user\/([^/?#]+)/u)?.[1] || '') || null,
+      cardKind: 'author',
+    }));
+  };
   const bilibiliAuthorSubpageFromPathLocal = (value) => {
     const matched = String(value || '').match(/^\/\d+(?:\/([^?#]+))?/u);
     const normalized = normalizeText(String(matched?.[1] || '').replace(/^\/+|\/+$/gu, ''));
@@ -4071,6 +4279,20 @@ function pageComputeStateSignature(siteProfile = null) {
         ),
         resultTitles,
       };
+      if (normalizeHostnameLocal(siteProfile?.host ?? '') === 'www.douyin.com') {
+        const douyinVideoUrls = hrefsFromSelectors(['a[href*="/video/"]']).map((value) => canonicalizeDouyinVideoUrlLocal(value)).filter(Boolean).slice(0, 20);
+        facts.resultUrls = douyinVideoUrls;
+        facts.firstResultUrl = douyinVideoUrls[0] ?? null;
+        facts.queryText = queryText || (() => {
+          try {
+            const decoded = decodeURIComponent(pathname);
+            const matched = decoded.match(/\/search\/(.+?)(?:\/|$)/u);
+            return normalizeText(matched?.[1] || '');
+          } catch {
+            return queryText;
+          }
+        })();
+      }
       if (['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''))) {
         const resultAuthorUrls = uniqueSorted(
           Array.from(document.querySelectorAll('a[href*="space.bilibili.com/"]'))
@@ -4109,6 +4331,18 @@ function pageComputeStateSignature(siteProfile = null) {
       return facts;
     }
     if (isContentDetailPageTypeLocal(pageType)) {
+      if (normalizeHostnameLocal(siteProfile?.host ?? '') === 'www.douyin.com') {
+        const authorUrl = canonicalizeDouyinAuthorUrlLocal(
+          hrefFromSelectors(['a[href*="/user/"]:not([href*="/user/self"])']) || '',
+        ) || null;
+        const authorUserId = normalizeText(authorUrl?.match(/\/user\/([^/?#]+)/u)?.[1] || '') || null;
+        return {
+          contentTitle: textFromSelectors(['h1']) || normalizeText(title) || null,
+          authorName: textFromSelectors(['a[href*="/user/"]:not([href*="/user/self"])']) || null,
+          authorUrl,
+          authorUserId,
+        };
+      }
       const chapterLinkSelectors = Array.isArray(siteProfile?.bookDetail?.chapterLinkSelectors)
         ? siteProfile.bookDetail.chapterLinkSelectors
         : ['#list a[href]', '.listmain a[href]', 'dd a[href]', '.book_last a[href]'];
@@ -4218,6 +4452,57 @@ function pageComputeStateSignature(siteProfile = null) {
       return facts;
     }
     if (pageType === 'author-page' || pageType === 'author-list-page') {
+      if (normalizeHostnameLocal(siteProfile?.host ?? '') === 'www.douyin.com') {
+        const authorSubpage = normalizeDouyinAuthorSubpageLocal(
+          pathname.includes('/follow') ? (pathname.includes('tab=user') ? 'follow-users' : 'follow-feed') : pathname.split('/').filter(Boolean).at(-1),
+          pageType === 'author-list-page' ? 'post' : 'home',
+        );
+        const antiCrawlSignals = detectDouyinAntiCrawlSignalsLocal({
+          title,
+          documentText: normalizeText(document.body?.innerText || document.documentElement?.innerText || ''),
+        });
+        const facts = {
+          authorSubpage,
+        };
+        if (pageType === 'author-page') {
+          const authorUrl = canonicalizeDouyinAuthorUrlLocal(finalUrl) || null;
+          const authorUserId = normalizeText(authorUrl?.match(/\/user\/([^/?#]+)/u)?.[1] || '') || null;
+          facts.authorName = textFromSelectors(['h1']) || null;
+          facts.authorUrl = authorUrl;
+          facts.authorUserId = authorUserId;
+          const featuredContentTitles = textsFromSelectors(['a[href*="/video/"]']).slice(0, 32);
+          const featuredContentUrls = hrefsFromSelectors(['a[href*="/video/"]']).slice(0, 32);
+          const featuredContentCards = buildDouyinContentCardsLocal(featuredContentUrls, featuredContentTitles, facts);
+          facts.featuredContentCards = featuredContentCards;
+          facts.featuredContentUrls = featuredContentCards.map((card) => card.url).filter(Boolean);
+          facts.featuredContentTitles = featuredContentCards.map((card) => card.title).filter(Boolean);
+          facts.featuredContentVideoIds = featuredContentCards.map((card) => card.videoId).filter(Boolean);
+          facts.featuredContentCount = featuredContentCards.length;
+          if (featuredContentCards.length > 0) {
+            facts.featuredContentComplete = true;
+          }
+        } else {
+          const featuredAuthorNames = textsFromSelectors(['a[href*="/user/"]']).slice(0, 32);
+          const featuredAuthorUrls = hrefsFromSelectors(['a[href*="/user/"]']).slice(0, 32);
+          const featuredAuthorCards = authorSubpage === 'follow-users'
+            ? buildDouyinAuthorCardsLocal(featuredAuthorUrls, featuredAuthorNames)
+            : [];
+          if (featuredAuthorCards.length > 0) {
+            facts.featuredAuthorCards = featuredAuthorCards;
+            facts.featuredAuthorUrls = featuredAuthorCards.map((card) => card.url).filter(Boolean);
+            facts.featuredAuthorNames = featuredAuthorCards.map((card) => card.name).filter(Boolean);
+            facts.featuredAuthorUserIds = featuredAuthorCards.map((card) => card.userId).filter(Boolean);
+            facts.featuredAuthorCount = featuredAuthorCards.length;
+            facts.featuredAuthorComplete = true;
+          }
+        }
+        if (antiCrawlSignals.length > 0) {
+          facts.antiCrawlDetected = true;
+          facts.antiCrawlSignals = antiCrawlSignals;
+          facts.antiCrawlReasonCode = deriveDouyinAntiCrawlReasonCodeLocal(antiCrawlSignals);
+        }
+        return facts;
+      }
       const facts = {
         authorName: metaContent('og:novel:author')
           || textFromSelectors(
@@ -4305,6 +4590,7 @@ function pageComputeStateSignature(siteProfile = null) {
         if (antiCrawlSignals.length > 0) {
           facts.antiCrawlDetected = true;
           facts.antiCrawlSignals = antiCrawlSignals;
+          facts.antiCrawlReasonCode = deriveBilibiliAntiCrawlReasonCodeLocal(antiCrawlSignals);
         }
       }
       return facts;
@@ -4313,6 +4599,21 @@ function pageComputeStateSignature(siteProfile = null) {
       const facts = {
         categoryName: textFromSelectors(['h1', '.channel-title', '.page-title']) || bilibiliCategoryNameFromPathLocal(pathname),
       };
+      if (normalizeHostnameLocal(siteProfile?.host ?? '') === 'www.douyin.com') {
+        const featuredContentTitles = textsFromSelectors(['a[href*="/video/"]']).slice(0, 32);
+        const featuredContentUrls = hrefsFromSelectors(['a[href*="/video/"]']).slice(0, 32);
+        const featuredContentCards = buildDouyinContentCardsLocal(featuredContentUrls, featuredContentTitles, {});
+        facts.categoryPath = pathname;
+        facts.featuredContentCards = featuredContentCards;
+        facts.featuredContentUrls = featuredContentCards.map((card) => card.url).filter(Boolean);
+        facts.featuredContentTitles = featuredContentCards.map((card) => card.title).filter(Boolean);
+        facts.featuredContentVideoIds = featuredContentCards.map((card) => card.videoId).filter(Boolean);
+        facts.featuredContentCount = featuredContentCards.length;
+        if (featuredContentCards.length > 0) {
+          facts.featuredContentComplete = true;
+        }
+        return facts;
+      }
       if (['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(normalizeHostnameLocal(siteProfile?.host ?? ''))) {
         const featuredContentUrls = uniqueSorted(
           Array.from(document.querySelectorAll('a[href*="/video/"], a[href*="/bangumi/play/"]'))
@@ -4530,12 +4831,23 @@ async function navigateAndWaitReady(session, url, settings, siteProfile = null) 
   if (await tryWarmBilibiliAuthorListNavigation(session, url, settings, siteProfile)) {
     return;
   }
-  await session.navigateAndWait(url, resolveNavigationWaitPolicy(settings, siteProfile, url));
+  try {
+    await session.navigateAndWait(url, resolveNavigationWaitPolicy(settings, siteProfile, url));
+  } catch (error) {
+    if (!isDouyinSiteProfile(siteProfile, url) || !isDocumentReadyTimeout(error)) {
+      throw error;
+    }
+    await ensureSiteSpecificReadyMarkers(session, siteProfile, url);
+    await ensureSiteSpecificReadyMarkers(session, siteProfile, url);
+    return;
+  }
   await ensureSiteSpecificReadyMarkers(session, siteProfile, url);
 }
 
 async function collectStateSignature(session, siteProfile = null) {
-  const signature = await callExpandHelper(session, 'pageComputeStateSignature', pageComputeStateSignature, siteProfile);
+  const signature = normalizeStateSignature(
+    await callExpandHelper(session, 'pageComputeStateSignature', pageComputeStateSignature, siteProfile),
+  );
   if (!signature?.pageFacts || !isBilibiliSiteProfile(siteProfile, signature.finalUrl)) {
     return signature;
   }
@@ -4569,7 +4881,9 @@ async function collectStateSignature(session, siteProfile = null) {
   } catch {
     // Keep the captured page facts even if login-state inspection is unavailable.
   }
-  return signature;
+  return normalizeStateSignature(signature, {
+    antiCrawlReasonCode: signature.pageFacts?.antiCrawlReasonCode ?? null,
+  });
 }
 
 async function discoverPageTriggers(session, discoveryLimit, searchQueries = [], siteProfile = null) {
@@ -4700,6 +5014,7 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
   };
   const isJableSite = String(siteProfile?.host ?? '').toLowerCase() === 'jable.tv';
   const isBilibiliSite = isBilibiliSiteProfile(siteProfile);
+  const isDouyinSite = isDouyinSiteProfile(siteProfile);
   const pageSelectionLimit = (() => {
     if (!isJableSite) {
       return Number.POSITIVE_INFINITY;
@@ -4723,10 +5038,60 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
   })();
 
   const orderedTriggers = (() => {
-    if (!isJableSite) {
+    if (!isJableSite && !isDouyinSite) {
       return triggers;
     }
     const priorityFor = (trigger) => {
+      if (isDouyinSite) {
+        if (isContentDetailPageType(pageType)) {
+          if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author' && trigger.locator?.primary === 'page-facts') {
+            return 0;
+          }
+          if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author') {
+            return 1;
+          }
+          return 9;
+        }
+        if (pageType === 'search-results-page') {
+          if (trigger.kind === 'content-link') {
+            return 0;
+          }
+          if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author' && trigger.locator?.primary === 'page-facts') {
+            return 1;
+          }
+          if (trigger.kind === 'safe-nav-link' && ['category', 'utility', 'home'].includes(trigger.semanticRole)) {
+            return 8;
+          }
+          return 4;
+        }
+        if (pageType === 'author-page') {
+          if (trigger.kind === 'content-link') {
+            return 0;
+          }
+          if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author' && trigger.locator?.primary === 'page-facts') {
+            return 1;
+          }
+          return 4;
+        }
+        if (['home', 'category-page', 'history-page', 'unknown-page'].includes(pageType)) {
+          if (trigger.kind === 'search-form') {
+            return 0;
+          }
+          if (trigger.kind === 'content-link' && trigger.locator?.primary === 'known-query') {
+            return 1;
+          }
+          if (trigger.kind === 'content-link') {
+            return 2;
+          }
+          if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author' && trigger.locator?.primary === 'page-facts') {
+            return 3;
+          }
+          if (trigger.kind === 'safe-nav-link' && ['category', 'utility', 'home'].includes(trigger.semanticRole)) {
+            return 8;
+          }
+          return 5;
+        }
+      }
       if (pageType === 'author-list-page') {
         if (trigger.kind === 'safe-nav-link' && trigger.semanticRole === 'author') {
           return 0;
@@ -4906,8 +5271,11 @@ function selectTriggersForPage(pageType, triggers, settings, siteProfile = null,
           }
           if (
             settings.searchQueries.length > 0
-            && bookCount > 0
-            && ['category', 'home'].includes(trigger.semanticRole)
+            && (searchFormCount > 0 || bookCount > 0)
+            && (
+              ['category', 'home'].includes(trigger.semanticRole)
+              || (isDouyinSite && trigger.semanticRole === 'utility')
+            )
           ) {
             continue;
           }
@@ -5006,24 +5374,42 @@ async function loadSourceContext({
 
 export async function expandStates(inputUrl, options = {}) {
   const settings = mergeOptions(options);
-  const { manifest: initialManifest } = await resolveInitialManifest(settings);
+  const { manifest: initialManifest, missingFiles: initialMissingFiles } = await resolveInitialManifest(settings);
   const baseUrl = initialManifest.finalUrl || inputUrl;
   const layout = await createExpandOutputLayout(baseUrl, inputUrl, settings.outDir);
   const topManifest = buildTopLevelManifest(inputUrl, baseUrl, layout);
   topManifest.budget = createBudgetState(settings);
+  if (initialMissingFiles.length > 0) {
+    topManifest.warnings.push(`Initial capture artifacts were missing (${initialMissingFiles.join(', ')})`);
+  }
 
   let session = null;
   let stateCounter = 1;
 
   try {
-    session = await createExpandSession(settings, inputUrl);
     const siteProfile = await loadSiteProfile(baseUrl, settings.profilePath, settings.siteProfile);
     const effectiveSearchQueries = settings.searchQueries.length > 0
       ? mergeStringArrays(settings.searchQueries)
       : mergeStringArrays(siteProfile?.search?.defaultQueries);
-    await navigateAndWaitReady(session, baseUrl, settings, siteProfile);
 
-    const liveInitialSignature = await collectStateSignature(session, siteProfile);
+    let liveInitialSignature = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        session = await createExpandSession(settings, inputUrl);
+        await navigateAndWaitReady(session, baseUrl, settings, siteProfile);
+        liveInitialSignature = await collectStateSignature(session, siteProfile);
+        break;
+      } catch (error) {
+        const shouldRetry = attempt === 0 && isTransientExpandBootstrapError(error);
+        await closeSessionQuietly(session);
+        session = null;
+        if (!shouldRetry) {
+          throw error;
+        }
+        topManifest.warnings.push('Transient browser session failure occurred during initial expand bootstrap; retrying with a fresh session.');
+      }
+    }
+
     const initialDedupKey = hashFingerprint(liveInitialSignature.fingerprint);
 
     if (normalizeUrlNoFragment(initialManifest.finalUrl) !== normalizeUrlNoFragment(liveInitialSignature.finalUrl)) {
@@ -5037,7 +5423,13 @@ export async function expandStates(inputUrl, options = {}) {
       );
     }
 
-    const initialStateManifest = await copyInitialState(initialManifest, layout, initialDedupKey);
+    const initialStateManifest = await copyInitialState(
+      initialManifest,
+      layout,
+      initialDedupKey,
+      liveInitialSignature,
+      initialMissingFiles,
+    );
     topManifest.states.push(topLevelStateEntryFromManifest(initialStateManifest));
 
     const capturedDedupKeys = new Map([[initialDedupKey, 's0000']]);
@@ -5141,6 +5533,7 @@ export async function expandStates(inputUrl, options = {}) {
                 capturedAt: attemptedAt,
                 status: 'noop',
                 pageFacts: postSignature.pageFacts ?? null,
+                runtimeEvidence: postSignature.runtimeEvidence ?? null,
                 error: null,
               }),
             );
@@ -5162,6 +5555,7 @@ export async function expandStates(inputUrl, options = {}) {
                 status: 'duplicate',
                 duplicateOf: capturedDedupKeys.get(dedupKey),
                 pageFacts: postSignature.pageFacts ?? null,
+                runtimeEvidence: postSignature.runtimeEvidence ?? null,
                 error: null,
               }),
             );

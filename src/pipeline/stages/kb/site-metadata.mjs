@@ -55,6 +55,7 @@ export async function syncKnowledgeBaseSiteMetadata({
   siteContext,
   model,
   siteProfilePath,
+  siteMetadataOptions = null,
 }) {
   const usedActionKinds = uniqueSortedStrings(
     toArray(model.intents)
@@ -95,7 +96,7 @@ export async function syncKnowledgeBaseSiteMetadata({
     latestKnowledgeBaseCompileAt: generatedAt,
     latestKnowledgeBaseSourcesPath: path.join(kbDir, kbFiles.sources),
     latestLintSummary: lintSummary,
-  });
+  }, siteMetadataOptions ?? {});
   await upsertSiteCapabilities(cwd, host, {
     baseUrl,
     siteKey: resolvedIdentity.siteKey,
@@ -106,5 +107,5 @@ export async function syncKnowledgeBaseSiteMetadata({
     supportedIntents: resolvedSupportedIntents,
     safeActionKinds: resolvedSafeActionKinds,
     approvalActionKinds,
-  });
+  }, siteMetadataOptions ?? {});
 }

@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { analyzeStates } from '../../src/entrypoints/pipeline/analyze-states.mjs';
 import { compileKnowledgeBase } from '../../src/entrypoints/pipeline/compile-wiki.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 const DOUYIN_BASE_URL = 'https://www.douyin.com/';
 const CAPTURED_AT = '2026-04-18T00:00:00.000Z';
@@ -233,6 +234,7 @@ async function createGovernanceFixture(rootDir) {
 
 test('analyzeStates surfaces Douyin featured completeness and counts without expanding summaries', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-douyin-analysis-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
 
   try {
     const expandedStatesDir = await createExpandedStatesFixture(workspace);
@@ -251,6 +253,7 @@ test('analyzeStates surfaces Douyin featured completeness and counts without exp
     assert.equal(state.pageFactHighlights.featuredContentCards.length, 3);
     assert.equal(state.pageFactHighlights.featuredAuthorCards.length, 2);
     assert.equal(state.pageFactHighlights.featuredContentCards.at(-1).title, 'Video 3');
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -259,6 +262,8 @@ test('analyzeStates surfaces Douyin featured completeness and counts without exp
 test('compileKnowledgeBase renders Douyin featured completeness and counts in overview and state wiki pages', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-douyin-compile-'));
   const previousCwd = process.cwd();
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     process.chdir(workspace);
@@ -285,6 +290,7 @@ test('compileKnowledgeBase renders Douyin featured completeness and counts in ov
       docsDir,
       governanceDir,
       strict: false,
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     });
 
     const pagesIndex = JSON.parse(await readFile(path.join(kbDir, 'index', 'pages.json'), 'utf8'));
@@ -311,6 +317,7 @@ test('compileKnowledgeBase renders Douyin featured completeness and counts in ov
     assert.match(stateMd, /\| Featured Author Complete \| no \|/u);
     assert.match(stateMd, /Video 1/u);
     assert.match(stateMd, /\| Video 1 \| video \| - \| - \|[\s\S]*\| Video 2 \| video \| - \| - \|[\s\S]*\| Video 3 \| video \| - \| - \|/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     process.chdir(previousCwd);
     await rm(workspace, { recursive: true, force: true });

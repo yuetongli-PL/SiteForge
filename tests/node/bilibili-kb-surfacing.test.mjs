@@ -3,64 +3,23 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 import { analyzeStates } from '../../src/entrypoints/pipeline/analyze-states.mjs';
 import { compileKnowledgeBase } from '../../src/entrypoints/pipeline/compile-wiki.mjs';
 import { enrichBilibiliPageFactsForState, summarizeBilibiliKnowledgeFacts } from '../../src/sites/bilibili/model/surfacing.mjs';
-
-function rewritePaths(value, fromDir, toDir) {
-  if (Array.isArray(value)) {
-    return value.map((item) => rewritePaths(item, fromDir, toDir));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, rewritePaths(item, fromDir, toDir)]),
-    );
-  }
-  if (typeof value === 'string' && path.isAbsolute(value) && value.startsWith(fromDir)) {
-    return path.join(toDir, path.relative(fromDir, value));
-  }
-  return value;
-}
-
-async function prepareExplicitStageDirs(repoRoot, workspace, host) {
-  const sourcesDocument = JSON.parse(
-    await readFile(path.join(repoRoot, 'knowledge-base', host, 'index', 'sources.json'), 'utf8'),
-  );
-  const stageDirs = {};
-
-  for (const source of sourcesDocument.activeSources) {
-    const repoRawDir = path.join(repoRoot, 'knowledge-base', host, source.rawDir);
-    const tempRawDir = path.join(workspace, 'stage-fixtures', source.step, source.runId);
-    await cp(repoRawDir, tempRawDir, { recursive: true });
-
-    if (source.manifestPath && source.originalDir) {
-      const manifestPath = path.join(tempRawDir, path.basename(source.manifestPath));
-      const manifestDocument = JSON.parse(await readFile(manifestPath, 'utf8'));
-      const rewritten = rewritePaths(
-        manifestDocument,
-        path.resolve(source.originalDir),
-        path.resolve(tempRawDir),
-      );
-      await writeFile(manifestPath, `${JSON.stringify(rewritten, null, 2)}\n`, 'utf8');
-    }
-
-    stageDirs[source.step] = tempRawDir;
-  }
-
-  return stageDirs;
-}
+import { buildBilibiliStageSpec, createStageFixtures } from './kb-test-fixtures.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
 
 test('analyzeStates preserves and enriches bilibili pageFacts in analysis output', async () => {
-  const repoRoot = process.cwd();
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-bilibili-analysis-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
 
   try {
-    const rawDirs = await prepareExplicitStageDirs(repoRoot, workspace, 'www.bilibili.com');
+    const fixtures = await createStageFixtures(workspace, buildBilibiliStageSpec());
     const analysis = await analyzeStates('https://www.bilibili.com/', {
-      expandedStatesDir: rawDirs['step-2-expanded'],
-      bookContentDir: rawDirs['step-book-content'],
+      expandedStatesDir: fixtures.expandedStatesDir,
+      bookContentDir: fixtures.bookContentDir,
       outDir: path.join(workspace, 'analysis'),
     });
 
@@ -83,37 +42,39 @@ test('analyzeStates preserves and enriches bilibili pageFacts in analysis output
     assert.ok(featuredState);
     assert.ok(Array.isArray(featuredState.pageFacts.featuredContentCards));
     assert.ok(featuredState.pageFacts.featuredContentCards.some((card) => card?.bvid));
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test('compileKnowledgeBase surfaces bilibili facts into wiki pages and page indexes', async () => {
-  const repoRoot = process.cwd();
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-bilibili-compile-'));
   const previousCwd = process.cwd();
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
 
   try {
+    const fixtures = await createStageFixtures(workspace, buildBilibiliStageSpec());
     process.chdir(workspace);
-    const rawDirs = await prepareExplicitStageDirs(repoRoot, workspace, 'www.bilibili.com');
     const analysis = await analyzeStates('https://www.bilibili.com/', {
-      expandedStatesDir: rawDirs['step-2-expanded'],
-      bookContentDir: rawDirs['step-book-content'],
+      expandedStatesDir: fixtures.expandedStatesDir,
+      bookContentDir: fixtures.bookContentDir,
       outDir: path.join(workspace, 'analysis'),
     });
     const kbDir = path.join(workspace, 'knowledge-base', 'www.bilibili.com');
 
     await compileKnowledgeBase('https://www.bilibili.com/', {
       kbDir,
-      captureDir: rawDirs['step-1-capture'],
-      expandedStatesDir: rawDirs['step-2-expanded'],
-      bookContentDir: rawDirs['step-book-content'],
+      captureDir: fixtures.captureDir,
+      expandedStatesDir: fixtures.expandedStatesDir,
+      bookContentDir: fixtures.bookContentDir,
       analysisDir: analysis.outDir,
-      abstractionDir: rawDirs['step-4-abstraction'],
-      nlEntryDir: rawDirs['step-5-nl-entry'],
-      docsDir: rawDirs['step-6-docs'],
-      governanceDir: rawDirs['step-7-governance'],
+      abstractionDir: fixtures.abstractionDir,
+      nlEntryDir: fixtures.nlEntryDir,
+      docsDir: fixtures.docsDir,
+      governanceDir: fixtures.governanceDir,
       strict: false,
+      siteMetadataOptions: fixtures.metadataSandbox.siteMetadataOptions,
     });
 
     const pagesIndex = JSON.parse(await readFile(path.join(kbDir, 'index', 'pages.json'), 'utf8'));
@@ -156,6 +117,7 @@ test('compileKnowledgeBase surfaces bilibili facts into wiki pages and page inde
     assert.match(homeStateMd, /Featured Content Cards/u);
     assert.match(homeStateMd, /Featured Author Cards/u);
     assert.match(homeStateMd, /BV/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     process.chdir(previousCwd);
     await rm(workspace, { recursive: true, force: true });

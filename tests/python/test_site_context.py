@@ -24,6 +24,8 @@ site_context = load_internal_module(
 )
 build_site_capabilities_path = site_context.build_site_capabilities_path
 build_site_registry_path = site_context.build_site_registry_path
+build_site_runtime_capabilities_path = site_context.build_site_runtime_capabilities_path
+build_site_runtime_registry_path = site_context.build_site_runtime_registry_path
 read_site_context = site_context.read_site_context
 resolve_capability_families = site_context.resolve_capability_families
 resolve_page_types = site_context.resolve_page_types
@@ -125,6 +127,40 @@ class SiteContextTests(unittest.TestCase):
             self.assertEqual(["download-book"], capabilities["sites"]["www.22biqu.com"]["supportedIntents"])
             self.assertFalse((root / "site-registry.json").exists())
             self.assertFalse((root / "site-capabilities.json").exists())
+
+    def test_runtime_snapshot_fields_are_split_from_stable_config_documents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            upsert_site_registry_record("www.22biqu.com", {
+                "canonicalBaseUrl": "https://www.22biqu.com/",
+                "siteKey": "22biqu",
+                "adapterId": "chapter-content",
+                "knowledgeBaseDir": str(root / "knowledge-base" / "www.22biqu.com"),
+                "latestDownloadMode": "artifact-hit",
+            }, root)
+            upsert_site_capabilities_record("www.22biqu.com", {
+                "baseUrl": "https://www.22biqu.com/",
+                "siteKey": "22biqu",
+                "adapterId": "chapter-content",
+                "capabilityFamilies": ["download-content"],
+            }, root)
+
+            stable_registry = json.loads(build_site_registry_path(root).read_text(encoding="utf-8"))
+            runtime_registry = json.loads(build_site_runtime_registry_path(root).read_text(encoding="utf-8"))
+            stable_capabilities = json.loads(build_site_capabilities_path(root).read_text(encoding="utf-8"))
+            runtime_capabilities = json.loads(build_site_runtime_capabilities_path(root).read_text(encoding="utf-8"))
+            context = read_site_context("www.22biqu.com", root)
+
+            self.assertNotIn("knowledgeBaseDir", stable_registry["sites"]["www.22biqu.com"])
+            self.assertEqual("artifact-hit", runtime_registry["sites"]["www.22biqu.com"]["latestDownloadMode"])
+            self.assertEqual(
+                str(root / "knowledge-base" / "www.22biqu.com"),
+                context["registryRecord"]["knowledgeBaseDir"],
+            )
+
+            self.assertNotIn("updatedAt", stable_capabilities["sites"]["www.22biqu.com"])
+            self.assertIn("updatedAt", runtime_capabilities["sites"]["www.22biqu.com"])
+            self.assertEqual("22biqu", context["capabilitiesRecord"]["siteKey"])
 
 
 if __name__ == "__main__":

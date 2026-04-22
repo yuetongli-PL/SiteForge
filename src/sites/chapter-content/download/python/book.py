@@ -113,7 +113,7 @@ def to_relative_posix(base_dir: Path, target_path: Path) -> str:
 
 
 def load_json(path_value: str | Path) -> Any:
-    return json.loads(Path(path_value).read_text(encoding="utf-8"))
+    return json.loads(Path(path_value).read_text(encoding="utf-8-sig"))
 
 
 def write_json(path_value: str | Path, payload: Any) -> None:

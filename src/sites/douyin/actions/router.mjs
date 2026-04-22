@@ -35,7 +35,10 @@ function normalizeDouyinDownloadSpec(value) {
   }
   if (typeof value === 'string') {
     const finalUrl = normalizeText(value);
-    return finalUrl ? { finalUrl } : null;
+    return finalUrl ? {
+      finalUrl,
+      resolutionPathway: inferInitialDouyinResolutionPathway(finalUrl),
+    } : null;
   }
   const finalUrl = normalizeText(value.finalUrl || value.url || value.normalizedUrl || value.source);
   if (!finalUrl) {
@@ -45,7 +48,8 @@ function normalizeDouyinDownloadSpec(value) {
     finalUrl,
     videoId: normalizeText(value.videoId) || null,
     source: normalizeText(value.source) || null,
-    resolutionPathway: inferResolutionPathway(value.resolutionPathway || value.resolvedVia || value.source),
+    resolutionPathway: inferResolutionPathway(value.resolutionPathway || value.resolvedVia || value.source)
+      || inferInitialDouyinResolutionPathway(finalUrl),
     resolvedMediaUrl: normalizeText(value.resolvedMediaUrl) || null,
     resolvedTitle: normalizeText(value.resolvedTitle) || normalizeText(value.title) || null,
     resolvedFormat: value.resolvedFormat ?? null,
@@ -138,6 +142,28 @@ function inferResolutionPathway(value) {
     return 'direct-media';
   }
   return source;
+}
+
+function inferInitialDouyinResolutionPathway(finalUrl) {
+  const text = normalizeText(finalUrl);
+  if (!text) {
+    return null;
+  }
+  if (looksLikeDirectDouyinMediaUrl(text)) {
+    return 'direct-media';
+  }
+  try {
+    const parsed = new URL(text);
+    if (parsed.hostname.toLowerCase() !== 'www.douyin.com') {
+      return null;
+    }
+    if (parsed.pathname.startsWith('/video/') || parsed.pathname.startsWith('/shipin/')) {
+      return 'detail';
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function buildResolvedDownloadSpec(spec, media = null) {

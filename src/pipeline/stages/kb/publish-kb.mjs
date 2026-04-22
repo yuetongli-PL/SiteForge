@@ -98,6 +98,7 @@ export async function publishKnowledgeBase(inputUrl, options, deps) {
     siteContext: publisherInput.site.siteContext,
     model,
     siteProfilePath: artifacts.analysis.siteProfilePath,
+    siteMetadataOptions: options.siteMetadataOptions ?? null,
   }, {
     syncKnowledgeBaseSiteMetadata: deps.syncKnowledgeBaseSiteMetadata,
   });

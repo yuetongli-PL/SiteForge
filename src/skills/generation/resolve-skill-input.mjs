@@ -127,6 +127,7 @@ export async function resolveSourceInputs(url, options) {
   const locator = await resolveArtifactLocatorContext({
     workspaceRoot,
     inputUrl: url,
+    siteMetadataOptions: options.siteMetadataOptions ?? null,
   });
   const host = locator.hostKey ?? 'unknown-host';
   const kbDir = path.resolve((await resolveHostKeyedDir(locator, 'knowledge-base', {

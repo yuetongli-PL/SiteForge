@@ -332,7 +332,11 @@ function renderOverviewPage(page, context, pagesById) {
       contentType: cleanText(state.pageFactHighlights?.contentType) || '-',
     }));
   const featuredCardRows = model.states
-    .filter((state) => toArray(state.pageFactHighlights?.featuredContentCards).length > 0)
+    .filter((state) => (
+      toArray(state.pageFactHighlights?.featuredContentCards).length > 0
+      || Number.isFinite(state.pageFactHighlights?.featuredAuthorCount)
+      || toArray(state.pageFactHighlights?.featuredAuthors).length > 0
+    ))
     .map((state) => ({
       state: pageRefById(pagesById, `page_state_${state.stateId}`, page.path),
       cards: toArray(state.pageFactHighlights?.featuredContentCards)
@@ -343,7 +347,15 @@ function renderOverviewPage(page, context, pagesById) {
         })
         .slice(0, 3)
         .join('; '),
-      count: String(state.pageFactHighlights?.featuredContentCardCount ?? toArray(state.pageFactHighlights?.featuredContentCards).length),
+      contentCount: String(state.pageFactHighlights?.featuredContentCardCount ?? toArray(state.pageFactHighlights?.featuredContentCards).length),
+      contentComplete: state.pageFactHighlights?.featuredContentComplete === true ? 'yes' : 'no',
+      authors: toArray(state.pageFactHighlights?.featuredAuthorCards)
+        .map((author) => cleanText(author?.name) || cleanText(author?.mid) || cleanText(author?.url) || '-')
+        .filter(Boolean)
+        .slice(0, 3)
+        .join('; '),
+      authorCount: String(state.pageFactHighlights?.featuredAuthorCount ?? toArray(state.pageFactHighlights?.featuredAuthors).length),
+      authorComplete: state.pageFactHighlights?.featuredAuthorComplete === true ? 'yes' : 'no',
     }));
   return [
     '# \u7ad9\u70b9\u603b\u89c8',
@@ -378,7 +390,7 @@ function renderOverviewPage(page, context, pagesById) {
       : '- No identity facts observed.',
     '',
     featuredCardRows.length > 0
-      ? renderTable(['State', 'Featured Cards', 'Count'], featuredCardRows)
+      ? renderTable(['State', 'Featured Cards', 'Content Count', 'Content Complete', 'Featured Authors', 'Author Count', 'Author Complete'], featuredCardRows)
       : '- No featured content cards observed.',
     '',
     ...augmentationSections,
@@ -651,6 +663,9 @@ function renderStatePage(page, context, pagesById) {
   if (state.pageFactHighlights?.featuredAuthorCount) {
     factRows.push({ field: 'Featured Author Count', value: String(state.pageFactHighlights.featuredAuthorCount) });
   }
+  if (typeof state.pageFactHighlights?.featuredAuthorComplete === 'boolean') {
+    factRows.push({ field: 'Featured Author Complete', value: state.pageFactHighlights.featuredAuthorComplete ? 'yes' : 'no' });
+  }
   const featuredAuthors = toArray(state.pageFactHighlights?.featuredAuthors).map((author) => {
     const parts = [
       author?.name ?? null,
@@ -672,6 +687,12 @@ function renderStatePage(page, context, pagesById) {
   }
   if (state.pageFactHighlights?.categoryPath) {
     factRows.push({ field: 'Category Path', value: `\`${state.pageFactHighlights.categoryPath}\`` });
+  }
+  if (state.pageFactHighlights?.featuredContentCardCount) {
+    factRows.push({ field: 'Featured Content Count', value: String(state.pageFactHighlights.featuredContentCardCount) });
+  }
+  if (typeof state.pageFactHighlights?.featuredContentComplete === 'boolean') {
+    factRows.push({ field: 'Featured Content Complete', value: state.pageFactHighlights.featuredContentComplete ? 'yes' : 'no' });
   }
   const featuredCards = toArray(state.pageFactHighlights?.featuredContentCards).map((card) => ({
     title: mdEscape(cleanText(card?.title) || cleanText(card?.bvid) || cleanText(card?.url) || '-'),
@@ -739,6 +760,9 @@ function renderStatePageEnhancedDraft(page, context, pagesById) {
   if (state.pageFactHighlights?.featuredAuthorCount) {
     factRows.push({ field: 'Featured Author Count', value: String(state.pageFactHighlights.featuredAuthorCount) });
   }
+  if (typeof state.pageFactHighlights?.featuredAuthorComplete === 'boolean') {
+    factRows.push({ field: 'Featured Author Complete', value: state.pageFactHighlights.featuredAuthorComplete ? 'yes' : 'no' });
+  }
   const featuredAuthors = toArray(state.pageFactHighlights?.featuredAuthors).map((author) => {
     const parts = [
       author?.name ?? null,
@@ -754,6 +778,12 @@ function renderStatePageEnhancedDraft(page, context, pagesById) {
   }
   if (state.pageFactHighlights?.categoryPath) {
     factRows.push({ field: 'Category Path', value: `\`${state.pageFactHighlights.categoryPath}\`` });
+  }
+  if (state.pageFactHighlights?.featuredContentCardCount) {
+    factRows.push({ field: 'Featured Content Count', value: String(state.pageFactHighlights.featuredContentCardCount) });
+  }
+  if (typeof state.pageFactHighlights?.featuredContentComplete === 'boolean') {
+    factRows.push({ field: 'Featured Content Complete', value: state.pageFactHighlights.featuredContentComplete ? 'yes' : 'no' });
   }
   if (Number.isFinite(state.pageFacts?.resultCount)) {
     factRows.push({ field: 'Result Count', value: String(state.pageFacts.resultCount) });
@@ -805,6 +835,40 @@ function renderStatePageEnhancedDraft(page, context, pagesById) {
   ].join('\n');
 }
 
+function renderObservedFeaturedCardSections(pageFactHighlights, renderTable, mdEscape) {
+  const authorRows = toArray(pageFactHighlights?.featuredAuthorCards).map((author) => ({
+    name: mdEscape(cleanText(author?.name) || '-'),
+    mid: cleanText(author?.mid) || '-',
+    url: mdEscape(cleanText(author?.url) || '-'),
+    authorSubpage: cleanText(author?.authorSubpage) || cleanText(pageFactHighlights?.authorSubpage) || '-',
+  }));
+  const contentRows = toArray(pageFactHighlights?.featuredContentCards).map((card) => ({
+    title: mdEscape(cleanText(card?.title) || cleanText(card?.bvid) || cleanText(card?.url) || '-'),
+    contentType: cleanText(card?.contentType) || '-',
+    bvid: cleanText(card?.bvid) || '-',
+    authorMid: cleanText(card?.authorMid) || '-',
+  }));
+
+  return [
+    ...(contentRows.length > 0
+      ? [
+          '## Featured content cards',
+          '',
+          renderTable(['Title', 'Content Type', 'BV', 'UP Mid'], contentRows),
+          '',
+        ]
+      : []),
+    ...(authorRows.length > 0
+      ? [
+          '## Featured author cards',
+          '',
+          renderTable(['Name', 'MID', 'Author URL', 'Author Subpage'], authorRows),
+          '',
+        ]
+      : []),
+  ];
+}
+
 function renderStatePageEnhanced(page, context, pagesById) {
   const { model, kbAugmentation } = context;
   const stateId = page.attributes.stateId;
@@ -819,12 +883,54 @@ function renderStatePageEnhanced(page, context, pagesById) {
   if (state.semanticPageType) {
     factRows.push({ field: 'Semantic Page Type', value: `\`${state.semanticPageType}\`` });
   }
+  if (state.pageFactHighlights?.searchFamily) {
+    factRows.push({ field: 'Search Family', value: `\`${state.pageFactHighlights.searchFamily}\`` });
+  }
   if (state.pageFacts?.queryText) {
     factRows.push({ field: 'Search Query', value: mdEscape(state.pageFacts.queryText) });
   }
   if (Number.isFinite(state.pageFacts?.resultCount)) {
     factRows.push({ field: 'Result Count', value: String(state.pageFacts.resultCount) });
   }
+  if (state.pageFactHighlights?.bvid) {
+    factRows.push({ field: 'BV', value: `\`${state.pageFactHighlights.bvid}\`` });
+  }
+  if (state.pageFactHighlights?.authorMid) {
+    factRows.push({ field: 'UP Mid', value: `\`${state.pageFactHighlights.authorMid}\`` });
+  }
+  if (state.pageFactHighlights?.contentType) {
+    factRows.push({ field: 'Content Type', value: `\`${state.pageFactHighlights.contentType}\`` });
+  }
+  if (state.pageFactHighlights?.authorSubpage) {
+    factRows.push({ field: 'Author Subpage', value: `\`${state.pageFactHighlights.authorSubpage}\`` });
+  }
+  if (state.pageFactHighlights?.featuredAuthorCount) {
+    factRows.push({ field: 'Featured Author Count', value: String(state.pageFactHighlights.featuredAuthorCount) });
+  }
+  if (typeof state.pageFactHighlights?.featuredAuthorComplete === 'boolean') {
+    factRows.push({ field: 'Featured Author Complete', value: state.pageFactHighlights.featuredAuthorComplete ? 'yes' : 'no' });
+  }
+  const featuredAuthors = toArray(state.pageFactHighlights?.featuredAuthors).map((author) => {
+    const parts = [
+      author?.name ?? null,
+      author?.mid ? `MID ${author.mid}` : null,
+    ].filter(Boolean);
+    return parts.join(' | ');
+  }).filter(Boolean);
+  if (featuredAuthors.length > 0) {
+    factRows.push({ field: 'Featured Authors', value: featuredAuthors.map((value) => mdEscape(value)).join(' ; ') });
+  }
+  if (state.pageFactHighlights?.featuredContentCardCount) {
+    factRows.push({ field: 'Featured Content Count', value: String(state.pageFactHighlights.featuredContentCardCount) });
+  }
+  if (typeof state.pageFactHighlights?.featuredContentComplete === 'boolean') {
+    factRows.push({ field: 'Featured Content Complete', value: state.pageFactHighlights.featuredContentComplete ? 'yes' : 'no' });
+  }
+  const observedFeaturedCardSections = renderObservedFeaturedCardSections(
+    state.pageFactHighlights,
+    renderTable,
+    mdEscape,
+  );
   const augmentationSections = kbAugmentation?.renderStateSections?.({
     model,
     state,
@@ -852,6 +958,7 @@ function renderStatePageEnhanced(page, context, pagesById) {
       ? renderTable(['Field', 'Value'], factRows)
       : '- No surfaced page facts.',
     '',
+    ...observedFeaturedCardSections,
     ...augmentationSections,
     '## Element States',
     '',

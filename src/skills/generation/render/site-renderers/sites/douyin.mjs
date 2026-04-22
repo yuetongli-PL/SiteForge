@@ -165,7 +165,7 @@ function renderDouyinSkillMd(input) {
     executionPolicyLines: [
       '- Public Douyin pages MUST use the built-in browser.',
       '- Authenticated Douyin pages MUST use the local-profile browser with a reusable persisted session.',
-      '- Login bootstrap MUST run through `node .\\scripts\\site-login.mjs https://www.douyin.com/ --profile-path profiles/www.douyin.com.json --no-headless --reuse-login-state --no-auto-login`.',
+      '- Login bootstrap MUST run through `node .\\src\\entrypoints\\sites\\site-login.mjs https://www.douyin.com/ --profile-path profiles/www.douyin.com.json --no-headless --reuse-login-state --no-auto-login`.',
       '- The first Douyin login is always manual in a visible browser; do not save or submit account credentials automatically.',
       '- Authenticated read-only subpages include `/user/self?showTab=post|like|collect|history` and `/follow?tab=feed|user`.',
       '- `list-followed-users` and `list-followed-updates` are cache-first authenticated read-only queries backed by the local persisted profile.',

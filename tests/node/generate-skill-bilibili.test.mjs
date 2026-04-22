@@ -6,23 +6,28 @@ import process from 'node:process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 import { generateSkill } from '../../src/entrypoints/pipeline/generate-skill.mjs';
+import { buildBilibiliStageSpec, compileFixtureKnowledgeBase } from './kb-test-fixtures.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
 
 function normalizeEol(value) {
   return String(value).replace(/\r\n/g, '\n');
 }
 
 test('generateSkill produces bilibili skill documents with stronger execution constraints', async () => {
-  const repoRoot = process.cwd();
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-generate-skill-bilibili-'));
   const previousCwd = process.cwd();
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
 
   try {
+    const spec = buildBilibiliStageSpec();
+    const fixture = await compileFixtureKnowledgeBase(workspace, spec);
     process.chdir(workspace);
 
-    const result = await generateSkill('https://www.bilibili.com/', {
-      kbDir: path.join(repoRoot, 'knowledge-base', 'www.bilibili.com'),
+    const result = await generateSkill(spec.inputUrl, {
+      kbDir: fixture.kbDir,
       outDir: path.join(workspace, 'out', 'bilibili'),
       skillName: 'bilibili',
+      siteMetadataOptions: fixture.metadataSandbox.siteMetadataOptions,
     });
 
     assert.equal(result.skillName, 'bilibili');
@@ -34,6 +39,7 @@ test('generateSkill produces bilibili skill documents with stronger execution co
       'references/nl-intents.md',
       'references/interaction-model.md',
     ]);
+    assert.deepEqual(result.warnings, []);
 
     const skillMd = normalizeEol(await readFile(path.join(result.skillDir, 'SKILL.md'), 'utf8'));
     const indexMd = normalizeEol(await readFile(path.join(result.skillDir, 'references', 'index.md'), 'utf8'));
@@ -66,7 +72,9 @@ test('generateSkill produces bilibili skill documents with stronger execution co
 
     assert.match(indexMd, /^# bilibili Index\n/su);
     assert.match(indexMd, /Site type: video catalog \+ search hub \+ UP profile navigation\./u);
-    assert.match(indexMd, /Verified hosts: www\.bilibili\.com, search\.bilibili\.com, space\.bilibili\.com/u);
+    assert.match(indexMd, /Verified hosts: .*www\.bilibili\.com/u);
+    assert.match(indexMd, /Verified hosts: .*search\.bilibili\.com/u);
+    assert.match(indexMd, /Verified hosts: .*space\.bilibili\.com/u);
     assert.match(indexMd, /Video samples: BV1WjDDBGE3p/u);
     assert.match(indexMd, /UP profile samples: UP 1202350411/u);
     assert.match(indexMd, /Approved category\/channel families:/u);
@@ -87,7 +95,7 @@ test('generateSkill produces bilibili skill documents with stronger execution co
     assert.match(flowsMd, /bangumi\/play/u);
     assert.match(flowsMd, /Example user requests: `search BV1WjDDBGE3p`/u);
     assert.match(flowsMd, /Example user requests: .*`open UP 1202350411`/u);
-    assert.match(flowsMd, /- Examples: .*`open anime`/u);
+    assert.match(flowsMd, /Example user requests: .*`open anime`/u);
     assert.match(flowsMd, /Result semantics: treat `\/all`, `\/video`, `\/bangumi`, and `\/upuser` as the same search family/u);
     assert.match(flowsMd, /Slot guidance: accept either `videoCode` \(preferred BV code\) or `videoTitle`/u);
     assert.match(flowsMd, /Slot guidance: prefer stable UP identifiers or exact display names/u);
@@ -108,7 +116,9 @@ test('generateSkill produces bilibili skill documents with stronger execution co
     assert.doesNotMatch(nlIntentsMd, /涓汉绌洪棿/u);
 
     assert.match(interactionModelMd, /^# Interaction Model\n/su);
-    assert.match(interactionModelMd, /Hosts: www\.bilibili\.com, search\.bilibili\.com, space\.bilibili\.com/u);
+    assert.match(interactionModelMd, /Hosts: .*www\.bilibili\.com/u);
+    assert.match(interactionModelMd, /Hosts: .*search\.bilibili\.com/u);
+    assert.match(interactionModelMd, /Hosts: .*space\.bilibili\.com/u);
     assert.match(interactionModelMd, /Approved category\/channel families:/u);
     assert.match(interactionModelMd, /Verified bangumi detail URLs: .*\/bangumi\/play\//u);
     assert.match(interactionModelMd, /Verified UP video subpages: .*space\.bilibili\.com\/1202350411\/video/u);
@@ -117,6 +127,7 @@ test('generateSkill produces bilibili skill documents with stronger execution co
     assert.match(interactionModelMd, /The interaction model is read-only and excludes engagement or account workflows\./u);
     assert.doesNotMatch(interactionModelMd, /涓汉绌洪棿/u);
     assert.doesNotMatch(interactionModelMd, /_鍝斿摡鍝斿摡_bilibili/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     process.chdir(previousCwd);
     await rm(workspace, { recursive: true, force: true });

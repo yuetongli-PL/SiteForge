@@ -17,9 +17,9 @@ function resolveHostValue(input) {
   return null;
 }
 
-export async function readSiteContext(workspaceRoot = process.cwd(), hostOrUrl) {
+export async function readSiteContext(workspaceRoot = process.cwd(), hostOrUrl, pathOptions = {}) {
   const resolvedHost = resolveHostValue(hostOrUrl);
-  return readSiteContextCanonical(workspaceRoot, resolvedHost ?? hostOrUrl);
+  return readSiteContextCanonical(workspaceRoot, resolvedHost ?? hostOrUrl, pathOptions);
 }
 
 export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = []) {

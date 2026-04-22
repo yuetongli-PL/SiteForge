@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { siteDoctor } from '../../scripts/site-doctor.mjs';
+import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
@@ -123,6 +124,8 @@ function createExpandedDownloadableNavigationProfile(host = 'videos.example.com'
 
 test('site-doctor enables download preflight for navigation profiles with downloader config', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-doctor-download-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     const profilePath = path.join(workspace, 'videos.example.com.json');
@@ -133,6 +136,7 @@ test('site-doctor enables download preflight for navigation profiles with downlo
       profilePath,
       outDir: path.join(workspace, 'doctor'),
       checkDownload: true,
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     }, {
       resolveSite: async () => ({ adapter: { id: 'generic-navigation' } }),
       ensureCrawlerScript: async () => ({
@@ -192,6 +196,7 @@ test('site-doctor enables download preflight for navigation profiles with downlo
     assert.equal(report.download?.status, 'pass');
     assert.equal(observedDownloadCheck?.sample?.url, 'https://videos.example.com/video/BV1WjDDBGE3p/');
     assert.equal(observedDownloadCheck?.siteProfile?.downloader?.maxBatchItems, 5);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -199,6 +204,8 @@ test('site-doctor enables download preflight for navigation profiles with downlo
 
 test('site-doctor still runs download preflight when bilibili-style downloader-only samples are available without videoDetailUrl', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-doctor-download-sources-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     const profilePath = path.join(workspace, 'videos.example.com.json');
@@ -209,6 +216,7 @@ test('site-doctor still runs download preflight when bilibili-style downloader-o
       profilePath,
       outDir: path.join(workspace, 'doctor'),
       checkDownload: true,
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     }, {
       resolveSite: async () => ({ adapter: { id: 'generic-navigation' } }),
       ensureCrawlerScript: async () => ({
@@ -263,6 +271,7 @@ test('site-doctor still runs download preflight when bilibili-style downloader-o
       maxItems: 10,
     });
     assert.ok(!report.missingFields.includes('profile.validationSamples.videoDetailUrl'));
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -270,6 +279,8 @@ test('site-doctor still runs download preflight when bilibili-style downloader-o
 
 test('site-doctor surfaces bilibili downloader login-state quality warnings without failing preflight', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-doctor-download-quality-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
 
   try {
     const profilePath = path.join(workspace, 'videos.example.com.json');
@@ -279,6 +290,7 @@ test('site-doctor surfaces bilibili downloader login-state quality warnings with
       profilePath,
       outDir: path.join(workspace, 'doctor'),
       checkDownload: true,
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
     }, {
       resolveSite: async () => ({ adapter: { id: 'generic-navigation' } }),
       ensureCrawlerScript: async () => ({
@@ -332,6 +344,7 @@ test('site-doctor surfaces bilibili downloader login-state quality warnings with
       qualityWarning: 'highest-quality-degraded',
     });
     assert.match(report.warnings.join('\n'), /highest available quality may be downgraded/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

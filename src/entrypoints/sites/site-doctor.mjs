@@ -1226,6 +1226,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       profile: validatedProfile.profile,
       profilePath: validatedProfile.filePath,
       workspaceRoot: REPO_ROOT,
+      siteMetadataOptions: settings.siteMetadataOptions ?? null,
     });
     siteIdentity = resolveCanonicalSiteIdentity({
       host: resolvedSite?.host ?? settings.host,
@@ -1374,6 +1375,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       profilePath: settings.profilePath,
       crawlerScriptsDir: settings.crawlerScriptsDir,
       knowledgeBaseDir: settings.knowledgeBaseDir,
+      siteMetadataOptions: settings.siteMetadataOptions ?? null,
     });
     markPass(report.crawler, {
       status: crawlerResult.status,

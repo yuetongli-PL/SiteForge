@@ -1,8 +1,8 @@
-// @ts-check
+﻿// @ts-check
 
 import path from 'node:path';
 
-const EDGE_PUNCTUATION_CLASS = String.raw`\s"'~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?锛屻€傦紒锛熴€侊紱锛氣€溾€濃€樷€欍€愩€戯紙锛夈€娿€媇`;
+const EDGE_PUNCTUATION_CLASS = String.raw`\s"'~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?\u300a\u300b\u3008\u3009\u300c\u300d\u300e\u300f\u3010\u3011\u3014\u3015\uff08\uff09\u201c\u201d\u2018\u2019閿涘被鈧偊绱掗敍鐔粹偓渚婄幢閿涙埃鈧壕鈧績鈧ǚ鈧瑣鈧劑鈧埊绱欓敍澶堚偓濞库偓濯嘸;`;
 const EDGE_PUNCTUATION_REGEX = new RegExp(`^[${EDGE_PUNCTUATION_CLASS}]+|[${EDGE_PUNCTUATION_CLASS}]+$`, 'gu');
 
 export function normalizeWhitespace(value) {

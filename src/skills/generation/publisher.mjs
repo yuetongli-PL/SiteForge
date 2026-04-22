@@ -42,6 +42,7 @@ export async function publishSkill(inputUrl, options, deps) {
     primaryArchetype: deps.resolvePrimaryArchetype(context),
     capabilityFamilies: deps.resolveCapabilityFamilies(context),
     supportedIntents: deps.resolveSupportedIntents(context),
+    siteMetadataOptions: options.siteMetadataOptions ?? null,
   }, {
     upsertSiteRegistryRecord: deps.upsertSiteRegistryRecord,
     upsertSiteCapabilities: deps.upsertSiteCapabilities,

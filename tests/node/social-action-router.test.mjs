@@ -231,6 +231,68 @@ test('social API parser keeps X high quality video variant metadata', () => {
   assert.equal(media.variants.length, 2);
 });
 
+test('social API parser marks X retweets without treating quoted tweets as retweets', () => {
+  const payload = {
+    data: {
+      timeline: {
+        instructions: [{
+          entries: [
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'rt',
+                      core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                      legacy: {
+                        created_at: 'Fri Apr 24 18:24:52 +0000 2026',
+                        full_text: 'retweeted item',
+                        retweeted_status_id_str: 'source',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'quote',
+                      core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                      legacy: {
+                        created_at: 'Fri Apr 24 19:24:52 +0000 2026',
+                        full_text: 'quoted item',
+                        quoted_status_result: {
+                          result: {
+                            rest_id: 'quoted',
+                            core: { user_results: { result: { legacy: { screen_name: 'other' } } } },
+                            legacy: {
+                              created_at: 'Fri Apr 24 18:00:00 +0000 2026',
+                              full_text: 'nested quote',
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        }],
+      },
+    },
+  };
+
+  const parsed = parseSocialApiPayload('x', payload);
+
+  assert.equal(parsed.items.length, 2);
+  assert.equal(parsed.items[0].isRetweet, true);
+  assert.equal(parsed.items[1].isRetweet, false);
+});
+
 test('buildCursorPageUrl updates nested GraphQL variables cursor', () => {
   const original = new URL('https://x.com/i/api/graphql/abc/UserTweets');
   original.searchParams.set('variables', JSON.stringify({
@@ -398,6 +460,47 @@ test('social API parser extracts Instagram carousel media without user-node fals
   assert.equal(parsed.items[0].media[1].url, 'https://cdninstagram.com/video-large.mp4');
   assert.equal(parsed.items[0].media[1].posterUrl, 'https://cdninstagram.com/video-poster.jpg');
   assert.equal(parsed.nextCursor, 'NEXT_MAX');
+});
+
+test('social API parser extracts Instagram clips author, timestamp, and video variants', () => {
+  const payload = {
+    items: [{
+      media: {
+        pk: 'clip-1',
+        code: 'REEL123',
+        product_type: 'clips',
+        taken_at: 1777053600,
+        video_duration: 12.5,
+        user: { pk: '25025320', username: 'instagram', full_name: 'Instagram' },
+        caption: { text: 'clip caption' },
+        image_versions2: {
+          candidates: [{ url: 'https://cdninstagram.com/reel-poster.jpg', width: 720, height: 1280 }],
+        },
+        video_versions: [
+          { url: 'https://cdninstagram.com/reel-low.mp4', width: 360, height: 640 },
+          { url: 'https://cdninstagram.com/reel-high.mp4', width: 1080, height: 1920 },
+        ],
+      },
+    }],
+    paging_info: { max_id: 'CLIPS_NEXT' },
+  };
+
+  const parsed = parseSocialApiPayload('instagram', payload);
+  const item = parsed.items[0];
+  const video = item.media[0];
+
+  assert.equal(item.url, 'https://www.instagram.com/reel/REEL123/');
+  assert.equal(item.timestamp, '2026-04-24T18:00:00.000Z');
+  assert.equal(item.author.handle, 'instagram');
+  assert.equal(item.sourceAccount, 'instagram');
+  assert.equal(video.type, 'video');
+  assert.equal(video.url, 'https://cdninstagram.com/reel-high.mp4');
+  assert.equal(video.posterUrl, 'https://cdninstagram.com/reel-poster.jpg');
+  assert.equal(video.width, 1080);
+  assert.equal(video.height, 1920);
+  assert.equal(video.durationMillis, 12500);
+  assert.equal(video.variants.length, 2);
+  assert.equal(parsed.nextCursor, 'CLIPS_NEXT');
 });
 
 test('runSocialAction dry-run treats full-archive action as API cursor archive mode', async () => {
@@ -725,6 +828,350 @@ test('runSocialAction captures API debug summary and replays cursor fixture page
   assert.equal(debug.capture.samples[0].itemCount, 1);
   assert.equal(debug.capture.samples[0].hasNextCursor, true);
   assert.equal(debug.capture.driftSamples.length, 0);
+});
+
+test('runSocialAction filters X profile API archive to requested original posts', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-x-profile-filter-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const seedPayload = {
+    data: {
+      timeline: {
+        instructions: [{
+          entries: [
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'keep',
+                      core: { user_results: { result: { legacy: { screen_name: 'OpenAI' } } } },
+                      legacy: { created_at: 'Fri Apr 24 18:24:52 +0000 2026', full_text: 'keep original' },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'other',
+                      core: { user_results: { result: { legacy: { screen_name: 'other' } } } },
+                      legacy: { created_at: 'Fri Apr 24 18:25:52 +0000 2026', full_text: 'recommendation' },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'retweet',
+                      core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                      legacy: {
+                        created_at: 'Fri Apr 24 18:26:52 +0000 2026',
+                        full_text: 'retweet',
+                        retweeted_status_id_str: 'source',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        }],
+      },
+    },
+  };
+  const listeners = new Map();
+  const seedUrl = new URL('https://x.com/i/api/graphql/abc/UserTweets');
+  let emitted = false;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-x-profile-filter',
+    async send(command) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify(seedPayload), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/OpenAI')) {
+        return;
+      }
+      emitted = true;
+      listeners.get('Network.requestWillBeSent')?.({
+        params: { requestId: 'api-1', type: 'XHR', request: { url: seedUrl.toString(), method: 'GET', headers: { accept: 'application/json' } } },
+      });
+      listeners.get('Network.responseReceived')?.({
+        params: { requestId: 'api-1', type: 'XHR', response: { url: seedUrl.toString(), status: 200, mimeType: 'application/json' } },
+      });
+      listeners.get('Network.loadingFinished')?.({ params: { requestId: 'api-1' } });
+    },
+    async evaluateValue() { return 'https://x.com/OpenAI'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/OpenAI', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'OpenAI' }, items: [], relations: [], media: [] };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: '@OpenAI',
+    apiCursor: true,
+    timeoutMs: 1000,
+    maxScrolls: 0,
+    scrollWaitMs: 0,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+  });
+
+  assert.equal(result.result.items.length, 1);
+  assert.equal(result.result.items[0].id, 'keep');
+  assert.equal(result.result.items[0].author.handle, 'OpenAI');
+});
+
+test('runSocialAction treats X cursor 404 after seed results as degraded partial result', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-x-soft-cursor-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const seedPayload = {
+    data: {
+      timeline: {
+        instructions: [{
+          entries: [
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'seed',
+                      core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                      legacy: { created_at: 'Fri Apr 24 18:24:52 +0000 2026', full_text: 'seed' },
+                    },
+                  },
+                },
+              },
+            },
+            { content: { cursorType: 'Bottom', value: 'CURSOR_NEXT' } },
+          ],
+        }],
+      },
+    },
+  };
+  const listeners = new Map();
+  const seedUrl = new URL('https://x.com/i/api/graphql/abc/UserTweets');
+  seedUrl.searchParams.set('variables', JSON.stringify({ userId: '1', cursor: 'OLD' }));
+  let emitted = false;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-x-soft-cursor',
+    async send(command) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify(seedPayload), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/openai')) {
+        return;
+      }
+      emitted = true;
+      listeners.get('Network.requestWillBeSent')?.({
+        params: { requestId: 'api-1', type: 'XHR', request: { url: seedUrl.toString(), method: 'GET', headers: { accept: 'application/json' } } },
+      });
+      listeners.get('Network.responseReceived')?.({
+        params: { requestId: 'api-1', type: 'XHR', response: { url: seedUrl.toString(), status: 200, mimeType: 'application/json' } },
+      });
+      listeners.get('Network.loadingFinished')?.({ params: { requestId: 'api-1' } });
+    },
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageFetchJson')) {
+        return { ok: false, status: 404, headers: {}, json: { errors: [{ message: 'not found' }] }, text: '' };
+      }
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [], relations: [], media: [] };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'full-archive',
+    account: 'openai',
+    timeoutMs: 1000,
+    maxScrolls: 0,
+    scrollWaitMs: 0,
+    maxApiPages: 3,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+  });
+
+  assert.equal(result.result.items.length, 1);
+  assert.equal(result.result.archive.reason, 'soft-cursor-exhausted');
+  assert.equal(result.result.archive.complete, null);
+  assert.equal(result.result.archive.nextCursor, null);
+  assert.equal(result.result.archive.diagnosticCursor, 'CURSOR_NEXT');
+  assert.equal(result.completeness.status, 'degraded');
+  assert.equal(result.outcome.ok, true);
+  assert.equal(result.outcome.status, 'degraded');
+  assert.equal(result.outcome.resumable, false);
+  assert.equal(result.runtimeRisk.hardStop, false);
+});
+
+test('runSocialAction does not select X home timeline as profile archive seed', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-api-target-seed-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const bodies = new Map([
+    ['api-home', {
+      data: {
+        home: {
+          home_timeline_urt: {
+            instructions: [{
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: {
+                          rest_id: 'home',
+                          core: { user_results: { result: { legacy: { screen_name: 'other' } } } },
+                          legacy: { created_at: 'Sun Apr 26 12:00:00 +0000 2026', full_text: 'home timeline post' },
+                        },
+                      },
+                    },
+                  },
+                },
+                { content: { cursorType: 'Bottom', value: 'HOME_CURSOR' } },
+              ],
+            }],
+          },
+        },
+      },
+    }],
+    ['api-profile', {
+      data: {
+        user: {
+          result: {
+            timeline_v2: {
+              timeline: {
+                instructions: [{
+                  entries: [{
+                    content: {
+                      itemContent: {
+                        tweet_results: {
+                          result: {
+                            rest_id: 'profile',
+                            core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                            legacy: { created_at: 'Sun Apr 26 13:00:00 +0000 2026', full_text: 'profile timeline post' },
+                          },
+                        },
+                      },
+                    },
+                  }],
+                }],
+              },
+            },
+          },
+        },
+      },
+    }],
+  ]);
+  const listeners = new Map();
+  const homeUrl = new URL('https://x.com/i/api/graphql/abc/HomeTimeline');
+  homeUrl.searchParams.set('variables', JSON.stringify({ count: 20, cursor: 'HOME_OLD' }));
+  const profileUrl = new URL('https://x.com/i/api/graphql/abc/UserTweets');
+  profileUrl.searchParams.set('variables', JSON.stringify({ userId: '1' }));
+  let emitted = false;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-target-seed',
+    async send(command, params) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify(bodies.get(params.requestId)), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/openai')) {
+        return;
+      }
+      emitted = true;
+      for (const [requestId, apiUrl] of [['api-home', homeUrl.toString()], ['api-profile', profileUrl.toString()]]) {
+        listeners.get('Network.requestWillBeSent')?.({
+          params: { requestId, type: 'XHR', request: { url: apiUrl, method: 'GET', headers: { accept: 'application/json' } } },
+        });
+        listeners.get('Network.responseReceived')?.({
+          params: { requestId, type: 'XHR', response: { url: apiUrl, status: 200, mimeType: 'application/json' } },
+        });
+        listeners.get('Network.loadingFinished')?.({ params: { requestId } });
+      }
+    },
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [], relations: [], media: [] };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'full-archive',
+    account: 'openai',
+    timeoutMs: 1000,
+    maxScrolls: 0,
+    scrollWaitMs: 0,
+    maxApiPages: 3,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+  });
+
+  assert.equal(result.result.archive.seedUrl, profileUrl.toString());
+  assert.equal(result.result.items.length, 1);
+  assert.equal(result.result.items[0].url, 'https://x.com/openai/status/profile');
+  assert.equal(result.result.items[0].text, 'profile timeline post');
 });
 
 test('runSocialAction writes drift samples only for target timeline API schema issues', async (t) => {
@@ -1236,6 +1683,7 @@ test('runSocialAction pauses X full archive with resumable cursor after API rate
   });
 
   const state = JSON.parse(await readFile(path.join(runDir, 'state.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
   assert.equal(result.ok, false);
   assert.equal(result.outcome.resumable, true);
   assert.equal(result.result.archive.reason, 'api-rate-limited');
@@ -1243,6 +1691,8 @@ test('runSocialAction pauses X full archive with resumable cursor after API rate
   assert.equal(state.status, 'paused');
   assert.equal(state.archive.nextCursor, 'CURSOR_NEXT');
   assert.equal(state.archive.riskSignals.includes('rate-limited'), true);
+  assert.equal(manifest.recoveryRunbook.status, 'actionable');
+  assert.equal(manifest.recoveryRunbook.commands.some((entry) => entry.id === 'resume-after-cooldown'), true);
 });
 
 test('runSocialAction classifies API auth payload as recoverable login wall', async (t) => {
@@ -1440,6 +1890,175 @@ test('runSocialAction keeps Instagram followed profile scan incomplete unless pa
   assert.equal(result.result.archive.reason, 'unverified-following-pagination');
   assert.equal(result.result.archive.confidence, 'verified-complete');
   assert.equal(result.completeness.confidence, 'verified-complete');
+});
+
+test('runSocialAction scrolls Instagram followed-users until profile count is reached', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-ig-following-count-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const firstPage = Array.from({ length: 10 }, (_, index) => ({
+    handle: `friend${index + 1}`,
+    url: `https://www.instagram.com/friend${index + 1}/`,
+  }));
+  const fullPage = [
+    ...firstPage,
+    { handle: 'friend11', url: 'https://www.instagram.com/friend11/' },
+    { handle: 'friend12', url: 'https://www.instagram.com/friend12/' },
+    { handle: 'friend13', url: 'https://www.instagram.com/friend13/' },
+  ];
+  let extractCalls = 0;
+  let scrollCalls = 0;
+  let startupUrl = null;
+  const navigations = [];
+  const fakeSession = {
+    async navigateAndWait(url) {
+      navigations.push(url);
+    },
+    async evaluateValue() {
+      return 'https://www.instagram.com/me/following/';
+    },
+    async waitForSettled() {},
+    async callPageFunction(fn, config, request = {}) {
+      const source = String(fn);
+      if (source.includes('pageOpenSocialRelationSurface')) {
+        return { clicked: true, relation: 'following', href: '/me/following/' };
+      }
+      if (source.includes('pageExtractSocialState')) {
+        extractCalls += 1;
+        const relations = extractCalls >= 4 ? fullPage : firstPage;
+        return {
+          url: 'https://www.instagram.com/me/following/',
+          title: 'Following',
+          currentAccount: 'me',
+          account: {
+            handle: 'me',
+            displayName: 'Me',
+            stats: [{ text: '13 following', url: 'https://www.instagram.com/me/following/' }],
+          },
+          relationExpectedCount: 13,
+          items: [],
+          relations,
+          media: [],
+        };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        scrollCalls += 1;
+        return { target: 'dialog', before: scrollCalls * 100, after: scrollCalls * 100 + 80, height: 1000, changed: true };
+      }
+      return null;
+    },
+    getMetrics() {
+      return {};
+    },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'instagram',
+    action: 'followed-users',
+    account: 'me',
+    maxItems: 100,
+    maxScrolls: 10,
+    scrollWaitMs: 0,
+    timeoutMs: 1000,
+    apiCursor: true,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() {
+      return { userDataDir: null, cleanupUserDataDirOnShutdown: true };
+    },
+    async openBrowserSession(settings) {
+      startupUrl = settings.startupUrl;
+      return fakeSession;
+    },
+    async ensureAuthenticatedSession() {
+      return { status: 'already-authenticated', loginState: { loggedIn: true, identityConfirmed: true } };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(scrollCalls >= 1, true);
+  assert.equal(result.result.users.length, 13);
+  assert.equal(result.result.users[12].handle, 'friend13');
+  assert.equal(result.result.archive.strategy, 'dom-relation-scroll');
+  assert.equal(result.result.archive.complete, true);
+  assert.equal(result.result.archive.expectedRelationCount, 13);
+  assert.equal(result.result.archive.domRelationCount, 13);
+  assert.equal(result.completeness.status, 'complete');
+  assert.equal(result.completeness.userCount, 13);
+  assert.equal(result.outcome.status, 'passed');
+  assert.equal(startupUrl, 'https://www.instagram.com/me/');
+  assert.equal(navigations.includes('https://www.instagram.com/me/following/'), false);
+});
+
+test('runSocialAction does not mark empty Instagram relation surface as complete', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-ig-empty-relation-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const fakeSession = {
+    async navigateAndWait() {},
+    async evaluateValue() {
+      return 'https://www.instagram.com/me/';
+    },
+    async waitForSettled() {},
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageOpenSocialRelationSurface')) {
+        return { clicked: false, relation: 'following', reason: 'relation-link-not-found' };
+      }
+      if (source.includes('pageExtractSocialState')) {
+        return {
+          url: 'https://www.instagram.com/me/',
+          title: 'Me',
+          currentAccount: 'me',
+          account: { handle: 'me', displayName: 'Me', stats: [] },
+          relationExpectedCount: null,
+          items: [],
+          relations: [],
+          media: [],
+        };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { target: 'window', before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() {
+      return {};
+    },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'instagram',
+    action: 'followed-users',
+    account: 'me',
+    maxItems: 100,
+    maxScrolls: 3,
+    scrollWaitMs: 0,
+    timeoutMs: 1000,
+    apiCursor: true,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() {
+      return { userDataDir: null, cleanupUserDataDirOnShutdown: true };
+    },
+    async openBrowserSession() {
+      return fakeSession;
+    },
+    async ensureAuthenticatedSession() {
+      return { status: 'already-authenticated', loginState: { loggedIn: true, identityConfirmed: true } };
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.result.users.length, 0);
+  assert.equal(result.result.archive.complete, false);
+  assert.equal(result.result.archive.reason, 'relation-surface-empty');
+  assert.equal(result.completeness.status, 'incomplete');
+  assert.equal(result.outcome.status, 'incomplete');
 });
 
 test('runSocialAction stops Instagram followed scan when a profile hits rate limit', async (t) => {
@@ -2211,6 +2830,350 @@ test('runSocialAction writes standard social archive artifacts', async (t) => {
   assert.match(report, /- Items: 1/u);
 });
 
+test('runSocialAction uses X API media variants for downloads even when apiCursor is not requested', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-x-download-api-media-'));
+  const previousFetch = globalThis.fetch;
+  t.after(async () => {
+    globalThis.fetch = previousFetch;
+    await rm(runDir, { recursive: true, force: true });
+  });
+  let fetchedUrl = null;
+  globalThis.fetch = async (url) => {
+    fetchedUrl = String(url);
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get(name) {
+          return String(name).toLowerCase() === 'content-type' ? 'video/mp4' : '';
+        },
+      },
+      async arrayBuffer() {
+        return new TextEncoder().encode(`video:${url}`).buffer;
+      },
+    };
+  };
+
+  const seedPayload = {
+    data: {
+      timeline: {
+        instructions: [{
+          entries: [{
+            content: {
+              itemContent: {
+                tweet_results: {
+                  result: {
+                    rest_id: '1',
+                    core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                    legacy: {
+                      created_at: 'Fri Apr 24 18:24:52 +0000 2026',
+                      full_text: 'video from api',
+                      extended_entities: {
+                        media: [{
+                          media_url_https: 'https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/poster.jpg',
+                          video_info: {
+                            duration_millis: 1234,
+                            variants: [
+                              { content_type: 'video/mp4', bitrate: 256000, url: 'https://video.twimg.com/ext_tw_video/1/pu/vid/320x180/low.mp4' },
+                              { content_type: 'video/mp4', bitrate: 2176000, url: 'https://video.twimg.com/ext_tw_video/1/pu/vid/1024x576/high.mp4' },
+                            ],
+                          },
+                        }],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          }],
+        }],
+      },
+    },
+  };
+  const domItem = {
+    id: '1',
+    url: 'https://x.com/openai/status/1',
+    text: 'video from dom',
+    timestamp: '2026-04-24T18:24:52.000Z',
+    author: { handle: 'openai' },
+    media: [{ type: 'image', url: 'https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/poster.jpg' }],
+  };
+  const listeners = new Map();
+  const seedUrl = new URL('https://x.com/i/api/graphql/abc/UserTweets');
+  let emitted = false;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-x-download-api-media',
+    async send(command) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify(seedPayload), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/openai')) {
+        return;
+      }
+      emitted = true;
+      listeners.get('Network.requestWillBeSent')?.({
+        params: { requestId: 'api-1', type: 'XHR', request: { url: seedUrl.toString(), method: 'GET', headers: { accept: 'application/json' } } },
+      });
+      listeners.get('Network.responseReceived')?.({
+        params: { requestId: 'api-1', type: 'XHR', response: { url: seedUrl.toString(), status: 200, mimeType: 'application/json' } },
+      });
+      listeners.get('Network.loadingFinished')?.({ params: { requestId: 'api-1' } });
+    },
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [domItem], relations: [], media: domItem.media };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: 'openai',
+    maxItems: 1,
+    maxScrolls: 0,
+    timeoutMs: 1000,
+    scrollWaitMs: 0,
+    downloadMedia: true,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+    async exportDownloadSessionPassthrough() { return {}; },
+  });
+
+  assert.equal(result.result.items[0].media[0].type, 'video');
+  assert.equal(result.result.items[0].media[0].url, 'https://video.twimg.com/ext_tw_video/1/pu/vid/1024x576/high.mp4');
+  assert.equal(result.download.expectedMedia[0].type, 'video');
+  assert.equal(result.download.expectedMedia[0].bitrate, 2176000);
+  assert.equal(fetchedUrl, 'https://video.twimg.com/ext_tw_video/1/pu/vid/1024x576/high.mp4');
+});
+
+test('runSocialAction uses X API media variants for search downloads without apiCursor', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-x-search-download-api-media-'));
+  const previousFetch = globalThis.fetch;
+  t.after(async () => {
+    globalThis.fetch = previousFetch;
+    await rm(runDir, { recursive: true, force: true });
+  });
+  let fetchedUrl = null;
+  globalThis.fetch = async (url) => {
+    fetchedUrl = String(url);
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get(name) {
+          return String(name).toLowerCase() === 'content-type' ? 'video/mp4' : '';
+        },
+      },
+      async arrayBuffer() {
+        return new TextEncoder().encode(`video:${url}`).buffer;
+      },
+    };
+  };
+
+  const seedPayload = {
+    data: {
+      search_by_raw_query: {
+        search_timeline: {
+          timeline: {
+            instructions: [{
+              entries: [{
+                content: {
+                  itemContent: {
+                    tweet_results: {
+                      result: {
+                        rest_id: 'search-1',
+                        core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                        legacy: {
+                          created_at: 'Fri Apr 24 18:24:52 +0000 2026',
+                          full_text: 'search video from api',
+                          extended_entities: {
+                            media: [{
+                              media_url_https: 'https://pbs.twimg.com/ext_tw_video_thumb/search-1/pu/img/poster.jpg',
+                              video_info: {
+                                duration_millis: 2345,
+                                variants: [
+                                  { content_type: 'video/mp4', bitrate: 256000, url: 'https://video.twimg.com/ext_tw_video/search-1/pu/vid/320x180/low.mp4' },
+                                  { content_type: 'video/mp4', bitrate: 2176000, url: 'https://video.twimg.com/ext_tw_video/search-1/pu/vid/1024x576/high.mp4' },
+                                ],
+                              },
+                            }],
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              }],
+            }],
+          },
+        },
+      },
+    },
+  };
+  const domItem = {
+    id: 'search-1',
+    url: 'https://x.com/openai/status/search-1',
+    text: 'search video from dom',
+    timestamp: '2026-04-24T18:24:52.000Z',
+    author: { handle: 'openai' },
+    media: [{ type: 'image', url: 'https://pbs.twimg.com/ext_tw_video_thumb/search-1/pu/img/poster.jpg' }],
+  };
+  const listeners = new Map();
+  const seedUrl = new URL('https://x.com/i/api/graphql/abc/SearchTimeline');
+  let emitted = false;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-x-search-download-api-media',
+    async send(command) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify(seedPayload), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/search')) {
+        return;
+      }
+      emitted = true;
+      listeners.get('Network.requestWillBeSent')?.({
+        params: { requestId: 'api-1', type: 'XHR', request: { url: seedUrl.toString(), method: 'GET', headers: { accept: 'application/json' } } },
+      });
+      listeners.get('Network.responseReceived')?.({
+        params: { requestId: 'api-1', type: 'XHR', response: { url: seedUrl.toString(), status: 200, mimeType: 'application/json' } },
+      });
+      listeners.get('Network.loadingFinished')?.({ params: { requestId: 'api-1' } });
+    },
+    async evaluateValue() { return 'https://x.com/search?q=from%3Aopenai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/search?q=from%3Aopenai', title: 'Search / X', currentAccount: 'me', account: null, items: [domItem], relations: [], media: domItem.media };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'search',
+    query: 'from:openai filter:videos',
+    maxItems: 1,
+    maxScrolls: 0,
+    timeoutMs: 1000,
+    scrollWaitMs: 0,
+    downloadMedia: true,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+    async exportDownloadSessionPassthrough() { return {}; },
+  });
+
+  assert.equal(result.result.archive.strategy, 'api-seed');
+  assert.equal(result.result.archive.reason, 'api-seed-only');
+  assert.equal(result.result.items[0].media[0].type, 'video');
+  assert.equal(result.result.items[0].media[0].url, 'https://video.twimg.com/ext_tw_video/search-1/pu/vid/1024x576/high.mp4');
+  assert.equal(result.download.expectedMedia[0].type, 'video');
+  assert.equal(result.download.expectedMedia[0].bitrate, 2176000);
+  assert.equal(fetchedUrl, 'https://video.twimg.com/ext_tw_video/search-1/pu/vid/1024x576/high.mp4');
+});
+
+test('runSocialAction marks X DOM poster-only video fallbacks in media artifacts', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-x-poster-fallback-'));
+  const previousFetch = globalThis.fetch;
+  t.after(async () => {
+    globalThis.fetch = previousFetch;
+    await rm(runDir, { recursive: true, force: true });
+  });
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    status: 200,
+    headers: {
+      get(name) {
+        return String(name).toLowerCase() === 'content-type' ? 'image/jpeg' : '';
+      },
+    },
+    async arrayBuffer() {
+      return new TextEncoder().encode(`poster:${url}`).buffer;
+    },
+  });
+
+  const item = {
+    id: 'post-1',
+    url: 'https://x.com/openai/status/1',
+    text: 'dom poster fallback',
+    timestamp: '2026-04-26T00:00:00.000Z',
+    media: [{ type: 'image', url: 'https://pbs.twimg.com/ext_tw_video_thumb/post-1/pu/img/poster.jpg' }],
+  };
+  const fakeSession = {
+    async navigateAndWait() {},
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [item], relations: [], media: item.media };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: 'openai',
+    maxItems: 1,
+    maxScrolls: 0,
+    timeoutMs: 1000,
+    downloadMedia: true,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+    async exportDownloadSessionPassthrough() { return {}; },
+  });
+
+  const mediaManifest = JSON.parse(await readFile(path.join(runDir, 'media-manifest.json'), 'utf8'));
+  const queue = JSON.parse(await readFile(path.join(runDir, 'media-queue.json'), 'utf8'));
+
+  assert.equal(result.download.expectedMedia[0].fallbackFrom, 'poster-only-video-fallback');
+  assert.equal(result.download.expectedMedia[0].expectedType, 'video');
+  assert.equal(result.download.expectedMedia[0].type, 'image');
+  assert.equal(result.download.downloads[0].fallbackFrom, 'poster-only-video-fallback');
+  assert.equal(queue.queue[0].fallbackFrom, 'poster-only-video-fallback');
+  assert.equal(mediaManifest.summary.posterOnlyVideoFallbacks, 1);
+  assert.equal(mediaManifest.entries[0].fallbackFrom, 'poster-only-video-fallback');
+  assert.equal(mediaManifest.entries[0].expectedType, 'video');
+  assert.equal(mediaManifest.entries[0].type, 'image');
+});
+
 test('runSocialAction downloads every media entry from a single item when maxItems is one', async (t) => {
   const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-download-media-'));
   const previousFetch = globalThis.fetch;
@@ -2302,11 +3265,17 @@ test('runSocialAction downloads every media entry from a single item when maxIte
   assert.equal(result.download.downloads[0].itemId, 'post-1');
   assert.match(path.basename(result.download.downloads[0].filePath), /^0001-x-openai-post-1-m0-image-[a-f0-9]{10}\.jpg$/u);
   const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
+  const mediaManifest = JSON.parse(await readFile(path.join(runDir, 'media-manifest.json'), 'utf8'));
   const downloadsJsonl = await readFile(path.join(runDir, 'downloads.jsonl'), 'utf8');
   const queue = JSON.parse(await readFile(path.join(runDir, 'media-queue.json'), 'utf8'));
   assert.equal(manifest.downloads.expectedMedia, 3);
   assert.equal(manifest.downloads.physicalCandidates, 3);
   assert.equal(manifest.downloads.queue.done, 3);
+  assert.equal(manifest.downloads.hashManifest, path.join(runDir, 'media-manifest.json'));
+  assert.equal(manifest.downloads.validation.total, 3);
+  assert.equal(mediaManifest.summary.hashed, 3);
+  assert.match(mediaManifest.entries[0].sha256, /^[a-f0-9]{64}$/u);
+  assert.equal(mediaManifest.entries[0].hashMatchesDeclared, true);
   assert.equal(queue.counts.done, 3);
   assert.match(downloadsJsonl, /"referenceCount":1/u);
 });

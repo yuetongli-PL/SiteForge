@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readdir, stat, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../../infra/cli.mjs';
@@ -21,6 +21,7 @@ const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_ITEMS = 100;
+const DEFAULT_MAX_RELATION_ITEMS = 500;
 const DEFAULT_MAX_SCROLLS = 8;
 const DEFAULT_SCROLL_WAIT_MS = 700;
 const DEFAULT_FULL_ARCHIVE_MAX_SCROLLS = 250;
@@ -630,6 +631,43 @@ function pageExtractSocialState(config, request) {
     text: normalize(node.textContent || node.getAttribute('aria-label') || ''),
     url: absoluteUrl(node.getAttribute('href') || node.href || ''),
   })).filter((entry) => entry.text || entry.url);
+  const parseCompactCount = (text) => {
+    const raw = normalize(text);
+    const match = raw.match(/([\d,.]+)\s*([KMB万萬千]?)/iu);
+    if (!match) {
+      return null;
+    }
+    const numeric = Number(match[1].replace(/,/gu, ''));
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    const suffix = match[2]?.toLowerCase?.() || '';
+    const multiplier = suffix === 'k' || suffix === '千'
+      ? 1_000
+      : suffix === 'm'
+        ? 1_000_000
+        : suffix === 'b'
+          ? 1_000_000_000
+          : suffix === '万' || suffix === '萬'
+            ? 10_000
+            : 1;
+    return Math.round(numeric * multiplier);
+  };
+  const relationExpectedCount = (() => {
+    if (!['profile-following', 'profile-followers', 'followed-users'].includes(request.action)) {
+      return null;
+    }
+    const relation = request.action === 'profile-followers' ? 'followers' : 'following';
+    const relationPatterns = relation === 'followers'
+      ? [/followers/iu, /粉丝|粉絲|绮変笣/iu]
+      : [/following/iu, /关注|關注|鍏虫敞/iu];
+    const candidate = statLinks.find((entry) => {
+      const href = String(entry.url || '');
+      const text = String(entry.text || '');
+      return href.includes(`/${relation}/`) || relationPatterns.some((pattern) => pattern.test(text));
+    });
+    return candidate ? parseCompactCount(candidate.text) : null;
+  })();
 
   const pageMedia = [...mediaFrom(document), ...mediaFromPerformance()]
     .filter((entry) => !isDecorativeMedia(entry));
@@ -701,10 +739,12 @@ function pageExtractSocialState(config, request) {
       .filter((entry) => entry.url || entry.text || entry.media.length);
   }
 
-  const relationSelector = config.siteKey === 'instagram'
-    && (request.action === 'profile-following' || request.action === 'profile-followers' || request.action === 'followed-users')
+  const isRelationRequest = ['profile-following', 'profile-followers', 'followed-users'].includes(request.action);
+  const relationSelector = config.siteKey === 'instagram' && isRelationRequest
     ? `div[role="dialog"] ${config.accountSelectors.relationLink}`
-    : config.accountSelectors.relationLink;
+    : config.siteKey === 'x' && isRelationRequest
+      ? `main [data-testid="cellInnerDiv"] ${config.accountSelectors.relationLink}`
+      : config.accountSelectors.relationLink;
   const relationAccounts = all(relationSelector)
     .map((node) => {
       const href = node.getAttribute('href') || node.href || '';
@@ -730,6 +770,7 @@ function pageExtractSocialState(config, request) {
       bio,
       stats: statLinks,
     },
+    relationExpectedCount,
     items: rawItems,
     relations: relationAccounts,
     media: pageMedia,
@@ -786,13 +827,52 @@ function pageScrollToBottom(config = {}, request = {}) {
   };
   const scroller = findDialogScroller();
   if (scroller) {
-    const before = scroller.scrollTop;
-    scroller.scrollTop = scroller.scrollHeight;
+    const dialog = document.querySelector('div[role="dialog"]');
+    const linkCountBefore = dialog ? dialog.querySelectorAll(config.accountSelectors.relationLink).length : 0;
+    const candidates = dialog
+      ? [dialog, ...dialog.querySelectorAll('*')]
+        .filter((node) => node.scrollHeight > node.clientHeight + 8)
+        .sort((left, right) => {
+          const leftLinks = left.querySelectorAll?.(config.accountSelectors.relationLink).length ?? 0;
+          const rightLinks = right.querySelectorAll?.(config.accountSelectors.relationLink).length ?? 0;
+          if (leftLinks !== rightLinks) {
+            return rightLinks - leftLinks;
+          }
+          return (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight);
+        })
+      : [scroller];
+    const attempts = candidates.slice(0, 6).map((node, index) => {
+      const before = node.scrollTop || 0;
+      const step = Math.max(160, Math.round((node.clientHeight || 400) * 0.85));
+      const top = Math.min(node.scrollHeight, before + step);
+      if (typeof node.scrollTo === 'function') {
+        node.scrollTo({ top });
+      } else {
+        node.scrollTop = top;
+      }
+      node.dispatchEvent(new Event('scroll', { bubbles: true }));
+      node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: step, deltaMode: 0 }));
+      return {
+        index,
+        before,
+        after: node.scrollTop || 0,
+        height: node.scrollHeight,
+        clientHeight: node.clientHeight,
+        linkCount: node.querySelectorAll?.(config.accountSelectors.relationLink).length ?? 0,
+      };
+    });
+    const lastRelationLink = dialog ? [...dialog.querySelectorAll(config.accountSelectors.relationLink)].at(-1) : null;
+    lastRelationLink?.scrollIntoView?.({ block: 'end', inline: 'nearest' });
+    const linkCountAfter = dialog ? dialog.querySelectorAll(config.accountSelectors.relationLink).length : linkCountBefore;
     return {
       target: 'dialog',
-      before,
-      after: scroller.scrollTop,
-      height: scroller.scrollHeight,
+      before: attempts[0]?.before ?? scroller.scrollTop,
+      after: attempts[0]?.after ?? scroller.scrollTop,
+      height: attempts[0]?.height ?? scroller.scrollHeight,
+      changed: attempts.some((attempt) => attempt.after !== attempt.before),
+      linkCountBefore,
+      linkCountAfter,
+      attempts,
     };
   }
   const before = window.scrollY;
@@ -825,6 +905,10 @@ function mergeByKey(items, keyFn, maxItems) {
 function dedupeSortedStrings(values = []) {
   return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'en'));
+}
+
+function isSocialRelationAction(action) {
+  return ['profile-following', 'profile-followers', 'followed-users'].includes(String(action ?? ''));
 }
 
 function pickRuntimeRiskSignal(signals = []) {
@@ -988,6 +1072,7 @@ async function collectSocialPage(session, config, plan, settings) {
   const riskEvents = [];
   let riskRetryCount = 0;
   let stopReason = null;
+  let relationExpectedCount = null;
 
   for (let round = 0; round <= maxScrolls; round += 1) {
     const state = await session.callPageFunction(pageExtractSocialState, config, {
@@ -999,6 +1084,9 @@ async function collectSocialPage(session, config, plan, settings) {
       toDate: plan.toDate,
     });
     collectedStates.push(state);
+    if (state?.relationExpectedCount !== null && state?.relationExpectedCount !== undefined && Number.isFinite(Number(state.relationExpectedCount)) && Number(state.relationExpectedCount) >= 0) {
+      relationExpectedCount = Math.max(relationExpectedCount ?? 0, Number(state.relationExpectedCount));
+    }
     visibilitySignals.push(...(Array.isArray(state?.visibilitySignals) ? state.visibilitySignals : []));
     riskSignals.push(...(Array.isArray(state?.riskSignals) ? state.riskSignals : []));
     const runtimeRiskSignal = pickRuntimeRiskSignal(state?.riskSignals || []);
@@ -1026,7 +1114,9 @@ async function collectSocialPage(session, config, plan, settings) {
 
     const items = mergeByKey(collectedStates.flatMap((entry) => entry.items || []), (entry) => entry.url || entry.text, maxItems);
     const relations = mergeByKey(collectedStates.flatMap((entry) => entry.relations || []), (entry) => entry.handle || entry.url, maxItems);
-    if (items.length >= maxItems || relations.length >= maxItems) {
+    const relationTargetReached = Number.isFinite(relationExpectedCount)
+      && relations.length >= relationExpectedCount;
+    if (items.length >= maxItems || relations.length >= maxItems || relationTargetReached) {
       break;
     }
     if (round === maxScrolls) {
@@ -1037,19 +1127,37 @@ async function collectSocialPage(session, config, plan, settings) {
     } else {
       stagnantRounds = 0;
     }
-    if (stagnantRounds >= 3) {
+    const stagnantLimit = isSocialRelationAction(plan.action) && Number.isFinite(relationExpectedCount) && relations.length < relationExpectedCount
+      ? 8
+      : 3;
+    if (stagnantRounds >= stagnantLimit) {
       break;
     }
     previousItemCount = items.length;
     previousRelationCount = relations.length;
-    scrollSummary.push(await session.callPageFunction(pageScrollToBottom, config, {
+    const scrollResult = await session.callPageFunction(pageScrollToBottom, config, {
       account: plan.account,
       action: plan.action,
       contentType: plan.contentType,
       date: plan.date,
       fromDate: plan.fromDate,
       toDate: plan.toDate,
-    }));
+    });
+    if (config.siteKey === 'instagram' && isSocialRelationAction(plan.action) && typeof session?.send === 'function') {
+      try {
+        await session.send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel',
+          x: 720,
+          y: 520,
+          deltaX: 0,
+          deltaY: 720,
+        });
+        scrollResult.cdpWheel = true;
+      } catch {
+        scrollResult.cdpWheel = false;
+      }
+    }
+    scrollSummary.push(scrollResult);
     await sleep(settings.scrollWaitMs);
   }
 
@@ -1057,14 +1165,42 @@ async function collectSocialPage(session, config, plan, settings) {
   const allItems = collectedStates.flatMap((entry) => entry.items || []);
   const allRelations = collectedStates.flatMap((entry) => entry.relations || []);
   const allMedia = collectedStates.flatMap((entry) => entry.media || []);
+  const mergedRelations = mergeByKey(allRelations, (entry) => entry.handle || entry.url, maxItems);
+  const hasRelationExpectedCount = Number.isFinite(relationExpectedCount);
+  const relationArchive = isSocialRelationAction(plan.action)
+    ? {
+      strategy: 'dom-relation-scroll',
+      complete: hasRelationExpectedCount
+        ? mergedRelations.length >= relationExpectedCount
+        : mergedRelations.length > 0
+          ? null
+          : false,
+      reason: hasRelationExpectedCount
+        ? mergedRelations.length >= relationExpectedCount
+          ? null
+          : 'relation-expected-count-mismatch'
+        : mergedRelations.length > 0
+          ? 'relation-count-unverified'
+          : 'relation-surface-empty',
+      pages: 0,
+      expectedRelationCount: hasRelationExpectedCount ? relationExpectedCount : null,
+      domRelationCount: mergedRelations.length,
+      domItemCount: 0,
+      apiItemCount: 0,
+      dedupedItemCount: mergedRelations.length,
+      boundarySignals: [],
+    }
+    : null;
   return {
     finalUrl: latest.url || null,
     title: latest.title || null,
     currentAccount: latest.currentAccount || null,
     account: latest.account || null,
     items: mergeByKey(allItems, (entry) => entry.url || entry.text, maxItems),
-    relations: mergeByKey(allRelations, (entry) => entry.handle || entry.url, maxItems),
+    relations: mergedRelations,
     media: mergeByKey(allMedia, (entry) => `${entry.type}:${entry.url}`, maxItems * 5),
+    relationExpectedCount: Number.isFinite(relationExpectedCount) ? relationExpectedCount : null,
+    archive: relationArchive,
     scrollSummary,
     visibilitySignals: dedupeSortedStrings(visibilitySignals),
     riskSignals: dedupeSortedStrings(riskSignals),
@@ -1506,9 +1642,71 @@ function normalizeXTweetResult(result) {
     text: cleanText(legacy.full_text || legacy.text || ''),
     timestamp: normalizeXCreatedAt(legacy.created_at),
     author: screenName ? { handle: screenName, url: `https://x.com/${screenName}` } : null,
+    sourceAccount: screenName || null,
+    isRetweet: Boolean(legacy.retweeted_status_result || legacy.retweeted_status_id_str || legacy.retweeted_status_id),
     media: parseXMedia(legacy),
     source: 'api-cursor',
   };
+}
+
+function normalizeXUserResult(result) {
+  const user = result?.user || result;
+  const legacy = user?.legacy;
+  const handle = cleanText(
+    legacy?.screen_name
+    || user?.core?.screen_name
+    || user?.screen_name
+    || '',
+  );
+  if (!handle) {
+    return null;
+  }
+  return {
+    handle,
+    id: user?.rest_id || legacy?.id_str || null,
+    url: `https://x.com/${handle}`,
+    label: cleanText(legacy?.name || user?.core?.name || ''),
+    displayName: cleanText(legacy?.name || user?.core?.name || '') || null,
+    bio: cleanText(legacy?.description || ''),
+    followers: finiteNumber(legacy?.followers_count, null),
+    following: finiteNumber(legacy?.friends_count, null),
+    verified: Boolean(legacy?.verified || user?.is_blue_verified),
+    source: 'api-relation',
+  };
+}
+
+function collectXRelationEntries(json) {
+  const users = [];
+  const cursors = [];
+  collectRecursive(json, (node) => {
+    const cursor = xCursorFromTimelineContent(node, node?.entryId || node?.entry_id);
+    if (cursor) {
+      cursors.push(cursor);
+    }
+    const candidates = [
+      node?.itemContent?.user_results?.result,
+      node?.user_results?.result,
+      node?.userResult?.result,
+      node?.__typename === 'User' || node?.legacy?.screen_name ? node : null,
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      const user = normalizeXUserResult(candidate);
+      if (user) {
+        users.push(user);
+      }
+    }
+  });
+  return {
+    users: mergeByKey(users, (entry) => entry.handle?.toLowerCase() || entry.url, Number.MAX_SAFE_INTEGER),
+    nextCursor: cursors[cursors.length - 1] || null,
+  };
+}
+
+function isXRelationApiUrl(url, action) {
+  const value = String(url ?? '');
+  return action === 'profile-followers'
+    ? /\/i\/api\/graphql\/[^/]+\/Followers\?/u.test(value)
+    : /\/i\/api\/graphql\/[^/]+\/Following\?/u.test(value);
 }
 
 function xCursorFromTimelineContent(content = {}, entryId = '') {
@@ -1577,14 +1775,50 @@ function collectXTimelineEntries(json) {
 }
 
 function instagramTimestampFromNode(node = {}) {
-  const value = node?.taken_at_timestamp ?? node?.taken_at ?? node?.device_timestamp ?? null;
+  const value = node?.taken_at_timestamp ?? node?.taken_at ?? node?.caption?.created_at ?? node?.device_timestamp ?? null;
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
     return '';
   }
-  const millis = numeric > 10_000_000_000 ? numeric : numeric * 1000;
+  const millis = numeric > 100_000_000_000_000
+    ? numeric / 1000
+    : numeric > 10_000_000_000
+      ? numeric
+      : numeric * 1000;
   const parsed = new Date(millis);
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+}
+
+function instagramDurationMillisFromNode(node = {}) {
+  const candidates = [
+    node?.video_duration,
+    node?.videoDuration,
+    node?.clips_metadata?.original_sound_info?.duration_in_ms,
+    node?.clips_metadata?.music_info?.music_asset_info?.duration_in_ms,
+  ];
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      continue;
+    }
+    return numeric > 10_000 ? Math.round(numeric) : Math.round(numeric * 1000);
+  }
+  return null;
+}
+
+function instagramAuthorFromNode(node = {}) {
+  const user = node?.owner || node?.user || node?.caption?.user || node?.user_info || {};
+  const handle = cleanText(user?.username || user?.handle || node?.owner_username || '');
+  const id = user?.id ?? user?.pk ?? node?.owner_id ?? null;
+  if (!handle && !id) {
+    return null;
+  }
+  return {
+    handle: handle || null,
+    id: id !== null && id !== undefined ? String(id) : null,
+    displayName: cleanText(user?.full_name || user?.fullName || user?.name || '') || null,
+    url: handle ? `https://www.instagram.com/${handle}/` : null,
+  };
 }
 
 function instagramPermalinkPath(node = {}) {
@@ -1606,10 +1840,26 @@ function appendInstagramNodeMedia(media, node, captionText, mediaIndex = null) {
     ...(Array.isArray(node?.image_versions?.candidates) ? node.image_versions.candidates : []),
     image ? { url: image } : null,
   ].filter(Boolean));
-  const videoCandidate = selectBestVideoCandidate([
+  const videoVariants = [
     ...(Array.isArray(node?.video_versions) ? node.video_versions : []),
     node?.video_url ? { url: node.video_url } : null,
-  ].filter(Boolean));
+  ].filter(Boolean)
+    .filter((candidate) => candidate?.url)
+    .map((candidate) => ({
+      url: candidate.url,
+      width: finiteNumber(candidate.width, null),
+      height: finiteNumber(candidate.height, null),
+      bitrate: finiteNumber(candidate.bitrate, null),
+      contentType: candidate.type || candidate.content_type || 'video/mp4',
+    }))
+    .sort((left, right) => {
+      const bitrateDelta = finiteNumber(right.bitrate) - finiteNumber(left.bitrate);
+      if (bitrateDelta !== 0) {
+        return bitrateDelta;
+      }
+      return dimensionsScore(right) - dimensionsScore(left);
+    });
+  const videoCandidate = selectBestVideoCandidate(videoVariants);
 
   if (videoCandidate?.url) {
     media.push({
@@ -1619,6 +1869,9 @@ function appendInstagramNodeMedia(media, node, captionText, mediaIndex = null) {
       alt: cleanText(captionText),
       width: finiteNumber(videoCandidate.width, null),
       height: finiteNumber(videoCandidate.height, null),
+      bitrate: finiteNumber(videoCandidate.bitrate, null),
+      durationMillis: instagramDurationMillisFromNode(node),
+      variants: videoVariants,
       mediaIndex,
     });
     return;
@@ -1637,6 +1890,18 @@ function appendInstagramNodeMedia(media, node, captionText, mediaIndex = null) {
 }
 
 function parseInstagramMediaNode(node) {
+  const wrapped = node?.media || node?.media_or_ad || node?.clip?.media || null;
+  if (wrapped && typeof wrapped === 'object' && wrapped !== node) {
+    const wrappedItem = parseInstagramMediaNode({
+      ...wrapped,
+      user: wrapped.user || node.user,
+      owner: wrapped.owner || node.owner,
+      caption: wrapped.caption || node.caption,
+    });
+    if (wrappedItem) {
+      return wrappedItem;
+    }
+  }
   const code = node?.shortcode || node?.code;
   const id = node?.id || node?.pk;
   const hasStandaloneMediaShape = Boolean(
@@ -1646,14 +1911,15 @@ function parseInstagramMediaNode(node) {
     || node?.taken_at_timestamp
     || node?.taken_at
     || node?.carousel_media
-    || node?.edge_sidecar_to_children,
+    || node?.edge_sidecar_to_children
+    || node?.media_type
+    || node?.product_type
   );
   if ((!code && !id) || !hasStandaloneMediaShape) {
     return null;
   }
   const captionText = node?.edge_media_to_caption?.edges?.[0]?.node?.text
-    || node?.caption?.text
-    || node?.caption
+    || (node?.caption && typeof node.caption === 'object' ? node.caption.text : node?.caption)
     || '';
   const timestamp = instagramTimestampFromNode(node);
   const media = [];
@@ -1666,11 +1932,14 @@ function parseInstagramMediaNode(node) {
     const childNode = child?.node || child;
     appendInstagramNodeMedia(media, childNode, captionText, index + 1);
   }
+  const author = instagramAuthorFromNode(node);
   return {
     id: id || code,
     url: code ? `https://www.instagram.com/${instagramPermalinkPath(node)}/${code}/` : null,
     text: cleanText(captionText),
     timestamp,
+    author,
+    sourceAccount: author?.handle ?? null,
     media: dedupeMediaEntries(media),
     source: 'api-cursor',
   };
@@ -1722,6 +1991,9 @@ export function parseSocialApiPayload(site, json) {
         cursors.push(String(node.next_max_id));
       }
       if (node?.more_available && node?.paging_info?.max_id) {
+        cursors.push(String(node.paging_info.max_id));
+      }
+      if (node?.paging_info?.max_id) {
         cursors.push(String(node.paging_info.max_id));
       }
       if (node?.pagination?.next_max_id) {
@@ -1815,6 +2087,24 @@ function boundedReasonFromArchiveReason(reason) {
   return ['max-items', 'max-api-pages', 'max-users', 'max-detail-pages', 'max-media-downloads'].includes(normalized)
     ? normalized
     : null;
+}
+
+function isSoftCursorReplayExhaustion(fetchResult = {}, context = {}) {
+  const status = Number(fetchResult.status);
+  if (!(status === 404 || status === 410)) {
+    return false;
+  }
+  if (!['x', 'twitter'].includes(String(context.config?.siteKey ?? '').toLowerCase())) {
+    return false;
+  }
+  if (!['profile-content', 'search', 'followed-posts-by-date'].includes(String(context.plan?.action ?? ''))) {
+    return false;
+  }
+  if (!Number.isFinite(Number(context.pages)) || Number(context.pages) < 1 || !Number(context.itemCount)) {
+    return false;
+  }
+  const riskSignals = dedupeSortedStrings(fetchResult.riskSignals ?? []);
+  return !riskSignals.some((signal) => ['challenge', 'login-wall', 'rate-limited'].includes(signal));
 }
 
 function normalizeApiFetchResult(value) {
@@ -2086,6 +2376,24 @@ function isTargetTimelineApiSummary(summary, config = {}, plan = {}) {
   return false;
 }
 
+function requiresTargetTimelineApiSeed(config = {}, plan = {}) {
+  if (config.siteKey === 'x') {
+    return ['profile-content', 'search', 'followed-posts-by-date'].includes(plan.action);
+  }
+  if (config.siteKey === 'instagram') {
+    return ['profile-content', 'followed-posts-by-date'].includes(plan.action);
+  }
+  return false;
+}
+
+function isTargetTimelineApiEntry(entry, config = {}, plan = {}) {
+  return isTargetTimelineApiSummary(
+    summarizeParsedApiResponse(entry.response, entry.parsed, config, plan),
+    config,
+    plan,
+  );
+}
+
 function isSchemaDriftApiSummary(summary, config = {}, plan = {}) {
   return isTargetTimelineApiSummary(summary, config, plan)
     && (
@@ -2145,7 +2453,16 @@ function annotateApiSchemaDriftSummary(summary) {
 }
 
 function selectSocialApiSeed(parsedResponses, config, plan) {
-  return [...parsedResponses]
+  const parseableResponses = parsedResponses
+    .filter((entry) => entry.parsed.items.length || entry.parsed.nextCursor);
+  const targetResponses = parseableResponses
+    .filter((entry) => isTargetTimelineApiEntry(entry, config, plan));
+  const candidates = requiresTargetTimelineApiSeed(config, plan)
+    ? targetResponses
+    : targetResponses.length
+      ? targetResponses
+      : parseableResponses;
+  return [...candidates]
     .sort((left, right) => {
       const scoreDelta = scoreSocialApiSeed(right, config, plan) - scoreSocialApiSeed(left, config, plan);
       if (scoreDelta !== 0) {
@@ -2198,10 +2515,47 @@ function summarizeSocialApiCapture(apiCapture, parsedResponses = [], config = nu
   };
 }
 
+function normalizeHandleForCompare(value) {
+  return String(value ?? '').trim().replace(/^@/u, '').toLowerCase();
+}
+
+function itemAuthorHandle(item = {}) {
+  const explicit = item?.author?.handle ?? item?.sourceAccount ?? null;
+  if (explicit) {
+    return normalizeHandleForCompare(explicit);
+  }
+  try {
+    const parsed = new URL(String(item?.url ?? ''));
+    const segment = parsed.pathname.split('/').filter(Boolean)[0] || '';
+    return normalizeHandleForCompare(segment);
+  } catch {
+    return '';
+  }
+}
+
+function itemMatchesRequestedAccount(item = {}, plan = {}) {
+  const requested = normalizeHandleForCompare(plan.account);
+  if (!requested) {
+    return true;
+  }
+  if (item.isRetweet === true) {
+    return false;
+  }
+  const author = itemAuthorHandle(item);
+  return !author || author === requested;
+}
+
+function filterApiArchiveItemsForPlan(items, config, plan) {
+  if (config?.siteKey !== 'x' || plan?.action !== 'profile-content' || !plan?.account) {
+    return Array.isArray(items) ? items : [];
+  }
+  return (Array.isArray(items) ? items : []).filter((item) => itemMatchesRequestedAccount(item, plan));
+}
+
 function annotateApiArchiveItems(items, plan) {
   return (Array.isArray(items) ? items : []).map((item) => ({
     ...item,
-    sourceAccount: item.sourceAccount ?? plan.account ?? null,
+    sourceAccount: item.sourceAccount ?? item.author?.handle ?? plan.account ?? null,
   }));
 }
 
@@ -2315,7 +2669,8 @@ async function fetchCursorReplayJson(session, request, settings) {
 }
 
 async function collectSocialApiArchive(session, config, plan, settings, apiCapture, checkpoint = null, options = {}) {
-  if (!apiCapture || !settings.apiCursor) {
+  const seedOnly = options.seedOnly === true || settings.apiCursor !== true;
+  if (!apiCapture || (!settings.apiCursor && !seedOnly)) {
     return null;
   }
   await sleep(Math.max(settings.scrollWaitMs, 500));
@@ -2333,13 +2688,15 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
     ...(entry.parsed?.riskSignals ?? []),
     ...detectApiPayloadRisk(entry.response.json, entry.response.status),
   ]));
-  const seedCandidates = parsedResponses
-    .filter((entry) => entry.parsed.items.length || entry.parsed.nextCursor);
-  const seed = selectSocialApiSeed(seedCandidates, config, plan);
+  const seed = selectSocialApiSeed(parsedResponses, config, plan);
   const capture = summarizeSocialApiCapture(apiCapture, parsedResponses, config, plan);
   if (!seed) {
     if (previousArchive?.nextCursor && previousArchive?.seedUrl) {
-      const allItems = mergeByKey(previousItems, (entry) => entry.id || entry.url || entry.text, settings.maxItems);
+      const allItems = filterApiArchiveItemsForPlan(
+        mergeByKey(previousItems, (entry) => entry.id || entry.url || entry.text, settings.maxItems),
+        config,
+        plan,
+      );
       const boundedBy = boundedReasonFromArchiveReason(allItems.length >= settings.maxItems ? 'max-items' : null);
       return {
         strategy: 'api-cursor',
@@ -2370,10 +2727,10 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
       boundarySignals: capturedRiskSignals,
     };
   }
-  let allItems = mergeByKey([
+  let allItems = filterApiArchiveItemsForPlan(mergeByKey([
     ...previousItems,
     ...annotateApiArchiveItems(seed.parsed.items, plan),
-  ], (entry) => entry.id || entry.url || entry.text, settings.maxItems);
+  ], (entry) => entry.id || entry.url || entry.text, settings.maxItems), config, plan);
   let cursor = previousArchive?.nextCursor || seed.parsed.nextCursor;
   let seedUrl = previousArchive?.seedUrl || seed.response.url;
   let replayRequest = {
@@ -2392,6 +2749,31 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
   if (allItems.length >= settings.maxItems) {
     reason = 'max-items';
   }
+  if (seedOnly) {
+    const windowedItems = (plan.date || plan.fromDate || plan.toDate)
+      ? allItems.filter((entry) => itemMatchesDateWindow(entry, plan))
+      : allItems;
+    const items = mergeByKey(windowedItems, (entry) => entry.id || entry.url || entry.text, settings.maxItems);
+    return {
+      strategy: 'api-seed',
+      complete: null,
+      reason: 'api-seed-only',
+      bounded: false,
+      boundedBy: null,
+      pages: 1,
+      items,
+      media: mergeByKey(items.flatMap((item) => item.media || []), (entry) => `${entry.type}:${entry.url}`, settings.maxItems * 5),
+      nextCursor: null,
+      seedUrl,
+      requestTemplate,
+      capture,
+      riskSignals: dedupeSortedStrings(apiRiskSignals),
+      riskEvents: apiRiskEvents,
+      boundarySignals: dedupeSortedStrings(apiRiskSignals),
+      resumed: Boolean(previousItems.length || previousArchive?.nextCursor),
+    };
+  }
+  let softCursorFailure = false;
   while (cursor && pages < settings.maxApiPages && allItems.length < settings.maxItems) {
     const nextRequest = buildCursorReplayRequest(replayRequest, cursor);
     const fetchResult = await fetchCursorReplayJson(session, nextRequest, settings);
@@ -2402,6 +2784,12 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
     apiRiskSignals.push(...(fetchResult.riskSignals ?? []));
     if (!fetchResult.ok) {
       reason = fetchResult.reason || 'cursor-fetch-failed';
+      softCursorFailure = isSoftCursorReplayExhaustion(fetchResult, {
+        config,
+        plan,
+        pages,
+        itemCount: allItems.length,
+      });
       const riskSignals = dedupeSortedStrings(apiRiskSignals);
       await checkpoint?.write?.({
         status: riskSignals.includes('rate-limited') ? 'paused' : 'running',
@@ -2432,10 +2820,10 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
       break;
     }
     pages += 1;
-    allItems = mergeByKey([
+    allItems = filterApiArchiveItemsForPlan(mergeByKey([
       ...allItems,
       ...annotateApiArchiveItems(parsed.items, plan),
-    ], (entry) => entry.id || entry.url || entry.text, settings.maxItems);
+    ], (entry) => entry.id || entry.url || entry.text, settings.maxItems), config, plan);
     cursor = parsed.nextCursor;
     replayRequest = nextRequest;
     seedUrl = nextRequest.url;
@@ -2472,16 +2860,20 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
     : allItems;
   const items = mergeByKey(windowedItems, (entry) => entry.id || entry.url || entry.text, settings.maxItems);
   const boundedBy = boundedReasonFromArchiveReason(reason);
+  const archiveReason = softCursorFailure ? 'soft-cursor-exhausted' : reason;
   return {
     strategy: 'api-cursor',
-    complete: !cursor,
-    reason,
+    complete: softCursorFailure ? null : !cursor,
+    reason: archiveReason,
+    confidence: softCursorFailure ? 'partial' : null,
+    partial: softCursorFailure,
     bounded: Boolean(boundedBy),
     boundedBy,
     pages,
     items,
     media: mergeByKey(items.flatMap((item) => item.media || []), (entry) => `${entry.type}:${entry.url}`, settings.maxItems * 5),
-    nextCursor: cursor || null,
+    nextCursor: softCursorFailure ? null : cursor || null,
+    diagnosticCursor: softCursorFailure ? cursor || null : null,
     seedUrl,
     requestTemplate,
     capture,
@@ -2492,8 +2884,211 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
   };
 }
 
+function xRelationOperationNameForAction(action) {
+  return action === 'profile-followers' ? 'followers' : 'following';
+}
+
+function isXRelationApiResponse(entry, plan) {
+  const operation = operationNameFromApiEntry(entry);
+  if (operation === xRelationOperationNameForAction(plan.action)) {
+    return true;
+  }
+  return isXRelationApiUrl(entry.response?.url, plan.action);
+}
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+async function captureXRelationSeedRequest(session, plan, settings) {
+  if (typeof session?.send !== 'function' || !session?.client?.on) {
+    return null;
+  }
+  const requests = new Map();
+  const deferred = createDeferred();
+  let settled = false;
+  const finish = (requestId) => {
+    if (settled || !requestId || !requests.has(requestId)) {
+      return;
+    }
+    settled = true;
+    const request = requests.get(requestId);
+    deferred.resolve({
+      url: request.url,
+      method: request.method || 'GET',
+      headers: buildBrowserReplayHeaders(request),
+      body: request.postData || null,
+      requestTemplate: sanitizeSocialApiRequestTemplate(request),
+    });
+  };
+  await session.send('Network.enable', {
+    maxTotalBufferSize: 10_000_000,
+    maxResourceBufferSize: 5_000_000,
+  }, settings.timeoutMs);
+  const offRequest = session.client.on('Network.requestWillBeSent', ({ params }) => {
+    const request = params?.request;
+    const url = request?.url || '';
+    if (!params?.requestId || !isXRelationApiUrl(url, plan.action)) {
+      return;
+    }
+    requests.set(params.requestId, {
+      url,
+      method: request?.method || 'GET',
+      headers: request?.headers || {},
+      postData: request?.postData || '',
+      resourceType: params?.type || '',
+    });
+    setTimeout(() => finish(params.requestId), 500).unref?.();
+  }, { sessionId: session.sessionId });
+  const offRequestExtra = session.client.on('Network.requestWillBeSentExtraInfo', ({ params }) => {
+    if (!params?.requestId || !requests.has(params.requestId)) {
+      return;
+    }
+    const request = requests.get(params.requestId);
+    requests.set(params.requestId, {
+      ...request,
+      headers: {
+        ...(request.headers || {}),
+        ...(params.headers || {}),
+      },
+    });
+    setTimeout(() => finish(params.requestId), 150).unref?.();
+  }, { sessionId: session.sessionId });
+  try {
+    await session.navigateAndWait(plan.url, createWaitPolicy(settings.timeoutMs));
+    return await Promise.race([
+      deferred.promise,
+      sleep(Math.min(settings.timeoutMs, 15_000)).then(() => null),
+    ]);
+  } finally {
+    settled = true;
+    offRequest();
+    offRequestExtra();
+  }
+}
+
+async function collectXRelationUsersFromReplayRequest(session, seedRequest, settings) {
+  let replayRequest = seedRequest;
+  let cursor = null;
+  let pages = 0;
+  let users = [];
+  let reason = 'no-next-cursor';
+  const riskSignals = [];
+  const riskEvents = [];
+
+  while (replayRequest?.url && pages < settings.maxApiPages && users.length < settings.maxItems) {
+    const fetchResult = await fetchCursorReplayJson(session, replayRequest, settings);
+    riskEvents.push(...(fetchResult.attempts || []).map((attempt) => ({
+      ...attempt,
+      url: replayRequest.url,
+    })));
+    riskSignals.push(...(fetchResult.riskSignals ?? []));
+    if (!fetchResult.ok) {
+      reason = fetchResult.reason || 'relation-page-fetch-failed';
+      break;
+    }
+    const parsed = collectXRelationEntries(fetchResult.json);
+    pages += 1;
+    const before = users.length;
+    users = mergeByKey([
+      ...users,
+      ...parsed.users,
+    ], (entry) => entry.handle?.toLowerCase() || entry.url, settings.maxItems);
+    cursor = parsed.nextCursor;
+    if (users.length === before && pages > 1) {
+      reason = 'no-new-users';
+      break;
+    }
+    if (!cursor) {
+      reason = 'no-next-cursor';
+      break;
+    }
+    if (users.length >= settings.maxItems) {
+      reason = 'max-items';
+      break;
+    }
+    replayRequest = buildCursorReplayRequest(replayRequest, cursor);
+    reason = 'max-api-pages';
+  }
+
+  if (pages >= settings.maxApiPages && cursor && users.length < settings.maxItems) {
+    reason = 'max-api-pages';
+  }
+  const boundedBy = boundedReasonFromArchiveReason(reason);
+  return {
+    strategy: 'api-relation',
+    complete: !boundedBy && !riskSignals.length,
+    reason,
+    bounded: Boolean(boundedBy),
+    boundedBy,
+    pages,
+    users,
+    nextCursor: cursor || null,
+    riskSignals: dedupeSortedStrings(riskSignals),
+    riskEvents,
+  };
+}
+
+async function collectXRelationApiUsers(session, plan, settings, apiCapture) {
+  if (!apiCapture || !isSocialRelationAction(plan.action)) {
+    return null;
+  }
+  await sleep(Math.max(settings.scrollWaitMs, 500));
+  await apiCapture.flush?.(Math.max(settings.scrollWaitMs, 1_500));
+  const parsedResponses = apiCapture.responses
+    .map((response) => ({
+      response,
+      parsed: collectXRelationEntries(response.json),
+    }))
+    .filter((entry) => isXRelationApiResponse(entry, plan));
+  const seed = parsedResponses
+    .sort((left, right) => right.parsed.users.length - left.parsed.users.length)[0];
+  const seedRequest = seed?.parsed?.users?.length
+    ? (seed.response.replayRequest || {
+      url: seed.response.url,
+      method: 'GET',
+      headers: seed.response.replayHeaders || {},
+    })
+    : await captureXRelationSeedRequest(session, plan, settings);
+  if (!seedRequest?.url) {
+    return {
+      strategy: 'api-relation',
+      complete: false,
+      reason: apiCapture.responses.length ? 'no-relation-api-seed' : 'no-relation-api-captured',
+      pages: 0,
+      users: [],
+      nextCursor: null,
+      capture: summarizeSocialApiCapture(apiCapture, parsedResponses, resolveSocialSiteConfig('x'), plan),
+    };
+  }
+
+  const archive = await collectXRelationUsersFromReplayRequest(session, seedRequest, settings);
+  return {
+    ...archive,
+    seedUrl: seedRequest.url,
+    requestTemplate: seedRequest.requestTemplate || seed?.response?.request || null,
+    capture: summarizeSocialApiCapture(apiCapture, parsedResponses, resolveSocialSiteConfig('x'), plan),
+  };
+}
+
 function mergePageResultWithArchive(pageResult, archive, settings) {
   if (!archive?.items?.length) {
+    const fallbackArchive = archive ?? pageResult.archive ?? {
+      strategy: 'dom-scroll',
+      complete: false,
+      reason: pageResult.stopReason || 'api-cursor-disabled-or-unavailable',
+      pages: 0,
+    };
+    const domDedupedCount = fallbackArchive.dedupedItemCount
+      ?? (fallbackArchive.strategy === 'dom-relation-scroll'
+        ? pageResult.relations?.length ?? 0
+        : pageResult.items?.length ?? 0);
     return {
       ...pageResult,
       riskSignals: dedupeSortedStrings([
@@ -2506,16 +3101,13 @@ function mergePageResultWithArchive(pageResult, archive, settings) {
       ],
       stopReason: pageResult.stopReason || runtimeRiskToStopReason(pickRuntimeRiskSignal(archive?.riskSignals ?? [])),
       archive: {
-        ...(archive ?? {
-        strategy: 'dom-scroll',
-        complete: false,
-        reason: pageResult.stopReason || 'api-cursor-disabled-or-unavailable',
-        pages: 0,
-        }),
+        ...fallbackArchive,
         domItemCount: pageResult.items?.length ?? 0,
+        domRelationCount: pageResult.relations?.length ?? fallbackArchive.domRelationCount ?? null,
         apiItemCount: archive?.items?.length ?? 0,
-        dedupedItemCount: pageResult.items?.length ?? 0,
+        dedupedItemCount: domDedupedCount,
         boundarySignals: dedupeSortedStrings([
+          ...(fallbackArchive.boundarySignals ?? []),
           ...(archive?.boundarySignals ?? []),
           ...(archive?.riskSignals ?? []),
           ...(pageResult.visibilitySignals ?? []),
@@ -2524,12 +3116,28 @@ function mergePageResultWithArchive(pageResult, archive, settings) {
       },
     };
   }
+  const archiveMediaByItem = new Map();
+  for (const item of archive.items || []) {
+    const key = item.id || item.url || null;
+    if (key && Array.isArray(item.media) && item.media.length) {
+      archiveMediaByItem.set(String(key), item.media);
+    }
+    if (item.url && Array.isArray(item.media) && item.media.length) {
+      archiveMediaByItem.set(String(item.url), item.media);
+    }
+  }
+  const pageItems = (pageResult.items || []).map((item) => {
+    const key = item.id || item.url || null;
+    const apiMedia = key ? archiveMediaByItem.get(String(key)) : null;
+    return apiMedia?.length ? { ...item, media: apiMedia } : item;
+  });
   const items = mergeByKey([
     ...archive.items,
-    ...(pageResult.items || []),
+    ...pageItems,
   ], (entry) => entry.id || entry.url || entry.text, settings.maxItems);
   const media = mergeByKey([
     ...(archive.media || []),
+    ...items.flatMap((item) => item.media || []),
     ...(pageResult.media || []),
   ], (entry) => `${entry.type}:${entry.url}`, settings.maxItems * 5);
   return {
@@ -2850,6 +3458,7 @@ function selectResultPayload(plan, pageResult) {
       users: pageResult.relations,
       finalUrl: pageResult.finalUrl,
       title: pageResult.title,
+      archive: pageResult.archive ?? null,
       ...runtimeFields,
     };
   }
@@ -3005,6 +3614,12 @@ function isDownloadableMediaUrl(url) {
   return /^https?:\/\//iu.test(value) && !/^blob:/iu.test(value) && !/^data:/iu.test(value);
 }
 
+function isLikelyXVideoPosterUrl(url) {
+  const value = String(url ?? '').toLowerCase();
+  return /\/(?:ext_tw_video|amplify_video|tweet_video)_thumb\//u.test(value)
+    || /[?&]format=(?:jpg|jpeg|png|webp)\b/u.test(value) && /(?:ext_tw_video|amplify_video|tweet_video)/u.test(value);
+}
+
 function shortHash(value) {
   return createHash('sha1').update(String(value ?? '')).digest('hex').slice(0, 10);
 }
@@ -3024,9 +3639,21 @@ function normalizeDownloadableMediaEntry(entry, index = 0) {
     return null;
   }
   if (isDownloadableMediaUrl(entry.url)) {
+    if (isLikelyXVideoPosterUrl(entry.url)) {
+      return {
+        ...entry,
+        type: 'image',
+        mediaIndex: entry.mediaIndex ?? index,
+        fallbackFrom: entry.fallbackFrom ?? 'poster-only-video-fallback',
+        expectedType: entry.expectedType ?? 'video',
+        alt: entry.alt || 'video poster',
+      };
+    }
     return {
       ...entry,
       mediaIndex: entry.mediaIndex ?? index,
+      fallbackFrom: entry.fallbackFrom,
+      expectedType: entry.expectedType,
     };
   }
   if (isDownloadableMediaUrl(entry.posterUrl)) {
@@ -3036,7 +3663,8 @@ function normalizeDownloadableMediaEntry(entry, index = 0) {
       url: entry.posterUrl,
       mediaIndex: entry.mediaIndex ?? index,
       alt: entry.alt || 'video poster',
-      fallbackFrom: 'posterUrl',
+      fallbackFrom: isLikelyXVideoPosterUrl(entry.posterUrl) ? 'poster-only-video-fallback' : 'posterUrl',
+      expectedType: entry.type === 'video' || isLikelyXVideoPosterUrl(entry.posterUrl) ? 'video' : entry.expectedType,
     };
   }
   return null;
@@ -3059,6 +3687,8 @@ function buildDownloadableMediaPlan(media, maxItems = Infinity) {
       durationMillis: entry.durationMillis ?? null,
       posterUrl: entry.posterUrl ?? null,
       variantCount: Array.isArray(entry.variants) ? entry.variants.length : 0,
+      fallbackFrom: entry.fallbackFrom ?? null,
+      expectedType: entry.expectedType ?? null,
     });
     const key = `${entry.type}:${entry.url}`;
     if (!byDownloadKey.has(key)) {
@@ -3102,6 +3732,8 @@ function normalizeDownloadQueueEntry(entry = {}, index = 0, previous = null) {
     status: previousStatus || 'pending',
     url: entry.url ?? previous?.url ?? null,
     type: entry.type ?? previous?.type ?? null,
+    fallbackFrom: entry.fallbackFrom ?? previous?.fallbackFrom ?? null,
+    expectedType: entry.expectedType ?? previous?.expectedType ?? null,
     itemId: entry.itemId ?? entry.id ?? previous?.itemId ?? null,
     pageUrl: entry.pageUrl ?? previous?.pageUrl ?? null,
     mediaIndex: entry.mediaIndex ?? previous?.mediaIndex ?? null,
@@ -3240,6 +3872,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
         ok: true,
         url: entry.url,
         type: entry.type ?? null,
+        fallbackFrom: entry.fallbackFrom ?? null,
+        expectedType: entry.expectedType ?? null,
         itemId: entry.itemId ?? entry.id ?? null,
         pageUrl: entry.pageUrl ?? null,
         mediaIndex: entry.mediaIndex ?? null,
@@ -3280,6 +3914,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
             ok: true,
             url: entry.url,
             type: entry.type ?? null,
+            fallbackFrom: entry.fallbackFrom ?? null,
+            expectedType: entry.expectedType ?? null,
             itemId: entry.itemId ?? entry.id ?? null,
             pageUrl: entry.pageUrl ?? null,
             mediaIndex: entry.mediaIndex ?? null,
@@ -3308,6 +3944,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
           ok: false,
           url: entry.url,
           type: entry.type ?? null,
+          fallbackFrom: entry.fallbackFrom ?? null,
+          expectedType: entry.expectedType ?? null,
           itemId: entry.itemId ?? entry.id ?? null,
           pageUrl: entry.pageUrl ?? null,
           mediaIndex: entry.mediaIndex ?? null,
@@ -3328,6 +3966,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
           ok: true,
           url: entry.url,
           type: entry.type ?? null,
+          fallbackFrom: entry.fallbackFrom ?? null,
+          expectedType: entry.expectedType ?? null,
           itemId: entry.itemId ?? entry.id ?? null,
           pageUrl: entry.pageUrl ?? null,
           mediaIndex: entry.mediaIndex ?? null,
@@ -3360,6 +4000,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
         ok: true,
         url: entry.url,
         type: entry.type ?? null,
+        fallbackFrom: entry.fallbackFrom ?? null,
+        expectedType: entry.expectedType ?? null,
         itemId: entry.itemId ?? entry.id ?? null,
         pageUrl: entry.pageUrl ?? null,
         mediaIndex: entry.mediaIndex ?? null,
@@ -3390,6 +4032,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
           ok: true,
           url: entry.url,
           type: entry.type ?? null,
+          fallbackFrom: entry.fallbackFrom ?? null,
+          expectedType: entry.expectedType ?? null,
           itemId: entry.itemId ?? entry.id ?? null,
           pageUrl: entry.pageUrl ?? null,
           mediaIndex: entry.mediaIndex ?? null,
@@ -3419,6 +4063,8 @@ async function downloadOneMediaCandidate({ entry, index, headers, outDir, siteKe
     ok: false,
     url: entry.url,
     type: entry.type ?? null,
+    fallbackFrom: entry.fallbackFrom ?? null,
+    expectedType: entry.expectedType ?? null,
     itemId: entry.itemId ?? entry.id ?? null,
     pageUrl: entry.pageUrl ?? null,
     mediaIndex: entry.mediaIndex ?? null,
@@ -3464,7 +4110,13 @@ async function downloadMediaFiles({
   const candidates = downloadPlan.candidates;
   await ensureDir(outDir);
   const queue = buildDownloadQueue(candidates, previousQueue);
-  await writeDownloadQueue(queuePath, queue);
+  let queueWrite = Promise.resolve();
+  const persistQueue = async () => {
+    const snapshot = queue.map((entry) => ({ ...entry }));
+    queueWrite = queueWrite.then(() => writeDownloadQueue(queuePath, snapshot));
+    await queueWrite;
+  };
+  await persistQueue();
   const contentHashIndex = new Map();
   const restorableDownloads = [
     ...previousQueueResults(previousQueue),
@@ -3495,9 +4147,11 @@ async function downloadMediaFiles({
       result,
       updatedAt: new Date().toISOString(),
     };
-    await writeDownloadQueue(queuePath, queue);
+    await persistQueue();
     return result;
   });
+  await queueWrite;
+  await writeDownloadQueue(queuePath, queue);
   return {
     downloads,
     queue,
@@ -3631,6 +4285,12 @@ function renderMarkdownReport(result) {
       }
     }
   }
+  if (result.recoveryRunbook?.commands?.length) {
+    lines.push('- Recovery runbook: actionable');
+    for (const command of result.recoveryRunbook.commands) {
+      lines.push(`  - ${command.id}: ${command.command}`);
+    }
+  }
   lines.push('');
   for (const item of result.result?.items ?? []) {
     lines.push(`## ${item.url || 'item'}`);
@@ -3666,6 +4326,7 @@ function artifactPathSummary(layout) {
     apiCapture: layout.apiCapturePath,
     apiDriftSamples: layout.apiDriftSamplesPath,
     downloads: layout.downloadsJsonlPath,
+    mediaManifest: layout.mediaHashManifestPath,
     mediaQueue: layout.mediaQueuePath,
   };
 }
@@ -3684,6 +4345,7 @@ function buildSocialArtifactLayout(plan, settings) {
     apiCapturePath: path.join(runDir, 'api-capture-debug.json'),
     apiDriftSamplesPath: path.join(runDir, 'api-drift-samples.json'),
     downloadsJsonlPath: path.join(runDir, 'downloads.jsonl'),
+    mediaHashManifestPath: path.join(runDir, 'media-manifest.json'),
     mediaQueuePath: path.join(runDir, 'media-queue.json'),
   };
 }
@@ -3769,6 +4431,300 @@ function formatArchiveComplete(value) {
   return 'unknown';
 }
 
+function quoteCommandArg(value) {
+  const text = String(value ?? '');
+  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/gu, '\\"')}"`;
+}
+
+function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
+  const plan = result.plan || {};
+  const settings = result.settings || result._settings || {};
+  const script = path.join('src', 'entrypoints', 'sites', `${plan.siteKey || result.siteKey}-action.mjs`);
+  const action = settings.fullArchive && plan.action === 'profile-content' ? 'full-archive' : (plan.action || 'profile-content');
+  const args = [script, action];
+  if (plan.account && !['followed-users', 'followed-posts-by-date', 'search'].includes(plan.action)) {
+    args.push(plan.account);
+  }
+  if (plan.action === 'profile-content' && plan.contentType && action !== 'full-archive') {
+    args.push('--content-type', plan.contentType);
+  }
+  if (plan.date) {
+    args.push('--date', plan.date);
+  }
+  if (plan.query) {
+    args.push('--query', plan.query);
+  }
+  args.push(
+    '--run-dir',
+    layout.runDir,
+    '--resume',
+    '--reuse-login-state',
+    settings.headless ? '--headless' : '--no-headless',
+    '--max-items',
+    String(settings.maxItems ?? DEFAULT_MAX_ITEMS),
+    '--timeout',
+    String(settings.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+  );
+  if (settings.apiCursor === false) {
+    args.push('--no-api-cursor');
+  }
+  if (settings.maxApiPages !== undefined) {
+    args.push('--max-api-pages', String(settings.maxApiPages));
+  }
+  if (settings.downloadMedia) {
+    args.push('--download-media', '--max-media-downloads', String(settings.maxMediaDownloads ?? DEFAULT_MAX_MEDIA_DOWNLOADS));
+  }
+  if (settings.riskBackoffMs !== undefined) {
+    args.push('--risk-backoff-ms', String(settings.riskBackoffMs));
+  }
+  if (settings.riskRetries !== undefined) {
+    args.push('--risk-retries', String(settings.riskRetries));
+  }
+  args.push(...extraArgs);
+  return ['node', ...args].map(quoteCommandArg).join(' ');
+}
+
+function buildRecoveryRunbook(result, layout) {
+  const commands = [];
+  const addCommand = (id, reason, command, explanation) => {
+    if (!command || commands.some((entry) => entry.id === id && entry.command === command)) {
+      return;
+    }
+    commands.push({ id, reason, command, explanation });
+  };
+  const site = result.plan?.siteKey || result.siteKey || 'x';
+  const resumeCommand = buildSocialActionRecoveryCommand(result, layout);
+  if (result.authHealth?.needsRecovery) {
+    addCommand(
+      'recover-auth-session',
+      result.authHealth.recoveryReason || 'auth-recovery-needed',
+      result.authHealth.recoveryCommand,
+      'Open a visible login recovery flow before resuming this artifact directory.',
+    );
+    addCommand(
+      'resume-after-auth',
+      'auth-recovery-needed',
+      resumeCommand,
+      'Resume the same action after the reusable browser profile is healthy.',
+    );
+  }
+  if (result.runtimeRisk?.rateLimited || result.outcome?.reason === 'api-rate-limited') {
+    addCommand(
+      'resume-after-cooldown',
+      'rate-limited',
+      ['node', path.join('scripts', 'social-live-resume.mjs'), '--state', layout.manifestPath, '--site', site, '--execute', '--cooldown-minutes', '30', '--max-attempts', '3'].map(quoteCommandArg).join(' '),
+      'Let the cooldown expire, then let the resume runner continue from the saved cursor/state.',
+    );
+  }
+  if (result.completeness?.driftReasons?.length) {
+    addCommand(
+      'inspect-api-drift',
+      result.completeness.driftReasons[0],
+      ['node', path.join('scripts', 'social-live-report.mjs'), '--runs-root', layout.runDir, '--site', site].map(quoteCommandArg).join(' '),
+      `Inspect ${path.basename(layout.apiCapturePath)} and ${path.basename(layout.apiDriftSamplesPath)} before changing API parsing rules.`,
+    );
+  }
+  const downloadSummary = result.completeness?.download;
+  if (
+    result.download
+    && (
+      result.outcome?.reason === 'media-download-incomplete'
+      || result.outcome?.reason === 'media-content-type-mismatch'
+      || Number(downloadSummary?.failedCount) > 0
+      || Number(downloadSummary?.contentTypeMismatchCount) > 0
+    )
+  ) {
+    addCommand(
+      'resume-media-downloads',
+      result.outcome?.reason || 'media-download-incomplete',
+      buildSocialActionRecoveryCommand(result, layout, ['--download-media']),
+      'Retry only the missing or failed media by reusing downloads.jsonl and media-queue.json.',
+    );
+  }
+  if (result.result?.archive?.complete === false && result.outcome?.resumable && commands.length === 0) {
+    addCommand(
+      'resume-archive',
+      result.result.archive.reason || 'archive-incomplete',
+      resumeCommand,
+      'Continue the archive from the saved cursor/state in this artifact directory.',
+    );
+  }
+  return {
+    status: commands.length ? 'actionable' : 'none',
+    generatedAt: new Date().toISOString(),
+    commands,
+  };
+}
+
+function spawnJsonCommand(command, args, timeoutMs = 10_000) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const child = spawn(command, args, {
+      cwd: REPO_ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    const timer = setTimeout(() => {
+      if (!settled) {
+        child.kill('SIGTERM');
+      }
+    }, timeoutMs);
+    timer.unref?.();
+    child.stdout?.on('data', (chunk) => {
+      stdout = `${stdout}${chunk}`.slice(-1_000_000);
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr = `${stderr}${chunk}`.slice(-20_000);
+    });
+    child.once('error', (error) => {
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: false, error: error?.message ?? String(error), stdout, stderr });
+    });
+    child.once('exit', (code, signal) => {
+      settled = true;
+      clearTimeout(timer);
+      if (code !== 0) {
+        resolve({ ok: false, code, signal, error: stderr.trim() || `${command} exited with code ${code}`, stdout, stderr });
+        return;
+      }
+      try {
+        resolve({ ok: true, json: JSON.parse(stdout), stdout, stderr });
+      } catch (error) {
+        resolve({ ok: false, code, signal, error: error?.message ?? String(error), stdout, stderr });
+      }
+    });
+  });
+}
+
+async function probeVideoFile(filePath) {
+  const result = await spawnJsonCommand('ffprobe', [
+    '-v',
+    'error',
+    '-print_format',
+    'json',
+    '-show_format',
+    '-show_streams',
+    filePath,
+  ]);
+  if (!result.ok) {
+    const unavailable = /not recognized|not found|ENOENT|spawn ffprobe ENOENT/iu.test(String(result.error));
+    return {
+      status: unavailable ? 'skipped' : 'failed',
+      reason: unavailable ? 'ffprobe-unavailable' : 'ffprobe-failed',
+      error: result.error,
+    };
+  }
+  const streams = Array.isArray(result.json?.streams) ? result.json.streams : [];
+  const video = streams.find((stream) => String(stream.codec_type).toLowerCase() === 'video') || null;
+  return {
+    status: video ? 'passed' : 'failed',
+    reason: video ? null : 'video-stream-missing',
+    codec: video?.codec_name ?? null,
+    width: video?.width ?? null,
+    height: video?.height ?? null,
+    durationSeconds: Number(video?.duration ?? result.json?.format?.duration) || null,
+    bitRate: Number(video?.bit_rate ?? result.json?.format?.bit_rate) || null,
+  };
+}
+
+async function hashFileSha256(filePath) {
+  return createHash('sha256').update(await readFile(filePath)).digest('hex');
+}
+
+function expectedMinimumBytes(entry = {}) {
+  if (entry.type === 'video') {
+    return 1024;
+  }
+  if (entry.type === 'image') {
+    return 16;
+  }
+  return 1;
+}
+
+async function buildMediaValidationManifest(result, layout) {
+  const downloads = Array.isArray(result.download?.downloads) ? result.download.downloads : [];
+  const entries = [];
+  for (const download of downloads) {
+    const entry = {
+      ok: download.ok === true,
+      url: download.url ?? null,
+      type: download.type ?? null,
+      fallbackFrom: download.fallbackFrom ?? null,
+      expectedType: download.expectedType ?? null,
+      itemId: download.itemId ?? null,
+      pageUrl: download.pageUrl ?? null,
+      filePath: download.filePath ?? null,
+      transport: download.transport ?? null,
+      bytes: download.bytes ?? null,
+      contentType: download.contentType ?? null,
+      contentTypeMatchesExpected: download.contentTypeMatchesExpected ?? null,
+      declaredHash: download.contentHash ?? null,
+      sha256: null,
+      hashMatchesDeclared: null,
+      anomalies: [],
+      probe: null,
+    };
+    if (!entry.ok || !entry.filePath) {
+      entry.anomalies.push('download-failed');
+      entries.push(entry);
+      continue;
+    }
+    try {
+      const fileStat = await stat(entry.filePath);
+      entry.bytes = fileStat.size;
+      entry.sha256 = await hashFileSha256(entry.filePath);
+      entry.hashMatchesDeclared = entry.declaredHash ? entry.declaredHash === entry.sha256 : null;
+      if (entry.declaredHash && !entry.hashMatchesDeclared) {
+        entry.anomalies.push('hash-mismatch');
+      }
+      if (fileStat.size < expectedMinimumBytes(entry)) {
+        entry.anomalies.push('small-file');
+      }
+      if (entry.contentTypeMatchesExpected === false) {
+        entry.anomalies.push('content-type-mismatch');
+      }
+      if (entry.type === 'video') {
+        entry.probe = await probeVideoFile(entry.filePath);
+        if (entry.probe.status !== 'passed') {
+          entry.anomalies.push(entry.probe.reason || 'ffprobe-failed');
+        }
+      }
+    } catch (error) {
+      entry.anomalies.push('file-missing');
+      entry.error = error?.message ?? String(error);
+    }
+    entries.push(entry);
+  }
+  const summary = {
+    total: entries.length,
+    ok: entries.filter((entry) => entry.ok).length,
+    hashed: entries.filter((entry) => entry.sha256).length,
+    missingFiles: entries.filter((entry) => entry.anomalies.includes('file-missing')).length,
+    smallFiles: entries.filter((entry) => entry.anomalies.includes('small-file')).length,
+    hashMismatches: entries.filter((entry) => entry.anomalies.includes('hash-mismatch')).length,
+    contentTypeMismatches: entries.filter((entry) => entry.anomalies.includes('content-type-mismatch')).length,
+    videoProbed: entries.filter((entry) => entry.probe?.status === 'passed').length,
+    videoProbeFailed: entries.filter((entry) => entry.probe && entry.probe.status !== 'passed').length,
+    ffprobeUnavailable: entries.filter((entry) => entry.probe?.reason === 'ffprobe-unavailable').length,
+    posterOnlyVideoFallbacks: entries.filter((entry) => entry.fallbackFrom === 'poster-only-video-fallback').length,
+    anomalyCount: entries.filter((entry) => entry.anomalies.length).length,
+  };
+  return {
+    schemaVersion: ARTIFACT_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    siteKey: result.siteKey,
+    path: layout.mediaHashManifestPath,
+    summary,
+    entries,
+  };
+}
+
 function summarizeCompleteness(result) {
   const payload = result?.result || {};
   const archive = payload.archive || null;
@@ -3841,6 +4797,10 @@ function summarizeCompleteness(result) {
     ...scannedUsers.flatMap((entry) => [...(entry.visibilitySignals ?? []), ...(entry.riskSignals ?? [])]),
   ]);
   const archiveReason = archive?.reason ?? null;
+  const softArchiveReasons = new Set([
+    'api-seed-only',
+    'soft-cursor-exhausted',
+  ]);
   const archiveBoundedBy = archive?.boundedBy || boundedReasonFromArchiveReason(archiveReason);
   const boundedReasons = [
     archiveBoundedBy,
@@ -3858,6 +4818,8 @@ function summarizeCompleteness(result) {
     ? 'blocked'
     : boundedReasons.length
       ? 'bounded'
+      : softArchiveReasons.has(String(archiveReason))
+        ? 'degraded'
       : driftReasons.length || boundarySignals.length
         ? 'degraded'
         : archive && archive.complete === false
@@ -3962,11 +4924,27 @@ function summarizeRunOutcome(result, settings) {
       resumable: Boolean(archive?.nextCursor),
     };
   }
+  if (archive?.reason === 'soft-cursor-exhausted' && result.completeness?.itemCount > 0) {
+    return {
+      ok: true,
+      status: 'degraded',
+      reason: 'soft-cursor-exhausted',
+      resumable: false,
+    };
+  }
   if ((settings.fullArchive || result.plan?.action === 'followed-posts-by-date') && archive && archive.complete !== true) {
     return {
       ok: false,
       status: 'incomplete',
       reason: archive.reason || 'archive-incomplete',
+      resumable: Boolean(archive.nextCursor),
+    };
+  }
+  if (isSocialRelationAction(result.plan?.action) && archive?.complete === false) {
+    return {
+      ok: false,
+      status: 'incomplete',
+      reason: archive.reason || 'relation-incomplete',
       resumable: Boolean(archive.nextCursor),
     };
   }
@@ -4073,9 +5051,12 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter) {
   await ensureDir(layout.mediaDir);
   const rows = extractArtifactRows(finalResult);
   const counts = artifactCounts(finalResult, rows);
+  const recoveryRunbook = finalResult.recoveryRunbook ?? buildRecoveryRunbook(finalResult, layout);
+  const mediaValidation = finalResult.download ? await buildMediaValidationManifest(finalResult, layout) : null;
   await writeJsonLines(layout.itemsJsonlPath, rows);
   if (finalResult.download) {
     await writeJsonLines(layout.downloadsJsonlPath, finalResult.download.downloads ?? []);
+    await writeJsonFile(layout.mediaHashManifestPath, mediaValidation);
   }
   await writeTextFile(layout.reportPath, finalResult.markdown || renderMarkdownReport(finalResult));
   if (finalResult.result?.archive?.capture) {
@@ -4111,6 +5092,11 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter) {
     completeness: finalResult.completeness ?? null,
     runtimeRisk: finalResult.runtimeRisk ?? null,
     outcome: finalResult.outcome ?? null,
+    recoveryRunbook,
+    mediaValidation: mediaValidation ? {
+      path: layout.mediaHashManifestPath,
+      summary: mediaValidation.summary,
+    } : null,
     counts,
   });
   const manifest = {
@@ -4126,6 +5112,7 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter) {
     authHealth: finalResult.authHealth ?? null,
     runtimeRisk: finalResult.runtimeRisk ?? null,
     outcome: finalResult.outcome ?? null,
+    recoveryRunbook,
     artifacts: artifactPathSummary(layout),
     downloads: finalResult.download ? {
       outDir: finalResult.download.outDir,
@@ -4144,6 +5131,8 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter) {
       qualityScore: finalResult.completeness?.download?.qualityScore ?? null,
       itemQuality: finalResult.completeness?.download?.itemQuality ?? [],
       details: layout.downloadsJsonlPath,
+      hashManifest: layout.mediaHashManifestPath,
+      validation: mediaValidation?.summary ?? null,
       queue: {
         path: layout.mediaQueuePath,
         total: finalResult.download.queue?.length ?? 0,
@@ -4218,6 +5207,28 @@ async function prepareSocialRelationSurface(session, config, plan, settings) {
     } catch {
       // Instagram relation dialogs can update through SPA navigation; extraction below is the verifier.
     }
+  } else {
+    const fallbackTimeoutMs = Math.min(settings.timeoutMs, 30_000);
+    await session.navigateAndWait(plan.url, createWaitPolicy(fallbackTimeoutMs));
+    await sleep(Math.max(settings.scrollWaitMs, 1500));
+    try {
+      await session.waitForSettled?.(createWaitPolicy(fallbackTimeoutMs));
+    } catch {
+      // Direct relation URLs can open the same SPA dialog; extraction below is the verifier.
+    }
+    const retryClickResult = await session.callPageFunction(pageOpenSocialRelationSurface, {
+      account: plan.account,
+      action: plan.action,
+    });
+    if (retryClickResult?.clicked) {
+      await sleep(Math.max(settings.scrollWaitMs, 1500));
+    }
+    return {
+      ...clickResult,
+      directNavigation: plan.url,
+      retry: retryClickResult,
+      clicked: Boolean(retryClickResult?.clicked),
+    };
   }
   return clickResult;
 }
@@ -4240,6 +5251,7 @@ function normalizeRunSettings(plan, options = {}) {
   const fullArchive = actionRequestsFullArchive || toBoolean(options.fullArchive ?? options.allHistory, false);
   const followedDateMode = String(options.followedDateMode || options.followedDateStrategy || '').trim().toLowerCase();
   const defaultMaxScrolls = fullArchive ? DEFAULT_FULL_ARCHIVE_MAX_SCROLLS : DEFAULT_MAX_SCROLLS;
+  const defaultMaxItems = isSocialRelationAction(plan.action) ? DEFAULT_MAX_RELATION_ITEMS : DEFAULT_MAX_ITEMS;
   const apiCursorDefault = fullArchive
     || (plan.siteKey === 'x' && plan.action === 'followed-posts-by-date')
     || (plan.siteKey === 'instagram' && plan.action === 'followed-posts-by-date' && /api/iu.test(followedDateMode));
@@ -4251,7 +5263,7 @@ function normalizeRunSettings(plan, options = {}) {
     reuseLoginState: options.reuseLoginState,
     autoLogin: options.autoLogin,
     timeoutMs: toNumber(options.timeoutMs, DEFAULT_TIMEOUT_MS),
-    maxItems: Math.max(1, toNumber(options.maxItems, DEFAULT_MAX_ITEMS)),
+    maxItems: Math.max(1, toNumber(options.maxItems, defaultMaxItems)),
     maxScrolls: Math.max(0, toNumber(options.maxScrolls, defaultMaxScrolls)),
     scrollWaitMs: Math.max(0, toNumber(options.scrollWaitMs, DEFAULT_SCROLL_WAIT_MS)),
     fullArchive,
@@ -4328,6 +5340,9 @@ export async function runSocialAction(options = {}, deps = {}) {
   const authContext = await runtime.resolveSiteBrowserSessionOptions(plan.url, settings, {
     profilePath: settings.profilePath,
   });
+  const initialNavigationUrl = config.siteKey === 'instagram' && isSocialRelationAction(plan.action) && plan.account
+    ? buildUrlFromTemplate(config, config.routes.profile, plan.account)
+    : plan.url;
   const loadedCheckpoint = await loadSocialCheckpoint(artifactLayout, settings);
   const checkpoint = createCheckpointWriter(artifactLayout, plan, settings, loadedCheckpoint);
   let session = null;
@@ -4338,6 +5353,23 @@ export async function runSocialAction(options = {}, deps = {}) {
     await checkpoint.write({
       status: 'started',
       startedAt: new Date().toISOString(),
+      counts: {
+        items: loadedCheckpoint.previousItems.length,
+        media: 0,
+      },
+    });
+    const shouldCaptureApi = (settings.apiCursor && !(config.siteKey === 'instagram' && isSocialRelationAction(plan.action)))
+      || (config.siteKey === 'x' && isSocialRelationAction(plan.action))
+      || (
+        config.siteKey === 'x'
+        && settings.downloadMedia
+        && ['profile-content', 'search', 'followed-posts-by-date'].includes(plan.action)
+      );
+    await checkpoint.write({
+      status: 'running',
+      phase: 'browser-opening',
+      updatedAt: new Date().toISOString(),
+      currentUrl: initialNavigationUrl,
       counts: {
         items: loadedCheckpoint.previousItems.length,
         media: 0,
@@ -4355,16 +5387,50 @@ export async function runSocialAction(options = {}, deps = {}) {
       },
       userDataDir: authContext.userDataDir,
       cleanupUserDataDirOnShutdown: authContext.cleanupUserDataDirOnShutdown,
-      startupUrl: settings.apiCursor ? 'about:blank' : plan.url,
+      startupUrl: shouldCaptureApi ? 'about:blank' : initialNavigationUrl,
     }, {
       userDataDirPrefix: `${plan.siteKey}-social-browser-`,
     });
-    apiCapture = settings.apiCursor ? await createSocialApiCapture(session, config, settings) : null;
-    await session.navigateAndWait(plan.url, createWaitPolicy(settings.timeoutMs));
-    const authResult = plan.requiresAuth
-      ? await runtime.ensureAuthenticatedSession(session, plan.url, settings, { authContext })
+    apiCapture = shouldCaptureApi && typeof session?.send === 'function' && typeof session?.client?.on === 'function'
+      ? await createSocialApiCapture(session, config, settings)
       : null;
-    await navigateBackToPlanUrl(session, plan, settings.timeoutMs);
+    await checkpoint.write({
+      status: 'running',
+      phase: 'browser-opened',
+      updatedAt: new Date().toISOString(),
+      currentUrl: initialNavigationUrl,
+      counts: {
+        items: loadedCheckpoint.previousItems.length,
+        media: 0,
+      },
+    });
+    await session.navigateAndWait(initialNavigationUrl, createWaitPolicy(settings.timeoutMs));
+    await checkpoint.write({
+      status: 'running',
+      phase: 'auth-checking',
+      updatedAt: new Date().toISOString(),
+      currentUrl: initialNavigationUrl,
+      counts: {
+        items: loadedCheckpoint.previousItems.length,
+        media: 0,
+      },
+    });
+    const authResult = plan.requiresAuth
+      ? await runtime.ensureAuthenticatedSession(session, initialNavigationUrl, settings, { authContext })
+      : null;
+    await checkpoint.write({
+      status: 'running',
+      phase: 'auth-ok',
+      updatedAt: new Date().toISOString(),
+      currentUrl: initialNavigationUrl,
+      counts: {
+        items: loadedCheckpoint.previousItems.length,
+        media: 0,
+      },
+    });
+    if (!(config.siteKey === 'instagram' && isSocialRelationAction(plan.action) && plan.account)) {
+      await navigateBackToPlanUrl(session, plan, settings.timeoutMs);
+    }
     let executionPlan = plan;
     if (plan.action === 'followed-users' && !plan.account) {
       const bootstrapState = await session.callPageFunction(pageExtractSocialState, config, {
@@ -4400,13 +5466,74 @@ export async function runSocialAction(options = {}, deps = {}) {
       pageResult = await collectInstagramFollowedPostsByProfiles(session, config, executionPlan, settings, checkpoint, apiCapture);
       surfacePreparation = pageResult.surfacePreparation ?? null;
     } else {
+      await checkpoint.write({
+        status: 'running',
+        phase: 'surface-preparing',
+        updatedAt: new Date().toISOString(),
+        currentUrl: executionPlan.url,
+        counts: {
+          items: loadedCheckpoint.previousItems.length,
+          media: 0,
+        },
+      });
       surfacePreparation = await prepareSocialRelationSurface(session, config, executionPlan, settings);
+      await checkpoint.write({
+        status: 'running',
+        phase: 'collecting-dom',
+        updatedAt: new Date().toISOString(),
+        currentUrl: executionPlan.url,
+        counts: {
+          items: loadedCheckpoint.previousItems.length,
+          media: 0,
+        },
+      });
       const domPageSettings = settings.apiCursor && settings.fullArchive
         ? { ...settings, maxScrolls: Math.min(settings.maxScrolls, 1) }
         : settings;
       const domPageResult = await collectSocialPage(session, config, executionPlan, domPageSettings);
-      const apiArchive = await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint);
+      const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action));
+      const apiArchive = shouldCollectContentApiArchive
+        ? await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint, {
+          seedOnly: !settings.apiCursor && settings.downloadMedia && config.siteKey === 'x',
+        })
+        : null;
       pageResult = mergePageResultWithArchive(domPageResult, apiArchive, settings);
+      if (config.siteKey === 'x' && isSocialRelationAction(executionPlan.action)) {
+        const relationApi = await collectXRelationApiUsers(session, executionPlan, settings, apiCapture);
+        if (relationApi) {
+          pageResult = {
+            ...pageResult,
+            relations: relationApi.users?.length ? relationApi.users : pageResult.relations,
+            archive: {
+              ...(pageResult.archive || {}),
+              strategy: relationApi.strategy,
+              complete: relationApi.complete,
+              reason: relationApi.reason,
+              bounded: relationApi.bounded,
+              boundedBy: relationApi.boundedBy,
+              pages: relationApi.pages,
+              apiItemCount: relationApi.users.length,
+              dedupedItemCount: relationApi.users.length || pageResult.relations?.length || 0,
+              seedUrl: relationApi.seedUrl ?? null,
+              requestTemplate: relationApi.requestTemplate ?? null,
+              nextCursor: relationApi.nextCursor ?? null,
+              boundarySignals: dedupeSortedStrings([
+                ...(pageResult.archive?.boundarySignals ?? []),
+                ...(relationApi.riskSignals ?? []),
+              ]),
+              capture: relationApi.capture,
+            },
+            riskSignals: dedupeSortedStrings([
+              ...(pageResult.riskSignals ?? []),
+              ...(relationApi.riskSignals ?? []),
+            ]),
+            riskEvents: [
+              ...(pageResult.riskEvents ?? []),
+              ...(relationApi.riskEvents ?? []),
+            ],
+          };
+        }
+      }
     }
     const resultPayload = mergeCheckpointItemsIntoPayload(
       selectResultPayload(executionPlan, pageResult),
@@ -4481,6 +5608,7 @@ export async function runSocialAction(options = {}, deps = {}) {
     finalResult.completeness = summarizeCompleteness(finalResult);
     finalResult.outcome = summarizeRunOutcome(finalResult, settings);
     finalResult.ok = finalResult.outcome.ok;
+    finalResult.recoveryRunbook = buildRecoveryRunbook({ ...finalResult, _settings: settings }, artifactLayout);
     finalResult.markdown = renderMarkdownReport(finalResult);
     finalResult.artifacts = await writeSocialArtifacts(finalResult, artifactLayout, checkpoint);
     if (settings.reportPath) {

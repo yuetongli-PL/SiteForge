@@ -1,6 +1,6 @@
 # Social Live Verification
 
-`scripts/social-live-verify.mjs` is the repeatable live acceptance runner for the X and Instagram social entrypoints. `scripts/social-kb-refresh.mjs` is the scenario-level KB state refresh runner for login walls, challenge/risk pages, search, author/profile pages, following lists/dialogs, and empty DOM app shells. `scripts/social-auth-recover.mjs` is the auth recovery wrapper that checks reusable sessions, optionally opens visible `site-login` for manual recovery, and can rerun auth verification cases after recovery. `scripts/social-auth-import.mjs` imports externally provided cookies into the reusable browser profile when password/challenge automation is not viable. These scripts are intentionally plan-first.
+`scripts/social-live-verify.mjs` is the repeatable live acceptance runner for the X and Instagram social entrypoints. `scripts/social-kb-refresh.mjs` is the scenario-level KB state refresh runner for login walls, challenge/risk pages, search, author/profile pages, following lists/dialogs, and empty DOM app shells. `scripts/social-live-resume.mjs`, `scripts/social-live-report.mjs`, `scripts/social-health-watch.mjs`, and `scripts/social-command-templates.mjs` cover archive resume planning, report aggregation, account health checks, and reusable command templates. `scripts/social-auth-recover.mjs` is the auth recovery wrapper that checks reusable sessions, optionally opens visible `site-login` for manual recovery, and can rerun auth verification cases after recovery. `scripts/social-auth-import.mjs` imports externally provided cookies into the reusable browser profile when password/challenge automation is not viable. These scripts are intentionally plan-first.
 
 ## Safety Model
 
@@ -8,7 +8,9 @@
 - `--execute` runs selected commands sequentially, not in parallel.
 - Execution writes `runs/social-live-verify/<timestamp>/manifest.json` with command order, options, timestamps, exit codes, artifact summaries, archive completeness, auth recovery status, runtime risk, and media completeness.
 - `social-kb-refresh` writes `runs/social-kb-refresh/<timestamp>/manifest.json` even in dry-run mode so the exact scenario command and expected artifact contract can be reviewed before live traffic.
+- `social-kb-refresh --schedule-interval-minutes <n>`, `--watch`, and `--once` record the automatic refresh policy in the manifest. Dry-run never opens a browser or starts a long-running loop.
 - `social-kb-refresh` applies a per-scenario outer timeout with `--case-timeout <ms>` in addition to the `site-doctor` `--timeout <ms>` flag. A timed-out scenario is recorded as `blocked` with reason `timeout`.
+- `social-health-watch` is dry-run by default; `--execute` is required before it runs `site-keepalive` and `site-doctor`.
 - `social-kb-refresh` continues after failed, blocked, or timed-out scenarios by default and aggregates the final manifest status after the selected matrix completes. Use `--fail-fast` to stop after the first non-passing scenario; the manifest records whether fail-fast triggered and which cases were skipped.
 - The runner does not modify router code, tests, profiles, or entrypoints.
 
@@ -30,9 +32,34 @@ node .\scripts\social-auth-recover.mjs --site x --verify
 # Preview cookie import without writing to the browser profile.
 node .\scripts\social-auth-import.mjs --site x --cookie-file C:\tmp\x-cookies.json
 
+# Preview archive resume commands after cooldown.
+node .\scripts\social-live-resume.mjs --state .\runs\social-live-verify\<timestamp>\manifest.json --cooldown-minutes 30 --max-attempts 3
+
+# Aggregate the latest X/Instagram manifests into JSON and Markdown.
+node .\scripts\social-live-report.mjs
+
+# Preview account health keepalive/auth-doctor commands.
+node .\scripts\social-health-watch.mjs --site all
+
+# Print production/resume/cooldown command templates.
+node .\scripts\social-command-templates.mjs --site all
+
 # Execute a bounded smoke matrix with explicit accounts.
 node .\scripts\social-live-verify.mjs --execute --x-account opensource --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10
 ```
+
+## Natural Language Trigger Guide
+
+X and Instagram profiles expose these operational intents through `social.naturalLanguage`. Treat the examples as aliases for the listed command shapes; keep dry-run/plan mode unless the user explicitly asks to execute live traffic.
+
+| User wording | Intent | Command shape |
+| --- | --- | --- |
+| `X 全量续跑 <handle>` / `IG 全量续跑 <handle>` / `resume full archive` | `resume-full-archive` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type posts --full-archive --run-dir <previous-or-new-run>` |
+| `限流冷却后继续` / `continue after rate limit cooldown` | `resume-after-cooldown` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type posts --full-archive --risk-backoff-ms <ms> --risk-retries <n>` |
+| `媒体高速下载` / `fast media download` | `media-fast-download` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type media --download-media --max-media-downloads <n>` |
+| `健康检查` / `session health check` | `health-check` | `node scripts/social-auth-recover.mjs --execute --site x|instagram --verify` |
+| `live 验收报告` / `live acceptance report` | `live-acceptance-report` | `node scripts/social-live-verify.mjs --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
+| `KB 刷新` / `scenario KB refresh` | `kb-refresh` | `node scripts/social-kb-refresh.mjs --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
 
 ## Command Matrix
 
@@ -68,6 +95,24 @@ Use `social-kb-refresh` when the acceptance target is KB state freshness rather 
 
 ```powershell
 node .\scripts\social-kb-refresh.mjs --site all
+```
+
+Record an automatic refresh cadence without live traffic:
+
+```powershell
+node .\scripts\social-kb-refresh.mjs --site all --watch --schedule-interval-minutes 720
+```
+
+Execute one scheduled iteration:
+
+```powershell
+node .\scripts\social-kb-refresh.mjs --execute --once --site all --schedule-interval-minutes 720
+```
+
+Bound an execute watch loop for automation:
+
+```powershell
+node .\scripts\social-kb-refresh.mjs --execute --watch --schedule-interval-minutes 720 --max-watch-iterations 1
 ```
 
 Execute one focused scenario:
@@ -106,8 +151,35 @@ The KB refresh manifest also records:
 - `timeoutPolicy.forwardedTimeoutMs`: the inner `site-doctor --timeout` value.
 - `timeoutPolicy.caseTimeoutMs`: the outer per-scenario child-process timeout.
 - `failFast`: whether fail-fast was enabled, whether it triggered, the case that stopped execution, and skipped case ids.
+- `schedulePolicy`: whether automatic refresh is enabled, `once` versus `watch`, interval minutes, and optional max watch iterations.
 - `results[].timeout`: whether the outer timeout fired for that scenario.
 - `results[].blocked`: blocked status and reason, including `timeout`, `not-logged-in`, `anti-crawl-*`, `browser-fingerprint-risk`, or `platform-boundary`.
+
+## Resume, Reports, Health, and Templates
+
+Use `social-live-resume` to inspect a previous state or manifest and generate resume commands for incomplete X/Instagram full archives. It honors cooldown and max-attempt limits, and dry-run mode only prints the plan:
+
+```powershell
+node .\scripts\social-live-resume.mjs --state .\runs\social-live-verify\<timestamp>\manifest.json --cooldown-minutes 30 --max-attempts 3
+```
+
+Use `social-live-report` to scan `runs/`, select the latest X/Instagram manifests, and write:
+
+- `runs/social-live-report/social-live-report.json`
+- `runs/social-live-report/social-live-report.md`
+
+Use `social-health-watch` before long live runs to check account health. Dry-run prints the keepalive and auth-doctor commands plus `nextSuggestedKeepalive`; execute mode runs them sequentially:
+
+```powershell
+node .\scripts\social-health-watch.mjs --site all
+node .\scripts\social-health-watch.mjs --execute --site x --interval-minutes 60
+```
+
+Use `social-command-templates` when you need consistent production, resume, cooldown, health, and KB refresh command shapes:
+
+```powershell
+node .\scripts\social-command-templates.mjs --site all --x-account <x-account> --ig-account <ig-account> --date <YYYY-MM-DD>
+```
 
 ## Common Options
 

@@ -668,6 +668,8 @@ function pageExtractSocialState(config, request) {
         url,
         text: itemText(root),
         timestamp,
+        author: request.account || currentProfileLink ? { handle: request.account || currentProfileLink } : null,
+        sourceAccount: request.account || currentProfileLink || null,
         media: mediaFrom(root),
       };
     })
@@ -691,6 +693,8 @@ function pageExtractSocialState(config, request) {
         url: entry.pageUrl || entry.url,
         text: entry.alt || '',
         timestamp: '',
+        author: request.account || currentProfileLink ? { handle: request.account || currentProfileLink } : null,
+        sourceAccount: request.account || currentProfileLink || null,
         media: [entry],
         source: 'media-fallback',
       }))
@@ -860,6 +864,13 @@ function riskBackoffDelayMs(settings, retryIndex) {
     return 0;
   }
   return Math.min(120_000, baseMs * (2 ** Math.max(0, retryIndex)));
+}
+
+function adaptiveRiskBackoffDelayMs(settings, retryIndex, consecutiveRateLimits = 0, retryAfterMs = null) {
+  const baseMs = riskBackoffDelayMs(settings, retryIndex);
+  const throttleLevel = Math.max(0, Number(consecutiveRateLimits) || 0);
+  const adaptiveMs = baseMs > 0 ? Math.min(120_000, baseMs * (2 ** Math.max(0, throttleLevel - 1))) : 0;
+  return Math.min(120_000, Math.max(adaptiveMs, retryAfterMs ?? 0));
 }
 
 function hasItemAuthor(item = {}) {
@@ -1790,7 +1801,7 @@ function apiRiskReasonFromSignals(signals = [], status = null) {
   if (runtimeSignal === 'login-wall') {
     return status === 403 ? 'api-forbidden-login-required' : 'api-auth-required';
   }
-  if (status) {
+  if (status && status >= 400) {
     return `api-http-${status}`;
   }
   return null;
@@ -2079,9 +2090,58 @@ function isSchemaDriftApiSummary(summary, config = {}, plan = {}) {
   return isTargetTimelineApiSummary(summary, config, plan)
     && (
       summary.itemCount === 0
+      || !summary.hasNextCursor
       || summary.missingTimestampCount > 0
       || summary.missingAuthorCount > 0
     );
+}
+
+function classifyApiSchemaDrift(summary = {}) {
+  if (summary.riskSignals?.length || summary.reason) {
+    return {
+      category: 'parse-risk',
+      reason: summary.reason || summary.riskSignals.join(','),
+    };
+  }
+  if (summary.itemCount === 0) {
+    return {
+      category: 'target-empty',
+      reason: summary.hasNextCursor ? 'target timeline parsed no items despite cursor' : 'target timeline parsed no items',
+    };
+  }
+  if (!summary.hasNextCursor) {
+    return {
+      category: 'missing-cursor',
+      reason: 'target timeline items parsed without a next cursor',
+    };
+  }
+  if (summary.missingTimestampCount > 0) {
+    return {
+      category: 'missing-time',
+      reason: `${summary.missingTimestampCount} parsed item(s) missing timestamp`,
+    };
+  }
+  if (summary.missingAuthorCount > 0) {
+    return {
+      category: 'missing-author',
+      reason: `${summary.missingAuthorCount} parsed item(s) missing author`,
+    };
+  }
+  return {
+    category: 'parse-risk',
+    reason: 'target timeline shape differs from parser expectations',
+  };
+}
+
+function annotateApiSchemaDriftSummary(summary) {
+  const classification = classifyApiSchemaDrift(summary);
+  return {
+    ...summary,
+    category: classification.category,
+    driftCategory: classification.category,
+    reason: summary.reason || classification.reason,
+    driftReason: classification.reason,
+  };
 }
 
 function selectSocialApiSeed(parsedResponses, config, plan) {
@@ -2108,6 +2168,7 @@ function summarizeSocialApiCapture(apiCapture, parsedResponses = [], config = nu
   const parsedSummaries = parsedResponses.map((entry) => summarizeParsedApiResponse(entry.response, entry.parsed, config || {}, plan || {}));
   const driftSamples = parsedSummaries
     .filter((entry) => isSchemaDriftApiSummary(entry, config || {}, plan || {}))
+    .map(annotateApiSchemaDriftSummary)
     .slice(-API_CAPTURE_SAMPLE_LIMIT);
   const rawDriftSamples = parsedResponses
     .map((entry) => ({
@@ -2115,6 +2176,10 @@ function summarizeSocialApiCapture(apiCapture, parsedResponses = [], config = nu
       payloadSample: apiPayloadSample(entry.response.json),
     }))
     .filter((entry) => isSchemaDriftApiSummary(entry.summary, config || {}, plan || {}))
+    .map((entry) => ({
+      ...entry,
+      summary: annotateApiSchemaDriftSummary(entry.summary),
+    }))
     .slice(-API_CAPTURE_SAMPLE_LIMIT);
   return {
     requestCount: apiCapture.stats?.requests ?? null,
@@ -2148,20 +2213,28 @@ function statusFromFetchError(error) {
 async function fetchCursorReplayJson(session, request, settings) {
   const maxAttempts = Math.max(1, (settings.apiRetries ?? DEFAULT_API_RETRIES) + 1);
   const attempts = [];
+  let consecutiveRateLimitEvents = 0;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     let result;
     try {
       result = normalizeApiFetchResult(await session.callPageFunction(pageFetchJson, request));
     } catch (error) {
       const status = statusFromFetchError(error);
+      if (status === 429) {
+        consecutiveRateLimitEvents += 1;
+      } else {
+        consecutiveRateLimitEvents = 0;
+      }
       const retryable = (status === 429 || (status !== null && status >= 500)) && attempt < maxAttempts - 1;
-      const waitMs = retryable ? riskBackoffDelayMs(settings, attempt) : 0;
+      const waitMs = retryable ? adaptiveRiskBackoffDelayMs(settings, attempt, consecutiveRateLimitEvents) : 0;
       attempts.push({
         attempt: attempt + 1,
         ok: false,
         status,
         retryable,
         waitMs,
+        adaptiveThrottleLevel: consecutiveRateLimitEvents,
+        adaptiveBackoffMs: waitMs,
         error: error?.message ?? String(error),
       });
       if (retryable && waitMs > 0) {
@@ -2184,14 +2257,21 @@ async function fetchCursorReplayJson(session, request, settings) {
     const retryAfterMs = retryAfterMsFromHeaders(result.headers);
     const retryableStatus = result.status === 429 || result.status >= 500;
     const retryableRisk = riskSignals.includes('rate-limited');
+    if (result.status === 429 || retryableRisk) {
+      consecutiveRateLimitEvents += 1;
+    } else {
+      consecutiveRateLimitEvents = 0;
+    }
     const retryable = (retryableStatus || retryableRisk) && attempt < maxAttempts - 1;
-    const waitMs = retryable ? Math.min(120_000, retryAfterMs ?? riskBackoffDelayMs(settings, attempt)) : 0;
+    const waitMs = retryable ? adaptiveRiskBackoffDelayMs(settings, attempt, consecutiveRateLimitEvents, retryAfterMs) : 0;
     attempts.push({
       attempt: attempt + 1,
       ok: result.ok,
       status: result.status,
       retryable,
       waitMs,
+      adaptiveThrottleLevel: consecutiveRateLimitEvents,
+      adaptiveBackoffMs: waitMs,
       riskSignals,
     });
     if ((!result.ok || retryableRisk) && retryable) {
@@ -2533,6 +2613,8 @@ async function enrichInstagramItemsFromDetails(session, config, plan, settings, 
         ...item,
         ...detailItem,
         url: detailItem.url || item.url,
+        timestamp: detailItem.timestamp || item.timestamp || null,
+        author: detailItem.author ?? item.author ?? (account ? { handle: account } : null),
         sourceAccount: account,
         source: detailItem.source || 'detail-date-scan',
       });
@@ -2697,6 +2779,15 @@ async function collectInstagramFollowedPostsByProfiles(session, config, plan, se
         : boundarySignals.length > 0
           ? 'platform-boundary-signals'
           : 'unverified-following-pagination';
+  const confidence = scanStopReason || boundaryCounts.riskBlocked > 0
+    ? 'risk-blocked'
+    : boundaryCounts.privateOrUnavailable > 0
+      ? 'private-or-unavailable'
+      : items.some((entry) => !entry.timestamp) || boundaryCounts.missingMatchedItems > 0
+        ? 'missing-detail-time'
+        : users.length >= settings.maxUsers
+          ? 'bounded-by-max-users'
+          : 'verified-complete';
   return {
     finalUrl: relationResult.finalUrl,
     title: relationResult.title,
@@ -2727,6 +2818,7 @@ async function collectInstagramFollowedPostsByProfiles(session, config, plan, se
       strategy: 'followed-profile-date-scan',
       complete: false,
       reason: archiveReason,
+      confidence,
       boundarySignals,
       boundaryCounts,
       scannedUsers,
@@ -2803,6 +2895,9 @@ function summarizeRuntimeRisk(pageResult = {}, settings = {}) {
   const authExpired = stopReason === 'login-wall' || stopReason === 'challenge' || riskSignals.includes('login-wall') || riskSignals.includes('challenge');
   const rateLimited = stopReason === 'rate-limited' || riskSignals.includes('rate-limited');
   const hardStop = authExpired || rateLimited;
+  const rateLimitEvents = riskEvents.filter((entry) => entry.status === 429 || entry.signal === 'rate-limited' || (entry.riskSignals ?? []).includes('rate-limited'));
+  const adaptiveThrottleLevel = Math.max(0, ...rateLimitEvents.map((entry) => Number(entry.adaptiveThrottleLevel) || 0), rateLimited ? 1 : 0);
+  const adaptiveBackoffMs = Math.max(0, ...rateLimitEvents.map((entry) => Number(entry.adaptiveBackoffMs ?? entry.waitMs) || 0));
   const suggestedAction = authExpired
     ? 'refresh-login-session'
     : rateLimited
@@ -2814,6 +2909,8 @@ function summarizeRuntimeRisk(pageResult = {}, settings = {}) {
     riskEvents,
     riskRetries: settings.riskRetries ?? 0,
     riskBackoffMs: settings.riskBackoffMs ?? 0,
+    adaptiveBackoffMs,
+    adaptiveThrottleLevel,
     authExpired,
     rateLimited,
     hardStop,
@@ -2990,6 +3087,63 @@ function buildDownloadableMediaPlan(media, maxItems = Infinity) {
 
 function selectDownloadableMediaCandidates(media, maxItems) {
   return buildDownloadableMediaPlan(media, maxItems).candidates;
+}
+
+function downloadQueueKey(entry = {}) {
+  return entry.downloadKey || `${entry.type ?? ''}:${entry.url ?? ''}`;
+}
+
+function normalizeDownloadQueueEntry(entry = {}, index = 0, previous = null) {
+  const key = downloadQueueKey(entry);
+  const previousStatus = previous?.status && previous.status !== 'pending' ? previous.status : null;
+  return {
+    key,
+    index,
+    status: previousStatus || 'pending',
+    url: entry.url ?? previous?.url ?? null,
+    type: entry.type ?? previous?.type ?? null,
+    itemId: entry.itemId ?? entry.id ?? previous?.itemId ?? null,
+    pageUrl: entry.pageUrl ?? previous?.pageUrl ?? null,
+    mediaIndex: entry.mediaIndex ?? previous?.mediaIndex ?? null,
+    referenceCount: entry.references?.length ?? previous?.referenceCount ?? 1,
+    references: entry.references ?? previous?.references ?? [mediaReference(entry, index)],
+    result: previous?.result ?? null,
+    updatedAt: previous?.updatedAt ?? null,
+  };
+}
+
+function buildDownloadQueue(candidates = [], previousQueue = []) {
+  const previousByKey = new Map((Array.isArray(previousQueue) ? previousQueue : [])
+    .map((entry) => [entry?.key || downloadQueueKey(entry), entry])
+    .filter(([key]) => key && key !== ':'));
+  return candidates.map((entry, index) => normalizeDownloadQueueEntry(entry, index, previousByKey.get(downloadQueueKey(entry))));
+}
+
+async function writeDownloadQueue(queuePath, queue) {
+  if (!queuePath) {
+    return;
+  }
+  await writeJsonFile(queuePath, {
+    schemaVersion: ARTIFACT_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+    counts: {
+      total: queue.length,
+      pending: queue.filter((entry) => entry.status === 'pending').length,
+      done: queue.filter((entry) => entry.status === 'done').length,
+      failed: queue.filter((entry) => entry.status === 'failed').length,
+      skipped: queue.filter((entry) => entry.status === 'skipped').length,
+    },
+    queue,
+  });
+}
+
+function previousQueueResults(previousQueue = []) {
+  return (Array.isArray(previousQueue) ? previousQueue : [])
+    .filter((entry) => ['done', 'skipped'].includes(entry?.status) && entry?.result?.ok === true)
+    .map((entry) => ({
+      ...entry.result,
+      skipped: entry.status === 'skipped' || entry.result.skipped === true,
+    }));
 }
 
 function buildMediaDownloadFileName(entry, index, { siteKey, account, contentType }) {
@@ -3303,17 +3457,26 @@ async function downloadMediaFiles({
   retryBackoffMs = DEFAULT_MEDIA_DOWNLOAD_BACKOFF_MS,
   skipExisting = true,
   previousDownloads = [],
+  previousQueue = [],
+  queuePath = null,
 }) {
   const downloadPlan = buildDownloadableMediaPlan(media, maxItems);
   const candidates = downloadPlan.candidates;
   await ensureDir(outDir);
+  const queue = buildDownloadQueue(candidates, previousQueue);
+  await writeDownloadQueue(queuePath, queue);
   const contentHashIndex = new Map();
-  for (const entry of previousDownloads) {
+  const restorableDownloads = [
+    ...previousQueueResults(previousQueue),
+    ...(Array.isArray(previousDownloads) ? previousDownloads : []),
+  ];
+  for (const entry of restorableDownloads) {
     if (entry?.ok === true && entry?.contentHash && entry?.filePath) {
       contentHashIndex.set(entry.contentHash, { filePath: entry.filePath, url: entry.url });
     }
   }
-  const downloads = await mapWithConcurrency(candidates, concurrency, (entry, index) => downloadOneMediaCandidate({
+  const downloads = await mapWithConcurrency(candidates, concurrency, async (entry, index) => {
+    const result = await downloadOneMediaCandidate({
     entry,
     index,
     headers,
@@ -3321,13 +3484,23 @@ async function downloadMediaFiles({
     siteKey,
     account,
     contentHashIndex,
-    previousDownloads,
+      previousDownloads: restorableDownloads,
     skipExisting,
     retries,
     retryBackoffMs,
-  }));
+    });
+    queue[index] = {
+      ...queue[index],
+      status: result.ok ? (result.skipped ? 'skipped' : 'done') : 'failed',
+      result,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeDownloadQueue(queuePath, queue);
+    return result;
+  });
   return {
     downloads,
+    queue,
     candidates,
     expectedMedia: downloadPlan.expectedMedia,
     skippedMedia: downloadPlan.skippedMedia,
@@ -3493,6 +3666,7 @@ function artifactPathSummary(layout) {
     apiCapture: layout.apiCapturePath,
     apiDriftSamples: layout.apiDriftSamplesPath,
     downloads: layout.downloadsJsonlPath,
+    mediaQueue: layout.mediaQueuePath,
   };
 }
 
@@ -3510,6 +3684,7 @@ function buildSocialArtifactLayout(plan, settings) {
     apiCapturePath: path.join(runDir, 'api-capture-debug.json'),
     apiDriftSamplesPath: path.join(runDir, 'api-drift-samples.json'),
     downloadsJsonlPath: path.join(runDir, 'downloads.jsonl'),
+    mediaQueuePath: path.join(runDir, 'media-queue.json'),
   };
 }
 
@@ -3624,6 +3799,41 @@ function summarizeCompleteness(result) {
     downloaded: downloadedByItem.get(itemId) ?? 0,
     complete: (downloadedByItem.get(itemId) ?? 0) >= expected,
   }));
+  const okDownloadsByReferenceKey = new Set();
+  for (const download of downloads.filter((entry) => entry.ok)) {
+    const references = Array.isArray(download.references) && download.references.length ? download.references : [download];
+    for (const reference of references) {
+      okDownloadsByReferenceKey.add(`${reference.itemId ?? download.itemId ?? ''}|${reference.pageUrl ?? download.pageUrl ?? ''}|${reference.mediaIndex ?? download.mediaIndex ?? ''}|${reference.url ?? download.url ?? ''}|${reference.type ?? download.type ?? ''}`);
+    }
+  }
+  const expectedByItemEntries = new Map();
+  for (const entry of expectedMedia) {
+    const itemId = String(entry.itemId ?? entry.pageUrl ?? 'unknown');
+    if (!expectedByItemEntries.has(itemId)) {
+      expectedByItemEntries.set(itemId, []);
+    }
+    expectedByItemEntries.get(itemId).push(entry);
+  }
+  const itemQuality = [...expectedByItemEntries.entries()].map(([itemId, entries]) => {
+    const downloadedEntries = entries.filter((entry) => okDownloadsByReferenceKey.has(`${entry.itemId ?? ''}|${entry.pageUrl ?? ''}|${entry.mediaIndex ?? ''}|${entry.url ?? ''}|${entry.type ?? ''}`));
+    const highestVariantExpected = entries.some((entry) => Number(entry.variantCount) > 0 || Number(entry.bitrate) > 0 || ((Number(entry.width) || 0) * (Number(entry.height) || 0)) > 0);
+    const highestVariantHit = !highestVariantExpected || downloadedEntries.some((entry) => Number(entry.variantCount) > 0 || Number(entry.bitrate) > 0 || ((Number(entry.width) || 0) * (Number(entry.height) || 0)) > 0);
+    const expectedCount = entries.length;
+    const downloadedCount = downloadedEntries.length;
+    const completenessScore = expectedCount > 0 ? downloadedCount / expectedCount : 1;
+    return {
+      itemId,
+      expected: expectedCount,
+      downloaded: downloadedCount,
+      complete: downloadedCount >= expectedCount,
+      highestVariantHit,
+      quality: downloadedCount >= expectedCount && highestVariantHit ? 'complete' : downloadedCount > 0 ? 'partial' : 'missing',
+      qualityScore: Math.round(Math.max(0, Math.min(1, completenessScore * (highestVariantHit ? 1 : 0.75))) * 100) / 100,
+    };
+  });
+  const aggregateQualityScore = itemQuality.length
+    ? Math.round((itemQuality.reduce((sum, entry) => sum + entry.qualityScore, 0) / itemQuality.length) * 100) / 100
+    : null;
   const boundarySignals = dedupeSortedStrings([
     ...(archive?.boundarySignals ?? []),
     ...(payload.visibilitySignals ?? []),
@@ -3660,6 +3870,7 @@ function summarizeCompleteness(result) {
     blockedReasons: dedupeSortedStrings(blockedReasons),
     archiveStatus: archive ? formatArchiveComplete(archive.complete) : 'unknown',
     archiveReason: archive?.reason ?? null,
+    confidence: archive?.confidence ?? null,
     apiPages: archive?.pages ?? 0,
     domItemCount: archive?.domItemCount ?? null,
     apiItemCount: archive?.apiItemCount ?? null,
@@ -3683,6 +3894,9 @@ function summarizeCompleteness(result) {
       physicalCandidateCount: result.download.downloadCandidates?.length ?? downloads.length,
       skippedPhysicalCandidateCount: result.download.skippedDownloadCandidates ?? 0,
       itemCompleteness: itemDownloadCompleteness,
+      itemQuality,
+      highestVariantHit: itemQuality.every((entry) => entry.highestVariantHit),
+      qualityScore: aggregateQualityScore,
       incompleteItemCount: itemDownloadCompleteness.filter((entry) => !entry.complete).length,
       contentTypeMismatchCount: downloads.filter((entry) => entry.ok && entry.contentTypeMatchesExpected === false).length,
       highestBitrate: Math.max(0, ...expectedMedia.map((entry) => Number(entry.bitrate) || 0)),
@@ -3801,6 +4015,7 @@ async function loadSocialCheckpoint(layout, settings) {
       previousState: null,
       previousItems: [],
       previousDownloads: [],
+      previousDownloadQueue: [],
     };
   }
   let previousState = null;
@@ -3816,10 +4031,18 @@ async function loadSocialCheckpoint(layout, settings) {
       return rest;
     });
   const previousDownloads = await readJsonLinesFile(layout.downloadsJsonlPath);
+  let previousDownloadQueue = [];
+  try {
+    const queueArtifact = await readJsonFile(layout.mediaQueuePath);
+    previousDownloadQueue = Array.isArray(queueArtifact?.queue) ? queueArtifact.queue : [];
+  } catch {
+    previousDownloadQueue = [];
+  }
   return {
     previousState,
     previousItems,
     previousDownloads,
+    previousDownloadQueue,
   };
 }
 
@@ -3917,7 +4140,18 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter) {
       retries: finalResult.download.retries ?? null,
       retryBackoffMs: finalResult.download.retryBackoffMs ?? null,
       skippedExisting: finalResult.download.downloads?.filter((entry) => entry.skipped).length ?? 0,
+      highestVariantHit: finalResult.completeness?.download?.highestVariantHit ?? null,
+      qualityScore: finalResult.completeness?.download?.qualityScore ?? null,
+      itemQuality: finalResult.completeness?.download?.itemQuality ?? [],
       details: layout.downloadsJsonlPath,
+      queue: {
+        path: layout.mediaQueuePath,
+        total: finalResult.download.queue?.length ?? 0,
+        pending: finalResult.download.queue?.filter((entry) => entry.status === 'pending').length ?? 0,
+        done: finalResult.download.queue?.filter((entry) => entry.status === 'done').length ?? 0,
+        failed: finalResult.download.queue?.filter((entry) => entry.status === 'failed').length ?? 0,
+        skipped: finalResult.download.queue?.filter((entry) => entry.status === 'skipped').length ?? 0,
+      },
     } : null,
   };
   await writeJsonFile(layout.manifestPath, manifest);
@@ -4210,10 +4444,13 @@ export async function runSocialAction(options = {}, deps = {}) {
         retryBackoffMs: settings.mediaDownloadBackoffMs,
         skipExisting: settings.skipExistingDownloads,
         previousDownloads: loadedCheckpoint.previousDownloads,
+        previousQueue: loadedCheckpoint.previousDownloadQueue,
+        queuePath: artifactLayout.mediaQueuePath,
       });
       download = {
         outDir: mediaOutDir,
         downloads: downloadResult.downloads,
+        queue: downloadResult.queue,
         downloadCandidates: downloadResult.candidates,
         expectedMedia: downloadResult.expectedMedia,
         skippedMedia: downloadResult.skippedMedia,

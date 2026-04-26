@@ -11,6 +11,7 @@ import {
   executePlan,
   filterMatrix,
   parseArgs,
+  schedulePolicyForOptions,
 } from '../../scripts/social-kb-refresh.mjs';
 
 function fakeEntry(rootDir, id, args) {
@@ -225,4 +226,30 @@ test('social-kb-refresh aggregate status distinguishes failed and blocked result
   assert.equal(aggregateRefreshStatus([{ status: 'passed' }]), 'passed');
   assert.equal(aggregateRefreshStatus([{ status: 'blocked', blocked: { status: true } }]), 'blocked');
   assert.equal(aggregateRefreshStatus([{ status: 'blocked' }, { status: 'failed' }]), 'failed');
+});
+
+test('social-kb-refresh records scheduled dry-run policy without executing a watch loop', () => {
+  const options = parseArgs([
+    '--watch',
+    '--schedule-interval-minutes',
+    '720',
+    '--max-watch-iterations',
+    '2',
+    '--site',
+    'x',
+  ]);
+  const selected = filterMatrix(buildMatrix(options, 'run-schedule'), options);
+  const manifest = buildRunManifest(selected, options, 'run-schedule', path.join(os.tmpdir(), 'manifest.json'));
+
+  assert.equal(options.execute, false);
+  assert.deepEqual(schedulePolicyForOptions(options), {
+    enabled: true,
+    mode: 'watch',
+    intervalMinutes: 720,
+    dryRunOnly: true,
+    maxWatchIterations: 2,
+  });
+  assert.equal(manifest.schedulePolicy.mode, 'watch');
+  assert.equal(manifest.schedulePolicy.intervalMinutes, 720);
+  assert.equal(manifest.options.watch, true);
 });

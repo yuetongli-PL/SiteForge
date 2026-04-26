@@ -42,6 +42,60 @@ export function isMoodyzContext(context) {
   return resolveSemanticSiteKey(context) === 'moodyz';
 }
 
+function resolveSemanticProfile(context) {
+  return context?.siteProfileDocument
+    ?? context?.liveSiteProfileDocument
+    ?? context?.siteProfile
+    ?? context?.profile
+    ?? context?.siteContext?.profile
+    ?? null;
+}
+
+function isSocialContext(context) {
+  const siteKey = resolveSemanticSiteKey(context);
+  return siteKey === 'x' || siteKey === 'instagram';
+}
+
+const SOCIAL_INTENT_ALIASES = Object.freeze({
+  'continue-full-archive': 'resume-full-archive',
+  'full-archive-resume': 'resume-full-archive',
+  'resume-archive': 'resume-full-archive',
+  'resume-full-archive': 'resume-full-archive',
+  'resume-after-cooldown': 'resume-after-cooldown',
+  'continue-after-cooldown': 'resume-after-cooldown',
+  'cooldown-resume': 'resume-after-cooldown',
+  'media-download-fast': 'media-fast-download',
+  'fast-media-download': 'media-fast-download',
+  'high-speed-media-download': 'media-fast-download',
+  'media-fast-download': 'media-fast-download',
+  'auth-health-check': 'health-check',
+  'health-check': 'health-check',
+  'session-health-check': 'health-check',
+  'live-report': 'live-acceptance-report',
+  'live-acceptance': 'live-acceptance-report',
+  'live-acceptance-report': 'live-acceptance-report',
+  'verification-report': 'live-acceptance-report',
+  'kb-refresh': 'kb-refresh',
+  'knowledge-base-refresh': 'kb-refresh',
+  'refresh-kb': 'kb-refresh',
+});
+
+export function resolveSocialIntentAlias(intentType, context) {
+  if (!isSocialContext(context)) {
+    return intentType;
+  }
+  const normalized = String(intentType ?? '').trim();
+  return SOCIAL_INTENT_ALIASES[normalized] ?? normalized;
+}
+
+export function resolveSocialNaturalLanguageSemantics(context = {}) {
+  if (!isSocialContext(context)) {
+    return null;
+  }
+  const profile = resolveSemanticProfile(context);
+  return profile?.social?.naturalLanguage ?? null;
+}
+
 export function siteTerminology(context) {
   return resolveSiteTerminology(context?.siteContext ?? context, resolveSemanticUrl(context));
 }
@@ -110,6 +164,33 @@ export function remapSupportedIntent(intentType, context) {
       }
     case 'x':
       switch (intentType) {
+        case 'continue-full-archive':
+        case 'full-archive-resume':
+        case 'resume-archive':
+        case 'resume-full-archive':
+          return 'resume-full-archive';
+        case 'resume-after-cooldown':
+        case 'continue-after-cooldown':
+        case 'cooldown-resume':
+          return 'resume-after-cooldown';
+        case 'media-download-fast':
+        case 'fast-media-download':
+        case 'high-speed-media-download':
+        case 'media-fast-download':
+          return 'media-fast-download';
+        case 'auth-health-check':
+        case 'health-check':
+        case 'session-health-check':
+          return 'health-check';
+        case 'live-report':
+        case 'live-acceptance':
+        case 'live-acceptance-report':
+        case 'verification-report':
+          return 'live-acceptance-report';
+        case 'kb-refresh':
+        case 'knowledge-base-refresh':
+        case 'refresh-kb':
+          return 'kb-refresh';
         case 'search-book':
         case 'search-video':
         case 'search-work':
@@ -126,6 +207,33 @@ export function remapSupportedIntent(intentType, context) {
       }
     case 'instagram':
       switch (intentType) {
+        case 'continue-full-archive':
+        case 'full-archive-resume':
+        case 'resume-archive':
+        case 'resume-full-archive':
+          return 'resume-full-archive';
+        case 'resume-after-cooldown':
+        case 'continue-after-cooldown':
+        case 'cooldown-resume':
+          return 'resume-after-cooldown';
+        case 'media-download-fast':
+        case 'fast-media-download':
+        case 'high-speed-media-download':
+        case 'media-fast-download':
+          return 'media-fast-download';
+        case 'auth-health-check':
+        case 'health-check':
+        case 'session-health-check':
+          return 'health-check';
+        case 'live-report':
+        case 'live-acceptance':
+        case 'live-acceptance-report':
+        case 'verification-report':
+          return 'live-acceptance-report';
+        case 'kb-refresh':
+        case 'knowledge-base-refresh':
+        case 'refresh-kb':
+          return 'kb-refresh';
         case 'search-book':
         case 'search-video':
         case 'search-work':

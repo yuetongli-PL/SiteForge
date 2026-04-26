@@ -3388,3 +3388,47 @@ test('site-doctor diagnoses empty bilibili authenticated surfaces as empty-shell
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('X and Instagram social docs include operational natural language command mappings', async () => {
+  const [
+    socialLiveVerification,
+    xSkill,
+    xNlIntents,
+    xFlows,
+    instagramSkill,
+    instagramNlIntents,
+    instagramFlows,
+  ] = await Promise.all([
+    readFile(path.resolve('docs/SOCIAL_LIVE_VERIFICATION.md'), 'utf8'),
+    readFile(path.resolve('skills/x/SKILL.md'), 'utf8'),
+    readFile(path.resolve('skills/x/references/nl-intents.md'), 'utf8'),
+    readFile(path.resolve('skills/x/references/flows.md'), 'utf8'),
+    readFile(path.resolve('skills/instagram/SKILL.md'), 'utf8'),
+    readFile(path.resolve('skills/instagram/references/nl-intents.md'), 'utf8'),
+    readFile(path.resolve('skills/instagram/references/flows.md'), 'utf8'),
+  ]);
+
+  for (const document of [
+    socialLiveVerification,
+    xSkill,
+    xNlIntents,
+    xFlows,
+    instagramSkill,
+    instagramNlIntents,
+    instagramFlows,
+  ]) {
+    assert.match(document, /resume-full-archive/u);
+    assert.match(document, /resume-after-cooldown/u);
+    assert.match(document, /media-fast-download/u);
+    assert.match(document, /health-check/u);
+    assert.match(document, /live-acceptance-report/u);
+    assert.match(document, /kb-refresh/u);
+  }
+
+  assert.match(xSkill, /node scripts\/social-live-verify\.mjs --execute --site x --x-account <handle>/u);
+  assert.match(xSkill, /node scripts\/social-kb-refresh\.mjs --execute --site x --x-account <handle>/u);
+  assert.match(instagramSkill, /node scripts\/social-live-verify\.mjs --execute --site instagram --ig-account <handle>/u);
+  assert.match(instagramSkill, /node scripts\/social-kb-refresh\.mjs --execute --site instagram --ig-account <handle>/u);
+  assert.match(socialLiveVerification, /Natural Language Trigger Guide/u);
+  assert.match(socialLiveVerification, /KB 刷新/u);
+});

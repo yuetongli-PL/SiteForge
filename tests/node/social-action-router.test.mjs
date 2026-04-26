@@ -830,6 +830,74 @@ test('runSocialAction writes drift samples only for target timeline API schema i
   );
 });
 
+test('runSocialAction classifies API drift samples with category and reason', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-api-drift-category-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const listeners = new Map();
+  const timelineUrl = new URL('https://x.com/i/api/graphql/abc/UserTweets');
+  timelineUrl.searchParams.set('variables', JSON.stringify({ userId: '1', cursor: 'OLD' }));
+  let emitted = false;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-api-drift-category',
+    async send(command) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify({ data: { timeline: { instructions: [] } } }), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/openai')) {
+        return;
+      }
+      emitted = true;
+      listeners.get('Network.requestWillBeSent')?.({
+        params: { requestId: 'api-empty', type: 'XHR', request: { url: timelineUrl.toString(), method: 'GET', headers: { accept: 'application/json' } } },
+      });
+      listeners.get('Network.responseReceived')?.({
+        params: { requestId: 'api-empty', type: 'XHR', response: { url: timelineUrl.toString(), status: 200, mimeType: 'application/json' } },
+      });
+      listeners.get('Network.loadingFinished')?.({ params: { requestId: 'api-empty' } });
+    },
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [], relations: [], media: [] };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  await runSocialAction({
+    site: 'x',
+    action: 'full-archive',
+    account: 'openai',
+    timeoutMs: 1000,
+    maxScrolls: 0,
+    scrollWaitMs: 0,
+    maxApiPages: 1,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+  });
+
+  const debug = JSON.parse(await readFile(path.join(runDir, 'api-capture-debug.json'), 'utf8'));
+  const samples = JSON.parse(await readFile(path.join(runDir, 'api-drift-samples.json'), 'utf8'));
+  assert.equal(debug.capture.driftSamples[0].category, 'target-empty');
+  assert.equal(debug.capture.driftSamples[0].driftReason, 'target timeline parsed no items');
+  assert.equal(samples.samples[0].summary.category, 'target-empty');
+});
+
 test('runSocialAction retries API cursor replay after rate limit response', async (t) => {
   const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-api-429-'));
   t.after(async () => {
@@ -950,8 +1018,131 @@ test('runSocialAction retries API cursor replay after rate limit response', asyn
   assert.equal(result.result.archive.complete, true);
   assert.equal(result.result.archive.riskEvents[0].status, 429);
   assert.equal(result.result.archive.riskEvents[0].retryable, true);
+  assert.equal(result.runtimeRisk.adaptiveThrottleLevel, 1);
   const debug = JSON.parse(await readFile(path.join(runDir, 'api-capture-debug.json'), 'utf8'));
   assert.equal(Object.prototype.hasOwnProperty.call(debug.capture.samples[0], 'responseHeaders'), true);
+});
+
+test('runSocialAction increases adaptive throttle across consecutive API rate limits', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-api-adaptive-429-'));
+  t.after(async () => {
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const seedPayload = {
+    data: {
+      timeline: {
+        instructions: [{
+          entries: [
+            {
+              content: {
+                itemContent: {
+                  tweet_results: {
+                    result: {
+                      rest_id: 'seed',
+                      core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                      legacy: { created_at: 'Fri Apr 24 18:24:52 +0000 2026', full_text: 'seed' },
+                    },
+                  },
+                },
+              },
+            },
+            { content: { cursorType: 'Bottom', value: 'CURSOR_NEXT' } },
+          ],
+        }],
+      },
+    },
+  };
+  const replayPayload = {
+    data: {
+      timeline: {
+        instructions: [{
+          entries: [{
+            content: {
+              itemContent: {
+                tweet_results: {
+                  result: {
+                    rest_id: 'replay',
+                    core: { user_results: { result: { legacy: { screen_name: 'openai' } } } },
+                    legacy: { created_at: 'Sat Apr 25 18:24:52 +0000 2026', full_text: 'replay' },
+                  },
+                },
+              },
+            },
+          }],
+        }],
+      },
+    },
+  };
+  const listeners = new Map();
+  const seedUrl = new URL('https://x.com/i/api/graphql/abc/UserTweets');
+  seedUrl.searchParams.set('variables', JSON.stringify({ userId: '1', cursor: 'OLD' }));
+  let emitted = false;
+  let fetchCalls = 0;
+  const fakeSession = {
+    client: { on(eventName, callback) { listeners.set(eventName, callback); return () => {}; } },
+    sessionId: 'session-api-adaptive-429',
+    async send(command) {
+      if (command === 'Network.getResponseBody') {
+        return { body: JSON.stringify(seedPayload), base64Encoded: false };
+      }
+      return {};
+    },
+    async navigateAndWait(url) {
+      if (emitted || !String(url).includes('/openai')) {
+        return;
+      }
+      emitted = true;
+      listeners.get('Network.requestWillBeSent')?.({
+        params: { requestId: 'api-1', type: 'XHR', request: { url: seedUrl.toString(), method: 'GET', headers: { accept: 'application/json' } } },
+      });
+      listeners.get('Network.responseReceived')?.({
+        params: { requestId: 'api-1', type: 'XHR', response: { url: seedUrl.toString(), status: 200, mimeType: 'application/json' } },
+      });
+      listeners.get('Network.loadingFinished')?.({ params: { requestId: 'api-1' } });
+    },
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageFetchJson')) {
+        fetchCalls += 1;
+        if (fetchCalls <= 2) {
+          return { ok: false, status: 429, headers: {}, json: { errors: [{ message: 'rate limit' }] }, text: '' };
+        }
+        return { ok: true, status: 200, headers: {}, json: replayPayload, text: '' };
+      }
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [], relations: [], media: [] };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'full-archive',
+    account: 'openai',
+    timeoutMs: 1000,
+    maxScrolls: 0,
+    scrollWaitMs: 0,
+    maxApiPages: 3,
+    riskBackoffMs: 1,
+    apiRetries: 2,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+  });
+
+  assert.equal(result.result.archive.complete, true);
+  assert.equal(result.runtimeRisk.adaptiveThrottleLevel, 2);
+  assert.equal(result.runtimeRisk.adaptiveBackoffMs >= 2, true);
+  assert.deepEqual(result.result.archive.riskEvents.slice(0, 2).map((entry) => entry.adaptiveThrottleLevel), [1, 2]);
 });
 
 test('runSocialAction pauses X full archive with resumable cursor after API rate limit exhaustion', async (t) => {
@@ -1247,6 +1438,8 @@ test('runSocialAction keeps Instagram followed profile scan incomplete unless pa
   assert.equal(result.result.items.length, 1);
   assert.equal(result.result.archive.complete, false);
   assert.equal(result.result.archive.reason, 'unverified-following-pagination');
+  assert.equal(result.result.archive.confidence, 'verified-complete');
+  assert.equal(result.completeness.confidence, 'verified-complete');
 });
 
 test('runSocialAction stops Instagram followed scan when a profile hits rate limit', async (t) => {
@@ -1334,6 +1527,8 @@ test('runSocialAction stops Instagram followed scan when a profile hits rate lim
 
   assert.equal(navigations.some((url) => String(url).includes('/friend2/')), false);
   assert.equal(result.result.archive.reason, 'rate-limited');
+  assert.equal(result.result.archive.confidence, 'risk-blocked');
+  assert.equal(result.completeness.confidence, 'risk-blocked');
   assert.equal(result.runtimeRisk.stopReason, 'rate-limited');
   assert.equal(result.ok, false);
 });
@@ -1500,6 +1695,8 @@ test('runSocialAction extracts Instagram post links when the item node is the ma
 
   assert.equal(result.result.items.length, 1);
   assert.equal(result.result.items[0].url, 'https://www.instagram.com/p/root-node-post/');
+  assert.equal(result.result.items[0].sourceAccount, 'instagram');
+  assert.equal(result.result.items[0].author.handle, 'instagram');
 });
 
 test('runSocialAction falls back to Instagram content media when profile links are hidden', async () => {
@@ -1592,6 +1789,8 @@ test('runSocialAction falls back to Instagram content media when profile links a
   assert.equal(result.result.items.length, 1);
   assert.equal(result.result.items[0].source, 'media-fallback');
   assert.equal(result.result.items[0].text, 'Visible post caption');
+  assert.equal(result.result.items[0].sourceAccount, 'instagram');
+  assert.equal(result.result.items[0].author.handle, 'instagram');
   assert.equal(result.result.media.length, 1);
 });
 
@@ -2104,8 +2303,11 @@ test('runSocialAction downloads every media entry from a single item when maxIte
   assert.match(path.basename(result.download.downloads[0].filePath), /^0001-x-openai-post-1-m0-image-[a-f0-9]{10}\.jpg$/u);
   const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
   const downloadsJsonl = await readFile(path.join(runDir, 'downloads.jsonl'), 'utf8');
+  const queue = JSON.parse(await readFile(path.join(runDir, 'media-queue.json'), 'utf8'));
   assert.equal(manifest.downloads.expectedMedia, 3);
   assert.equal(manifest.downloads.physicalCandidates, 3);
+  assert.equal(manifest.downloads.queue.done, 3);
+  assert.equal(queue.counts.done, 3);
   assert.match(downloadsJsonl, /"referenceCount":1/u);
 });
 
@@ -2333,6 +2535,88 @@ test('runSocialAction resume reuses existing media downloads', async (t) => {
   assert.equal(manifest.downloads.skippedExisting, 1);
 });
 
+test('runSocialAction resume reads completed media queue and skips completed downloads', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-download-queue-resume-'));
+  const previousFetch = globalThis.fetch;
+  t.after(async () => {
+    globalThis.fetch = previousFetch;
+    await rm(runDir, { recursive: true, force: true });
+  });
+  const mediaDir = path.join(runDir, 'media');
+  await mkdir(mediaDir, { recursive: true });
+  const existingPath = path.join(mediaDir, 'queued.jpg');
+  await writeFile(existingPath, 'queued', 'utf8');
+  await writeFile(path.join(runDir, 'media-queue.json'), JSON.stringify({
+    schemaVersion: 1,
+    queue: [{
+      key: 'image:https://pbs.twimg.com/media/queued.jpg',
+      status: 'done',
+      url: 'https://pbs.twimg.com/media/queued.jpg',
+      type: 'image',
+      result: {
+        ok: true,
+        url: 'https://pbs.twimg.com/media/queued.jpg',
+        type: 'image',
+        itemId: 'post-queued',
+        pageUrl: 'https://x.com/openai/status/queued',
+        mediaIndex: 0,
+        filePath: existingPath,
+        bytes: 6,
+        transport: 'fetch',
+      },
+    }],
+  }), 'utf8');
+  globalThis.fetch = async () => {
+    throw new Error('fetch should not run for completed queue item');
+  };
+
+  const item = {
+    id: 'post-queued',
+    url: 'https://x.com/openai/status/queued',
+    text: 'queued media item',
+    timestamp: '2026-04-26T00:00:00.000Z',
+    media: [{ type: 'image', url: 'https://pbs.twimg.com/media/queued.jpg' }],
+  };
+  const fakeSession = {
+    async navigateAndWait() {},
+    async evaluateValue() { return 'https://x.com/openai'; },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return { url: 'https://x.com/openai', title: 'OpenAI / X', currentAccount: 'me', account: { handle: 'openai' }, items: [item], relations: [], media: item.media };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() { return {}; },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: 'openai',
+    maxScrolls: 0,
+    timeoutMs: 1000,
+    downloadMedia: true,
+    resume: true,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() { return { userDataDir: null, cleanupUserDataDirOnShutdown: true }; },
+    async openBrowserSession() { return fakeSession; },
+    async ensureAuthenticatedSession() { return { loggedIn: true }; },
+    async exportDownloadSessionPassthrough() { return {}; },
+  });
+
+  const queue = JSON.parse(await readFile(path.join(runDir, 'media-queue.json'), 'utf8'));
+  assert.equal(result.download.downloads.length, 1);
+  assert.equal(result.download.downloads[0].skipped, true);
+  assert.equal(result.download.downloads[0].filePath, existingPath);
+  assert.equal(queue.counts.skipped, 1);
+});
+
 test('runSocialAction dedupes reused CDN URL but preserves per-post media completeness', async (t) => {
   const runDir = await mkdtemp(path.join(os.tmpdir(), 'bws-social-download-dedupe-'));
   const previousFetch = globalThis.fetch;
@@ -2437,9 +2721,13 @@ test('runSocialAction dedupes reused CDN URL but preserves per-post media comple
   assert.equal(result.completeness.download.incompleteItemCount, 0);
   assert.equal(result.completeness.download.largestImageArea, 1080 * 1350);
   assert.deepEqual(result.completeness.download.itemCompleteness.map((entry) => entry.complete), [true, true]);
+  assert.deepEqual(result.completeness.download.itemQuality.map((entry) => entry.quality), ['complete', 'complete']);
+  assert.equal(result.completeness.download.highestVariantHit, true);
+  assert.equal(result.completeness.download.qualityScore, 1);
   const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
   assert.equal(manifest.downloads.expectedMedia, 2);
   assert.equal(manifest.downloads.physicalCandidates, 1);
+  assert.equal(manifest.downloads.qualityScore, 1);
 });
 
 test('runSocialAction resume ignores non-item artifact rows', async (t) => {

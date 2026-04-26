@@ -47,6 +47,10 @@ Options:
   --timeout <ms>                    Forwarded to site-doctor. Default: 120000.
   --case-timeout <ms>               Outer timeout per scenario command. Default: 600000.
   --run-root <dir>                  Manifest/output root. Default: runs/social-kb-refresh.
+  --schedule-interval-minutes <n>   Record automatic refresh cadence. Default: 0/off.
+  --watch                           Schedule mode. Dry-run records the plan; execute loops until stopped.
+  --once                            Run or plan one scheduled iteration. Default unless --watch is present.
+  --max-watch-iterations <n>        Bound execute --watch for automation/tests. Default: unbounded.
   --browser-path <path>             Forwarded to site-doctor.
   --browser-profile-root <dir>      Forwarded to site-doctor.
   --user-data-dir <dir>             Forwarded to site-doctor.
@@ -114,6 +118,10 @@ export function parseArgs(argv) {
     timeout: '120000',
     caseTimeout: '600000',
     runRoot: DEFAULT_RUN_ROOT,
+    scheduleIntervalMinutes: '0',
+    watch: false,
+    once: false,
+    maxWatchIterations: null,
     browserPath: null,
     browserProfileRoot: null,
     userDataDir: null,
@@ -136,6 +144,14 @@ export function parseArgs(argv) {
         break;
       case '--dry-run':
         options.execute = false;
+        break;
+      case '--watch':
+        options.watch = true;
+        options.once = false;
+        break;
+      case '--once':
+        options.once = true;
+        options.watch = false;
         break;
       case '--case': {
         const { value, nextIndex } = readValue(argv, index, token);
@@ -179,6 +195,8 @@ export function parseArgs(argv) {
       case '--timeout':
       case '--case-timeout':
       case '--run-root':
+      case '--schedule-interval-minutes':
+      case '--max-watch-iterations':
       case '--browser-path':
       case '--browser-profile-root':
       case '--user-data-dir': {
@@ -215,10 +233,17 @@ export function parseArgs(argv) {
     ['max-captured-states', options.maxCapturedStates],
     ['timeout', options.timeout],
     ['case-timeout', options.caseTimeout],
+    ['schedule-interval-minutes', options.scheduleIntervalMinutes],
   ]) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) {
       throw new Error(`Invalid --${name}: ${value}`);
+    }
+  }
+  if (options.maxWatchIterations !== null) {
+    const parsed = Number(options.maxWatchIterations);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      throw new Error(`Invalid --max-watch-iterations: ${options.maxWatchIterations}`);
     }
   }
   if (!String(options.query ?? '').trim()) {
@@ -485,6 +510,18 @@ function timeoutPolicyForOptions(options) {
   };
 }
 
+export function schedulePolicyForOptions(options) {
+  const intervalMinutes = Number(options.scheduleIntervalMinutes);
+  const enabled = Boolean(options.watch || intervalMinutes > 0);
+  return {
+    enabled,
+    mode: options.watch ? 'watch' : 'once',
+    intervalMinutes,
+    dryRunOnly: !options.execute,
+    maxWatchIterations: options.maxWatchIterations === null ? null : Number(options.maxWatchIterations),
+  };
+}
+
 function commandManifestEntry(entry, options) {
   return {
     id: entry.id,
@@ -517,6 +554,7 @@ export function buildRunManifest(entries, options, runId, manifestPath) {
     runDir,
     manifestPath,
     timeoutPolicy: timeoutPolicyForOptions(options),
+    schedulePolicy: schedulePolicyForOptions(options),
     failFast: {
       enabled: Boolean(options.failFast),
       triggered: false,
@@ -536,6 +574,10 @@ export function buildRunManifest(entries, options, runId, manifestPath) {
       caseTimeout: options.caseTimeout,
       headless: options.headless,
       failFast: Boolean(options.failFast),
+      scheduleIntervalMinutes: options.scheduleIntervalMinutes,
+      watch: Boolean(options.watch),
+      once: Boolean(options.once || !options.watch),
+      maxWatchIterations: options.maxWatchIterations,
     },
     commands: entries.map((entry) => commandManifestEntry(entry, options)),
     results: [],
@@ -551,6 +593,10 @@ function printPlan(entries, options, manifestPath) {
   const mode = options.execute ? 'execute' : 'dry-run';
   process.stdout.write(`social-kb-refresh ${mode} plan (${entries.length} command(s))\n`);
   process.stdout.write(`Manifest: ${manifestPath}\n\n`);
+  const schedule = schedulePolicyForOptions(options);
+  if (schedule.enabled) {
+    process.stdout.write(`Schedule: ${schedule.mode}, interval=${schedule.intervalMinutes} minute(s), maxWatchIterations=${schedule.maxWatchIterations ?? 'unbounded'}\n\n`);
+  }
   for (const [index, entry] of entries.entries()) {
     process.stdout.write(`${index + 1}. ${entry.id} [${entry.surface}]\n`);
     process.stdout.write(`   site: ${entry.site}\n`);
@@ -780,6 +826,41 @@ export async function executePlan(entries, manifest, manifestPath) {
   return manifestPath;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function executeScheduledPlan(options) {
+  const maxIterations = options.maxWatchIterations === null ? Infinity : Number(options.maxWatchIterations);
+  const intervalMs = Number(options.scheduleIntervalMinutes) * 60_000;
+  let iteration = 0;
+  let lastManifestPath = null;
+  do {
+    const runId = timestampForDir();
+    const matrix = buildMatrix(options, runId);
+    const selected = filterMatrix(matrix, options);
+    const runDir = path.join(path.resolve(options.runRoot), runId);
+    const manifestPath = path.join(runDir, 'manifest.json');
+    const manifest = buildRunManifest(selected, options, runId, manifestPath);
+    manifest.schedulePolicy.iteration = iteration + 1;
+    manifest.schedulePolicy.nextRunAt = options.watch && intervalMs > 0
+      ? new Date(Date.now() + intervalMs).toISOString()
+      : null;
+    printPlan(selected, options, manifestPath);
+    await executePlan(selected, manifest, manifestPath);
+    lastManifestPath = manifestPath;
+    iteration += 1;
+    if (!options.watch || iteration >= maxIterations) {
+      break;
+    }
+    if (intervalMs <= 0) {
+      throw new Error('--watch requires --schedule-interval-minutes > 0 unless --max-watch-iterations is 1');
+    }
+    await sleep(intervalMs);
+  } while (true);
+  return lastManifestPath;
+}
+
 export async function main(argv) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -800,6 +881,11 @@ export async function main(argv) {
   printPlan(selected, options, manifestPath);
   if (!options.execute) {
     process.stdout.write('Dry-run only. Re-run with --execute to run live commands; the manifest above is the planned artifact contract.\n');
+    return;
+  }
+  if (options.watch) {
+    const scheduledManifestPath = await executeScheduledPlan(options);
+    process.stdout.write(`\nLast manifest: ${scheduledManifestPath}\n`);
     return;
   }
   await executePlan(selected, manifest, manifestPath);

@@ -17,6 +17,10 @@ import {
 import { upsertSiteCapabilities } from '../../src/sites/catalog/capabilities.mjs';
 import { upsertSiteRegistryRecord } from '../../src/sites/catalog/registry.mjs';
 import { resolveSite, resolveSiteIdentity } from '../../src/sites/core/adapters/resolver.mjs';
+import {
+  remapSupportedIntent,
+  resolveSocialNaturalLanguageSemantics,
+} from '../../src/sites/core/site-semantics.mjs';
 
 test('site context reads isolated host records and resolves merged facts', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-context-'));
@@ -193,4 +197,36 @@ test('resolveSite uses configured X and Instagram adapter identities', async () 
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test('social site semantics expose X and Instagram operational natural language aliases', async () => {
+  const xProfile = JSON.parse(await readFile(path.resolve('profiles/x.com.json'), 'utf8'));
+  const instagramProfile = JSON.parse(await readFile(path.resolve('profiles/www.instagram.com.json'), 'utf8'));
+
+  const xContext = {
+    host: 'x.com',
+    baseUrl: 'https://x.com/home',
+    profile: xProfile,
+  };
+  const instagramContext = {
+    host: 'www.instagram.com',
+    baseUrl: 'https://www.instagram.com/',
+    profile: instagramProfile,
+  };
+
+  assert.equal(remapSupportedIntent('continue-full-archive', xContext), 'resume-full-archive');
+  assert.equal(remapSupportedIntent('cooldown-resume', xContext), 'resume-after-cooldown');
+  assert.equal(remapSupportedIntent('high-speed-media-download', instagramContext), 'media-fast-download');
+  assert.equal(remapSupportedIntent('verification-report', instagramContext), 'live-acceptance-report');
+  assert.equal(remapSupportedIntent('knowledge-base-refresh', instagramContext), 'kb-refresh');
+
+  const xSemantics = resolveSocialNaturalLanguageSemantics(xContext);
+  const instagramSemantics = resolveSocialNaturalLanguageSemantics(instagramContext);
+
+  assert.ok(xSemantics?.siteAliases.includes('twitter'));
+  assert.ok(xSemantics?.intentAliases['resume-after-cooldown'].includes('限流冷却后继续'));
+  assert.match(xSemantics?.commandMappings['kb-refresh'] ?? '', /social-kb-refresh\.mjs --execute --site x/u);
+  assert.ok(instagramSemantics?.siteAliases.includes('ig'));
+  assert.ok(instagramSemantics?.intentAliases['media-fast-download'].includes('媒体高速下载'));
+  assert.match(instagramSemantics?.commandMappings['live-acceptance-report'] ?? '', /social-live-verify\.mjs --execute --site instagram/u);
 });

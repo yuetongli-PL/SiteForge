@@ -1940,9 +1940,41 @@ function parseInstagramMediaNode(node) {
     timestamp,
     author,
     sourceAccount: author?.handle ?? null,
+    productType: node?.product_type ?? node?.media_product_type ?? null,
     media: dedupeMediaEntries(media),
     source: 'api-cursor',
   };
+}
+
+function isInstagramFeedUserPayload(json) {
+  return Boolean(json && typeof json === 'object' && Array.isArray(json.items) && (
+    Object.prototype.hasOwnProperty.call(json, 'more_available')
+    || Object.prototype.hasOwnProperty.call(json, 'next_max_id')
+    || Object.prototype.hasOwnProperty.call(json, 'num_results')
+    || Object.prototype.hasOwnProperty.call(json, 'paging_info')
+    || Object.prototype.hasOwnProperty.call(json, 'pagination')
+  ));
+}
+
+function collectInstagramPaginationCursors(json, cursors) {
+  collectRecursive(json, (node) => {
+    const pageInfo = node?.page_info || node?.pageInfo;
+    if (pageInfo?.has_next_page && pageInfo?.end_cursor) {
+      cursors.push(String(pageInfo.end_cursor));
+    }
+    if (node?.more_available && node?.next_max_id) {
+      cursors.push(String(node.next_max_id));
+    }
+    if (node?.more_available && node?.paging_info?.max_id) {
+      cursors.push(String(node.paging_info.max_id));
+    }
+    if (node?.paging_info?.max_id) {
+      cursors.push(String(node.paging_info.max_id));
+    }
+    if (node?.pagination?.next_max_id) {
+      cursors.push(String(node.pagination.next_max_id));
+    }
+  });
 }
 
 export function parseSocialApiPayload(site, json) {
@@ -1978,28 +2010,23 @@ export function parseSocialApiPayload(site, json) {
       });
     }
   } else if (config.siteKey === 'instagram') {
-    collectRecursive(json, (node) => {
-      const candidate = parseInstagramMediaNode(node);
-      if (candidate) {
-        items.push(candidate);
+    if (isInstagramFeedUserPayload(json)) {
+      for (const node of json.items) {
+        const candidate = parseInstagramMediaNode(node);
+        if (candidate) {
+          items.push(candidate);
+        }
       }
-      const pageInfo = node?.page_info || node?.pageInfo;
-      if (pageInfo?.has_next_page && pageInfo?.end_cursor) {
-        cursors.push(String(pageInfo.end_cursor));
-      }
-      if (node?.more_available && node?.next_max_id) {
-        cursors.push(String(node.next_max_id));
-      }
-      if (node?.more_available && node?.paging_info?.max_id) {
-        cursors.push(String(node.paging_info.max_id));
-      }
-      if (node?.paging_info?.max_id) {
-        cursors.push(String(node.paging_info.max_id));
-      }
-      if (node?.pagination?.next_max_id) {
-        cursors.push(String(node.pagination.next_max_id));
-      }
-    });
+      collectInstagramPaginationCursors(json, cursors);
+    } else {
+      collectRecursive(json, (node) => {
+        const candidate = parseInstagramMediaNode(node);
+        if (candidate) {
+          items.push(candidate);
+        }
+      });
+      collectInstagramPaginationCursors(json, cursors);
+    }
   }
   return {
     items: mergeByKey(items, (entry) => entry.id || entry.url, Number.MAX_SAFE_INTEGER),
@@ -5255,6 +5282,8 @@ function normalizeRunSettings(plan, options = {}) {
   const apiCursorDefault = fullArchive
     || (plan.siteKey === 'x' && plan.action === 'followed-posts-by-date')
     || (plan.siteKey === 'instagram' && plan.action === 'followed-posts-by-date' && /api/iu.test(followedDateMode));
+  const requestedApiCursor = toBoolean(options.apiCursor, apiCursorDefault);
+  const apiCursorSuppressed = plan.siteKey === 'instagram' && isSocialRelationAction(plan.action) && requestedApiCursor;
   return {
     browserPath: options.browserPath || process.env[`BWS_${envToken}_BROWSER_PATH`],
     browserProfileRoot: options.browserProfileRoot || process.env[`BWS_${envToken}_BROWSER_PROFILE_ROOT`],
@@ -5267,7 +5296,8 @@ function normalizeRunSettings(plan, options = {}) {
     maxScrolls: Math.max(0, toNumber(options.maxScrolls, defaultMaxScrolls)),
     scrollWaitMs: Math.max(0, toNumber(options.scrollWaitMs, DEFAULT_SCROLL_WAIT_MS)),
     fullArchive,
-    apiCursor: toBoolean(options.apiCursor, apiCursorDefault),
+    apiCursor: apiCursorSuppressed ? false : requestedApiCursor,
+    apiCursorSuppressed,
     maxApiPages: Math.max(0, toNumber(options.maxApiPages, DEFAULT_MAX_API_PAGES)),
     maxUsers: Math.max(1, toNumber(options.maxUsers, DEFAULT_MAX_USERS)),
     maxDetailPages: Math.max(0, toNumber(options.maxDetailPages, DEFAULT_MAX_DETAIL_PAGES)),
@@ -5311,6 +5341,7 @@ export async function runSocialAction(options = {}, deps = {}) {
         maxScrolls: settings.maxScrolls,
         fullArchive: settings.fullArchive,
         apiCursor: settings.apiCursor,
+        apiCursorSuppressed: settings.apiCursorSuppressed,
         maxApiPages: settings.maxApiPages,
         maxUsers: settings.maxUsers,
         downloadMedia: settings.downloadMedia,
@@ -5687,6 +5718,7 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {
   ].includes(normalizedActionToken);
   const firstItem = positionals[1] ?? null;
   const site = lastFlagValue(flags, 'site', defaults.site);
+  const apiCursorFlag = lastFlagValue(flags, 'api-cursor');
   return {
     site,
     action,
@@ -5721,7 +5753,7 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {
     apiRetries: lastFlagValue(flags, 'api-retries'),
     scrollWaitMs: lastFlagValue(flags, 'scroll-wait'),
     fullArchive: actionRequestsFullArchive || flags['full-archive'] === true || flags['all-history'] === true,
-    apiCursor: flags['no-api-cursor'] === true ? false : flags['api-cursor'] === true ? true : undefined,
+    apiCursor: flags['no-api-cursor'] === true ? false : apiCursorFlag === undefined ? undefined : toBoolean(apiCursorFlag, true),
     followedDateMode: lastFlagValue(flags, 'followed-date-mode', lastFlagValue(flags, 'followed-date-strategy')),
     headless: flags.headless === true ? true : flags['no-headless'] === true ? false : undefined,
     reuseLoginState: flags['no-reuse-login-state'] === true ? false : flags['reuse-login-state'] === true ? true : undefined,

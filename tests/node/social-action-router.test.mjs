@@ -517,6 +517,20 @@ test('runSocialAction dry-run treats full-archive action as API cursor archive m
   assert.equal(result.settings.maxScrolls, 250);
 });
 
+test('runSocialAction suppresses API cursor for Instagram relation actions', async () => {
+  const result = await runSocialAction({
+    site: 'instagram',
+    action: 'followed-users',
+    account: 'me',
+    apiCursor: true,
+    dryRun: true,
+  });
+
+  assert.equal(result.plan.action, 'followed-users');
+  assert.equal(result.settings.apiCursor, false);
+  assert.equal(result.settings.apiCursorSuppressed, true);
+});
+
 test('runSocialAction opens a blank page before API cursor capture navigation', async () => {
   let startupUrl = null;
   const navigations = [];
@@ -2197,6 +2211,13 @@ test('social action CLI parser keeps site defaults and maps common flags', () =>
   assert.equal(parsed.runDir, 'runs/social/manual');
   assert.equal(parsed.resume, true);
   assert.equal(parsed.dryRun, true);
+});
+
+test('social action CLI parser handles explicit API cursor booleans', () => {
+  assert.equal(parseSocialActionArgs(['profile-content', 'openai', '--api-cursor=true'], { site: 'x' }).apiCursor, true);
+  assert.equal(parseSocialActionArgs(['profile-content', 'openai', '--api-cursor=false'], { site: 'x' }).apiCursor, false);
+  assert.equal(parseSocialActionArgs(['profile-content', 'openai', '--api-cursor'], { site: 'x' }).apiCursor, true);
+  assert.equal(parseSocialActionArgs(['profile-content', 'openai', '--api-cursor=true', '--no-api-cursor'], { site: 'x' }).apiCursor, false);
 });
 
 function makeInstagramNode({ tagName = 'a', attrs = {}, text = '', children = [] } = {}) {

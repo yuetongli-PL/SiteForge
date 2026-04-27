@@ -18,7 +18,7 @@ The runner can always execute already-resolved resources passed with `--resource
 
 | Site key | Host | Current path | Notes |
 | --- | --- | --- | --- |
-| `22biqu` | `www.22biqu.com` | Hybrid native + legacy fallback | Native when chapter resource entries are provided to the runner; normal book-title/book-url downloads still fall back to `src/sites/chapter-content/download/python/book.py`. |
+| `22biqu` | `www.22biqu.com` | Hybrid native + legacy fallback | Native when chapter resources are provided directly, or when dry-run is given a local book-content fixture/KB root. Normal unmatched book-title/book-url downloads still fall back to `src/sites/chapter-content/download/python/book.py`. |
 | `bilibili` | `www.bilibili.com` | Legacy fallback | Uses the unified runner for plan/session/manifest wrapping, then falls back to `src/entrypoints/sites/bilibili-action.mjs download` when no concrete resources are resolved. |
 | `douyin` | `www.douyin.com` | Legacy fallback | Falls back to `src/entrypoints/sites/douyin-action.mjs download`; session use remains optional and site controlled. |
 | `xiaohongshu` | `www.xiaohongshu.com` | Legacy fallback | Falls back to `src/entrypoints/sites/xiaohongshu-action.mjs download`; do not claim unattended auth. |
@@ -64,6 +64,12 @@ Retry only resources recorded as failed:
 node src\entrypoints\sites\download.mjs --site example --input https://example.com/file --execute --run-dir runs\downloads\example\20260427-example --retry-failed
 ```
 
+Quote Windows paths with spaces:
+
+```powershell
+node src\entrypoints\sites\download.mjs --site example --input https://example.com/file --execute --run-dir "C:\Users\me\Downloads\Browser Wiki Runs\example" --resume
+```
+
 `--retry-failed` requires old queue state. It reuses successful resources,
 retries only resources whose old queue status is `failed`, and skips resources
 that were not previously failed. If no old state exists it writes a skipped
@@ -73,6 +79,18 @@ entries it writes `reason: retry-failed-none`.
 Every `report.md` includes a status explanation, next `--resume` and
 `--retry-failed` commands, and the exact manifest, queue, and downloads JSONL
 paths for the run.
+
+## Session Preflight
+
+Required-session downloads stop before resource resolution or legacy spawn when
+health reports `blocked`, `manual-required`, `expired`, or `quarantine`.
+Optional-session downloads may continue anonymously only when the task is not
+marked login-required.
+
+Manifests intentionally keep only operational session metadata: `siteKey`,
+`host`, `mode`, `status`, `riskSignals`, `expiresAt`, `quarantineKey`,
+`reason`, and `purpose`. They do not write cookies, headers, browser profile
+roots, or user data directories.
 
 ## Manifest Fields
 
@@ -88,7 +106,7 @@ paths for the run.
 - `resumeCommand`: generated command for blocked, partial, or failed runs.
 - `artifacts`: paths to `manifest`, `queue`, `downloadsJsonl`, `reportMarkdown`, `plan`, `resolvedTask`, `runDir`, and `filesDir`; legacy runs may also include `artifacts.source` pointing at the spawned downloader's own artifacts.
 - `legacy`: legacy adapter command metadata when the run used an existing site downloader, including entrypoint, executor kind, command args, exit code, source manifest/run directory, and stderr preview.
-- `session`: anonymous, reusable-profile, or authenticated lease metadata and risk/session status.
+- `session`: sanitized anonymous, reusable-profile, or authenticated lease metadata and risk/session status.
 
 ## Artifact Fields
 

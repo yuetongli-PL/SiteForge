@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { readJsonFile } from '../../src/infra/io.mjs';
+import { parseArgs } from '../../src/entrypoints/sites/download.mjs';
 import { normalizeDownloadTaskPlan } from '../../src/sites/downloads/contracts.mjs';
 import { executeResolvedDownloadTask } from '../../src/sites/downloads/executor.mjs';
 import { executeLegacyDownloadTask } from '../../src/sites/downloads/legacy-executor.mjs';
@@ -14,6 +15,31 @@ import { runDownloadTask } from '../../src/sites/downloads/runner.mjs';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
+
+test('download CLI parser accepts resume flags emitted by manifests', () => {
+  const resumeArgs = parseArgs([
+    '--site',
+    'bilibili',
+    '--input',
+    'BV1resume',
+    '--execute',
+    '--run-dir',
+    path.join(os.tmpdir(), 'bwk-download-resume'),
+    '--resume',
+  ]);
+  assert.equal(resumeArgs.resume, true);
+  assert.equal(resumeArgs.dryRun, false);
+
+  const freshArgs = parseArgs([
+    '--site',
+    'bilibili',
+    '--input',
+    'BV1resume',
+    '--execute',
+    '--no-resume',
+  ]);
+  assert.equal(freshArgs.resume, false);
+});
 
 test('download registry exposes dry-run plans for every configured download site', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-dry-run-'));
@@ -327,6 +353,111 @@ test('download executor consumes resolved resources without site-specific logic'
   assert.equal(manifest.status, 'passed');
   assert.equal(manifest.counts.downloaded, 1);
   assert.equal(await readFile(manifest.files[0].filePath, 'utf8'), 'download body');
+});
+
+test('download executor treats retries zero as a single attempt', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-retries-zero-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/fails.txt' },
+    policy: { dryRun: false, retries: 0, retryBackoffMs: 0 },
+    output: { root: runRoot },
+  });
+  let calls = 0;
+  const manifest = await executeResolvedDownloadTask({
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [{
+      id: 'resource-1',
+      url: 'https://example.com/fails.txt',
+      fileName: 'fails.txt',
+      mediaType: 'text',
+    }],
+  }, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+    dryRun: false,
+  }, {
+    fetchImpl: async () => {
+      calls += 1;
+      return {
+        ok: false,
+        status: 500,
+      };
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(manifest.status, 'failed');
+  assert.equal(manifest.failedResources[0].reason, 'http-500');
+  assert.equal(manifest.resumeCommand.includes('--resume'), true);
+  assert.doesNotThrow(() => parseArgs([
+    '--site',
+    manifest.siteKey,
+    '--input',
+    plan.source.input,
+    '--execute',
+    '--run-dir',
+    path.dirname(manifest.artifacts.manifest),
+    '--resume',
+  ]));
+});
+
+test('download executor retries failed resources when configured', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-retries-one-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/retry.txt' },
+    policy: { dryRun: false, retries: 1, retryBackoffMs: 0 },
+    output: { root: runRoot },
+  });
+  const payload = Buffer.from('retry body', 'utf8');
+  let calls = 0;
+  const manifest = await executeResolvedDownloadTask({
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [{
+      id: 'resource-1',
+      url: 'https://example.com/retry.txt',
+      fileName: 'retry.txt',
+      mediaType: 'text',
+    }],
+  }, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+    dryRun: false,
+  }, {
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: false,
+          status: 500,
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(manifest.status, 'passed');
+  assert.equal(await readFile(manifest.files[0].filePath, 'utf8'), 'retry body');
 });
 
 test('download executor stays independent from concrete site routers', async () => {

@@ -25,6 +25,8 @@ Options:
   --concurrency <n>                 Download concurrency. Default: 4.
   --retries <n>                     Retry count per resource. Default: 2.
   --retry-backoff-ms <ms>           Backoff between retries. Default: 1000.
+  --resume                          Resume using existing run artifacts when supported.
+  --no-resume                       Ignore existing run artifacts and start fresh.
   --no-skip-existing                Redownload files even if the target file already exists.
   --no-verify                       Skip expected size/hash verification.
   --session-required                Require an authenticated/reusable session lease.
@@ -135,6 +137,12 @@ export function parseArgs(argv) {
         index = read.nextIndex;
         break;
       }
+      case '--resume':
+        options.resume = true;
+        break;
+      case '--no-resume':
+        options.resume = false;
+        break;
       case '--no-skip-existing':
         options.skipExisting = false;
         break;
@@ -186,6 +194,7 @@ export async function main(argv) {
     concurrency: options.concurrency,
     retries: options.retries,
     retryBackoffMs: options.retryBackoffMs,
+    resume: options.resume,
     skipExisting: options.skipExisting,
     verify: options.verify,
     sessionStatus: options.sessionStatus,

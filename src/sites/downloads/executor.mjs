@@ -25,6 +25,11 @@ function normalizePositiveInteger(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function normalizeNonNegativeInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+}
+
 function safeFileName(value, fallback = 'download.bin') {
   const normalized = String(value ?? fallback)
     .replace(/[<>:"/\\|?*\x00-\x1F]+/gu, '-')
@@ -138,7 +143,7 @@ async function fetchResource(resource, filePath, { fetchImpl, verify, sessionLea
 }
 
 async function downloadWithRetry(resource, filePath, options) {
-  const attempts = normalizePositiveInteger(options.retries, 2) + 1;
+  const attempts = normalizeNonNegativeInteger(options.retries, 2) + 1;
   let lastResult = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -158,7 +163,7 @@ async function downloadWithRetry(resource, filePath, options) {
       };
     }
     if (attempt < attempts) {
-      await delay(normalizePositiveInteger(options.retryBackoffMs, 1_000));
+      await delay(normalizeNonNegativeInteger(options.retryBackoffMs, 1_000));
     }
   }
   return { ...lastResult, attempts };

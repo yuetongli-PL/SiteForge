@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { readJsonFile } from '../../src/infra/io.mjs';
@@ -20,6 +20,34 @@ import {
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
+
+test('download site argv builders live in per-site module files', async () => {
+  const moduleDir = path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'site-modules');
+  for (const fileName of [
+    'common.mjs',
+    'bilibili.mjs',
+    'douyin.mjs',
+    'xiaohongshu.mjs',
+    '22biqu.mjs',
+    'social.mjs',
+  ]) {
+    await access(path.join(moduleDir, fileName));
+  }
+
+  const dispatcher = await readFile(path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'modules.mjs'), 'utf8');
+  for (const forbidden of [
+    'buildBilibiliArgs',
+    'buildDouyinArgs',
+    'buildXiaohongshuArgs',
+    'buildSocialArgs',
+    'build22BiquCommand',
+    '--author-page-limit',
+    '--book-url',
+    '--max-api-pages',
+  ]) {
+    assert.equal(dispatcher.includes(forbidden), false);
+  }
+});
 
 test('download site modules expose all configured legacy download sites', () => {
   assert.deepEqual(

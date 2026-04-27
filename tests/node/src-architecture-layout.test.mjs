@@ -71,6 +71,7 @@ test('root only keeps README.md and .gitignore as regular files', async () => {
   const entries = await readdir(REPO_ROOT, { withFileTypes: true });
   const regularFiles = entries
     .filter((entry) => entry.isFile())
+    .filter((entry) => entry.name !== '.git')
     .map((entry) => entry.name)
     .sort();
 

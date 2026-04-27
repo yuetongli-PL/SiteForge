@@ -12,13 +12,15 @@ import {
 
 export const siteKey = 'douyin';
 
+export const nativeSeedResolverOptions = Object.freeze({
+  defaultMediaType: 'video',
+  method: 'native-douyin-resource-seeds',
+  completeReason: 'douyin-resource-seeds-provided',
+  incompleteReason: 'douyin-resource-seeds-incomplete',
+});
+
 export function resolveResources(plan, sessionLease = null, context = {}) {
-  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, {
-    defaultMediaType: 'video',
-    method: 'native-douyin-resource-seeds',
-    completeReason: 'douyin-resource-seeds-provided',
-    incompleteReason: 'douyin-resource-seeds-incomplete',
-  });
+  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, nativeSeedResolverOptions);
 }
 
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {

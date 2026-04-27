@@ -11,13 +11,15 @@ import {
 
 export const siteKey = 'bilibili';
 
+export const nativeSeedResolverOptions = Object.freeze({
+  defaultMediaType: 'video',
+  method: 'native-bilibili-resource-seeds',
+  completeReason: 'bilibili-resource-seeds-provided',
+  incompleteReason: 'bilibili-resource-seeds-incomplete',
+});
+
 export function resolveResources(plan, sessionLease = null, context = {}) {
-  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, {
-    defaultMediaType: 'video',
-    method: 'native-bilibili-resource-seeds',
-    completeReason: 'bilibili-resource-seeds-provided',
-    incompleteReason: 'bilibili-resource-seeds-incomplete',
-  });
+  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, nativeSeedResolverOptions);
 }
 
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {

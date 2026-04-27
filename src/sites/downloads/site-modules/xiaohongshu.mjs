@@ -12,13 +12,15 @@ import {
 
 export const siteKey = 'xiaohongshu';
 
+export const nativeSeedResolverOptions = Object.freeze({
+  defaultMediaType: 'image',
+  method: 'native-xiaohongshu-resource-seeds',
+  completeReason: 'xiaohongshu-resource-seeds-provided',
+  incompleteReason: 'xiaohongshu-resource-seeds-incomplete',
+});
+
 export function resolveResources(plan, sessionLease = null, context = {}) {
-  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, {
-    defaultMediaType: 'image',
-    method: 'native-xiaohongshu-resource-seeds',
-    completeReason: 'xiaohongshu-resource-seeds-provided',
-    incompleteReason: 'xiaohongshu-resource-seeds-incomplete',
-  });
+  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, nativeSeedResolverOptions);
 }
 
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {

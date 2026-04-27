@@ -1,14 +1,31 @@
 # Download Runner
 
-The unified download runner keeps site-specific planning and resource resolution outside the generic executor.
+The unified download runner keeps site-specific planning and resource resolution outside the generic executor. It is the migration wrapper for Phase 6 download operations: plan first, write stable run artifacts, then either execute native resolved resources or invoke an existing legacy site downloader as a fallback.
+
+Publish caveat: the current download runner branch is stacked on earlier work and is not pushed. Do not document it as released or available on `main` until the stack is merged and pushed.
 
 ## Flow
 
 1. Generate a dry-run plan first.
 2. Acquire a session lease when the site requires one.
 3. Resolve concrete resources through the site module.
-4. Execute either the generic resource executor or a legacy downloader adapter.
-5. Write `manifest.json`, `queue.json`, `downloads.jsonl`, and `report.md`.
+4. Execute either the native resource executor or a legacy downloader adapter.
+5. Write `plan.json`, `resolved-task.json`, `manifest.json`, `queue.json`, `downloads.jsonl`, and `report.md`.
+
+## Site Migration Matrix
+
+The runner can always execute already-resolved resources passed with `--resource`. Site modules decide whether a normal site request produces native resources or falls through to the legacy adapter.
+
+| Site key | Host | Current path | Notes |
+| --- | --- | --- | --- |
+| `22biqu` | `www.22biqu.com` | Hybrid native + legacy fallback | Native when chapter resource entries are provided to the runner; normal book-title/book-url downloads still fall back to `src/sites/chapter-content/download/python/book.py`. |
+| `bilibili` | `www.bilibili.com` | Legacy fallback | Uses the unified runner for plan/session/manifest wrapping, then falls back to `src/entrypoints/sites/bilibili-action.mjs download` when no concrete resources are resolved. |
+| `douyin` | `www.douyin.com` | Legacy fallback | Falls back to `src/entrypoints/sites/douyin-action.mjs download`; session use remains optional and site controlled. |
+| `xiaohongshu` | `www.xiaohongshu.com` | Legacy fallback | Falls back to `src/entrypoints/sites/xiaohongshu-action.mjs download`; do not claim unattended auth. |
+| `x` | `x.com` | Legacy fallback | Falls back to `src/entrypoints/sites/x-action.mjs` social archive/media actions. |
+| `instagram` | `www.instagram.com` | Legacy fallback | Falls back to `src/entrypoints/sites/instagram-action.mjs`; reusable session is required by the site definition, but live auth health is still an operational precondition. |
+
+Native runner execution means `resolved-task.json` contains concrete `resources[]` and the shared executor downloads them into `files/`. Legacy fallback means `resolved-task.json` records `legacy-downloader-required`, then the runner spawns the site entrypoint and normalizes its JSON output into the unified manifest.
 
 ## Commands
 
@@ -22,6 +39,12 @@ Execute:
 
 ```powershell
 node src\entrypoints\sites\download.mjs --site bilibili --input BV1example --execute --json
+```
+
+Execute a native generic resource:
+
+```powershell
+node src\entrypoints\sites\download.mjs --site example --input https://example.com/file.bin --resource https://example.com/file.bin --file-name file.bin --media-type binary --execute --json
 ```
 
 Resume a fixed run directory:
@@ -53,14 +76,40 @@ paths for the run.
 
 ## Manifest Fields
 
+- `schemaVersion`: manifest schema version.
+- `runId`: run directory id.
+- `planId`: stable plan id for the site, task type, and input.
+- `siteKey`: normalized site key.
 - `status`: `passed`, `partial`, `failed`, `blocked`, or `skipped`.
 - `reason`: stable failure or skip reason when available.
 - `counts`: expected, attempted, downloaded, skipped, and failed counts.
-- `files`: successful or resumed file records.
-- `failedResources`: failed resource records with reason and error fields.
+- `files`: successful or resumed file records with `resourceId`, `url`, `filePath`, `bytes`, `mediaType`, `sha256`, and `skipped` when available.
+- `failedResources`: failed resource records with `resourceId`, `url`, `filePath`, `reason`, `error`, and verification failures when available.
 - `resumeCommand`: generated command for blocked, partial, or failed runs.
-- `artifacts`: paths to manifest, queue, JSONL downloads, and Markdown report.
-- `legacy`: legacy adapter command metadata when the run used an existing site downloader.
+- `artifacts`: paths to `manifest`, `queue`, `downloadsJsonl`, `reportMarkdown`, `plan`, `resolvedTask`, `runDir`, and `filesDir`; legacy runs may also include `artifacts.source` pointing at the spawned downloader's own artifacts.
+- `legacy`: legacy adapter command metadata when the run used an existing site downloader, including entrypoint, executor kind, command args, exit code, source manifest/run directory, and stderr preview.
+- `session`: anonymous, reusable-profile, or authenticated lease metadata and risk/session status.
+
+## Artifact Fields
+
+- `plan.json`: normalized `siteKey`, `host`, `taskType`, source input, session requirement, resolver metadata, output policy, and legacy fallback metadata.
+- `resolved-task.json`: normalized resolved resources. Native runs include concrete resources; legacy fallback runs use an empty resource list with `completeness.reason: legacy-downloader-required`.
+- `queue.json`: per-resource status for native execution. Status values include `pending`, `running`, `downloaded`, `skipped`, and `failed`.
+- `downloads.jsonl`: per-attempt native result rows, or one normalized legacy summary row for fallback execution.
+- `report.md`: human-readable status, counts, artifact paths, and next resume/retry commands.
+- `files/`: native downloaded files. Legacy adapters may write their own files elsewhere and expose those paths through `manifest.files` and `artifacts.source`.
+
+## Social Media Executor Artifacts
+
+X and Instagram media operations still run through the social action entrypoints during this phase. When `--download-media` is used, the social media executor writes its own artifacts in the action run directory:
+
+- `downloads.jsonl`: one row per media download attempt, including URL, type, page/item references, file path, byte count, content hash, transport, retry attempts, and errors.
+- `media-queue.json`: resumable queue with `schemaVersion`, counts, queue status, media references, fallback type, expected type, and the last result.
+- `media-manifest.json`: aggregate download quality manifest with hashes, small-file anomalies, content-type mismatches, ffprobe video checks, poster-only video fallback counts, and media completeness signals.
+- Action manifest / state files: archive status, bounded/degraded reasons, recovery runbook commands, and links to the media artifacts.
+- CSV/HTML indexes may be written by full archive runs for local review when the action supports them.
+
+For X video entries, API media is preferred. If only a poster URL is visible, artifacts mark `fallbackFrom: poster-only-video-fallback` and `expectedType: video`; do not call that a complete video download without checking the media manifest.
 
 ## Recovery Reasons
 
@@ -84,3 +133,4 @@ paths for the run.
 - Site modules own planner, resolver, and legacy command construction.
 - The session manager returns a lease and health status. It does not download resources.
 - Legacy Python and action routers remain valid adapters until their resource resolvers are migrated.
+- Live authentication health is never implied by docs. If a site needs a reusable profile, verify or recover that profile through the documented site action flow before executing live traffic.

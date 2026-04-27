@@ -30,6 +30,7 @@ node .\src\entrypoints\sites\site-scaffold.mjs https://<host>/ --archetype <navi
 - `skills/<skill-name>/`: generated repo-local skill package for the host.
 - `config/site-registry.json`: records the profile, crawler, skill, knowledge-base, and download entrypoint paths.
 - `config/site-capabilities.json`: records archetype, page types, capability families, safe actions, and approval actions.
+- `docs/DOWNLOAD_RUNNER.md`: records the current download runner migration state, including whether the site is native runner or legacy fallback.
 
 ## 4. Validate the host locally
 
@@ -61,7 +62,20 @@ node .\src\entrypoints\pipeline\run-pipeline.mjs https://<host>/
 node .\src\entrypoints\pipeline\generate-skill.mjs https://<host>/
 ```
 
-- If the site is chapter/book oriented, verify the download path through the canonical internal Python entrypoint:
+- For any site with download behavior, start with the unified runner dry-run:
+
+```powershell
+node .\src\entrypoints\sites\download.mjs --site <site-key> --input "<sample-target>" --json
+```
+
+- Execute only after the dry-run plan and session requirement are understood:
+
+```powershell
+node .\src\entrypoints\sites\download.mjs --site <site-key> --input "<sample-target>" --execute --json
+```
+
+- For a native resource resolver, verify `resolved-task.json` contains concrete `resources[]`. For a legacy fallback, verify `resolved-task.json` reports `legacy-downloader-required` and `manifest.json` includes `legacy` metadata.
+- If the site is chapter/book oriented and still uses the legacy adapter, verify the canonical internal Python entrypoint too:
 
 ```powershell
 pypy3 .\src\sites\chapter-content\download\python\book.py https://<host>/ --book-title "<title>"
@@ -75,6 +89,8 @@ pypy3 .\src\sites\chapter-content\download\python\book.py https://<host>/ --book
 - `skills/<skill-name>/SKILL.md` exists and references the correct host behavior.
 - `config/site-registry.json` points to the new profile, crawler, knowledge-base, and skill paths.
 - `config/site-capabilities.json` shows the expected archetype and capability families for the host.
+- Download runs write `runs/downloads/<site>/.../plan.json`, `resolved-task.json`, `manifest.json`, `queue.json`, `downloads.jsonl`, and `report.md`.
+- Social media downloads, when applicable, also write action-level `downloads.jsonl`, `media-queue.json`, and `media-manifest.json`.
 
 ## 7. Manual acceptance before calling it done
 
@@ -83,6 +99,8 @@ pypy3 .\src\sites\chapter-content\download\python\book.py https://<host>/ --book
 - Cleanup patterns remove obvious boilerplate without deleting 正文 content.
 - The host profile works with the existing scripts as-is; if a site needs new fields or logic, record that as a follow-up instead of patching scripts ad hoc.
 - Only add a new site adapter when `generic-navigation` or `chapter-content` cannot express the host behavior.
+- Do not claim native runner coverage until a dry-run shows concrete resolved resources without falling back to the legacy adapter.
+- Do not claim live auth or unattended execution unless the site already has verified session recovery docs and a current live check.
 
 ## 8. Deliberately out of scope for this first version
 

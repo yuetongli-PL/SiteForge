@@ -139,6 +139,12 @@ node .\src\entrypoints\sites\site-keepalive.mjs https://www.douyin.com/ --profil
 
 Root file retirement is now complete. If you still have callers or notes using root CLI, root Python, or root metadata paths, migrate them to the canonical `src/entrypoints/**`, `src/sites/**/python/*.py`, and `config/**` locations documented in [`docs/ROOT_FILE_RETIREMENT_MIGRATION.md`](./docs/ROOT_FILE_RETIREMENT_MIGRATION.md).
 
+## Download Runner Migration
+
+Download operations are moving behind the unified runner documented in [`docs/DOWNLOAD_RUNNER.md`](./docs/DOWNLOAD_RUNNER.md). The runner is dry-run by default, writes stable `plan.json`, `resolved-task.json`, `manifest.json`, `queue.json`, `downloads.jsonl`, and `report.md` artifacts, and supports `--execute`, `--resume`, and `--retry-failed`.
+
+Current branch caveat: this work is on a stacked branch and has not been pushed as the published `main` behavior. Treat the docs as branch-local migration guidance until the stack lands.
+
 ## Network Governance (No Dedicated IP)
 
 For Douyin and similar login-gated sites, the operating assumption is **no dedicated IP**. The supported strategy is to keep using the current trusted network consistently, not to rotate exits or depend on a pinned egress address.

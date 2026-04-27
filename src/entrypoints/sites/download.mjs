@@ -25,8 +25,8 @@ Options:
   --concurrency <n>                 Download concurrency. Default: 4.
   --retries <n>                     Retry count per resource. Default: 2.
   --retry-backoff-ms <ms>           Backoff between retries. Default: 1000.
-  --resume                          Resume using existing run artifacts when supported.
-  --retry-failed                    Resume a run but only attempt failed resources.
+  --resume                          Reuse valid completed artifacts and attempt incomplete resources in --run-dir.
+  --retry-failed                    Require old queue state; reuse successes and retry only old failed resources.
   --no-resume                       Ignore existing run artifacts and start fresh.
   --no-skip-existing                Redownload files even if the target file already exists.
   --no-verify                       Skip expected size/hash verification.

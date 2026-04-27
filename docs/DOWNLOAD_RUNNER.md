@@ -30,11 +30,26 @@ Resume a fixed run directory:
 node src\entrypoints\sites\download.mjs --site example --input https://example.com/file --execute --run-dir runs\downloads\example\20260427-example --resume
 ```
 
+`--resume` reads the previous `manifest.json`, `queue.json`, and `downloads.jsonl`
+when they exist. Valid completed artifacts are reused, incomplete resources are
+attempted again, and corrupted or inconsistent recovery artifacts produce a
+stable manifest `reason` instead of a thrown parser error.
+
 Retry only resources recorded as failed:
 
 ```powershell
 node src\entrypoints\sites\download.mjs --site example --input https://example.com/file --execute --run-dir runs\downloads\example\20260427-example --retry-failed
 ```
+
+`--retry-failed` requires old queue state. It reuses successful resources,
+retries only resources whose old queue status is `failed`, and skips resources
+that were not previously failed. If no old state exists it writes a skipped
+manifest with `reason: retry-state-missing`; if the old queue has no failed
+entries it writes `reason: retry-failed-none`.
+
+Every `report.md` includes a status explanation, next `--resume` and
+`--retry-failed` commands, and the exact manifest, queue, and downloads JSONL
+paths for the run.
 
 ## Manifest Fields
 
@@ -46,6 +61,22 @@ node src\entrypoints\sites\download.mjs --site example --input https://example.c
 - `resumeCommand`: generated command for blocked, partial, or failed runs.
 - `artifacts`: paths to manifest, queue, JSONL downloads, and Markdown report.
 - `legacy`: legacy adapter command metadata when the run used an existing site downloader.
+
+## Recovery Reasons
+
+- `retry-state-missing`: `--retry-failed` was requested but no previous run
+  artifacts existed in `--run-dir`.
+- `retry-queue-missing`: previous state existed, but `queue.json` was missing.
+- `retry-failed-none`: old `queue.json` contained no `failed` entries.
+- `manifest-queue-count-mismatch`: manifest expected count and queue length
+  disagree, so the runner does not guess which resources are safe to reuse.
+- `manifest-queue-resource-mismatch`: manifest file entries reference resources
+  that are not present in the old queue.
+- `queue-downloads-resource-mismatch`: downloads JSONL references resources
+  that are not present in the old queue.
+- `recovery-artifact-missing`, `recovery-artifact-not-file`, and
+  `recovery-artifact-size-mismatch`: a previously successful resource could not
+  be reused from the recorded file path.
 
 ## Boundaries
 

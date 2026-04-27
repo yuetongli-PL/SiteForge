@@ -5,8 +5,6 @@ import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  readJsonFile,
-  readTextFile,
   writeJsonFile,
   writeJsonLines,
   writeTextFile,
@@ -17,6 +15,12 @@ import {
   resolveDownloadRunStatus,
 } from './contracts.mjs';
 import { buildDownloadRunLayout } from './artifacts.mjs';
+import {
+  isSuccessfulQueueStatus,
+  loadDownloadRecoveryState,
+  queueKey,
+  recoverCompletedResource,
+} from './recovery.mjs';
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,43 +48,6 @@ function safeFileName(value, fallback = 'download.bin') {
 function resourceFilePath(filesDir, resource, index) {
   const prefix = String(index + 1).padStart(4, '0');
   return path.join(filesDir, `${prefix}-${safeFileName(resource.fileName, `${resource.id}.bin`)}`);
-}
-
-async function readJsonLinesFile(filePath) {
-  try {
-    const text = await readTextFile(filePath);
-    return text
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-  } catch {
-    return [];
-  }
-}
-
-async function loadResumeState(layout, enabled) {
-  if (!enabled) {
-    return {
-      queue: [],
-      downloads: [],
-    };
-  }
-  let queue = [];
-  try {
-    const queueArtifact = await readJsonFile(layout.queuePath);
-    queue = Array.isArray(queueArtifact?.queue) ? queueArtifact.queue : Array.isArray(queueArtifact) ? queueArtifact : [];
-  } catch {
-    queue = [];
-  }
-  return {
-    queue,
-    downloads: await readJsonLinesFile(layout.downloadsJsonlPath),
-  };
-}
-
-function queueKey(entry = {}) {
-  return entry.id ?? entry.resourceId ?? entry.url ?? null;
 }
 
 async function existingFileResult(resource, filePath) {
@@ -227,51 +194,78 @@ function buildQueue(resources, layout, previousQueue = []) {
   const previousByKey = new Map((Array.isArray(previousQueue) ? previousQueue : [])
     .map((entry) => [queueKey(entry), entry])
     .filter(([key]) => key));
-  return resources.map((resource, index) => ({
-    id: resource.id,
-    index,
-    status: previousByKey.get(resource.id)?.status ?? 'pending',
-    url: resource.url,
-    mediaType: resource.mediaType,
-    filePath: previousByKey.get(resource.id)?.filePath ?? resourceFilePath(layout.filesDir, resource, index),
-    sourceUrl: resource.sourceUrl ?? previousByKey.get(resource.id)?.sourceUrl ?? null,
-    reason: previousByKey.get(resource.id)?.reason ?? null,
-    bytes: previousByKey.get(resource.id)?.bytes ?? null,
-  }));
-}
-
-async function resumableCompletedResult(resource, queueEntry, previousDownloads = []) {
-  const match = (Array.isArray(previousDownloads) ? previousDownloads : [])
-    .find((entry) => entry?.ok === true && (entry.resourceId === resource.id || entry.url === resource.url) && entry.filePath);
-  if (!match) {
-    return null;
-  }
-  try {
-    const fileStat = await stat(match.filePath);
-    if (!fileStat.isFile()) {
-      return null;
-    }
+  return resources.map((resource, index) => {
+    const previous = previousByKey.get(queueKey(resource)) ?? previousByKey.get(resource.url);
     return {
-      ...match,
-      ok: true,
-      skipped: true,
-      reason: 'resume-existing-download',
-      resourceId: match.resourceId ?? resource.id,
-      url: match.url ?? resource.url,
-      filePath: match.filePath ?? queueEntry.filePath,
-      bytes: match.bytes ?? fileStat.size,
-      mediaType: match.mediaType ?? resource.mediaType,
+      id: resource.id,
+      index,
+      status: previous?.status ?? 'pending',
+      url: resource.url,
+      mediaType: resource.mediaType,
+      filePath: previous?.filePath ?? resourceFilePath(layout.filesDir, resource, index),
+      sourceUrl: resource.sourceUrl ?? previous?.sourceUrl ?? null,
+      reason: previous?.reason ?? null,
+      bytes: previous?.bytes ?? null,
     };
-  } catch {
-    return null;
-  }
+  });
 }
 
-function renderReport(manifest, resolvedTask) {
+function cliQuote(value) {
+  return `"${String(value).replace(/"/gu, '\\"')}"`;
+}
+
+function buildResumeCommand(plan, layout) {
+  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
+  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
+  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --resume`;
+}
+
+function buildRetryFailedCommand(plan, layout) {
+  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
+  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
+  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --retry-failed`;
+}
+
+function explainManifestStatus(manifest) {
+  if (manifest.reason === 'dry-run') {
+    return 'Dry run only wrote planned artifacts; no resource download was attempted.';
+  }
+  if (manifest.reason === 'retry-state-missing') {
+    return 'retry-failed found no previous run state in this run directory, so nothing was retried.';
+  }
+  if (manifest.reason === 'retry-failed-none') {
+    return 'retry-failed found no failed resources in the previous queue, so the run was skipped.';
+  }
+  if (manifest.reason === 'manifest-queue-count-mismatch') {
+    return 'Previous recovery artifacts disagree: manifest expected count does not match queue length.';
+  }
+  if (manifest.reason?.startsWith('recovery-artifact-')) {
+    return 'A previously successful resource could not be reused because its recorded artifact is inconsistent.';
+  }
+  if (manifest.failedResources.length > 0) {
+    return 'One or more resources failed; use resume or retry-failed after fixing the cause.';
+  }
+  if (manifest.status === 'passed') {
+    return 'All expected resources are downloaded or intentionally reused/skipped.';
+  }
+  if (manifest.status === 'skipped') {
+    return 'No download was attempted for this run.';
+  }
+  return 'See reason and failed resources for the recovery outcome.';
+}
+
+function formatRecoveryProblem(problem) {
+  const target = problem.resourceId ?? problem.url ?? problem.path ?? 'run';
+  const detail = problem.detail ?? problem.error;
+  return detail ? `${target}: ${problem.reason} (${detail})` : `${target}: ${problem.reason}`;
+}
+
+function renderReport(manifest, resolvedTask, { plan = null, layout = null, recoveryProblems = [] } = {}) {
   const lines = [
     '# Download Run',
     '',
     `- Status: ${manifest.status}`,
+    `- Status explanation: ${explainManifestStatus(manifest)}`,
     `- Site: ${manifest.siteKey}`,
     `- Plan: ${manifest.planId}`,
     `- Expected: ${manifest.counts.expected}`,
@@ -282,8 +276,13 @@ function renderReport(manifest, resolvedTask) {
   if (manifest.reason) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
-  if (manifest.resumeCommand) {
-    lines.push(`- Resume: ${manifest.resumeCommand}`);
+  if (plan && layout) {
+    lines.push(
+      `- Next resume command: ${buildResumeCommand(plan, layout)}`,
+      `- Next retry-failed command: ${buildRetryFailedCommand(plan, layout)}`,
+    );
+  } else if (manifest.resumeCommand) {
+    lines.push(`- Next resume command: ${manifest.resumeCommand}`);
   }
   if (resolvedTask?.completeness?.reason) {
     lines.push(`- Resolution: ${resolvedTask.completeness.reason}`);
@@ -293,6 +292,12 @@ function renderReport(manifest, resolvedTask) {
     `- Queue: ${manifest.artifacts.queue}`,
     `- Downloads JSONL: ${manifest.artifacts.downloadsJsonl}`,
   );
+  if (recoveryProblems.length) {
+    lines.push('', '## Recovery Diagnostics');
+    for (const problem of recoveryProblems) {
+      lines.push(`- ${formatRecoveryProblem(problem)}`);
+    }
+  }
   if (manifest.failedResources.length) {
     lines.push('', '## Failed Resources');
     for (const failure of manifest.failedResources) {
@@ -302,10 +307,153 @@ function renderReport(manifest, resolvedTask) {
   return `${lines.join('\n')}\n`;
 }
 
-function buildResumeCommand(plan, layout) {
-  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
-  const inputArg = plan.source?.input ? ` --input "${String(plan.source.input).replace(/"/gu, '\\"')}"` : '';
-  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir "${layout.runDir}" --resume`;
+function resultHasArtifact(result) {
+  return result?.ok === true && result.hasFile !== false;
+}
+
+function filesFromResults(results) {
+  return results.filter(resultHasArtifact).map((result) => ({
+    resourceId: result.resourceId,
+    url: result.url,
+    filePath: result.filePath,
+    bytes: result.bytes ?? 0,
+    mediaType: result.mediaType ?? 'binary',
+    sha256: result.sha256 ?? null,
+    skipped: result.skipped === true,
+  }));
+}
+
+function failedResourcesFromResults(results) {
+  return results.filter((result) => !result?.ok).map((result) => ({
+    resourceId: result.resourceId,
+    url: result.url,
+    filePath: result.filePath,
+    reason: result.reason ?? 'download-failed',
+    error: result.error ?? null,
+    verificationFailures: result.verificationFailures ?? [],
+  }));
+}
+
+function countsFromResults(resources, results, failedResources) {
+  return {
+    expected: resources.length,
+    attempted: results.filter((result) => result && result.skipped !== true && result.attempted !== false).length,
+    downloaded: results.filter((result) => result?.ok && result.skipped !== true).length,
+    skipped: results.filter((result) => result?.ok && result.skipped === true).length,
+    failed: failedResources.length,
+  };
+}
+
+function queueStatusFromResult(result) {
+  if (!result?.ok) {
+    return 'failed';
+  }
+  return result.skipped ? 'skipped' : 'downloaded';
+}
+
+function applyResultToQueue(queueEntry, result) {
+  return {
+    ...queueEntry,
+    status: queueStatusFromResult(result),
+    reason: result.reason ?? null,
+    bytes: result.bytes ?? null,
+  };
+}
+
+function skippedControlResult(resource, queueEntry, reason) {
+  return {
+    ok: true,
+    skipped: true,
+    hasFile: false,
+    reason,
+    resourceId: resource.id,
+    url: resource.url,
+    filePath: queueEntry?.filePath ?? null,
+    bytes: 0,
+    mediaType: resource.mediaType,
+  };
+}
+
+function failedControlResult(resource, queueEntry, reason, detail) {
+  return {
+    ok: false,
+    attempted: false,
+    reason,
+    error: detail ?? null,
+    resourceId: resource.id,
+    url: resource.url,
+    filePath: queueEntry?.filePath ?? null,
+    mediaType: resource.mediaType,
+  };
+}
+
+async function buildRetryFailedNoopResults(resources, queue, recoveryState, recoveryProblems, fallbackReason) {
+  const results = [];
+  for (let index = 0; index < resources.length; index += 1) {
+    const resource = resources[index];
+    const queueEntry = queue[index];
+    if (isSuccessfulQueueStatus(queueEntry?.status)) {
+      const recovered = await recoverCompletedResource(resource, queueEntry, recoveryState, 'retry-failed-reused-download');
+      if (recovered.result) {
+        results.push(recovered.result);
+        continue;
+      }
+      if (recovered.problem) {
+        recoveryProblems.push(recovered.problem);
+        results.push(failedControlResult(resource, queueEntry, recovered.problem.reason, recovered.problem.detail));
+        continue;
+      }
+    }
+    results.push(skippedControlResult(resource, queueEntry, fallbackReason));
+  }
+  return results;
+}
+
+async function writeRunArtifactsFromResults({
+  layout,
+  plan,
+  resolvedTask,
+  sessionLease,
+  resources,
+  queue,
+  results,
+  status,
+  reason,
+  recoveryProblems = [],
+}) {
+  const files = filesFromResults(results);
+  const failedResources = failedResourcesFromResults(results);
+  const counts = countsFromResults(resources, results, failedResources);
+  const manifest = normalizeDownloadRunManifest({
+    runId: layout.runId,
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    status: status ?? resolveDownloadRunStatus(counts),
+    reason: reason ?? (failedResources.length ? 'download-failures' : undefined),
+    counts,
+    files,
+    failedResources,
+    resumeCommand: failedResources.length || status === 'skipped' ? buildResumeCommand(plan, layout) : undefined,
+    artifacts: {
+      manifest: layout.manifestPath,
+      queue: layout.queuePath,
+      downloadsJsonl: layout.downloadsJsonlPath,
+      reportMarkdown: layout.reportMarkdownPath,
+    },
+    session: sessionLease,
+    createdAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+  });
+
+  await writeJsonFile(layout.queuePath, queue);
+  await writeJsonLines(layout.downloadsJsonlPath, results);
+  await writeJsonFile(layout.manifestPath, manifest);
+  await writeTextFile(layout.reportMarkdownPath, renderReport(manifest, resolvedTask, {
+    plan,
+    layout,
+    recoveryProblems,
+  }));
+  return manifest;
 }
 
 export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessionLease = null, options = {}, deps = {}) {
@@ -318,8 +466,10 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
   const retryFailedOnly = Boolean(options.retryFailedOnly ?? plan.policy?.retryFailedOnly ?? false);
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const resources = resolvedTask.resources;
-  const resumeState = await loadResumeState(layout, resume || retryFailedOnly);
-  const queue = buildQueue(resources, layout, resumeState.queue);
+  const recoveryMode = retryFailedOnly ? 'retry-failed' : resume ? 'resume' : 'none';
+  const recoveryState = await loadDownloadRecoveryState(layout, resources, recoveryMode);
+  const recoveryProblems = [...(recoveryState.problems ?? [])];
+  const queue = buildQueue(resources, layout, recoveryState.queue);
 
   await writeJsonFile(layout.planPath, plan);
   await writeJsonFile(layout.resolvedTaskPath, resolvedTask);
@@ -355,8 +505,50 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
       finishedAt: new Date().toISOString(),
     });
     await writeJsonFile(layout.manifestPath, manifest);
-    await writeTextFile(layout.reportMarkdownPath, renderReport(manifest, resolvedTask));
+    await writeTextFile(layout.reportMarkdownPath, renderReport(manifest, resolvedTask, {
+      plan,
+      layout,
+      recoveryProblems,
+    }));
     return manifest;
+  }
+
+  if (recoveryState.terminal) {
+    let results;
+    let status = recoveryState.terminal.status;
+    let reason = recoveryState.terminal.reason;
+    if (reason === 'retry-failed-none') {
+      results = await buildRetryFailedNoopResults(resources, queue, recoveryState, recoveryProblems, reason);
+      for (let index = 0; index < results.length; index += 1) {
+        queue[index] = applyResultToQueue(queue[index], results[index]);
+      }
+      const failedResources = failedResourcesFromResults(results);
+      if (failedResources.length > 0) {
+        status = 'failed';
+        reason = failedResources[0].reason;
+      }
+    } else {
+      results = resources.map((resource, index) => (
+        status === 'failed'
+          ? failedControlResult(resource, queue[index], reason, recoveryState.terminal.detail)
+          : skippedControlResult(resource, queue[index], reason)
+      ));
+      for (let index = 0; index < results.length; index += 1) {
+        queue[index] = applyResultToQueue(queue[index], results[index]);
+      }
+    }
+    return await writeRunArtifactsFromResults({
+      layout,
+      plan,
+      resolvedTask,
+      sessionLease,
+      resources,
+      queue,
+      results,
+      status,
+      reason,
+      recoveryProblems,
+    });
   }
 
   if (typeof fetchImpl !== 'function' && resources.length > 0) {
@@ -367,29 +559,29 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
     const filePath = queue[index].filePath;
     const previousStatus = queue[index].status;
     if (resume || retryFailedOnly) {
-      const completed = await resumableCompletedResult(resource, queue[index], resumeState.downloads);
-      if (completed) {
-        queue[index] = {
-          ...queue[index],
-          status: 'skipped',
-          reason: completed.reason,
-          bytes: completed.bytes ?? null,
-        };
+      const recovered = await recoverCompletedResource(
+        resource,
+        queue[index],
+        recoveryState,
+        retryFailedOnly ? 'retry-failed-reused-download' : 'resume-existing-download',
+      );
+      if (recovered.result) {
+        queue[index] = applyResultToQueue(queue[index], recovered.result);
         await writeJsonFile(layout.queuePath, queue);
-        return completed;
+        return recovered.result;
+      }
+      if (recovered.problem) {
+        recoveryProblems.push(recovered.problem);
+        if (retryFailedOnly && isSuccessfulQueueStatus(previousStatus)) {
+          const failed = failedControlResult(resource, queue[index], recovered.problem.reason, recovered.problem.detail);
+          queue[index] = applyResultToQueue(queue[index], failed);
+          await writeJsonFile(layout.queuePath, queue);
+          return failed;
+        }
       }
       if (retryFailedOnly && previousStatus !== 'failed') {
-        const skipped = {
-          ok: true,
-          skipped: true,
-          reason: 'retry-failed-only',
-          resourceId: resource.id,
-          url: resource.url,
-          filePath,
-          bytes: 0,
-          mediaType: resource.mediaType,
-        };
-        queue[index] = { ...queue[index], status: 'skipped', reason: skipped.reason };
+        const skipped = skippedControlResult(resource, queue[index], 'retry-failed-not-failed');
+        queue[index] = applyResultToQueue(queue[index], skipped);
         await writeJsonFile(layout.queuePath, queue);
         return skipped;
       }
@@ -397,7 +589,7 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
     if (skipExisting) {
       const existing = await existingFileResult(resource, filePath);
       if (existing) {
-        queue[index] = { ...queue[index], status: 'skipped', reason: existing.reason };
+        queue[index] = applyResultToQueue(queue[index], existing);
         await writeJsonFile(layout.queuePath, queue);
         return existing;
       }
@@ -411,64 +603,19 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
       retryBackoffMs: plan.policy?.retryBackoffMs ?? options.retryBackoffMs,
       sessionLease,
     });
-    queue[index] = {
-      ...queue[index],
-      status: result.ok ? (result.skipped ? 'skipped' : 'downloaded') : 'failed',
-      reason: result.reason ?? null,
-      bytes: result.bytes ?? null,
-    };
+    queue[index] = applyResultToQueue(queue[index], result);
     await writeJsonFile(layout.queuePath, queue);
     return result;
   });
 
-  const files = results.filter((result) => result?.ok).map((result) => ({
-    resourceId: result.resourceId,
-    url: result.url,
-    filePath: result.filePath,
-    bytes: result.bytes ?? 0,
-    mediaType: result.mediaType ?? 'binary',
-    sha256: result.sha256 ?? null,
-    skipped: result.skipped === true,
-  }));
-  const failedResources = results.filter((result) => !result?.ok).map((result) => ({
-    resourceId: result.resourceId,
-    url: result.url,
-    filePath: result.filePath,
-    reason: result.reason ?? 'download-failed',
-    error: result.error ?? null,
-    verificationFailures: result.verificationFailures ?? [],
-  }));
-  const counts = {
-    expected: resources.length,
-    attempted: results.filter((result) => result && result.skipped !== true).length,
-    downloaded: results.filter((result) => result?.ok && result.skipped !== true).length,
-    skipped: results.filter((result) => result?.ok && result.skipped === true).length,
-    failed: failedResources.length,
-  };
-  const manifest = normalizeDownloadRunManifest({
-    runId: layout.runId,
-    planId: plan.id,
-    siteKey: plan.siteKey,
-    status: resolveDownloadRunStatus(counts),
-    reason: failedResources.length ? 'download-failures' : undefined,
-    counts,
-    files,
-    failedResources,
-    resumeCommand: failedResources.length ? buildResumeCommand(plan, layout) : undefined,
-    artifacts: {
-      manifest: layout.manifestPath,
-      queue: layout.queuePath,
-      downloadsJsonl: layout.downloadsJsonlPath,
-      reportMarkdown: layout.reportMarkdownPath,
-    },
-    session: sessionLease,
-    createdAt: new Date().toISOString(),
-    finishedAt: new Date().toISOString(),
+  return await writeRunArtifactsFromResults({
+    layout,
+    plan,
+    resolvedTask,
+    sessionLease,
+    resources,
+    queue,
+    results,
+    recoveryProblems,
   });
-
-  await writeJsonFile(layout.queuePath, queue);
-  await writeJsonLines(layout.downloadsJsonlPath, results);
-  await writeJsonFile(layout.manifestPath, manifest);
-  await writeTextFile(layout.reportMarkdownPath, renderReport(manifest, resolvedTask));
-  return manifest;
 }

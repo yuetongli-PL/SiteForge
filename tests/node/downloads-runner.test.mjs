@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { readJsonFile } from '../../src/infra/io.mjs';
+import { readJsonFile, writeJsonFile } from '../../src/infra/io.mjs';
 import { parseArgs } from '../../src/entrypoints/sites/download.mjs';
 import { normalizeDownloadTaskPlan } from '../../src/sites/downloads/contracts.mjs';
 import { executeResolvedDownloadTask } from '../../src/sites/downloads/executor.mjs';
@@ -558,6 +558,209 @@ test('download executor resumes fixed run directories and retries incomplete res
   assert.equal(await readFile(secondManifest.files.find((entry) => entry.resourceId === 'failed').filePath, 'utf8'), 'retried body');
 });
 
+test('download executor reports manifest queue mismatch as a stable recovery reason', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-recovery-mismatch-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/recovery-mismatch' },
+    policy: { dryRun: false, retries: 0, retryBackoffMs: 0 },
+    output: { runDir },
+  });
+  const resolvedTask = {
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [
+      {
+        id: 'one',
+        url: 'https://example.com/one.txt',
+        fileName: 'one.txt',
+        mediaType: 'text',
+      },
+      {
+        id: 'two',
+        url: 'https://example.com/two.txt',
+        fileName: 'two.txt',
+        mediaType: 'text',
+      },
+    ],
+  };
+
+  await writeJsonFile(path.join(runDir, 'manifest.json'), {
+    runId: 'old-run',
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    status: 'partial',
+    counts: {
+      expected: 2,
+      attempted: 1,
+      downloaded: 0,
+      skipped: 0,
+      failed: 1,
+    },
+    files: [],
+    failedResources: [],
+  });
+  await writeJsonFile(path.join(runDir, 'queue.json'), [{
+    id: 'one',
+    status: 'failed',
+    url: 'https://example.com/one.txt',
+    filePath: path.join(runDir, 'files', '0001-one.txt'),
+  }]);
+  await writeFile(path.join(runDir, 'downloads.jsonl'), '', 'utf8');
+
+  const manifest = await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runDir,
+    dryRun: false,
+    retryFailedOnly: true,
+  }, {
+    fetchImpl: async () => {
+      throw new Error('recovery mismatch should not fetch resources');
+    },
+  });
+
+  assert.equal(manifest.status, 'failed');
+  assert.equal(manifest.reason, 'manifest-queue-count-mismatch');
+  assert.equal(manifest.counts.failed, 2);
+  assert.equal(manifest.failedResources[0].reason, 'manifest-queue-count-mismatch');
+  assert.match(await readFile(manifest.artifacts.reportMarkdown, 'utf8'), /manifest-queue-count-mismatch/u);
+});
+
+test('download executor retry-failed without failed queue entries skips and reuses successes', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-retry-none-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+
+  const filesDir = path.join(runDir, 'files');
+  await mkdir(filesDir, { recursive: true });
+  const filePath = path.join(filesDir, '0001-done.txt');
+  await writeFile(filePath, 'already done', 'utf8');
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/retry-none' },
+    policy: { dryRun: false, retries: 0, retryBackoffMs: 0 },
+    output: { runDir },
+  });
+  const resolvedTask = {
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [{
+      id: 'done',
+      url: 'https://example.com/done.txt',
+      fileName: 'done.txt',
+      mediaType: 'text',
+    }],
+  };
+  await writeJsonFile(path.join(runDir, 'manifest.json'), {
+    runId: 'old-run',
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    status: 'passed',
+    counts: {
+      expected: 1,
+      attempted: 1,
+      downloaded: 1,
+      skipped: 0,
+      failed: 0,
+    },
+    files: [{
+      resourceId: 'done',
+      url: 'https://example.com/done.txt',
+      filePath,
+      bytes: 'already done'.length,
+      mediaType: 'text',
+      skipped: false,
+    }],
+    failedResources: [],
+  });
+  await writeJsonFile(path.join(runDir, 'queue.json'), [{
+    id: 'done',
+    status: 'downloaded',
+    url: 'https://example.com/done.txt',
+    filePath,
+    bytes: 'already done'.length,
+    mediaType: 'text',
+  }]);
+  await writeFile(path.join(runDir, 'downloads.jsonl'), `${JSON.stringify({
+    ok: true,
+    resourceId: 'done',
+    url: 'https://example.com/done.txt',
+    filePath,
+    bytes: 'already done'.length,
+    mediaType: 'text',
+  })}\n`, 'utf8');
+
+  const manifest = await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runDir,
+    dryRun: false,
+    retryFailedOnly: true,
+  }, {
+    fetchImpl: async () => {
+      throw new Error('retry-failed with no failures should not fetch');
+    },
+  });
+
+  assert.equal(manifest.status, 'skipped');
+  assert.equal(manifest.reason, 'retry-failed-none');
+  assert.equal(manifest.counts.skipped, 1);
+  assert.equal(manifest.files.length, 1);
+  assert.equal(manifest.files[0].resourceId, 'done');
+  assert.equal(manifest.files[0].skipped, true);
+});
+
+test('download executor report includes next recovery commands and artifact paths', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-report-commands-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/report.txt' },
+    policy: { dryRun: false, retries: 0, retryBackoffMs: 0 },
+    output: { root: runRoot },
+  });
+  const manifest = await executeResolvedDownloadTask({
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [{
+      id: 'report',
+      url: 'https://example.com/report.txt',
+      fileName: 'report.txt',
+      mediaType: 'text',
+    }],
+  }, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+    dryRun: false,
+  }, {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+    }),
+  });
+
+  const report = await readFile(manifest.artifacts.reportMarkdown, 'utf8');
+  assert.equal(manifest.status, 'failed');
+  assert.equal(manifest.resumeCommand.includes('--resume'), true);
+  assert.match(report, /Status explanation:/u);
+  assert.match(report, /Next resume command: .*--resume/u);
+  assert.match(report, /Next retry-failed command: .*--retry-failed/u);
+  assert.match(report, new RegExp(`Manifest: ${manifest.artifacts.manifest.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u'));
+  assert.match(report, new RegExp(`Queue: ${manifest.artifacts.queue.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u'));
+  assert.match(report, new RegExp(`Downloads JSONL: ${manifest.artifacts.downloadsJsonl.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u'));
+});
+
 test('download executor retry-failed only reattempts previous failures', async (t) => {
   const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-retry-failed-run-'));
   t.after(() => rm(runDir, { recursive: true, force: true }));
@@ -595,7 +798,19 @@ test('download executor retry-failed only reattempts previous failures', async (
     runDir,
     dryRun: false,
   }, {
-    fetchImpl: async (url) => ({ ok: false, status: String(url).includes('failed') ? 500 : 404 }),
+    fetchImpl: async (url) => {
+      if (String(url).includes('failed')) {
+        return { ok: false, status: 500 };
+      }
+      const payload = Buffer.from('already successful', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
   });
 
   const retriedUrls = [];
@@ -607,6 +822,9 @@ test('download executor retry-failed only reattempts previous failures', async (
   }, {
     fetchImpl: async (url) => {
       retriedUrls.push(String(url));
+      if (String(url).includes('pending')) {
+        throw new Error('successful resources should be reused, not retried');
+      }
       const payload = Buffer.from('retry failed only', 'utf8');
       return {
         ok: true,
@@ -618,8 +836,11 @@ test('download executor retry-failed only reattempts previous failures', async (
     },
   });
 
-  assert.deepEqual(retriedUrls.sort(), ['https://example.com/failed.txt', 'https://example.com/pending.txt']);
+  assert.deepEqual(retriedUrls, ['https://example.com/failed.txt']);
   assert.equal(retryManifest.status, 'passed');
+  assert.equal(retryManifest.counts.downloaded, 1);
+  assert.equal(retryManifest.counts.skipped, 1);
+  assert.equal(retryManifest.files.find((entry) => entry.resourceId === 'pending').skipped, true);
 });
 
 test('download executor stays independent from concrete site routers', async () => {

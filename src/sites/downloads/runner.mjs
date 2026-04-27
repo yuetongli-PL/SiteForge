@@ -15,6 +15,8 @@ import { executeLegacyDownloadTask } from './legacy-executor.mjs';
 import {
   createDownloadPlan,
   resolveDownloadResources,
+} from './modules.mjs';
+import {
   resolveDownloadSiteDefinition,
 } from './registry.mjs';
 import {

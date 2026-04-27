@@ -3,6 +3,7 @@
 export * from './contracts.mjs';
 export * from './session-manager.mjs';
 export * from './registry.mjs';
+export * from './modules.mjs';
 export * from './executor.mjs';
 export * from './media-executor.mjs';
 export * from './legacy-executor.mjs';

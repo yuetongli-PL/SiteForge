@@ -182,7 +182,7 @@ test('download runner normalizes unhealthy session leases as blocked manifests',
 });
 
 test('download runner preflight blocks required sessions before legacy spawn', async (t) => {
-  for (const status of ['blocked', 'manual-required', 'expired']) {
+  for (const status of ['blocked', 'manual-required', 'expired', 'quarantine']) {
     await t.test(status, async (t) => {
       const runRoot = await mkdtemp(path.join(os.tmpdir(), `bwk-download-required-${status}-`));
       t.after(() => rm(runRoot, { recursive: true, force: true }));
@@ -218,6 +218,68 @@ test('download runner preflight blocks required sessions before legacy spawn', a
       assert.equal(result.manifest.reason, status === 'expired' ? 'session-expired' : `${status}-preflight`);
     });
   }
+});
+
+test('download runner writes sanitized session metadata to manifests', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-session-sanitized-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const result = await runDownloadTask({
+    site: 'instagram',
+    input: 'openai',
+    dryRun: true,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    inspectSessionHealth: async () => ({
+      siteKey: 'instagram',
+      host: 'www.instagram.com',
+      status: 'ready',
+      mode: 'authenticated',
+      riskSignals: [],
+    }),
+    acquireSessionLease: async () => ({
+      siteKey: 'instagram',
+      host: 'www.instagram.com',
+      mode: 'authenticated',
+      status: 'ready',
+      browserProfileRoot: 'C:/Users/example/profiles',
+      userDataDir: 'C:/Users/example/profiles/instagram',
+      headers: {
+        Cookie: 'sessionid=secret',
+        Authorization: 'Bearer secret',
+      },
+      cookies: [{ name: 'sessionid', value: 'secret' }],
+      riskSignals: ['profile-warmed'],
+      quarantineKey: 'www.instagram.com:download',
+      purpose: 'download:social-archive',
+    }),
+    resolveDownloadResources: async () => ({
+      resources: [{
+        id: 'media-1',
+        url: 'https://cdn.example.test/openai.jpg',
+        fileName: 'openai.jpg',
+        mediaType: 'image',
+      }],
+    }),
+  });
+
+  assert.equal(result.sessionLease.headers.Cookie, 'sessionid=secret');
+  assert.equal(result.manifest.status, 'skipped');
+  assert.equal(result.manifest.session.status, 'ready');
+  assert.equal(result.manifest.session.mode, 'authenticated');
+  assert.deepEqual(result.manifest.session.riskSignals, ['profile-warmed']);
+  assert.equal(result.manifest.session.quarantineKey, 'www.instagram.com:download');
+  assert.equal(result.manifest.session.headers, undefined);
+  assert.equal(result.manifest.session.cookies, undefined);
+  assert.equal(result.manifest.session.browserProfileRoot, undefined);
+  assert.equal(result.manifest.session.userDataDir, undefined);
+
+  const persisted = await readJsonFile(result.manifest.artifacts.manifest);
+  assert.equal(persisted.session.headers, undefined);
+  assert.equal(persisted.session.cookies, undefined);
+  assert.equal(persisted.session.userDataDir, undefined);
 });
 
 test('download runner uses lease risk reason when required lease is not ready', async (t) => {
@@ -493,6 +555,12 @@ test('legacy executor normalizes action stdout source artifacts into manifest re
     reportMarkdown: path.join(legacyRunDir, 'report.md'),
   });
   assert.deepEqual(manifest.legacy.artifacts, manifest.artifacts.source);
+  const report = await readFile(manifest.artifacts.reportMarkdown, 'utf8');
+  assert.match(report, /Status explanation:/u);
+  assert.match(report, /Next resume command: .*--resume/u);
+  assert.match(report, /Next retry-failed command: .*--retry-failed/u);
+  assert.match(report, /Source artifact mediaQueue:/u);
+  assert.match(report, /Source artifact indexCsv:|Source artifact manifest:/u);
 });
 
 test('legacy executor maps blocked legacy failures into blocked manifests', async (t) => {

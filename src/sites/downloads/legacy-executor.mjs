@@ -442,17 +442,57 @@ function previewText(value, limit = 2_000) {
   return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
-function buildResumeCommand(plan, layout) {
-  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
-  const inputArg = plan.source?.input ? ` --input "${String(plan.source.input).replace(/"/gu, '\\"')}"` : '';
-  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir "${layout.runDir}" --resume`;
+function cliQuote(value) {
+  return `"${String(value).replace(/"/gu, '\\"')}"`;
 }
 
-function renderLegacyReport(manifest) {
+function buildResumeCommand(plan, layout) {
+  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
+  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
+  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --resume`;
+}
+
+function buildRetryFailedCommand(plan, layout) {
+  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
+  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
+  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --retry-failed`;
+}
+
+function explainLegacyManifest(manifest) {
+  if (manifest.status === 'blocked') {
+    return 'Legacy downloader reported an authentication, session, challenge, or risk block.';
+  }
+  if (manifest.legacy?.recovery) {
+    return 'Legacy recovery preflight returned a stable wrapper result before spawning the legacy downloader.';
+  }
+  if (manifest.status === 'passed') {
+    return 'Legacy downloader completed successfully and its output was normalized into the unified manifest.';
+  }
+  if (manifest.status === 'partial' || manifest.status === 'failed') {
+    return 'Legacy downloader did not complete cleanly; inspect source artifacts and retry after fixing the cause.';
+  }
+  return 'Legacy downloader produced a skipped or no-op result.';
+}
+
+function flattenArtifactLines(prefix, value, lines) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return;
+  }
+  for (const [key, artifactValue] of Object.entries(value)) {
+    if (artifactValue && typeof artifactValue === 'object' && !Array.isArray(artifactValue)) {
+      flattenArtifactLines(`${prefix}${key}.`, artifactValue, lines);
+    } else if (artifactValue !== undefined && artifactValue !== null && artifactValue !== '') {
+      lines.push(`- Source artifact ${prefix}${key}: ${artifactValue}`);
+    }
+  }
+}
+
+function renderLegacyReport(manifest, { plan = null, layout = null } = {}) {
   const lines = [
     '# Download Run',
     '',
     `- Status: ${manifest.status}`,
+    `- Status explanation: ${explainLegacyManifest(manifest)}`,
     `- Site: ${manifest.siteKey}`,
     `- Plan: ${manifest.planId}`,
     `- Expected: ${manifest.counts.expected}`,
@@ -464,7 +504,10 @@ function renderLegacyReport(manifest) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
   if (manifest.resumeCommand) {
-    lines.push(`- Resume: ${manifest.resumeCommand}`);
+    lines.push(`- Next resume command: ${manifest.resumeCommand}`);
+  }
+  if (plan && layout) {
+    lines.push(`- Next retry-failed command: ${buildRetryFailedCommand(plan, layout)}`);
   }
   if (manifest.legacy?.runDir) {
     lines.push(`- Legacy run dir: ${manifest.legacy.runDir}`);
@@ -472,6 +515,7 @@ function renderLegacyReport(manifest) {
   if (manifest.legacy?.manifestPath) {
     lines.push(`- Legacy manifest: ${manifest.legacy.manifestPath}`);
   }
+  flattenArtifactLines('', manifest.artifacts?.source, lines);
   lines.push(
     `- Manifest: ${manifest.artifacts.manifest}`,
     `- Queue: ${manifest.artifacts.queue}`,
@@ -605,7 +649,10 @@ async function writeLegacyRecoveryManifest({ layout, plan, sessionLease, command
     failedResources,
   }]);
   await writeJsonFile(layout.manifestPath, manifest);
-  await writeTextFile(layout.reportMarkdownPath, renderLegacyReport(manifest));
+  await writeTextFile(layout.reportMarkdownPath, renderLegacyReport(manifest, {
+    plan,
+    layout,
+  }));
   return manifest;
 }
 
@@ -771,6 +818,9 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
     exitCode: processResult.code,
   }]);
   await writeJsonFile(layout.manifestPath, manifest);
-  await writeTextFile(layout.reportMarkdownPath, renderLegacyReport(manifest));
+  await writeTextFile(layout.reportMarkdownPath, renderLegacyReport(manifest, {
+    plan,
+    layout,
+  }));
   return manifest;
 }

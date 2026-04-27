@@ -25,6 +25,7 @@ export const SESSION_LEASE_STATUSES = Object.freeze([
   'blocked',
   'manual-required',
   'expired',
+  'quarantine',
 ]);
 
 export const SESSION_LEASE_MODES = Object.freeze([
@@ -393,6 +394,35 @@ export function normalizeDownloadRunArtifacts(raw = {}, context = {}) {
   return result;
 }
 
+export function normalizeManifestSession(value = undefined) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const session = normalizeSessionLease(value, {
+    siteKey: value.siteKey,
+    host: value.host,
+    mode: value.mode,
+    status: value.status,
+    riskSignals: value.riskSignals,
+    expiresAt: value.expiresAt,
+    quarantineKey: value.quarantineKey,
+    reason: value.reason,
+    purpose: value.purpose,
+  });
+  const result = {
+    siteKey: session.siteKey,
+    host: session.host,
+    mode: session.mode,
+    status: session.status,
+    riskSignals: session.riskSignals,
+    expiresAt: session.expiresAt,
+    quarantineKey: session.quarantineKey,
+    reason: session.reason,
+    purpose: session.purpose,
+  };
+  return Object.fromEntries(Object.entries(result).filter(([, entryValue]) => entryValue !== undefined));
+}
+
 export function normalizeDownloadRunManifest(raw = {}, context = {}) {
   const counts = {
     expected: Number(raw.counts?.expected ?? context.expected ?? 0),
@@ -419,7 +449,7 @@ export function normalizeDownloadRunManifest(raw = {}, context = {}) {
     resumeCommand: normalizeText(raw.resumeCommand ?? context.resumeCommand) || undefined,
     artifacts: normalizeDownloadRunArtifacts(raw.artifacts, context.artifacts),
     legacy: raw.legacy ?? context.legacy ?? undefined,
-    session: raw.session ?? context.session ?? undefined,
+    session: normalizeManifestSession(raw.session ?? context.session),
     createdAt: normalizeText(raw.createdAt ?? context.createdAt) || new Date().toISOString(),
     finishedAt: normalizeText(raw.finishedAt ?? context.finishedAt) || undefined,
   };

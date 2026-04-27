@@ -81,6 +81,22 @@ function sessionRiskReason(value = {}) {
     ?? sessionStatus(value);
 }
 
+function cliQuote(value) {
+  return `"${String(value).replace(/"/gu, '\\"')}"`;
+}
+
+function buildResumeCommand(plan, layout) {
+  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
+  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
+  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --resume`;
+}
+
+function buildRetryFailedCommand(plan, layout) {
+  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
+  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
+  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --retry-failed`;
+}
+
 function normalizeHealthAsLease(health = {}, plan = {}, purpose = 'download') {
   return normalizeSessionLease({
     siteKey: plan.siteKey,
@@ -106,20 +122,54 @@ function createAnonymousPreflightLease(plan = {}, purpose = 'download') {
   });
 }
 
-function renderTerminalReport(manifest, resolvedTask = null) {
+function explainTerminalManifest(manifest) {
+  if (manifest.status === 'blocked') {
+    return 'Session preflight blocked execution before resource resolution or legacy downloader spawn.';
+  }
+  if (manifest.reason === 'no-resolved-resources') {
+    return 'No concrete resources were resolved and no legacy downloader was available for this plan.';
+  }
+  if (manifest.reason === 'dry-run') {
+    return 'Dry run only wrote planned artifacts; no resource download was attempted.';
+  }
+  return 'No download was attempted for this terminal runner state.';
+}
+
+function renderTerminalReport(manifest, resolvedTask = null, { plan = null, layout = null } = {}) {
   const lines = [
     '# Download Run',
     '',
     `- Status: ${manifest.status}`,
+    `- Status explanation: ${explainTerminalManifest(manifest)}`,
     `- Site: ${manifest.siteKey}`,
     `- Plan: ${manifest.planId}`,
   ];
   if (manifest.reason) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
+  if (manifest.session) {
+    lines.push(`- Session status: ${manifest.session.status}`);
+    if (manifest.session.reason) {
+      lines.push(`- Session reason: ${manifest.session.reason}`);
+    }
+    if (manifest.session.quarantineKey) {
+      lines.push(`- Session quarantine key: ${manifest.session.quarantineKey}`);
+    }
+  }
+  if (manifest.resumeCommand) {
+    lines.push(`- Next resume command: ${manifest.resumeCommand}`);
+  }
+  if (plan && layout) {
+    lines.push(`- Next retry-failed command: ${buildRetryFailedCommand(plan, layout)}`);
+  }
   if (resolvedTask?.completeness?.reason) {
     lines.push(`- Resolution: ${resolvedTask.completeness.reason}`);
   }
+  lines.push(
+    `- Manifest: ${manifest.artifacts.manifest}`,
+    `- Queue: ${manifest.artifacts.queue}`,
+    `- Downloads JSONL: ${manifest.artifacts.downloadsJsonl}`,
+  );
   return `${lines.join('\n')}\n`;
 }
 
@@ -147,6 +197,9 @@ async function writeTerminalManifest({ plan, sessionLease, resolvedTask = null, 
     },
     files: [],
     failedResources: [],
+    resumeCommand: ['blocked', 'partial', 'failed', 'skipped'].includes(status)
+      ? buildResumeCommand(plan, layout)
+      : undefined,
     artifacts: {
       manifest: layout.manifestPath,
       queue: layout.queuePath,
@@ -163,7 +216,10 @@ async function writeTerminalManifest({ plan, sessionLease, resolvedTask = null, 
     finishedAt: new Date().toISOString(),
   });
   await writeJsonFile(layout.manifestPath, manifest);
-  await writeTextFile(layout.reportMarkdownPath, renderTerminalReport(manifest, normalizedResolvedTask));
+  await writeTextFile(layout.reportMarkdownPath, renderTerminalReport(manifest, normalizedResolvedTask, {
+    plan,
+    layout,
+  }));
   return manifest;
 }
 

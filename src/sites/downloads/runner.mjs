@@ -6,8 +6,10 @@ import {
   writeTextFile,
 } from '../../infra/io.mjs';
 import {
+  createAnonymousSessionLease,
   normalizeDownloadRunManifest,
   normalizeResolvedDownloadTask,
+  normalizeSessionLease,
 } from './contracts.mjs';
 import { buildDownloadRunLayout } from './artifacts.mjs';
 import { executeResolvedDownloadTask } from './executor.mjs';
@@ -21,8 +23,88 @@ import {
 } from './registry.mjs';
 import {
   acquireSessionLease,
+  inspectSessionHealth,
   releaseSessionLease,
 } from './session-manager.mjs';
+
+const AUTH_REQUIRED_KEYS = [
+  'authRequired',
+  'loginRequired',
+  'requiresAuth',
+  'downloadRequiresAuth',
+  'requiresLogin',
+];
+
+function isTruthyMarker(value) {
+  return value === true || value === 'true' || value === 'required' || value === 'login-required';
+}
+
+function objectMarksAuthRequired(value = {}) {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return AUTH_REQUIRED_KEYS.some((key) => isTruthyMarker(value[key]))
+    || value.sessionRequirement === 'required'
+    || value.downloadSessionRequirement === 'required'
+    || isTruthyMarker(value.auth?.required)
+    || isTruthyMarker(value.login?.required)
+    || isTruthyMarker(value.session?.required)
+    || value.session?.requirement === 'required';
+}
+
+function marksAuthRequired(request = {}, plan = {}) {
+  return plan.sessionRequirement === 'required'
+    || objectMarksAuthRequired(plan)
+    || objectMarksAuthRequired(plan.metadata)
+    || objectMarksAuthRequired(plan.metadata?.definition)
+    || objectMarksAuthRequired(plan.policy)
+    || objectMarksAuthRequired(request)
+    || objectMarksAuthRequired(request.download)
+    || objectMarksAuthRequired(request.plan)
+    || objectMarksAuthRequired(request.session)
+    || request.sessionRequirement === 'required';
+}
+
+function sessionStatus(value = {}) {
+  return String(value?.status ?? 'ready').trim() || 'ready';
+}
+
+function isSessionReady(value = {}) {
+  return sessionStatus(value) === 'ready';
+}
+
+function sessionRiskReason(value = {}) {
+  return value?.reason
+    ?? value?.riskReason
+    ?? value?.riskCauseCode
+    ?? value?.riskSignals?.find(Boolean)
+    ?? sessionStatus(value);
+}
+
+function normalizeHealthAsLease(health = {}, plan = {}, purpose = 'download') {
+  return normalizeSessionLease({
+    siteKey: plan.siteKey,
+    host: plan.host,
+    purpose,
+    mode: health.mode ?? 'reusable-profile',
+    ...health,
+    status: sessionStatus(health),
+    reason: sessionRiskReason(health),
+  }, {
+    siteKey: plan.siteKey,
+    host: plan.host,
+    purpose,
+    status: sessionStatus(health),
+  });
+}
+
+function createAnonymousPreflightLease(plan = {}, purpose = 'download') {
+  return createAnonymousSessionLease({
+    siteKey: plan.siteKey,
+    host: plan.host,
+    purpose,
+  });
+}
 
 function renderTerminalReport(manifest, resolvedTask = null) {
   const lines = [
@@ -99,31 +181,62 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
     siteMetadataOptions,
     definition,
   });
-  const sessionLease = await (deps.acquireSessionLease ?? acquireSessionLease)(
+  const sessionPurpose = `download:${plan.taskType}`;
+  const effectiveAuthRequired = marksAuthRequired(request, plan);
+  const sessionOptions = {
+    ...options,
+    ...request.session,
+    host: plan.host,
+    siteContext: request.siteContext,
+    profile: request.profile,
+    profilePath: request.profilePath,
+    sessionRequirement: effectiveAuthRequired ? 'required' : plan.sessionRequirement,
+    headers: request.headers,
+    downloadHeaders: request.downloadHeaders,
+    cookies: request.cookies,
+  };
+  const health = plan.sessionRequirement === 'none' && !effectiveAuthRequired
+    ? null
+    : await (deps.inspectSessionHealth ?? inspectSessionHealth)(
+      plan.siteKey,
+      sessionOptions,
+      deps.sessionDeps ?? deps,
+    );
+
+  if (health && !isSessionReady(health) && effectiveAuthRequired) {
+    const sessionLease = normalizeHealthAsLease(health, plan, sessionPurpose);
+    const manifest = await writeTerminalManifest({
+      plan,
+      sessionLease,
+      status: 'blocked',
+      reason: sessionRiskReason(sessionLease),
+      options,
+    });
+    return {
+      definition,
+      plan,
+      sessionLease,
+      resolvedTask: null,
+      manifest,
+    };
+  }
+
+  let sessionLease = health && !isSessionReady(health)
+    ? createAnonymousPreflightLease(plan, sessionPurpose)
+    : await (deps.acquireSessionLease ?? acquireSessionLease)(
     plan.siteKey,
-    `download:${plan.taskType}`,
-    {
-      ...options,
-      ...request.session,
-      host: plan.host,
-      siteContext: request.siteContext,
-      profile: request.profile,
-      profilePath: request.profilePath,
-      sessionRequirement: plan.sessionRequirement,
-      headers: request.headers,
-      downloadHeaders: request.downloadHeaders,
-      cookies: request.cookies,
-    },
+    sessionPurpose,
+    sessionOptions,
     deps.sessionDeps ?? deps,
   );
 
   try {
-    if (sessionLease.status !== 'ready') {
+    if (!isSessionReady(sessionLease) && effectiveAuthRequired) {
       const manifest = await writeTerminalManifest({
         plan,
         sessionLease,
         status: 'blocked',
-        reason: sessionLease.reason ?? sessionLease.status,
+        reason: sessionRiskReason(sessionLease),
         options,
       });
       return {
@@ -133,6 +246,11 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
         resolvedTask: null,
         manifest,
       };
+    }
+    if (!isSessionReady(sessionLease)) {
+      const blockedLease = sessionLease;
+      await (deps.releaseSessionLease ?? releaseSessionLease)(blockedLease, deps.sessionDeps ?? deps);
+      sessionLease = createAnonymousPreflightLease(plan, sessionPurpose);
     }
 
     const resolvedTask = await (deps.resolveDownloadResources ?? resolveDownloadResources)(plan, sessionLease, {

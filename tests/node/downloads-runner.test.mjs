@@ -181,6 +181,167 @@ test('download runner normalizes unhealthy session leases as blocked manifests',
   assert.equal(result.manifest.reason, 'expired');
 });
 
+test('download runner preflight blocks required sessions before legacy spawn', async (t) => {
+  for (const status of ['blocked', 'manual-required', 'expired']) {
+    await t.test(status, async (t) => {
+      const runRoot = await mkdtemp(path.join(os.tmpdir(), `bwk-download-required-${status}-`));
+      t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+      let legacyInvoked = false;
+      const result = await runDownloadTask({
+        site: 'instagram',
+        input: 'openai',
+        dryRun: false,
+      }, {
+        workspaceRoot: REPO_ROOT,
+        runRoot,
+      }, {
+        inspectSessionHealth: async () => ({
+          siteKey: 'instagram',
+          host: 'www.instagram.com',
+          status,
+          reason: status === 'expired' ? undefined : `${status}-preflight`,
+          riskSignals: status === 'expired' ? ['session-expired'] : [],
+        }),
+        acquireSessionLease: async () => {
+          throw new Error('lease acquisition should not run after failed required preflight');
+        },
+        executeLegacyDownloadTask: async () => {
+          legacyInvoked = true;
+          throw new Error('legacy adapter should not execute after failed required preflight');
+        },
+      });
+
+      assert.equal(legacyInvoked, false);
+      assert.equal(result.sessionLease.status, status);
+      assert.equal(result.manifest.status, 'blocked');
+      assert.equal(result.manifest.reason, status === 'expired' ? 'session-expired' : `${status}-preflight`);
+    });
+  }
+});
+
+test('download runner uses lease risk reason when required lease is not ready', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-required-lease-risk-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const result = await runDownloadTask({
+    site: 'instagram',
+    input: 'openai',
+    dryRun: false,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    inspectSessionHealth: async () => ({
+      siteKey: 'instagram',
+      host: 'www.instagram.com',
+      status: 'ready',
+      mode: 'authenticated',
+      riskSignals: [],
+    }),
+    acquireSessionLease: async () => ({
+      siteKey: 'instagram',
+      host: 'www.instagram.com',
+      mode: 'reusable-profile',
+      status: 'blocked',
+      riskSignals: ['login-wall'],
+    }),
+    executeLegacyDownloadTask: async () => {
+      throw new Error('legacy adapter should not execute after failed required lease');
+    },
+  });
+
+  assert.equal(result.sessionLease.status, 'blocked');
+  assert.equal(result.manifest.status, 'blocked');
+  assert.equal(result.manifest.reason, 'login-wall');
+});
+
+test('download runner continues optional sites anonymously when health is not ready', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-optional-anon-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  let resolverSawAnonymous = false;
+  const result = await runDownloadTask({
+    site: 'bilibili',
+    input: 'BV1optionalAnon',
+    dryRun: true,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    inspectSessionHealth: async () => ({
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'manual-required',
+      reason: 'not-logged-in',
+      riskSignals: ['not-logged-in'],
+    }),
+    acquireSessionLease: async () => {
+      throw new Error('optional anonymous preflight should not acquire an unhealthy lease');
+    },
+    resolveDownloadResources: async (_plan, sessionLease) => {
+      resolverSawAnonymous = true;
+      assert.equal(sessionLease.status, 'ready');
+      assert.equal(sessionLease.mode, 'anonymous');
+      return {
+        resources: [{
+          id: 'resource-1',
+          url: 'https://example.com/public.mp4',
+          fileName: 'public.mp4',
+          mediaType: 'video',
+        }],
+      };
+    },
+    executeResolvedDownloadTask: async (_resolvedTask, _plan, sessionLease) => ({
+      status: 'skipped',
+      reason: 'dry-run',
+      session: sessionLease,
+    }),
+    executeLegacyDownloadTask: async () => {
+      throw new Error('legacy adapter should not execute during dry-run');
+    },
+  });
+
+  assert.equal(resolverSawAnonymous, true);
+  assert.equal(result.sessionLease.status, 'ready');
+  assert.equal(result.sessionLease.mode, 'anonymous');
+  assert.equal(result.manifest.status, 'skipped');
+});
+
+test('download runner blocks optional downloads marked login-required when health is not ready', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-optional-login-required-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const result = await runDownloadTask({
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/watchlater/',
+    dryRun: false,
+    downloadRequiresAuth: true,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    inspectSessionHealth: async () => ({
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'manual-required',
+      reason: 'login-required',
+      riskSignals: ['not-logged-in'],
+    }),
+    acquireSessionLease: async () => {
+      throw new Error('lease acquisition should not run after failed login-required preflight');
+    },
+    executeLegacyDownloadTask: async () => {
+      throw new Error('legacy adapter should not execute after failed login-required preflight');
+    },
+  });
+
+  assert.equal(result.plan.sessionRequirement, 'optional');
+  assert.equal(result.sessionLease.status, 'manual-required');
+  assert.equal(result.manifest.status, 'blocked');
+  assert.equal(result.manifest.reason, 'login-required');
+});
+
 test('legacy executor normalizes successful action stdout into a download manifest', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-legacy-success-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));

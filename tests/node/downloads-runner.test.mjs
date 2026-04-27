@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { readJsonFile, writeJsonFile } from '../../src/infra/io.mjs';
 import { parseArgs } from '../../src/entrypoints/sites/download.mjs';
-import { normalizeDownloadTaskPlan } from '../../src/sites/downloads/contracts.mjs';
+import {
+  DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION,
+  normalizeDownloadRunManifest,
+  normalizeDownloadTaskPlan,
+} from '../../src/sites/downloads/contracts.mjs';
 import { executeResolvedDownloadTask } from '../../src/sites/downloads/executor.mjs';
 import { executeLegacyDownloadTask } from '../../src/sites/downloads/legacy-executor.mjs';
 import { listDownloadSiteDefinitions } from '../../src/sites/downloads/registry.mjs';
@@ -15,6 +19,80 @@ import { runDownloadTask } from '../../src/sites/downloads/runner.mjs';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
+
+test('download run manifest schema shape is stable', () => {
+  const manifest = normalizeDownloadRunManifest({
+    runId: 'run-1',
+    planId: 'plan-1',
+    siteKey: 'example',
+    status: 'success',
+    reason: 'success',
+    counts: {
+      expected: 1,
+      attempted: 1,
+      downloaded: 1,
+      skipped: 0,
+      failed: 0,
+    },
+    files: [{
+      resourceId: 'resource-1',
+      filePath: 'C:/tmp/run/files/0001-file.txt',
+    }],
+    failedResources: [],
+    artifacts: {
+      manifest: 'C:/tmp/run/manifest.json',
+      queue: 'C:/tmp/run/queue.json',
+      downloadsJsonl: 'C:/tmp/run/downloads.jsonl',
+      reportMarkdown: 'C:/tmp/run/report.md',
+      plan: 'C:/tmp/run/plan.json',
+      resolvedTask: 'C:/tmp/run/resolved-task.json',
+      runDir: 'C:/tmp/run',
+      filesDir: 'C:/tmp/run/files',
+      source: {
+        manifest: 'C:/tmp/legacy/manifest.json',
+        mediaManifest: 'C:/tmp/legacy/media-manifest.json',
+      },
+    },
+    createdAt: '2026-04-27T00:00:00.000Z',
+    finishedAt: '2026-04-27T00:00:01.000Z',
+  });
+
+  assert.equal(manifest.schemaVersion, DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION);
+  assert.equal(manifest.status, 'passed');
+  assert.equal(manifest.reason, undefined);
+  assert.deepEqual(Object.keys(manifest), [
+    'schemaVersion',
+    'runId',
+    'planId',
+    'siteKey',
+    'status',
+    'reason',
+    'counts',
+    'files',
+    'failedResources',
+    'resumeCommand',
+    'artifacts',
+    'legacy',
+    'session',
+    'createdAt',
+    'finishedAt',
+  ]);
+  assert.deepEqual(Object.keys(manifest.artifacts), [
+    'manifest',
+    'queue',
+    'downloadsJsonl',
+    'reportMarkdown',
+    'plan',
+    'resolvedTask',
+    'runDir',
+    'filesDir',
+    'source',
+  ]);
+  assert.deepEqual(manifest.artifacts.source, {
+    manifest: 'C:/tmp/legacy/manifest.json',
+    mediaManifest: 'C:/tmp/legacy/media-manifest.json',
+  });
+});
 
 test('download CLI parser accepts resume flags emitted by manifests', () => {
   const resumeArgs = parseArgs([
@@ -175,7 +253,85 @@ test('legacy executor normalizes successful action stdout into a download manife
   assert.equal(manifest.counts.downloaded, 1);
   assert.equal(manifest.files.length, 1);
   assert.equal(manifest.legacy.exitCode, 0);
+  assert.equal(manifest.schemaVersion, DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION);
+  assert.equal(manifest.artifacts.source.runDir, path.join(runRoot, 'legacy-bilibili-run'));
   assert.equal((await readJsonFile(manifest.artifacts.manifest)).planId, plan.id);
+});
+
+test('legacy executor normalizes action stdout source artifacts into manifest refs', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-legacy-action-artifacts-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const legacyRunDir = path.join(runRoot, 'legacy-x-run');
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'x',
+    host: 'x.com',
+    taskType: 'social-archive',
+    source: { input: 'openai' },
+    policy: { dryRun: false, maxItems: 2 },
+    output: { root: runRoot },
+    legacy: {
+      entrypoint: 'src/entrypoints/sites/x-action.mjs',
+      executorKind: 'node',
+    },
+  });
+
+  const manifest = await executeLegacyDownloadTask(plan, {
+    siteKey: 'x',
+    host: 'x.com',
+    status: 'ready',
+    mode: 'reusable-profile',
+    riskSignals: [],
+  }, {
+    input: 'openai',
+    account: 'openai',
+    downloadMedia: true,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    spawnJsonCommand: async () => ({
+      code: 0,
+      stderr: '',
+      stdout: JSON.stringify({
+        ok: true,
+        status: 'degraded',
+        reason: 'soft-cursor-exhausted',
+        artifacts: {
+          runDir: legacyRunDir,
+          manifest: path.join(legacyRunDir, 'manifest.json'),
+          items: path.join(legacyRunDir, 'items.jsonl'),
+          downloadsJsonl: path.join(legacyRunDir, 'downloads.jsonl'),
+          mediaHashManifestPath: path.join(legacyRunDir, 'media-manifest.json'),
+          mediaQueuePath: path.join(legacyRunDir, 'media-queue.json'),
+          reportPath: path.join(legacyRunDir, 'report.md'),
+        },
+        counts: {
+          rows: 2,
+          failed: 0,
+          skipped: 0,
+        },
+      }),
+    }),
+  });
+
+  assert.equal(manifest.status, 'partial');
+  assert.equal(manifest.reason, 'soft-cursor-exhausted');
+  assert.equal(manifest.counts.expected, 2);
+  assert.equal(manifest.counts.downloaded, 2);
+  assert.equal(manifest.artifacts.manifest.endsWith('manifest.json'), true);
+  assert.equal(manifest.artifacts.queue.endsWith('queue.json'), true);
+  assert.equal(manifest.artifacts.downloadsJsonl.endsWith('downloads.jsonl'), true);
+  assert.deepEqual(manifest.artifacts.source, {
+    runDir: legacyRunDir,
+    manifest: path.join(legacyRunDir, 'manifest.json'),
+    itemsJsonl: path.join(legacyRunDir, 'items.jsonl'),
+    downloadsJsonl: path.join(legacyRunDir, 'downloads.jsonl'),
+    mediaManifest: path.join(legacyRunDir, 'media-manifest.json'),
+    mediaQueue: path.join(legacyRunDir, 'media-queue.json'),
+    reportMarkdown: path.join(legacyRunDir, 'report.md'),
+  });
+  assert.deepEqual(manifest.legacy.artifacts, manifest.artifacts.source);
 });
 
 test('legacy executor maps blocked legacy failures into blocked manifests', async (t) => {

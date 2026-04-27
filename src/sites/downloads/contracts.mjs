@@ -50,6 +50,8 @@ export const DOWNLOAD_RUN_STATUSES = Object.freeze([
   'skipped',
 ]);
 
+export const DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION = 1;
+
 function valueOrDefault(value, fallback) {
   return value === undefined || value === null || value === '' ? fallback : value;
 }
@@ -307,6 +309,90 @@ export function resolveDownloadRunStatus({ expected = 0, attempted = 0, download
   return 'passed';
 }
 
+export function normalizeDownloadRunStatus(value, context = {}) {
+  const normalized = normalizeText(value).toLowerCase();
+  const aliases = {
+    ok: 'passed',
+    success: 'passed',
+    successful: 'passed',
+    complete: 'passed',
+    completed: 'passed',
+    done: 'passed',
+    warning: 'partial',
+    warnings: 'partial',
+    degraded: 'partial',
+    bounded: 'partial',
+    incomplete: 'partial',
+    error: 'failed',
+    failure: 'failed',
+    auth: 'blocked',
+    'blocked-auth': 'blocked',
+    'blocked-risk': 'blocked',
+    manual: 'blocked',
+    pending: 'skipped',
+    planned: 'skipped',
+    'dry-run': 'skipped',
+    noop: 'skipped',
+  };
+  const aliased = aliases[normalized] ?? normalized;
+  return enumValue(aliased, DOWNLOAD_RUN_STATUSES, resolveDownloadRunStatus(context));
+}
+
+export function normalizeDownloadRunReason(value, status = undefined) {
+  const reason = normalizeText(value);
+  if (!reason) {
+    return undefined;
+  }
+  if (
+    status === 'passed'
+    && ['ok', 'passed', 'success', 'successful', 'complete', 'completed', 'done'].includes(reason.toLowerCase())
+  ) {
+    return undefined;
+  }
+  return reason;
+}
+
+function normalizeArtifactRefs(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const result = {};
+  for (const [key, artifactValue] of Object.entries(value)) {
+    if (artifactValue === undefined || artifactValue === null || artifactValue === '') {
+      continue;
+    }
+    if (artifactValue && typeof artifactValue === 'object' && !Array.isArray(artifactValue)) {
+      const nested = normalizeArtifactRefs(artifactValue);
+      if (nested && Object.keys(nested).length > 0) {
+        result[key] = nested;
+      }
+      continue;
+    }
+    result[key] = String(artifactValue);
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+export function normalizeDownloadRunArtifacts(raw = {}, context = {}) {
+  const artifactInput = raw && typeof raw === 'object' ? raw : {};
+  const contextInput = context && typeof context === 'object' ? context : {};
+  const result = {
+    manifest: normalizeText(artifactInput.manifest ?? contextInput.manifest) || undefined,
+    queue: normalizeText(artifactInput.queue ?? contextInput.queue) || undefined,
+    downloadsJsonl: normalizeText(artifactInput.downloadsJsonl ?? contextInput.downloadsJsonl) || undefined,
+    reportMarkdown: normalizeText(artifactInput.reportMarkdown ?? contextInput.reportMarkdown) || undefined,
+    plan: normalizeText(artifactInput.plan ?? contextInput.plan) || undefined,
+    resolvedTask: normalizeText(artifactInput.resolvedTask ?? contextInput.resolvedTask) || undefined,
+    runDir: normalizeText(artifactInput.runDir ?? contextInput.runDir) || undefined,
+    filesDir: normalizeText(artifactInput.filesDir ?? contextInput.filesDir) || undefined,
+  };
+  const source = normalizeArtifactRefs(artifactInput.source ?? contextInput.source);
+  if (source) {
+    result.source = source;
+  }
+  return result;
+}
+
 export function normalizeDownloadRunManifest(raw = {}, context = {}) {
   const counts = {
     expected: Number(raw.counts?.expected ?? context.expected ?? 0),
@@ -315,27 +401,23 @@ export function normalizeDownloadRunManifest(raw = {}, context = {}) {
     skipped: Number(raw.counts?.skipped ?? context.skipped ?? 0),
     failed: Number(raw.counts?.failed ?? context.failed ?? 0),
   };
-  const status = enumValue(raw.status, DOWNLOAD_RUN_STATUSES, resolveDownloadRunStatus({
+  const status = normalizeDownloadRunStatus(raw.status ?? context.status, {
     ...counts,
     blocked: raw.blocked,
     dryRun: raw.dryRun,
-  }));
+  });
   return {
+    schemaVersion: Number(raw.schemaVersion ?? context.schemaVersion ?? DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION),
     runId: normalizeText(raw.runId ?? context.runId),
     planId: normalizeText(raw.planId ?? context.planId),
     siteKey: normalizeText(raw.siteKey ?? context.siteKey),
     status,
-    reason: normalizeText(raw.reason ?? context.reason) || undefined,
+    reason: normalizeDownloadRunReason(raw.reason ?? context.reason, status),
     counts,
     files: Array.isArray(raw.files) ? raw.files : [],
     failedResources: Array.isArray(raw.failedResources) ? raw.failedResources : [],
     resumeCommand: normalizeText(raw.resumeCommand ?? context.resumeCommand) || undefined,
-    artifacts: {
-      manifest: normalizeText(raw.artifacts?.manifest ?? context.artifacts?.manifest) || undefined,
-      queue: normalizeText(raw.artifacts?.queue ?? context.artifacts?.queue) || undefined,
-      downloadsJsonl: normalizeText(raw.artifacts?.downloadsJsonl ?? context.artifacts?.downloadsJsonl) || undefined,
-      reportMarkdown: normalizeText(raw.artifacts?.reportMarkdown ?? context.artifacts?.reportMarkdown) || undefined,
-    },
+    artifacts: normalizeDownloadRunArtifacts(raw.artifacts, context.artifacts),
     legacy: raw.legacy ?? context.legacy ?? undefined,
     session: raw.session ?? context.session ?? undefined,
     createdAt: normalizeText(raw.createdAt ?? context.createdAt) || new Date().toISOString(),

@@ -11,6 +11,8 @@ import {
 import { normalizeText } from '../../shared/normalize.mjs';
 import {
   normalizeDownloadRunManifest,
+  normalizeDownloadRunReason,
+  normalizeDownloadRunStatus,
   resolveDownloadRunStatus,
 } from './contracts.mjs';
 import { buildDownloadRunLayout } from './artifacts.mjs';
@@ -110,10 +112,14 @@ function extractSummary(payload = {}) {
     ['counts'],
     ['summary'],
     ['actionSummary'],
+    ['artifacts', 'counts'],
     ['downloadResult', 'manifest', 'summary'],
     ['downloadResult', 'summary'],
+    ['downloadResult', 'artifacts', 'counts'],
     ['download', 'summary'],
     ['download', 'summaryView'],
+    ['download', 'artifacts', 'counts'],
+    ['result', 'artifacts', 'counts'],
     ['result', 'download', 'summary'],
   ]) ?? {};
 }
@@ -122,18 +128,28 @@ function extractCounts(payload = {}, exitCode = 0) {
   const summary = extractSummary(payload);
   const downloaded = numberValue(
     summary.downloaded,
+    summary.downloadedCount,
+    summary.downloadedMedia,
+    summary.successfulCount,
     summary.successful,
     summary.success,
     summary.completed,
+    summary.items,
+    summary.rows,
   );
-  const failed = numberValue(summary.failed, summary.errors);
-  const skipped = numberValue(summary.skipped);
-  const planned = numberValue(summary.planned);
-  const partial = numberValue(summary.partial);
+  const failed = numberValue(summary.failed, summary.failedCount, summary.errors);
+  const skipped = numberValue(summary.skipped, summary.skippedCount, summary.skippedMedia);
+  const planned = numberValue(summary.planned, summary.plannedCount);
+  const partial = numberValue(summary.partial, summary.partialCount, summary.incompleteItemCount);
   const total = numberValue(
     summary.expected,
+    summary.expectedCount,
+    summary.expectedMedia,
+    summary.expectedMediaCount,
     summary.total,
     summary.count,
+    summary.itemCount,
+    summary.rows,
     downloaded + failed + skipped + planned + partial,
   );
   const expected = total || downloaded + failed + skipped + planned + partial;
@@ -164,14 +180,61 @@ function extractReason(payload = {}, stderr = '') {
       ?? payload.status
       ?? payload.outcome?.reason
       ?? payload.outcome?.reasonCode
+      ?? payload.artifactSummary?.reason
+      ?? payload.result?.artifactSummary?.reason
+      ?? payload.completeness?.reason
+      ?? payload.completeness?.boundedReasons?.[0]
+      ?? payload.completeness?.driftReasons?.[0]
       ?? stderr,
   ) || undefined;
 }
 
+function normalizeExplicitLegacyStatus(value, counts = {}) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  const statusLikeValues = [
+    'passed',
+    'partial',
+    'failed',
+    'blocked',
+    'skipped',
+    'ok',
+    'success',
+    'successful',
+    'complete',
+    'completed',
+    'done',
+    'warning',
+    'warnings',
+    'degraded',
+    'bounded',
+    'incomplete',
+    'error',
+    'failure',
+    'auth',
+    'blocked-auth',
+    'blocked-risk',
+    'manual',
+    'pending',
+    'planned',
+    'dry-run',
+    'noop',
+  ];
+  return statusLikeValues.includes(normalized) ? normalizeDownloadRunStatus(normalized, counts) : null;
+}
+
 function resolveLegacyStatus(payload = {}, exitCode = 0, counts = {}, stderr = '') {
   const reason = extractReason(payload, stderr);
-  if (payload.status && ['passed', 'partial', 'failed', 'blocked', 'skipped'].includes(payload.status)) {
-    return payload.status;
+  const statusCandidate = payload.status
+    ?? payload.outcome?.status
+    ?? payload.result?.status
+    ?? payload.artifactSummary?.verdict
+    ?? payload.result?.artifactSummary?.verdict;
+  const explicitStatus = normalizeExplicitLegacyStatus(statusCandidate, counts);
+  if (explicitStatus) {
+    return explicitStatus;
   }
   if (payload.ok === false || exitCode !== 0) {
     if (looksBlocked(reason)) {
@@ -210,10 +273,14 @@ function collectResultRows(payload = {}) {
     payload.downloadedFiles,
     payload.downloadResult?.manifest?.results,
     payload.downloadResult?.manifest?.files,
+    payload.downloadResult?.manifest?.downloads,
     payload.downloadResult?.results,
     payload.download?.results,
     payload.download?.files,
+    payload.download?.downloads,
     payload.result?.download?.results,
+    payload.result?.download?.files,
+    payload.result?.download?.downloads,
   ];
   return candidates.find((value) => Array.isArray(value)) ?? [];
 }
@@ -275,9 +342,12 @@ function extractLegacyRunDir(payload = {}) {
   return normalizeText(
     payload.runDir
       ?? payload.actionSummary?.runDir
+      ?? payload.artifacts?.runDir
       ?? payload.download?.runDir
+      ?? payload.download?.artifacts?.runDir
       ?? payload.downloadResult?.manifest?.runDir
       ?? payload.downloadResult?.runDir
+      ?? payload.downloadResult?.artifacts?.runDir
       ?? payload.manifest?.runDir,
   ) || undefined;
 }
@@ -285,10 +355,78 @@ function extractLegacyRunDir(payload = {}) {
 function extractLegacyManifestPath(payload = {}) {
   return normalizeText(
     payload.manifestPath
+      ?? payload.artifacts?.manifest
+      ?? payload.artifacts?.manifestPath
       ?? payload.downloadResult?.manifestPath
       ?? payload.downloadResult?.manifest?.manifestPath
-      ?? payload.download?.manifestPath,
+      ?? payload.downloadResult?.manifest?.artifacts?.manifest
+      ?? payload.downloadResult?.manifest?.artifacts?.manifestPath
+      ?? payload.downloadResult?.artifacts?.manifest
+      ?? payload.downloadResult?.artifacts?.manifestPath
+      ?? payload.download?.manifestPath
+      ?? payload.download?.artifacts?.manifest
+      ?? payload.download?.artifacts?.manifestPath
+      ?? payload.result?.artifacts?.manifest
+      ?? payload.result?.artifacts?.manifestPath
+      ?? payload.result?.download?.artifacts?.manifest
+      ?? payload.result?.download?.artifacts?.manifestPath,
   ) || undefined;
+}
+
+function artifactString(value, ...keys) {
+  for (const key of keys) {
+    const entry = value?.[key];
+    if (entry !== undefined && entry !== null && entry !== '') {
+      return normalizeText(entry) || undefined;
+    }
+  }
+  return undefined;
+}
+
+function mergeArtifactObject(target, value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return;
+  }
+  const mappings = [
+    ['runDir', ['runDir']],
+    ['manifest', ['manifest', 'manifestPath']],
+    ['itemsJsonl', ['items', 'itemsJsonl', 'itemsJsonlPath']],
+    ['downloadsJsonl', ['downloadsJsonl', 'downloadsJsonlPath', 'downloads']],
+    ['mediaManifest', ['mediaManifest', 'mediaHashManifest', 'mediaHashManifestPath']],
+    ['mediaQueue', ['mediaQueue', 'mediaQueuePath']],
+    ['queue', ['queue', 'queuePath']],
+    ['state', ['state', 'statePath']],
+    ['reportMarkdown', ['reportMarkdown', 'report', 'reportPath']],
+    ['apiCapture', ['apiCapture', 'apiCapturePath']],
+    ['apiDriftSamples', ['apiDriftSamples', 'apiDriftSamplesPath']],
+    ['indexCsv', ['indexCsv', 'indexCsvPath']],
+    ['indexHtml', ['indexHtml', 'indexHtmlPath']],
+  ];
+  for (const [targetKey, sourceKeys] of mappings) {
+    const artifactValue = artifactString(value, ...sourceKeys);
+    if (artifactValue) {
+      target[targetKey] = artifactValue;
+    }
+  }
+}
+
+function extractLegacySourceArtifacts(payload = {}) {
+  const source = {};
+  mergeArtifactObject(source, payload.artifacts);
+  mergeArtifactObject(source, payload.download?.artifacts);
+  mergeArtifactObject(source, payload.downloadResult?.artifacts);
+  mergeArtifactObject(source, payload.downloadResult?.manifest?.artifacts);
+  mergeArtifactObject(source, payload.result?.artifacts);
+  mergeArtifactObject(source, payload.result?.download?.artifacts);
+  const runDir = extractLegacyRunDir(payload);
+  if (runDir) {
+    source.runDir = runDir;
+  }
+  const manifest = extractLegacyManifestPath(payload);
+  if (manifest) {
+    source.manifest = manifest;
+  }
+  return Object.keys(source).length ? source : undefined;
 }
 
 function previewText(value, limit = 2_000) {
@@ -395,6 +533,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
   const counts = extractCounts(payload, processResult.code);
   const files = extractFiles(payload);
   const failedResources = extractFailures(payload);
+  const sourceArtifacts = extractLegacySourceArtifacts(payload);
   if (failedResources.length > counts.failed) {
     counts.failed = failedResources.length;
   }
@@ -423,6 +562,11 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
       queue: layout.queuePath,
       downloadsJsonl: layout.downloadsJsonlPath,
       reportMarkdown: layout.reportMarkdownPath,
+      plan: layout.planPath,
+      resolvedTask: layout.resolvedTaskPath,
+      runDir: layout.runDir,
+      filesDir: layout.filesDir,
+      source: sourceArtifacts,
     },
     session: sessionLease,
     legacy: {
@@ -435,6 +579,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
       reasonCode: payload.reasonCode,
       runDir: extractLegacyRunDir(payload),
       manifestPath: extractLegacyManifestPath(payload),
+      artifacts: sourceArtifacts,
       stdoutJson: Object.keys(payload).length > 0,
       stderr: previewText(processResult.stderr),
     },
@@ -445,7 +590,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
   await writeJsonLines(layout.downloadsJsonlPath, [{
     legacy: true,
     status,
-    reason,
+    reason: normalizeDownloadRunReason(reason, status),
     counts,
     files,
     failedResources,

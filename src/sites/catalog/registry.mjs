@@ -27,6 +27,9 @@ const siteRuntimeRegistryStore = createSiteIndexStore({
 
 const REGISTRY_STABLE_PATH_KEYS = Object.freeze([
   'downloadEntrypoint',
+  'downloadPlanner',
+  'downloadResolver',
+  'downloadExecutor',
   'rankingQueryEntrypoint',
   'repoSkillDir',
   'crawlerScriptsDir',
@@ -119,6 +122,11 @@ function splitRegistryPatch(patch = {}) {
     'adapterId',
     'siteArchetype',
     'downloadEntrypoint',
+    'downloadPlanner',
+    'downloadResolver',
+    'downloadExecutor',
+    'downloadSessionRequirement',
+    'downloadTaskTypes',
     'interpreterRequired',
     'scriptLanguage',
     'templateVersion',

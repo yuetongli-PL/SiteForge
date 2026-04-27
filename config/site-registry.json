@@ -6,6 +6,13 @@
       "canonicalBaseUrl": "https://www.22biqu.com/",
       "host": "www.22biqu.com",
       "downloadEntrypoint": "src/sites/chapter-content/download/python/book.py",
+      "downloadPlanner": "src/sites/downloads/registry.mjs",
+      "downloadResolver": "src/sites/downloads/registry.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "none",
+      "downloadTaskTypes": [
+        "book"
+      ],
       "crawlerScriptsDir": "crawler-scripts"
     },
     "moodyz.com": {
@@ -24,12 +31,40 @@
       "canonicalBaseUrl": "https://www.bilibili.com/",
       "siteArchetype": "catalog-detail",
       "host": "www.bilibili.com",
+      "siteKey": "bilibili",
+      "adapterId": "bilibili",
+      "downloadEntrypoint": "src/entrypoints/sites/bilibili-action.mjs",
+      "downloadPlanner": "src/sites/downloads/registry.mjs",
+      "downloadResolver": "src/sites/downloads/registry.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "optional",
+      "downloadTaskTypes": [
+        "video",
+        "media-bundle"
+      ],
+      "capabilityFamilies": [
+        "download-content"
+      ],
       "repoSkillDir": "skills/bilibili"
     },
     "www.douyin.com": {
       "canonicalBaseUrl": "https://www.douyin.com/?recommend=1",
       "siteArchetype": "catalog-detail",
       "host": "www.douyin.com",
+      "siteKey": "douyin",
+      "adapterId": "douyin",
+      "downloadEntrypoint": "src/entrypoints/sites/douyin-action.mjs",
+      "downloadPlanner": "src/sites/downloads/registry.mjs",
+      "downloadResolver": "src/sites/downloads/registry.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "optional",
+      "downloadTaskTypes": [
+        "video",
+        "media-bundle"
+      ],
+      "capabilityFamilies": [
+        "download-content"
+      ],
       "repoSkillDir": "skills/douyin"
     },
     "www.xiaohongshu.com": {
@@ -37,6 +72,14 @@
       "siteArchetype": "catalog-detail",
       "host": "www.xiaohongshu.com",
       "downloadEntrypoint": "src/entrypoints/sites/xiaohongshu-action.mjs",
+      "downloadPlanner": "src/sites/downloads/registry.mjs",
+      "downloadResolver": "src/sites/downloads/registry.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "optional",
+      "downloadTaskTypes": [
+        "image-note",
+        "media-bundle"
+      ],
       "scriptLanguage": "python",
       "interpreterRequired": "pypy3",
       "templateVersion": 3,
@@ -54,6 +97,14 @@
       "siteKey": "x",
       "adapterId": "x",
       "downloadEntrypoint": "src/entrypoints/sites/x-action.mjs",
+      "downloadPlanner": "src/sites/downloads/registry.mjs",
+      "downloadResolver": "src/sites/downloads/registry.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "optional",
+      "downloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
       "repoSkillDir": "skills/x",
       "scriptLanguage": "python",
       "interpreterRequired": "pypy3",
@@ -72,6 +123,14 @@
       "siteKey": "instagram",
       "adapterId": "instagram",
       "downloadEntrypoint": "src/entrypoints/sites/instagram-action.mjs",
+      "downloadPlanner": "src/sites/downloads/registry.mjs",
+      "downloadResolver": "src/sites/downloads/registry.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "required",
+      "downloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
       "repoSkillDir": "skills/instagram",
       "scriptLanguage": "python",
       "interpreterRequired": "pypy3",

@@ -105,6 +105,7 @@
         "search-results-page"
       ],
       "capabilityFamilies": [
+        "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
@@ -114,6 +115,7 @@
       ],
       "host": "www.bilibili.com",
       "supportedIntents": [
+        "download-video",
         "open-author",
         "open-category",
         "open-utility-page",
@@ -121,6 +123,7 @@
         "search-video"
       ],
       "safeActionKinds": [
+        "download-media",
         "navigate"
       ],
       "approvalActionKinds": [
@@ -140,16 +143,19 @@
         "search-results-page"
       ],
       "capabilityFamilies": [
+        "download-content",
         "navigate-to-content",
         "navigate-to-utility-page",
         "switch-in-page-state"
       ],
       "supportedIntents": [
+        "download-video",
         "open-category",
         "open-utility-page",
         "open-video"
       ],
       "safeActionKinds": [
+        "download-media",
         "navigate"
       ],
       "approvalActionKinds": [
@@ -170,6 +176,7 @@
         "search-results-page"
       ],
       "capabilityFamilies": [
+        "download-content",
         "search-content"
       ],
       "supportedIntents": [
@@ -184,6 +191,7 @@
         "list-followed-updates"
       ],
       "safeActionKinds": [
+        "download-media",
         "navigate"
       ],
       "approvalActionKinds": [
@@ -234,6 +242,7 @@
         "search-posts"
       ],
       "safeActionKinds": [
+        "download-media",
         "navigate"
       ],
       "approvalActionKinds": [
@@ -285,6 +294,7 @@
         "search-content"
       ],
       "safeActionKinds": [
+        "download-media",
         "navigate"
       ],
       "approvalActionKinds": [

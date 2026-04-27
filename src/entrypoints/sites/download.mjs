@@ -26,6 +26,7 @@ Options:
   --retries <n>                     Retry count per resource. Default: 2.
   --retry-backoff-ms <ms>           Backoff between retries. Default: 1000.
   --resume                          Resume using existing run artifacts when supported.
+  --retry-failed                    Resume a run but only attempt failed resources.
   --no-resume                       Ignore existing run artifacts and start fresh.
   --no-skip-existing                Redownload files even if the target file already exists.
   --no-verify                       Skip expected size/hash verification.
@@ -140,8 +141,13 @@ export function parseArgs(argv) {
       case '--resume':
         options.resume = true;
         break;
+      case '--retry-failed':
+        options.resume = true;
+        options.retryFailedOnly = true;
+        break;
       case '--no-resume':
         options.resume = false;
+        options.retryFailedOnly = false;
         break;
       case '--no-skip-existing':
         options.skipExisting = false;
@@ -195,6 +201,7 @@ export async function main(argv) {
     retries: options.retries,
     retryBackoffMs: options.retryBackoffMs,
     resume: options.resume,
+    retryFailedOnly: options.retryFailedOnly,
     skipExisting: options.skipExisting,
     verify: options.verify,
     sessionStatus: options.sessionStatus,

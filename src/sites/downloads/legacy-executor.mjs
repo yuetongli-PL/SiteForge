@@ -320,12 +320,20 @@ function renderLegacyReport(manifest) {
   if (manifest.reason) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
+  if (manifest.resumeCommand) {
+    lines.push(`- Resume: ${manifest.resumeCommand}`);
+  }
   if (manifest.legacy?.runDir) {
     lines.push(`- Legacy run dir: ${manifest.legacy.runDir}`);
   }
   if (manifest.legacy?.manifestPath) {
     lines.push(`- Legacy manifest: ${manifest.legacy.manifestPath}`);
   }
+  lines.push(
+    `- Manifest: ${manifest.artifacts.manifest}`,
+    `- Queue: ${manifest.artifacts.queue}`,
+    `- Downloads JSONL: ${manifest.artifacts.downloadsJsonl}`,
+  );
   return `${lines.join('\n')}\n`;
 }
 

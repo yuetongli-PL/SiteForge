@@ -5,6 +5,8 @@ import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  readJsonFile,
+  readTextFile,
   writeJsonFile,
   writeJsonLines,
   writeTextFile,
@@ -42,6 +44,43 @@ function safeFileName(value, fallback = 'download.bin') {
 function resourceFilePath(filesDir, resource, index) {
   const prefix = String(index + 1).padStart(4, '0');
   return path.join(filesDir, `${prefix}-${safeFileName(resource.fileName, `${resource.id}.bin`)}`);
+}
+
+async function readJsonLinesFile(filePath) {
+  try {
+    const text = await readTextFile(filePath);
+    return text
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch {
+    return [];
+  }
+}
+
+async function loadResumeState(layout, enabled) {
+  if (!enabled) {
+    return {
+      queue: [],
+      downloads: [],
+    };
+  }
+  let queue = [];
+  try {
+    const queueArtifact = await readJsonFile(layout.queuePath);
+    queue = Array.isArray(queueArtifact?.queue) ? queueArtifact.queue : Array.isArray(queueArtifact) ? queueArtifact : [];
+  } catch {
+    queue = [];
+  }
+  return {
+    queue,
+    downloads: await readJsonLinesFile(layout.downloadsJsonlPath),
+  };
+}
+
+function queueKey(entry = {}) {
+  return entry.id ?? entry.resourceId ?? entry.url ?? null;
 }
 
 async function existingFileResult(resource, filePath) {
@@ -184,16 +223,48 @@ async function mapWithConcurrency(items, concurrency, mapper) {
   return results;
 }
 
-function buildQueue(resources, layout) {
+function buildQueue(resources, layout, previousQueue = []) {
+  const previousByKey = new Map((Array.isArray(previousQueue) ? previousQueue : [])
+    .map((entry) => [queueKey(entry), entry])
+    .filter(([key]) => key));
   return resources.map((resource, index) => ({
     id: resource.id,
     index,
-    status: 'pending',
+    status: previousByKey.get(resource.id)?.status ?? 'pending',
     url: resource.url,
     mediaType: resource.mediaType,
-    filePath: resourceFilePath(layout.filesDir, resource, index),
-    sourceUrl: resource.sourceUrl ?? null,
+    filePath: previousByKey.get(resource.id)?.filePath ?? resourceFilePath(layout.filesDir, resource, index),
+    sourceUrl: resource.sourceUrl ?? previousByKey.get(resource.id)?.sourceUrl ?? null,
+    reason: previousByKey.get(resource.id)?.reason ?? null,
+    bytes: previousByKey.get(resource.id)?.bytes ?? null,
   }));
+}
+
+async function resumableCompletedResult(resource, queueEntry, previousDownloads = []) {
+  const match = (Array.isArray(previousDownloads) ? previousDownloads : [])
+    .find((entry) => entry?.ok === true && (entry.resourceId === resource.id || entry.url === resource.url) && entry.filePath);
+  if (!match) {
+    return null;
+  }
+  try {
+    const fileStat = await stat(match.filePath);
+    if (!fileStat.isFile()) {
+      return null;
+    }
+    return {
+      ...match,
+      ok: true,
+      skipped: true,
+      reason: 'resume-existing-download',
+      resourceId: match.resourceId ?? resource.id,
+      url: match.url ?? resource.url,
+      filePath: match.filePath ?? queueEntry.filePath,
+      bytes: match.bytes ?? fileStat.size,
+      mediaType: match.mediaType ?? resource.mediaType,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function renderReport(manifest, resolvedTask) {
@@ -211,9 +282,17 @@ function renderReport(manifest, resolvedTask) {
   if (manifest.reason) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
+  if (manifest.resumeCommand) {
+    lines.push(`- Resume: ${manifest.resumeCommand}`);
+  }
   if (resolvedTask?.completeness?.reason) {
     lines.push(`- Resolution: ${resolvedTask.completeness.reason}`);
   }
+  lines.push(
+    `- Manifest: ${manifest.artifacts.manifest}`,
+    `- Queue: ${manifest.artifacts.queue}`,
+    `- Downloads JSONL: ${manifest.artifacts.downloadsJsonl}`,
+  );
   if (manifest.failedResources.length) {
     lines.push('', '## Failed Resources');
     for (const failure of manifest.failedResources) {
@@ -235,9 +314,12 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
   const dryRun = Boolean(options.dryRun ?? plan.policy?.dryRun ?? false);
   const skipExisting = Boolean(options.skipExisting ?? plan.policy?.skipExisting ?? true);
   const verify = Boolean(options.verify ?? plan.policy?.verify ?? true);
+  const resume = Boolean(options.resume ?? plan.resume ?? false);
+  const retryFailedOnly = Boolean(options.retryFailedOnly ?? plan.policy?.retryFailedOnly ?? false);
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const resources = resolvedTask.resources;
-  const queue = buildQueue(resources, layout);
+  const resumeState = await loadResumeState(layout, resume || retryFailedOnly);
+  const queue = buildQueue(resources, layout, resumeState.queue);
 
   await writeJsonFile(layout.planPath, plan);
   await writeJsonFile(layout.resolvedTaskPath, resolvedTask);
@@ -283,6 +365,35 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
 
   const results = await mapWithConcurrency(resources, plan.policy?.concurrency ?? options.concurrency ?? 4, async (resource, index) => {
     const filePath = queue[index].filePath;
+    const previousStatus = queue[index].status;
+    if (resume || retryFailedOnly) {
+      const completed = await resumableCompletedResult(resource, queue[index], resumeState.downloads);
+      if (completed) {
+        queue[index] = {
+          ...queue[index],
+          status: 'skipped',
+          reason: completed.reason,
+          bytes: completed.bytes ?? null,
+        };
+        await writeJsonFile(layout.queuePath, queue);
+        return completed;
+      }
+      if (retryFailedOnly && previousStatus !== 'failed') {
+        const skipped = {
+          ok: true,
+          skipped: true,
+          reason: 'retry-failed-only',
+          resourceId: resource.id,
+          url: resource.url,
+          filePath,
+          bytes: 0,
+          mediaType: resource.mediaType,
+        };
+        queue[index] = { ...queue[index], status: 'skipped', reason: skipped.reason };
+        await writeJsonFile(layout.queuePath, queue);
+        return skipped;
+      }
+    }
     if (skipExisting) {
       const existing = await existingFileResult(resource, filePath);
       if (existing) {

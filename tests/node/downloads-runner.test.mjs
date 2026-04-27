@@ -30,6 +30,17 @@ test('download CLI parser accepts resume flags emitted by manifests', () => {
   assert.equal(resumeArgs.resume, true);
   assert.equal(resumeArgs.dryRun, false);
 
+  const retryFailedArgs = parseArgs([
+    '--site',
+    'bilibili',
+    '--input',
+    'BV1resume',
+    '--execute',
+    '--retry-failed',
+  ]);
+  assert.equal(retryFailedArgs.resume, true);
+  assert.equal(retryFailedArgs.retryFailedOnly, true);
+
   const freshArgs = parseArgs([
     '--site',
     'bilibili',
@@ -458,6 +469,157 @@ test('download executor retries failed resources when configured', async (t) => 
   assert.equal(calls, 2);
   assert.equal(manifest.status, 'passed');
   assert.equal(await readFile(manifest.files[0].filePath, 'utf8'), 'retry body');
+});
+
+test('download executor resumes fixed run directories and retries incomplete resources', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-resume-run-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/resume' },
+    policy: { dryRun: false, retries: 0, retryBackoffMs: 0 },
+    output: { runDir },
+  });
+  const resolvedTask = {
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [
+      {
+        id: 'done',
+        url: 'https://example.com/done.txt',
+        fileName: 'done.txt',
+        mediaType: 'text',
+      },
+      {
+        id: 'failed',
+        url: 'https://example.com/failed.txt',
+        fileName: 'failed.txt',
+        mediaType: 'text',
+      },
+    ],
+  };
+
+  let firstRunCalls = 0;
+  const firstManifest = await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runDir,
+    dryRun: false,
+  }, {
+    fetchImpl: async (url) => {
+      firstRunCalls += 1;
+      if (String(url).includes('failed')) {
+        return { ok: false, status: 500 };
+      }
+      const payload = Buffer.from('already downloaded', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+  });
+  assert.equal(firstRunCalls, 2);
+  assert.equal(firstManifest.status, 'partial');
+
+  const secondRunUrls = [];
+  const secondManifest = await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runDir,
+    dryRun: false,
+    resume: true,
+  }, {
+    fetchImpl: async (url) => {
+      secondRunUrls.push(String(url));
+      if (String(url).includes('done')) {
+        throw new Error('completed resource should be skipped during resume');
+      }
+      const payload = Buffer.from('retried body', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(secondRunUrls, ['https://example.com/failed.txt']);
+  assert.equal(secondManifest.status, 'passed');
+  assert.equal(secondManifest.counts.downloaded, 1);
+  assert.equal(secondManifest.counts.skipped, 1);
+  assert.equal(secondManifest.files.find((entry) => entry.resourceId === 'done').skipped, true);
+  assert.equal(await readFile(secondManifest.files.find((entry) => entry.resourceId === 'failed').filePath, 'utf8'), 'retried body');
+});
+
+test('download executor retry-failed only reattempts previous failures', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-retry-failed-run-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'example',
+    host: 'example.com',
+    taskType: 'generic-resource',
+    source: { input: 'https://example.com/retry-failed' },
+    policy: { dryRun: false, retries: 0, retryBackoffMs: 0 },
+    output: { runDir },
+  });
+  const resolvedTask = {
+    planId: plan.id,
+    siteKey: plan.siteKey,
+    taskType: plan.taskType,
+    resources: [
+      {
+        id: 'pending',
+        url: 'https://example.com/pending.txt',
+        fileName: 'pending.txt',
+        mediaType: 'text',
+      },
+      {
+        id: 'failed',
+        url: 'https://example.com/failed.txt',
+        fileName: 'failed.txt',
+        mediaType: 'text',
+      },
+    ],
+  };
+
+  await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runDir,
+    dryRun: false,
+  }, {
+    fetchImpl: async (url) => ({ ok: false, status: String(url).includes('failed') ? 500 : 404 }),
+  });
+
+  const retriedUrls = [];
+  const retryManifest = await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    workspaceRoot: REPO_ROOT,
+    runDir,
+    dryRun: false,
+    retryFailedOnly: true,
+  }, {
+    fetchImpl: async (url) => {
+      retriedUrls.push(String(url));
+      const payload = Buffer.from('retry failed only', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(retriedUrls.sort(), ['https://example.com/failed.txt', 'https://example.com/pending.txt']);
+  assert.equal(retryManifest.status, 'passed');
 });
 
 test('download executor stays independent from concrete site routers', async () => {

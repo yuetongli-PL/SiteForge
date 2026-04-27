@@ -50,6 +50,12 @@ function createRegistryBackedSiteModule(siteModule) {
       return await createRegistryDownloadPlan(request, context);
     },
     async resolveResources(plan, sessionLease = null, context = {}) {
+      const nativeResolvedTask = siteModule?.resolveResources
+        ? await siteModule.resolveResources(plan, sessionLease, context)
+        : null;
+      if (nativeResolvedTask) {
+        return nativeResolvedTask;
+      }
       return await resolveRegistryDownloadResources(plan, sessionLease, context);
     },
     buildLegacyCommand(plan, sessionLease = null, request = {}, options = {}) {

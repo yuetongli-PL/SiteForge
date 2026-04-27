@@ -88,6 +88,62 @@ test('download modules create plans and preserve legacy-required resource resolu
   assert.equal(resolved.completeness.reason, 'legacy-downloader-required');
 });
 
+test('22biqu native resolver maps provided chapter data to download resources', async () => {
+  const definition = await resolveDownloadSiteDefinition({ site: '22biqu' }, { workspaceRoot: REPO_ROOT });
+  const request = {
+    site: '22biqu',
+    input: 'https://www.22biqu.com/biqu1/123/',
+    title: 'Mock Book',
+    chapters: [
+      { url: '1001.html', title: 'Chapter One' },
+      { chapterUrl: 'https://www.22biqu.com/biqu1/123/1002.html', chapterTitle: 'Chapter Two' },
+    ],
+    dryRun: true,
+  };
+  const plan = await createDownloadPlan(request, {
+    workspaceRoot: REPO_ROOT,
+    definition,
+  });
+  const resolved = await resolveDownloadResources(plan, null, {
+    request,
+    workspaceRoot: REPO_ROOT,
+    definition,
+  });
+
+  assert.equal(resolved.siteKey, '22biqu');
+  assert.equal(resolved.resources.length, 2);
+  assert.equal(resolved.resources[0].url, 'https://www.22biqu.com/biqu1/123/1001.html');
+  assert.equal(resolved.resources[0].mediaType, 'text');
+  assert.equal(resolved.resources[0].fileName, '0001-Chapter One.txt');
+  assert.equal(resolved.resources[1].url, 'https://www.22biqu.com/biqu1/123/1002.html');
+  assert.equal(resolved.metadata.resolver.method, 'native-22biqu-chapters');
+  assert.equal(resolved.completeness.complete, true);
+  assert.equal(resolved.completeness.reason, '22biqu-chapters-provided');
+});
+
+test('22biqu ordinary book input still falls back to legacy resolution', async () => {
+  const definition = await resolveDownloadSiteDefinition({ site: '22biqu' }, { workspaceRoot: REPO_ROOT });
+  const request = {
+    site: '22biqu',
+    input: 'https://www.22biqu.com/biqu1/123/',
+    dryRun: true,
+  };
+  const plan = await createDownloadPlan(request, {
+    workspaceRoot: REPO_ROOT,
+    definition,
+  });
+  const resolved = await resolveDownloadResources(plan, null, {
+    request,
+    workspaceRoot: REPO_ROOT,
+    definition,
+  });
+
+  assert.equal(resolved.siteKey, '22biqu');
+  assert.equal(resolved.resources.length, 0);
+  assert.equal(resolved.completeness.reason, 'legacy-downloader-required');
+  assert.equal(plan.legacy.entrypoint.endsWith(path.join('src', 'sites', 'chapter-content', 'download', 'python', 'book.py')), true);
+});
+
 test('download site modules build legacy argv per site', async () => {
   const runDir = path.join(os.tmpdir(), 'bwk-download-module-run');
   const layout = { runDir };

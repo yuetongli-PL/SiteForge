@@ -144,6 +144,157 @@ test('22biqu ordinary book input still falls back to legacy resolution', async (
   assert.equal(plan.legacy.entrypoint.endsWith(path.join('src', 'sites', 'chapter-content', 'download', 'python', 'book.py')), true);
 });
 
+for (const fixture of [
+  {
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/video/BV1native/',
+    request: {
+      site: 'bilibili',
+      input: 'https://www.bilibili.com/video/BV1native/',
+      title: 'Bilibili Native Clip',
+      headers: { 'User-Agent': 'module-test' },
+      resources: [
+        {
+          url: 'https://upos.example.test/video/native.m4s',
+          fileName: 'native-video.m4s',
+          mediaType: 'video',
+          referer: 'https://www.bilibili.com/video/BV1native/',
+          headers: { Range: 'bytes=0-' },
+        },
+      ],
+      dryRun: true,
+    },
+    expected: {
+      method: 'native-bilibili-resource-seeds',
+      reason: 'bilibili-resource-seeds-provided',
+      url: 'https://upos.example.test/video/native.m4s',
+      fileName: 'native-video.m4s',
+      mediaType: 'video',
+      referer: 'https://www.bilibili.com/video/BV1native/',
+      headerName: 'Range',
+      headerValue: 'bytes=0-',
+    },
+  },
+  {
+    site: 'douyin',
+    input: 'https://www.douyin.com/video/1234567890123456789',
+    request: {
+      site: 'douyin',
+      input: 'https://www.douyin.com/video/1234567890123456789',
+      metadata: {
+        directMedia: [
+          {
+            resolvedMediaUrl: 'https://v3-web.example.test/video/play.mp4',
+            resolvedTitle: 'Douyin Native Clip',
+            requestedUrl: 'https://www.douyin.com/video/1234567890123456789',
+            headers: { Cookie: 'session=1' },
+          },
+        ],
+      },
+      dryRun: true,
+    },
+    expected: {
+      method: 'native-douyin-resource-seeds',
+      reason: 'douyin-resource-seeds-provided',
+      url: 'https://v3-web.example.test/video/play.mp4',
+      fileName: '0001-Douyin Native Clip.mp4',
+      mediaType: 'video',
+      referer: 'https://www.douyin.com/video/1234567890123456789',
+      headerName: 'Cookie',
+      headerValue: 'session=1',
+    },
+  },
+  {
+    site: 'xiaohongshu',
+    input: 'https://www.xiaohongshu.com/explore/662233445566778899aabbcc',
+    request: {
+      site: 'xiaohongshu',
+      input: 'https://www.xiaohongshu.com/explore/662233445566778899aabbcc',
+      title: 'Xiaohongshu Native Note',
+      metadata: {
+        downloadBundle: {
+          headers: { Accept: 'image/avif,image/webp,*/*' },
+          assets: [
+            {
+              url: 'https://ci.xiaohongshu.example.test/native-image.jpg',
+              kind: 'image',
+              finalUrl: 'https://www.xiaohongshu.com/explore/662233445566778899aabbcc',
+            },
+          ],
+        },
+      },
+      dryRun: true,
+    },
+    expected: {
+      method: 'native-xiaohongshu-resource-seeds',
+      reason: 'xiaohongshu-resource-seeds-provided',
+      url: 'https://ci.xiaohongshu.example.test/native-image.jpg',
+      fileName: '0001-Xiaohongshu Native Note.jpg',
+      mediaType: 'image',
+      referer: 'https://www.xiaohongshu.com/explore/662233445566778899aabbcc',
+      headerName: 'Accept',
+      headerValue: 'image/avif,image/webp,*/*',
+    },
+  },
+]) {
+  test(`${fixture.site} native resolver maps provided resource seeds`, async () => {
+    const definition = await resolveDownloadSiteDefinition({ site: fixture.site }, { workspaceRoot: REPO_ROOT });
+    const plan = await createDownloadPlan(fixture.request, {
+      workspaceRoot: REPO_ROOT,
+      definition,
+    });
+    const resolved = await resolveDownloadResources(plan, {
+      siteKey: fixture.site,
+      status: 'ready',
+      headers: { 'Accept-Language': 'zh-CN' },
+    }, {
+      request: fixture.request,
+      workspaceRoot: REPO_ROOT,
+      definition,
+    });
+
+    assert.equal(resolved.siteKey, fixture.site);
+    assert.equal(resolved.resources.length, 1);
+    assert.equal(resolved.resources[0].url, fixture.expected.url);
+    assert.equal(resolved.resources[0].fileName, fixture.expected.fileName);
+    assert.equal(resolved.resources[0].mediaType, fixture.expected.mediaType);
+    assert.equal(resolved.resources[0].referer, fixture.expected.referer);
+    assert.equal(resolved.resources[0].headers['Accept-Language'], 'zh-CN');
+    assert.equal(resolved.resources[0].headers[fixture.expected.headerName], fixture.expected.headerValue);
+    assert.equal(resolved.metadata.resolver.method, fixture.expected.method);
+    assert.equal(resolved.completeness.reason, fixture.expected.reason);
+    assert.equal(resolved.completeness.complete, true);
+  });
+}
+
+for (const fixture of [
+  { site: 'bilibili', input: 'BV1legacyFallback' },
+  { site: 'douyin', input: 'https://www.douyin.com/user/MS4wLjABlegacyFallback' },
+  { site: 'xiaohongshu', input: 'coffee search' },
+]) {
+  test(`${fixture.site} ordinary input still falls back to legacy resolution`, async () => {
+    const definition = await resolveDownloadSiteDefinition({ site: fixture.site }, { workspaceRoot: REPO_ROOT });
+    const request = {
+      site: fixture.site,
+      input: fixture.input,
+      dryRun: true,
+    };
+    const plan = await createDownloadPlan(request, {
+      workspaceRoot: REPO_ROOT,
+      definition,
+    });
+    const resolved = await resolveDownloadResources(plan, null, {
+      request,
+      workspaceRoot: REPO_ROOT,
+      definition,
+    });
+
+    assert.equal(resolved.siteKey, fixture.site);
+    assert.equal(resolved.resources.length, 0);
+    assert.equal(resolved.completeness.reason, 'legacy-downloader-required');
+  });
+}
+
 test('download site modules build legacy argv per site', async () => {
   const runDir = path.join(os.tmpdir(), 'bwk-download-module-run');
   const layout = { runDir };

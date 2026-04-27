@@ -6,9 +6,19 @@ import {
   legacyItems,
   normalizePositiveInteger,
   pushFlag,
+  resolveNativeResourceSeeds,
 } from './common.mjs';
 
 export const siteKey = 'bilibili';
+
+export function resolveResources(plan, sessionLease = null, context = {}) {
+  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, {
+    defaultMediaType: 'video',
+    method: 'native-bilibili-resource-seeds',
+    completeReason: 'bilibili-resource-seeds-provided',
+    incompleteReason: 'bilibili-resource-seeds-incomplete',
+  });
+}
 
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {
   const args = [entrypointPath, 'download', ...legacyItems(plan, request)];
@@ -37,5 +47,6 @@ export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease
 
 export default Object.freeze({
   siteKey,
+  resolveResources,
   buildLegacyArgs,
 });

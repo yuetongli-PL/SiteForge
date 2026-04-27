@@ -6,10 +6,20 @@ import {
   legacyItems,
   normalizePositiveInteger,
   pushFlag,
+  resolveNativeResourceSeeds,
   toArray,
 } from './common.mjs';
 
 export const siteKey = 'xiaohongshu';
+
+export function resolveResources(plan, sessionLease = null, context = {}) {
+  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, {
+    defaultMediaType: 'image',
+    method: 'native-xiaohongshu-resource-seeds',
+    completeReason: 'xiaohongshu-resource-seeds-provided',
+    incompleteReason: 'xiaohongshu-resource-seeds-incomplete',
+  });
+}
 
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {
   const args = [entrypointPath, 'download', ...legacyItems(plan, request)];
@@ -36,5 +46,6 @@ export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease
 
 export default Object.freeze({
   siteKey,
+  resolveResources,
   buildLegacyArgs,
 });

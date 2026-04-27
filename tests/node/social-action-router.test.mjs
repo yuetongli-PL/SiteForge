@@ -515,6 +515,7 @@ test('runSocialAction dry-run treats full-archive action as API cursor archive m
   assert.equal(result.settings.fullArchive, true);
   assert.equal(result.settings.apiCursor, true);
   assert.equal(result.settings.maxScrolls, 250);
+  assert.equal(result.settings.maxItems, 2_000);
 });
 
 test('runSocialAction suppresses API cursor for Instagram relation actions', async () => {
@@ -2983,6 +2984,7 @@ test('runSocialAction writes standard social archive artifacts', async (t) => {
   assert.equal(manifest.artifacts.indexHtml, path.join(runDir, 'index.html'));
   assert.equal(state.status, 'completed');
   assert.equal(state.counts.items, 1);
+  assert.equal(state.settings.apiCursorSuppressed, false);
   assert.match(itemsText, /"kind":"item"/u);
   assert.match(itemsText, /https:\/\/x\.com\/openai\/status\/1/u);
   assert.match(report, /- Items: 1/u);

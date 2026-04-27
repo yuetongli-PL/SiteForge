@@ -4232,6 +4232,7 @@ function safeSettingsForArtifact(settings) {
     scrollWaitMs: settings.scrollWaitMs,
     fullArchive: settings.fullArchive,
     apiCursor: settings.apiCursor,
+    apiCursorSuppressed: settings.apiCursorSuppressed,
     maxApiPages: settings.maxApiPages,
     maxUsers: settings.maxUsers,
     maxDetailPages: settings.maxDetailPages,
@@ -5114,7 +5115,11 @@ function normalizeRunSettings(plan, options = {}) {
   const fullArchive = actionRequestsFullArchive || toBoolean(options.fullArchive ?? options.allHistory, false);
   const followedDateMode = String(options.followedDateMode || options.followedDateStrategy || '').trim().toLowerCase();
   const defaultMaxScrolls = fullArchive ? DEFAULT_FULL_ARCHIVE_MAX_SCROLLS : DEFAULT_MAX_SCROLLS;
-  const defaultMaxItems = isSocialRelationAction(plan.action) ? DEFAULT_MAX_RELATION_ITEMS : DEFAULT_MAX_ITEMS;
+  const defaultMaxItems = isSocialRelationAction(plan.action)
+    ? DEFAULT_MAX_RELATION_ITEMS
+    : fullArchive
+      ? Math.max(DEFAULT_MAX_ITEMS, 2_000)
+      : DEFAULT_MAX_ITEMS;
   const apiCursorDefault = fullArchive
     || (plan.siteKey === 'x' && plan.action === 'followed-posts-by-date')
     || (plan.siteKey === 'instagram' && plan.action === 'followed-posts-by-date' && /api/iu.test(followedDateMode));

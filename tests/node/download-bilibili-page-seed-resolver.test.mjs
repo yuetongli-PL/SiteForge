@@ -107,6 +107,118 @@ test('bilibili native resolver maps offline durl payload to a video resource', a
   assert.equal(resolved.completeness.reason, 'bilibili-resource-seeds-provided');
 });
 
+test('bilibili native resolver expands offline BV view payload with multi-page playurl payloads', async () => {
+  const { resolved } = await resolveBilibili({
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/video/BV1fixtureMulti/',
+    bilibiliViewPayload: {
+      data: {
+        bvid: 'BV1fixtureMulti',
+        aid: 10001,
+        title: 'Multi Page Fixture',
+        pages: [
+          { cid: 111, page: 1, part: 'Part One' },
+          { cid: 222, page: 2, part: 'Part Two' },
+        ],
+      },
+    },
+    playUrlPayloads: {
+      111: {
+        cid: 111,
+        data: {
+          dash: {
+            video: [{ id: 80, baseUrl: 'https://upos.example.test/BV1fixtureMulti/p1-video.m4s', mimeType: 'video/mp4' }],
+            audio: [{ id: 30280, baseUrl: 'https://upos.example.test/BV1fixtureMulti/p1-audio.m4s', mimeType: 'audio/mp4' }],
+          },
+        },
+      },
+      222: {
+        cid: 222,
+        data: {
+          dash: {
+            video: [{ id: 80, baseUrl: 'https://upos.example.test/BV1fixtureMulti/p2-video.m4s', mimeType: 'video/mp4' }],
+            audio: [{ id: 30280, baseUrl: 'https://upos.example.test/BV1fixtureMulti/p2-audio.m4s', mimeType: 'audio/mp4' }],
+          },
+        },
+      },
+    },
+    dryRun: true,
+  });
+
+  assert.equal(resolved.resources.length, 4);
+  assert.deepEqual(resolved.resources.map((resource) => resource.url), [
+    'https://upos.example.test/BV1fixtureMulti/p1-video.m4s',
+    'https://upos.example.test/BV1fixtureMulti/p1-audio.m4s',
+    'https://upos.example.test/BV1fixtureMulti/p2-video.m4s',
+    'https://upos.example.test/BV1fixtureMulti/p2-audio.m4s',
+  ]);
+  assert.deepEqual([...new Set(resolved.resources.map((resource) => resource.groupId))], [
+    'bilibili:BV1fixtureMulti:p1',
+    'bilibili:BV1fixtureMulti:p2',
+  ]);
+  assert.equal(resolved.resources[0].metadata.bvid, 'BV1fixtureMulti');
+  assert.equal(resolved.resources[0].metadata.cid, '111');
+  assert.equal(resolved.resources[0].metadata.page, 1);
+  assert.equal(resolved.resources[2].metadata.partTitle, 'Part Two');
+  assert.equal(resolved.metadata.resolution.expectedVideos, 2);
+  assert.equal(resolved.completeness.reason, 'bilibili-resource-seeds-provided');
+});
+
+test('bilibili native resolver expands offline collection and UP archive payloads', async () => {
+  const { resolved: collectionResolved } = await resolveBilibili({
+    site: 'bilibili',
+    input: 'https://space.bilibili.com/100/channel/collectiondetail?sid=200',
+    bilibiliCollectionPayload: {
+      data: {
+        sid: '200',
+        title: 'Fixture Collection',
+        items: [
+          { bvid: 'BV1collectionA', title: 'Collection A', cid: 3001 },
+          { bvid: 'BV1collectionB', title: 'Collection B', cid: 3002 },
+        ],
+      },
+    },
+    playUrlPayloads: {
+      BV1collectionA: { bvid: 'BV1collectionA', data: { durl: [{ url: 'https://upos.example.test/collection/a.flv' }] } },
+      BV1collectionB: { bvid: 'BV1collectionB', data: { durl: [{ url: 'https://upos.example.test/collection/b.flv' }] } },
+    },
+    dryRun: true,
+  });
+
+  assert.equal(collectionResolved.resources.length, 2);
+  assert.deepEqual(collectionResolved.resources.map((resource) => resource.url), [
+    'https://upos.example.test/collection/a.flv',
+    'https://upos.example.test/collection/b.flv',
+  ]);
+  assert.equal(collectionResolved.resources[0].metadata.playlistKind, 'collection');
+  assert.equal(collectionResolved.resources[0].metadata.playlistTitle, 'Fixture Collection');
+
+  const { resolved: upResolved } = await resolveBilibili({
+    site: 'bilibili',
+    input: 'https://space.bilibili.com/100/video',
+    maxItems: 1,
+    bilibiliSpaceArchivesPayload: {
+      data: {
+        list: {
+          vlist: [
+            { bvid: 'BV1upA', title: 'UP A', cid: 4001 },
+            { bvid: 'BV1upB', title: 'UP B', cid: 4002 },
+          ],
+        },
+      },
+    },
+    playUrlPayloads: {
+      BV1upA: { bvid: 'BV1upA', data: { durl: [{ url: 'https://upos.example.test/up/a.flv' }] } },
+      BV1upB: { bvid: 'BV1upB', data: { durl: [{ url: 'https://upos.example.test/up/b.flv' }] } },
+    },
+    dryRun: true,
+  });
+
+  assert.equal(upResolved.resources.length, 1);
+  assert.equal(upResolved.resources[0].url, 'https://upos.example.test/up/a.flv');
+  assert.equal(upResolved.resources[0].metadata.playlistKind, 'space-archives');
+});
+
 test('bilibili ordinary input without fixture payload still falls back to legacy resolution', async () => {
   const { plan, resolved } = await resolveBilibili({
     site: 'bilibili',

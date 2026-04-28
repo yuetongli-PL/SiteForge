@@ -6,6 +6,8 @@ import {
   isHttpUrl,
   normalizeText,
   pushFlag,
+  resolveNativeResourceSeeds,
+  toArray,
 } from './common.mjs';
 
 export const siteKeys = Object.freeze(['x', 'instagram']);
@@ -26,6 +28,10 @@ function normalizeActionToken(value) {
 
 function isTrue(value) {
   return value === true || value === 'true' || value === '1' || value === 'yes' || value === 'on';
+}
+
+function isObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function actionNeedsQuery(action) {
@@ -180,6 +186,295 @@ function inferSocialContentType(plan, request = {}) {
   return '';
 }
 
+function metadataObject(request = {}) {
+  return isObject(request.metadata) ? request.metadata : {};
+}
+
+function nativeResolverEnabled(request = {}) {
+  const metadata = metadataObject(request);
+  return isTrue(request.nativeResolver)
+    || isTrue(request.nativeSocialResolver)
+    || isTrue(metadata.nativeResolver)
+    || isTrue(metadata.nativeSocialResolver);
+}
+
+function socialNativeSupported(plan, request = {}) {
+  if (!nativeResolverEnabled(request)) {
+    return false;
+  }
+  const action = inferSocialAction(plan, request);
+  if (['profile-followers', 'profile-following', 'followed-users', 'followed-posts-by-date'].includes(action)) {
+    return false;
+  }
+  if (plan.siteKey === 'instagram') {
+    return ['profile-content', 'full-archive'].includes(action);
+  }
+  if (plan.siteKey === 'x') {
+    return ['profile-content', 'full-archive', 'search'].includes(action);
+  }
+  return false;
+}
+
+function socialMediaContainers(request = {}, siteKey = '') {
+  const metadata = metadataObject(request);
+  return [
+    request.socialMediaResources,
+    request.mediaResources,
+    request.mediaItems,
+    request.archiveItems,
+    request.items,
+    request.resources,
+    siteKey === 'x' ? request.xMediaItems : undefined,
+    siteKey === 'x' ? request.xArchiveItems : undefined,
+    siteKey === 'instagram' ? request.instagramMediaItems : undefined,
+    siteKey === 'instagram' ? request.instagramFeedUserPayload : undefined,
+    siteKey === 'instagram' ? request.feedUserPayload : undefined,
+    metadata.socialMediaResources,
+    metadata.mediaResources,
+    metadata.mediaItems,
+    metadata.archiveItems,
+    metadata.items,
+    siteKey === 'x' ? metadata.xMediaItems : undefined,
+    siteKey === 'x' ? metadata.xArchiveItems : undefined,
+    siteKey === 'instagram' ? metadata.instagramMediaItems : undefined,
+    siteKey === 'instagram' ? metadata.instagramFeedUserPayload : undefined,
+    siteKey === 'instagram' ? metadata.feedUserPayload : undefined,
+  ].filter(Boolean);
+}
+
+function inferMediaTypeFromUrl(url) {
+  const normalized = normalizeText(url).toLowerCase();
+  if (/\.(?:jpg|jpeg|png|webp|gif|avif)(?:[?#]|$)/u.test(normalized)) {
+    return 'image';
+  }
+  if (/\.(?:mp4|m4v|mov|webm|m3u8)(?:[?#]|$)/u.test(normalized)) {
+    return 'video';
+  }
+  return '';
+}
+
+function selectBestXVideoVariant(variants = []) {
+  return toArray(variants)
+    .filter(isObject)
+    .filter((variant) => firstText(variant.url, variant.src) && firstText(variant.contentType, variant.content_type, variant.type).includes('mp4'))
+    .sort((left, right) => Number(right.bitrate ?? right.bit_rate ?? 0) - Number(left.bitrate ?? left.bit_rate ?? 0))[0]
+    ?? toArray(variants).find((variant) => isObject(variant) && firstText(variant.url, variant.src));
+}
+
+function directUrlFromSocialMedia(entry = {}) {
+  if (typeof entry === 'string') {
+    return entry;
+  }
+  const variant = selectBestXVideoVariant(entry.variants ?? entry.videoVariants ?? entry.video_variants);
+  return firstText(
+    entry.url,
+    entry.downloadUrl,
+    entry.mediaUrl,
+    entry.bestUrl,
+    entry.imageUrl,
+    entry.videoUrl,
+    entry.src,
+    entry.href,
+    entry.image_versions2?.candidates?.[0]?.url,
+    entry.video_versions?.[0]?.url,
+    entry.videoVersion?.url,
+    variant?.url,
+    variant?.src,
+  );
+}
+
+function mediaTypeFromSocialMedia(entry = {}, url = '') {
+  const explicit = firstText(entry.mediaType, entry.kind, entry.type, entry.media_type).toLowerCase();
+  if (explicit === 'photo') {
+    return 'image';
+  }
+  if (['image', 'video', 'audio', 'json', 'binary'].includes(explicit)) {
+    return explicit;
+  }
+  const contentType = firstText(entry.contentType, entry.content_type, entry.mimeType, entry.mime_type).toLowerCase();
+  if (contentType.includes('image/')) {
+    return 'image';
+  }
+  if (contentType.includes('video/')) {
+    return 'video';
+  }
+  if (entry.video_versions || entry.videoVariants || entry.variants) {
+    return 'video';
+  }
+  if (entry.image_versions2 || entry.imageUrl) {
+    return 'image';
+  }
+  return inferMediaTypeFromUrl(url) || 'binary';
+}
+
+function captionText(value = {}) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return firstText(value?.text, value?.caption?.text, value?.edge_media_to_caption?.edges?.[0]?.node?.text);
+}
+
+function socialMediaChildValues(value = {}) {
+  return [
+    value.media,
+    value.mediaItems,
+    value.media_items,
+    value.assets,
+    value.images,
+    value.videos,
+    value.carousel_media,
+    value.carouselMedia,
+    value.items,
+    value.data?.items,
+    value.data?.user?.edge_owner_to_timeline_media?.edges?.map((edge) => edge.node),
+  ].filter((entry) => entry !== undefined && entry !== null && entry !== value);
+}
+
+function socialMediaEntries(value = {}, inherited = {}) {
+  const entries = [];
+  const seen = new WeakSet();
+  const stack = [{ value, inherited, depth: 0 }];
+
+  while (stack.length > 0 && entries.length < 2000) {
+    const current = stack.pop();
+    const currentValue = current?.value;
+    if (currentValue == null || current.depth > 8) {
+      continue;
+    }
+    if (typeof currentValue === 'string') {
+      entries.push({ ...current.inherited, url: currentValue });
+      continue;
+    }
+    if (Array.isArray(currentValue)) {
+      if (seen.has(currentValue)) {
+        continue;
+      }
+      seen.add(currentValue);
+      for (let index = currentValue.length - 1; index >= 0; index -= 1) {
+        stack.push({ value: currentValue[index], inherited: current.inherited, depth: current.depth + 1 });
+      }
+      continue;
+    }
+    if (!isObject(currentValue) || seen.has(currentValue)) {
+      continue;
+    }
+    seen.add(currentValue);
+
+    const nextInherited = {
+      ...current.inherited,
+      postId: firstText(currentValue.postId, currentValue.id, currentValue.pk, currentValue.tweetId, currentValue.rest_id, current.inherited.postId),
+      shortcode: firstText(currentValue.shortcode, currentValue.code, current.inherited.shortcode),
+      permalink: firstText(currentValue.permalink, currentValue.url, currentValue.link, current.inherited.permalink),
+      title: firstText(currentValue.title, currentValue.full_text, currentValue.text, captionText(currentValue.caption), current.inherited.title),
+      author: firstText(currentValue.author, currentValue.user?.username, currentValue.user?.screen_name, currentValue.owner?.username, current.inherited.author),
+    };
+
+    if (directUrlFromSocialMedia(currentValue)) {
+      entries.push({ ...nextInherited, ...currentValue });
+    }
+    const children = socialMediaChildValues(currentValue);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ value: children[index], inherited: nextInherited, depth: current.depth + 1 });
+    }
+  }
+  return entries;
+}
+
+function seedFromSocialMediaEntry(entry = {}, siteKey, plan, request = {}, index = 0) {
+  const url = directUrlFromSocialMedia(entry);
+  if (!url) {
+    return null;
+  }
+  const mediaType = mediaTypeFromSocialMedia(entry, url);
+  const postId = firstText(entry.postId, entry.id, entry.pk, entry.tweetId, entry.rest_id, entry.shortcode, entry.code);
+  const title = firstText(entry.title, entry.text, entry.full_text, captionText(entry), postId, `${siteKey}-media-${index + 1}`);
+  const sourceUrl = firstText(
+    entry.permalink,
+    entry.sourceUrl,
+    entry.postUrl,
+    entry.url && isHttpUrl(entry.url) && entry.url !== url ? entry.url : '',
+    request.inputUrl,
+    request.url,
+    request.input,
+    plan.source?.input,
+  );
+  return {
+    id: firstText(entry.mediaId, entry.media_id, entry.id, postId, `media-${index + 1}`),
+    url,
+    mediaType,
+    contentType: firstText(entry.contentType, entry.content_type, entry.mimeType, entry.mime_type),
+    title,
+    sourceUrl,
+    referer: firstText(entry.referer, sourceUrl),
+    headers: isObject(entry.headers) ? entry.headers : {},
+    expectedBytes: entry.expectedBytes ?? entry.size,
+    groupId: firstText(entry.groupId, postId, sourceUrl, title),
+    metadata: {
+      postId: postId || undefined,
+      shortcode: firstText(entry.shortcode, entry.code) || undefined,
+      author: firstText(entry.author, entry.user?.username, entry.user?.screen_name, entry.owner?.username) || undefined,
+      assetType: mediaType,
+      archiveStrategy: firstText(entry.archiveStrategy, siteKey === 'instagram' ? 'instagram-feed-user' : 'social-media-candidates'),
+      posterOnlyVideoFallback: entry.posterOnlyVideoFallback === true || entry.reason === 'poster-only-video-fallback' || undefined,
+    },
+  };
+}
+
+function requestWithSocialNativeSeeds(siteKey, plan, request = {}) {
+  if (!socialNativeSupported(plan, request)) {
+    return null;
+  }
+  const mediaEntries = socialMediaContainers(request, siteKey)
+    .flatMap((container) => socialMediaEntries(container));
+  const seeds = mediaEntries
+    .map((entry, index) => seedFromSocialMediaEntry(entry, siteKey, plan, request, index))
+    .filter(Boolean);
+  if (seeds.length === 0) {
+    return null;
+  }
+  return {
+    ...request,
+    metadata: {
+      ...metadataObject(request),
+      resourceSeeds: seeds,
+      resolution: {
+        siteResolver: siteKey,
+        action: inferSocialAction(plan, request),
+        archiveStrategy: siteKey === 'instagram' ? 'instagram-feed-user' : 'social-media-candidates',
+        expectedMedia: mediaEntries.length,
+        resolvedSeeds: seeds.length,
+      },
+    },
+  };
+}
+
+export function resolveResourcesForSocialSite(siteKey, plan, sessionLease = null, context = {}) {
+  const request = context.request ?? {};
+  const seededRequest = requestWithSocialNativeSeeds(siteKey, plan, request);
+  if (!seededRequest) {
+    return null;
+  }
+  const resolved = resolveNativeResourceSeeds(siteKey, plan, sessionLease, {
+    ...context,
+    request: seededRequest,
+  }, {
+    defaultMediaType: 'binary',
+    method: `native-${siteKey}-social-resource-seeds`,
+    completeReason: `${siteKey}-social-resource-seeds-provided`,
+    incompleteReason: `${siteKey}-social-resource-seeds-incomplete`,
+  });
+  if (!resolved) {
+    return null;
+  }
+  return {
+    ...resolved,
+    metadata: {
+      ...resolved.metadata,
+      resolution: seededRequest.metadata?.resolution,
+    },
+  };
+}
+
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {
   const action = inferSocialAction(plan, request);
   const query = actionNeedsQuery(action) ? queryFromSocialInput(plan, request) : '';
@@ -228,6 +523,9 @@ export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease
 export function createSocialSiteModule(siteKey) {
   return Object.freeze({
     siteKey,
+    resolveResources(plan, sessionLease = null, context = {}) {
+      return resolveResourcesForSocialSite(siteKey, plan, sessionLease, context);
+    },
     buildLegacyArgs,
   });
 }

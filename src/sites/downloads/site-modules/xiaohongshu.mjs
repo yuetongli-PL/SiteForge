@@ -96,6 +96,10 @@ function videoUrl(video = {}) {
     video.media?.stream?.h264?.[0]?.url,
     video.media?.stream?.h265?.[0]?.masterUrl,
     video.media?.stream?.h265?.[0]?.master_url,
+    video.media?.stream?.h265?.[0]?.url,
+    video.media?.stream?.av1?.[0]?.masterUrl,
+    video.media?.stream?.av1?.[0]?.master_url,
+    video.media?.stream?.av1?.[0]?.url,
     video.video?.url,
   );
 }
@@ -172,6 +176,273 @@ function seedsFromPayload(payload = {}, request = {}, plan = {}) {
   return seeds;
 }
 
+function metadataObject(request = {}) {
+  return isObject(request.metadata) ? request.metadata : {};
+}
+
+function pageFactCandidates(request = {}) {
+  const metadata = metadataObject(request);
+  return [
+    request.xiaohongshuPageFacts,
+    request.pageFacts,
+    request.fixturePageFacts,
+    metadata.xiaohongshuPageFacts,
+    metadata.pageFacts,
+    metadata.fixturePageFacts,
+  ].filter(isObject);
+}
+
+function htmlCandidates(request = {}) {
+  const metadata = metadataObject(request);
+  return [
+    request.fixtureHtml,
+    request.pageHtml,
+    request.html,
+    request.rawHtml,
+    metadata.fixtureHtml,
+    metadata.pageHtml,
+    metadata.html,
+    metadata.rawHtml,
+  ].map((value) => (typeof value === 'string' ? value : '')).filter((value) => value.trim());
+}
+
+function noteMetadataFromFacts(facts = {}, request = {}, plan = {}) {
+  const note = facts.note ?? facts.detailNote ?? facts.currentNote ?? facts;
+  return {
+    noteId: firstText(request.noteId, facts.noteId, note.noteId, note.note_id, note.id),
+    noteTitle: firstText(request.title, facts.title, note.title, note.displayTitle, note.display_title, note.desc, plan.source?.title),
+    authorName: firstText(facts.authorName, note.authorName, note.user?.nickname, note.user?.name),
+    authorUserId: firstText(facts.authorUserId, facts.userId, note.user?.userId, note.user?.user_id, note.user?.id),
+    authorUrl: firstText(facts.authorUrl, note.authorUrl),
+    publishedAt: firstText(facts.publishedAt, facts.createTime, note.time, note.createTime, note.create_time),
+    tagNames: Array.isArray(facts.tagNames) ? facts.tagNames : Array.isArray(note.tagNames) ? note.tagNames : undefined,
+    sourceUrl: firstText(request.inputUrl, request.url, request.input, facts.url, note.url, plan.source?.canonicalUrl, plan.source?.input),
+  };
+}
+
+function seedFromXiaohongshuAsset(asset = {}, mediaType = 'image', index = 0, note = {}, sourceType = 'page-facts') {
+  const url = mediaType === 'video' ? videoUrl(asset) : imageUrl(asset);
+  if (!url) {
+    return null;
+  }
+  const assetId = firstText(asset.id, asset.assetId, asset.fileId, asset.file_id, asset.traceId, asset.trace_id, `${mediaType}-${index + 1}`);
+  return {
+    id: assetId,
+    url,
+    mediaType,
+    title: firstText(note.noteTitle, note.noteId, `xiaohongshu-${mediaType}-${index + 1}`),
+    noteId: note.noteId,
+    sourceUrl: note.sourceUrl,
+    referer: note.sourceUrl,
+    groupId: firstText(note.noteId, note.noteTitle),
+    metadata: {
+      noteId: note.noteId || undefined,
+      noteTitle: note.noteTitle || undefined,
+      authorName: note.authorName || undefined,
+      authorUserId: note.authorUserId || undefined,
+      authorUrl: note.authorUrl || undefined,
+      publishedAt: note.publishedAt || undefined,
+      tagNames: note.tagNames,
+      assetType: mediaType,
+      assetId: assetId || undefined,
+      previewUrl: firstText(asset.previewUrl, asset.preview, asset.thumbnailUrl, asset.urlPre, asset.url_pre) || undefined,
+      width: asset.width,
+      height: asset.height,
+      sourceUrls: Array.isArray(asset.sourceUrls) ? asset.sourceUrls : undefined,
+      sourceType,
+    },
+  };
+}
+
+function seedsFromPageFacts(facts = {}, request = {}, plan = {}, sourceType = 'page-facts') {
+  const note = noteMetadataFromFacts(facts, request, plan);
+  const images = [
+    ...toArray(facts.contentImages),
+    ...toArray(facts.images),
+    ...toArray(facts.note?.images),
+    ...toArray(facts.note?.imageList),
+    ...toArray(facts.note?.image_list),
+  ];
+  const videos = [
+    ...toArray(facts.contentVideos),
+    ...toArray(facts.contentVideoUrls),
+    ...toArray(facts.primaryVideoUrl),
+    ...toArray(facts.videos),
+    ...toArray(facts.video),
+    ...toArray(facts.note?.videos),
+    ...toArray(facts.note?.video),
+  ];
+  return [
+    ...images.map((asset, index) => seedFromXiaohongshuAsset(asset, 'image', index, note, sourceType)),
+    ...videos.map((asset, index) => seedFromXiaohongshuAsset(asset, 'video', index, note, sourceType)),
+  ].filter(Boolean);
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? '')
+    .replace(/&amp;/giu, '&')
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;/giu, '\'')
+    .replace(/&lt;/giu, '<')
+    .replace(/&gt;/giu, '>');
+}
+
+function mediaUrlsFromHtml(html, tagPattern) {
+  const urls = [];
+  let match = tagPattern.exec(html);
+  while (match) {
+    const url = decodeHtmlEntities(match[1] ?? '');
+    if (url) {
+      urls.push(url);
+    }
+    match = tagPattern.exec(html);
+  }
+  return [...new Set(urls)];
+}
+
+function seedsFromFixtureHtml(html, request = {}, plan = {}) {
+  const note = noteMetadataFromFacts({}, request, plan);
+  const imageUrls = mediaUrlsFromHtml(html, /<(?:img|meta)\b[^>]*(?:src|content)=["']([^"']+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"']*)?)["'][^>]*>/giu);
+  const videoUrls = mediaUrlsFromHtml(html, /<(?:video|source|meta)\b[^>]*(?:src|content)=["']([^"']+\.(?:mp4|m3u8|mov|webm)(?:\?[^"']*)?)["'][^>]*>/giu);
+  return [
+    ...imageUrls.map((url, index) => seedFromXiaohongshuAsset({ url, id: `html-image-${index + 1}` }, 'image', index, note, 'fixture-html')),
+    ...videoUrls.map((url, index) => seedFromXiaohongshuAsset({ url, id: `html-video-${index + 1}` }, 'video', index, note, 'fixture-html')),
+  ].filter(Boolean);
+}
+
+function noteListCandidates(request = {}) {
+  const metadata = metadataObject(request);
+  return [
+    { sourceType: 'search', notes: request.xiaohongshuSearchNotes },
+    { sourceType: 'search', notes: request.searchNotes },
+    { sourceType: 'author', notes: request.xiaohongshuAuthorNotes },
+    { sourceType: 'author', notes: request.authorNotes },
+    { sourceType: 'followed-users', notes: request.xiaohongshuFollowedNotes },
+    { sourceType: 'followed-users', notes: request.followedNotes },
+    { sourceType: 'search', notes: metadata.xiaohongshuSearchNotes },
+    { sourceType: 'search', notes: metadata.searchNotes },
+    { sourceType: 'author', notes: metadata.xiaohongshuAuthorNotes },
+    { sourceType: 'author', notes: metadata.authorNotes },
+    { sourceType: 'followed-users', notes: metadata.xiaohongshuFollowedNotes },
+    { sourceType: 'followed-users', notes: metadata.followedNotes },
+  ].flatMap((entry) => toArray(entry.notes).map((note) => ({
+    sourceType: entry.sourceType,
+    note,
+  }))).filter((entry) => isObject(entry.note));
+}
+
+function seedsFromNoteList(entries = [], request = {}, plan = {}) {
+  return entries.flatMap((entry) => seedsFromPayload({
+    note: entry.note,
+  }, {
+    ...request,
+    title: firstText(entry.note.title, entry.note.displayTitle, entry.note.display_title, request.title),
+  }, plan).map((seed) => ({
+    ...seed,
+    metadata: {
+      ...(seed.metadata ?? {}),
+      noteTitle: firstText(entry.note.title, entry.note.displayTitle, entry.note.display_title) || undefined,
+      authorName: firstText(entry.note.authorName, entry.note.user?.nickname, entry.note.user?.name) || undefined,
+      authorUserId: firstText(entry.note.authorUserId, entry.note.user?.userId, entry.note.user?.id) || undefined,
+      authorUrl: firstText(entry.note.authorUrl) || undefined,
+      queryText: firstText(request.query, request.keyword) || undefined,
+      sourceType: entry.sourceType,
+    },
+  })));
+}
+
+function callableFromContext(context = {}, name) {
+  return [
+    context[name],
+    context.deps?.[name],
+    context.options?.[name],
+  ].find((candidate) => typeof candidate === 'function') ?? null;
+}
+
+function resultNotes(value = {}) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (!isObject(value)) {
+    return [];
+  }
+  return [
+    value.notes,
+    value.items,
+    value.results,
+    value.videos,
+  ].flatMap(toArray).filter(isObject);
+}
+
+async function followedNotesFromInjectedQuery(request = {}, plan = {}, sessionLease = null, context = {}) {
+  if (!request.followedUsers && !request.followedUpdates && !request.followedNotes) {
+    return [];
+  }
+  const query = callableFromContext(context, 'queryXiaohongshuFollow');
+  if (!query) {
+    return [];
+  }
+  const result = await query({
+    intent: 'list-followed-users',
+    request,
+    plan,
+    sessionLease,
+    limit: request.followedUserLimit ?? request.maxItems ?? plan.policy?.maxItems,
+  });
+  return resultNotes(result).map((note) => ({ sourceType: 'followed-users', note }));
+}
+
+function requestWithSeeds(request = {}, seeds = [], resolution = {}) {
+  if (seeds.length === 0) {
+    return null;
+  }
+  return {
+    ...request,
+    metadata: {
+      ...metadataObject(request),
+      resourceSeeds: seeds,
+      resolution: {
+        siteResolver: siteKey,
+        resolvedSeeds: seeds.length,
+        ...resolution,
+      },
+    },
+  };
+}
+
+async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLease = null, context = {}) {
+  const pageFactSeeds = pageFactCandidates(request)
+    .flatMap((facts) => seedsFromPageFacts(facts, request, plan));
+  if (pageFactSeeds.length > 0) {
+    return requestWithSeeds(request, pageFactSeeds, {
+      sourceType: 'page-facts',
+      resolvedNotes: pageFactCandidates(request).length,
+    });
+  }
+
+  const htmlSeeds = htmlCandidates(request).flatMap((html) => seedsFromFixtureHtml(html, request, plan));
+  if (htmlSeeds.length > 0) {
+    return requestWithSeeds(request, htmlSeeds, {
+      sourceType: 'fixture-html',
+      resolvedNotes: 1,
+    });
+  }
+
+  const noteEntries = [
+    ...noteListCandidates(request),
+    ...await followedNotesFromInjectedQuery(request, plan, sessionLease, context),
+  ];
+  const noteSeeds = seedsFromNoteList(noteEntries, request, plan);
+  if (noteSeeds.length > 0) {
+    return requestWithSeeds(request, noteSeeds, {
+      sourceType: 'note-list',
+      attemptedNotes: noteEntries.length,
+      resolvedNotes: new Set(noteEntries.map((entry) => firstText(entry.note.noteId, entry.note.id, entry.note.note_id))).size || noteEntries.length,
+    });
+  }
+  return null;
+}
+
 function requestWithPayloadSeeds(request = {}, plan = {}) {
   for (const payload of payloadCandidates(request)) {
     const seeds = seedsFromPayload(payload, request, plan);
@@ -188,19 +459,59 @@ function requestWithPayloadSeeds(request = {}, plan = {}) {
   return null;
 }
 
-export function resolveResources(plan, sessionLease = null, context = {}) {
-  const resolved = resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, nativeSeedResolverOptions);
-  if (resolved) {
-    return resolved;
+function hasExplicitNativeSeeds(request = {}) {
+  const metadata = metadataObject(request);
+  return Boolean(
+    request.resources
+      || request.resourceUrls
+      || request.resourceUrl
+      || request.resourceSeeds
+      || request.resolvedResources
+      || request.downloadResources
+      || request.mediaResources
+      || request.directMedia
+      || request.downloadBundle
+      || request.download?.resources
+      || request.download?.resourceSeeds
+      || request.download?.directMedia
+      || metadata.resourceSeeds
+      || metadata.resolvedResources
+      || metadata.downloadResources
+      || metadata.mediaResources
+      || metadata.directMedia
+      || metadata.downloadBundle
+      || metadata.download?.resources
+      || metadata.download?.resourceSeeds
+      || metadata.download?.directMedia
+  );
+}
+
+export async function resolveResources(plan, sessionLease = null, context = {}) {
+  if (hasExplicitNativeSeeds(context.request ?? {})) {
+    const resolved = resolveNativeResourceSeeds(siteKey, plan, sessionLease, context, nativeSeedResolverOptions);
+    if (resolved) {
+      return resolved;
+    }
   }
-  const seededRequest = requestWithPayloadSeeds(context.request ?? {}, plan);
+  const seededRequest = requestWithPayloadSeeds(context.request ?? {}, plan)
+    ?? await requestWithPageResolverSeeds(context.request ?? {}, plan, sessionLease, context);
   if (!seededRequest) {
     return null;
   }
-  return resolveNativeResourceSeeds(siteKey, plan, sessionLease, {
+  const seededResolved = resolveNativeResourceSeeds(siteKey, plan, sessionLease, {
     ...context,
     request: seededRequest,
   }, nativeSeedResolverOptions);
+  if (!seededResolved) {
+    return null;
+  }
+  return {
+    ...seededResolved,
+    metadata: {
+      ...seededResolved.metadata,
+      resolution: seededRequest.metadata?.resolution,
+    },
+  };
 }
 
 export function buildLegacyArgs(entrypointPath, plan, request = {}, sessionLease = {}, options = {}, layout) {

@@ -61,9 +61,8 @@ Pass criteria:
 
 Current next-branch caution:
 
-- `codex/download-native-resolvers` may start at the Phase 2 tip. Until it has
-  branch-specific commits and evidence, it must not be represented as a
-  published native-resolver release.
+- Any follow-up branch must not be represented as release-ready until it has
+  branch-specific commits, resolver evidence, and updated branch-scoped docs.
 
 ## Dirty Work Gate
 
@@ -109,6 +108,10 @@ node --test `
   tests\node\download-site-modules.test.mjs `
   tests\node\download-native-seed-schema.test.mjs `
   tests\node\download-22biqu-native-resolver.test.mjs `
+  tests\node\download-bilibili-page-seed-resolver.test.mjs `
+  tests\node\download-xiaohongshu-page-seed-resolver.test.mjs `
+  tests\node\download-douyin-native-resolver.test.mjs `
+  tests\node\download-social-native-resolver.test.mjs `
   tests\node\download-media-executor.test.mjs `
   tests\node\douyin-media-resolver.test.mjs
 ```
@@ -123,6 +126,9 @@ Pass criteria:
 - Focused download tests pass.
 - Resolver branches include fixture-backed native resolver coverage for every
   migrated task shape.
+- Native social resolver coverage documents gate flags and unsupported
+  legacy-only actions, because social native resolution is intentionally gated
+  rather than a default replacement.
 - Recovery or resume branches include artifact-level tests for `manifest.json`,
   `queue.json`, and `downloads.jsonl`.
 - Test failures are not waived by release notes. They must be fixed or the

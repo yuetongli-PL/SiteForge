@@ -945,6 +945,78 @@ test('download runner maps social requests to legacy action argv and source arti
   assert.deepEqual(result.manifest.legacy.artifacts, result.manifest.artifacts.source);
 });
 
+test('download runner executes gated social native resources without spawning legacy', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-runner-social-native-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  let executorInvoked = false;
+  let legacyInvoked = false;
+  const result = await runDownloadTask({
+    site: 'x',
+    input: 'https://x.com/openai',
+    nativeResolver: true,
+    dryRun: false,
+    mediaItems: [{
+      tweetId: 'tweet-native',
+      media: [{
+        id: 'media-native',
+        type: 'video',
+        variants: [{ contentType: 'video/mp4', bitrate: 1024, url: 'https://video.twimg.example.test/native.mp4' }],
+      }],
+    }],
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    acquireSessionLease: async () => ({
+      siteKey: 'x',
+      host: 'x.com',
+      status: 'ready',
+      mode: 'reusable-profile',
+      riskSignals: [],
+    }),
+    releaseSessionLease: async () => {},
+    executeResolvedDownloadTask: async (resolvedTask, plan) => {
+      executorInvoked = true;
+      assert.equal(resolvedTask.resources.length, 1);
+      assert.equal(resolvedTask.resources[0].url, 'https://video.twimg.example.test/native.mp4');
+      assert.equal(resolvedTask.metadata.resolver.method, 'native-x-social-resource-seeds');
+      return normalizeDownloadRunManifest({
+        runId: 'social-native',
+        planId: plan.id,
+        siteKey: plan.siteKey,
+        status: 'passed',
+        counts: {
+          expected: 1,
+          attempted: 1,
+          downloaded: 1,
+          skipped: 0,
+          failed: 0,
+        },
+        artifacts: {
+          manifest: path.join(runRoot, 'manifest.json'),
+          queue: path.join(runRoot, 'queue.json'),
+          downloadsJsonl: path.join(runRoot, 'downloads.jsonl'),
+          reportMarkdown: path.join(runRoot, 'report.md'),
+        },
+      });
+    },
+    executeLegacyDownloadTask: async () => {
+      legacyInvoked = true;
+      throw new Error('legacy adapter should not execute for gated native social resources');
+    },
+    spawnJsonCommand: async () => {
+      legacyInvoked = true;
+      throw new Error('legacy spawn should not run for gated native social resources');
+    },
+  });
+
+  assert.equal(executorInvoked, true);
+  assert.equal(legacyInvoked, false);
+  assert.equal(result.manifest.status, 'passed');
+  assert.equal(result.manifest.legacy, undefined);
+});
+
 test('download runner dry-run does not execute legacy adapters', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-runner-legacy-dry-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));

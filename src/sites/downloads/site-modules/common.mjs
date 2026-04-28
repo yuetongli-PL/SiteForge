@@ -252,7 +252,6 @@ function flattenSeedValue(value, inherited = {}, baseUrl = '') {
   entries.push(...flattenSeedValue(value.download?.resourceSeeds, nextInherited, baseUrl));
   entries.push(...flattenSeedValue(value.download?.directMedia, nextInherited, baseUrl));
   entries.push(...flattenSeedValue(value.downloadBundle?.assets, nextInherited, baseUrl));
-  entries.push(...flattenSeedValue(value.pageFacts?.contentImages, nextInherited, baseUrl));
   return entries;
 }
 
@@ -272,7 +271,6 @@ function nativeSeedContainers(request = {}, plan = {}) {
     request.download?.resourceSeeds,
     request.download?.directMedia,
     request.downloadBundle,
-    request.pageFacts?.contentImages,
     metadata.resourceSeeds,
     metadata.resolvedResources,
     metadata.downloadResources,
@@ -282,7 +280,6 @@ function nativeSeedContainers(request = {}, plan = {}) {
     metadata.download?.resourceSeeds,
     metadata.download?.directMedia,
     metadata.downloadBundle,
-    metadata.pageFacts?.contentImages,
     planMetadata.resourceSeeds,
     planMetadata.resolvedResources,
     planMetadata.downloadResources,
@@ -292,7 +289,6 @@ function nativeSeedContainers(request = {}, plan = {}) {
     planMetadata.download?.resourceSeeds,
     planMetadata.download?.directMedia,
     planMetadata.downloadBundle,
-    planMetadata.pageFacts?.contentImages,
   ];
 }
 

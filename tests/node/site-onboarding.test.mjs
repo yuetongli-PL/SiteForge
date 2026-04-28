@@ -3425,9 +3425,9 @@ test('X and Instagram social docs include operational natural language command m
     assert.match(document, /kb-refresh/u);
   }
 
-  assert.match(xSkill, /node scripts\/social-live-verify\.mjs --execute --site x --x-account <handle>/u);
+  assert.match(xSkill, /node scripts\/social-live-verify\.mjs --live --execute --site x --x-account <handle>/u);
   assert.match(xSkill, /node scripts\/social-kb-refresh\.mjs --execute --site x --x-account <handle>/u);
-  assert.match(instagramSkill, /node scripts\/social-live-verify\.mjs --execute --site instagram --ig-account <handle>/u);
+  assert.match(instagramSkill, /node scripts\/social-live-verify\.mjs --live --execute --site instagram --ig-account <handle>/u);
   assert.match(instagramSkill, /node scripts\/social-kb-refresh\.mjs --execute --site instagram --ig-account <handle>/u);
   assert.match(socialLiveVerification, /Natural Language Trigger Guide/u);
   assert.match(socialLiveVerification, /KB 刷新/u);

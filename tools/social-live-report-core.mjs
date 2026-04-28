@@ -132,6 +132,14 @@ function normalizeSite(value) {
   return text;
 }
 
+function normalizeArtifactVerdict(value) {
+  const status = String(value ?? '').trim().toLowerCase();
+  if (['passed', 'failed', 'blocked', 'skipped', 'unknown'].includes(status)) {
+    return status;
+  }
+  return 'unknown';
+}
+
 function resultRowsFromManifest(manifest, manifestPath, mtimeMs) {
   const rows = [];
   if (Array.isArray(manifest?.results)) {
@@ -140,7 +148,7 @@ function resultRowsFromManifest(manifest, manifestPath, mtimeMs) {
         site: normalizeSite(result.site ?? manifest?.options?.site),
         id: result.id ?? manifest.runId ?? path.basename(path.dirname(manifestPath)),
         category: result.category ?? null,
-        status: result.artifactSummary?.verdict ?? result.status ?? manifest.status ?? 'unknown',
+        status: normalizeArtifactVerdict(result.artifactSummary?.verdict),
         reason: result.artifactSummary?.reason ?? result.reason ?? null,
         commandStatus: result.status ?? null,
         manifestPath,
@@ -154,7 +162,7 @@ function resultRowsFromManifest(manifest, manifestPath, mtimeMs) {
       site: normalizeSite(manifest?.site ?? manifest?.options?.site ?? manifest?.siteKey),
       id: manifest?.id ?? manifest?.runId ?? path.basename(path.dirname(manifestPath)),
       category: manifest?.category ?? null,
-      status: manifest?.outcome?.status ?? manifest?.status ?? 'unknown',
+      status: normalizeArtifactVerdict(manifest?.artifactSummary?.verdict ?? manifest?.outcome?.verdict ?? manifest?.outcome?.status ?? manifest?.status),
       reason: manifest?.outcome?.reason ?? manifest?.reason ?? manifest?.archive?.reason ?? null,
       commandStatus: null,
       manifestPath,

@@ -228,5 +228,5 @@ test('social site semantics expose X and Instagram operational natural language 
   assert.match(xSemantics?.commandMappings['kb-refresh'] ?? '', /social-kb-refresh\.mjs --execute --site x/u);
   assert.ok(instagramSemantics?.siteAliases.includes('ig'));
   assert.ok(instagramSemantics?.intentAliases['media-fast-download'].includes('媒体高速下载'));
-  assert.match(instagramSemantics?.commandMappings['live-acceptance-report'] ?? '', /social-live-verify\.mjs --execute --site instagram/u);
+  assert.match(instagramSemantics?.commandMappings['live-acceptance-report'] ?? '', /social-live-verify\.mjs --live --execute --site instagram/u);
 });

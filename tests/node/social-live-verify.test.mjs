@@ -2,15 +2,99 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  assertLiveSmokeBoundary,
   buildMatrix,
   classifyDoctorReport,
   classifyKbRefreshManifest,
   classifySocialActionManifest,
+  evaluateLiveSmokeBoundary,
   parseArgs,
 } from '../../scripts/social-live-verify.mjs';
 
+function boundedArgs(extra = []) {
+  return [
+    '--live',
+    '--site',
+    'all',
+    '--x-account',
+    'openai',
+    '--ig-account',
+    'instagram',
+    '--date',
+    '2026-04-26',
+    '--max-items',
+    '10',
+    '--max-users',
+    '5',
+    '--max-media-downloads',
+    '3',
+    '--timeout',
+    '120000',
+    '--case-timeout',
+    '600000',
+    '--run-root',
+    'C:\\tmp\\social-live-verify',
+    ...extra,
+  ];
+}
+
+test('social-live-verify defaults to not-run until live boundaries are explicit', () => {
+  const boundary = evaluateLiveSmokeBoundary(parseArgs([]));
+
+  assert.equal(boundary.mode, 'not-run');
+  assert.equal(boundary.ok, false);
+  assert.deepEqual(boundary.missing, [
+    'live',
+    'site',
+    'max-items',
+    'timeout',
+    'case-timeout',
+    'run-root',
+  ]);
+});
+
+test('social-live-verify requires explicit live, site, account, limit, timeout, and run root before planning', () => {
+  assert.throws(
+    () => assertLiveSmokeBoundary(parseArgs([
+      '--live',
+      '--site',
+      'x',
+      '--x-account',
+      'openai',
+      '--timeout',
+      '120000',
+      '--case-timeout',
+      '600000',
+      '--run-root',
+      'C:\\tmp\\social-live-verify',
+    ])),
+    /missing --max-items/u,
+  );
+});
+
+test('social-live-verify refuses execute without explicit live acknowledgement', () => {
+  assert.throws(
+    () => parseArgs([
+      '--execute',
+      '--site',
+      'x',
+      '--x-account',
+      'openai',
+      '--max-items',
+      '10',
+      '--timeout',
+      '120000',
+      '--case-timeout',
+      '600000',
+      '--run-root',
+      'C:\\tmp\\social-live-verify',
+    ]),
+    /--execute requires --live/u,
+  );
+});
+
 test('social-live-verify forwards case timeout into KB refresh commands', () => {
-  const options = parseArgs(['--case-timeout', '1234']);
+  const options = parseArgs(boundedArgs(['--case-timeout', '1234']));
   const matrix = buildMatrix(options, 'run-1');
   const xKbRefresh = matrix.find((entry) => entry.id === 'x-kb-refresh');
 
@@ -22,8 +106,7 @@ test('social-live-verify forwards case timeout into KB refresh commands', () => 
 
 test('social-live-verify forwards media download tuning into media cases', () => {
   const options = parseArgs([
-    '--case',
-    'x-media-download',
+    ...boundedArgs(['--case', 'x-media-download']),
     '--media-download-concurrency',
     '9',
     '--media-download-retries',

@@ -238,6 +238,7 @@ function manualLoginCommand(config, options, outDir) {
 
 function verifyCommand(config, options, outDir, caseId) {
   const args = [
+    '--live',
     '--execute',
     '--site',
     config.site,

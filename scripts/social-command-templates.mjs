@@ -20,6 +20,10 @@ Options:
   --date <YYYY-MM-DD>               Followed-date placeholder/default. Default: <YYYY-MM-DD>.
   --max-items <n>                   Default max items. Default: 25.
   --max-users <n>                   Default max followed users. Default: 25.
+  --max-media-downloads <n>         Default max media downloads. Default: 25.
+  --timeout <ms>                    Live smoke timeout. Default: 120000.
+  --case-timeout <ms>               Live smoke outer timeout. Default: 600000.
+  --run-root <dir>                  Live smoke run root. Default: runs/social-live-verify.
   --cooldown-minutes <n>            Cooldown template value. Default: 30.
   --format <text|json>              Output format. Default: text.
   -h, --help                        Show this help.
@@ -45,6 +49,10 @@ export function parseArgs(argv) {
     date: '<YYYY-MM-DD>',
     maxItems: '25',
     maxUsers: '25',
+    maxMediaDownloads: '25',
+    timeout: '120000',
+    caseTimeout: '600000',
+    runRoot: path.join('runs', 'social-live-verify'),
     cooldownMinutes: '30',
     format: 'text',
     help: false,
@@ -63,6 +71,10 @@ export function parseArgs(argv) {
       case '--date':
       case '--max-items':
       case '--max-users':
+      case '--max-media-downloads':
+      case '--timeout':
+      case '--case-timeout':
+      case '--run-root':
       case '--cooldown-minutes':
       case '--format': {
         const { value, nextIndex } = readValue(argv, index, token);
@@ -133,6 +145,28 @@ export function buildTemplates(options) {
     generatedAt: new Date().toISOString(),
     sites: siteEntries(options).map((site) => {
       const cases = site.verifyCases.flatMap((id) => ['--case', id]);
+      const liveSmokeCommon = [
+        '--live',
+        '--site',
+        site.site,
+        ...cases,
+        site.site === 'x' ? '--x-account' : '--ig-account',
+        site.account,
+        '--date',
+        options.date,
+        '--max-items',
+        options.maxItems,
+        '--max-users',
+        options.maxUsers,
+        '--max-media-downloads',
+        options.maxMediaDownloads,
+        '--timeout',
+        options.timeout,
+        '--case-timeout',
+        options.caseTimeout,
+        '--run-root',
+        options.runRoot,
+      ];
       const productionCommands = [
         nodeLine(site.action, [...site.fullArchive, ...common, '--run-dir', `runs/social-production/${site.site}/full-archive`]),
         nodeLine(site.action, [...site.media, ...common, '--run-dir', `runs/social-production/${site.site}/media`]),
@@ -144,8 +178,8 @@ export function buildTemplates(options) {
         site: site.site,
         account: site.account,
         productionCommands,
-        verifyCommand: nodeLine(path.join('scripts', 'social-live-verify.mjs'), ['--site', site.site, site.site === 'x' ? '--x-account' : '--ig-account', site.account, '--date', options.date, '--max-items', options.maxItems, '--max-users', options.maxUsers]),
-        executeVerifyCommand: nodeLine(path.join('scripts', 'social-live-verify.mjs'), ['--execute', '--site', site.site, ...cases, site.site === 'x' ? '--x-account' : '--ig-account', site.account, '--date', options.date, '--max-items', options.maxItems, '--max-users', options.maxUsers]),
+        verifyCommand: nodeLine(path.join('scripts', 'social-live-verify.mjs'), liveSmokeCommon),
+        executeVerifyCommand: nodeLine(path.join('scripts', 'social-live-verify.mjs'), ['--execute', ...liveSmokeCommon]),
         resumeCommand: nodeLine(path.join('scripts', 'social-live-resume.mjs'), ['--site', site.site, '--state', '<state-or-manifest.json>', '--cooldown-minutes', options.cooldownMinutes, '--max-attempts', '3']),
         cooldownCommand: nodeLine(path.join('scripts', 'social-live-resume.mjs'), ['--site', site.site, '--state', '<state-or-manifest.json>', '--cooldown-minutes', options.cooldownMinutes]),
         healthCommand: nodeLine(path.join('scripts', 'social-health-watch.mjs'), ['--site', site.site]),

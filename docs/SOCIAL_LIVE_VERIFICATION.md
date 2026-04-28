@@ -4,9 +4,11 @@
 
 ## Safety Model
 
-- Default mode is dry-run plan mode.
+- Default mode is `not-run`: invoking `social-live-verify` without the full live boundary prints a boundary message and does not plan, open, log in, or download anything.
+- `social-live-verify` requires explicit `--live`, `--site`, account, item limit, timeout, case timeout, and `--run-root` before it emits even a dry-run live plan. Case-specific boundaries are explicit too: `instagram-followed-date` needs `--date` and `--max-users`; media cases need `--max-media-downloads`.
+- `--execute` is rejected unless `--live` is present.
 - `--execute` runs selected commands sequentially, not in parallel.
-- Execution writes `runs/social-live-verify/<timestamp>/manifest.json` with command order, options, timestamps, exit codes, artifact summaries, archive completeness, auth recovery status, runtime risk, and media completeness.
+- Execution writes the explicitly configured `<run-root>/<timestamp>/manifest.json` with command order, options, timestamps, exit codes, artifact summaries, archive completeness, auth recovery status, runtime risk, and media completeness.
 - `social-kb-refresh` writes `runs/social-kb-refresh/<timestamp>/manifest.json` even in dry-run mode so the exact scenario command and expected artifact contract can be reviewed before live traffic.
 - `social-kb-refresh --schedule-interval-minutes <n>`, `--watch`, and `--once` record the automatic refresh policy in the manifest. Dry-run never opens a browser or starts a long-running loop.
 - `social-kb-refresh` applies a per-scenario outer timeout with `--case-timeout <ms>` in addition to the `site-doctor` `--timeout <ms>` flag. A timed-out scenario is recorded as `blocked` with reason `timeout`.
@@ -17,11 +19,11 @@
 ## Quick Start
 
 ```powershell
-# Preview the complete matrix without live traffic.
+# Boundary check only. This prints not-run and does not emit live commands.
 node .\scripts\social-live-verify.mjs
 
 # Preview only Instagram followed-date verification.
-node .\scripts\social-live-verify.mjs --case instagram-followed-date --date 2026-04-26
+node .\scripts\social-live-verify.mjs --live --site instagram --case instagram-followed-date --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 
 # Preview scenario-level KB state refresh without live traffic.
 node .\scripts\social-kb-refresh.mjs --site all
@@ -48,7 +50,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\install-social-healt
 node .\scripts\social-command-templates.mjs --site all
 
 # Execute a bounded smoke matrix with explicit accounts.
-node .\scripts\social-live-verify.mjs --execute --x-account opensource --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10
+node .\scripts\social-live-verify.mjs --live --execute --site all --x-account opensource --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 ```
 
 ## Natural Language Trigger Guide
@@ -61,7 +63,7 @@ X and Instagram profiles expose these operational intents through `social.natura
 | `限流冷却后继续` / `continue after rate limit cooldown` | `resume-after-cooldown` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type posts --full-archive --risk-backoff-ms <ms> --risk-retries <n>` |
 | `媒体高速下载` / `fast media download` | `media-fast-download` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type media --download-media --max-media-downloads <n>` |
 | `健康检查` / `session health check` | `health-check` | `node scripts/social-auth-recover.mjs --execute --site x|instagram --verify` |
-| `live 验收报告` / `live acceptance report` | `live-acceptance-report` | `node scripts/social-live-verify.mjs --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
+| `live 验收报告` / `live acceptance report` | `live-acceptance-report` | `node scripts/social-live-verify.mjs --live --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` plus explicit limits, timeouts, and `--run-root` |
 | `KB 刷新` / `scenario KB refresh` | `kb-refresh` | `node scripts/social-kb-refresh.mjs --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
 
 ## Command Matrix
@@ -221,23 +223,28 @@ node .\scripts\social-command-templates.mjs --site all --x-account <x-account> -
 
 ```powershell
 node .\scripts\social-live-verify.mjs `
+  --live `
   --site instagram `
   --case instagram-full-archive `
   --case instagram-media-download `
   --ig-account instagram `
   --max-items 25 `
   --max-media-downloads 100 `
-  --timeout 120000
+  --timeout 120000 `
+  --case-timeout 600000 `
+  --run-root .\runs\social-live-verify
 ```
 
-- `--site x|instagram|all` filters site-specific matrix rows.
+- `--live` acknowledges that live smoke commands may be planned; without it the tool remains `not-run`.
+- `--site x|instagram|all` filters site-specific matrix rows and is required for live smoke planning.
 - `--case <id>` can be repeated for a custom subset.
 - `--account <handle>` applies one account to both sites; `--x-account` and `--ig-account` override per site.
 - `--date <YYYY-MM-DD>` drives the IG followed-date case.
-- `--max-items`, `--max-users`, and `--timeout` keep live acceptance bounded.
-- `--case-timeout` bounds each `social-kb-refresh` scenario from outside the child process.
+- `--max-items`, `--max-users`, and `--timeout` keep live acceptance bounded and must be explicit when applicable.
+- `--case-timeout` bounds each matrix command from outside the child process and must be explicit.
 - `--fail-fast` makes `social-kb-refresh` stop after the first failed, blocked, or timed-out scenario; without it, later cases still run.
-- `--max-media-downloads` bounds the media download cases independently from post count.
+- `--max-media-downloads` bounds the media download cases independently from post count and must be explicit for media cases.
+- `--run-root` must be explicit so live smoke artifacts cannot silently land in the default repo `runs/` tree.
 - `--browser-profile-root`, `--browser-path`, and `--user-data-dir` are forwarded to social actions and site-doctor where supported.
 - `--headless` or `--no-headless` controls browser visibility; default is `--no-headless` for auth-sensitive checks.
 
@@ -277,13 +284,13 @@ The import manifest is written under `runs/social-auth-import/<timestamp>/manife
 1. Run the full dry-run and inspect command targets:
 
 ```powershell
-node .\scripts\social-live-verify.mjs --x-account <x-account> --ig-account <ig-account> --date <YYYY-MM-DD>
+node .\scripts\social-live-verify.mjs --live --site all --x-account <x-account> --ig-account <ig-account> --date <YYYY-MM-DD> --max-items 10 --max-users 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 ```
 
 2. Execute a narrow auth/KB pass before archive or media download:
 
 ```powershell
-node .\scripts\social-live-verify.mjs --execute --case x-auth-doctor --case instagram-auth-doctor --case x-kb-refresh --case instagram-kb-refresh
+node .\scripts\social-live-verify.mjs --live --execute --site all --case x-auth-doctor --case instagram-auth-doctor --case x-kb-refresh --case instagram-kb-refresh --x-account <x-account> --ig-account <ig-account> --max-items 10 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 ```
 
 For a scenario-only KB refresh pass, prefer the focused runner:
@@ -295,13 +302,13 @@ node .\scripts\social-kb-refresh.mjs --execute --site all --x-account <x-account
 3. Execute bounded archive and media checks:
 
 ```powershell
-node .\scripts\social-live-verify.mjs --execute --case x-full-archive --case instagram-full-archive --case x-media-download --case instagram-media-download --max-items 10
+node .\scripts\social-live-verify.mjs --live --execute --site all --case x-full-archive --case instagram-full-archive --case x-media-download --case instagram-media-download --x-account <x-account> --ig-account <ig-account> --max-items 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 ```
 
 4. Execute the Instagram followed-date pass separately when the date is the acceptance target:
 
 ```powershell
-node .\scripts\social-live-verify.mjs --execute --case instagram-followed-date --date <YYYY-MM-DD> --max-users 10 --max-items 10
+node .\scripts\social-live-verify.mjs --live --execute --site instagram --case instagram-followed-date --ig-account <ig-account> --date <YYYY-MM-DD> --max-users 10 --max-items 10 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 ```
 
 ## Manifest Review
@@ -313,16 +320,16 @@ Get-Content .\runs\social-live-verify\<timestamp>\manifest.json
 Get-Content .\runs\social-kb-refresh\<timestamp>\manifest.json
 ```
 
-Use `status`, per-command `exitCode`, and the command-specific run directories referenced by `--run-dir` or site-doctor `--out-dir` to decide whether the live acceptance pass is complete, blocked by auth, or bounded by platform limits. For KB state refresh, also inspect `results[].artifacts.scenarioStatuses[]` for `not-logged-in`, `anti-crawl-*`, `empty-shell`, `platform-boundary`, or `matching-state-missing`.
+Use `results[].artifactSummary` as the primary classification. `exitCode` is recorded for debugging, but acceptance and reports bucket live smoke rows from parsed artifacts into `passed`, `failed`, `blocked`, `skipped`, or `unknown`. For KB state refresh, also inspect `results[].artifacts.scenarioStatuses[]` for `not-logged-in`, `anti-crawl-*`, `empty-shell`, `platform-boundary`, or `matching-state-missing`.
 
-For social action cases, inspect `results[].artifactSummary` first. It classifies each case as `passed`, `failed`, `blocked`, or `unknown`, and links the action `manifest.json`. Full action manifests include `outcome`, `runtimeRisk`, `authHealth`, `completeness`, `downloads`, `api-capture-debug.json`, optional `api-drift-samples.json`, and optional `downloads.jsonl`.
+For social action cases, inspect `results[].artifactSummary` first. It classifies each case as `passed`, `failed`, `blocked`, `skipped`, or `unknown`, and links the action `manifest.json`. Full action manifests include `outcome`, `runtimeRisk`, `authHealth`, `completeness`, `downloads`, `api-capture-debug.json`, optional `api-drift-samples.json`, and optional `downloads.jsonl`.
 
 For Instagram full archive acceptance, confirm the archive strategy records `api/v1/feed/user/<userId>/` pagination when available, or a specific fallback reason when it is not. Also confirm that resumable state, failed-media retry state, automatic validation results, and CSV/HTML indexes are present before calling a full archive complete.
 
 Useful risk controls:
 
 ```powershell
-node .\scripts\social-live-verify.mjs --execute --risk-backoff-ms 30000 --risk-retries 2 --api-retries 2
+node .\scripts\social-live-verify.mjs --live --execute --site all --x-account <x-account> --ig-account <ig-account> --max-items 10 --max-users 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify --risk-backoff-ms 30000 --risk-retries 2 --api-retries 2
 ```
 
 ## Doctor Scenario Coverage

@@ -11,31 +11,34 @@ const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-verify');
 
 const HELP = `Usage:
-  node scripts/social-live-verify.mjs [--execute] [--case <id>] [--site x|instagram|all] [options]
+  node scripts/social-live-verify.mjs --live --site x|instagram|all --run-root <dir> [--case <id>] [options]
 
-Defaults to dry-run plan mode. No live commands are executed unless --execute is present.
+Defaults to not-run mode. No live plan is emitted unless --live and every live boundary is explicit.
+No live commands are executed unless both --live and --execute are present.
 
 Options:
+  --live                            Acknowledge live smoke planning. Required before dry-run or execute plans.
+  --dry-run                         Emit the bounded command plan without running it. Default after --live.
   --execute                         Run commands sequentially and write a run manifest.
   --fail-fast                       Stop after the first non-zero command. Default: continue and summarize all cases.
   --case <id>                       Run one matrix case. Can be repeated.
-  --site <x|instagram|all>          Filter site-specific cases. Default: all.
+  --site <x|instagram|all>          Filter site-specific cases. Required.
   --account <handle>                Account used by both sites when site-specific account is omitted.
-  --x-account <handle>              X archive/media account. Default: opensource.
-  --ig-account <handle>             Instagram archive/media account. Default: instagram.
-  --date <YYYY-MM-DD>               Date for followed-date verification. Default: today UTC.
-  --max-items <n>                   Per-command item limit. Default: 25.
-  --max-users <n>                   Followed-date user scan limit. Default: 25.
-  --max-media-downloads <n>         Media download cap for download cases. Default: 100.
+  --x-account <handle>              X archive/media account. Required for selected X cases unless --account is set.
+  --ig-account <handle>             Instagram archive/media account. Required for selected Instagram cases unless --account is set.
+  --date <YYYY-MM-DD>               Date for followed-date verification. Required when that case is selected.
+  --max-items <n>                   Per-command item limit. Required.
+  --max-users <n>                   Followed-date user scan limit. Required when that case is selected.
+  --max-media-downloads <n>         Media download cap for download cases. Required when media cases are selected.
   --media-download-concurrency <n>  Forwarded media download concurrency. Default: action default.
   --media-download-retries <n>      Forwarded media download retry count. Default: action default.
   --media-download-backoff-ms <ms>  Forwarded media download retry backoff. Default: action default.
   --risk-backoff-ms <ms>            Forwarded social runtime risk backoff. Default: action default.
   --risk-retries <n>                Forwarded social runtime risk retry count. Default: action default.
   --api-retries <n>                 Forwarded API cursor retry count. Default: action default.
-  --timeout <ms>                    Action timeout flag forwarded to social commands. Default: 120000.
-  --case-timeout <ms>               Outer timeout per matrix command. Default: 600000.
-  --run-root <dir>                  Execute manifest/output root. Default: runs/social-live-verify.
+  --timeout <ms>                    Action timeout flag forwarded to social commands. Required.
+  --case-timeout <ms>               Outer timeout per matrix command. Required.
+  --run-root <dir>                  Execute manifest/output root. Required.
   --browser-path <path>             Forwarded to site-doctor.
   --browser-profile-root <dir>      Forwarded to action and site-doctor commands.
   --user-data-dir <dir>             Forwarded to site-doctor.
@@ -75,31 +78,38 @@ function readValue(argv, index, flag) {
 
 export function parseArgs(argv) {
   const options = {
+    live: false,
     execute: false,
     failFast: false,
     cases: [],
-    site: 'all',
+    site: null,
     account: null,
-    xAccount: 'opensource',
-    igAccount: 'instagram',
-    date: todayUtcDate(),
-    maxItems: '25',
-    maxUsers: '25',
-    maxMediaDownloads: '100',
+    xAccount: null,
+    igAccount: null,
+    date: null,
+    maxItems: null,
+    maxUsers: null,
+    maxMediaDownloads: null,
     mediaDownloadConcurrency: null,
     mediaDownloadRetries: null,
     mediaDownloadBackoffMs: null,
     riskBackoffMs: null,
     riskRetries: null,
     apiRetries: null,
-    timeout: '120000',
-    caseTimeout: '600000',
-    runRoot: DEFAULT_RUN_ROOT,
+    timeout: null,
+    caseTimeout: null,
+    runRoot: null,
     browserPath: null,
     browserProfileRoot: null,
     userDataDir: null,
     headless: false,
     help: false,
+    explicitOptions: [],
+  };
+  const explicit = new Set();
+  const markExplicit = (name) => {
+    explicit.add(name);
+    options.explicitOptions = [...explicit].sort();
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -109,8 +119,17 @@ export function parseArgs(argv) {
       case '--help':
         options.help = true;
         break;
+      case '--live':
+        options.live = true;
+        markExplicit('live');
+        break;
+      case '--dry-run':
+        options.execute = false;
+        markExplicit('dryRun');
+        break;
       case '--execute':
         options.execute = true;
+        markExplicit('execute');
         break;
       case '--fail-fast':
         options.failFast = true;
@@ -118,30 +137,35 @@ export function parseArgs(argv) {
       case '--case': {
         const { value, nextIndex } = readValue(argv, index, token);
         options.cases.push(value);
+        markExplicit('case');
         index = nextIndex;
         break;
       }
       case '--site': {
         const { value, nextIndex } = readValue(argv, index, token);
         options.site = value;
+        markExplicit('site');
         index = nextIndex;
         break;
       }
       case '--account': {
         const { value, nextIndex } = readValue(argv, index, token);
         options.account = value;
+        markExplicit('account');
         index = nextIndex;
         break;
       }
       case '--x-account': {
         const { value, nextIndex } = readValue(argv, index, token);
         options.xAccount = value;
+        markExplicit('xAccount');
         index = nextIndex;
         break;
       }
       case '--ig-account': {
         const { value, nextIndex } = readValue(argv, index, token);
         options.igAccount = value;
+        markExplicit('igAccount');
         index = nextIndex;
         break;
       }
@@ -164,14 +188,17 @@ export function parseArgs(argv) {
         const { value, nextIndex } = readValue(argv, index, token);
         const key = token.slice(2).replace(/-([a-z])/gu, (_, letter) => letter.toUpperCase());
         options[key] = value;
+        markExplicit(key);
         index = nextIndex;
         break;
       }
       case '--headless':
         options.headless = true;
+        markExplicit('headless');
         break;
       case '--no-headless':
         options.headless = false;
+        markExplicit('headless');
         break;
       default:
         throw new Error(`Unknown option: ${token}`);
@@ -182,13 +209,100 @@ export function parseArgs(argv) {
     options.xAccount = options.account;
     options.igAccount = options.account;
   }
-  if (!['x', 'instagram', 'all'].includes(String(options.site))) {
+  if (options.site !== null && !['x', 'instagram', 'all'].includes(String(options.site))) {
     throw new Error(`Invalid --site: ${options.site}`);
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(String(options.date))) {
+  if (options.date !== null && !/^\d{4}-\d{2}-\d{2}$/u.test(String(options.date))) {
     throw new Error(`Invalid --date: ${options.date}`);
   }
+  for (const [name, value] of [
+    ['max-items', options.maxItems],
+    ['max-users', options.maxUsers],
+    ['max-media-downloads', options.maxMediaDownloads],
+    ['timeout', options.timeout],
+    ['case-timeout', options.caseTimeout],
+  ]) {
+    if (value === null) {
+      continue;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      throw new Error(`Invalid --${name}: ${value}`);
+    }
+  }
+  if (options.execute && !options.live) {
+    throw new Error('--execute requires --live');
+  }
   return options;
+}
+
+function selectedSitesFromOptions(options) {
+  if (options.site === 'x') return ['x'];
+  if (options.site === 'instagram') return ['instagram'];
+  if (options.site === 'all') return ['x', 'instagram'];
+  return [];
+}
+
+function knownCaseIds() {
+  return [
+    'x-full-archive',
+    'instagram-full-archive',
+    'instagram-followed-date',
+    'x-media-download',
+    'instagram-media-download',
+    'x-auth-doctor',
+    'instagram-auth-doctor',
+    'x-kb-refresh',
+    'instagram-kb-refresh',
+  ];
+}
+
+function selectedCaseIdsFromOptions(options) {
+  if (options.cases.length > 0) return [...options.cases];
+  return knownCaseIds().filter((id) => {
+    const sites = selectedSitesFromOptions(options);
+    return sites.some((site) => id === `${site}-kb-refresh` || id.startsWith(`${site}-`));
+  });
+}
+
+export function evaluateLiveSmokeBoundary(options) {
+  const explicit = new Set(options.explicitOptions ?? []);
+  const missing = [];
+  const selectedSites = selectedSitesFromOptions(options);
+  const selectedCases = selectedCaseIdsFromOptions(options);
+  const caseScoped = options.cases.length > 0;
+  const needsX = caseScoped ? selectedCases.some((id) => id.startsWith('x-')) : selectedSites.includes('x');
+  const needsInstagram = caseScoped ? selectedCases.some((id) => id.startsWith('instagram-')) : selectedSites.includes('instagram');
+  const needsFollowedDate = selectedCases.includes('instagram-followed-date');
+  const needsMedia = selectedCases.includes('x-media-download') || selectedCases.includes('instagram-media-download');
+
+  if (!explicit.has('live') || options.live !== true) missing.push('live');
+  if (!explicit.has('site') || !options.site) missing.push('site');
+  if (needsX && !explicit.has('account') && !explicit.has('xAccount')) missing.push('x-account');
+  if (needsInstagram && !explicit.has('account') && !explicit.has('igAccount')) missing.push('ig-account');
+  if (!explicit.has('maxItems') || options.maxItems === null) missing.push('max-items');
+  if (needsFollowedDate && (!explicit.has('date') || options.date === null)) missing.push('date');
+  if (needsFollowedDate && (!explicit.has('maxUsers') || options.maxUsers === null)) missing.push('max-users');
+  if (needsMedia && (!explicit.has('maxMediaDownloads') || options.maxMediaDownloads === null)) missing.push('max-media-downloads');
+  if (!explicit.has('timeout') || options.timeout === null) missing.push('timeout');
+  if (!explicit.has('caseTimeout') || options.caseTimeout === null) missing.push('case-timeout');
+  if (!explicit.has('runRoot') || options.runRoot === null) missing.push('run-root');
+
+  return {
+    mode: options.live ? (options.execute ? 'execute' : 'dry-run') : 'not-run',
+    ok: missing.length === 0,
+    missing,
+    selectedSites,
+    selectedCases,
+  };
+}
+
+export function assertLiveSmokeBoundary(options) {
+  const boundary = evaluateLiveSmokeBoundary(options);
+  if (!boundary.ok) {
+    throw new Error(`Live smoke boundary not explicit: missing --${boundary.missing.join(', --')}`);
+  }
+  return boundary;
 }
 
 function nodeCommand(scriptRelativePath, args) {
@@ -287,6 +401,7 @@ function kbRefreshArgs(site, options, runRoot) {
 }
 
 export function buildMatrix(options, runId) {
+  assertLiveSmokeBoundary(options);
   const xAccount = normalizeHandle(options.xAccount);
   const igAccount = normalizeHandle(options.igAccount);
   const runRoot = path.resolve(options.runRoot);
@@ -932,10 +1047,10 @@ function aggregateMatrixStatus(results) {
   if (results.some((result) => result.artifactSummary?.verdict === 'skipped')) {
     return 'skipped';
   }
-  if (results.some((result) => result.status === 'failed')) {
-    return 'failed';
-  }
   if (results.some((result) => result.artifactSummary?.verdict === 'unknown')) {
+    return 'unknown';
+  }
+  if (results.some((result) => !result.artifactSummary)) {
     return 'unknown';
   }
   return 'passed';
@@ -1027,6 +1142,12 @@ async function main(argv) {
   const options = parseArgs(argv);
   if (options.help) {
     process.stdout.write(`${HELP}\n`);
+    return;
+  }
+  const boundary = evaluateLiveSmokeBoundary(options);
+  if (!boundary.ok) {
+    process.stdout.write(`social-live-verify not-run: missing explicit boundary flag(s): --${boundary.missing.join(', --')}\n`);
+    process.stdout.write('No live commands were planned or executed.\n');
     return;
   }
   const runId = timestampForDir();

@@ -76,6 +76,41 @@ test('social-live-report aggregates latest X and Instagram manifests and writes 
   assert.match(markdown, /x-full-archive/u);
 });
 
+test('social-live-report classifies live smoke rows from artifact verdicts, not exit status alone', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-artifacts-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'run-1');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'run-1',
+    status: 'failed',
+    results: [
+      { id: 'x-auth-doctor', site: 'x', status: 'failed', artifactSummary: { verdict: 'blocked', reason: 'rate-limited' }, finishedAt: '2026-04-26T00:00:00.000Z' },
+      { id: 'x-full-archive', site: 'x', status: 'passed', artifactSummary: { verdict: 'failed', reason: 'archive-incomplete' }, finishedAt: '2026-04-26T00:01:00.000Z' },
+      { id: 'instagram-full-archive', site: 'instagram', status: 'failed', artifactSummary: { verdict: 'skipped', reason: 'not-logged-in' }, finishedAt: '2026-04-26T00:02:00.000Z' },
+      { id: 'instagram-media-download', site: 'instagram', status: 'passed', artifactSummary: { verdict: 'passed', reason: null }, finishedAt: '2026-04-26T00:03:00.000Z' },
+      { id: 'instagram-kb-refresh', site: 'instagram', status: 'passed', artifactSummary: { verdict: 'unexpected-live-status', reason: 'drift' }, finishedAt: '2026-04-26T00:04:00.000Z' },
+    ],
+  }, null, 2)}\n`, 'utf8');
+
+  const options = parseReportArgs(['--runs-root', rootDir, '--no-write']);
+  const report = await buildReport(options);
+
+  assert.deepEqual(report.rows.map((row) => [row.id, row.status]), [
+    ['x-auth-doctor', 'blocked'],
+    ['x-full-archive', 'failed'],
+    ['instagram-full-archive', 'skipped'],
+    ['instagram-media-download', 'passed'],
+    ['instagram-kb-refresh', 'unknown'],
+  ]);
+  assert.equal(report.summary.x.statuses.blocked, 1);
+  assert.equal(report.summary.x.statuses.failed, 1);
+  assert.equal(report.summary.instagram.statuses.skipped, 1);
+  assert.equal(report.summary.instagram.statuses.passed, 1);
+  assert.equal(report.summary.instagram.statuses.unknown, 1);
+});
+
 test('social-live-report surfaces state-only started runs as stale when no process owns them', async (t) => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-stale-'));
   t.after(() => rm(rootDir, { recursive: true, force: true }));

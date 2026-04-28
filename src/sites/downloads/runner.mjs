@@ -257,6 +257,7 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
     headers: request.headers,
     downloadHeaders: request.downloadHeaders,
     cookies: request.cookies,
+    dryRun: Boolean(options.dryRun ?? plan.policy?.dryRun ?? request.dryRun),
   };
   const health = plan.sessionRequirement === 'none' && !effectiveAuthRequired
     ? null

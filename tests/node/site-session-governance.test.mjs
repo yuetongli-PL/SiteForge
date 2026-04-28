@@ -23,6 +23,9 @@ import {
   writeHealthyNetworkFingerprint,
   writeProfileQuarantine,
 } from '../../src/infra/auth/site-session-governance.mjs';
+import {
+  inspectSessionHealth as inspectDownloadSessionHealth,
+} from '../../src/sites/downloads/session-manager.mjs';
 
 test('resolveAuthSessionPolicy applies keepalive and stable-network defaults', () => {
   const policy = resolveAuthSessionPolicy({
@@ -248,6 +251,84 @@ test('evaluateSessionPolicy blocks pipeline on drift but still allows keepalive'
   });
   assert.equal(keepaliveDecision.allowed, true);
   assert.equal(keepaliveDecision.riskAction, 'keepalive-only');
+});
+
+test('download session preflight maps governance risk to a sanitized quarantine lease', async (t) => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-governance-risk-'));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+
+  const released = [];
+  const health = await inspectDownloadSessionHealth('x', {
+    host: 'x.com',
+    userDataDir: workspace,
+    sessionRequirement: 'required',
+    profile: {
+      host: 'x.com',
+      authSession: {
+        loginUrl: 'https://x.com/i/flow/login',
+        verificationUrl: 'https://x.com/home',
+        reuseLoginStateByDefault: true,
+      },
+    },
+  }, {
+    inspectReusableSiteSession: async () => ({
+      authAvailable: true,
+      reusableProfile: true,
+      reuseLoginState: true,
+      userDataDir: workspace,
+      profileHealth: {
+        exists: true,
+        healthy: true,
+        warnings: [],
+      },
+      authConfig: {
+        requireStableNetworkForAuthenticatedFlows: true,
+      },
+      sessionOptions: {
+        authConfig: {
+          requireStableNetworkForAuthenticatedFlows: true,
+        },
+        reuseLoginState: true,
+        userDataDir: workspace,
+      },
+    }),
+    prepareSiteSessionGovernance: async (_inputUrl, authContext, _settings, options) => {
+      assert.equal(authContext.userDataDir, workspace);
+      assert.equal(options.networkOptions.disableExternalLookup, true);
+      return {
+        lease: {
+          leaseId: 'risk-preflight-lease',
+          userDataDir: workspace,
+        },
+        policyDecision: {
+          allowed: false,
+          riskCauseCode: 'network-identity-drift',
+          riskAction: 'run-keepalive-before-auth',
+          profileQuarantined: false,
+          driftReasons: ['public-ip-changed'],
+        },
+        networkDrift: {
+          driftDetected: true,
+          reasons: ['public-ip-changed'],
+        },
+      };
+    },
+    releaseGovernanceSessionLease: async (lease) => {
+      released.push(lease.leaseId);
+    },
+  });
+
+  assert.equal(health.status, 'quarantine');
+  assert.equal(health.reason, 'network-identity-drift');
+  assert.deepEqual(health.riskSignals, [
+    'network-identity-drift',
+    'run-keepalive-before-auth',
+    'public-ip-changed',
+  ]);
+  assert.equal(health.userDataDir, undefined);
+  assert.equal(health.headers, undefined);
+  assert.equal(health.cookies, undefined);
+  assert.deepEqual(released, ['risk-preflight-lease']);
 });
 
 test('appendRiskLedgerEvent writes structured entries without throwing', async () => {

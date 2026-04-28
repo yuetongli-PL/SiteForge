@@ -343,6 +343,131 @@ test('download runner writes sanitized session metadata to manifests', async (t)
   assert.equal(persisted.session.userDataDir, undefined);
 });
 
+test('download runner maps reusable profile governance health to sanitized session manifests', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-governance-session-'));
+  const userDataDir = path.join(runRoot, 'profile', 'instagram');
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const governanceLeases = [];
+  const releasedGovernanceLeases = [];
+  let resolverSawProfileLease = false;
+  const result = await runDownloadTask({
+    site: 'instagram',
+    input: 'openai',
+    dryRun: false,
+    profile: {
+      host: 'www.instagram.com',
+      authSession: {
+        loginUrl: 'https://www.instagram.com/accounts/login/',
+        verificationUrl: 'https://www.instagram.com/',
+        reuseLoginStateByDefault: true,
+      },
+    },
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    sessionDeps: {
+      inspectReusableSiteSession: async (_inputUrl, settings) => ({
+        authAvailable: true,
+        reusableProfile: true,
+        reuseLoginState: true,
+        userDataDir,
+        profileHealth: {
+          exists: true,
+          healthy: true,
+          warnings: [],
+        },
+        authConfig: {
+          keepaliveIntervalMinutes: 120,
+          requireStableNetworkForAuthenticatedFlows: true,
+        },
+        sessionOptions: {
+          authConfig: {
+            keepaliveIntervalMinutes: 120,
+            requireStableNetworkForAuthenticatedFlows: true,
+          },
+          reuseLoginState: settings.reuseLoginState,
+          userDataDir,
+          cleanupUserDataDirOnShutdown: false,
+        },
+      }),
+      prepareSiteSessionGovernance: async (_inputUrl, authContext, _settings, options) => {
+        assert.equal(options.networkOptions.disableExternalLookup, true);
+        const lease = {
+          leaseId: `governance-${governanceLeases.length + 1}`,
+          userDataDir: authContext.userDataDir,
+        };
+        governanceLeases.push(lease);
+        return {
+          operation: options.operation,
+          userDataDir: authContext.userDataDir,
+          lease,
+          policyDecision: {
+            allowed: true,
+            riskCauseCode: null,
+            riskAction: null,
+            profileQuarantined: false,
+          },
+          authSessionSummary: {
+            lastHealthyAt: '2026-04-28T00:00:00.000Z',
+            nextSuggestedKeepaliveAt: '2026-04-28T02:00:00.000Z',
+            keepaliveDue: false,
+          },
+          networkDrift: {
+            driftDetected: false,
+            reasons: [],
+          },
+        };
+      },
+      releaseGovernanceSessionLease: async (lease) => {
+        releasedGovernanceLeases.push(lease.leaseId);
+      },
+    },
+    resolveDownloadResources: async (_plan, sessionLease) => {
+      resolverSawProfileLease = true;
+      assert.equal(sessionLease.status, 'ready');
+      assert.equal(sessionLease.mode, 'authenticated');
+      assert.equal(sessionLease.userDataDir, userDataDir);
+      assert.equal(sessionLease.headers.Cookie, undefined);
+      assert.deepEqual(sessionLease.cookies, []);
+      return {
+        resources: [{
+          id: 'media-1',
+          url: 'https://cdn.example.test/openai.jpg',
+          fileName: 'openai.jpg',
+          mediaType: 'image',
+        }],
+      };
+    },
+    fetchImpl: async () => {
+      const payload = Buffer.from('image body', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+  });
+
+  assert.equal(resolverSawProfileLease, true);
+  assert.equal(governanceLeases.length, 2);
+  assert.deepEqual(releasedGovernanceLeases.sort(), ['governance-1', 'governance-2']);
+  assert.equal(result.manifest.status, 'passed');
+  assert.equal(result.manifest.session.status, 'ready');
+  assert.equal(result.manifest.session.mode, 'authenticated');
+  assert.equal(result.manifest.session.userDataDir, undefined);
+  assert.equal(result.manifest.session.headers, undefined);
+  assert.equal(result.manifest.session.cookies, undefined);
+
+  const persisted = await readJsonFile(result.manifest.artifacts.manifest);
+  assert.equal(persisted.session.userDataDir, undefined);
+  assert.equal(persisted.session.headers, undefined);
+  assert.equal(persisted.session.cookies, undefined);
+});
+
 test('download runner uses lease risk reason when required lease is not ready', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-required-lease-risk-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));

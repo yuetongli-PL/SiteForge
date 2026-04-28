@@ -9,7 +9,9 @@ plan to execute from this worktree.
 - Phase 1 base branch: local `main` / `codex/download-runner-base`, both at
   the same commit and ahead of `origin/main` by 6 commits.
 - Phase 2 branch: `codex/download-runner-phase2`, ahead of local `main` by 22 commits.
-- Native resolver branch: `codex/download-native-resolvers`, ahead of `codex/download-runner-phase2` by 3 commits in the current local stack.
+- Native resolver branch: `codex/download-native-resolvers`, ahead of `codex/download-runner-phase2` by 4 commits in the current local stack.
+- 22biqu URL resolver follow-on branch: `codex/download-native-22biqu-url-resolver`, ahead of `codex/download-native-resolvers` by 1 commit.
+- Page seed resolver follow-on branch: `codex/download-native-page-seeds`, ahead of `codex/download-native-22biqu-url-resolver` by 1 commit.
 - Current worktree branch: `codex/download-native-resolvers`.
 
 Stack shape:
@@ -18,7 +20,9 @@ Stack shape:
 origin/main
   -> local main / codex/download-runner-base (+6)
   -> codex/download-runner-phase2 (+22)
-  -> codex/download-native-resolvers (+3)
+  -> codex/download-native-resolvers (+4)
+  -> codex/download-native-22biqu-url-resolver (+1)
+  -> codex/download-native-page-seeds (+1)
 ```
 
 ## Publication Order
@@ -31,6 +35,8 @@ review target intentionally changes.
    for review or merged.
 3. Publish native resolvers against `codex/download-runner-phase2` after Phase 2
    is available for review or merged.
+4. Publish 22biqu URL resolver against `codex/download-native-resolvers`.
+5. Publish page seed resolvers against `codex/download-native-22biqu-url-resolver`.
 
 Expected PR bases:
 
@@ -38,6 +44,8 @@ Expected PR bases:
 base PR:              local main / codex/download-runner-base -> origin/main
 phase2 PR:            codex/download-runner-phase2 -> main
 native resolvers PR:  codex/download-native-resolvers -> codex/download-runner-phase2
+22biqu URL PR:        codex/download-native-22biqu-url-resolver -> codex/download-native-resolvers
+page seed PR:         codex/download-native-page-seeds -> codex/download-native-22biqu-url-resolver
 ```
 
 If a lower stack branch is rebased, merged, or renamed before publication,
@@ -45,8 +53,12 @@ re-check the three ahead counts before opening the next PR.
 
 ## Parallel Sibling Branches
 
-These sibling branches are based on `codex/download-native-resolvers` and can
-be reviewed in parallel after the native resolver stack is available:
+These sibling branches were created from an earlier `codex/download-native-resolvers`
+tip and currently each differs from the latest native branch by one native
+release-documentation commit plus one branch-specific commit. They can still be
+reviewed in parallel after the native resolver stack is available, but re-check
+or rebase their base before publication if the review target requires a clean
+zero-behind branch:
 
 - `codex/download-legacy-reduction`
 - `codex/download-session-governance`

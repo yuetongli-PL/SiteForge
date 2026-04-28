@@ -10,9 +10,9 @@ open it directly against `origin/main`.
 - Implementation commit: `90909a3 feat(downloads): expand native resolver execution path`.
 - Release package commit: this document-only release note commit.
 - Local closeout commit: documents local stack release order without pushing.
-- Stack shape: `origin/main` -> local `main` / `codex/download-runner-base` (+6) -> `codex/download-runner-phase2` (+22) -> `codex/download-native-resolvers` (+3).
+- Stack shape: `origin/main` -> local `main` / `codex/download-runner-base` (+6) -> `codex/download-runner-phase2` (+22) -> `codex/download-native-resolvers` (+4).
 - Implementation delta before release packaging: this branch was ahead of `codex/download-runner-phase2` by 1 commit and ahead of `origin/main` by 29 commits.
-- After the local stack closeout document is committed, the branch should be ahead of `codex/download-runner-phase2` by 3 commits.
+- After the local stack closeout document is committed, the branch should be ahead of `codex/download-runner-phase2` by 4 commits.
 
 ## Included Capabilities
 
@@ -35,8 +35,10 @@ open it directly against `origin/main`.
 1. Publish or merge `codex/download-runner-base` against `origin/main`.
 2. Publish or review `codex/download-runner-phase2` against `codex/download-runner-base`.
 3. Publish `codex/download-native-resolvers` against `codex/download-runner-phase2`.
-4. Review sibling branches based on `codex/download-native-resolvers` in parallel; do not force them into a linear sibling-on-sibling stack.
-5. If any lower stack branch is rebased or merged first, re-check this branch before publication.
+4. Publish `codex/download-native-22biqu-url-resolver` against `codex/download-native-resolvers`.
+5. Publish `codex/download-native-page-seeds` against `codex/download-native-22biqu-url-resolver`.
+6. Review sibling branches based on `codex/download-native-resolvers` in parallel; do not force them into a linear sibling-on-sibling stack.
+7. If any lower stack branch is rebased or merged first, re-check this branch before publication.
 
 Sibling branches currently based on `codex/download-native-resolvers`:
 
@@ -80,3 +82,8 @@ work is split into sibling branches based on `codex/download-native-resolvers`:
 
 These sibling branches can be reviewed in parallel. Do not stack them on top of
 each other unless a reviewer explicitly asks for a combined sequence.
+
+Follow-on resolver branches created after this release note:
+
+- `codex/download-native-22biqu-url-resolver`: adds explicit `--resolve-network` gating and injected-fetch support for 22biqu URL directory resolution.
+- `codex/download-native-page-seeds`: adds offline Bilibili and Xiaohongshu page/API seed fixture resolvers while keeping ordinary pages on legacy fallback.

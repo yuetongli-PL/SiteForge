@@ -9,9 +9,10 @@ open it directly against `origin/main`.
 - Feature branch: `codex/download-native-resolvers`.
 - Implementation commit: `90909a3 feat(downloads): expand native resolver execution path`.
 - Release package commit: this document-only release note commit.
+- Local closeout commit: documents local stack release order without pushing.
 - Stack shape: `origin/main` < `codex/download-runner-base` < `codex/download-runner-phase2` < `codex/download-native-resolvers`.
 - Implementation delta before release packaging: this branch was ahead of `codex/download-runner-phase2` by 1 commit and ahead of `origin/main` by 29 commits.
-- After this release note is committed, the branch should be ahead of `codex/download-runner-phase2` by 2 commits.
+- After the local stack closeout document is committed, the branch should be ahead of `codex/download-runner-phase2` by 3 commits.
 
 ## Included Capabilities
 

@@ -907,6 +907,19 @@ test('legacy executor normalizes successful action stdout into a download manife
   });
   let capturedCommand = null;
   let capturedArgs = null;
+  const nativeFallback = {
+    reason: 'bilibili-playurl-evidence-missing',
+    resolver: {
+      adapterId: 'bilibili',
+      method: 'native-bilibili-page-seeds',
+    },
+    completeness: {
+      expectedCount: 1,
+      resolvedCount: 0,
+      complete: false,
+      reason: 'bilibili-playurl-evidence-missing',
+    },
+  };
   const manifest = await executeLegacyDownloadTask(plan, {
     siteKey: 'bilibili',
     host: 'www.bilibili.com',
@@ -918,6 +931,7 @@ test('legacy executor normalizes successful action stdout into a download manife
   }, {
     workspaceRoot: REPO_ROOT,
     runRoot,
+    nativeFallback,
   }, {
     spawnJsonCommand: async (command, args) => {
       capturedCommand = command;
@@ -961,8 +975,12 @@ test('legacy executor normalizes successful action stdout into a download manife
   assert.equal(manifest.counts.downloaded, 1);
   assert.equal(manifest.files.length, 1);
   assert.equal(manifest.legacy.exitCode, 0);
+  assert.deepEqual(manifest.legacy.nativeFallback, nativeFallback);
   assert.equal(manifest.schemaVersion, DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION);
   assert.equal(manifest.artifacts.source.runDir, path.join(runRoot, 'legacy-bilibili-run'));
+  const resolvedTask = await readJsonFile(manifest.artifacts.resolvedTask);
+  assert.equal(resolvedTask.completeness.reason, 'legacy-downloader-required');
+  assert.deepEqual(resolvedTask.metadata.nativeFallback, nativeFallback);
   assert.equal((await readJsonFile(manifest.artifacts.manifest)).planId, plan.id);
 });
 
@@ -1163,6 +1181,77 @@ test('download runner executes bilibili legacy adapter when no resources are res
   assert.equal(result.manifest.status, 'passed');
   assert.equal(result.manifest.counts.downloaded, 1);
   assert.equal(result.manifest.legacy.entrypoint.endsWith(path.join('src', 'entrypoints', 'sites', 'bilibili-action.mjs')), true);
+});
+
+test('download runner passes native miss trace into legacy fallback options', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-runner-native-miss-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  let capturedNativeFallback = null;
+  const result = await runDownloadTask({
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/video/BV1nativeMissTrace/',
+    dryRun: false,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    acquireSessionLease: async () => ({
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'ready',
+      mode: 'anonymous',
+      riskSignals: [],
+    }),
+    releaseSessionLease: async () => {},
+    resolveDownloadResources: async (plan) => ({
+      planId: plan.id,
+      siteKey: plan.siteKey,
+      taskType: plan.taskType,
+      resources: [],
+      metadata: {
+        resolver: {
+          adapterId: 'bilibili',
+          method: 'native-bilibili-page-seeds',
+        },
+      },
+      completeness: {
+        expectedCount: 1,
+        resolvedCount: 0,
+        complete: false,
+        reason: 'bilibili-playurl-evidence-missing',
+      },
+    }),
+    executeLegacyDownloadTask: async (_plan, _sessionLease, _request, options) => {
+      capturedNativeFallback = options.nativeFallback;
+      return normalizeDownloadRunManifest({
+        status: 'passed',
+        siteKey: 'bilibili',
+        counts: {
+          expected: 1,
+          downloaded: 1,
+          skipped: 0,
+          failed: 0,
+        },
+        legacy: {
+          entrypoint: _plan.legacy.entrypoint,
+          nativeFallback: options.nativeFallback,
+        },
+      });
+    },
+  });
+
+  assert.equal(result.resolvedTask.resources.length, 0);
+  assert.equal(capturedNativeFallback.reason, 'bilibili-playurl-evidence-missing');
+  assert.equal(capturedNativeFallback.resolver.adapterId, 'bilibili');
+  assert.equal(capturedNativeFallback.resolver.method, 'native-bilibili-page-seeds');
+  assert.deepEqual(capturedNativeFallback.completeness, {
+    expectedCount: 1,
+    resolvedCount: 0,
+    complete: false,
+    reason: 'bilibili-playurl-evidence-missing',
+  });
+  assert.deepEqual(result.manifest.legacy.nativeFallback, capturedNativeFallback);
 });
 
 test('download runner maps social requests to legacy action argv and source artifacts', async (t) => {

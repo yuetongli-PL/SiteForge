@@ -114,6 +114,35 @@ function sessionRiskReason(value = {}) {
     ?? sessionStatus(value);
 }
 
+function nativeFallbackTrace(resolvedTask = {}) {
+  const completeness = resolvedTask?.completeness && typeof resolvedTask.completeness === 'object'
+    ? resolvedTask.completeness
+    : {};
+  const resolver = resolvedTask?.metadata?.resolver && typeof resolvedTask.metadata.resolver === 'object'
+    ? resolvedTask.metadata.resolver
+    : null;
+  const reason = String(completeness.reason ?? '').trim();
+  const trace = {
+    reason: reason || undefined,
+    resolver: resolver
+      ? {
+        adapterId: resolver.adapterId,
+        method: resolver.method,
+      }
+      : undefined,
+    completeness: {
+      expectedCount: completeness.expectedCount,
+      resolvedCount: completeness.resolvedCount,
+      complete: completeness.complete === true,
+      reason: reason || undefined,
+    },
+  };
+  if (!trace.reason && !trace.resolver?.adapterId && !trace.resolver?.method) {
+    return null;
+  }
+  return trace;
+}
+
 function cliQuote(value) {
   return `"${String(value).replace(/"/gu, '\\"')}"`;
 }
@@ -415,6 +444,7 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
             ...options,
             dryRun,
             workspaceRoot,
+            nativeFallback: nativeFallbackTrace(normalizedResolvedTask),
           },
           deps.legacyExecutorDeps ?? deps,
         );

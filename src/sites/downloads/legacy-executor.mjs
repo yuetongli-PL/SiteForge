@@ -443,6 +443,40 @@ function previewText(value, limit = 2_000) {
   return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
+function normalizeNativeFallbackTrace(value = null) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const resolver = value.resolver && typeof value.resolver === 'object' && !Array.isArray(value.resolver)
+    ? {
+      adapterId: normalizeText(value.resolver.adapterId) || undefined,
+      method: normalizeText(value.resolver.method) || undefined,
+    }
+    : undefined;
+  const sourceCompleteness = value.completeness
+    && typeof value.completeness === 'object'
+    && !Array.isArray(value.completeness)
+    ? value.completeness
+    : {};
+  const reason = normalizeText(value.reason ?? sourceCompleteness.reason);
+  const expectedCount = Number(sourceCompleteness.expectedCount ?? 0);
+  const resolvedCount = Number(sourceCompleteness.resolvedCount ?? 0);
+  const trace = {
+    reason: reason || undefined,
+    resolver,
+    completeness: {
+      expectedCount: Number.isFinite(expectedCount) ? expectedCount : 0,
+      resolvedCount: Number.isFinite(resolvedCount) ? resolvedCount : 0,
+      complete: sourceCompleteness.complete === true,
+      reason: normalizeText(sourceCompleteness.reason ?? reason) || undefined,
+    },
+  };
+  if (!trace.reason && !trace.resolver?.adapterId && !trace.resolver?.method) {
+    return null;
+  }
+  return trace;
+}
+
 function cliQuote(value) {
   return `"${String(value).replace(/"/gu, '\\"')}"`;
 }
@@ -516,6 +550,9 @@ function renderLegacyReport(manifest, { plan = null, layout = null } = {}) {
   }
   if (manifest.legacy?.manifestPath) {
     lines.push(`- Legacy manifest: ${manifest.legacy.manifestPath}`);
+  }
+  if (manifest.legacy?.nativeFallback?.reason) {
+    lines.push(`- Native fallback reason: ${manifest.legacy.nativeFallback.reason}`);
   }
   flattenArtifactLines('', manifest.artifacts?.source, lines);
   lines.push(
@@ -592,7 +629,17 @@ function failedResourcesFromRecoveryProblems(recoveryState = {}, reason, detail)
     : [];
 }
 
-async function writeLegacyRecoveryManifest({ layout, plan, sessionLease, commandSpec, recoveryState, status, reason, detail }) {
+async function writeLegacyRecoveryManifest({
+  layout,
+  plan,
+  sessionLease,
+  commandSpec,
+  recoveryState,
+  status,
+  reason,
+  detail,
+  nativeFallback = null,
+}) {
   const counts = recoveryCounts(recoveryState);
   const failedResources = failedResourcesFromRecoveryProblems(recoveryState, reason, detail);
   if (failedResources.length > counts.failed) {
@@ -636,6 +683,7 @@ async function writeLegacyRecoveryManifest({ layout, plan, sessionLease, command
         detail,
       },
       stdoutJson: false,
+      ...(nativeFallback ? { nativeFallback } : {}),
     },
     createdAt: new Date().toISOString(),
     finishedAt: new Date().toISOString(),
@@ -689,6 +737,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
     ...options,
     workspaceRoot,
   });
+  const nativeFallback = normalizeNativeFallbackTrace(options.nativeFallback ?? request.nativeFallback);
   const commandSpec = buildLegacyDownloadCommand(plan, sessionLease, request, {
     ...options,
     workspaceRoot,
@@ -704,6 +753,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
     groups: [],
     metadata: {
       legacy: plan.legacy,
+      ...(nativeFallback ? { nativeFallback } : {}),
     },
     completeness: {
       expectedCount: 0,
@@ -727,6 +777,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
         status: preflight.status,
         reason: preflight.reason,
         detail: preflight.detail,
+        nativeFallback,
       });
     }
   }
@@ -805,6 +856,7 @@ export async function executeLegacyDownloadTask(plan, sessionLease = null, reque
       artifacts: sourceArtifacts,
       stdoutJson: Object.keys(payload).length > 0,
       stderr: previewText(processResult.stderr),
+      ...(nativeFallback ? { nativeFallback } : {}),
     },
     createdAt: new Date().toISOString(),
     finishedAt: new Date().toISOString(),

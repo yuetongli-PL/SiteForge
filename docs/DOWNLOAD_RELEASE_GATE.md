@@ -272,6 +272,11 @@ Pass criteria:
   `sessionProvider`.
 - Social live plans include `x-session-health` and/or
   `instagram-session-health` before the corresponding auth doctor case.
+- Before any live-capability claim, run the offline audit against the candidate
+  artifacts:
+  `node scripts/download-release-audit.mjs --runs-root runs --out-dir runs/download-release-audit`.
+  The audit is read-only and must report no blocked authenticated session gate
+  rows unless the run is explicitly marked `legacy-session-provider`.
 - Session manifests stay sanitized: no cookie values, auth headers, raw cursor
   state, profile root, or `userDataDir` raw path.
 
@@ -304,6 +309,7 @@ Use this template in a branch release note or handoff:
 | Local branch | `git status`, branch list, local logs | `pass` / `blocked` | Base and ahead counts |
 | Dirty work | `git status`, diff file lists | `pass` / `blocked` | Unrelated files excluded |
 | Tests | Full and focused test commands | `pass` / `blocked` | Include pass counts |
+| Session gate audit | `scripts/download-release-audit.mjs` JSON/Markdown | `pass` / `blocked` | Offline only; no live/login/download side effects |
 | Release notes | Branch-scoped note review | `pass` / `blocked` | No Phase 2 history rewrite |
 | Live smoke | Approved artifacts or `not-run` | `pass` / `blocked` / `not-run` | State whether live behavior is claimed |
 

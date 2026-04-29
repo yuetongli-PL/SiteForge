@@ -355,6 +355,8 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /legacy-session-provider/u);
   assert.match(releaseGate, /--session-health-plan/u);
   assert.match(releaseGate, /--session-manifest <path>/u);
+  assert.match(releaseGate, /scripts\/download-release-audit\.mjs/u);
+  assert.match(releaseGate, /Offline only; no live\/login\/download side effects/u);
 });
 
 test('authenticated release gate blocks missing session traceability', () => {

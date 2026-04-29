@@ -142,6 +142,30 @@ test('xiaohongshu native resolver maps ordinary note fixture page facts to image
   assert.equal(resolved.completeness.reason, 'xiaohongshu-resource-seeds-provided');
 });
 
+test('xiaohongshu native resolver records missing header freshness evidence without secrets', async () => {
+  const { resolved } = await resolveXiaohongshu({
+    site: 'xiaohongshu',
+    input: 'https://www.xiaohongshu.com/explore/662233445566778899aabbfa',
+    requiredHeaderNames: ['x-s'],
+    pageFacts: {
+      noteId: '662233445566778899aabbfa',
+      title: 'Missing Header Evidence',
+      contentImages: [
+        'https://ci.xiaohongshu.example.test/page-facts/missing-header.jpg',
+      ],
+    },
+    dryRun: true,
+  });
+
+  const freshness = resolved.metadata.resolution.headerFreshness;
+  assert.equal(freshness.freshnessStatus, 'missing-required');
+  assert.deepEqual(freshness.requiredHeaderNames, ['User-Agent', 'x-s']);
+  assert.deepEqual(freshness.missingRequiredHeaders, ['x-s']);
+  assert.equal(freshness.riskCauseCode, 'header-evidence-incomplete');
+  assert.deepEqual(freshness.resolverHeaderNames, ['User-Agent']);
+  assert.equal(JSON.stringify(freshness).includes('secret'), false);
+});
+
 test('xiaohongshu native resolver maps fixture HTML media without live navigation', async () => {
   const { resolved } = await resolveXiaohongshu({
     site: 'xiaohongshu',
@@ -195,6 +219,7 @@ test('xiaohongshu fetched HTML stays behind network gate and supports injected f
     title: 'Fetched HTML',
     headers: { 'x-s': 'fresh-signature' },
     headersFresh: true,
+    requiredHeaderNames: ['x-s'],
     dryRun: true,
   }, {
     siteKey: 'xiaohongshu',
@@ -231,7 +256,13 @@ test('xiaohongshu fetched HTML stays behind network gate and supports injected f
   ]);
   assert.equal(resolved.resources[0].metadata.sourceType, 'fetched-html');
   assert.equal(resolved.metadata.resolution.sourceType, 'fetched-html');
-  assert.deepEqual(resolved.metadata.resolution.headerFreshness.headerNames, ['Cookie', 'Referer', 'x-s']);
+  assert.equal(resolved.metadata.resolution.fetchSource, 'injected-fetch');
+  assert.equal(resolved.metadata.resolution.networkGateUsed, false);
+  assert.equal(resolved.metadata.resolution.fetchedUrlPresent, true);
+  assert.deepEqual(resolved.metadata.resolution.headerFreshness.headerNames, ['Cookie', 'Referer', 'User-Agent', 'x-s']);
+  assert.deepEqual(resolved.metadata.resolution.headerFreshness.requiredHeaderNames, ['User-Agent', 'x-s']);
+  assert.deepEqual(resolved.metadata.resolution.headerFreshness.missingRequiredHeaders, []);
+  assert.equal(resolved.metadata.resolution.headerFreshness.freshnessStatus, 'claimed-fresh');
   assert.equal(resolved.metadata.resolution.headerFreshness.cookieEvidence, true);
   assert.equal(resolved.metadata.resolution.headerFreshness.freshnessClaimed, true);
   assert.equal(JSON.stringify(resolved.metadata.resolution.headerFreshness).includes('secret-cookie'), false);

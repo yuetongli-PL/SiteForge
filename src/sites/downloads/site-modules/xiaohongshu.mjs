@@ -183,13 +183,30 @@ function metadataObject(request = {}) {
 function headerFreshnessEvidence(request = {}, sessionLease = null) {
   const requestHeaderNames = isObject(request.headers) ? Object.keys(request.headers).sort() : [];
   const sessionHeaderNames = isObject(sessionLease?.headers) ? Object.keys(sessionLease.headers).sort() : [];
-  const allHeaderNames = [...new Set([...requestHeaderNames, ...sessionHeaderNames])].sort();
+  const resolverHeaderNames = ['User-Agent'];
+  const allHeaderNames = [...new Set([...requestHeaderNames, ...sessionHeaderNames, ...resolverHeaderNames])].sort();
+  const requiredHeaderNames = [...new Set([
+    'User-Agent',
+    ...toArray(request.requiredHeaderNames ?? request.headerFreshnessRequiredHeaders).map((value) => firstText(value)).filter(Boolean),
+  ])].sort();
+  const presentLower = new Set(allHeaderNames.map((name) => name.toLowerCase()));
+  const missingRequiredHeaders = requiredHeaderNames.filter((name) => !presentLower.has(name.toLowerCase()));
+  const freshnessStatus = missingRequiredHeaders.length
+    ? 'missing-required'
+    : request.headersFresh === true || request.headerFreshness === 'fresh'
+      ? 'claimed-fresh'
+      : 'unknown';
   return {
     contractVersion: 'xiaohongshu-header-freshness-v1',
     sessionStatus: firstText(sessionLease?.status) || undefined,
     headerNames: allHeaderNames,
     requestHeaderNames,
     sessionHeaderNames,
+    resolverHeaderNames,
+    requiredHeaderNames,
+    missingRequiredHeaders,
+    freshnessStatus,
+    riskCauseCode: missingRequiredHeaders.length ? 'header-evidence-incomplete' : undefined,
     cookieEvidence: allHeaderNames.some((name) => name.toLowerCase() === 'cookie') || undefined,
     freshnessClaimed: request.headersFresh === true || request.headerFreshness === 'fresh' || undefined,
   };
@@ -387,11 +404,11 @@ async function responseToText(response) {
   return firstText(response.body, response.data);
 }
 
-async function fetchedHtmlSeeds(request = {}, plan = {}, sessionLease = null, context = {}) {
+async function fetchedHtmlEvidence(request = {}, plan = {}, sessionLease = null, context = {}) {
   const url = inputUrl(request, plan);
   const fetchState = pageFetchState(request, context);
   if (!url || !isXiaohongshuPageUrl(url) || !fetchState) {
-    return [];
+    return { seeds: [] };
   }
   try {
     const response = await fetchState.fetchImpl(url, {
@@ -406,16 +423,31 @@ async function fetchedHtmlSeeds(request = {}, plan = {}, sessionLease = null, co
     });
     const html = await responseToText(response);
     if (!html) {
-      return [];
+      return {
+        seeds: [],
+        fetchSource: fetchState.source === 'network-fetch' ? 'network-fetch' : 'injected-fetch',
+        networkGateUsed: fetchState.source === 'network-fetch',
+        fetchedUrlPresent: Boolean(firstText(response?.url, url)),
+      };
     }
-    return seedsFromFixtureHtml(html, {
-      ...request,
-      input: firstText(response?.url, url),
-      inputUrl: firstText(response?.url, url),
-      url: firstText(response?.url, url),
-    }, plan, 'fetched-html');
+    return {
+      seeds: seedsFromFixtureHtml(html, {
+        ...request,
+        input: firstText(response?.url, url),
+        inputUrl: firstText(response?.url, url),
+        url: firstText(response?.url, url),
+      }, plan, 'fetched-html'),
+      fetchSource: fetchState.source === 'network-fetch' ? 'network-fetch' : 'injected-fetch',
+      networkGateUsed: fetchState.source === 'network-fetch',
+      fetchedUrlPresent: Boolean(firstText(response?.url, url)),
+    };
   } catch {
-    return [];
+    return {
+      seeds: [],
+      fetchSource: fetchState.source === 'network-fetch' ? 'network-fetch' : 'injected-fetch',
+      networkGateUsed: fetchState.source === 'network-fetch',
+      fetchedUrlPresent: false,
+    };
   }
 }
 
@@ -544,12 +576,15 @@ async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLeas
     });
   }
 
-  const fetchSeeds = await fetchedHtmlSeeds(request, plan, sessionLease, context);
-  if (fetchSeeds.length > 0) {
-    return requestWithSeeds(request, fetchSeeds, {
+  const fetchEvidence = await fetchedHtmlEvidence(request, plan, sessionLease, context);
+  if (fetchEvidence.seeds.length > 0) {
+    return requestWithSeeds(request, fetchEvidence.seeds, {
       sourceType: 'fetched-html',
       resolvedNotes: 1,
       headerFreshness,
+      fetchSource: fetchEvidence.fetchSource,
+      networkGateUsed: fetchEvidence.networkGateUsed,
+      fetchedUrlPresent: fetchEvidence.fetchedUrlPresent,
     });
   }
 

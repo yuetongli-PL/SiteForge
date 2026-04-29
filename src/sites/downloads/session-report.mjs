@@ -1,19 +1,12 @@
 // @ts-check
 
 import { evaluateAuthenticatedSessionReleaseGate } from '../sessions/release-gate.mjs';
+import { buildSessionRepairPlanCommand } from '../sessions/repair-command.mjs';
 
 function requiresAuthenticatedSession(manifest = {}, plan = null) {
   return plan?.sessionRequirement === 'required'
     || manifest.liveValidation?.authenticated === true
     || manifest.session?.mode === 'authenticated';
-}
-
-function quoteCommandArg(value) {
-  const text = String(value ?? '');
-  if (!/[\s"]/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
 }
 
 function buildSessionRepairCommand(manifest = {}, gate = {}) {
@@ -24,15 +17,7 @@ function buildSessionRepairCommand(manifest = {}, gate = {}) {
   if (!site) {
     return null;
   }
-  const argv = [
-    'node',
-    'src/entrypoints/sites/session-repair-plan.mjs',
-    '--site',
-    site,
-    '--session-gate-reason',
-    gate.reason ?? 'blocked',
-  ];
-  return argv.map(quoteCommandArg).join(' ');
+  return buildSessionRepairPlanCommand({ site, reason: gate.reason })?.commandText ?? null;
 }
 
 export function renderSessionTraceabilityLines(manifest = {}, { plan = null } = {}) {

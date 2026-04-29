@@ -6,6 +6,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
+import { buildSessionRepairPlanCommand } from '../src/sites/sessions/repair-command.mjs';
+
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUNS_ROOT = path.join(REPO_ROOT, 'runs');
@@ -258,31 +260,14 @@ function summarize(rows) {
   return bySite;
 }
 
-function quoteCommandArg(value) {
-  const text = String(value ?? '');
-  if (!/[\s"]/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 function sessionRepairPlanForRow(row = {}) {
   if (row.sessionGate?.status !== 'blocked' || !row.site) {
     return null;
   }
-  const argv = [
-    'node',
-    'src/entrypoints/sites/session-repair-plan.mjs',
-    '--site',
-    row.site,
-    '--session-gate-reason',
-    row.sessionGate.reason ?? 'blocked',
-  ];
-  return {
-    command: 'session-repair-plan',
-    argv,
-    commandText: argv.map(quoteCommandArg).join(' '),
-  };
+  return buildSessionRepairPlanCommand({
+    site: row.site,
+    reason: row.sessionGate.reason,
+  });
 }
 
 function addSessionRepairPlans(rows = []) {

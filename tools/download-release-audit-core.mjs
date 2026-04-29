@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { evaluateAuthenticatedSessionReleaseGate } from '../src/sites/sessions/release-gate.mjs';
+import { buildSessionRepairPlanCommand } from '../src/sites/sessions/repair-command.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -180,33 +181,12 @@ function auditJsonPath(options = {}) {
   return path.join(path.resolve(options.outDir ?? DEFAULT_OUT_DIR), 'download-release-audit.json');
 }
 
-function quoteCommandArg(value) {
-  const text = String(value ?? '');
-  if (!/[\s"]/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 function repairPlanForRow(row = {}, options = {}) {
   if (row.status !== 'blocked' || !row.site || row.site === 'unknown') {
     return null;
   }
   const manifestPath = auditJsonPath(options);
-  const argv = [
-    'node',
-    'src/entrypoints/sites/session-repair-plan.mjs',
-    '--site',
-    row.site,
-    '--audit-manifest',
-    manifestPath,
-  ];
-  return {
-    command: 'session-repair-plan',
-    argv,
-    commandText: argv.map(quoteCommandArg).join(' '),
-    auditManifest: manifestPath,
-  };
+  return buildSessionRepairPlanCommand({ site: row.site, auditManifest: manifestPath });
 }
 
 function addRepairGuidance(rows = [], options = {}) {

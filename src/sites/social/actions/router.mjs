@@ -18,6 +18,7 @@ import { cleanText, compactSlug, normalizeText } from '../../../shared/normalize
 import { downloadMediaFiles as executeMediaDownloads } from '../../downloads/media-executor.mjs';
 import { actionSessionMetadataFromOptions } from '../../sessions/manifest-bridge.mjs';
 import { evaluateAuthenticatedSessionReleaseGate } from '../../sessions/release-gate.mjs';
+import { buildSessionRepairPlanCommand } from '../../sessions/repair-command.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
@@ -4032,14 +4033,7 @@ function buildSocialSessionRepairCommand(result = {}, gate = {}) {
   if (!site) {
     return null;
   }
-  return [
-    'node',
-    'src/entrypoints/sites/session-repair-plan.mjs',
-    '--site',
-    site,
-    '--session-gate-reason',
-    gate.reason ?? 'blocked',
-  ].map(quoteCommandArg).join(' ');
+  return buildSessionRepairPlanCommand({ site, reason: gate.reason })?.commandText ?? null;
 }
 
 function csvCell(value) {

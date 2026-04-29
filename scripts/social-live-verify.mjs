@@ -51,6 +51,8 @@ Matrix ids:
   instagram-followed-date
   x-media-download
   instagram-media-download
+  x-session-health
+  instagram-session-health
   x-auth-doctor
   instagram-auth-doctor
   x-kb-refresh
@@ -250,6 +252,8 @@ function knownCaseIds() {
     'instagram-followed-date',
     'x-media-download',
     'instagram-media-download',
+    'x-session-health',
+    'instagram-session-health',
     'x-auth-doctor',
     'instagram-auth-doctor',
     'x-kb-refresh',
@@ -349,7 +353,25 @@ function mediaDownloadArgs(options) {
   return args;
 }
 
-function siteDoctorArgs(url, profilePath, options, outDir, knowledgeBaseDir) {
+function sessionHealthArgs(site, purpose, profilePath, options, runDir) {
+  const args = [
+    'health',
+    '--site',
+    site,
+    '--purpose',
+    purpose,
+    '--session-required',
+    '--profile-path',
+    profilePath,
+    '--run-dir',
+    runDir,
+  ];
+  addOptional(args, '--browser-profile-root', options.browserProfileRoot);
+  addOptional(args, '--user-data-dir', options.userDataDir);
+  return args;
+}
+
+function siteDoctorArgs(url, profilePath, options, outDir, knowledgeBaseDir, sessionManifestPath = null) {
   const args = [
     url,
     '--profile-path',
@@ -365,6 +387,7 @@ function siteDoctorArgs(url, profilePath, options, outDir, knowledgeBaseDir) {
     '--timeout',
     String(options.timeout),
   ];
+  addOptional(args, '--session-manifest', sessionManifestPath);
   addOptional(args, '--browser-path', options.browserPath);
   addOptional(args, '--browser-profile-root', options.browserProfileRoot);
   addOptional(args, '--user-data-dir', options.userDataDir);
@@ -409,6 +432,7 @@ export function buildMatrix(options, runId) {
   const xAction = path.join('src', 'entrypoints', 'sites', 'x-action.mjs');
   const igAction = path.join('src', 'entrypoints', 'sites', 'instagram-action.mjs');
   const siteDoctor = path.join('src', 'entrypoints', 'sites', 'site-doctor.mjs');
+  const sessionCli = path.join('src', 'entrypoints', 'sites', 'session.mjs');
   const kbRefresh = path.join('scripts', 'social-kb-refresh.mjs');
   const xProfile = path.join(REPO_ROOT, 'profiles', 'x.com.json');
   const igProfile = path.join(REPO_ROOT, 'profiles', 'www.instagram.com.json');
@@ -492,6 +516,36 @@ export function buildMatrix(options, runId) {
       ]),
     },
     {
+      id: 'x-session-health',
+      site: 'x',
+      category: 'session health',
+      purpose: 'Write a unified X session health manifest before live auth recovery checks.',
+      artifactType: 'session-health',
+      artifactRoot: caseRoot('x-session-health'),
+      ...nodeCommand(sessionCli, sessionHealthArgs(
+        'x',
+        'archive',
+        xProfile,
+        options,
+        caseRoot('x-session-health'),
+      )),
+    },
+    {
+      id: 'instagram-session-health',
+      site: 'instagram',
+      category: 'session health',
+      purpose: 'Write a unified Instagram session health manifest before live auth recovery checks.',
+      artifactType: 'session-health',
+      artifactRoot: caseRoot('instagram-session-health'),
+      ...nodeCommand(sessionCli, sessionHealthArgs(
+        'instagram',
+        'archive',
+        igProfile,
+        options,
+        caseRoot('instagram-session-health'),
+      )),
+    },
+    {
       id: 'x-auth-doctor',
       site: 'x',
       category: 'auth recovery/site-doctor',
@@ -504,6 +558,7 @@ export function buildMatrix(options, runId) {
         options,
         caseRoot('x-auth-doctor'),
         path.join(REPO_ROOT, 'knowledge-base', 'x.com'),
+        path.join(caseRoot('x-session-health'), 'manifest.json'),
       )),
     },
     {
@@ -519,6 +574,7 @@ export function buildMatrix(options, runId) {
         options,
         caseRoot('instagram-auth-doctor'),
         path.join(REPO_ROOT, 'knowledge-base', 'www.instagram.com'),
+        path.join(caseRoot('instagram-session-health'), 'manifest.json'),
       )),
     },
     {
@@ -973,6 +1029,34 @@ async function summarizeKbRefreshArtifacts(entry) {
   };
 }
 
+async function summarizeSessionHealthArtifacts(entry) {
+  const manifestPath = path.join(entry.artifactRoot, 'manifest.json');
+  if (!await pathExists(manifestPath)) {
+    return {
+      type: entry.artifactType,
+      manifestPath,
+      found: false,
+      verdict: 'unknown',
+      reason: 'session-manifest-missing',
+    };
+  }
+  const manifest = await readJsonFile(manifestPath);
+  const healthStatus = normalizedStatus(manifest.health?.status);
+  const verdict = healthStatus === 'ready'
+    ? 'passed'
+    : (['blocked', 'manual-required', 'expired', 'quarantine'].includes(healthStatus) ? 'blocked' : 'unknown');
+  return {
+    type: entry.artifactType,
+    manifestPath,
+    found: true,
+    verdict,
+    reason: verdict === 'passed' ? null : (manifest.health?.reason ?? manifest.reason ?? healthStatus),
+    status: manifest.status ?? null,
+    healthStatus: manifest.health?.status ?? null,
+    repairPlan: manifest.repairPlan ?? null,
+  };
+}
+
 export function classifyKbRefreshManifest(manifest) {
   const results = Array.isArray(manifest?.results) ? manifest.results : [];
   const blocked = results.find((result) => (
@@ -1020,6 +1104,9 @@ async function summarizeCaseArtifacts(entry) {
     }
     if (entry.artifactType === 'kb-refresh') {
       return await summarizeKbRefreshArtifacts(entry);
+    }
+    if (entry.artifactType === 'session-health') {
+      return await summarizeSessionHealthArtifacts(entry);
     }
   } catch (error) {
     return {

@@ -216,6 +216,22 @@ test('download CLI parser exposes native network, mux, and live validation gates
   });
 });
 
+test('download CLI parser accepts unified session manifest input', () => {
+  const manifestPath = path.join(os.tmpdir(), 'bwk-session-health', 'manifest.json');
+  const args = parseArgs([
+    '--site',
+    'x',
+    '--input',
+    'openai',
+    '--session-required',
+    '--session-manifest',
+    manifestPath,
+  ]);
+
+  assert.equal(args.sessionRequirement, 'required');
+  assert.equal(args.sessionManifest, manifestPath);
+});
+
 test('download CLI parser accepts derived mux compatibility aliases', () => {
   assert.equal(parseArgs(['--site', 'bilibili', '--input', 'BV1mux', '--mux-derived-media']).enableDerivedMux, true);
   assert.equal(parseArgs(['--site', 'bilibili', '--input', 'BV1mux', '--dash-mux']).enableDerivedMux, true);

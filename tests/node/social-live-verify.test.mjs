@@ -104,6 +104,27 @@ test('social-live-verify forwards case timeout into KB refresh commands', () => 
   assert.equal(xKbRefresh.args[timeoutIndex + 1], '1234');
 });
 
+test('social-live-verify includes unified session health before auth doctor cases', () => {
+  const options = parseArgs(boundedArgs(['--case', 'x-session-health', '--case', 'x-auth-doctor']));
+  const matrix = buildMatrix(options, 'run-1');
+  const sessionHealth = matrix.find((entry) => entry.id === 'x-session-health');
+  const authDoctor = matrix.find((entry) => entry.id === 'x-auth-doctor');
+
+  assert.ok(sessionHealth);
+  assert.ok(authDoctor);
+  assert.match(sessionHealth.args.join(' '), /session\.mjs health --site x/u);
+  assert.match(sessionHealth.args.join(' '), /--run-dir .*x-session-health/u);
+  assert.match(authDoctor.args.join(' '), /--session-manifest .*x-session-health.*manifest\.json/u);
+});
+
+test('social-live-verify selected default matrix includes social session health cases', () => {
+  const options = parseArgs(boundedArgs());
+  const ids = buildMatrix(options, 'run-1').map((entry) => entry.id);
+
+  assert.equal(ids.includes('x-session-health'), true);
+  assert.equal(ids.includes('instagram-session-health'), true);
+});
+
 test('social-live-verify forwards media download tuning into media cases', () => {
   const options = parseArgs([
     ...boundedArgs(['--case', 'x-media-download']),

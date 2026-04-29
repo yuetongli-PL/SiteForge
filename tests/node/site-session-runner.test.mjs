@@ -12,11 +12,18 @@ import {
   listSessionSiteDefinitions,
   resolveSessionSiteDefinition,
 } from '../../src/sites/sessions/site-modules.mjs';
+import {
+  sessionOptionsFromRunManifest,
+  summarizeSessionRunManifest,
+} from '../../src/sites/sessions/manifest-bridge.mjs';
 import { runSessionTask } from '../../src/sites/sessions/runner.mjs';
 import {
   main,
   parseArgs,
 } from '../../src/entrypoints/sites/session.mjs';
+import {
+  parseCliArgs as parseSiteDoctorArgs,
+} from '../../src/entrypoints/sites/site-doctor.mjs';
 
 test('session CLI parser accepts health plan flags', () => {
   const parsed = parseArgs([
@@ -189,4 +196,52 @@ test('session CLI prints JSON and writes manifest under runs/session layout', as
   assert.equal(parsed.artifacts.runDir.includes(`${path.sep}bilibili${path.sep}`), true);
   const persisted = JSON.parse(await readFile(parsed.artifacts.manifest, 'utf8'));
   assert.equal(persisted.status, 'expired');
+});
+
+test('session manifest bridge maps health into legacy session options without secrets', () => {
+  const manifest = normalizeSessionRunManifest({
+    plan: {
+      siteKey: 'x',
+      host: 'x.com',
+      purpose: 'archive',
+      sessionRequirement: 'required',
+    },
+    health: {
+      status: 'manual-required',
+      reason: 'session-invalid',
+      riskSignals: ['session-invalid'],
+    },
+    repairPlan: {
+      action: 'site-login',
+      command: 'site-login',
+      reason: 'session-invalid',
+    },
+    artifacts: {
+      manifest: 'C:/tmp/session/manifest.json',
+      runDir: 'C:/tmp/session',
+    },
+  });
+
+  const summary = summarizeSessionRunManifest(manifest);
+  const options = sessionOptionsFromRunManifest(manifest, { siteKey: 'x', host: 'x.com' });
+
+  assert.equal(summary.healthStatus, 'manual-required');
+  assert.equal(options.sessionStatus, 'manual-required');
+  assert.equal(options.sessionReason, 'session-invalid');
+  assert.deepEqual(options.riskSignals, ['session-invalid']);
+  assert.equal(options.sessionHealthManifest.repairPlan.action, 'site-login');
+});
+
+test('site-doctor parser accepts unified session manifest input', () => {
+  const parsed = parseSiteDoctorArgs([
+    'https://x.com/home',
+    '--profile-path',
+    'profiles/x.com.json',
+    '--session-manifest',
+    'runs/session/x/manifest.json',
+  ]);
+
+  assert.equal(parsed.inputUrl, 'https://x.com/home');
+  assert.equal(parsed.options.profilePath, 'profiles/x.com.json');
+  assert.equal(parsed.options.sessionManifest, 'runs/session/x/manifest.json');
 });

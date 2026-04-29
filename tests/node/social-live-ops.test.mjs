@@ -38,16 +38,18 @@ test('social-command-templates emits unified X and Instagram commands', () => {
   assert.match(templates.sites[1].kbWatchCommand, /social-kb-refresh\.mjs --site instagram --watch/u);
 });
 
-test('social-health-watch dry-run plan includes keepalive, auth doctor, and nextSuggestedKeepalive', () => {
+test('social-health-watch dry-run plan includes session health, keepalive, auth doctor, and nextSuggestedKeepalive', () => {
   const now = new Date('2026-04-26T00:00:00.000Z');
   const plan = buildHealthPlan(parseHealthArgs(['--site', 'x', '--interval-minutes', '90']), now);
 
   assert.equal(plan.mode, 'dry-run');
   assert.equal(plan.nextSuggestedKeepalive, '2026-04-26T01:30:00.000Z');
   assert.equal(plan.sites.length, 1);
-  assert.deepEqual(plan.sites[0].commands.map((command) => command.type), ['keepalive', 'auth-doctor']);
-  assert.match(plan.sites[0].commands[0].commandLine, /site-keepalive\.mjs/u);
-  assert.match(plan.sites[0].commands[1].commandLine, /site-doctor\.mjs/u);
+  assert.deepEqual(plan.sites[0].commands.map((command) => command.type), ['session-health', 'keepalive', 'auth-doctor']);
+  assert.match(plan.sites[0].commands[0].commandLine, /session\.mjs health/u);
+  assert.match(plan.sites[0].commands[1].commandLine, /site-keepalive\.mjs/u);
+  assert.match(plan.sites[0].commands[2].commandLine, /site-doctor\.mjs/u);
+  assert.match(plan.sites[0].commands[2].commandLine, /--session-manifest/u);
 });
 
 test('social-live-report aggregates latest X and Instagram manifests and writes JSON/Markdown', async (t) => {

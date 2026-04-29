@@ -31,7 +31,7 @@ const HELP = `Usage:
 Dry-run by default. In execute mode, runs keepalive and auth doctor sequentially.
 
 Options:
-  --execute                         Run keepalive/auth doctor commands.
+  --execute                         Run session health, keepalive, and auth doctor commands.
   --site <x|instagram|all>          Site filter. Default: all.
   --interval-minutes <n>            Suggested keepalive interval. Default: 60.
   --timeout <ms>                    Forwarded browser timeout. Default: 30000.
@@ -133,6 +133,7 @@ export function buildHealthPlan(options, now = new Date()) {
   const nextSuggestedKeepalive = new Date(now.getTime() + Number(options.intervalMinutes) * 60_000).toISOString();
   const sites = selectedSites(options).map((site) => {
     const siteRunDir = path.join(runDir, site.site);
+    const sessionManifestPath = path.join(siteRunDir, 'session-health', 'manifest.json');
     const common = [
       '--profile-path', site.profilePath,
       '--out-dir', siteRunDir,
@@ -143,11 +144,24 @@ export function buildHealthPlan(options, now = new Date()) {
     addOptional(common, '--browser-path', options.browserPath);
     addOptional(common, '--browser-profile-root', options.browserProfileRoot);
     addOptional(common, '--user-data-dir', options.userDataDir);
+    const sessionArgs = [
+      path.join('src', 'entrypoints', 'sites', 'session.mjs'),
+      'health',
+      '--site', site.site,
+      '--purpose', 'keepalive',
+      '--session-required',
+      '--profile-path', site.profilePath,
+      '--run-dir', path.dirname(sessionManifestPath),
+    ];
+    addOptional(sessionArgs, '--browser-profile-root', options.browserProfileRoot);
+    addOptional(sessionArgs, '--user-data-dir', options.userDataDir);
     const keepaliveArgs = [path.join('src', 'entrypoints', 'sites', 'site-keepalive.mjs'), site.url, ...common, '--no-auto-login'];
     const doctorArgs = [
       path.join('src', 'entrypoints', 'sites', 'site-doctor.mjs'),
       site.url,
       ...common,
+      '--session-manifest',
+      sessionManifestPath,
       '--crawler-scripts-dir',
       path.join(REPO_ROOT, 'crawler-scripts'),
       '--knowledge-base-dir',
@@ -157,8 +171,9 @@ export function buildHealthPlan(options, now = new Date()) {
       site: site.site,
       nextSuggestedKeepalive,
       commands: [
+        { id: `${site.site}-session-health`, type: 'session-health', command: process.execPath, args: sessionArgs, commandLine: formatCommand(process.execPath, sessionArgs), artifact: sessionManifestPath },
         { id: `${site.site}-keepalive`, type: 'keepalive', command: process.execPath, args: keepaliveArgs, commandLine: formatCommand(process.execPath, keepaliveArgs) },
-        { id: `${site.site}-auth-doctor`, type: 'auth-doctor', command: process.execPath, args: doctorArgs, commandLine: formatCommand(process.execPath, doctorArgs) },
+        { id: `${site.site}-auth-doctor`, type: 'auth-doctor', command: process.execPath, args: doctorArgs, commandLine: formatCommand(process.execPath, doctorArgs), sessionManifest: sessionManifestPath },
       ],
     };
   });

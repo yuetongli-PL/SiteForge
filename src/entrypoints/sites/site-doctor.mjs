@@ -28,6 +28,10 @@ import {
 import { classifyRiskFromContext } from '../../infra/auth/site-session-governance.mjs';
 import { resolveCanonicalSiteIdentity, resolveCanonicalSiteKey } from '../../sites/core/site-identity.mjs';
 import { resolveSiteDoctorScenarioSuite } from '../../sites/core/site-doctor-scenarios.mjs';
+import {
+  readSessionRunManifest,
+  summarizeSessionRunManifest,
+} from '../../sites/sessions/manifest-bridge.mjs';
 import { ensureCrawlerScript } from '../pipeline/generate-crawler-script.mjs';
 import { capture } from '../pipeline/capture.mjs';
 import { derivePageFacts, expandStates } from '../pipeline/expand-states.mjs';
@@ -59,7 +63,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-doctor.mjs <url> [--query "<sample>"] [--profile-path <path>] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download]
+  node src/entrypoints/sites/site-doctor.mjs <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download]
 `;
 
 const AUTH_PROBE_WAIT_POLICY = {
@@ -115,6 +119,7 @@ function mergeOptions(inputUrl, options = {}) {
   merged.knowledgeBaseDir = merged.knowledgeBaseDir ? path.resolve(merged.knowledgeBaseDir) : undefined;
   merged.browserProfileRoot = merged.browserProfileRoot ? path.resolve(merged.browserProfileRoot) : undefined;
   merged.userDataDir = merged.userDataDir ? path.resolve(merged.userDataDir) : undefined;
+  merged.sessionManifest = merged.sessionManifest ? path.resolve(merged.sessionManifest) : undefined;
   merged.timeoutMs = normalizeNumber(merged.timeoutMs, 'timeoutMs');
   merged.maxTriggers = normalizeNumber(merged.maxTriggers, 'maxTriggers');
   merged.maxCapturedStates = normalizeNumber(merged.maxCapturedStates, 'maxCapturedStates');
@@ -609,6 +614,13 @@ function buildReportMarkdown(report) {
         lines.push(`- Probe error: ${report.authSession.probeError ?? 'unknown'}`);
       }
     }
+  }
+  if (report.sessionHealth) {
+    lines.push('', '## Unified Session Health', '');
+    lines.push(`- Manifest: ${report.sessionHealth.artifacts?.manifest ?? 'none'}`);
+    lines.push(`- Status: ${report.sessionHealth.healthStatus ?? report.sessionHealth.status ?? 'unknown'}`);
+    lines.push(`- Reason: ${report.sessionHealth.reason ?? 'none'}`);
+    lines.push(`- Repair action: ${report.sessionHealth.repairPlan?.action ?? 'none'}`);
   }
   if (report.riskCauseCode || report.riskAction || report.networkIdentityFingerprint || report.profileQuarantined) {
     lines.push('', '## Risk Governance', '');
@@ -1780,6 +1792,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     scenarios: [],
     sessionReuseWorked: null,
     authSession: null,
+    sessionHealth: null,
     antiCrawlSignals: [],
     antiCrawlReasonCode: null,
     riskCauseCode: null,
@@ -1807,6 +1820,12 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   let scenarioSuite = null;
 
   try {
+    if (settings.sessionManifest) {
+      const sessionManifest = await (runtime.readSessionRunManifest ?? readSessionRunManifest)(settings.sessionManifest);
+      report.sessionHealth = summarizeSessionRunManifest(sessionManifest);
+      report.warnings.push(`Loaded unified session health manifest: ${report.sessionHealth.artifacts.manifest}.`);
+    }
+
     if (!await runtime.pathExists(settings.profilePath)) {
       throw new Error(`Missing site profile: ${settings.profilePath}`);
     }
@@ -2365,7 +2384,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   return report;
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -2391,6 +2410,12 @@ function parseCliArgs(argv) {
       case '--profile-path': {
         const { value, nextIndex } = readValue(index);
         options.profilePath = value;
+        index = nextIndex;
+        break;
+      }
+      case '--session-manifest': {
+        const { value, nextIndex } = readValue(index);
+        options.sessionManifest = value;
         index = nextIndex;
         break;
       }

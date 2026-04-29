@@ -5,6 +5,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { runDownloadTask } from '../../sites/downloads/runner.mjs';
+import {
+  readSessionRunManifest,
+  sessionOptionsFromRunManifest,
+} from '../../sites/sessions/manifest-bridge.mjs';
 
 const HELP = `Usage:
   node src/entrypoints/sites/download.mjs --site <site> --input <url-or-target> [options]
@@ -39,6 +43,7 @@ Options:
   --session-optional                Prefer a reusable session lease.
   --session-none                    Use an anonymous session lease.
   --session-status <status>         Force lease status for testing: ready, blocked, manual-required, expired.
+  --session-manifest <path>         Consume a unified runs/session health manifest before resolving resources.
   --resolve-network                 Allow resolvers to fetch source pages before falling back to legacy downloaders.
   --json                            Print the full runner result JSON.
   -h, --help                        Show this help.
@@ -201,6 +206,12 @@ export function parseArgs(argv) {
         index = read.nextIndex;
         break;
       }
+      case '--session-manifest': {
+        const read = readValue(argv, index, arg);
+        options.sessionManifest = read.value;
+        index = read.nextIndex;
+        break;
+      }
       case '--resolve-network':
         options.resolveNetwork = true;
         break;
@@ -227,6 +238,12 @@ export async function main(argv) {
     process.stdout.write(`${HELP}\n`);
     return;
   }
+  const sessionManifestOptions = options.sessionManifest
+    ? sessionOptionsFromRunManifest(await readSessionRunManifest(path.resolve(options.sessionManifest)), {
+      siteKey: options.site,
+      host: options.host,
+    })
+    : {};
   const result = await runDownloadTask(options, {
     dryRun: options.dryRun,
     runRoot: options.outDir,
@@ -245,6 +262,7 @@ export async function main(argv) {
         siteKey: options.site,
       }
       : undefined,
+    ...sessionManifestOptions,
     sessionStatus: options.sessionStatus,
     resolveNetwork: options.resolveNetwork,
   });

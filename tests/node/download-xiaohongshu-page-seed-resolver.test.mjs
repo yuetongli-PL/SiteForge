@@ -167,6 +167,63 @@ test('xiaohongshu native resolver maps fixture HTML media without live navigatio
   assert.equal(resolved.metadata.resolution.sourceType, 'fixture-html');
 });
 
+test('xiaohongshu fetched HTML stays behind network gate and supports injected fetch', async () => {
+  const originalFetch = globalThis.fetch;
+  let globalFetchCalls = 0;
+  globalThis.fetch = async () => {
+    globalFetchCalls += 1;
+    throw new Error('global fetch should stay behind the network gate');
+  };
+  try {
+    const { resolved: gatedResolved } = await resolveXiaohongshu({
+      site: 'xiaohongshu',
+      input: 'https://www.xiaohongshu.com/explore/662233445566778899aabbd1',
+      dryRun: true,
+    });
+
+    assert.equal(globalFetchCalls, 0);
+    assert.equal(gatedResolved.resources.length, 0);
+    assert.equal(gatedResolved.completeness.reason, 'legacy-downloader-required');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  let injectedFetchUrl = '';
+  const { resolved } = await resolveXiaohongshu({
+    site: 'xiaohongshu',
+    input: 'https://www.xiaohongshu.com/explore/662233445566778899aabbd1',
+    title: 'Fetched HTML',
+    dryRun: true,
+  }, null, {
+    mockFetchImpl: async (url) => {
+      injectedFetchUrl = url;
+      return {
+        ok: true,
+        url,
+        async text() {
+          return `
+            <html>
+              <body>
+                <img src="https://ci.xiaohongshu.example.test/fetched/image.jpg">
+                <source src="https://sns-video.example.test/fetched/video.mp4">
+              </body>
+            </html>
+          `;
+        },
+      };
+    },
+  });
+
+  assert.equal(injectedFetchUrl, 'https://www.xiaohongshu.com/explore/662233445566778899aabbd1');
+  assert.equal(resolved.resources.length, 2);
+  assert.deepEqual(resolved.resources.map((resource) => resource.url), [
+    'https://ci.xiaohongshu.example.test/fetched/image.jpg',
+    'https://sns-video.example.test/fetched/video.mp4',
+  ]);
+  assert.equal(resolved.resources[0].metadata.sourceType, 'fetched-html');
+  assert.equal(resolved.metadata.resolution.sourceType, 'fetched-html');
+});
+
 test('xiaohongshu native resolver maps search, author, and followed mock notes to resources', async () => {
   const { resolved: searchResolved } = await resolveXiaohongshu({
     site: 'xiaohongshu',

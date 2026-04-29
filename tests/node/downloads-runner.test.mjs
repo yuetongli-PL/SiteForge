@@ -706,6 +706,13 @@ test('download runner blocks required unhealthy sessions before resolver deps ru
       status: 'manual-required',
       reason: 'login-required',
       riskSignals: ['not-logged-in'],
+      repairPlan: {
+        action: 'site-login',
+        command: 'site-login',
+        reason: 'login-required',
+        riskSignals: ['not-logged-in'],
+        requiresApproval: true,
+      },
     }),
     resolveBilibiliApiEvidence: async () => {
       throw new Error('resolver deps should not run before required session preflight passes');
@@ -718,6 +725,13 @@ test('download runner blocks required unhealthy sessions before resolver deps ru
   assert.equal(result.resolvedTask, null);
   assert.equal(result.manifest.status, 'blocked');
   assert.equal(result.manifest.reason, 'login-required');
+  assert.deepEqual(result.manifest.session.repairPlan, {
+    action: 'site-login',
+    command: 'site-login',
+    reason: 'login-required',
+    requiresApproval: true,
+    riskSignals: ['not-logged-in'],
+  });
 });
 
 test('legacy executor normalizes successful action stdout into a download manifest', async (t) => {
@@ -1337,6 +1351,92 @@ test('download executor consumes resolved resources without site-specific logic'
   assert.equal(manifest.status, 'passed');
   assert.equal(manifest.counts.downloaded, 1);
   assert.equal(await readFile(manifest.files[0].filePath, 'utf8'), 'download body');
+});
+
+test('download executor muxes completed audio and video resources as a derived artifact', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-executor-mux-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'bilibili',
+    host: 'www.bilibili.com',
+    taskType: 'video',
+    source: { input: 'https://www.bilibili.com/video/BV1muxFixture/' },
+    policy: { dryRun: false, concurrency: 2, retries: 0, retryBackoffMs: 0 },
+    output: { root: runRoot },
+  });
+  const resolvedTask = {
+    planId: plan.id,
+    siteKey: 'bilibili',
+    taskType: 'video',
+    resources: [{
+      id: 'dash-video',
+      url: 'https://upos.example.test/mux/video.m4s',
+      fileName: 'dash-video.m4s',
+      mediaType: 'video',
+      groupId: 'bilibili:BV1muxFixture:p1',
+      metadata: {
+        muxRole: 'video',
+        muxKind: 'dash-audio-video',
+      },
+    }, {
+      id: 'dash-audio',
+      url: 'https://upos.example.test/mux/audio.m4s',
+      fileName: 'dash-audio.m4s',
+      mediaType: 'audio',
+      groupId: 'bilibili:BV1muxFixture:p1',
+      metadata: {
+        muxRole: 'audio',
+        muxKind: 'dash-audio-video',
+      },
+    }],
+  };
+  const fetchUrls = [];
+  const muxCalls = [];
+  const manifest = await executeResolvedDownloadTask(resolvedTask, plan, null, {
+    runRoot,
+    dryRun: false,
+  }, {
+    fetchImpl: async (url) => {
+      fetchUrls.push(String(url));
+      const payload = Buffer.from(String(url).includes('video') ? 'video stream' : 'audio stream', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+    muxMediaPair: async ({ videoFile, audioFile, outputFile, groupId }) => {
+      muxCalls.push({ videoFile, audioFile, outputFile, groupId });
+      const video = await readFile(videoFile, 'utf8');
+      const audio = await readFile(audioFile, 'utf8');
+      await writeFile(outputFile, `${video}+${audio}`, 'utf8');
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(fetchUrls.sort(), [
+    'https://upos.example.test/mux/audio.m4s',
+    'https://upos.example.test/mux/video.m4s',
+  ]);
+  assert.equal(muxCalls.length, 1);
+  assert.equal(muxCalls[0].groupId, 'bilibili:BV1muxFixture:p1');
+  assert.equal(manifest.counts.expected, 2);
+  assert.equal(manifest.counts.downloaded, 2);
+  assert.equal(manifest.counts.failed, 0);
+  assert.equal(manifest.files.length, 3);
+  const muxFile = manifest.files.find((entry) => entry.derived === true);
+  assert.equal(Boolean(muxFile), true);
+  assert.equal(muxFile.resourceId, 'mux:bilibili:BV1muxFixture:p1');
+  assert.equal(muxFile.groupId, 'bilibili:BV1muxFixture:p1');
+  assert.equal(await readFile(muxFile.filePath, 'utf8'), 'video stream+audio stream');
+
+  const artifacts = await assertDownloadRunArtifactBundle(manifest);
+  assert.equal(artifacts.queue.length, 2);
+  assert.equal(artifacts.downloads.length, 3);
+  assert.equal(artifacts.downloads[2].derived, true);
 });
 
 test('download executor treats retries zero as a single attempt', async (t) => {

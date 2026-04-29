@@ -114,6 +114,58 @@ function governanceRiskSignals({ governance = null, reusableSession = null } = {
   ].map((value) => normalizeText(value)).filter(Boolean);
 }
 
+export function buildSessionRepairPlan(health = {}) {
+  const reason = normalizeText(health.reason ?? health.riskCauseCode ?? health.status);
+  const riskSignals = [
+    reason,
+    ...(Array.isArray(health.riskSignals) ? health.riskSignals : []),
+  ].map((value) => normalizeText(value)).filter(Boolean);
+  const action = (() => {
+    if (['network-identity-drift'].includes(reason) || riskSignals.includes('run-keepalive-before-auth')) {
+      return 'site-keepalive';
+    }
+    if (['session-invalid', 'login-required', 'reusable-profile-unavailable', 'missing-user-data-dir'].includes(reason)) {
+      return 'site-login';
+    }
+    if (['profile-health-risk'].includes(reason)) {
+      return 'rebuild-profile';
+    }
+    if (['browser-fingerprint-risk', 'request-burst'].includes(reason) || health.status === 'quarantine') {
+      return 'cooldown-and-retry-later';
+    }
+    if (health.status === 'expired') {
+      return 'site-keepalive';
+    }
+    if (health.status === 'manual-required') {
+      return 'manual-login';
+    }
+    return health.status && health.status !== 'ready' ? 'inspect-session-health' : '';
+  })();
+  if (!action) {
+    return undefined;
+  }
+  const command = (() => {
+    if (action === 'site-keepalive') {
+      return 'site-keepalive';
+    }
+    if (action === 'site-login' || action === 'manual-login') {
+      return 'site-login';
+    }
+    if (action === 'inspect-session-health') {
+      return 'site-doctor';
+    }
+    return action;
+  })();
+  return Object.fromEntries(Object.entries({
+    action,
+    command,
+    reason,
+    riskSignals: [...new Set(riskSignals)],
+    requiresApproval: true,
+    notBefore: health.expiresAt,
+  }).filter(([, value]) => value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0)));
+}
+
 async function releaseGovernanceLease(lease, deps = {}) {
   if (!lease) {
     return;
@@ -222,6 +274,7 @@ async function resolveGovernanceBackedSessionLease(siteKey, purpose, options = {
       ?? undefined,
     quarantineKey: options.quarantineKey ?? `${host}:download`,
   });
+  lease.repairPlan = buildSessionRepairPlan(lease);
 
   if (preflightOnly) {
     await releaseGovernanceLease(governance?.lease, deps);
@@ -321,6 +374,7 @@ export async function inspectSessionHealth(siteKey, options = {}, deps = {}) {
   const lease = await resolveGovernanceBackedSessionLease(siteKey, 'health-check', options, deps, {
     preflightOnly: true,
   }) ?? await acquireSessionLease(siteKey, 'health-check', options, deps);
+  const repairPlan = buildSessionRepairPlan(lease);
   return {
     siteKey: lease.siteKey,
     host: lease.host,
@@ -328,6 +382,8 @@ export async function inspectSessionHealth(siteKey, options = {}, deps = {}) {
     mode: lease.mode,
     riskSignals: lease.riskSignals,
     reason: lease.reason,
+    expiresAt: lease.expiresAt,
+    repairPlan,
   };
 }
 

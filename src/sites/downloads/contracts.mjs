@@ -133,6 +133,7 @@ export function createDownloadPlanId({ siteKey, taskType, input, seed = null } =
 export function normalizeSessionLease(raw = {}, defaults = {}) {
   const siteKey = normalizeText(raw.siteKey ?? defaults.siteKey ?? inferSiteKeyFromHost(raw.host ?? defaults.host));
   const host = sanitizeHost(normalizeText(raw.host ?? defaults.host ?? siteKey));
+  const repairPlan = normalizeSessionRepairPlan(raw.repairPlan ?? defaults.repairPlan);
   return {
     siteKey,
     host,
@@ -147,7 +148,27 @@ export function normalizeSessionLease(raw = {}, defaults = {}) {
     quarantineKey: normalizeText(raw.quarantineKey ?? defaults.quarantineKey) || undefined,
     reason: normalizeText(raw.reason ?? defaults.reason) || undefined,
     purpose: normalizeText(raw.purpose ?? defaults.purpose) || undefined,
+    repairPlan,
   };
+}
+
+function normalizeSessionRepairPlan(value = undefined) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const result = {
+    action: normalizeText(value.action ?? value.suggestedAction),
+    reason: normalizeText(value.reason),
+    command: normalizeText(value.command),
+    requiresApproval: value.requiresApproval === true || undefined,
+    riskSignals: normalizeStringList(value.riskSignals),
+    notBefore: normalizeText(value.notBefore) || undefined,
+  };
+  return Object.fromEntries(Object.entries(result).filter(([, entryValue]) => (
+    entryValue !== undefined
+      && entryValue !== ''
+      && (!Array.isArray(entryValue) || entryValue.length > 0)
+  )));
 }
 
 export function createAnonymousSessionLease({ siteKey, host, purpose } = {}) {
@@ -419,6 +440,7 @@ export function normalizeManifestSession(value = undefined) {
     quarantineKey: session.quarantineKey,
     reason: session.reason,
     purpose: session.purpose,
+    repairPlan: session.repairPlan,
   };
   return Object.fromEntries(Object.entries(result).filter(([, entryValue]) => entryValue !== undefined));
 }

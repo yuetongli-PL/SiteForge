@@ -1,5 +1,11 @@
 // @ts-check
 
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import {
+  normalizeResolvedDownloadTask,
+} from '../contracts.mjs';
 import {
   addCommonProfileFlags,
   addLoginFlags,
@@ -215,6 +221,57 @@ function socialNativeSupported(plan, request = {}) {
   return false;
 }
 
+function socialNativeUnsupportedReason(plan, request = {}) {
+  if (!nativeResolverEnabled(request)) {
+    return '';
+  }
+  const action = inferSocialAction(plan, request);
+  if (['profile-followers', 'profile-following', 'followed-users'].includes(action)) {
+    return 'relation-flow-legacy-only';
+  }
+  if (action === 'followed-posts-by-date') {
+    return 'followed-date-legacy-only';
+  }
+  if (isTrue(request.resume) || firstText(request.resumeCursor, request.checkpoint, request.checkpointPath)) {
+    return 'checkpoint-resume-legacy-only';
+  }
+  if (plan.siteKey === 'instagram' && ['profile-content', 'full-archive'].includes(action)) {
+    return 'requires-authenticated-feed-user-discovery';
+  }
+  if (plan.siteKey === 'x' && ['profile-content', 'full-archive', 'search'].includes(action)) {
+    return 'requires-social-cursor-discovery';
+  }
+  return 'social-native-unsupported-shape';
+}
+
+function legacyRequiredTask(siteKey, plan, request, reason) {
+  return normalizeResolvedDownloadTask({
+    planId: plan.id,
+    siteKey,
+    taskType: plan.taskType,
+    resources: [],
+    metadata: {
+      resolver: {
+        ...(plan.resolver ?? {}),
+        method: `native-${siteKey}-social-resource-seeds`,
+      },
+      legacy: plan.legacy,
+      resolution: {
+        siteResolver: siteKey,
+        action: inferSocialAction(plan, request),
+        unsupportedReason: reason,
+        nativeResolver: 'unsupported',
+      },
+    },
+    completeness: {
+      expectedCount: 0,
+      resolvedCount: 0,
+      complete: false,
+      reason: 'legacy-downloader-required',
+    },
+  }, plan);
+}
+
 function socialMediaContainers(request = {}, siteKey = '') {
   const metadata = metadataObject(request);
   return [
@@ -224,6 +281,12 @@ function socialMediaContainers(request = {}, siteKey = '') {
     request.archiveItems,
     request.archivePayload,
     request.socialArchivePayload,
+    request.socialApiPayload,
+    request.socialApiPayloads,
+    request.apiPayload,
+    request.apiPayloads,
+    request.replayPayload,
+    request.replayPayloads,
     request.items,
     request.resources,
     siteKey === 'x' ? request.xMediaItems : undefined,
@@ -242,6 +305,12 @@ function socialMediaContainers(request = {}, siteKey = '') {
     metadata.archiveItems,
     metadata.archivePayload,
     metadata.socialArchivePayload,
+    metadata.socialApiPayload,
+    metadata.socialApiPayloads,
+    metadata.apiPayload,
+    metadata.apiPayloads,
+    metadata.replayPayload,
+    metadata.replayPayloads,
     metadata.items,
     siteKey === 'x' ? metadata.xMediaItems : undefined,
     siteKey === 'x' ? metadata.xArchiveItems : undefined,
@@ -254,6 +323,185 @@ function socialMediaContainers(request = {}, siteKey = '') {
     siteKey === 'instagram' ? metadata.instagramGraphqlPayload : undefined,
     siteKey === 'instagram' ? metadata.feedUserPayload : undefined,
   ].filter(Boolean);
+}
+
+function resolveArtifactPath(pathLike, workspaceRoot = process.cwd()) {
+  const text = firstText(pathLike);
+  if (!text) {
+    return '';
+  }
+  return path.isAbsolute(text) ? text : path.resolve(workspaceRoot, text);
+}
+
+async function readJsonArtifact(pathLike, workspaceRoot) {
+  const filePath = resolveArtifactPath(pathLike, workspaceRoot);
+  if (!filePath) {
+    return null;
+  }
+  try {
+    return JSON.parse(await readFile(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function readJsonlArtifact(pathLike, workspaceRoot) {
+  const filePath = resolveArtifactPath(pathLike, workspaceRoot);
+  if (!filePath) {
+    return [];
+  }
+  try {
+    const text = await readFile(filePath, 'utf8');
+    return text.split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(isObject);
+  } catch {
+    return [];
+  }
+}
+
+function artifactPathsFromManifest(manifest = {}) {
+  const manifestObject = isObject(manifest) ? manifest : {};
+  const artifacts = isObject(manifestObject.artifacts) ? manifestObject.artifacts : {};
+  return {
+    items: firstText(artifacts.items, artifacts.itemsJsonl, manifestObject.items, manifestObject.itemsJsonl),
+    state: firstText(artifacts.state, manifestObject.state),
+  };
+}
+
+async function socialArtifactContainers(request = {}, context = {}) {
+  const workspaceRoot = context.workspaceRoot ?? process.cwd();
+  const sourceArtifacts = isObject(request.sourceArtifacts) ? request.sourceArtifacts : {};
+  const runDir = resolveArtifactPath(request.socialRunDir ?? request.runDir ?? sourceArtifacts.runDir, workspaceRoot);
+  const directManifestPath = firstText(request.manifestPath, sourceArtifacts.manifest);
+  const manifestPath = directManifestPath || (runDir ? path.join(runDir, 'manifest.json') : '');
+  const manifest = await readJsonArtifact(manifestPath, workspaceRoot);
+  const manifestArtifacts = artifactPathsFromManifest(manifest);
+  const itemsPath = firstText(
+    request.itemsJsonlPath,
+    sourceArtifacts.itemsJsonl,
+    sourceArtifacts.items,
+    manifestArtifacts.items,
+    runDir ? path.join(runDir, 'items.jsonl') : '',
+  );
+  const statePath = firstText(
+    request.statePath,
+    sourceArtifacts.state,
+    manifestArtifacts.state,
+    runDir ? path.join(runDir, 'state.json') : '',
+  );
+  const rows = (await readJsonlArtifact(itemsPath, workspaceRoot))
+    .filter((entry) => !entry.kind || entry.kind === 'item')
+    .map((entry) => {
+      const { kind, ...rest } = entry;
+      if (
+        rest.url
+        && (rest.media || rest.mediaItems || rest.media_items || rest.assets || rest.images || rest.videos)
+      ) {
+        rest.permalink = firstText(rest.permalink, rest.url);
+        delete rest.url;
+      }
+      return rest;
+    });
+  const state = await readJsonArtifact(statePath, workspaceRoot);
+  return {
+    containers: rows.length ? [rows] : [],
+    state: isObject(state) ? state : null,
+    source: rows.length || state ? {
+      runDir: runDir || undefined,
+      manifestPath: resolveArtifactPath(manifestPath, workspaceRoot) || undefined,
+      itemsJsonlPath: resolveArtifactPath(itemsPath, workspaceRoot) || undefined,
+      statePath: resolveArtifactPath(statePath, workspaceRoot) || undefined,
+    } : null,
+  };
+}
+
+function firstCursor(value = {}) {
+  if (!isObject(value)) {
+    return '';
+  }
+  return firstText(
+    value.nextCursor,
+    value.next_cursor,
+    value.cursor,
+    value.pageCursor,
+    value.page_cursor,
+    value.maxId,
+    value.max_id,
+    value.pageInfo?.endCursor,
+    value.page_info?.end_cursor,
+    value.archive?.nextCursor,
+    value.archive?.cursor,
+    value.data?.nextCursor,
+    value.data?.next_cursor,
+    value.data?.page_info?.end_cursor,
+    value.data?.user?.edge_owner_to_timeline_media?.page_info?.end_cursor,
+  );
+}
+
+function firstRequestTemplate(value = {}) {
+  if (!isObject(value)) {
+    return '';
+  }
+  return firstText(
+    value.requestTemplate?.url,
+    value.requestTemplate?.endpoint,
+    value.archive?.requestTemplate?.url,
+    value.archive?.requestTemplate?.endpoint,
+  );
+}
+
+function cursorMetadata(containers = [], artifactState = null) {
+  const cursor = firstText(
+    ...containers.flatMap((container) => toArray(container)).map(firstCursor),
+    firstCursor(artifactState),
+  );
+  const requestTemplate = firstText(
+    ...containers.flatMap((container) => toArray(container)).map(firstRequestTemplate),
+    firstRequestTemplate(artifactState),
+  );
+  return {
+    cursorReplayAvailable: Boolean(cursor || requestTemplate) || undefined,
+    nextCursorAvailable: Boolean(cursor) || undefined,
+    requestTemplateAvailable: Boolean(requestTemplate) || undefined,
+  };
+}
+
+function artifactSourceSummary(source = null) {
+  if (!isObject(source)) {
+    return undefined;
+  }
+  return {
+    runDir: Boolean(source.runDir) || undefined,
+    manifest: Boolean(source.manifestPath) || undefined,
+    items: Boolean(source.itemsJsonlPath) || undefined,
+    state: Boolean(source.statePath) || undefined,
+  };
+}
+
+function sanitizedSocialResourceHeaders(headers = {}) {
+  if (!isObject(headers)) {
+    return {};
+  }
+  const sanitized = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const normalizedName = String(name).toLowerCase();
+    if (['authorization', 'cookie', 'x-csrf-token', 'x-ig-app-id', 'x-twitter-auth-type'].includes(normalizedName)) {
+      continue;
+    }
+    if (['referer', 'referrer', 'origin', 'range', 'user-agent', 'accept'].includes(normalizedName)) {
+      sanitized[name] = String(value);
+    }
+  }
+  return sanitized;
 }
 
 function inferMediaTypeFromUrl(url) {
@@ -467,7 +715,7 @@ function seedFromSocialMediaEntry(entry = {}, siteKey, plan, request = {}, index
     title,
     sourceUrl,
     referer: firstText(entry.referer, sourceUrl),
-    headers: isObject(entry.headers) ? entry.headers : {},
+    headers: sanitizedSocialResourceHeaders(entry.headers),
     expectedBytes: entry.expectedBytes ?? entry.size,
     groupId: firstText(entry.groupId, postId, sourceUrl, title),
     metadata: {
@@ -481,11 +729,16 @@ function seedFromSocialMediaEntry(entry = {}, siteKey, plan, request = {}, index
   };
 }
 
-function requestWithSocialNativeSeeds(siteKey, plan, request = {}) {
+async function requestWithSocialNativeSeeds(siteKey, plan, request = {}, context = {}) {
   if (!socialNativeSupported(plan, request)) {
     return null;
   }
-  const mediaEntries = socialMediaContainers(request, siteKey)
+  const artifactEvidence = await socialArtifactContainers(request, context);
+  const containers = [
+    ...socialMediaContainers(request, siteKey),
+    ...artifactEvidence.containers,
+  ];
+  const mediaEntries = containers
     .flatMap((container) => socialMediaEntries(container));
   const seeds = mediaEntries
     .map((entry, index) => seedFromSocialMediaEntry(entry, siteKey, plan, request, index))
@@ -504,16 +757,19 @@ function requestWithSocialNativeSeeds(siteKey, plan, request = {}) {
         archiveStrategy: siteKey === 'instagram' ? 'instagram-feed-user' : 'social-media-candidates',
         expectedMedia: mediaEntries.length,
         resolvedSeeds: seeds.length,
+        ...cursorMetadata(containers, artifactEvidence.state),
+        artifactSource: artifactSourceSummary(artifactEvidence.source),
       },
     },
   };
 }
 
-export function resolveResourcesForSocialSite(siteKey, plan, sessionLease = null, context = {}) {
+export async function resolveResourcesForSocialSite(siteKey, plan, sessionLease = null, context = {}) {
   const request = context.request ?? {};
-  const seededRequest = requestWithSocialNativeSeeds(siteKey, plan, request);
+  const seededRequest = await requestWithSocialNativeSeeds(siteKey, plan, request, context);
   if (!seededRequest) {
-    return null;
+    const reason = socialNativeUnsupportedReason(plan, request);
+    return reason ? legacyRequiredTask(siteKey, plan, request, reason) : null;
   }
   const resolved = resolveNativeResourceSeeds(siteKey, plan, sessionLease, {
     ...context,

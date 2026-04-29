@@ -78,6 +78,9 @@ test('bilibili native resolver maps offline dash playurl payload to video and au
   assert.equal(resolved.resources[0].referer, 'https://www.bilibili.com/video/BV1fixturePage/');
   assert.equal(resolved.resources[0].metadata.streamType, 'video');
   assert.equal(resolved.resources[1].metadata.streamType, 'audio');
+  assert.equal(resolved.resources[0].metadata.muxRole, 'video');
+  assert.equal(resolved.resources[1].metadata.muxRole, 'audio');
+  assert.equal(resolved.resources[0].metadata.muxKind, 'dash-audio-video');
   assert.equal(resolved.metadata.resolver.method, 'native-bilibili-resource-seeds');
   assert.equal(resolved.completeness.complete, true);
   assert.equal(resolved.completeness.reason, 'bilibili-resource-seeds-provided');
@@ -311,6 +314,194 @@ test('bilibili injected API evidence stays legacy when playurl evidence is parti
 
   assert.equal(resolved.resources.length, 0);
   assert.equal(resolved.completeness.reason, 'legacy-downloader-required');
+});
+
+test('bilibili native API fetch is disabled without network gate or injected fetch', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('global fetch should stay behind the network gate');
+  };
+  try {
+    const { resolved } = await resolveBilibili({
+      site: 'bilibili',
+      input: 'https://www.bilibili.com/video/BV1fetchGateOff/',
+      dryRun: true,
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(resolved.resources.length, 0);
+    assert.equal(resolved.completeness.reason, 'legacy-downloader-required');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('bilibili native resolver fetches view and playurl evidence through injected fetch', async () => {
+  const fetchedUrls = [];
+  const mockFetchImpl = async (url) => {
+    fetchedUrls.push(url);
+    const parsed = new URL(url);
+    if (parsed.pathname === '/x/web-interface/view') {
+      assert.equal(parsed.searchParams.get('bvid'), 'BV1fetchInjected');
+      return {
+        ok: true,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              bvid: 'BV1fetchInjected',
+              title: 'Fetch Injected Video',
+              pages: [{ cid: 7301, page: 1, part: 'Fetched Part' }],
+            },
+          };
+        },
+      };
+    }
+    if (parsed.pathname === '/x/player/playurl') {
+      assert.equal(parsed.searchParams.get('bvid'), 'BV1fetchInjected');
+      assert.equal(parsed.searchParams.get('cid'), '7301');
+      return {
+        ok: true,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              durl: [{ url: 'https://upos.example.test/fetched/bv.flv', size: 8192 }],
+            },
+          };
+        },
+      };
+    }
+    throw new Error(`unexpected Bilibili API URL: ${url}`);
+  };
+
+  const { resolved } = await resolveBilibili({
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/video/BV1fetchInjected/',
+    dryRun: true,
+  }, null, {
+    mockFetchImpl,
+  });
+
+  assert.deepEqual(fetchedUrls.map((url) => new URL(url).pathname), [
+    '/x/web-interface/view',
+    '/x/player/playurl',
+  ]);
+  assert.equal(resolved.resources.length, 1);
+  assert.equal(resolved.resources[0].url, 'https://upos.example.test/fetched/bv.flv');
+  assert.equal(resolved.resources[0].metadata.bvid, 'BV1fetchInjected');
+  assert.equal(resolved.resources[0].metadata.cid, '7301');
+  assert.equal(resolved.metadata.resolution.inputKind, 'video-detail');
+});
+
+test('bilibili native API fetch can expand collection evidence through injected fetch', async () => {
+  const mockFetchImpl = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === '/x/polymer/web-space/seasons_archives_list') {
+      assert.equal(parsed.searchParams.get('mid'), '100');
+      assert.equal(parsed.searchParams.get('season_id'), '700');
+      assert.equal(parsed.searchParams.get('page_size'), '1');
+      return {
+        ok: true,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              meta: { id: 700, name: 'Fetched Collection' },
+              archives: [
+                { bvid: 'BV1fetchCollection', title: 'Fetched Collection Item', cid: 7401 },
+              ],
+            },
+          };
+        },
+      };
+    }
+    if (parsed.pathname === '/x/player/playurl') {
+      assert.equal(parsed.searchParams.get('bvid'), 'BV1fetchCollection');
+      assert.equal(parsed.searchParams.get('cid'), '7401');
+      return {
+        ok: true,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              durl: [{ url: 'https://upos.example.test/fetched/collection.flv' }],
+            },
+          };
+        },
+      };
+    }
+    throw new Error(`unexpected Bilibili API URL: ${url}`);
+  };
+
+  const { resolved } = await resolveBilibili({
+    site: 'bilibili',
+    input: 'https://space.bilibili.com/100/channel/collectiondetail?sid=700',
+    maxItems: 1,
+    dryRun: true,
+  }, null, {
+    mockFetchImpl,
+  });
+
+  assert.equal(resolved.resources.length, 1);
+  assert.equal(resolved.resources[0].url, 'https://upos.example.test/fetched/collection.flv');
+  assert.equal(resolved.resources[0].metadata.playlistKind, 'collection');
+  assert.equal(resolved.resources[0].metadata.playlistTitle, 'Fetched Collection');
+  assert.equal(resolved.metadata.resolution.inputKind, 'playlist');
+});
+
+test('bilibili native API fetch only uses global fetch when network gate is enabled', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async (url) => {
+    fetchCalls += 1;
+    const parsed = new URL(url);
+    if (parsed.pathname === '/x/web-interface/view') {
+      return {
+        ok: true,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              bvid: 'BV1fetchGateOn',
+              pages: [{ cid: 7501, page: 1 }],
+            },
+          };
+        },
+      };
+    }
+    if (parsed.pathname === '/x/player/playurl') {
+      return {
+        ok: true,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              durl: [{ url: 'https://upos.example.test/fetched/gate-on.flv' }],
+            },
+          };
+        },
+      };
+    }
+    throw new Error(`unexpected Bilibili API URL: ${url}`);
+  };
+  try {
+    const { resolved } = await resolveBilibili({
+      site: 'bilibili',
+      input: 'https://www.bilibili.com/video/BV1fetchGateOn/',
+      dryRun: true,
+    }, null, {
+      allowNetworkResolve: true,
+    });
+
+    assert.equal(fetchCalls, 2);
+    assert.equal(resolved.resources.length, 1);
+    assert.equal(resolved.resources[0].url, 'https://upos.example.test/fetched/gate-on.flv');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('bilibili ordinary input without fixture payload still falls back to legacy resolution', async () => {

@@ -325,6 +325,17 @@ test('download session preflight maps governance risk to a sanitized quarantine 
     'run-keepalive-before-auth',
     'public-ip-changed',
   ]);
+  assert.deepEqual(health.repairPlan, {
+    action: 'site-keepalive',
+    command: 'site-keepalive',
+    reason: 'network-identity-drift',
+    riskSignals: [
+      'network-identity-drift',
+      'run-keepalive-before-auth',
+      'public-ip-changed',
+    ],
+    requiresApproval: true,
+  });
   assert.equal(health.userDataDir, undefined);
   assert.equal(health.headers, undefined);
   assert.equal(health.cookies, undefined);

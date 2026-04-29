@@ -1,6 +1,7 @@
 // @ts-check
 
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -325,6 +326,8 @@ function filesFromResults(results) {
     mediaType: result.mediaType ?? 'binary',
     sha256: result.sha256 ?? null,
     skipped: result.skipped === true,
+    derived: result.derived === true || undefined,
+    groupId: result.groupId ?? undefined,
   }));
 }
 
@@ -340,11 +343,12 @@ function failedResourcesFromResults(results) {
 }
 
 function countsFromResults(resources, results, failedResources) {
+  const primaryResults = results.filter((result) => result?.derived !== true);
   return {
     expected: resources.length,
-    attempted: results.filter((result) => result && result.skipped !== true && result.attempted !== false).length,
-    downloaded: results.filter((result) => result?.ok && result.skipped !== true).length,
-    skipped: results.filter((result) => result?.ok && result.skipped === true).length,
+    attempted: primaryResults.filter((result) => result && result.skipped !== true && result.attempted !== false).length,
+    downloaded: primaryResults.filter((result) => result?.ok && result.skipped !== true).length,
+    skipped: primaryResults.filter((result) => result?.ok && result.skipped === true).length,
     failed: failedResources.length,
   };
 }
@@ -412,6 +416,188 @@ async function buildRetryFailedNoopResults(resources, queue, recoveryState, reco
     results.push(skippedControlResult(resource, queueEntry, fallbackReason));
   }
   return results;
+}
+
+function isMuxableStream(resource = {}) {
+  return ['video', 'audio'].includes(resource.metadata?.muxRole)
+    && resource.metadata?.muxKind
+    && resource.groupId;
+}
+
+function buildMuxPlans(resources = [], queue = [], results = [], layout = {}) {
+  const groups = new Map();
+  for (let index = 0; index < resources.length; index += 1) {
+    const resource = resources[index];
+    const result = results[index];
+    if (!isMuxableStream(resource) || !result?.ok || !result.filePath) {
+      continue;
+    }
+    const groupId = resource.groupId;
+    const entry = groups.get(groupId) ?? {
+      groupId,
+      resources: [],
+      video: null,
+      audio: null,
+    };
+    const streamEntry = {
+      resource,
+      result,
+      queueEntry: queue[index],
+      index,
+    };
+    entry.resources.push(streamEntry);
+    if (resource.metadata.muxRole === 'video' && !entry.video) {
+      entry.video = streamEntry;
+    }
+    if (resource.metadata.muxRole === 'audio' && !entry.audio) {
+      entry.audio = streamEntry;
+    }
+    groups.set(groupId, entry);
+  }
+
+  return [...groups.values()]
+    .filter((entry) => entry.video && entry.audio)
+    .map((entry) => {
+      const outputName = `mux-${safeFileName(entry.video.resource.fileName ?? entry.groupId, 'merged-media')}.mp4`;
+      return {
+        ...entry,
+        outputPath: path.join(layout.filesDir, outputName),
+      };
+    });
+}
+
+async function runProcess(command, args = [], options = {}) {
+  return await new Promise((resolve) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+      ...options,
+    });
+    let stderr = '';
+    child.stderr?.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', (error) => {
+      resolve({
+        code: 1,
+        stderr: error?.message ?? String(error),
+      });
+    });
+    child.on('close', (code) => {
+      resolve({
+        code: code ?? 0,
+        stderr,
+      });
+    });
+  });
+}
+
+async function muxWithFfmpeg(muxPlan, { ffmpegPath = 'ffmpeg', spawnProcess = runProcess } = {}) {
+  const result = await spawnProcess(ffmpegPath, [
+    '-y',
+    '-i',
+    muxPlan.video.result.filePath,
+    '-i',
+    muxPlan.audio.result.filePath,
+    '-c',
+    'copy',
+    muxPlan.outputPath,
+  ]);
+  if (result?.code !== 0) {
+    return {
+      ok: false,
+      reason: 'mux-failed',
+      error: result?.stderr ?? `ffmpeg exited ${result?.code}`,
+    };
+  }
+  return {
+    ok: true,
+  };
+}
+
+async function derivedMuxResult(muxPlan, options = {}, deps = {}) {
+  const existing = await existingFileResult({
+    id: `mux:${muxPlan.groupId}`,
+    url: `mux:${muxPlan.groupId}`,
+    mediaType: 'video',
+  }, muxPlan.outputPath);
+  if (existing) {
+    return {
+      ...existing,
+      derived: true,
+      groupId: muxPlan.groupId,
+      reason: 'existing-mux-file',
+    };
+  }
+
+  const muxer = deps.muxMediaPair
+    ?? (async (plan) => await muxWithFfmpeg(plan, {
+      ffmpegPath: deps.ffmpegPath ?? options.ffmpegPath,
+      spawnProcess: deps.spawnProcess,
+    }));
+  try {
+    const muxed = await muxer({
+      groupId: muxPlan.groupId,
+      videoFile: muxPlan.video.result.filePath,
+      audioFile: muxPlan.audio.result.filePath,
+      outputFile: muxPlan.outputPath,
+      videoResource: muxPlan.video.resource,
+      audioResource: muxPlan.audio.resource,
+      resources: muxPlan.resources.map((entry) => entry.resource),
+    });
+    if (muxed?.ok === false) {
+      return {
+        ok: false,
+        derived: true,
+        reason: muxed.reason ?? 'mux-failed',
+        error: muxed.error ?? null,
+        resourceId: `mux:${muxPlan.groupId}`,
+        url: `mux:${muxPlan.groupId}`,
+        filePath: muxPlan.outputPath,
+        mediaType: 'video',
+        groupId: muxPlan.groupId,
+      };
+    }
+    const fileStat = await stat(muxPlan.outputPath);
+    return {
+      ok: true,
+      skipped: false,
+      derived: true,
+      resourceId: `mux:${muxPlan.groupId}`,
+      url: `mux:${muxPlan.groupId}`,
+      filePath: muxPlan.outputPath,
+      bytes: fileStat.size,
+      mediaType: 'video',
+      groupId: muxPlan.groupId,
+      reason: 'dash-mux',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      derived: true,
+      reason: 'mux-error',
+      error: error?.message ?? String(error),
+      resourceId: `mux:${muxPlan.groupId}`,
+      url: `mux:${muxPlan.groupId}`,
+      filePath: muxPlan.outputPath,
+      mediaType: 'video',
+      groupId: muxPlan.groupId,
+    };
+  }
+}
+
+async function buildDerivedMuxResults(resources, queue, results, layout, options, deps) {
+  const enabled = Boolean(options.enableDerivedMux ?? options.muxDerivedMedia ?? false)
+    || Boolean(deps.muxMediaPair);
+  if (!enabled) {
+    return [];
+  }
+  const muxPlans = buildMuxPlans(resources, queue, results, layout);
+  const muxResults = [];
+  for (const muxPlan of muxPlans) {
+    muxResults.push(await derivedMuxResult(muxPlan, options, deps));
+  }
+  return muxResults;
 }
 
 async function writeRunArtifactsFromResults({
@@ -612,6 +798,7 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
     await writeJsonFile(layout.queuePath, queue);
     return result;
   });
+  const derivedResults = await buildDerivedMuxResults(resources, queue, results, layout, options, deps);
 
   return await writeRunArtifactsFromResults({
     layout,
@@ -620,7 +807,7 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
     sessionLease,
     resources,
     queue,
-    results,
+    results: [...results, ...derivedResults],
     recoveryProblems,
   });
 }

@@ -300,14 +300,108 @@ function mediaUrlsFromHtml(html, tagPattern) {
   return [...new Set(urls)];
 }
 
-function seedsFromFixtureHtml(html, request = {}, plan = {}) {
+function seedsFromFixtureHtml(html, request = {}, plan = {}, sourceType = 'fixture-html') {
   const note = noteMetadataFromFacts({}, request, plan);
   const imageUrls = mediaUrlsFromHtml(html, /<(?:img|meta)\b[^>]*(?:src|content)=["']([^"']+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^"']*)?)["'][^>]*>/giu);
   const videoUrls = mediaUrlsFromHtml(html, /<(?:video|source|meta)\b[^>]*(?:src|content)=["']([^"']+\.(?:mp4|m3u8|mov|webm)(?:\?[^"']*)?)["'][^>]*>/giu);
   return [
-    ...imageUrls.map((url, index) => seedFromXiaohongshuAsset({ url, id: `html-image-${index + 1}` }, 'image', index, note, 'fixture-html')),
-    ...videoUrls.map((url, index) => seedFromXiaohongshuAsset({ url, id: `html-video-${index + 1}` }, 'video', index, note, 'fixture-html')),
+    ...imageUrls.map((url, index) => seedFromXiaohongshuAsset({ url, id: `html-image-${index + 1}` }, 'image', index, note, sourceType)),
+    ...videoUrls.map((url, index) => seedFromXiaohongshuAsset({ url, id: `html-video-${index + 1}` }, 'video', index, note, sourceType)),
   ].filter(Boolean);
+}
+
+function inputUrl(request = {}, plan = {}) {
+  return firstText(request.inputUrl, request.url, request.input, plan.source?.input);
+}
+
+function isXiaohongshuPageUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === 'www.xiaohongshu.com'
+      && (/^\/explore\//u.test(parsed.pathname) || /^\/user\/profile\//u.test(parsed.pathname) || parsed.pathname === '/search_result');
+  } catch {
+    return false;
+  }
+}
+
+function injectedFetchImpl(request = {}, context = {}) {
+  for (const candidate of [
+    request.fetchImpl,
+    request.mockFetchImpl,
+    context.fetchImpl,
+    context.mockFetchImpl,
+    context.deps?.fetchImpl,
+    context.deps?.mockFetchImpl,
+    context.options?.fetchImpl,
+    context.options?.mockFetchImpl,
+  ]) {
+    if (typeof candidate === 'function') {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function pageFetchState(request = {}, context = {}) {
+  const fetchImpl = injectedFetchImpl(request, context);
+  if (fetchImpl) {
+    return {
+      fetchImpl,
+      source: 'fetchImpl',
+    };
+  }
+  if (context.allowNetworkResolve === true && typeof globalThis.fetch === 'function') {
+    return {
+      fetchImpl: globalThis.fetch,
+      source: 'network-fetch',
+    };
+  }
+  return null;
+}
+
+async function responseToText(response) {
+  if (typeof response === 'string') {
+    return response;
+  }
+  if (!response || response.ok === false) {
+    return '';
+  }
+  if (typeof response.text === 'function') {
+    return await response.text();
+  }
+  return firstText(response.body, response.data);
+}
+
+async function fetchedHtmlSeeds(request = {}, plan = {}, sessionLease = null, context = {}) {
+  const url = inputUrl(request, plan);
+  const fetchState = pageFetchState(request, context);
+  if (!url || !isXiaohongshuPageUrl(url) || !fetchState) {
+    return [];
+  }
+  try {
+    const response = await fetchState.fetchImpl(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 Browser-Wiki-Skill native resolver',
+        ...(isObject(sessionLease?.headers) ? sessionLease.headers : {}),
+        ...(isObject(request.headers) ? request.headers : {}),
+      },
+      redirect: 'follow',
+    });
+    const html = await responseToText(response);
+    if (!html) {
+      return [];
+    }
+    return seedsFromFixtureHtml(html, {
+      ...request,
+      input: firstText(response?.url, url),
+      inputUrl: firstText(response?.url, url),
+      url: firstText(response?.url, url),
+    }, plan, 'fetched-html');
+  } catch {
+    return [];
+  }
 }
 
 function noteListCandidates(request = {}) {
@@ -427,6 +521,14 @@ async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLeas
   if (htmlSeeds.length > 0) {
     return requestWithSeeds(request, htmlSeeds, {
       sourceType: 'fixture-html',
+      resolvedNotes: 1,
+    });
+  }
+
+  const fetchSeeds = await fetchedHtmlSeeds(request, plan, sessionLease, context);
+  if (fetchSeeds.length > 0) {
+    return requestWithSeeds(request, fetchSeeds, {
+      sourceType: 'fetched-html',
       resolvedNotes: 1,
     });
   }

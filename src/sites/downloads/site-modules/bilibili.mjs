@@ -134,6 +134,98 @@ function callableFromContext(context = {}, name) {
   ].find((candidate) => typeof candidate === 'function') ?? null;
 }
 
+function injectedFetchImpl(request = {}, context = {}) {
+  for (const candidate of [
+    request.fetchImpl,
+    request.mockFetchImpl,
+    context.fetchImpl,
+    context.mockFetchImpl,
+    context.deps?.fetchImpl,
+    context.deps?.mockFetchImpl,
+    context.options?.fetchImpl,
+    context.options?.mockFetchImpl,
+  ]) {
+    if (typeof candidate === 'function') {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function evidenceFetchState(request = {}, context = {}) {
+  const fetchImpl = injectedFetchImpl(request, context);
+  if (fetchImpl) {
+    return {
+      fetchImpl,
+      source: 'fetchImpl',
+    };
+  }
+  if (context.allowNetworkResolve === true && typeof globalThis.fetch === 'function') {
+    return {
+      fetchImpl: globalThis.fetch,
+      source: 'network-fetch',
+    };
+  }
+  return null;
+}
+
+function bilibiliApiHeaders(request = {}, sessionLease = null) {
+  return {
+    Accept: 'application/json, text/plain, */*',
+    Referer: 'https://www.bilibili.com/',
+    'User-Agent': 'Mozilla/5.0 Browser-Wiki-Skill native resolver',
+    ...(isObject(sessionLease?.headers) ? sessionLease.headers : {}),
+    ...(isObject(request.headers) ? request.headers : {}),
+  };
+}
+
+async function responseToJson(response) {
+  if (isObject(response) && (response.code !== undefined || response.data !== undefined || response.result !== undefined)) {
+    return response;
+  }
+  if (!response || response.ok === false) {
+    return null;
+  }
+  if (typeof response.json === 'function') {
+    const value = await response.json();
+    return isObject(value) ? value : null;
+  }
+  if (typeof response.text === 'function') {
+    const text = await response.text();
+    try {
+      const value = JSON.parse(text);
+      return isObject(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function bilibiliApiUrl(pathname, params = {}) {
+  const url = new URL(pathname, 'https://api.bilibili.com');
+  for (const [key, value] of Object.entries(params)) {
+    const text = firstText(value);
+    if (text) {
+      url.searchParams.set(key, text);
+    }
+  }
+  return url.toString();
+}
+
+async function fetchBilibiliJson(fetchState, url, request = {}, sessionLease = null) {
+  try {
+    const response = await fetchState.fetchImpl(url, {
+      method: 'GET',
+      headers: bilibiliApiHeaders(request, sessionLease),
+      redirect: 'follow',
+    });
+    return await responseToJson(response);
+  } catch {
+    return null;
+  }
+}
+
 function inputText(request = {}, plan = {}) {
   return firstText(request.inputUrl, request.url, request.input, plan.source?.input);
 }
@@ -186,6 +278,7 @@ function bilibiliEvidenceRequest(request = {}, plan = {}) {
       ...descriptor,
       inputKind: 'collection',
       collectionId,
+      spaceMid: firstText(request.spaceMid, request.mid, parsed.hostname.startsWith('space.') ? pathParts[0] : ''),
       requiredPayloads: ['collection', 'playurl'],
     };
   }
@@ -199,6 +292,7 @@ function bilibiliEvidenceRequest(request = {}, plan = {}) {
       ...descriptor,
       inputKind: 'series',
       seriesId,
+      spaceMid: firstText(request.spaceMid, request.mid, parsed.hostname.startsWith('space.') ? pathParts[0] : ''),
       requiredPayloads: ['series', 'playurl'],
     };
   }
@@ -211,6 +305,120 @@ function bilibiliEvidenceRequest(request = {}, plan = {}) {
       requiredPayloads: ['space-archives', 'playurl'],
     };
   }
+  return null;
+}
+
+async function fetchPlayUrlPayload(fetchState, identity = {}, request = {}, sessionLease = null) {
+  const cid = firstText(identity.cid);
+  if (!cid) {
+    return null;
+  }
+  return await fetchBilibiliJson(fetchState, bilibiliApiUrl('/x/player/playurl', {
+    bvid: identity.bvid,
+    aid: identity.aid,
+    cid,
+    qn: request.quality ?? request.qn ?? 80,
+    fnval: request.fnval ?? 16,
+    fourk: request.fourk ?? 1,
+  }), request, sessionLease);
+}
+
+async function playUrlPayloadsForEntries(fetchState, entries = [], request = {}, sessionLease = null) {
+  const payloads = {};
+  for (const entry of entries) {
+    const payload = await fetchPlayUrlPayload(fetchState, entry, request, sessionLease);
+    if (!isObject(payload)) {
+      continue;
+    }
+    const key = firstText(entry.cid, entry.bvid, entry.page);
+    if (key) {
+      payloads[key] = {
+        bvid: entry.bvid || undefined,
+        cid: entry.cid || undefined,
+        page: entry.page || undefined,
+        payload,
+      };
+    }
+  }
+  return payloads;
+}
+
+async function fetchBilibiliApiEvidence(evidenceRequest = {}, request = {}, plan = {}, sessionLease = null, context = {}) {
+  const fetchState = evidenceFetchState(request, context);
+  if (!fetchState || !isObject(evidenceRequest)) {
+    return null;
+  }
+  const maxItems = normalizePositiveInteger(evidenceRequest.maxItems ?? request.maxItems ?? request.maxPlaylistItems ?? plan.policy?.maxItems, 20);
+  const pageSize = Math.max(1, Math.min(50, maxItems || 20));
+  if (evidenceRequest.inputKind === 'video-detail') {
+    const viewPayload = await fetchBilibiliJson(fetchState, bilibiliApiUrl('/x/web-interface/view', {
+      bvid: evidenceRequest.bvid,
+      aid: request.aid,
+    }), request, sessionLease);
+    if (!isObject(viewPayload)) {
+      return null;
+    }
+    const entries = pageEntriesFromViewPayload(viewPayload, request, plan);
+    return {
+      viewPayload,
+      playUrlPayloads: await playUrlPayloadsForEntries(fetchState, entries, request, sessionLease),
+      metadata: {
+        evidenceSource: fetchState.source,
+      },
+    };
+  }
+
+  if (evidenceRequest.inputKind === 'collection' || evidenceRequest.inputKind === 'series') {
+    const spaceMid = firstText(evidenceRequest.spaceMid, request.spaceMid, request.mid);
+    const listId = firstText(evidenceRequest.collectionId, evidenceRequest.seriesId, request.collectionId, request.seriesId, request.sid);
+    if (!spaceMid || !listId) {
+      return null;
+    }
+    const payloadKey = evidenceRequest.inputKind === 'collection' ? 'season_id' : 'series_id';
+    const listPayload = await fetchBilibiliJson(fetchState, bilibiliApiUrl('/x/polymer/web-space/seasons_archives_list', {
+      mid: spaceMid,
+      [payloadKey]: listId,
+      page_num: request.pageNumber ?? request.page ?? 1,
+      page_size: pageSize,
+    }), request, sessionLease);
+    if (!isObject(listPayload)) {
+      return null;
+    }
+    const entries = pageEntriesFromListPayload(listPayload, evidenceRequest.inputKind, request, plan);
+    return {
+      [evidenceRequest.inputKind === 'collection' ? 'collectionPayload' : 'seriesPayload']: listPayload,
+      playUrlPayloads: await playUrlPayloadsForEntries(fetchState, entries, request, sessionLease),
+      metadata: {
+        evidenceSource: fetchState.source,
+      },
+    };
+  }
+
+  if (evidenceRequest.inputKind === 'space-archives') {
+    const spaceMid = firstText(evidenceRequest.spaceMid, request.spaceMid, request.mid);
+    if (!spaceMid) {
+      return null;
+    }
+    const spaceArchivesPayload = await fetchBilibiliJson(fetchState, bilibiliApiUrl('/x/space/wbi/arc/search', {
+      mid: spaceMid,
+      pn: request.pageNumber ?? request.page ?? 1,
+      ps: pageSize,
+      order: request.order ?? 'pubdate',
+      platform: 'web',
+    }), request, sessionLease);
+    if (!isObject(spaceArchivesPayload)) {
+      return null;
+    }
+    const entries = pageEntriesFromListPayload(spaceArchivesPayload, 'space-archives', request, plan);
+    return {
+      spaceArchivesPayload,
+      playUrlPayloads: await playUrlPayloadsForEntries(fetchState, entries, request, sessionLease),
+      metadata: {
+        evidenceSource: fetchState.source,
+      },
+    };
+  }
+
   return null;
 }
 
@@ -230,6 +438,7 @@ function mergeBilibiliEvidence(request = {}, evidence = {}) {
     bilibiliPlayUrlPayloads: evidence.bilibiliPlayUrlPayloads ?? request.bilibiliPlayUrlPayloads,
     metadata: {
       ...metadata,
+      bilibiliApiEvidenceSource: evidence.metadata?.evidenceSource ?? metadata.bilibiliApiEvidenceSource,
     },
   };
 }
@@ -238,10 +447,9 @@ async function requestWithInjectedEvidenceSeeds(request = {}, plan = {}, session
   const directEvidence = request.bilibiliApiEvidence ?? metadataObject(request).bilibiliApiEvidence;
   const evidenceRequest = bilibiliEvidenceRequest(request, plan);
   const resolver = callableFromContext(context, 'resolveBilibiliApiEvidence');
-  const evidence = isObject(directEvidence)
-    ? directEvidence
-    : evidenceRequest && resolver
-      ? await resolver({
+  let evidence = isObject(directEvidence) ? directEvidence : null;
+  if (!evidence && evidenceRequest && resolver) {
+    evidence = await resolver({
         ...evidenceRequest,
         allowNetworkResolve: context.allowNetworkResolve === true,
       }, {
@@ -249,8 +457,14 @@ async function requestWithInjectedEvidenceSeeds(request = {}, plan = {}, session
         plan,
         sessionLease,
         allowNetworkResolve: context.allowNetworkResolve === true,
-      })
-      : null;
+      });
+  }
+  if (!evidence && evidenceRequest) {
+    evidence = await fetchBilibiliApiEvidence({
+      ...evidenceRequest,
+      allowNetworkResolve: context.allowNetworkResolve === true,
+    }, request, plan, sessionLease, context);
+  }
   if (!isObject(evidence)) {
     return null;
   }
@@ -279,7 +493,7 @@ function streamUrl(stream = {}) {
   );
 }
 
-function streamSeed(stream = {}, inherited = {}, mediaType = 'video', index = 0) {
+function streamSeed(stream = {}, inherited = {}, mediaType = 'video', index = 0, muxEligible = false) {
   const url = streamUrl(stream);
   if (!url) {
     return null;
@@ -308,6 +522,8 @@ function streamSeed(stream = {}, inherited = {}, mediaType = 'video', index = 0)
     groupId: inherited.groupId,
     metadata: {
       streamType: mediaType,
+      muxRole: muxEligible ? mediaType : undefined,
+      muxKind: muxEligible ? 'dash-audio-video' : undefined,
       quality: quality || undefined,
       bandwidth: stream.bandwidth,
       codecs: firstText(stream.codecs, stream.codec) || undefined,
@@ -332,13 +548,13 @@ function seedsFromPayload(payload = {}, request = {}, plan = {}, inheritedOverri
 
   const dash = data.dash ?? data.videoInfo?.dash ?? data.playInfo?.dash;
   for (const stream of toArray(dash?.video)) {
-    const seed = streamSeed(stream, inherited, 'video', seeds.length);
+    const seed = streamSeed(stream, inherited, 'video', seeds.length, true);
     if (seed) {
       seeds.push(seed);
     }
   }
   for (const stream of toArray(dash?.audio)) {
-    const seed = streamSeed(stream, inherited, 'audio', seeds.length);
+    const seed = streamSeed(stream, inherited, 'audio', seeds.length, true);
     if (seed) {
       seeds.push(seed);
     }

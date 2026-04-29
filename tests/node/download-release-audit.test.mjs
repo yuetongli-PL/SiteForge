@@ -149,3 +149,39 @@ test('download-release-audit no-write guidance avoids unwritten audit manifest p
   assert.match(blocked.repairPlan.commandText, /--session-gate-reason session-provider-missing/u);
   assert.doesNotMatch(blocked.repairPlan.commandText, /--audit-manifest/u);
 });
+
+test('download-release-audit records skipped manifests and infers matrix session gates', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-release-audit-skipped-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  const runDir = path.join(rootDir, 'social-live');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(rootDir, 'manifest.json'), '{not-json', 'utf8');
+  const healthManifest = path.join(rootDir, 'session', 'twitter', 'manifest.json');
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'matrix-run',
+    results: [{
+      id: 'twitter-archive',
+      site: 'twitter',
+      artifactSummary: {
+        authHealth: { required: true },
+        sessionProvider: 'unified-session-runner',
+        sessionHealth: {
+          healthStatus: 'ready',
+          artifacts: { manifest: healthManifest },
+        },
+      },
+    }],
+  }, null, 2)}\n`, 'utf8');
+
+  const audit = await buildAudit(parseArgs(['--runs-root', rootDir, '--no-write']));
+  const row = audit.rows.find((candidate) => candidate.id === 'twitter-archive');
+
+  assert.equal(audit.skipped.length, 1);
+  assert.match(audit.skipped[0].reason, /JSON/u);
+  assert.equal(row.site, 'x');
+  assert.equal(row.status, 'passed');
+  assert.equal(row.reason, 'unified-session-health-manifest');
+  assert.equal(row.provider, 'unified-session-runner');
+  assert.equal(row.healthManifest, healthManifest);
+  assert.equal(row.repairPlan, undefined);
+});

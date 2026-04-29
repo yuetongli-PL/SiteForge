@@ -210,6 +210,47 @@ function normalizePositiveInteger(value, fallback = 0) {
   return Number.isFinite(numericValue) && numericValue > 0 ? Math.floor(numericValue) : fallback;
 }
 
+function normalizeSessionStatus(value) {
+  const normalizedValue = normalizeText(value);
+  return ['ready', 'blocked', 'manual-required', 'expired', 'quarantine'].includes(normalizedValue)
+    ? normalizedValue
+    : null;
+}
+
+function resolveRequestSessionStatus(request = {}) {
+  return normalizeSessionStatus(
+    request.sessionStatus
+    ?? request.sessionHealthManifest?.healthStatus
+    ?? request.sessionHealthManifest?.status
+    ?? request.sessionHealth?.healthStatus
+    ?? request.sessionHealth?.status,
+  );
+}
+
+function buildAuthRequiredSessionBlock(plan, request = {}) {
+  if (plan.authRequired !== true) {
+    return null;
+  }
+  const status = resolveRequestSessionStatus(request);
+  if (!status || status === 'ready') {
+    return null;
+  }
+  const summary = request.sessionHealthManifest ?? request.sessionHealth ?? {};
+  const reason = normalizeText(
+    request.sessionReason
+    ?? summary.reason
+    ?? summary.riskCauseCode
+    ?? status,
+  ) || status;
+  return {
+    status,
+    reason,
+    provider: normalizeText(request.sessionProvider) || 'unified-session-runner',
+    healthManifest: normalizeText(request.sessionManifestPath ?? request.sessionManifest) || null,
+    repairPlan: summary.repairPlan ?? null,
+  };
+}
+
 function normalizePositiveDurationMs(value, fallback = 0) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue > 0 ? Math.floor(numericValue) : fallback;
@@ -2370,6 +2411,38 @@ export async function planXiaohongshuAction(request) {
 
 export async function runXiaohongshuAction(request, deps = {}) {
   const plan = await planXiaohongshuAction(request);
+  const sessionGate = buildAuthRequiredSessionBlock(plan, request);
+  if (sessionGate) {
+    const resolution = {
+      attemptedPages: 0,
+      attemptedNotes: 0,
+      resolvedNotes: 0,
+      skippedVideoNotes: 0,
+      skippedNoImageNotes: 0,
+      failedNotes: 0,
+      followedUsersRequested: request?.followedUsers === true,
+      followedUsersStatus: 'blocked',
+      sessionGate,
+    };
+    return {
+      ok: false,
+      action: 'download',
+      plan,
+      reasonCode: 'session-unhealthy',
+      resolution,
+      resolvedInputs: [],
+      downloadSession: {
+        attempted: false,
+        status: 'blocked',
+        reason: sessionGate.reason,
+        sessionGate,
+      },
+      download: null,
+      sessionGate,
+      actionSummary: buildDownloadActionSummary(null, resolution),
+      markdown: buildDownloadActionMarkdown(null, resolution),
+    };
+  }
   const resolved = await resolveConcreteDownloadInputs(request, deps);
   if (!resolved.items.length) {
     const followedUsersReasonCode = resolved.resolution.followedUsersRequested === true

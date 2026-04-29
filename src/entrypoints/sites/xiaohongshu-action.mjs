@@ -6,7 +6,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
-import { actionSessionMetadataFromOptions } from '../../sites/sessions/manifest-bridge.mjs';
+import {
+  actionSessionMetadataFromOptions,
+  readSessionRunManifest,
+  sessionOptionsFromRunManifest,
+} from '../../sites/sessions/manifest-bridge.mjs';
 import { runXiaohongshuAction } from '../../sites/xiaohongshu/actions/router.mjs';
 
 function normalizeStringList(value) {
@@ -130,16 +134,18 @@ function selectCliPayload(result, outputMode) {
   return result;
 }
 
-export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
-  initializeCliUtf8();
-  const parsed = parseXiaohongshuActionArgs(argv);
+export async function buildXiaohongshuActionRequest(parsed) {
   const items = [...parsed.items, ...parsed.queries];
-  const sessionMetadata = await actionSessionMetadataFromOptions(parsed, {
-    siteKey: 'xiaohongshu',
-    host: 'www.xiaohongshu.com',
-  });
-  const result = {
-    ...await runXiaohongshuAction({
+  const sessionManifestOptions = parsed.sessionManifest
+    ? sessionOptionsFromRunManifest(
+      await readSessionRunManifest(path.resolve(parsed.sessionManifest)),
+      {
+        siteKey: 'xiaohongshu',
+        host: 'www.xiaohongshu.com',
+      },
+    )
+    : {};
+  return {
     action: parsed.action,
     items,
     profilePath: parsed.profilePath,
@@ -152,11 +158,27 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
     headless: parsed.headless,
     reuseLoginState: parsed.reuseLoginState,
     autoLogin: parsed.autoLogin,
+    sessionManifest: parsed.sessionManifest,
+    sessionProvider: parsed.sessionProvider,
+    useUnifiedSessionHealth: parsed.useUnifiedSessionHealth,
     followedUsers: parsed.followedUsers,
     followedUserLimit: parsed.followedUserLimit,
     download: parsed.download,
     authorResumeState: parsed.authorResumeState,
-  }),
+    ...sessionManifestOptions,
+  };
+}
+
+export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
+  initializeCliUtf8();
+  const parsed = parseXiaohongshuActionArgs(argv);
+  const request = await buildXiaohongshuActionRequest(parsed);
+  const sessionMetadata = await actionSessionMetadataFromOptions(parsed, {
+    siteKey: 'xiaohongshu',
+    host: 'www.xiaohongshu.com',
+  });
+  const result = {
+    ...await runXiaohongshuAction(request),
     ...sessionMetadata,
   };
   const outputFormat = String(parsed.outputFormat || 'json').trim().toLowerCase();

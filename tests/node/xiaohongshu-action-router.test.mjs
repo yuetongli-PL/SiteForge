@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import os from 'node:os';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
-import { parseXiaohongshuActionArgs } from '../../src/entrypoints/sites/xiaohongshu-action.mjs';
+import {
+  buildXiaohongshuActionRequest,
+  parseXiaohongshuActionArgs,
+} from '../../src/entrypoints/sites/xiaohongshu-action.mjs';
 import { readJsonFile } from '../../src/infra/io.mjs';
 import {
   classifyXiaohongshuDownloadInput,
@@ -215,6 +219,95 @@ test('parseXiaohongshuActionArgs accepts followed-user batch download flags', ()
   assert.equal(parsed.sessionManifest, 'runs/session/xiaohongshu/manifest.json');
 });
 
+test('buildXiaohongshuActionRequest carries unified session manifest options into router request', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'xiaohongshu-session-manifest-'));
+  try {
+    const manifestPath = path.join(tempDir, 'manifest.json');
+    await writeFile(manifestPath, `${JSON.stringify({
+      schemaVersion: 1,
+      runId: 'xiaohongshu-session-test',
+      siteKey: 'xiaohongshu',
+      host: 'www.xiaohongshu.com',
+      purpose: 'followed',
+      status: 'blocked',
+      reason: 'session-invalid',
+      health: {
+        status: 'blocked',
+        reason: 'session-invalid',
+        authStatus: 'unknown',
+        riskCauseCode: 'session-invalid',
+        riskAction: 'manual-login-required',
+      },
+      repairPlan: {
+        actions: [{
+          kind: 'site-login',
+          command: 'node src/entrypoints/sites/site-login.mjs --site xiaohongshu',
+        }],
+      },
+      artifacts: {},
+    }, null, 2)}\n`, 'utf8');
+    const parsed = parseXiaohongshuActionArgs([
+      'download',
+      '--followed-users',
+      '--session-manifest',
+      manifestPath,
+      '--session-health-plan',
+    ]);
+
+    const request = await buildXiaohongshuActionRequest(parsed);
+
+    assert.equal(request.followedUsers, true);
+    assert.equal(request.sessionManifest, manifestPath);
+    assert.equal(request.useUnifiedSessionHealth, true);
+    assert.equal(request.sessionStatus, 'blocked');
+    assert.equal(request.sessionReason, 'session-invalid');
+    assert.equal(request.sessionHealthManifest.healthStatus, 'blocked');
+    assert.equal(request.sessionManifestPath, path.resolve(manifestPath));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runXiaohongshuAction blocks followed-users when unified session manifest is unhealthy', async () => {
+  const result = await runXiaohongshuAction({
+    action: 'download',
+    items: [],
+    followedUsers: true,
+    sessionManifest: 'runs/session/xiaohongshu/manifest.json',
+    sessionStatus: 'blocked',
+    sessionReason: 'session-invalid',
+    sessionHealthManifest: {
+      healthStatus: 'blocked',
+      reason: 'session-invalid',
+      riskCauseCode: 'session-invalid',
+      repairPlan: {
+        actions: [{ kind: 'site-login' }],
+      },
+    },
+    download: {
+      dryRun: true,
+    },
+  }, {
+    async queryXiaohongshuFollow() {
+      assert.fail('follow query should not run after unhealthy session gate');
+    },
+    async fetchImpl() {
+      assert.fail('fetch should not run after unhealthy session gate');
+    },
+    async spawnJsonCommand() {
+      assert.fail('download subprocess should not run after unhealthy session gate');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'session-unhealthy');
+  assert.equal(result.sessionGate.status, 'blocked');
+  assert.equal(result.sessionGate.reason, 'session-invalid');
+  assert.equal(result.downloadSession.status, 'blocked');
+  assert.equal(result.resolution.followedUsersRequested, true);
+  assert.equal(result.resolution.followedUsersStatus, 'blocked');
+});
+
 test('runXiaohongshuAction resolves a search query into image-note bundles and scans past video candidates', async () => {
   const siteProfile = await readJsonFile(path.resolve('profiles/www.xiaohongshu.com.json'));
   let capturedArgs = null;
@@ -231,6 +324,8 @@ test('runXiaohongshuAction resolves a search query into image-note bundles and s
     profilePath: path.resolve('profiles/www.xiaohongshu.com.json'),
     timeoutMs: 45_000,
     reuseLoginState: false,
+    sessionStatus: 'blocked',
+    sessionReason: 'session-invalid',
     download: {
       dryRun: true,
       maxItems: 1,

@@ -334,8 +334,11 @@ Latest local offline evidence on `main`:
 - `git status --short --branch --untracked-files=all`: clean worktree
   verified before evidence capture. Re-check the current ahead count before
   any publication step.
-- `node --test tests\node\*.test.mjs`: 671 passed, 0 failed.
+- `node --test tests\node\*.test.mjs`: 692 passed, 0 failed.
 - `python -m unittest discover -s tests\python -p "test_*.py"`: 46 tests OK.
+- Social/live traceability focused gate:
+  `node --test tests\node\social-live-verify.test.mjs tests\node\social-live-ops.test.mjs tests\node\social-live-resume-execute.test.mjs tests\node\download-release-audit.test.mjs`:
+  32 passed, 0 failed.
 - Live smoke: `not-run`.
 - Real login: `not-run`.
 - Real download: `not-run`.

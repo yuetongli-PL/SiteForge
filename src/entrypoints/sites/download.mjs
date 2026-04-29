@@ -257,7 +257,7 @@ export async function main(argv) {
   const sessionManifestOptions = options.sessionManifest
     ? sessionOptionsFromRunManifest(await readSessionRunManifest(path.resolve(options.sessionManifest)), {
       siteKey: options.site,
-      host: options.host,
+      ...(options.host ? { host: options.host } : {}),
     })
     : {};
   const result = await runDownloadTask(options, {

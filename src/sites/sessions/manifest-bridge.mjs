@@ -65,7 +65,8 @@ export function summarizeSessionRunManifest(manifest = {}) {
 export function assertSessionManifestMatches(manifest = {}, expected = {}) {
   const summary = summarizeSessionRunManifest(manifest);
   const expectedSite = normalizeText(expected.siteKey ?? expected.site);
-  const expectedHost = sanitizeHost(normalizeText(expected.host));
+  const expectedHostText = normalizeText(expected.host);
+  const expectedHost = expectedHostText ? sanitizeHost(expectedHostText) : '';
   if (expectedSite && summary.siteKey && expectedSite !== summary.siteKey) {
     throw new Error(`Session manifest site mismatch: expected ${expectedSite}, got ${summary.siteKey}`);
   }

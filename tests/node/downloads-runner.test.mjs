@@ -233,6 +233,97 @@ test('download CLI parser accepts unified session manifest input', () => {
   assert.equal(args.sessionManifest, manifestPath);
 });
 
+test('download CLI consumes session manifests without requiring an explicit host', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-session-manifest-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const sessionManifest = path.join(runRoot, 'session', 'manifest.json');
+  await mkdir(path.dirname(sessionManifest), { recursive: true });
+  await writeJsonFile(sessionManifest, normalizeSessionRunManifest({
+    siteKey: 'bilibili',
+    host: 'www.bilibili.com',
+    purpose: 'download',
+    status: 'ready',
+    health: {
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'ready',
+      authStatus: 'authenticated',
+    },
+    artifacts: {
+      manifest: sessionManifest,
+      runDir: path.dirname(sessionManifest),
+    },
+  }));
+
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, ...args) => {
+    output += String(chunk);
+    if (typeof args.at(-1) === 'function') args.at(-1)();
+    return true;
+  };
+  try {
+    await runDownloadCli([
+      '--site',
+      'bilibili',
+      '--input',
+      'BV1sessionManifest',
+      '--session-optional',
+      '--session-manifest',
+      sessionManifest,
+      '--run-dir',
+      path.join(runRoot, 'download'),
+      '--json',
+    ]);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  const result = JSON.parse(output);
+  assert.equal(result.manifest.status, 'skipped');
+  assert.equal(result.manifest.reason, 'dry-run');
+  assert.equal(result.plan.host, 'www.bilibili.com');
+});
+
+test('download CLI keeps explicit host checks for session manifests', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-session-host-mismatch-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const sessionManifest = path.join(runRoot, 'session', 'manifest.json');
+  await mkdir(path.dirname(sessionManifest), { recursive: true });
+  await writeJsonFile(sessionManifest, normalizeSessionRunManifest({
+    siteKey: 'bilibili',
+    host: 'www.bilibili.com',
+    purpose: 'download',
+    status: 'ready',
+    health: {
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'ready',
+    },
+    artifacts: {
+      manifest: sessionManifest,
+      runDir: path.dirname(sessionManifest),
+    },
+  }));
+
+  await assert.rejects(
+    () => runDownloadCli([
+      '--site',
+      'bilibili',
+      '--host',
+      'm.bilibili.com',
+      '--input',
+      'BV1sessionManifest',
+      '--session-manifest',
+      sessionManifest,
+      '--run-dir',
+      path.join(runRoot, 'download'),
+      '--json',
+    ]),
+    /Session manifest host mismatch: expected m.bilibili.com, got www.bilibili.com/u,
+  );
+});
+
 test('download CLI parser accepts generated unified session health plans', () => {
   const args = parseArgs([
     '--site',

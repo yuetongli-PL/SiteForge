@@ -390,7 +390,7 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /## Current Local Evidence/u);
   assert.match(releaseGate, /clean worktree\s+verified before evidence capture/u);
   assert.match(releaseGate, /Re-check the current ahead count before\s+any publication step/u);
-  assert.match(releaseGate, /node --test tests\\node\\\*\.test\.mjs`: 671 passed, 0 failed/u);
+  assert.match(releaseGate, /node --test tests\\node\\\*\.test\.mjs`: 692 passed, 0 failed/u);
   assert.match(releaseGate, /python -m unittest discover -s tests\\python -p "test_\*\.py"`: 46 tests OK/u);
   assert.match(releaseGate, /Real download: `not-run`/u);
 });

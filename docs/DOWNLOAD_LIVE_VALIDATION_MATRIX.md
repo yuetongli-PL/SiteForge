@@ -164,6 +164,18 @@ For each approved run, review artifacts before marking the case as passed:
 - No artifact contains cookies, auth headers, raw cursor strings, request
   template secrets, profile roots, or browser profile paths.
 
+## Current Case Evidence
+
+Latest local evidence on `main` remains mostly offline. Do not treat these rows
+as production live passes.
+
+| Site | Case ID | Latest evidence | Status | Notes |
+| --- | --- | --- | --- | --- |
+| Bilibili | `bilibili-dash-mux` | `runs\live-validation\bilibili-dash-mux\20260430T053612_BV1WjDDBGE3p\session-health\manifest.json` | `blocked` | Session health stopped the run before download/mux: `profile-health-risk`; repair plan is `rebuild-profile` and requires separate approval. |
+| Douyin | `douyin-video-native`, `douyin-author-native`, `douyin-followed-native` | `douyin-native-evidence-v1` focused tests | `offline-only` | Signature completeness, missing signature params, API evidence mode, and cache refresh blocked reason are sanitized and fixture-backed. Real signing/API/page parsing/cache refresh/profile side effects are not claimed. |
+| Xiaohongshu | `xiaohongshu-note-native`, `xiaohongshu-search-native`, `xiaohongshu-author-native`, `xiaohongshu-followed-native` | `xiaohongshu-header-freshness-v1` focused tests | `offline-only` | Header freshness status, required/missing headers, fetch source, network gate use, and fetched URL presence are sanitized and fixture/injected-fetch backed. No live fetch, header refresh, or risk-page handling is claimed. |
+| X / Instagram | `x-archive-replay-native`, `instagram-feed-user-native` | `social-archive-v2` focused tests | `offline-only` | Replay policy evidence records `not-executed`, resume unsupported, rate-limit/API-drift presence, and `cursor-replay-not-executed` without leaking cursor or request-template values. Cursor/API replay is not executed in native yet. |
+
 ## Remaining 100 Percent Gates
 
 After the matrix cases pass, the remaining closeout work is:

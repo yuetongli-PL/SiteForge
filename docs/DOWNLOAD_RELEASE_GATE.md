@@ -339,6 +339,17 @@ Latest local offline evidence on `main`:
 - Social/live traceability focused gate:
   `node --test tests\node\social-live-verify.test.mjs tests\node\social-live-ops.test.mjs tests\node\social-live-resume-execute.test.mjs tests\node\download-release-audit.test.mjs`:
   32 passed, 0 failed.
+- Recent offline native evidence focused gates:
+  - `node --test tests\node\download-douyin-native-resolver.test.mjs`:
+    12 passed, 0 failed.
+  - `node --test tests\node\download-social-native-resolver.test.mjs`:
+    10 passed, 0 failed.
+  - `node --test tests\node\download-xiaohongshu-page-seed-resolver.test.mjs`:
+    8 passed, 0 failed.
+- Bilibili DASH mux live validation: `blocked`.
+  `runs\live-validation\bilibili-dash-mux\20260430T053612_BV1WjDDBGE3p\session-health\manifest.json`
+  recorded `profile-health-risk`; no download, mux file, or downloads JSONL was
+  produced.
 - Live smoke: `not-run`.
 - Real login: `not-run`.
 - Real download: `not-run`.

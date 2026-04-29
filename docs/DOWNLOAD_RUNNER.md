@@ -27,6 +27,12 @@ The runner can always execute already-resolved resources passed with `--resource
 
 Native runner execution means `resolved-task.json` contains concrete `resources[]` and the shared executor downloads them into `files/`. Legacy fallback means `resolved-task.json` records `legacy-downloader-required`, then the runner spawns the site entrypoint and normalizes its JSON output into the unified manifest.
 
+Fallback action entrypoints for Douyin, Xiaohongshu, X, and Instagram expose
+`--session-manifest <path>`, `--session-health-plan`, and
+`--no-session-health-plan`. Use a unified session manifest or generated health
+plan when authenticated capability is being evaluated; reserve
+`--no-session-health-plan` for explicit legacy-provider runs.
+
 Hybrid native status is not a live-capability claim. Current native coverage is
 fixture-backed, request-injected, injected-fetch, or explicitly gated by
 `--resolve-network`; live smoke, real login, and real download validation remain

@@ -16,9 +16,13 @@ import {
 import { ensureDir, readJsonFile, readTextFile, writeJsonFile, writeJsonLines, writeTextFile } from '../../../infra/io.mjs';
 import { cleanText, compactSlug, normalizeText } from '../../../shared/normalize.mjs';
 import { downloadMediaFiles as executeMediaDownloads } from '../../downloads/media-executor.mjs';
-import { actionSessionMetadataFromOptions } from '../../sessions/manifest-bridge.mjs';
+import {
+  actionSessionMetadataFromOptions,
+  summarizeSessionRunManifest,
+} from '../../sessions/manifest-bridge.mjs';
 import { evaluateAuthenticatedSessionReleaseGate } from '../../sessions/release-gate.mjs';
 import { buildSessionRepairPlanCommand } from '../../sessions/repair-command.mjs';
+import { runSessionTask } from '../../sessions/runner.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
@@ -5207,15 +5211,36 @@ function normalizeRunSettings(plan, options = {}) {
   };
 }
 
+async function resolveSocialSessionMetadata(plan, config, settings, artifactLayout, deps = {}) {
+  if (settings.useUnifiedSessionHealth === true && !settings.sessionManifest) {
+    const sessionResult = await (deps.runSessionTask ?? runSessionTask)({
+      action: 'health',
+      site: plan.siteKey,
+      host: config.host,
+      purpose: 'archive',
+      profilePath: settings.profilePath,
+      browserProfileRoot: settings.browserProfileRoot,
+      userDataDir: settings.userDataDir,
+      runDir: path.join(artifactLayout.runDir, 'session-health'),
+      sessionRequirement: plan.requiresAuth === true ? 'required' : 'optional',
+    }, {}, deps.sessionRunnerDeps ?? deps);
+    return {
+      sessionProvider: 'unified-session-runner',
+      sessionHealth: summarizeSessionRunManifest(sessionResult.manifest),
+    };
+  }
+  return await actionSessionMetadataFromOptions(settings, {
+    siteKey: plan.siteKey,
+    host: config.host,
+  });
+}
+
 export async function runSocialAction(options = {}, deps = {}) {
   const plan = buildSocialActionPlan(options);
   const config = resolveSocialSiteConfig(plan.siteKey);
   const settings = normalizeRunSettings(plan, options);
   const artifactLayout = buildSocialArtifactLayout(plan, settings);
-  const sessionMetadata = await actionSessionMetadataFromOptions(settings, {
-    siteKey: plan.siteKey,
-    host: config.host,
-  });
+  const sessionMetadata = await resolveSocialSessionMetadata(plan, config, settings, artifactLayout, deps);
   if (plan.requiresAccount && !plan.account && !plan.canRunWithoutAccount) {
     throw new Error(`${plan.action} requires --account <handle> or a profile URL.`);
   }

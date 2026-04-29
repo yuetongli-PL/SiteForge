@@ -2408,6 +2408,60 @@ test('social action dry-run consumes session manifest metadata without opening a
   assert.doesNotMatch(result.markdown, /Next session repair command/u);
 });
 
+test('social action dry-run generates unified session health before session gate', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-session-plan-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const runDir = path.join(runRoot, 'social-run');
+  const sessionRunDir = path.join(runDir, 'session-health');
+  const sessionManifest = path.join(sessionRunDir, 'manifest.json');
+  let sessionHealthRequested = false;
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: 'openai',
+    dryRun: true,
+    runDir,
+    useUnifiedSessionHealth: true,
+  }, {
+    runSessionTask: async (request) => {
+      sessionHealthRequested = true;
+      assert.equal(request.site, 'x');
+      assert.equal(request.host, 'x.com');
+      assert.equal(request.purpose, 'archive');
+      assert.equal(request.sessionRequirement, 'required');
+      assert.equal(request.runDir, sessionRunDir);
+      return {
+        manifest: {
+          plan: {
+            siteKey: 'x',
+            host: 'x.com',
+            purpose: 'archive',
+            sessionRequirement: 'required',
+          },
+          health: {
+            status: 'ready',
+            authStatus: 'authenticated',
+            identityConfirmed: true,
+          },
+          artifacts: {
+            manifest: sessionManifest,
+            runDir: sessionRunDir,
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(sessionHealthRequested, true);
+  assert.equal(result.sessionProvider, 'unified-session-runner');
+  assert.equal(result.sessionHealth.healthStatus, 'ready');
+  assert.equal(result.sessionHealth.artifacts.manifest, sessionManifest);
+  assert.equal(result.sessionGate.ok, true);
+  assert.match(result.markdown, /Session health manifest:/u);
+  assert.match(result.markdown, /Session traceability gate: passed \(unified-session-health-manifest\)/u);
+});
+
 test('social action dry-run suggests session repair command for blocked session gates', async () => {
   const result = await runSocialAction({
     site: 'x',
@@ -2471,6 +2525,62 @@ test('runSocialAction blocks required actions before opening browser when sessio
     result.markdown,
     /Next session repair command: node src\/entrypoints\/sites\/session-repair-plan\.mjs --site x --session-gate-reason session-invalid/u,
   );
+});
+
+test('runSocialAction blocks generated unhealthy session health before opening browser', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-session-plan-block-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const runDir = path.join(runRoot, 'social-run');
+  const sessionRunDir = path.join(runDir, 'session-health');
+  const sessionManifest = path.join(sessionRunDir, 'manifest.json');
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: 'openai',
+    runDir,
+    useUnifiedSessionHealth: true,
+  }, {
+    runSessionTask: async () => ({
+      manifest: {
+        plan: {
+          siteKey: 'x',
+          host: 'x.com',
+          purpose: 'archive',
+          sessionRequirement: 'required',
+        },
+        health: {
+          status: 'blocked',
+          reason: 'session-invalid',
+          riskCauseCode: 'session-invalid',
+        },
+        repairPlan: {
+          action: 'site-login',
+          command: 'site-login',
+          reason: 'session-invalid',
+          requiresApproval: true,
+        },
+        artifacts: {
+          manifest: sessionManifest,
+          runDir: sessionRunDir,
+        },
+      },
+    }),
+    async resolveSiteBrowserSessionOptions() {
+      assert.fail('auth context should not resolve after generated blocked session gate');
+    },
+    async openBrowserSession() {
+      assert.fail('browser should not open after generated blocked session gate');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'session-gate-blocked');
+  assert.equal(result.sessionProvider, 'unified-session-runner');
+  assert.equal(result.sessionGate.status, 'blocked');
+  assert.equal(result.sessionGate.reason, 'session-invalid');
+  assert.equal(result.sessionHealth.artifacts.manifest, sessionManifest);
+  assert.match(result.markdown, /Session traceability gate: blocked \(session-invalid\)/u);
 });
 
 test('runSocialAction does not block public X search when session manifest is absent', async (t) => {

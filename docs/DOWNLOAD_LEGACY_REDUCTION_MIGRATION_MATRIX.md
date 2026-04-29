@@ -73,6 +73,13 @@ injected-resolver native resolution, native seed execution, legacy fallback
 routing, and generic media executor behavior. It does not prove live crawling,
 authenticated social archive capability, or safe fallback removal.
 
+Legacy fallback runs must keep native miss evidence auditable. When a native
+resolver returns no resources and the runner delegates to legacy, manifests
+record sanitized `legacy.nativeFallback` metadata and the release audit surfaces
+that reason in its `Native Fallback` / `Native Resolver` columns. This evidence
+is for review only; fallback can be removed only after fixture, injected,
+runner, and approved live validation all cover the same task shape.
+
 ## Derived Artifacts And Session Repair
 
 - Bilibili DASH audio/video streams can be muxed as an explicit opt-in derived

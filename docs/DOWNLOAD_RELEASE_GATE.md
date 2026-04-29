@@ -281,6 +281,11 @@ Pass criteria:
   report includes a `Repair Plan` column. The suggested command stays dry-run,
   for example:
   `node src/entrypoints/sites/session-repair-plan.mjs --site x --audit-manifest runs/download-release-audit/download-release-audit.json`.
+- Audit rows also surface sanitized native fallback evidence in the
+  `Native Fallback` and `Native Resolver` columns when a unified legacy
+  fallback manifest recorded `legacy.nativeFallback` or an artifact summary
+  recorded `nativeFallback`. These columns explain why native resolution did
+  not cover the task; they do not approve fallback removal.
 - Download and social action reports include `Next session repair command`
   when the per-run session traceability gate is blocked. Social live matrix
   reports surface the same guidance in their `Repair Plan` column. These

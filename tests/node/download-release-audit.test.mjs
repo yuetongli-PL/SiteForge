@@ -71,6 +71,13 @@ test('download-release-audit audits download and social matrix session gates off
           reason: 'session-health-manifest-missing',
           provider: 'unified-session-runner',
         },
+        nativeFallback: {
+          reason: 'x-social-cursor-replay-required',
+          resolver: {
+            adapterId: 'x',
+            method: 'native-x-social-resource-seeds',
+          },
+        },
       },
     }],
   }, null, 2)}\n`, 'utf8');
@@ -99,11 +106,16 @@ test('download-release-audit audits download and social matrix session gates off
   assert.equal(blockedMatrix.repairPlan.auditManifest, path.join(outDir, 'download-release-audit.json'));
   assert.match(blockedMatrix.repairPlan.commandText, /session-repair-plan\.mjs/u);
   assert.match(blockedMatrix.repairPlan.commandText, /--site x/u);
+  assert.equal(blockedMatrix.nativeFallbackReason, 'x-social-cursor-replay-required');
+  assert.equal(blockedMatrix.nativeResolverMethod, 'native-x-social-resource-seeds');
+  assert.equal(blockedMatrix.nativeResolverAdapter, 'x');
   assert.equal(audit.rows.find((row) => row.id === 'download-run').repairPlan, undefined);
   assert.match(markdown, /Download Release Audit/u);
   assert.match(markdown, /session-health-manifest-missing/u);
   assert.match(markdown, /bilibili-playurl-evidence-missing/u);
   assert.match(markdown, /bilibili\/native-bilibili-page-seeds/u);
+  assert.match(markdown, /x-social-cursor-replay-required/u);
+  assert.match(markdown, /x\/native-x-social-resource-seeds/u);
   assert.match(markdown, /Repair Plan/u);
   assert.match(markdown, /session-repair-plan\.mjs/u);
 });

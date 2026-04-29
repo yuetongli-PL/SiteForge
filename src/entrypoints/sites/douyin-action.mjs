@@ -12,6 +12,32 @@ import {
 } from '../../sites/sessions/manifest-bridge.mjs';
 import { runDouyinAction } from '../../sites/douyin/actions/router.mjs';
 
+export const DOUYIN_ACTION_HELP = `Usage:
+  node src/entrypoints/sites/douyin-action.mjs download <video-url|author-url|video-id> [options]
+  node src/entrypoints/sites/douyin-action.mjs login [options]
+
+Defaults to planning/dry-run behavior unless the underlying action requires an
+explicitly approved execution path.
+
+Options:
+  --profile-path <path>             Profile JSON source override.
+  --browser-profile-root <path>     Browser profile root for reusable sessions.
+  --user-data-dir <path>            Browser user data directory override.
+  --out-dir <dir>                   Output directory for action artifacts.
+  --timeout <ms>                    Browser/action timeout.
+  --dry-run                         Plan downloads without executing media fetches.
+  --max-items <n>                   Limit resolved download inputs.
+  --window <value>                  Followed-update window.
+  --user <value>                    Restrict followed/author inputs. Can be comma-separated.
+  --keyword <value>                 Restrict titles. Can be comma-separated.
+  --session-manifest <path>         Consume a unified runs/session health manifest.
+  --session-health-plan             Generate and consume a unified session health manifest first.
+  --no-session-health-plan          Use the legacy session provider path.
+  --format <json|markdown>          Output format. Default: json.
+  --output <full|summary|download>  Output payload shape. Default: full.
+  -h, --help                        Show this help.
+`;
+
 function normalizeStringList(value) {
   return (Array.isArray(value) ? value : value === undefined || value === null ? [] : [value])
     .flatMap((item) => String(item ?? '').split(','))
@@ -36,6 +62,10 @@ export function parseDouyinActionArgs(argv = process.argv.slice(2)) {
   };
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
+    if (token === '-h') {
+      appendFlag('help', true);
+      continue;
+    }
     if (!token.startsWith('--')) {
       positionals.push(token);
       continue;
@@ -58,6 +88,7 @@ export function parseDouyinActionArgs(argv = process.argv.slice(2)) {
   const action = positionals[0] ?? 'download';
   const items = positionals.slice(1);
   return {
+    help: flags.help === true,
     action,
     items,
     profilePath: flags['profile-path'] ? String(flags['profile-path']) : null,
@@ -130,6 +161,10 @@ export async function buildDouyinActionRequest(parsed) {
 export async function runDouyinActionCli(argv = process.argv.slice(2)) {
   initializeCliUtf8();
   const parsed = parseDouyinActionArgs(argv);
+  if (parsed.help) {
+    process.stdout.write(DOUYIN_ACTION_HELP);
+    return { help: DOUYIN_ACTION_HELP };
+  }
   const request = await buildDouyinActionRequest(parsed);
   const sessionMetadata = await actionSessionMetadataFromOptions(parsed, {
     siteKey: 'douyin',

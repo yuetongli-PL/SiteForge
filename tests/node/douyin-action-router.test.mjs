@@ -6,7 +6,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import {
   buildDouyinActionRequest,
+  DOUYIN_ACTION_HELP,
   parseDouyinActionArgs,
+  runDouyinActionCli,
 } from '../../src/entrypoints/sites/douyin-action.mjs';
 import {
   classifyDouyinDownloadInput,
@@ -37,6 +39,27 @@ test('parseDouyinActionArgs accepts unified session traceability flags', () => {
   assert.equal(parsed.sessionManifest, 'runs/session/douyin/manifest.json');
   assert.equal(parsed.sessionProvider, 'unified-session-runner');
   assert.equal(parsed.useUnifiedSessionHealth, false);
+});
+
+test('runDouyinActionCli help exposes unified session flags without running actions', async () => {
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, ...args) => {
+    output += String(chunk);
+    const callback = args.find((arg) => typeof arg === 'function');
+    callback?.();
+    return true;
+  };
+  try {
+    const result = await runDouyinActionCli(['--help']);
+
+    assert.deepEqual(result, { help: DOUYIN_ACTION_HELP });
+    assert.match(output, /--session-manifest <path>/u);
+    assert.match(output, /--session-health-plan/u);
+    assert.match(output, /--no-session-health-plan/u);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
 });
 
 test('buildDouyinActionRequest carries unified session manifest options into router request', async () => {

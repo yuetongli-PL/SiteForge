@@ -139,7 +139,7 @@ function siteEntries(options) {
 }
 
 export function buildTemplates(options) {
-  const common = ['--max-items', String(options.maxItems), '--reuse-login-state', '--no-headless'];
+  const common = ['--max-items', String(options.maxItems), '--session-health-plan', '--reuse-login-state', '--no-headless'];
   return {
     repoRoot: REPO_ROOT,
     generatedAt: new Date().toISOString(),

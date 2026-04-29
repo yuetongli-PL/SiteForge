@@ -36,6 +36,11 @@ test('social-command-templates emits unified X and Instagram commands', () => {
   assert.match(templates.sites[0].productionCommands[0], /x-action\.mjs full-archive openai/u);
   assert.match(templates.sites[0].resumeCommand, /social-live-resume\.mjs --site x/u);
   assert.match(templates.sites[1].kbWatchCommand, /social-kb-refresh\.mjs --site instagram --watch/u);
+  for (const site of templates.sites) {
+    for (const command of site.productionCommands) {
+      assert.match(command, /--session-health-plan/u);
+    }
+  }
 });
 
 test('social-health-watch dry-run plan includes session health, keepalive, auth doctor, and nextSuggestedKeepalive', () => {

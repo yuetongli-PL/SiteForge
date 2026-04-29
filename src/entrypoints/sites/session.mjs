@@ -114,6 +114,8 @@ function render(result) {
     `- Requirement: ${plan.sessionRequirement ?? 'optional'}`,
     `- Dry-run: ${manifest.dryRun === true}`,
     `- Repair action: ${repairPlan.action ?? 'none'}`,
+    `- Repair command: ${repairPlan.command ?? 'none'}`,
+    `- Repair requires approval: ${repairPlan.requiresApproval === true}`,
     `- Manifest: ${manifest.artifacts?.manifest ?? 'none'}`,
   ].join('\n') + '\n';
 }

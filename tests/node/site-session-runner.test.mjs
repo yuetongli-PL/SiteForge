@@ -200,6 +200,32 @@ test('session CLI prints JSON and writes manifest under runs/session layout', as
   assert.equal(persisted.status, 'expired');
 });
 
+test('session CLI text output includes repair command guidance', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-session-cli-text-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  let output = '';
+
+  await main([
+    'plan-repair',
+    '--site', 'douyin',
+    '--purpose', 'download',
+    '--out-dir', runRoot,
+    '--session-required',
+    '--status', 'manual-required',
+    '--reason', 'session-invalid',
+  ], {
+    stdout: {
+      write(chunk) {
+        output += chunk;
+      },
+    },
+  });
+
+  assert.match(output, /Repair action: site-login/u);
+  assert.match(output, /Repair command: site-login/u);
+  assert.match(output, /Repair requires approval: true/u);
+});
+
 test('session manifest bridge maps health into legacy session options without secrets', () => {
   const manifest = normalizeSessionRunManifest({
     plan: {

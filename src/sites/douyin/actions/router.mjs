@@ -14,6 +14,8 @@ import {
   bootstrapReusableSiteSession,
   inspectRequestReusableSiteSession,
 } from '../../../infra/auth/site-login-service.mjs';
+import { summarizeSessionRunManifest } from '../../sessions/manifest-bridge.mjs';
+import { runSessionTask } from '../../sessions/runner.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
@@ -689,8 +691,43 @@ function buildDownloadActionMarkdown(download = null, mediaResolution = null) {
   return `${lines.join('\n')}\n`;
 }
 
+async function resolveDouyinUnifiedSessionRequest(request = {}, deps = {}) {
+  const action = normalizeText(request?.action) || 'download';
+  if (action !== 'download' || request.useUnifiedSessionHealth !== true || request.sessionManifest) {
+    return request;
+  }
+  const sessionRunDir = request.sessionRunDir
+    ? path.resolve(request.sessionRunDir)
+    : request.outDir
+      ? path.join(path.resolve(request.outDir), 'session-health')
+      : undefined;
+  const sessionResult = await (deps.runSessionTask ?? runSessionTask)({
+    action: 'health',
+    site: 'douyin',
+    host: 'www.douyin.com',
+    purpose: 'download',
+    profilePath: request.profilePath,
+    browserProfileRoot: request.browserProfileRoot,
+    userDataDir: request.userDataDir,
+    runDir: sessionRunDir,
+    sessionRequirement: 'required',
+  }, {}, deps.sessionRunnerDeps ?? deps);
+  const summary = summarizeSessionRunManifest(sessionResult.manifest);
+  return {
+    ...request,
+    sessionProvider: 'unified-session-runner',
+    sessionStatus: summary.healthStatus,
+    sessionReason: summary.reason ?? summary.riskCauseCode ?? summary.healthStatus,
+    riskSignals: summary.riskSignals,
+    expiresAt: summary.expiresAt,
+    sessionHealthManifest: summary,
+    sessionManifestPath: summary.artifacts.manifest,
+  };
+}
+
 export async function runDouyinAction(request, deps = {}) {
-  const sessionGate = buildDownloadSessionGateBlock(request);
+  const effectiveRequest = await resolveDouyinUnifiedSessionRequest(request, deps);
+  const sessionGate = buildDownloadSessionGateBlock(effectiveRequest);
   if (sessionGate) {
     return {
       ok: false,
@@ -698,8 +735,8 @@ export async function runDouyinAction(request, deps = {}) {
       reasonCode: 'session-unhealthy',
       plan: {
         action: 'download',
-        items: Array.isArray(request.items) ? request.items.map((item) => normalizeText(item)).filter(Boolean) : [],
-        followUpdatesWindow: normalizeText(request.followUpdatesWindow) || null,
+        items: Array.isArray(effectiveRequest.items) ? effectiveRequest.items.map((item) => normalizeText(item)).filter(Boolean) : [],
+        followUpdatesWindow: normalizeText(effectiveRequest.followUpdatesWindow) || null,
         authRequired: true,
         route: 'blocked-before-session-inspection',
         reason: sessionGate.reason,
@@ -711,12 +748,12 @@ export async function runDouyinAction(request, deps = {}) {
       download: null,
     };
   }
-  const plan = await planDouyinAction(request, deps);
-  const normalizedHeadless = request.headless ?? false;
+  const plan = await planDouyinAction(effectiveRequest, deps);
+  const normalizedHeadless = effectiveRequest.headless ?? false;
   if (plan.action === 'login') {
     const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
       plan.targetUrl,
-      request,
+      effectiveRequest,
       deps,
       {
         headless: normalizedHeadless,
@@ -736,7 +773,7 @@ export async function runDouyinAction(request, deps = {}) {
   if (plan.route === 'download-after-login') {
     const loginBootstrap = await (deps.bootstrapReusableSiteSession ?? bootstrapReusableSiteSession)(
       DOUYIN_HOME_URL,
-      request,
+      effectiveRequest,
       deps,
       {
         headless: normalizedHeadless,
@@ -748,7 +785,7 @@ export async function runDouyinAction(request, deps = {}) {
     }
   }
 
-  const concreteDownloadPlan = await resolveConcreteDownloadInputs(request, deps);
+  const concreteDownloadPlan = await resolveConcreteDownloadInputs(effectiveRequest, deps);
   const concreteInputs = concreteDownloadPlan?.items || [];
   if (!concreteInputs.length) {
     return {
@@ -762,7 +799,7 @@ export async function runDouyinAction(request, deps = {}) {
     };
   }
 
-  const invoked = await invokeDownloadCli(request, concreteInputs, deps);
+  const invoked = await invokeDownloadCli(effectiveRequest, concreteInputs, deps);
   return {
     ok: invoked.process.code === 0,
     action: 'download',

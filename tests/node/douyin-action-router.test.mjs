@@ -119,11 +119,145 @@ test('runDouyinAction blocks unhealthy download sessions before legacy inspectio
   assert.deepEqual(result.resolvedInputs, []);
 });
 
+test('runDouyinAction generates unified session health before download planning', async () => {
+  const outDir = path.join(os.tmpdir(), 'bwk-douyin-session-plan-ready');
+  const sessionRunDir = path.join(outDir, 'session-health');
+  const sessionManifest = path.join(sessionRunDir, 'manifest.json');
+  let sessionHealthRequested = false;
+  let inspected = false;
+  let capturedArgs = null;
+
+  const result = await runDouyinAction({
+    action: 'download',
+    items: ['https://www.douyin.com/video/7487317288315258152'],
+    outDir,
+    useUnifiedSessionHealth: true,
+    reuseLoginState: true,
+    download: {
+      dryRun: true,
+    },
+  }, {
+    async runSessionTask(request) {
+      sessionHealthRequested = true;
+      assert.equal(request.site, 'douyin');
+      assert.equal(request.host, 'www.douyin.com');
+      assert.equal(request.purpose, 'download');
+      assert.equal(request.sessionRequirement, 'required');
+      assert.equal(request.runDir, sessionRunDir);
+      return {
+        manifest: {
+          plan: {
+            siteKey: 'douyin',
+            host: 'www.douyin.com',
+            purpose: 'download',
+            sessionRequirement: 'required',
+          },
+          health: {
+            status: 'ready',
+            authStatus: 'authenticated',
+            identityConfirmed: true,
+          },
+          artifacts: {
+            manifest: sessionManifest,
+            runDir: sessionRunDir,
+          },
+        },
+      };
+    },
+    async inspectRequestReusableSiteSession() {
+      inspected = true;
+      return {
+        authAvailable: true,
+        userDataDir: 'C:/profiles/douyin.com',
+        profileHealth: { status: 'ready' },
+        profilePath: 'profiles/www.douyin.com.json',
+      };
+    },
+    async spawnJsonCommand(_command, args) {
+      capturedArgs = args;
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          runDir: 'C:/tmp/douyin-download',
+          summary: { total: 1, successful: 0, partial: 0, failed: 0, planned: 1 },
+          statistics: { pathStats: { 'video-detail': 1 } },
+          reportMarkdown: '# Douyin Download Action\n',
+        }),
+        stderr: '',
+      };
+    },
+  });
+
+  assert.equal(sessionHealthRequested, true);
+  assert.equal(inspected, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.reasonCode, 'download-started');
+  assert.ok(Array.isArray(capturedArgs));
+});
+
+test('runDouyinAction blocks generated unhealthy session health before legacy inspection', async () => {
+  const result = await runDouyinAction({
+    action: 'download',
+    items: ['https://www.douyin.com/video/7487317288315258152'],
+    useUnifiedSessionHealth: true,
+    download: {
+      dryRun: true,
+    },
+  }, {
+    async runSessionTask() {
+      return {
+        manifest: {
+          plan: {
+            siteKey: 'douyin',
+            host: 'www.douyin.com',
+            purpose: 'download',
+            sessionRequirement: 'required',
+          },
+          health: {
+            status: 'blocked',
+            reason: 'session-invalid',
+            riskCauseCode: 'session-invalid',
+          },
+          repairPlan: {
+            action: 'site-login',
+            command: 'site-login',
+            reason: 'session-invalid',
+            requiresApproval: true,
+          },
+          artifacts: {
+            manifest: 'runs/session/douyin/generated/manifest.json',
+            runDir: 'runs/session/douyin/generated',
+          },
+        },
+      };
+    },
+    async inspectRequestReusableSiteSession() {
+      assert.fail('legacy session inspection should not run after generated unhealthy session gate');
+    },
+    async bootstrapReusableSiteSession() {
+      assert.fail('login bootstrap should not run after generated unhealthy session gate');
+    },
+    async queryDouyinFollow() {
+      assert.fail('follow query should not run after generated unhealthy session gate');
+    },
+    async spawnJsonCommand() {
+      assert.fail('download subprocess should not run after generated unhealthy session gate');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'session-unhealthy');
+  assert.equal(result.sessionGate.status, 'blocked');
+  assert.equal(result.sessionGate.reason, 'session-invalid');
+  assert.equal(result.sessionGate.provider, 'unified-session-runner');
+});
+
 test('runDouyinAction does not block login repair action on unhealthy session manifest', async () => {
   let inspected = false;
   let bootstrapped = false;
   const result = await runDouyinAction({
     action: 'login',
+    useUnifiedSessionHealth: true,
     sessionStatus: 'blocked',
     sessionReason: 'session-invalid',
     sessionHealthManifest: {
@@ -148,6 +282,9 @@ test('runDouyinAction does not block login repair action on unhealthy session ma
           status: 'completed',
         },
       };
+    },
+    async runSessionTask() {
+      assert.fail('login repair action should not generate a session health plan');
     },
   });
 

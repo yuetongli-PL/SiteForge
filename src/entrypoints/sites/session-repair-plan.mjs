@@ -4,7 +4,7 @@ import process from 'node:process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { writeJsonFile } from '../../infra/io.mjs';
+import { readJsonFile, writeJsonFile } from '../../infra/io.mjs';
 import {
   buildSessionRepairPlan,
   inspectSessionHealth,
@@ -21,6 +21,8 @@ Options:
   --host <host>                     Optional host override.
   --status <status>                 Inject health status for dry-run planning.
   --reason <reason>                 Inject health reason/risk cause.
+  --session-gate-reason <reason>    Map an offline release audit gate reason into repair guidance.
+  --audit-manifest <path>           Read download-release-audit JSON and map the first blocked row for --site.
   --risk-signal <signal>            Add a risk signal. Can be repeated.
   --profile-path <path>             Forwarded to health inspection when no status is injected.
   --approve-action <action>         Approval token for command construction in --execute mode.
@@ -61,6 +63,8 @@ export function parseArgs(argv) {
       case '--host':
       case '--status':
       case '--reason':
+      case '--session-gate-reason':
+      case '--audit-manifest':
       case '--profile-path':
       case '--approve-action':
       case '--out-file':
@@ -171,15 +175,52 @@ function executionAudit(options = {}, repairPlan = {}, health = {}) {
 }
 
 function injectedHealth(options = {}) {
-  if (!options.status && !options.reason && options.riskSignals.length === 0) {
+  const gateReason = options.sessionGateReason;
+  const riskSignals = Array.isArray(options.riskSignals) ? options.riskSignals : [];
+  if (!options.status && !options.reason && !gateReason && riskSignals.length === 0) {
     return null;
   }
+  const reason = options.reason ?? gateReason ?? options.status ?? 'blocked';
   return {
     siteKey: options.site,
     host: options.host,
-    status: options.status ?? 'blocked',
-    reason: options.reason ?? options.status ?? 'blocked',
-    riskSignals: options.riskSignals,
+    status: options.status ?? (gateReason === 'session-invalid' ? 'manual-required' : 'blocked'),
+    reason,
+    riskSignals: [...new Set([
+      ...riskSignals,
+      ...(gateReason ? ['session-gate-blocked', gateReason] : []),
+    ])],
+  };
+}
+
+async function auditHealth(options = {}) {
+  if (!options.auditManifest) {
+    return null;
+  }
+  const audit = await readJsonFile(path.resolve(options.auditManifest));
+  const rows = Array.isArray(audit.rows) ? audit.rows : [];
+  const siteRows = rows.filter((row) => !options.site || row.site === options.site);
+  const row = siteRows.find((entry) => entry.status === 'blocked')
+    ?? siteRows[0]
+    ?? rows.find((entry) => entry.status === 'blocked')
+    ?? rows[0];
+  if (!row) {
+    return null;
+  }
+  const reason = row.reason ?? row.status ?? 'unknown';
+  return {
+    siteKey: row.site ?? options.site,
+    host: options.host,
+    status: row.status === 'passed' ? 'ready' : 'blocked',
+    reason,
+    riskSignals: [...new Set(['session-gate-audit', reason].filter(Boolean))],
+    audit: {
+      manifest: path.resolve(options.auditManifest),
+      rowId: row.id,
+      kind: row.kind,
+      provider: row.provider ?? null,
+      healthManifest: row.healthManifest ?? null,
+    },
   };
 }
 
@@ -191,6 +232,7 @@ export async function buildSessionRepairPlanResult(options = {}, deps = {}) {
     throw new Error('Missing required --site');
   }
   const health = injectedHealth(options)
+    ?? await auditHealth(options)
     ?? await (deps.inspectSessionHealth ?? inspectSessionHealth)(options.site, {
       host: options.host,
       profilePath: options.profilePath,
@@ -205,6 +247,7 @@ export async function buildSessionRepairPlanResult(options = {}, deps = {}) {
     status: health.status,
     reason: health.reason,
     riskSignals: health.riskSignals ?? [],
+    audit: health.audit ?? undefined,
     repairPlan,
     execution,
     createdAt: new Date().toISOString(),

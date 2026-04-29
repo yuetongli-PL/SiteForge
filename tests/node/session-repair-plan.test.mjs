@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import {
   buildSessionRepairPlanResult,
@@ -24,6 +24,18 @@ test('session repair plan parser defaults to dry-run guidance', () => {
   assert.equal(parsed.reason, 'network-identity-drift');
   assert.deepEqual(parsed.riskSignals, ['run-keepalive-before-auth']);
   assert.equal(parsed.execute, false);
+});
+
+test('session repair plan parser accepts release audit guidance inputs', () => {
+  const parsed = parseArgs([
+    '--site', 'x',
+    '--session-gate-reason', 'session-health-manifest-missing',
+    '--audit-manifest', 'runs/download-release-audit/download-release-audit.json',
+  ]);
+
+  assert.equal(parsed.site, 'x');
+  assert.equal(parsed.sessionGateReason, 'session-health-manifest-missing');
+  assert.equal(parsed.auditManifest, 'runs/download-release-audit/download-release-audit.json');
 });
 
 test('session repair plan maps injected unhealthy health without executing ops', async () => {
@@ -59,6 +71,57 @@ test('session repair plan execute mode blocks without matching approval', async 
     'src/entrypoints/sites/site-login.mjs',
     'https://www.douyin.com/',
   ]);
+});
+
+test('session repair plan maps session gate reason to dry-run guidance', async () => {
+  const result = await buildSessionRepairPlanResult({
+    site: 'x',
+    host: 'x.com',
+    sessionGateReason: 'session-health-manifest-missing',
+  });
+
+  assert.equal(result.dryRun, true);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'session-health-manifest-missing');
+  assert.equal(result.riskSignals.includes('session-gate-blocked'), true);
+  assert.equal(result.repairPlan.action, 'inspect-session-health');
+  assert.equal(result.repairPlan.command, 'site-doctor');
+});
+
+test('session repair plan maps blocked audit rows without executing ops', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-session-repair-audit-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const auditManifest = path.join(runRoot, 'download-release-audit.json');
+  await writeFile(auditManifest, `${JSON.stringify({
+    rows: [
+      {
+        site: 'instagram',
+        id: 'ig-ok',
+        status: 'passed',
+        reason: 'unified-session-health-manifest',
+      },
+      {
+        site: 'x',
+        id: 'x-blocked',
+        kind: 'social-live-matrix',
+        status: 'blocked',
+        reason: 'session-provider-missing',
+        provider: null,
+      },
+    ],
+  }, null, 2)}\n`, 'utf8');
+
+  const result = await buildSessionRepairPlanResult({
+    site: 'x',
+    host: 'x.com',
+    auditManifest,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'session-provider-missing');
+  assert.equal(result.audit.rowId, 'x-blocked');
+  assert.equal(result.repairPlan.action, 'inspect-session-health');
+  assert.equal(result.execution.status, 'not-run');
 });
 
 test('session repair plan main prints JSON and does not spawn child commands', async () => {

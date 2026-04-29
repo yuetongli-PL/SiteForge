@@ -750,6 +750,50 @@ test('download runner continues optional sites anonymously when health is not re
   assert.equal(result.manifest.status, 'skipped');
 });
 
+test('download runner blocks live validation when optional session health is not ready', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-live-session-blocked-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const result = await runDownloadTask({
+    site: 'bilibili',
+    input: 'BV1liveSessionBlocked',
+    dryRun: false,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+    liveValidation: {
+      status: 'planned',
+      scenario: 'bilibili-dash-mux',
+      requiresApproval: true,
+      approvalId: 'approval-live-session-blocked',
+    },
+  }, {
+    inspectSessionHealth: async () => ({
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'blocked',
+      reason: 'profile-health-risk',
+      riskSignals: ['profile-crashed'],
+    }),
+    acquireSessionLease: async () => {
+      throw new Error('live validation should not acquire a lease after blocked session health');
+    },
+    resolveDownloadResources: async () => {
+      throw new Error('live validation resolver should not run after blocked session health');
+    },
+    executeLegacyDownloadTask: async () => {
+      throw new Error('live validation legacy adapter should not run after blocked session health');
+    },
+  });
+
+  assert.equal(result.resolvedTask, null);
+  assert.equal(result.sessionLease.status, 'blocked');
+  assert.equal(result.manifest.status, 'blocked');
+  assert.equal(result.manifest.reason, 'profile-health-risk');
+  assert.equal(result.manifest.liveValidation.scenario, 'bilibili-dash-mux');
+  assert.equal(result.manifest.liveValidation.approvalId, 'approval-live-session-blocked');
+});
+
 test('download runner blocks optional downloads marked login-required when health is not ready', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-optional-login-required-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));

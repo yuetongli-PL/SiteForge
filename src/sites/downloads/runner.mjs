@@ -345,6 +345,8 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
   });
   const sessionPurpose = `download:${plan.taskType}`;
   const effectiveAuthRequired = marksAuthRequired(request, plan);
+  const liveValidationRequiresReadySession = options.liveValidation?.requiresApproval === true
+    || request.liveValidation?.requiresApproval === true;
   const unifiedSessionOptions = await maybeResolveUnifiedSessionHealth(plan, request, options, deps);
   const sessionOptions = {
     ...options,
@@ -368,7 +370,7 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
       deps.sessionDeps ?? deps,
     );
 
-  if (health && !isSessionReady(health) && effectiveAuthRequired) {
+  if (health && !isSessionReady(health) && (effectiveAuthRequired || liveValidationRequiresReadySession)) {
     const sessionLease = annotateSessionLeaseProvider(
       normalizeHealthAsLease(health, plan, sessionPurpose),
       unifiedSessionOptions,

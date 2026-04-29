@@ -339,6 +339,47 @@ function buildLoginFailureResult(plan, report) {
   };
 }
 
+function normalizeSessionStatus(value) {
+  const normalizedValue = normalizeText(value);
+  return ['ready', 'blocked', 'manual-required', 'expired', 'quarantine', 'passed'].includes(normalizedValue)
+    ? normalizedValue
+    : null;
+}
+
+function resolveRequestSessionStatus(request = {}) {
+  return normalizeSessionStatus(
+    request.sessionStatus
+    ?? request.sessionHealthManifest?.healthStatus
+    ?? request.sessionHealthManifest?.status
+    ?? request.sessionHealth?.healthStatus
+    ?? request.sessionHealth?.status,
+  );
+}
+
+function buildDownloadSessionGateBlock(request = {}) {
+  if ((normalizeText(request.action) || 'download') !== 'download') {
+    return null;
+  }
+  const status = resolveRequestSessionStatus(request);
+  if (!status || status === 'ready' || status === 'passed') {
+    return null;
+  }
+  const summary = request.sessionHealthManifest ?? request.sessionHealth ?? {};
+  const reason = normalizeText(
+    request.sessionReason
+    ?? summary.reason
+    ?? summary.riskCauseCode
+    ?? status,
+  ) || status;
+  return {
+    status,
+    reason,
+    provider: normalizeText(request.sessionProvider) || 'unified-session-runner',
+    healthManifest: normalizeText(request.sessionManifestPath ?? request.sessionManifest) || null,
+    repairPlan: summary.repairPlan ?? null,
+  };
+}
+
 export async function planDouyinAction(request, deps = {}) {
   const action = normalizeText(request?.action) || 'download';
   const reuseLoginState = request?.reuseLoginState !== false;
@@ -649,6 +690,27 @@ function buildDownloadActionMarkdown(download = null, mediaResolution = null) {
 }
 
 export async function runDouyinAction(request, deps = {}) {
+  const sessionGate = buildDownloadSessionGateBlock(request);
+  if (sessionGate) {
+    return {
+      ok: false,
+      action: 'download',
+      reasonCode: 'session-unhealthy',
+      plan: {
+        action: 'download',
+        items: Array.isArray(request.items) ? request.items.map((item) => normalizeText(item)).filter(Boolean) : [],
+        followUpdatesWindow: normalizeText(request.followUpdatesWindow) || null,
+        authRequired: true,
+        route: 'blocked-before-session-inspection',
+        reason: sessionGate.reason,
+      },
+      sessionGate,
+      loginReport: null,
+      mediaResolution: null,
+      resolvedInputs: [],
+      download: null,
+    };
+  }
   const plan = await planDouyinAction(request, deps);
   const normalizedHeadless = request.headless ?? false;
   if (plan.action === 'login') {

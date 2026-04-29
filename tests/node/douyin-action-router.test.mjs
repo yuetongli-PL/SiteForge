@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
-import { parseDouyinActionArgs } from '../../src/entrypoints/sites/douyin-action.mjs';
+import {
+  buildDouyinActionRequest,
+  parseDouyinActionArgs,
+} from '../../src/entrypoints/sites/douyin-action.mjs';
 import {
   classifyDouyinDownloadInput,
   planDouyinAction,
@@ -32,6 +37,125 @@ test('parseDouyinActionArgs accepts unified session traceability flags', () => {
   assert.equal(parsed.sessionManifest, 'runs/session/douyin/manifest.json');
   assert.equal(parsed.sessionProvider, 'unified-session-runner');
   assert.equal(parsed.useUnifiedSessionHealth, false);
+});
+
+test('buildDouyinActionRequest carries unified session manifest options into router request', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'douyin-session-manifest-'));
+  try {
+    const manifestPath = path.join(tempDir, 'manifest.json');
+    await writeFile(manifestPath, `${JSON.stringify({
+      schemaVersion: 1,
+      runId: 'douyin-session-test',
+      siteKey: 'douyin',
+      host: 'www.douyin.com',
+      purpose: 'download',
+      status: 'blocked',
+      reason: 'session-invalid',
+      health: {
+        status: 'blocked',
+        reason: 'session-invalid',
+        authStatus: 'unknown',
+        riskCauseCode: 'session-invalid',
+      },
+      artifacts: {},
+    }, null, 2)}\n`, 'utf8');
+    const parsed = parseDouyinActionArgs([
+      'download',
+      'https://www.douyin.com/video/7487317288315258152',
+      '--session-manifest',
+      manifestPath,
+      '--session-health-plan',
+    ]);
+
+    const request = await buildDouyinActionRequest(parsed);
+
+    assert.deepEqual(request.items, ['https://www.douyin.com/video/7487317288315258152']);
+    assert.equal(request.sessionManifest, manifestPath);
+    assert.equal(request.useUnifiedSessionHealth, true);
+    assert.equal(request.sessionStatus, 'blocked');
+    assert.equal(request.sessionReason, 'session-invalid');
+    assert.equal(request.sessionHealthManifest.healthStatus, 'blocked');
+    assert.equal(request.sessionManifestPath, path.resolve(manifestPath));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runDouyinAction blocks unhealthy download sessions before legacy inspection', async () => {
+  const result = await runDouyinAction({
+    action: 'download',
+    items: ['https://www.douyin.com/video/7487317288315258152'],
+    sessionManifest: 'runs/session/douyin/manifest.json',
+    sessionStatus: 'blocked',
+    sessionReason: 'session-invalid',
+    sessionHealthManifest: {
+      healthStatus: 'blocked',
+      reason: 'session-invalid',
+      riskCauseCode: 'session-invalid',
+    },
+    download: {
+      dryRun: true,
+    },
+  }, {
+    async inspectRequestReusableSiteSession() {
+      assert.fail('legacy session inspection should not run after unhealthy session gate');
+    },
+    async bootstrapReusableSiteSession() {
+      assert.fail('login bootstrap should not run after unhealthy session gate');
+    },
+    async queryDouyinFollow() {
+      assert.fail('follow query should not run after unhealthy session gate');
+    },
+    async spawnJsonCommand() {
+      assert.fail('download subprocess should not run after unhealthy session gate');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'session-unhealthy');
+  assert.equal(result.sessionGate.status, 'blocked');
+  assert.equal(result.sessionGate.reason, 'session-invalid');
+  assert.equal(result.plan.route, 'blocked-before-session-inspection');
+  assert.deepEqual(result.resolvedInputs, []);
+});
+
+test('runDouyinAction does not block login repair action on unhealthy session manifest', async () => {
+  let inspected = false;
+  let bootstrapped = false;
+  const result = await runDouyinAction({
+    action: 'login',
+    sessionStatus: 'blocked',
+    sessionReason: 'session-invalid',
+    sessionHealthManifest: {
+      healthStatus: 'blocked',
+      reason: 'session-invalid',
+    },
+  }, {
+    async inspectRequestReusableSiteSession() {
+      inspected = true;
+      return {
+        authAvailable: false,
+        userDataDir: 'C:/profiles/douyin.com',
+        profileHealth: { status: 'manual-required' },
+        profilePath: 'profiles/www.douyin.com.json',
+      };
+    },
+    async bootstrapReusableSiteSession() {
+      bootstrapped = true;
+      return {
+        ok: true,
+        report: {
+          status: 'completed',
+        },
+      };
+    },
+  });
+
+  assert.equal(inspected, true);
+  assert.equal(bootstrapped, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.action, 'login');
+  assert.equal(result.reasonCode, 'login-finished');
 });
 
 test('planDouyinAction routes downloads through login bootstrap when reusable auth is missing', async () => {

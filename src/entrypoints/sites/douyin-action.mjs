@@ -5,7 +5,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
-import { actionSessionMetadataFromOptions } from '../../sites/sessions/manifest-bridge.mjs';
+import {
+  actionSessionMetadataFromOptions,
+  readSessionRunManifest,
+  sessionOptionsFromRunManifest,
+} from '../../sites/sessions/manifest-bridge.mjs';
 import { runDouyinAction } from '../../sites/douyin/actions/router.mjs';
 
 function normalizeStringList(value) {
@@ -107,15 +111,32 @@ function selectCliPayload(result, output) {
   return result;
 }
 
+export async function buildDouyinActionRequest(parsed) {
+  const sessionManifestOptions = parsed.sessionManifest
+    ? sessionOptionsFromRunManifest(
+      await readSessionRunManifest(path.resolve(parsed.sessionManifest)),
+      {
+        siteKey: 'douyin',
+        host: 'www.douyin.com',
+      },
+    )
+    : {};
+  return {
+    ...parsed,
+    ...sessionManifestOptions,
+  };
+}
+
 export async function runDouyinActionCli(argv = process.argv.slice(2)) {
   initializeCliUtf8();
   const parsed = parseDouyinActionArgs(argv);
+  const request = await buildDouyinActionRequest(parsed);
   const sessionMetadata = await actionSessionMetadataFromOptions(parsed, {
     siteKey: 'douyin',
     host: 'www.douyin.com',
   });
   const result = {
-    ...await runDouyinAction(parsed),
+    ...await runDouyinAction(request),
     ...sessionMetadata,
   };
   const outputFormat = String(parsed.outputFormat || 'json').trim().toLowerCase();

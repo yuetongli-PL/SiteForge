@@ -277,6 +277,15 @@ Pass criteria:
   `node scripts/download-release-audit.mjs --runs-root runs --out-dir runs/download-release-audit`.
   The audit is read-only and must report no blocked authenticated session gate
   rows unless the run is explicitly marked `legacy-session-provider`.
+- Blocked audit rows include a `repairPlan` guidance object and the Markdown
+  report includes a `Repair Plan` column. The suggested command stays dry-run,
+  for example:
+  `node src/entrypoints/sites/session-repair-plan.mjs --site x --audit-manifest runs/download-release-audit/download-release-audit.json`.
+- Download and social action reports include `Next session repair command`
+  when the per-run session traceability gate is blocked. Social live matrix
+  reports surface the same guidance in their `Repair Plan` column. These
+  commands route to `node src/entrypoints/sites/session-repair-plan.mjs --site <site> --session-gate-reason <reason>`
+  and do not execute login, keepalive, or profile repair.
 - Session manifests stay sanitized: no cookie values, auth headers, raw cursor
   state, profile root, or `userDataDir` raw path.
 

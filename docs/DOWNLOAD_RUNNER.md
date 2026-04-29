@@ -19,13 +19,18 @@ The runner can always execute already-resolved resources passed with `--resource
 | Site key | Host | Current path | Notes |
 | --- | --- | --- | --- |
 | `22biqu` | `www.22biqu.com` | Hybrid native + legacy fallback | Native when chapter resources are provided directly, or when dry-run is given a local book-content fixture/KB root. Normal unmatched book-title/book-url downloads still fall back to `src/sites/chapter-content/download/python/book.py`. |
-| `bilibili` | `www.bilibili.com` | Legacy fallback | Uses the unified runner for plan/session/manifest wrapping, then falls back to `src/entrypoints/sites/bilibili-action.mjs download` when no concrete resources are resolved. |
-| `douyin` | `www.douyin.com` | Legacy fallback | Falls back to `src/entrypoints/sites/douyin-action.mjs download`; session use remains optional and site controlled. |
-| `xiaohongshu` | `www.xiaohongshu.com` | Legacy fallback | Falls back to `src/entrypoints/sites/xiaohongshu-action.mjs download`; do not claim unattended auth. |
-| `x` | `x.com` | Legacy fallback | Falls back to `src/entrypoints/sites/x-action.mjs` social archive/media actions. |
-| `instagram` | `www.instagram.com` | Legacy fallback | Falls back to `src/entrypoints/sites/instagram-action.mjs`; reusable session is required by the site definition, but live auth health is still an operational precondition. |
+| `bilibili` | `www.bilibili.com` | Hybrid native + legacy fallback | Native can consume fixture/injected/gated API evidence for playurl `dash`/`durl`, BV multi-P, collection/series, and UP archive shapes. Missing view/list/playurl evidence, unsupported live signatures, or incomplete payloads still fall back to `src/entrypoints/sites/bilibili-action.mjs download`. |
+| `douyin` | `www.douyin.com` | Hybrid native + legacy fallback | Native can consume fixture/injected media detail, direct media, author enumeration, and followed-update seeds without refreshing live state. Live signing, cache refresh, profile side effects, and unsupported discovery still fall back to `src/entrypoints/sites/douyin-action.mjs download` or the existing query/action layer. |
+| `xiaohongshu` | `www.xiaohongshu.com` | Hybrid native + legacy fallback | Native can consume fixture/injected note, search, author, followed, page facts, and side-effect-free fetch evidence. Header refresh, session side effects, and unsupported live API/page fetches still fall back to `src/entrypoints/sites/xiaohongshu-action.mjs download`. |
+| `x` | `x.com` | Hybrid native + legacy fallback | Native can consume gated captured archive/media candidates and local social archive artifacts. Relation flows, followed-date, checkpoint/resume, cursor discovery, and unsupported archive state still fall back to `src/entrypoints/sites/x-action.mjs`. |
+| `instagram` | `www.instagram.com` | Hybrid native + legacy fallback | Native can consume gated captured feed-user/archive payloads, media candidates, and local social archive artifacts. Relation flows, followed-users, checkpoint/resume, authenticated feed discovery, and unsupported archive state still fall back to `src/entrypoints/sites/instagram-action.mjs`. |
 
 Native runner execution means `resolved-task.json` contains concrete `resources[]` and the shared executor downloads them into `files/`. Legacy fallback means `resolved-task.json` records `legacy-downloader-required`, then the runner spawns the site entrypoint and normalizes its JSON output into the unified manifest.
+
+Hybrid native status is not a live-capability claim. Current native coverage is
+fixture-backed, request-injected, injected-fetch, or explicitly gated by
+`--resolve-network`; live smoke, real login, and real download validation remain
+separate release gates.
 
 ## Commands
 

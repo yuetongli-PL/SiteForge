@@ -393,6 +393,18 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /Real download: `not-run`/u);
 });
 
+test('download runner docs describe hybrid native migration without live claims', async () => {
+  const runnerDoc = await readFile(path.join(process.cwd(), 'docs', 'DOWNLOAD_RUNNER.md'), 'utf8');
+
+  assert.match(runnerDoc, /`bilibili` \| `www\.bilibili\.com` \| Hybrid native \+ legacy fallback/u);
+  assert.match(runnerDoc, /`douyin` \| `www\.douyin\.com` \| Hybrid native \+ legacy fallback/u);
+  assert.match(runnerDoc, /`xiaohongshu` \| `www\.xiaohongshu\.com` \| Hybrid native \+ legacy fallback/u);
+  assert.match(runnerDoc, /`x` \| `x\.com` \| Hybrid native \+ legacy fallback/u);
+  assert.match(runnerDoc, /`instagram` \| `www\.instagram\.com` \| Hybrid native \+ legacy fallback/u);
+  assert.match(runnerDoc, /Hybrid native status is not a live-capability claim/u);
+  assert.match(runnerDoc, /live smoke, real login, and real download validation remain/u);
+});
+
 test('authenticated release gate blocks missing session traceability', () => {
   assert.deepEqual(evaluateAuthenticatedSessionReleaseGate({
     plan: { sessionRequirement: 'required' },

@@ -326,8 +326,9 @@ Use this template in a branch release note or handoff:
 
 Latest local offline evidence on `main`:
 
-- `git status --short --branch --untracked-files=all`: clean,
-  `main...origin/main [ahead 67]`.
+- `git status --short --branch --untracked-files=all`: clean worktree
+  verified before evidence capture. Re-check the current ahead count before
+  any publication step.
 - `node --test tests\node\*.test.mjs`: 668 passed, 0 failed.
 - `python -m unittest discover -s tests\python -p "test_*.py"`: 46 tests OK.
 - Live smoke: `not-run`.

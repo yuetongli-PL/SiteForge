@@ -387,6 +387,10 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /Next session repair command/u);
   assert.match(releaseGate, /session-repair-plan\.mjs --site/u);
   assert.match(releaseGate, /Offline only; no live\/login\/download side effects/u);
+  assert.match(releaseGate, /## Current Local Evidence/u);
+  assert.match(releaseGate, /node --test tests\\node\\\*\.test\.mjs`: 668 passed, 0 failed/u);
+  assert.match(releaseGate, /python -m unittest discover -s tests\\python -p "test_\*\.py"`: 46 tests OK/u);
+  assert.match(releaseGate, /Real download: `not-run`/u);
 });
 
 test('authenticated release gate blocks missing session traceability', () => {

@@ -322,6 +322,18 @@ Use this template in a branch release note or handoff:
 | Release notes | Branch-scoped note review | `pass` / `blocked` | No Phase 2 history rewrite |
 | Live smoke | Approved artifacts or `not-run` | `pass` / `blocked` / `not-run` | State whether live behavior is claimed |
 
+## Current Local Evidence
+
+Latest local offline evidence on `main`:
+
+- `git status --short --branch --untracked-files=all`: clean,
+  `main...origin/main [ahead 67]`.
+- `node --test tests\node\*.test.mjs`: 668 passed, 0 failed.
+- `python -m unittest discover -s tests\python -p "test_*.py"`: 46 tests OK.
+- Live smoke: `not-run`.
+- Real login: `not-run`.
+- Real download: `not-run`.
+
 ## Publication Boundary
 
 This document stops before publication. After all gates pass, a separate

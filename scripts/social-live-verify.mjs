@@ -330,6 +330,7 @@ function socialCommonArgs(options, runDir) {
     String(options.timeout),
     '--run-dir',
     runDir,
+    '--session-health-plan',
     '--reuse-login-state',
     options.headless ? '--headless' : '--no-headless',
   ];

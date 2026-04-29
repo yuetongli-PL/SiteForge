@@ -129,6 +129,24 @@ test('social-live-verify selected default matrix includes social session health 
   assert.equal(ids.includes('instagram-session-health'), true);
 });
 
+test('social-live-verify adds unified session health plan to social action cases', () => {
+  const options = parseArgs(boundedArgs());
+  const matrix = buildMatrix(options, 'run-1');
+  const actionCaseIds = [
+    'x-full-archive',
+    'instagram-full-archive',
+    'instagram-followed-date',
+    'x-media-download',
+    'instagram-media-download',
+  ];
+
+  for (const id of actionCaseIds) {
+    const entry = matrix.find((candidate) => candidate.id === id);
+    assert.ok(entry, id);
+    assert.equal(entry.args.includes('--session-health-plan'), true, id);
+  }
+});
+
 test('social-live-verify forwards media download tuning into media cases', () => {
   const options = parseArgs([
     ...boundedArgs(['--case', 'x-media-download']),

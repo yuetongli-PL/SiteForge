@@ -181,6 +181,20 @@ test('session repair plan main prints JSON and does not spawn child commands', a
   assert.equal(parsed.dryRun, true);
 });
 
+test('session repair plan entrypoint stays command-construction only', async () => {
+  const source = await readFile(
+    path.join(process.cwd(), 'src', 'entrypoints', 'sites', 'session-repair-plan.mjs'),
+    'utf8',
+  );
+
+  assert.doesNotMatch(source, /node:child_process/u);
+  assert.doesNotMatch(source, /\bspawn\s*\(/u);
+  assert.doesNotMatch(source, /\bexec\s*\(/u);
+  assert.doesNotMatch(source, /\bexecFile\s*\(/u);
+  assert.match(source, /approved-not-run/u);
+  assert.match(source, /command-construction-only/u);
+});
+
 test('session repair plan execute mode records approved command without spawning', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-session-repair-plan-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));

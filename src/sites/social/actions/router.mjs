@@ -5642,12 +5642,43 @@ function lastFlagValue(flags, key, fallback = undefined) {
   return value ?? fallback;
 }
 
+export const SOCIAL_ACTION_HELP = `Usage:
+  node src/entrypoints/sites/x-action.mjs <action> <account-or-query> [options]
+  node src/entrypoints/sites/instagram-action.mjs <action> <account-or-query> [options]
+
+Common actions include profile-content, full-archive, search, profile-following,
+profile-followers, followed-posts-by-date, and account-info.
+
+Options:
+  --site <x|instagram>              Override the wrapper default site.
+  --account <handle>                Target account or profile handle.
+  --query <value>                   Search query.
+  --content-type <type>             posts, replies, media, likes, or site-specific tab.
+  --download-media                  Download media candidates discovered by the action.
+  --max-items <n>                   Limit archive or content items.
+  --max-media-downloads <n>         Limit downloaded media files.
+  --max-users <n>                   Limit relation/followed scans.
+  --run-dir <dir>                   Exact artifact run directory.
+  --out-dir <dir>                   Artifact output root.
+  --resume                          Resume from existing checkpoint state.
+  --dry-run                         Plan without performing browser/media work when supported.
+  --session-manifest <path>         Consume a unified runs/session health manifest.
+  --session-health-plan             Generate and consume a unified session health manifest first.
+  --no-session-health-plan          Use the legacy session provider path.
+  --format <json|markdown>          Output format. Default: json.
+  -h, --help                        Show this help.
+`;
+
 export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {}) {
   const args = [...argv];
   const positionals = [];
   const flags = {};
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
+    if (token === '-h') {
+      appendFlag(flags, 'help', true);
+      continue;
+    }
     if (!token.startsWith('--')) {
       positionals.push(token);
       continue;
@@ -5680,6 +5711,7 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {
   const site = lastFlagValue(flags, 'site', defaults.site);
   const apiCursorFlag = lastFlagValue(flags, 'api-cursor');
   return {
+    help: flags.help === true,
     site,
     action,
     account: lastFlagValue(flags, 'account', lastFlagValue(flags, 'handle', lastFlagValue(flags, 'user', firstItem))),
@@ -5735,6 +5767,10 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {
 export async function runSocialActionCli(argv = process.argv.slice(2), defaults = {}) {
   initializeCliUtf8();
   const parsed = parseSocialActionArgs(argv, defaults);
+  if (parsed.help) {
+    process.stdout.write(SOCIAL_ACTION_HELP);
+    return { help: SOCIAL_ACTION_HELP };
+  }
   const result = await runSocialAction(parsed);
   if (String(parsed.outputFormat ?? 'json').toLowerCase() === 'markdown') {
     process.stdout.write(result.markdown || '');

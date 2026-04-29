@@ -12,7 +12,9 @@ import {
   parseSocialApiPayload,
   parseSocialActionArgs,
   runSocialAction,
+  runSocialActionCli,
   sanitizeSocialApiRequestTemplate,
+  SOCIAL_ACTION_HELP,
 } from '../../src/sites/social/actions/router.mjs';
 
 test('social action planner builds X user content, relation, and date search routes', () => {
@@ -2367,6 +2369,29 @@ test('social action CLI parser keeps site defaults and maps common flags', () =>
   assert.equal(aliasParsed.mediaDownloadConcurrency, '4');
   assert.equal(aliasParsed.mediaDownloadRetries, '6');
   assert.equal(aliasParsed.mediaDownloadBackoffMs, '1500');
+});
+
+test('social action CLI help exposes unified session flags without running actions', async () => {
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, ...args) => {
+    output += String(chunk);
+    const callback = args.find((arg) => typeof arg === 'function');
+    callback?.();
+    return true;
+  };
+  try {
+    const result = await runSocialActionCli(['--help'], { site: 'x' });
+
+    assert.deepEqual(result, { help: SOCIAL_ACTION_HELP });
+    assert.match(output, /x-action\.mjs/u);
+    assert.match(output, /instagram-action\.mjs/u);
+    assert.match(output, /--session-manifest <path>/u);
+    assert.match(output, /--session-health-plan/u);
+    assert.match(output, /--no-session-health-plan/u);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
 });
 
 test('social action dry-run consumes session manifest metadata without opening a browser', async (t) => {

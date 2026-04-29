@@ -14,6 +14,8 @@ import { inferPageTypeFromUrl } from '../../core/page-types.mjs';
 import { readJsonFile } from '../../../infra/io.mjs';
 import { inspectRequestReusableSiteSession } from '../../../infra/auth/site-login-service.mjs';
 import { queryXiaohongshuFollow } from '../queries/follow-query.mjs';
+import { summarizeSessionRunManifest } from '../../sessions/manifest-bridge.mjs';
+import { runSessionTask } from '../../sessions/runner.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
@@ -2409,9 +2411,47 @@ export async function planXiaohongshuAction(request) {
   };
 }
 
+async function resolveXiaohongshuUnifiedSessionRequest(plan, request = {}, deps = {}) {
+  if (
+    plan.followedUsers !== true
+    || request.useUnifiedSessionHealth !== true
+    || request.sessionManifest
+  ) {
+    return request;
+  }
+  const sessionRunDir = request.sessionRunDir
+    ? path.resolve(request.sessionRunDir)
+    : request.outDir
+      ? path.join(path.resolve(request.outDir), 'session-health')
+      : undefined;
+  const sessionResult = await (deps.runSessionTask ?? runSessionTask)({
+    action: 'health',
+    site: 'xiaohongshu',
+    host: 'www.xiaohongshu.com',
+    purpose: 'followed',
+    profilePath: request.profilePath,
+    browserProfileRoot: request.browserProfileRoot,
+    userDataDir: request.userDataDir,
+    runDir: sessionRunDir,
+    sessionRequirement: 'required',
+  }, {}, deps.sessionRunnerDeps ?? deps);
+  const summary = summarizeSessionRunManifest(sessionResult.manifest);
+  return {
+    ...request,
+    sessionProvider: 'unified-session-runner',
+    sessionStatus: summary.healthStatus,
+    sessionReason: summary.reason ?? summary.riskCauseCode ?? summary.healthStatus,
+    riskSignals: summary.riskSignals,
+    expiresAt: summary.expiresAt,
+    sessionHealthManifest: summary,
+    sessionManifestPath: summary.artifacts.manifest,
+  };
+}
+
 export async function runXiaohongshuAction(request, deps = {}) {
   const plan = await planXiaohongshuAction(request);
-  const sessionGate = buildAuthRequiredSessionBlock(plan, request);
+  const effectiveRequest = await resolveXiaohongshuUnifiedSessionRequest(plan, request, deps);
+  const sessionGate = buildAuthRequiredSessionBlock(plan, effectiveRequest);
   if (sessionGate) {
     const resolution = {
       attemptedPages: 0,
@@ -2443,7 +2483,7 @@ export async function runXiaohongshuAction(request, deps = {}) {
       markdown: buildDownloadActionMarkdown(null, resolution),
     };
   }
-  const resolved = await resolveConcreteDownloadInputs(request, deps);
+  const resolved = await resolveConcreteDownloadInputs(effectiveRequest, deps);
   if (!resolved.items.length) {
     const followedUsersReasonCode = resolved.resolution.followedUsersRequested === true
       ? (
@@ -2467,7 +2507,7 @@ export async function runXiaohongshuAction(request, deps = {}) {
       markdown: buildDownloadActionMarkdown(null, resolved.resolution),
     };
   }
-  const invoked = await invokeDownloadCli(request, resolved.items, deps);
+  const invoked = await invokeDownloadCli(effectiveRequest, resolved.items, deps);
   if (invoked.process.code !== 0) {
     return {
       ok: false,

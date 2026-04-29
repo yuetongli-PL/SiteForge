@@ -308,6 +308,62 @@ test('runXiaohongshuAction blocks followed-users when unified session manifest i
   assert.equal(result.resolution.followedUsersStatus, 'blocked');
 });
 
+test('runXiaohongshuAction blocks generated unhealthy followed-users session health before follow query', async () => {
+  const result = await runXiaohongshuAction({
+    action: 'download',
+    items: [],
+    followedUsers: true,
+    useUnifiedSessionHealth: true,
+    download: {
+      dryRun: true,
+    },
+  }, {
+    async runSessionTask() {
+      return {
+        manifest: {
+          plan: {
+            siteKey: 'xiaohongshu',
+            host: 'www.xiaohongshu.com',
+            purpose: 'followed',
+            sessionRequirement: 'required',
+          },
+          health: {
+            status: 'blocked',
+            reason: 'session-invalid',
+            riskCauseCode: 'session-invalid',
+          },
+          repairPlan: {
+            action: 'site-login',
+            command: 'site-login',
+            reason: 'session-invalid',
+            requiresApproval: true,
+          },
+          artifacts: {
+            manifest: 'runs/session/xiaohongshu/generated/manifest.json',
+            runDir: 'runs/session/xiaohongshu/generated',
+          },
+        },
+      };
+    },
+    async queryXiaohongshuFollow() {
+      assert.fail('follow query should not run after generated unhealthy session gate');
+    },
+    async fetchImpl() {
+      assert.fail('fetch should not run after generated unhealthy session gate');
+    },
+    async spawnJsonCommand() {
+      assert.fail('download subprocess should not run after generated unhealthy session gate');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'session-unhealthy');
+  assert.equal(result.sessionGate.status, 'blocked');
+  assert.equal(result.sessionGate.reason, 'session-invalid');
+  assert.equal(result.sessionGate.provider, 'unified-session-runner');
+  assert.equal(result.resolution.followedUsersStatus, 'blocked');
+});
+
 test('runXiaohongshuAction resolves a search query into image-note bundles and scans past video candidates', async () => {
   const siteProfile = await readJsonFile(path.resolve('profiles/www.xiaohongshu.com.json'));
   let capturedArgs = null;
@@ -324,6 +380,7 @@ test('runXiaohongshuAction resolves a search query into image-note bundles and s
     profilePath: path.resolve('profiles/www.xiaohongshu.com.json'),
     timeoutMs: 45_000,
     reuseLoginState: false,
+    useUnifiedSessionHealth: true,
     sessionStatus: 'blocked',
     sessionReason: 'session-invalid',
     download: {
@@ -332,6 +389,9 @@ test('runXiaohongshuAction resolves a search query into image-note bundles and s
     },
   }, {
     siteProfile,
+    async runSessionTask() {
+      assert.fail('public search downloads should not generate a session health plan');
+    },
     async fetchImpl(url) {
       const html = fetchMap.get(String(url));
       assert.ok(html, `unexpected fetch url: ${url}`);
@@ -376,6 +436,10 @@ test('runXiaohongshuAction expands followed users into author-page image-note do
   const siteProfile = await readJsonFile(path.resolve('profiles/www.xiaohongshu.com.json'));
   let capturedPayload = null;
   let capturedFollowOptions = null;
+  let sessionHealthRequested = false;
+  const outDir = path.join(os.tmpdir(), 'bwk-xiaohongshu-session-plan-ready');
+  const sessionRunDir = path.join(outDir, 'session-health');
+  const sessionManifest = path.join(sessionRunDir, 'manifest.json');
   const alphaUrl = 'https://www.xiaohongshu.com/user/profile/u-1';
   const betaUrl = 'https://www.xiaohongshu.com/user/profile/u-2';
   const fetchMap = new Map([
@@ -403,6 +467,8 @@ test('runXiaohongshuAction expands followed users into author-page image-note do
     followedUsers: true,
     followedUserLimit: 2,
     profilePath: path.resolve('profiles/www.xiaohongshu.com.json'),
+    outDir,
+    useUnifiedSessionHealth: true,
     reuseLoginState: false,
     download: {
       dryRun: true,
@@ -411,6 +477,33 @@ test('runXiaohongshuAction expands followed users into author-page image-note do
     },
   }, {
     siteProfile,
+    async runSessionTask(request) {
+      sessionHealthRequested = true;
+      assert.equal(request.site, 'xiaohongshu');
+      assert.equal(request.host, 'www.xiaohongshu.com');
+      assert.equal(request.purpose, 'followed');
+      assert.equal(request.sessionRequirement, 'required');
+      assert.equal(request.runDir, sessionRunDir);
+      return {
+        manifest: {
+          plan: {
+            siteKey: 'xiaohongshu',
+            host: 'www.xiaohongshu.com',
+            purpose: 'followed',
+            sessionRequirement: 'required',
+          },
+          health: {
+            status: 'ready',
+            authStatus: 'authenticated',
+            identityConfirmed: true,
+          },
+          artifacts: {
+            manifest: sessionManifest,
+            runDir: sessionRunDir,
+          },
+        },
+      };
+    },
     async queryXiaohongshuFollow(inputUrl, options) {
       capturedFollowOptions = { inputUrl, options };
       return {
@@ -455,6 +548,7 @@ test('runXiaohongshuAction expands followed users into author-page image-note do
 
   assert.equal(result.ok, true);
   assert.equal(result.reasonCode, 'download-started');
+  assert.equal(sessionHealthRequested, true);
   assert.equal(capturedFollowOptions?.options?.intent, 'list-followed-users');
   assert.equal(capturedFollowOptions?.options?.limit, 2);
   assert.equal(result.resolution.followedUsersRequested, true);

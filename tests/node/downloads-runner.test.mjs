@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { readJsonFile, writeJsonFile } from '../../src/infra/io.mjs';
-import { parseArgs } from '../../src/entrypoints/sites/download.mjs';
+import { main as runDownloadCli, parseArgs } from '../../src/entrypoints/sites/download.mjs';
 import {
   DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION,
   normalizeDownloadRunManifest,
@@ -266,6 +266,27 @@ test('download CLI parser defaults required sessions to unified health plans and
 
   assert.equal(requiredArgs.useUnifiedSessionHealth, true);
   assert.equal(legacyArgs.useUnifiedSessionHealth, false);
+});
+
+test('download CLI help exposes unified session flags without running tasks', async () => {
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, ...args) => {
+    output += String(chunk);
+    if (typeof args.at(-1) === 'function') args.at(-1)();
+    return true;
+  };
+  try {
+    await runDownloadCli(['--help']);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  assert.match(output, /--session-manifest <path>/u);
+  assert.match(output, /--session-health-plan/u);
+  assert.match(output, /--no-session-health-plan/u);
+  assert.doesNotMatch(output, /^Status:/mu);
+  assert.doesNotMatch(output, /^Manifest:/mu);
 });
 
 test('download CLI parser accepts derived mux compatibility aliases', () => {

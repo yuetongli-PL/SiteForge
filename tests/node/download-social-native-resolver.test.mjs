@@ -112,6 +112,19 @@ test('social relation and followed-date actions stay on legacy even when native 
   assert.equal(followedResolved.resources.length, 0);
   assert.equal(followedResolved.completeness.reason, 'legacy-downloader-required');
   assert.equal(followedResolved.metadata.resolution.unsupportedReason, 'followed-date-legacy-only');
+
+  const { resolved: resumeResolved } = await resolveSocial('x', {
+    input: 'https://x.com/openai',
+    nativeResolver: true,
+    fullArchive: true,
+    resume: true,
+    mediaItems: [{ url: 'https://video.twimg.example.test/resume.mp4' }],
+    dryRun: true,
+  });
+
+  assert.equal(resumeResolved.resources.length, 0);
+  assert.equal(resumeResolved.completeness.reason, 'legacy-downloader-required');
+  assert.equal(resumeResolved.metadata.resolution.unsupportedReason, 'checkpoint-resume-legacy-only');
 });
 
 test('social native resolver reports cursor discovery fallback when gated without archive media payloads', async () => {
@@ -395,6 +408,96 @@ test('social native resolver recognizes replay state schema v1 without executing
   assert.equal(resolved.metadata.resolution.requestTemplateAvailable, true);
   assert.equal(resolved.metadata.resolution.nextCursor, undefined);
   assert.equal(resolved.metadata.resolution.requestTemplate, undefined);
+  assert.deepEqual(resolved.metadata.resolution.archiveSchema, {
+    archiveSchemaVersion: 1,
+    archiveContractVersion: undefined,
+    artifactRows: 1,
+    cursorReplayStatus: 'captured-only',
+    checkpointResumeMigrated: false,
+    relationMigrated: false,
+    followedDateMigrated: false,
+    rateLimitEvidence: undefined,
+    apiDriftEvidence: undefined,
+  });
+});
+
+test('social native resolver records archive schema v2 metadata without leaking cursor payloads', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-native-schema-v2-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+
+  const itemsPath = path.join(runDir, 'items.jsonl');
+  const statePath = path.join(runDir, 'state.json');
+  const manifestPath = path.join(runDir, 'manifest.json');
+  await writeFile(itemsPath, [
+    JSON.stringify({
+      kind: 'post',
+      id: 'v2-post-1',
+      url: 'https://x.com/openai/status/v2-post-1',
+      media: [{
+        id: 'v2-media-1',
+        type: 'photo',
+        media_url_https: 'https://pbs.twimg.example.test/v2/photo.jpg',
+      }],
+    }),
+    JSON.stringify({
+      kind: 'media',
+      id: 'v2-media-row',
+      url: 'https://pbs.twimg.example.test/v2/direct.jpg',
+    }),
+    JSON.stringify({ kind: 'account', handle: 'openai' }),
+  ].join('\n'), 'utf8');
+  await writeFile(statePath, JSON.stringify({
+    schemaVersion: 2,
+    contractVersion: 'social-archive-v2',
+    cursor: {
+      nextCursor: 'secret-cursor-v2',
+      requestTemplate: {
+        url: 'https://x.com/i/api/graphql/secret/UserTweets',
+      },
+    },
+    rateLimit: {
+      remaining: 0,
+      resetAt: '2026-04-29T00:00:00.000Z',
+    },
+    apiDrift: {
+      reason: 'shape-changed',
+    },
+  }), 'utf8');
+  await writeFile(manifestPath, JSON.stringify({
+    schemaVersion: 2,
+    contractVersion: 'social-archive-v2',
+    artifacts: {
+      itemsJsonl: itemsPath,
+      state: statePath,
+    },
+  }), 'utf8');
+
+  const { resolved } = await resolveSocial('x', {
+    input: 'https://x.com/openai',
+    nativeResolver: true,
+    fullArchive: true,
+    socialRunDir: runDir,
+    dryRun: true,
+  });
+
+  assert.equal(resolved.resources.length, 2);
+  assert.deepEqual(resolved.resources.map((resource) => resource.url), [
+    'https://pbs.twimg.example.test/v2/photo.jpg',
+    'https://pbs.twimg.example.test/v2/direct.jpg',
+  ]);
+  assert.deepEqual(resolved.metadata.resolution.archiveSchema, {
+    archiveSchemaVersion: 2,
+    archiveContractVersion: 'social-archive-v2',
+    artifactRows: 2,
+    cursorReplayStatus: 'captured-only',
+    checkpointResumeMigrated: false,
+    relationMigrated: false,
+    followedDateMigrated: false,
+    rateLimitEvidence: true,
+    apiDriftEvidence: true,
+  });
+  assert.equal(JSON.stringify(resolved.metadata.resolution).includes('secret-cursor-v2'), false);
+  assert.equal(JSON.stringify(resolved.metadata.resolution).includes('/secret/'), false);
 });
 
 test('instagram native resolver maps GraphQL sidecar archive media', async () => {

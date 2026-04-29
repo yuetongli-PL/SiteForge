@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 import {
   buildSessionRepairPlanResult,
@@ -38,15 +41,24 @@ test('session repair plan maps injected unhealthy health without executing ops',
   assert.equal(result.repairPlan.requiresApproval, true);
 });
 
-test('session repair plan rejects execute mode until separately approved', async () => {
-  await assert.rejects(
-    () => buildSessionRepairPlanResult({
-      site: 'douyin',
-      execute: true,
-      status: 'manual-required',
-    }),
-    /--execute is not implemented/u,
-  );
+test('session repair plan execute mode blocks without matching approval', async () => {
+  const result = await buildSessionRepairPlanResult({
+    site: 'douyin',
+    host: 'www.douyin.com',
+    execute: true,
+    status: 'manual-required',
+    reason: 'login-required',
+  });
+
+  assert.equal(result.dryRun, false);
+  assert.equal(result.execution.status, 'blocked');
+  assert.equal(result.execution.reason, 'approval-required');
+  assert.equal(result.execution.command.command, 'site-login');
+  assert.deepEqual(result.execution.command.argv, [
+    'node',
+    'src/entrypoints/sites/site-login.mjs',
+    'https://www.douyin.com/',
+  ]);
 });
 
 test('session repair plan main prints JSON and does not spawn child commands', async () => {
@@ -68,5 +80,48 @@ test('session repair plan main prints JSON and does not spawn child commands', a
   assert.equal(result.repairPlan.command, 'site-login');
   assert.equal(parsed.repairPlan.command, 'site-login');
   assert.equal(parsed.dryRun, true);
+});
+
+test('session repair plan execute mode records approved command without spawning', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-session-repair-plan-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const outFile = path.join(runRoot, 'repair-plan.json');
+
+  const result = await buildSessionRepairPlanResult({
+    site: 'instagram',
+    host: 'www.instagram.com',
+    execute: true,
+    approveAction: 'site-keepalive',
+    status: 'quarantine',
+    reason: 'network-identity-drift',
+    outFile,
+  });
+
+  assert.equal(result.execution.status, 'approved-not-run');
+  assert.equal(result.execution.reason, 'command-construction-only');
+  assert.deepEqual(result.execution.command.argv, [
+    'node',
+    'src/entrypoints/sites/site-keepalive.mjs',
+    'https://www.instagram.com/',
+  ]);
+  const persisted = JSON.parse(await readFile(outFile, 'utf8'));
+  assert.equal(persisted.execution.status, 'approved-not-run');
+  assert.equal(typeof persisted.createdAt, 'string');
+});
+
+test('session repair plan execute mode blocks dangerous repair actions', async () => {
+  const result = await buildSessionRepairPlanResult({
+    site: 'douyin',
+    host: 'www.douyin.com',
+    execute: true,
+    approveAction: 'rebuild-profile',
+    status: 'blocked',
+    reason: 'profile-health-risk',
+  });
+
+  assert.equal(result.repairPlan.action, 'rebuild-profile');
+  assert.equal(result.execution.status, 'blocked');
+  assert.equal(result.execution.reason, 'dangerous-action-requires-human-runbook');
+  assert.equal(result.execution.command, null);
 });
 

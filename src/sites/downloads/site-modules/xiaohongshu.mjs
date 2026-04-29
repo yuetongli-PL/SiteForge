@@ -180,6 +180,21 @@ function metadataObject(request = {}) {
   return isObject(request.metadata) ? request.metadata : {};
 }
 
+function headerFreshnessEvidence(request = {}, sessionLease = null) {
+  const requestHeaderNames = isObject(request.headers) ? Object.keys(request.headers).sort() : [];
+  const sessionHeaderNames = isObject(sessionLease?.headers) ? Object.keys(sessionLease.headers).sort() : [];
+  const allHeaderNames = [...new Set([...requestHeaderNames, ...sessionHeaderNames])].sort();
+  return {
+    contractVersion: 'xiaohongshu-header-freshness-v1',
+    sessionStatus: firstText(sessionLease?.status) || undefined,
+    headerNames: allHeaderNames,
+    requestHeaderNames,
+    sessionHeaderNames,
+    cookieEvidence: allHeaderNames.some((name) => name.toLowerCase() === 'cookie') || undefined,
+    freshnessClaimed: request.headersFresh === true || request.headerFreshness === 'fresh' || undefined,
+  };
+}
+
 function pageFactCandidates(request = {}) {
   const metadata = metadataObject(request);
   return [
@@ -484,6 +499,7 @@ async function followedNotesFromInjectedQuery(request = {}, plan = {}, sessionLe
     plan,
     sessionLease,
     allowNetworkResolve: context.allowNetworkResolve === true,
+    headerFreshness: headerFreshnessEvidence(request, sessionLease),
     limit: request.followedUserLimit ?? request.maxItems ?? plan.policy?.maxItems,
   });
   return resultNotes(result).map((note) => ({ sourceType: 'followed-users', note }));
@@ -508,12 +524,14 @@ function requestWithSeeds(request = {}, seeds = [], resolution = {}) {
 }
 
 async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLease = null, context = {}) {
+  const headerFreshness = headerFreshnessEvidence(request, sessionLease);
   const pageFactSeeds = pageFactCandidates(request)
     .flatMap((facts) => seedsFromPageFacts(facts, request, plan));
   if (pageFactSeeds.length > 0) {
     return requestWithSeeds(request, pageFactSeeds, {
       sourceType: 'page-facts',
       resolvedNotes: pageFactCandidates(request).length,
+      headerFreshness,
     });
   }
 
@@ -522,6 +540,7 @@ async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLeas
     return requestWithSeeds(request, htmlSeeds, {
       sourceType: 'fixture-html',
       resolvedNotes: 1,
+      headerFreshness,
     });
   }
 
@@ -530,6 +549,7 @@ async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLeas
     return requestWithSeeds(request, fetchSeeds, {
       sourceType: 'fetched-html',
       resolvedNotes: 1,
+      headerFreshness,
     });
   }
 
@@ -543,6 +563,7 @@ async function requestWithPageResolverSeeds(request = {}, plan = {}, sessionLeas
       sourceType: 'note-list',
       attemptedNotes: noteEntries.length,
       resolvedNotes: new Set(noteEntries.map((entry) => firstText(entry.note.noteId, entry.note.id, entry.note.note_id))).size || noteEntries.length,
+      headerFreshness,
     });
   }
   return null;

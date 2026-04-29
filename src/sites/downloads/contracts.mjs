@@ -53,6 +53,16 @@ export const DOWNLOAD_RUN_STATUSES = Object.freeze([
 
 export const DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION = 1;
 
+export const LIVE_VALIDATION_STATUSES = Object.freeze([
+  'not-run',
+  'planned',
+  'approved',
+  'passed',
+  'partial',
+  'failed',
+  'blocked',
+]);
+
 function valueOrDefault(value, fallback) {
   return value === undefined || value === null || value === '' ? fallback : value;
 }
@@ -395,6 +405,27 @@ function normalizeArtifactRefs(value = {}) {
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+export function normalizeLiveValidation(value = undefined) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const status = enumValue(value.status, LIVE_VALIDATION_STATUSES, 'not-run');
+  const result = {
+    status,
+    requiresApproval: value.requiresApproval !== false || undefined,
+    approvalId: normalizeText(value.approvalId) || undefined,
+    siteKey: normalizeText(value.siteKey) || undefined,
+    scenario: normalizeText(value.scenario) || undefined,
+    reason: normalizeText(value.reason) || undefined,
+    evidenceLevel: normalizeText(value.evidenceLevel) || undefined,
+    liveSmoke: value.liveSmoke === true || undefined,
+    realDownload: value.realDownload === true || undefined,
+    authenticated: value.authenticated === true || undefined,
+    checkedAt: normalizeText(value.checkedAt) || undefined,
+  };
+  return Object.fromEntries(Object.entries(result).filter(([, entryValue]) => entryValue !== undefined && entryValue !== ''));
+}
+
 export function normalizeDownloadRunArtifacts(raw = {}, context = {}) {
   const artifactInput = raw && typeof raw === 'object' ? raw : {};
   const contextInput = context && typeof context === 'object' ? context : {};
@@ -471,6 +502,7 @@ export function normalizeDownloadRunManifest(raw = {}, context = {}) {
     resumeCommand: normalizeText(raw.resumeCommand ?? context.resumeCommand) || undefined,
     artifacts: normalizeDownloadRunArtifacts(raw.artifacts, context.artifacts),
     legacy: raw.legacy ?? context.legacy ?? undefined,
+    liveValidation: normalizeLiveValidation(raw.liveValidation ?? context.liveValidation),
     session: normalizeManifestSession(raw.session ?? context.session),
     createdAt: normalizeText(raw.createdAt ?? context.createdAt) || new Date().toISOString(),
     finishedAt: normalizeText(raw.finishedAt ?? context.finishedAt) || undefined,

@@ -1,93 +1,51 @@
 # Download Stack Local Release Closeout
 
-This document records the local release stack state only. It is not a push
-plan to execute from this worktree.
+This document records the current local closeout state for the integrated
+download architecture. It is not a push or pull-request plan.
 
-## Current Local Stack
+## Current Local State
 
+- Active branch: `main`.
 - Remote base: `origin/main`.
-- Phase 1 base branch: local `main` / `codex/download-runner-base`, both at
-  the same commit and ahead of `origin/main` by 6 commits.
-- Phase 2 branch: `codex/download-runner-phase2`, ahead of local `main` by 22 commits.
-- Native resolver branch: `codex/download-native-resolvers`, stacked on `codex/download-runner-phase2`.
-- 22biqu URL resolver follow-on branch: `codex/download-native-22biqu-url-resolver`, ahead of `codex/download-native-resolvers` by 1 commit.
-- Page seed resolver follow-on branch: `codex/download-native-page-seeds`, ahead of `codex/download-native-22biqu-url-resolver` by 1 commit.
-- Current worktree branch: `codex/download-native-resolvers`.
+- Local branch state: `main` contains the integrated download architecture work
+  and is ahead of `origin/main`.
+- Worktree policy: continue in `C:\Users\lyt-p\Desktop\Browser-Wiki-Skill`;
+  do not create extra branches or worktrees unless explicitly requested.
+- Publication policy: no push and no PR from this closeout task.
 
-Stack shape:
-
-```text
-origin/main
-  -> local main / codex/download-runner-base (+6)
-  -> codex/download-runner-phase2 (+22)
-  -> codex/download-native-resolvers
-  -> codex/download-native-22biqu-url-resolver (+1)
-  -> codex/download-native-page-seeds (+1)
-```
-
-Re-check exact ahead counts immediately before publication instead of treating
-this document as the source of truth:
+Re-check exact state immediately before any local commit or publication:
 
 ```powershell
-git rev-list --left-right --count codex/download-runner-phase2...codex/download-native-resolvers
-git rev-list --left-right --count codex/download-native-resolvers...codex/download-native-22biqu-url-resolver
-git rev-list --left-right --count codex/download-native-22biqu-url-resolver...codex/download-native-page-seeds
+git status --short --branch --untracked-files=all
+git branch --list -vv
+git log --oneline --decorate --max-count=30
 ```
 
-## Publication Order
+## Integrated Capability Boundary
 
-Use stacked review order. Do not collapse the stack into a single PR unless the
-review target intentionally changes.
-
-1. Publish Phase 1 base against `origin/main`.
-2. Publish Phase 2 against the Phase 1 base branch after Phase 1 is available
-   for review or merged.
-3. Publish native resolvers against `codex/download-runner-phase2` after Phase 2
-   is available for review or merged.
-4. Publish 22biqu URL resolver against `codex/download-native-resolvers`.
-5. Publish page seed resolvers against `codex/download-native-22biqu-url-resolver`.
-
-Expected PR bases:
-
-```text
-base PR:              local main / codex/download-runner-base -> origin/main
-phase2 PR:            codex/download-runner-phase2 -> main
-native resolvers PR:  codex/download-native-resolvers -> codex/download-runner-phase2
-22biqu URL PR:        codex/download-native-22biqu-url-resolver -> codex/download-native-resolvers
-page seed PR:         codex/download-native-page-seeds -> codex/download-native-22biqu-url-resolver
-```
-
-If a lower stack branch is rebased, merged, or renamed before publication,
-re-check the three ahead counts before opening the next PR.
-
-## Parallel Sibling Branches
-
-These sibling branches were created from an earlier `codex/download-native-resolvers`
-tip and currently each differs from the latest native branch by one native
-release-documentation commit plus one branch-specific commit. They can still be
-reviewed in parallel after the native resolver stack is available, but re-check
-or rebase their base before publication if the review target requires a clean
-zero-behind branch:
-
-- `codex/download-legacy-reduction`
-- `codex/download-session-governance`
-- `codex/download-live-smoke-boundaries`
-
-Do not force these sibling branches into a linear sequence on top of each other
-unless review feedback or conflict resolution explicitly requires that. Their
-default review base is `codex/download-native-resolvers`, not another sibling.
+- Contracts, runner, executor, media executor, site modules, legacy adapter
+  bridge, and session-manager bridge are integrated on `main`.
+- Native resolvers cover fixture-backed, request-injected, injected-fetch, and
+  gated-network evidence paths for 22biqu, Bilibili, Xiaohongshu, Douyin, X,
+  and Instagram.
+- Bilibili and Xiaohongshu real fetch paths remain behind `--resolve-network`;
+  injected fetch tests cover the code path without hitting live sites.
+- Derived DASH mux is explicit opt-in through `--enable-derived-mux`,
+  `--mux-derived-media`, or `--dash-mux`. Offline tests use injected mux hooks;
+  real ffmpeg/live media validation is still not run.
+- Live validation is represented as manifest metadata through
+  `--live-validation` and `--live-approval-id`. These flags do not run live
+  smoke by themselves.
+- Session repair `--execute` builds an auditable approved command only. It does
+  not spawn login, keepalive, profile rebuild, or live smoke commands.
 
 ## Explicit Non-Actions
 
 - Do not push from this local closeout task.
 - Do not open PRs from this local closeout task.
-- Do not run test suites from this local closeout task.
-- Do not perform any further original worktree cleanup from this release
-  closeout. The approved social dirty-file cleanup was handled separately with
-  a local backup patch.
-
-## Out Of Scope
-
-The original social dirty patch was backed up locally at
-`reports/social-dirty-backup.patch` and the two original worktree files were
-restored. Keep that local backup out of the release stack and do not publish it.
+- Do not run live smoke, real login, or real downloads without a separate
+  bounded approval.
+- Do not remove legacy fallback for a task shape until fixture, injected,
+  runner, and live validation evidence are all present.
+- Do not stage by broad commands such as `git add -A` or `git commit -a`; stage
+  only the intended paths.

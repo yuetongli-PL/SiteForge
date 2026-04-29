@@ -134,6 +134,7 @@ test('download run manifest schema shape is stable', () => {
     'resumeCommand',
     'artifacts',
     'legacy',
+    'liveValidation',
     'session',
     'createdAt',
     'finishedAt',
@@ -189,6 +190,35 @@ test('download CLI parser accepts resume flags emitted by manifests', () => {
     '--no-resume',
   ]);
   assert.equal(freshArgs.resume, false);
+});
+
+test('download CLI parser exposes native network, mux, and live validation gates', () => {
+  const args = parseArgs([
+    '--site',
+    'bilibili',
+    '--input',
+    'BV1live',
+    '--resolve-network',
+    '--enable-derived-mux',
+    '--live-validation',
+    'bilibili-dash-mux',
+    '--live-approval-id',
+    'approval-123',
+  ]);
+
+  assert.equal(args.resolveNetwork, true);
+  assert.equal(args.enableDerivedMux, true);
+  assert.deepEqual(args.liveValidation, {
+    status: 'planned',
+    scenario: 'bilibili-dash-mux',
+    requiresApproval: true,
+    approvalId: 'approval-123',
+  });
+});
+
+test('download CLI parser accepts derived mux compatibility aliases', () => {
+  assert.equal(parseArgs(['--site', 'bilibili', '--input', 'BV1mux', '--mux-derived-media']).enableDerivedMux, true);
+  assert.equal(parseArgs(['--site', 'bilibili', '--input', 'BV1mux', '--dash-mux']).enableDerivedMux, true);
 });
 
 test('download registry exposes dry-run plans for every configured download site', async (t) => {

@@ -1,6 +1,6 @@
 # Download Release Gate
 
-Initial release gate for download-runner follow-up branches.
+Release gate for the integrated download architecture on local `main`.
 
 This gate is documentation-only. It does not push branches, open pull requests,
 run real downloads, or perform account login or recovery. Live work requires a
@@ -8,10 +8,10 @@ separate operator approval with a bounded plan.
 
 ## Scope
 
-Use this gate before any download-runner branch is described as ready to
-publish. It covers:
+Use this gate before the local download architecture is described as ready to
+ship or before any later push/PR step is separately approved. It covers:
 
-- Branch stack shape and base readiness.
+- Local branch/base readiness.
 - Dirty work and unrelated edits.
 - Required local tests and focused download tests.
 - Release notes accuracy.
@@ -37,7 +37,7 @@ Block publication when any of these are true:
 - A gate step would require pushing, opening a PR, real network downloads,
   account login, cookie import, or auth recovery.
 
-## Stack Gate
+## Local Branch Gate
 
 Run only local inspection commands during the gate:
 
@@ -51,18 +51,11 @@ git log --oneline origin/main..HEAD
 
 Pass criteria:
 
-- The current branch name matches the release scope.
-- The branch tip contains only the intended work for this branch.
-- The base stack named by the release notes is present locally.
-- Ahead counts are understood and match the release notes or current release
-  draft.
-- If the branch is stacked on Phase 2, the gate treats Phase 2 as a baseline,
-  not as newly authored current-branch work.
-
-Current next-branch caution:
-
-- Any follow-up branch must not be represented as release-ready until it has
-  branch-specific commits, resolver evidence, and updated branch-scoped docs.
+- The current branch is `main` unless a later task explicitly changes scope.
+- The branch tip contains only intended download architecture work for the
+  current commit.
+- Ahead counts are understood before committing or publishing.
+- The worktree has not created extra branches or worktrees for this closeout.
 
 ## Dirty Work Gate
 
@@ -198,13 +191,74 @@ Live smoke evidence must classify each case from artifacts as one of:
 `blocked` and `skipped` are valid evidence outcomes, but they do not prove live
 download capability.
 
+## Live Validation Manifest Schema
+
+`--live-validation <scenario>` records planned validation metadata only. It
+must not be treated as approval to run live smoke. The normalized manifest field
+is:
+
+```json
+{
+  "liveValidation": {
+    "status": "planned",
+    "requiresApproval": true,
+    "approvalId": "operator-ticket-or-empty",
+    "siteKey": "bilibili",
+    "scenario": "bilibili-dash-mux",
+    "evidenceLevel": "fixture|injected|live-smoke|real-download",
+    "liveSmoke": false,
+    "realDownload": false,
+    "authenticated": false
+  }
+}
+```
+
+Accepted statuses are `not-run`, `planned`, `approved`, `running`, `passed`,
+`failed`, `blocked`, `skipped`, and `unknown`. A case can move to `approved` or
+`running` only after a separate bounded approval names site, account/profile,
+case, item limits, output directory, timeout, and stop conditions.
+
+## Resolver Evidence Gate
+
+Every native resolver that touches real network code must satisfy all gates:
+
+- `--resolve-network` or an injected/mock fetch dependency is present.
+- Required session health is ready before resolver deps run.
+- Resolver evidence is complete for the task shape; partial evidence returns no
+  native resources or marks completeness false.
+- Manifest metadata is sanitized. It may include header names, cookie presence,
+  risk flags, cursor availability, and schema versions, but not cookie values,
+  auth headers, raw cursor strings, request-template secrets, or profile roots.
+
+Current native evidence contracts include:
+
+- `bilibili-native-api-evidence-v1`
+- `douyin-native-evidence-v1`
+- `xiaohongshu-header-freshness-v1`
+- `social-archive-v2`
+
+## Session Repair Execution Gate
+
+`session-repair-plan` is dry-run by default. In `--execute` mode it only builds
+an audit command after `--approve-action <action>` matches the suggested
+allowlisted action. It never spawns child commands.
+
+Allowlisted command construction:
+
+- `site-login`
+- `site-keepalive`
+- `inspect-session-health`
+
+Dangerous or non-allowlisted actions such as `rebuild-profile` remain blocked
+and require a human runbook plus separate approval before any real operation.
+
 ## Gate Evidence Template
 
 Use this template in a branch release note or handoff:
 
 | Gate | Evidence | Status | Notes |
 | --- | --- | --- | --- |
-| Stack | `git status`, branch list, local logs | `pass` / `blocked` | Base and ahead counts |
+| Local branch | `git status`, branch list, local logs | `pass` / `blocked` | Base and ahead counts |
 | Dirty work | `git status`, diff file lists | `pass` / `blocked` | Unrelated files excluded |
 | Tests | Full and focused test commands | `pass` / `blocked` | Include pass counts |
 | Release notes | Branch-scoped note review | `pass` / `blocked` | No Phase 2 history rewrite |

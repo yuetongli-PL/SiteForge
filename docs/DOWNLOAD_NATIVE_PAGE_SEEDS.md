@@ -1,7 +1,8 @@
 # Download Native Page Seed Follow-up
 
-This local follow-up branch deepens fixture-backed and injected-resolver native
-coverage without running live site traffic or removing legacy fallback paths.
+This local closeout deepens fixture-backed, injected-resolver, injected-fetch,
+and gated-network native coverage without running live site traffic or removing
+legacy fallback paths.
 
 ## Covered Shapes
 
@@ -27,9 +28,14 @@ coverage without running live site traffic or removing legacy fallback paths.
 - Douyin direct media results, `resolvedVideos`, injected
   `resolveDouyinMediaBatch`, author enumerator results, and injected followed
   update query results can resolve to native media seeds without refreshing live
-  state. Injected deps receive `douyin-native-resolver-deps-v1` descriptors.
+  state. Injected deps receive `douyin-native-resolver-deps-v1` descriptors and
+  sanitized `douyin-native-evidence-v1` evidence input. Fixture/API payloads
+  record video completeness; cover-only payloads are native but incomplete and
+  keep fallback risk visible.
 - Xiaohongshu followed-user injected queries receive
   `xiaohongshu-native-resolver-deps-v1` descriptors and remain side-effect free.
+  Page/fetch/list resolution records `xiaohongshu-header-freshness-v1` metadata
+  with header names and freshness claims only, never header values or cookies.
 - X and Instagram expose gated social native resolvers through
   `nativeResolver`/`nativeSocialResolver`. X supports injected media candidates
   for `profile-content`, `full-archive`, and `search`, including nested timeline
@@ -37,8 +43,8 @@ coverage without running live site traffic or removing legacy fallback paths.
   including `instagramFeedUserPayload` and GraphQL sidecar archive payloads.
   Native social resolution also consumes already-captured social API/replay
   payloads and local social archive artifacts such as `items.jsonl`,
-  `state.json`, and `manifest.json`; it records cursor metadata but does not
-  execute cursor replay itself.
+  `state.json`, and `manifest.json`; it records sanitized
+  `social-archive-v2` schema metadata but does not execute cursor replay itself.
   When the gate is enabled but cursor discovery, relation flow, followed-date,
   checkpoint/resume, or authenticated feed discovery is still required, the
   native resolver records an unsupported reason and returns no resources so the
@@ -93,10 +99,11 @@ page fetches, or live smoke validation.
 ## Still Not Claimed
 
 - Bilibili DASH mux now has an executor-level derived artifact path for native
-  downloads, but it is explicit opt-in only (`enableDerivedMux`/injected mux
-  hook). DASH audio and video streams with the same `groupId` can be muxed after
-  both stream resources complete. Tests use an injected mux hook; live
-  ffmpeg/download validation remains not-run.
+  downloads, but it is explicit opt-in only (`--enable-derived-mux`,
+  `--mux-derived-media`, `--dash-mux`, or injected mux hook). DASH audio and
+  video streams with the same `groupId` can be muxed after both stream
+  resources complete. Tests use an injected mux hook; live ffmpeg/download
+  validation remains not-run.
 - Douyin signing, live API discovery, cache refresh, and profile side effects
   remain in the existing action/query layer. Native resolution can consume
   fixture/API detail payloads, fixture HTML JSON payloads, injected fetch JSON,
@@ -108,8 +115,10 @@ page fetches, or live smoke validation.
   selection, checkpoint/resume continuation, and authenticated feed discovery
   remain in the social legacy action. Native resolution only consumes captured
   replay results or local artifacts, including sanitized replay state schema v1
-  presence metadata without raw cursor/request-template values.
+  and v2 presence metadata without raw cursor/request-template values.
 - Session repair ops are exposed as a dry-run `session-repair-plan` entrypoint.
-  It prints sanitized operator guidance and rejects `--execute`; login,
-  keepalive, and profile rebuild still need a separately approved path.
+  It prints sanitized operator guidance. `--execute` only constructs an
+  approved audit command for allowlisted actions and never spawns child
+  commands; login, keepalive, and profile rebuild still need a separately
+  approved path before any real operation is run.
 - Live smoke and real download verification remain `not-run`.

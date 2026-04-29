@@ -169,7 +169,6 @@
       "pageTypes": [
         "auth-page",
         "author-page",
-        "book-detail-page",
         "category-page",
         "content-detail-page",
         "home",
@@ -180,9 +179,9 @@
         "search-content"
       ],
       "supportedIntents": [
-        "search-book",
-        "open-book",
-        "download-book",
+        "search-note",
+        "open-note",
+        "download-note",
         "open-author",
         "open-category",
         "open-auth-page",
@@ -228,7 +227,7 @@
       ],
       "supportedIntents": [
         "account-info",
-        "download-book",
+        "download-media",
         "full-archive",
         "list-author-following",
         "list-followed-updates",
@@ -279,7 +278,7 @@
       ],
       "supportedIntents": [
         "account-info",
-        "download-book",
+        "download-media",
         "full-archive",
         "list-author-following",
         "list-followed-updates",

@@ -193,8 +193,17 @@ test('xiaohongshu fetched HTML stays behind network gate and supports injected f
     site: 'xiaohongshu',
     input: 'https://www.xiaohongshu.com/explore/662233445566778899aabbd1',
     title: 'Fetched HTML',
+    headers: { 'x-s': 'fresh-signature' },
+    headersFresh: true,
     dryRun: true,
-  }, null, {
+  }, {
+    siteKey: 'xiaohongshu',
+    status: 'ready',
+    headers: {
+      Cookie: 'a1=secret-cookie',
+      Referer: 'https://www.xiaohongshu.com/',
+    },
+  }, {
     mockFetchImpl: async (url) => {
       injectedFetchUrl = url;
       return {
@@ -222,6 +231,10 @@ test('xiaohongshu fetched HTML stays behind network gate and supports injected f
   ]);
   assert.equal(resolved.resources[0].metadata.sourceType, 'fetched-html');
   assert.equal(resolved.metadata.resolution.sourceType, 'fetched-html');
+  assert.deepEqual(resolved.metadata.resolution.headerFreshness.headerNames, ['Cookie', 'Referer', 'x-s']);
+  assert.equal(resolved.metadata.resolution.headerFreshness.cookieEvidence, true);
+  assert.equal(resolved.metadata.resolution.headerFreshness.freshnessClaimed, true);
+  assert.equal(JSON.stringify(resolved.metadata.resolution.headerFreshness).includes('secret-cookie'), false);
 });
 
 test('xiaohongshu native resolver maps search, author, and followed mock notes to resources', async () => {
@@ -272,6 +285,7 @@ test('xiaohongshu native resolver maps search, author, and followed mock notes t
       assert.equal(query.intent, 'list-followed-users');
       assert.equal(query.sourceType, 'followed-users');
       assert.equal(query.allowNetworkResolve, false);
+      assert.equal(query.headerFreshness.contractVersion, 'xiaohongshu-header-freshness-v1');
       return {
         notes: [{
           noteId: 'followed-note-1',

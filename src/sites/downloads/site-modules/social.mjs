@@ -17,6 +17,7 @@ import {
 } from './common.mjs';
 
 export const siteKeys = Object.freeze(['x', 'instagram']);
+export const SOCIAL_ARCHIVE_CONTRACT_VERSION = 'social-archive-v2';
 
 function firstText(...values) {
   for (const value of values) {
@@ -65,6 +66,10 @@ function relationActionFromRequest(request = {}) {
 
 function hasDateWindow(request = {}) {
   return Boolean(firstText(request.date, request.fromDate, request.from, request.toDate, request.to));
+}
+
+function hasCheckpointResume(request = {}) {
+  return isTrue(request.resume) || Boolean(firstText(request.resumeCursor, request.checkpoint, request.checkpointPath));
 }
 
 function queryFromSocialInput(plan, request = {}) {
@@ -208,6 +213,9 @@ function socialNativeSupported(plan, request = {}) {
   if (!nativeResolverEnabled(request)) {
     return false;
   }
+  if (hasCheckpointResume(request)) {
+    return false;
+  }
   const action = inferSocialAction(plan, request);
   if (['profile-followers', 'profile-following', 'followed-users', 'followed-posts-by-date'].includes(action)) {
     return false;
@@ -232,7 +240,7 @@ function socialNativeUnsupportedReason(plan, request = {}) {
   if (action === 'followed-posts-by-date') {
     return 'followed-date-legacy-only';
   }
-  if (isTrue(request.resume) || firstText(request.resumeCursor, request.checkpoint, request.checkpointPath)) {
+  if (hasCheckpointResume(request)) {
     return 'checkpoint-resume-legacy-only';
   }
   if (plan.siteKey === 'instagram' && ['profile-content', 'full-archive'].includes(action)) {
@@ -377,6 +385,35 @@ function artifactPathsFromManifest(manifest = {}) {
   };
 }
 
+function artifactSchemaSummary(manifest = {}, state = null, rows = []) {
+  const manifestObject = isObject(manifest) ? manifest : {};
+  const stateObject = isObject(state) ? state : {};
+  const schemaVersion = Number(stateObject.schemaVersion ?? manifestObject.schemaVersion ?? 1) || 1;
+  const contractVersion = firstText(
+    stateObject.contractVersion,
+    stateObject.archiveContractVersion,
+    manifestObject.contractVersion,
+    manifestObject.archiveContractVersion,
+    schemaVersion >= 2 ? SOCIAL_ARCHIVE_CONTRACT_VERSION : '',
+  );
+  return {
+    archiveSchemaVersion: schemaVersion,
+    archiveContractVersion: contractVersion || undefined,
+    artifactRows: rows.length,
+    cursorReplayStatus: 'captured-only',
+    checkpointResumeMigrated: false,
+    relationMigrated: false,
+    followedDateMigrated: false,
+    rateLimitEvidence: Boolean(stateObject.rateLimit ?? stateObject.rate_limit ?? stateObject.ratelimit) || undefined,
+    apiDriftEvidence: Boolean(stateObject.apiDrift ?? stateObject.api_drift ?? stateObject.drift) || undefined,
+  };
+}
+
+function isArtifactItemRow(entry = {}) {
+  const kind = normalizeActionToken(entry.kind);
+  return !kind || ['item', 'post', 'media'].includes(kind);
+}
+
 async function socialArtifactContainers(request = {}, context = {}) {
   const workspaceRoot = context.workspaceRoot ?? process.cwd();
   const sourceArtifacts = isObject(request.sourceArtifacts) ? request.sourceArtifacts : {};
@@ -399,7 +436,7 @@ async function socialArtifactContainers(request = {}, context = {}) {
     runDir ? path.join(runDir, 'state.json') : '',
   );
   const rows = (await readJsonlArtifact(itemsPath, workspaceRoot))
-    .filter((entry) => !entry.kind || entry.kind === 'item')
+    .filter(isArtifactItemRow)
     .map((entry) => {
       const { kind, ...rest } = entry;
       if (
@@ -415,6 +452,7 @@ async function socialArtifactContainers(request = {}, context = {}) {
   return {
     containers: rows.length ? [rows] : [],
     state: isObject(state) ? state : null,
+    schema: artifactSchemaSummary(manifest, state, rows),
     source: rows.length || state ? {
       runDir: runDir || undefined,
       manifestPath: resolveArtifactPath(manifestPath, workspaceRoot) || undefined,
@@ -764,6 +802,7 @@ async function requestWithSocialNativeSeeds(siteKey, plan, request = {}, context
         resolvedSeeds: seeds.length,
         ...cursorMetadata(containers, artifactEvidence.state),
         artifactSource: artifactSourceSummary(artifactEvidence.source),
+        archiveSchema: artifactEvidence.source ? artifactEvidence.schema : undefined,
       },
     },
   };

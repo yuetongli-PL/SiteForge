@@ -12,6 +12,7 @@ import {
 } from './common.mjs';
 
 export const siteKey = 'douyin';
+export const DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION = 'douyin-native-evidence-v1';
 
 export const nativeSeedResolverOptions = Object.freeze({
   defaultMediaType: 'video',
@@ -36,6 +37,51 @@ function firstText(...values) {
 
 function metadataObject(request = {}) {
   return isObject(request.metadata) ? request.metadata : {};
+}
+
+function signedApiEvidenceFrom(request = {}) {
+  const apiUrl = firstText(request.douyinApiUrl, request.apiUrl, request.detailApiUrl, request.fetchUrl);
+  const urlFlags = {};
+  try {
+    const parsed = new URL(apiUrl);
+    for (const key of ['a_bogus', 'msToken', 'verifyFp']) {
+      if (parsed.searchParams.has(key)) {
+        urlFlags[key] = true;
+      }
+    }
+  } catch {
+    // Non-URL fixture inputs simply have no query signature evidence.
+  }
+  const fetchHeaders = isObject(request.fetchHeaders) ? Object.keys(request.fetchHeaders) : [];
+  return {
+    signedApiProvided: Boolean(apiUrl && Object.keys(urlFlags).length > 0) || undefined,
+    signatureParamsPresent: Object.keys(urlFlags).sort(),
+    headersPresent: fetchHeaders.sort(),
+    cookieEvidence: fetchHeaders.some((header) => header.toLowerCase() === 'cookie') || undefined,
+  };
+}
+
+function sessionEvidenceFrom(sessionLease = null) {
+  const headerNames = Object.keys(sessionLease?.headers ?? {}).sort();
+  return {
+    leaseStatus: sessionLease?.status,
+    authStatus: sessionLease?.mode,
+    userDataDirPresent: Boolean(sessionLease?.userDataDir) || undefined,
+    profilePathPresent: Boolean(sessionLease?.browserProfileRoot) || undefined,
+    headerNames,
+    cookieEvidence: Array.isArray(sessionLease?.cookies) && sessionLease.cookies.length > 0 || undefined,
+  };
+}
+
+function cacheEvidenceFrom(request = {}, context = {}) {
+  const refreshRequested = request.refreshCache === true;
+  return {
+    mode: refreshRequested ? 'refresh-requested' : 'cache-only',
+    refreshRequested: refreshRequested || undefined,
+    refreshAllowed: context.allowNetworkResolve === true && refreshRequested || undefined,
+    refreshed: false,
+    reason: refreshRequested && context.allowNetworkResolve !== true ? 'resolve-network-required' : undefined,
+  };
 }
 
 function isTrue(value) {
@@ -137,7 +183,7 @@ function requestAuthorEntries(request = {}) {
     metadata.douyinAuthorVideos,
     metadata.authorVideos,
     metadata.authorItems,
-  ].filter((entry) => entry !== undefined && entry !== null);
+  ].flatMap(resultEntries);
 }
 
 function requestFollowEntries(request = {}) {
@@ -280,6 +326,7 @@ function seedFromDouyinEntry(entry = {}, index = 0, overrides = {}) {
       height: format.height ?? entry.height,
       bitRate: format.bitRate ?? format.bitrate ?? entry.bitRate,
       sourceType: firstText(overrides.sourceType, entry.sourceType) || undefined,
+      evidenceId: firstText(overrides.evidenceId) || undefined,
     },
   };
 }
@@ -304,6 +351,7 @@ function coverSeedFromDouyinEntry(entry = {}, index = 0, overrides = {}) {
       videoId: videoId || undefined,
       assetType: 'cover',
       sourceType: firstText(overrides.sourceType, entry.sourceType) || undefined,
+      evidenceId: firstText(overrides.evidenceId) || undefined,
     },
   };
 }
@@ -327,6 +375,51 @@ function seedsFromEntries(entries = [], overrides = {}) {
     seedFromDouyinEntry(entry, index, overrides),
     coverSeedFromDouyinEntry(entry, index, overrides),
   ].filter(Boolean)));
+}
+
+function videoIdFromEntry(entry = {}, index = 0) {
+  return firstText(
+    entry.videoId,
+    entry.awemeId,
+    entry.aweme_id,
+    entry.awemeData?.aweme_id,
+    videoIdFromValue(entry.url),
+    videoIdFromValue(entry.requestedUrl),
+    videoIdFromValue(entry.finalUrl),
+    `entry-${index + 1}`,
+  );
+}
+
+function buildEvidence({ sourceType, intent = 'resolve-media', entries = [], seeds = [], request = {}, sessionLease = null, context = {}, fallbackReason = undefined } = {}) {
+  const videoSeeds = seeds.filter((seed) => seed.mediaType === 'video');
+  const coverSeeds = seeds.filter((seed) => seed.mediaType === 'image');
+  const unresolvedVideoIds = entries
+    .map((entry, index) => ({ entry, videoId: videoIdFromEntry(entry, index) }))
+    .filter(({ entry }) => isObject(entry) && !mediaUrl(entry))
+    .map(({ videoId }) => videoId)
+    .filter(Boolean);
+  const expectedVideos = entries.filter(isObject).length;
+  const complete = expectedVideos > 0 && unresolvedVideoIds.length === 0 && videoSeeds.length >= expectedVideos;
+  return {
+    contractVersion: DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION,
+    sourceType,
+    intent,
+    input: {
+      targetCount: expectedVideos,
+    },
+    payload: {
+      expectedVideos,
+      parsedEntries: entries.length,
+      videoSeeds: videoSeeds.length,
+      coverSeeds: coverSeeds.length,
+      unresolvedVideoIds,
+      complete,
+    },
+    request: signedApiEvidenceFrom(request),
+    session: sessionEvidenceFrom(sessionLease),
+    cache: cacheEvidenceFrom(request, context),
+    fallback: fallbackReason ? { reason: fallbackReason } : undefined,
+  };
 }
 
 function extractDouyinPayloadEntries(payload = {}) {
@@ -440,20 +533,31 @@ async function fetchedPayloadEntries(request = {}, context = {}) {
   return extractDouyinPayloadEntries(payload);
 }
 
-async function requestWithFixtureSeeds(request = {}, plan = {}, context = {}) {
+async function requestWithFixtureSeeds(request = {}, plan = {}, sessionLease = null, context = {}) {
   const fixtureHtml = firstText(request.fixtureHtml, request.html, metadataObject(request).fixtureHtml);
   const entries = [
     ...extractDouyinPayloadEntries(requestPayloadEntries(request)),
     ...payloadEntriesFromHtml(fixtureHtml),
     ...await fetchedPayloadEntries(request, context),
   ];
+  const evidenceId = `${DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION}:fixture-api`;
   const seeds = seedsFromEntries(entries, {
     sourceType: 'fixture-api',
+    evidenceId,
     sourceUrl: firstText(request.input, request.inputUrl, request.url, plan.source?.input),
   });
   if (seeds.length === 0) {
     return null;
   }
+  const evidence = buildEvidence({
+    sourceType: 'fixture-api',
+    intent: 'fixture-api-payload',
+    entries,
+    seeds,
+    request,
+    sessionLease,
+    context,
+  });
   return {
     ...request,
     metadata: {
@@ -464,8 +568,18 @@ async function requestWithFixtureSeeds(request = {}, plan = {}, context = {}) {
         sourceType: 'fixture-api',
         expectedVideos: entries.length,
         resolvedSeeds: seeds.length,
+        evidence,
       },
     },
+  };
+}
+
+function evidenceInput(request = {}, sessionLease = null, context = {}) {
+  return {
+    contractVersion: DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION,
+    request: signedApiEvidenceFrom(request),
+    session: sessionEvidenceFrom(sessionLease),
+    cache: cacheEvidenceFrom(request, context),
   };
 }
 
@@ -482,6 +596,7 @@ async function callMediaBatchResolver(context, items, request, plan, sessionLeas
     plan,
     sessionLease,
     allowNetworkResolve: context.allowNetworkResolve === true,
+    evidenceInput: evidenceInput(request, sessionLease, context),
   });
   return resultEntries(result);
 }
@@ -499,6 +614,7 @@ async function callAuthorEnumerator(context, request, plan, sessionLease) {
     plan,
     sessionLease,
     allowNetworkResolve: context.allowNetworkResolve === true,
+    evidenceInput: evidenceInput(request, sessionLease, context),
     limit: request.maxItems ?? plan.policy?.maxItems,
   });
   return resultEntries(result);
@@ -522,6 +638,8 @@ async function callFollowQuery(context, request, plan, sessionLease) {
     plan,
     sessionLease,
     allowNetworkResolve: context.allowNetworkResolve === true,
+    refreshAllowed: context.allowNetworkResolve === true && request.refreshCache === true,
+    evidenceInput: evidenceInput(request, sessionLease, context),
   });
   return resultEntries(result);
 }
@@ -537,13 +655,25 @@ function ordinaryVideoTargets(request = {}, plan = {}) {
 }
 
 async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = null, context = {}) {
-  const fixtureSeeded = await requestWithFixtureSeeds(request, plan, context);
+  const fixtureSeeded = await requestWithFixtureSeeds(request, plan, sessionLease, context);
   if (fixtureSeeded) {
     return fixtureSeeded;
   }
 
-  const directSeeds = seedsFromEntries(requestMediaEntries(request), { sourceType: 'media-results' });
+  const mediaEntries = requestMediaEntries(request);
+  const directSeeds = seedsFromEntries(mediaEntries, {
+    sourceType: 'media-results',
+    evidenceId: `${DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION}:media-results`,
+  });
   if (directSeeds.length > 0) {
+    const evidence = buildEvidence({
+      sourceType: 'media-results',
+      entries: mediaEntries,
+      seeds: directSeeds,
+      request,
+      sessionLease,
+      context,
+    });
     return {
       ...request,
       metadata: {
@@ -553,6 +683,7 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
           siteResolver: siteKey,
           sourceType: 'media-results',
           resolvedSeeds: directSeeds.length,
+          evidence,
         },
       },
     };
@@ -560,8 +691,19 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
 
   const ordinaryTargets = ordinaryVideoTargets(request, plan);
   const ordinaryMedia = await callMediaBatchResolver(context, ordinaryTargets, request, plan, sessionLease);
-  const ordinarySeeds = seedsFromEntries(ordinaryMedia, { sourceType: 'ordinary-video' });
+  const ordinarySeeds = seedsFromEntries(ordinaryMedia, {
+    sourceType: 'ordinary-video',
+    evidenceId: `${DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION}:ordinary-video`,
+  });
   if (ordinarySeeds.length > 0) {
+    const evidence = buildEvidence({
+      sourceType: 'ordinary-video',
+      entries: ordinaryMedia,
+      seeds: ordinarySeeds,
+      request,
+      sessionLease,
+      context,
+    });
     return {
       ...request,
       metadata: {
@@ -572,6 +714,7 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
           sourceType: 'ordinary-video',
           attemptedVideos: ordinaryTargets.length,
           resolvedSeeds: ordinarySeeds.length,
+          evidence,
         },
       },
     };
@@ -593,8 +736,19 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
   const authorSeeds = seedsFromEntries([
     ...enumeratedAuthorEntries.filter((entry) => !isObject(entry) || mediaUrl(entry)),
     ...resolvedAuthorEntries,
-  ], { sourceType: 'author' });
+  ], {
+    sourceType: 'author',
+    evidenceId: `${DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION}:author`,
+  });
   if (authorSeeds.length > 0) {
+    const evidence = buildEvidence({
+      sourceType: 'author',
+      entries: enumeratedAuthorEntries,
+      seeds: authorSeeds,
+      request,
+      sessionLease,
+      context,
+    });
     return {
       ...request,
       metadata: {
@@ -605,6 +759,7 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
           sourceType: 'author',
           attemptedVideos: enumeratedAuthorEntries.length,
           resolvedSeeds: authorSeeds.length,
+          evidence,
         },
       },
     };
@@ -619,8 +774,19 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
     : requestedFollowUpdates
       ? await callFollowQuery(context, request, plan, sessionLease)
       : [];
-  const followSeeds = seedsFromEntries(queriedFollowEntries, { sourceType: 'followed-updates' });
+  const followSeeds = seedsFromEntries(queriedFollowEntries, {
+    sourceType: 'followed-updates',
+    evidenceId: `${DOUYIN_NATIVE_EVIDENCE_CONTRACT_VERSION}:followed-updates`,
+  });
   if (followSeeds.length > 0) {
+    const evidence = buildEvidence({
+      sourceType: 'followed-updates',
+      entries: queriedFollowEntries,
+      seeds: followSeeds,
+      request,
+      sessionLease,
+      context,
+    });
     return {
       ...request,
       metadata: {
@@ -631,6 +797,7 @@ async function requestWithInjectedSeeds(request = {}, plan = {}, sessionLease = 
           sourceType: 'followed-updates',
           attemptedVideos: queriedFollowEntries.length,
           resolvedSeeds: followSeeds.length,
+          evidence,
         },
       },
     };
@@ -661,6 +828,16 @@ export async function resolveResources(plan, sessionLease = null, context = {}) 
       ...seededResolved.metadata,
       resolution: seededRequest.metadata?.resolution,
     },
+    completeness: seededRequest.metadata?.resolution?.evidence?.payload?.complete === false
+      ? {
+        ...seededResolved.completeness,
+        complete: false,
+        reason: 'douyin-native-payload-incomplete',
+      }
+      : {
+        ...seededResolved.completeness,
+        reason: 'douyin-native-complete',
+      },
   };
 }
 

@@ -30,6 +30,11 @@ Options:
   --no-resume                       Ignore existing run artifacts and start fresh.
   --no-skip-existing                Redownload files even if the target file already exists.
   --no-verify                       Skip expected size/hash verification.
+  --enable-derived-mux              Allow opt-in derived audio/video mux artifacts.
+  --mux-derived-media               Alias for --enable-derived-mux.
+  --dash-mux                        Alias for --enable-derived-mux.
+  --live-validation <scenario>      Record planned live validation metadata; does not run live smoke by itself.
+  --live-approval-id <id>           Approval reference for a separately approved live validation run.
   --session-required                Require an authenticated/reusable session lease.
   --session-optional                Prefer a reusable session lease.
   --session-none                    Use an anonymous session lease.
@@ -156,6 +161,31 @@ export function parseArgs(argv) {
       case '--no-verify':
         options.verify = false;
         break;
+      case '--enable-derived-mux':
+      case '--mux-derived-media':
+      case '--dash-mux':
+        options.enableDerivedMux = true;
+        break;
+      case '--live-validation': {
+        const read = readValue(argv, index, arg);
+        options.liveValidation = {
+          ...(options.liveValidation ?? {}),
+          status: 'planned',
+          scenario: read.value,
+          requiresApproval: true,
+        };
+        index = read.nextIndex;
+        break;
+      }
+      case '--live-approval-id': {
+        const read = readValue(argv, index, arg);
+        options.liveValidation = {
+          ...(options.liveValidation ?? {}),
+          approvalId: read.value,
+        };
+        index = read.nextIndex;
+        break;
+      }
       case '--session-required':
         options.sessionRequirement = 'required';
         break;
@@ -208,6 +238,13 @@ export async function main(argv) {
     retryFailedOnly: options.retryFailedOnly,
     skipExisting: options.skipExisting,
     verify: options.verify,
+    enableDerivedMux: options.enableDerivedMux,
+    liveValidation: options.liveValidation
+      ? {
+        ...options.liveValidation,
+        siteKey: options.site,
+      }
+      : undefined,
     sessionStatus: options.sessionStatus,
     resolveNetwork: options.resolveNetwork,
   });

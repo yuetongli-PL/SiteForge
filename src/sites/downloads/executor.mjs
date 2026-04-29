@@ -667,6 +667,7 @@ async function writeRunArtifactsFromResults({
   status,
   reason,
   recoveryProblems = [],
+  liveValidation = undefined,
 }) {
   const files = filesFromResults(results);
   const failedResources = failedResourcesFromResults(results);
@@ -687,6 +688,7 @@ async function writeRunArtifactsFromResults({
       downloadsJsonl: layout.downloadsJsonlPath,
       reportMarkdown: layout.reportMarkdownPath,
     },
+    liveValidation,
     session: sessionLease,
     createdAt: new Date().toISOString(),
     finishedAt: new Date().toISOString(),
@@ -747,6 +749,7 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
         downloadsJsonl: layout.downloadsJsonlPath,
         reportMarkdown: layout.reportMarkdownPath,
       },
+      liveValidation: options.liveValidation,
       session: sessionLease,
       createdAt: new Date().toISOString(),
       finishedAt: new Date().toISOString(),
@@ -795,6 +798,7 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
       status,
       reason,
       recoveryProblems,
+      liveValidation: options.liveValidation,
     });
   }
 
@@ -865,5 +869,6 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
     queue,
     results: [...results, ...derivedResults],
     recoveryProblems,
+    liveValidation: options.liveValidation,
   });
 }

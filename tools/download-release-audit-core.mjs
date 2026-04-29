@@ -134,10 +134,26 @@ function gateFromArtifactSummary(summary = {}) {
   });
 }
 
+function nativeFallbackFromValue(value = {}) {
+  const trace = value?.legacy?.nativeFallback
+    ?? value?.metadata?.nativeFallback
+    ?? value?.nativeFallback
+    ?? null;
+  if (!trace || typeof trace !== 'object' || Array.isArray(trace)) {
+    return {};
+  }
+  return {
+    nativeFallbackReason: trace.reason ?? trace.completeness?.reason ?? null,
+    nativeResolverMethod: trace.resolver?.method ?? null,
+    nativeResolverAdapter: trace.resolver?.adapterId ?? null,
+  };
+}
+
 function auditRowsFromManifest(manifest = {}, manifestPath) {
   if (Array.isArray(manifest.results)) {
     return manifest.results.map((result) => {
       const gate = gateFromArtifactSummary(result.artifactSummary ?? {});
+      const nativeFallback = nativeFallbackFromValue(result.artifactSummary ?? result);
       return {
         manifestPath,
         kind: 'social-live-matrix',
@@ -148,12 +164,14 @@ function auditRowsFromManifest(manifest = {}, manifestPath) {
         reason: gate.reason ?? null,
         provider: gate.provider ?? null,
         healthManifest: gate.healthManifest ?? null,
+        ...nativeFallback,
       };
     });
   }
   const gate = evaluateAuthenticatedSessionReleaseGate(manifest, {
     requiresAuth: requiresAuth(manifest),
   });
+  const nativeFallback = nativeFallbackFromValue(manifest);
   return [{
     manifestPath,
     kind: manifest.session || manifest.liveValidation ? 'download' : 'social-action',
@@ -164,6 +182,7 @@ function auditRowsFromManifest(manifest = {}, manifestPath) {
     reason: gate.reason ?? null,
     provider: gate.provider ?? null,
     healthManifest: gate.healthManifest ?? null,
+    ...nativeFallback,
   }];
 }
 
@@ -233,11 +252,12 @@ function renderMarkdown(audit = {}) {
     `Rows: ${audit.summary?.total ?? 0}`,
     `Statuses: ${JSON.stringify(audit.summary?.statuses ?? {})}`,
     '',
-    '| Site | ID | Kind | Gate | Reason | Provider | Manifest | Repair Plan |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Site | ID | Kind | Gate | Reason | Provider | Native Fallback | Native Resolver | Manifest | Repair Plan |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const row of audit.rows ?? []) {
-    lines.push(`| ${row.site} | ${row.id} | ${row.kind} | ${row.status} | ${row.reason ?? ''} | ${row.provider ?? ''} | ${row.manifestPath} | ${row.repairPlan?.commandText ?? ''} |`);
+    const nativeResolver = [row.nativeResolverAdapter, row.nativeResolverMethod].filter(Boolean).join('/');
+    lines.push(`| ${row.site} | ${row.id} | ${row.kind} | ${row.status} | ${row.reason ?? ''} | ${row.provider ?? ''} | ${row.nativeFallbackReason ?? ''} | ${nativeResolver} | ${row.manifestPath} | ${row.repairPlan?.commandText ?? ''} |`);
   }
   if (audit.skipped?.length) {
     lines.push('', '## Skipped');

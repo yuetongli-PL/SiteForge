@@ -47,6 +47,15 @@ test('download-release-audit audits download and social matrix session gates off
       mode: 'authenticated',
       status: 'ready',
     },
+    legacy: {
+      nativeFallback: {
+        reason: 'bilibili-playurl-evidence-missing',
+        resolver: {
+          adapterId: 'bilibili',
+          method: 'native-bilibili-page-seeds',
+        },
+      },
+    },
   }, null, 2)}\n`, 'utf8');
   await writeFile(path.join(matrixDir, 'manifest.json'), `${JSON.stringify({
     runId: 'matrix-run',
@@ -79,7 +88,11 @@ test('download-release-audit audits download and social matrix session gates off
   assert.equal(audit.summary.total, 3);
   assert.equal(audit.summary.statuses.passed, 1);
   assert.equal(audit.summary.statuses.blocked, 2);
-  assert.equal(audit.rows.find((row) => row.id === 'download-run').healthManifest, healthManifest);
+  const downloadRow = audit.rows.find((row) => row.id === 'download-run');
+  assert.equal(downloadRow.healthManifest, healthManifest);
+  assert.equal(downloadRow.nativeFallbackReason, 'bilibili-playurl-evidence-missing');
+  assert.equal(downloadRow.nativeResolverMethod, 'native-bilibili-page-seeds');
+  assert.equal(downloadRow.nativeResolverAdapter, 'bilibili');
   assert.equal(audit.rows.find((row) => row.id === 'social-run').reason, 'session-provider-missing');
   const blockedMatrix = audit.rows.find((row) => row.id === 'x-full-archive');
   assert.equal(blockedMatrix.repairPlan.command, 'session-repair-plan');
@@ -89,6 +102,8 @@ test('download-release-audit audits download and social matrix session gates off
   assert.equal(audit.rows.find((row) => row.id === 'download-run').repairPlan, undefined);
   assert.match(markdown, /Download Release Audit/u);
   assert.match(markdown, /session-health-manifest-missing/u);
+  assert.match(markdown, /bilibili-playurl-evidence-missing/u);
+  assert.match(markdown, /bilibili\/native-bilibili-page-seeds/u);
   assert.match(markdown, /Repair Plan/u);
   assert.match(markdown, /session-repair-plan\.mjs/u);
 });

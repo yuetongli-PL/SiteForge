@@ -255,6 +255,9 @@ test('douyin native resolver consumes injected fetch API payload without global 
   assert.equal(resolved.resources.length, 1);
   assert.equal(resolved.resources[0].url, 'https://v3-web.example.test/injected/detail.mp4');
   assert.equal(resolved.metadata.resolution.sourceType, 'fixture-api');
+  assert.equal(resolved.metadata.resolution.evidence.request.apiEvidenceMode, 'injected-fetch');
+  assert.equal(resolved.metadata.resolution.evidence.request.signatureCompleteness, 'none');
+  assert.deepEqual(resolved.metadata.resolution.evidence.request.missingSignatureParams, ['a_bogus', 'msToken']);
   assert.equal(resolved.metadata.resolution.evidence.request.signedApiProvided, undefined);
 });
 
@@ -323,8 +326,51 @@ test('douyin native resolver records sanitized signed API and header evidence on
 
   const evidence = resolved.metadata.resolution.evidence;
   assert.equal(evidence.request.signedApiProvided, true);
+  assert.equal(evidence.request.apiEvidenceMode, 'signed-api-url');
+  assert.deepEqual(evidence.request.requiredSignatureParams, ['a_bogus', 'msToken']);
   assert.deepEqual(evidence.request.signatureParamsPresent, ['a_bogus', 'msToken', 'verifyFp']);
+  assert.deepEqual(evidence.request.missingSignatureParams, []);
+  assert.equal(evidence.request.signatureCompleteness, 'complete');
   assert.deepEqual(evidence.request.headersPresent, ['Cookie', 'User-Agent']);
+  assert.deepEqual(evidence.request.headerNamesPresent, ['Cookie', 'User-Agent']);
+  assert.equal(evidence.request.cookieEvidence, true);
+  assert.equal(JSON.stringify(evidence).includes('secret'), false);
+});
+
+test('douyin native resolver records partial signed API evidence without leaking values', async () => {
+  const { resolved } = await resolveDouyin({
+    site: 'douyin',
+    input: 'https://www.douyin.com/video/7321000000000000106',
+    douyinApiUrl: 'https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=7321000000000000106&a_bogus=secret-a',
+    fetchHeaders: {
+      Cookie: 'sessionid=secret-cookie',
+    },
+    dryRun: true,
+  }, {
+    mockFetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          aweme_detail: {
+            aweme_id: '7321000000000000106',
+            desc: 'Partial Signed Evidence Clip',
+            video: {
+              play_addr: {
+                url_list: ['https://v3-web.example.test/signed/partial.mp4'],
+              },
+            },
+          },
+        };
+      },
+    }),
+  });
+
+  const evidence = resolved.metadata.resolution.evidence;
+  assert.equal(evidence.request.apiEvidenceMode, 'injected-fetch');
+  assert.deepEqual(evidence.request.signatureParamsPresent, ['a_bogus']);
+  assert.deepEqual(evidence.request.missingSignatureParams, ['msToken']);
+  assert.equal(evidence.request.signatureCompleteness, 'partial');
+  assert.deepEqual(evidence.request.headerNamesPresent, ['Cookie']);
   assert.equal(evidence.request.cookieEvidence, true);
   assert.equal(JSON.stringify(evidence).includes('secret'), false);
 });
@@ -354,6 +400,33 @@ test('douyin followed refresh is allowed only with explicit network gate and ref
 
   assert.equal(observedRefreshAllowed, true);
   assert.equal(resolved.metadata.resolution.evidence.cache.refreshAllowed, true);
+});
+
+test('douyin followed refresh records blocked refresh without network gate', async () => {
+  let observedRefreshAllowed = null;
+  const { resolved } = await resolveDouyin({
+    site: 'douyin',
+    input: 'followed updates',
+    followedUpdates: true,
+    refreshCache: true,
+    dryRun: true,
+  }, {
+    queryDouyinFollow: async (query) => {
+      observedRefreshAllowed = query.refreshAllowed;
+      return {
+        videos: [{
+          videoId: '7321000000000000107',
+          title: 'Refresh Blocked Clip',
+          requestedUrl: 'https://www.douyin.com/video/7321000000000000107',
+          resolvedMediaUrl: 'https://v3-web.example.test/followed/refresh-blocked.mp4',
+        }],
+      };
+    },
+  });
+
+  assert.equal(observedRefreshAllowed, false);
+  assert.equal(resolved.metadata.resolution.evidence.cache.refreshAllowed, false);
+  assert.equal(resolved.metadata.resolution.evidence.cache.refreshBlockedReason, 'resolve-network-required');
 });
 
 test('douyin fixture payload with cover only is native but incomplete', async () => {

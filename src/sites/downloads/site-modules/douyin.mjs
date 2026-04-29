@@ -53,10 +53,43 @@ function signedApiEvidenceFrom(request = {}) {
     // Non-URL fixture inputs simply have no query signature evidence.
   }
   const fetchHeaders = isObject(request.fetchHeaders) ? Object.keys(request.fetchHeaders) : [];
+  const signatureParamsPresent = Object.keys(urlFlags).sort();
+  const requiredSignatureParams = ['a_bogus', 'msToken'];
+  const missingSignatureParams = apiUrl
+    ? requiredSignatureParams.filter((key) => !urlFlags[key])
+    : [];
+  const signatureCompleteness = (() => {
+    if (!apiUrl) {
+      return 'none';
+    }
+    if (missingSignatureParams.length === 0) {
+      return 'complete';
+    }
+    return signatureParamsPresent.length > 0 ? 'partial' : 'none';
+  })();
+  const fixturePayloadProvided = requestPayloadEntries(request).length > 0
+    || Boolean(firstText(request.fixtureHtml, request.html, metadataObject(request).fixtureHtml));
+  const apiEvidenceMode = (() => {
+    if (apiUrl && signatureCompleteness === 'complete') {
+      return 'signed-api-url';
+    }
+    if (apiUrl) {
+      return 'injected-fetch';
+    }
+    if (fixturePayloadProvided) {
+      return 'fixture-payload';
+    }
+    return 'none';
+  })();
   return {
     signedApiProvided: Boolean(apiUrl && Object.keys(urlFlags).length > 0) || undefined,
-    signatureParamsPresent: Object.keys(urlFlags).sort(),
+    apiEvidenceMode,
+    requiredSignatureParams,
+    signatureParamsPresent,
+    missingSignatureParams,
+    signatureCompleteness,
     headersPresent: fetchHeaders.sort(),
+    headerNamesPresent: fetchHeaders.sort(),
     cookieEvidence: fetchHeaders.some((header) => header.toLowerCase() === 'cookie') || undefined,
   };
 }
@@ -75,10 +108,12 @@ function sessionEvidenceFrom(sessionLease = null) {
 
 function cacheEvidenceFrom(request = {}, context = {}) {
   const refreshRequested = request.refreshCache === true;
+  const refreshAllowed = context.allowNetworkResolve === true && refreshRequested;
   return {
     mode: refreshRequested ? 'refresh-requested' : 'cache-only',
     refreshRequested: refreshRequested || undefined,
-    refreshAllowed: context.allowNetworkResolve === true && refreshRequested || undefined,
+    refreshAllowed,
+    refreshBlockedReason: refreshRequested && !refreshAllowed ? 'resolve-network-required' : undefined,
     refreshed: false,
     reason: refreshRequested && context.allowNetworkResolve !== true ? 'resolve-network-required' : undefined,
   };

@@ -16,6 +16,7 @@ import {
   resolveDownloadRunStatus,
 } from './contracts.mjs';
 import { buildDownloadRunLayout } from './artifacts.mjs';
+import { renderSessionTraceabilityLines } from './session-report.mjs';
 import { buildLegacyDownloadCommand } from './modules.mjs';
 import {
   isSuccessfulQueueStatus,
@@ -503,6 +504,7 @@ function renderLegacyReport(manifest, { plan = null, layout = null } = {}) {
   if (manifest.reason) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
+  lines.push(...renderSessionTraceabilityLines(manifest, { plan }));
   if (manifest.resumeCommand) {
     lines.push(`- Next resume command: ${manifest.resumeCommand}`);
   }

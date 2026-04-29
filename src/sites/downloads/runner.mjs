@@ -32,6 +32,7 @@ import {
 import {
   sessionOptionsFromRunManifest,
 } from '../sessions/manifest-bridge.mjs';
+import { renderSessionTraceabilityLines } from './session-report.mjs';
 
 const AUTH_REQUIRED_KEYS = [
   'authRequired',
@@ -229,6 +230,7 @@ function renderTerminalReport(manifest, resolvedTask = null, { plan = null, layo
     if (manifest.session.quarantineKey) {
       lines.push(`- Session quarantine key: ${manifest.session.quarantineKey}`);
     }
+    lines.push(...renderSessionTraceabilityLines(manifest, { plan }));
   }
   if (manifest.resumeCommand) {
     lines.push(`- Next resume command: ${manifest.resumeCommand}`);

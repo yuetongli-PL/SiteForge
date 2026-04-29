@@ -16,6 +16,7 @@ import {
   resolveDownloadRunStatus,
 } from './contracts.mjs';
 import { buildDownloadRunLayout } from './artifacts.mjs';
+import { renderSessionTraceabilityLines } from './session-report.mjs';
 import {
   isSuccessfulQueueStatus,
   loadDownloadRecoveryState,
@@ -282,6 +283,7 @@ function renderReport(manifest, resolvedTask, { plan = null, layout = null, reco
   if (manifest.reason) {
     lines.push(`- Reason: ${manifest.reason}`);
   }
+  lines.push(...renderSessionTraceabilityLines(manifest, { plan }));
   if (plan && layout) {
     lines.push(
       `- Next resume command: ${buildResumeCommand(plan, layout)}`,

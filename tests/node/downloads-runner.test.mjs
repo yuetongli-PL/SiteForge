@@ -883,6 +883,10 @@ test('download runner can generate and consume unified session health before res
   assert.equal(result.manifest.status, 'blocked');
   assert.equal(result.manifest.session.provider, 'unified-session-runner');
   assert.equal(result.manifest.session.healthManifest, sessionManifestPath);
+  const report = await readFile(result.manifest.artifacts.reportMarkdown, 'utf8');
+  assert.match(report, /Session provider: unified-session-runner/u);
+  assert.match(report, /Session traceability gate: passed \(unified-session-health-manifest\)/u);
+  assert.match(report, new RegExp(sessionManifestPath.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&'), 'u'));
 });
 
 test('legacy executor normalizes successful action stdout into a download manifest', async (t) => {

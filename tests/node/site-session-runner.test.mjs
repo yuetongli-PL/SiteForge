@@ -423,6 +423,19 @@ test('legacy reduction matrix preserves fallback and live-claim guardrails', asy
   assert.match(matrix, /safe fallback removal/u);
 });
 
+test('download runner next steps keep work on local main without new branches', async () => {
+  const nextSteps = await readFile(path.join(process.cwd(), 'docs', 'DOWNLOAD_RUNNER_NEXT_STEPS.md'), 'utf8');
+
+  assert.match(nextSteps, /continues\s+on local `main` in the current project directory/u);
+  assert.match(nextSteps, /Do not create new branches or\s+extra worktrees unless the operator explicitly asks/u);
+  assert.match(nextSteps, /## Local Main Workstreams/u);
+  assert.match(nextSteps, /1\. Native resolvers/u);
+  assert.match(nextSteps, /2\. Legacy reduction/u);
+  assert.match(nextSteps, /3\. Session governance/u);
+  assert.doesNotMatch(nextSteps, /## Branch Plan/u);
+  assert.doesNotMatch(nextSteps, /codex\/download-native-resolvers/u);
+});
+
 test('authenticated release gate blocks missing session traceability', () => {
   assert.deepEqual(evaluateAuthenticatedSessionReleaseGate({
     plan: { sessionRequirement: 'required' },

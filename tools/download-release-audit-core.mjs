@@ -185,6 +185,12 @@ function repairPlanForRow(row = {}, options = {}) {
   if (row.status !== 'blocked' || !row.site || row.site === 'unknown') {
     return null;
   }
+  if (options.write === false) {
+    return buildSessionRepairPlanCommand({
+      site: row.site,
+      reason: row.reason ?? 'blocked',
+    });
+  }
   const manifestPath = auditJsonPath(options);
   return buildSessionRepairPlanCommand({ site: row.site, auditManifest: manifestPath });
 }

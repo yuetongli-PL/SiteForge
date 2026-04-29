@@ -92,3 +92,33 @@ test('download-release-audit audits download and social matrix session gates off
   assert.match(markdown, /Repair Plan/u);
   assert.match(markdown, /session-repair-plan\.mjs/u);
 });
+
+test('download-release-audit no-write guidance avoids unwritten audit manifest paths', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-release-audit-no-write-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  const runDir = path.join(rootDir, 'social-live');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'matrix-run',
+    results: [{
+      id: 'x-full-archive',
+      site: 'x',
+      artifactSummary: {
+        verdict: 'blocked',
+        reason: 'session-provider-missing',
+        sessionGate: {
+          ok: false,
+          status: 'blocked',
+          reason: 'session-provider-missing',
+        },
+      },
+    }],
+  }, null, 2)}\n`, 'utf8');
+
+  const audit = await buildAudit(parseArgs(['--runs-root', rootDir, '--no-write']));
+  const blocked = audit.rows.find((row) => row.id === 'x-full-archive');
+
+  assert.equal(blocked.repairPlan.auditManifest, undefined);
+  assert.match(blocked.repairPlan.commandText, /--session-gate-reason session-provider-missing/u);
+  assert.doesNotMatch(blocked.repairPlan.commandText, /--audit-manifest/u);
+});

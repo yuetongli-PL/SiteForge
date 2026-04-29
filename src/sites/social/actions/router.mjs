@@ -5256,6 +5256,33 @@ export async function runSocialAction(options = {}, deps = {}) {
     return dryRunResult;
   }
 
+  const initialSessionGate = buildSocialSessionGate({
+    siteKey: plan.siteKey,
+    plan,
+    ...sessionMetadata,
+  }, {
+    requiresAuth: plan.requiresAuth === true,
+  });
+  if (initialSessionGate.status === 'blocked') {
+    const blockedResult = {
+      ok: false,
+      siteKey: plan.siteKey,
+      dryRun: false,
+      plan,
+      reasonCode: 'session-gate-blocked',
+      outcome: {
+        ok: false,
+        status: 'blocked',
+        reason: initialSessionGate.reason,
+      },
+      ...sessionMetadata,
+      sessionGate: initialSessionGate,
+      artifacts: artifactPathSummary(artifactLayout),
+    };
+    blockedResult.markdown = renderMarkdownReport(blockedResult);
+    return blockedResult;
+  }
+
   const runtime = {
     openBrowserSession,
     resolveSiteBrowserSessionOptions,

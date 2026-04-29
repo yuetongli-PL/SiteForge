@@ -2425,6 +2425,118 @@ test('social action dry-run suggests session repair command for blocked session 
   );
 });
 
+test('runSocialAction blocks required actions before opening browser when session gate fails', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-required-session-block-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const sessionManifest = path.join(runRoot, 'session-manifest.json');
+  await writeFile(sessionManifest, JSON.stringify({
+    plan: {
+      siteKey: 'x',
+      host: 'x.com',
+      purpose: 'archive',
+      sessionRequirement: 'required',
+    },
+    health: {
+      status: 'blocked',
+      reason: 'session-invalid',
+      riskCauseCode: 'session-invalid',
+    },
+    artifacts: {
+      manifest: sessionManifest,
+      runDir: runRoot,
+    },
+  }, null, 2));
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'profile-content',
+    account: 'openai',
+    sessionManifest,
+    runDir: path.join(runRoot, 'social-run'),
+  }, {
+    async resolveSiteBrowserSessionOptions() {
+      assert.fail('auth context should not resolve after blocked session gate');
+    },
+    async openBrowserSession() {
+      assert.fail('browser should not open after blocked session gate');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reasonCode, 'session-gate-blocked');
+  assert.equal(result.sessionGate.status, 'blocked');
+  assert.equal(result.sessionGate.reason, 'session-invalid');
+  assert.match(result.markdown, /Session traceability gate: blocked \(session-invalid\)/u);
+  assert.match(
+    result.markdown,
+    /Next session repair command: node src\/entrypoints\/sites\/session-repair-plan\.mjs --site x --session-gate-reason session-invalid/u,
+  );
+});
+
+test('runSocialAction does not block public X search when session manifest is absent', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-public-search-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+  let opened = false;
+  const searchUrl = 'https://x.com/search?q=openai&src=typed_query&f=live';
+  const fakeSession = {
+    async navigateAndWait() {},
+    async evaluateValue() {
+      return searchUrl;
+    },
+    async callPageFunction(fn) {
+      const source = String(fn);
+      if (source.includes('pageExtractSocialState')) {
+        return {
+          url: searchUrl,
+          title: 'Search / X',
+          currentAccount: null,
+          account: null,
+          items: [{
+            id: 'tweet-1',
+            url: 'https://x.com/openai/status/1',
+            text: 'public search result',
+            timestamp: '2026-04-30T00:00:00.000Z',
+            author: { handle: 'openai', displayName: 'OpenAI' },
+            media: [],
+          }],
+          relations: [],
+          media: [],
+        };
+      }
+      if (source.includes('pageScrollToBottom')) {
+        return { before: 0, after: 0, height: 0 };
+      }
+      return null;
+    },
+    getMetrics() {
+      return {};
+    },
+    async close() {},
+  };
+
+  const result = await runSocialAction({
+    site: 'x',
+    action: 'search',
+    query: 'openai',
+    maxScrolls: 0,
+    timeoutMs: 1000,
+    runDir,
+  }, {
+    async resolveSiteBrowserSessionOptions() {
+      return { userDataDir: null, cleanupUserDataDirOnShutdown: true };
+    },
+    async openBrowserSession() {
+      opened = true;
+      return fakeSession;
+    },
+  });
+
+  assert.equal(opened, true);
+  assert.equal(result.sessionGate.status, 'passed');
+  assert.equal(result.sessionGate.reason, 'session-not-required');
+  assert.equal(result.plan.requiresAuth, false);
+});
+
 test('social action CLI parser handles explicit API cursor booleans', () => {
   assert.equal(parseSocialActionArgs(['profile-content', 'openai', '--api-cursor=true'], { site: 'x' }).apiCursor, true);
   assert.equal(parseSocialActionArgs(['profile-content', 'openai', '--api-cursor=false'], { site: 'x' }).apiCursor, false);

@@ -258,6 +258,40 @@ function summarize(rows) {
   return bySite;
 }
 
+function quoteCommandArg(value) {
+  const text = String(value ?? '');
+  if (!/[\s"]/u.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/gu, '\\"')}"`;
+}
+
+function sessionRepairPlanForRow(row = {}) {
+  if (row.sessionGate?.status !== 'blocked' || !row.site) {
+    return null;
+  }
+  const argv = [
+    'node',
+    'src/entrypoints/sites/session-repair-plan.mjs',
+    '--site',
+    row.site,
+    '--session-gate-reason',
+    row.sessionGate.reason ?? 'blocked',
+  ];
+  return {
+    command: 'session-repair-plan',
+    argv,
+    commandText: argv.map(quoteCommandArg).join(' '),
+  };
+}
+
+function addSessionRepairPlans(rows = []) {
+  return rows.map((row) => {
+    const sessionRepairPlan = sessionRepairPlanForRow(row);
+    return sessionRepairPlan ? { ...row, sessionRepairPlan } : row;
+  });
+}
+
 export async function buildReport(options) {
   const files = await findManifestFiles(options.runsRoot);
   const rows = [];
@@ -290,12 +324,13 @@ export async function buildReport(options) {
     if (options.site !== 'all' && options.site !== site) continue;
     limited.push(...siteFiltered.filter((row) => row.site === site).slice(0, Number(options.limit)));
   }
+  const rowsWithRepairPlans = addSessionRepairPlans(limited);
   return {
     generatedAt: new Date().toISOString(),
     runsRoot: path.resolve(options.runsRoot),
-    totalRows: limited.length,
-    summary: summarize(limited),
-    rows: limited,
+    totalRows: rowsWithRepairPlans.length,
+    summary: summarize(rowsWithRepairPlans),
+    rows: rowsWithRepairPlans,
   };
 }
 
@@ -304,12 +339,12 @@ function markdownReport(report) {
   for (const [site, summary] of Object.entries(report.summary)) {
     lines.push(`- ${site}: ${summary.total} row(s), latest ${summary.latestFinishedAt}, statuses ${JSON.stringify(summary.statuses)}, session gates ${JSON.stringify(summary.sessionGates)}`);
   }
-  lines.push('', '## Rows', '', '| Site | Case | Status | Reason | Session Gate | Finished | Manifest |', '| --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('', '## Rows', '', '| Site | Case | Status | Reason | Session Gate | Repair Plan | Finished | Manifest |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const row of report.rows) {
     const sessionGate = row.sessionGate
       ? `${row.sessionGate.status}${row.sessionGate.reason ? ` (${row.sessionGate.reason})` : ''}`
       : '';
-    lines.push(`| ${row.site} | ${row.id} | ${row.status} | ${row.reason ?? ''} | ${sessionGate} | ${row.finishedAt ?? ''} | ${row.manifestPath} |`);
+    lines.push(`| ${row.site} | ${row.id} | ${row.status} | ${row.reason ?? ''} | ${sessionGate} | ${row.sessionRepairPlan?.commandText ?? ''} | ${row.finishedAt ?? ''} | ${row.manifestPath} |`);
   }
   lines.push('');
   return lines.join('\n');

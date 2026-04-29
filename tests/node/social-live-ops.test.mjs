@@ -118,7 +118,9 @@ test('social-live-report surfaces social action session gate summaries', async (
   t.after(() => rm(rootDir, { recursive: true, force: true }));
 
   const runDir = path.join(rootDir, 'x-action-run');
+  const blockedRunDir = path.join(rootDir, 'x-blocked-action-run');
   await mkdir(runDir, { recursive: true });
+  await mkdir(blockedRunDir, { recursive: true });
   await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
     runId: 'x-action-run',
     siteKey: 'x',
@@ -134,18 +136,42 @@ test('social-live-report surfaces social action session gate summaries', async (
     },
     generatedAt: '2026-04-26T00:00:00.000Z',
   }, null, 2)}\n`, 'utf8');
+  await writeFile(path.join(blockedRunDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'x-blocked-action-run',
+    siteKey: 'x',
+    status: 'blocked',
+    reason: 'session-health-manifest-missing',
+    sessionProvider: 'unified-session-runner',
+    sessionGate: {
+      ok: false,
+      status: 'blocked',
+      reason: 'session-health-manifest-missing',
+      provider: 'unified-session-runner',
+      healthManifest: null,
+    },
+    generatedAt: '2026-04-26T00:01:00.000Z',
+  }, null, 2)}\n`, 'utf8');
 
   const outDir = path.join(rootDir, 'report');
   const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--out-dir', outDir]));
   const outputs = await writeReport(parseReportArgs(['--runs-root', rootDir, '--out-dir', outDir]), report);
   const markdown = await readFile(outputs.markdownPath, 'utf8');
 
-  assert.equal(report.totalRows, 1);
-  assert.equal(report.rows[0].sessionGate.status, 'passed');
-  assert.equal(report.rows[0].sessionGate.reason, 'unified-session-health-manifest');
+  assert.equal(report.totalRows, 2);
+  const passedRow = report.rows.find((row) => row.id === 'x-action-run');
+  const blockedRow = report.rows.find((row) => row.id === 'x-blocked-action-run');
+  assert.equal(passedRow.sessionGate.status, 'passed');
+  assert.equal(passedRow.sessionGate.reason, 'unified-session-health-manifest');
+  assert.equal(passedRow.sessionRepairPlan, undefined);
+  assert.equal(blockedRow.sessionGate.status, 'blocked');
+  assert.equal(blockedRow.sessionRepairPlan.command, 'session-repair-plan');
+  assert.match(blockedRow.sessionRepairPlan.commandText, /session-repair-plan\.mjs --site x --session-gate-reason session-health-manifest-missing/u);
   assert.equal(report.summary.x.sessionGates.passed, 1);
+  assert.equal(report.summary.x.sessionGates.blocked, 1);
   assert.match(markdown, /Session Gate/u);
   assert.match(markdown, /passed \(unified-session-health-manifest\)/u);
+  assert.match(markdown, /Repair Plan/u);
+  assert.match(markdown, /session-repair-plan\.mjs --site x --session-gate-reason session-health-manifest-missing/u);
 });
 
 test('social-live-report surfaces state-only started runs as stale when no process owns them', async (t) => {

@@ -18,6 +18,7 @@ import {
 } from '../../src/sites/sessions/manifest-bridge.mjs';
 import { evaluateAuthenticatedSessionReleaseGate } from '../../src/sites/sessions/release-gate.mjs';
 import { runSessionTask } from '../../src/sites/sessions/runner.mjs';
+import { inspectSessionHealth } from '../../src/sites/downloads/session-manager.mjs';
 import {
   main,
   parseArgs,
@@ -168,6 +169,65 @@ test('session runner records repair plan for unhealthy required sessions', async
   assert.equal(result.manifest.repairPlan.action, 'site-login');
   assert.equal(result.manifest.repairPlan.command, 'site-login');
   assert.equal(result.manifest.repairPlan.requiresApproval, true);
+});
+
+test('session health treats verified reusable profile as recovered from historical crash marker', async () => {
+  const health = await inspectSessionHealth('bilibili', {
+    host: 'www.bilibili.com',
+    profile: {
+      host: 'www.bilibili.com',
+      authSession: {
+        reuseLoginStateByDefault: true,
+      },
+    },
+    sessionRequirement: 'optional',
+    now: new Date('2026-04-30T13:13:00.000Z'),
+  }, {
+    inspectReusableSiteSession: async () => ({
+      authAvailable: false,
+      reusableProfile: false,
+      userDataDir: 'C:/private/bilibili-profile',
+      reuseLoginState: true,
+      profileHealth: {
+        exists: true,
+        healthy: false,
+        usableForCookies: true,
+        warnings: ['Persistent browser profile last exit type was Crashed.'],
+      },
+      authSessionStateSummary: {
+        lastHealthyAt: '2026-04-30T13:12:42.831Z',
+        lastSessionReuseVerifiedAt: '2026-04-30T13:12:42.831Z',
+        nextSuggestedKeepaliveAt: '2026-04-30T15:12:42.831Z',
+        keepaliveDue: false,
+      },
+    }),
+    prepareSiteSessionGovernance: async () => ({
+      policyDecision: {
+        allowed: false,
+        riskCauseCode: 'profile-health-risk',
+        riskAction: 'rebuild-profile',
+      },
+      networkDrift: {
+        driftDetected: false,
+        reasons: [],
+      },
+      authSessionSummary: {
+        lastHealthyAt: '2026-04-30T13:12:42.831Z',
+        lastSessionReuseVerifiedAt: '2026-04-30T13:12:42.831Z',
+        nextSuggestedKeepaliveAt: '2026-04-30T15:12:42.831Z',
+        keepaliveDue: false,
+      },
+      lease: {
+        leaseId: 'lease-recovered-profile-health',
+      },
+    }),
+    releaseGovernanceSessionLease: async () => {},
+  });
+
+  assert.equal(health.status, 'ready');
+  assert.equal(health.reason, undefined);
+  assert.equal(health.repairPlan, undefined);
+  assert.deepEqual(health.riskSignals, ['profile-health-recovered-after-session-reuse']);
 });
 
 test('session CLI prints JSON and writes manifest under runs/session layout', async (t) => {

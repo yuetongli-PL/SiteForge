@@ -104,14 +104,69 @@ function governanceReasonFromDecision({ governance = null, reusableSession = nul
   ) || undefined;
 }
 
-function governanceRiskSignals({ governance = null, reusableSession = null } = {}) {
-  return [
+function profileHealthRiskRecovered({ governance = null, reusableSession = null, now = new Date() } = {}) {
+  const policyDecision = governance?.policyDecision ?? {};
+  const riskCauseCode = normalizeText(policyDecision.riskCauseCode);
+  if (riskCauseCode && riskCauseCode !== 'profile-health-risk') {
+    return false;
+  }
+  if (reusableSession?.profileHealth?.healthy !== false || reusableSession?.profileHealth?.exists === false) {
+    return false;
+  }
+  if (policyDecision.profileQuarantined === true || governance?.quarantine) {
+    return false;
+  }
+  if (governance?.networkDrift?.driftDetected === true) {
+    return false;
+  }
+
+  const summary = reusableSession?.authSessionStateSummary ?? governance?.authSessionSummary ?? {};
+  const lastHealthyAt = normalizeText(summary.lastHealthyAt);
+  const lastSessionReuseVerifiedAt = normalizeText(summary.lastSessionReuseVerifiedAt);
+  if (!lastHealthyAt || !lastSessionReuseVerifiedAt) {
+    return false;
+  }
+
+  const lastHealthyDate = new Date(lastHealthyAt);
+  const lastReuseDate = new Date(lastSessionReuseVerifiedAt);
+  if (Number.isNaN(lastHealthyDate.getTime()) || Number.isNaN(lastReuseDate.getTime())) {
+    return false;
+  }
+  if (summary.keepaliveDue === true) {
+    return false;
+  }
+
+  const nextSuggestedKeepaliveAt = normalizeText(summary.nextSuggestedKeepaliveAt);
+  if (nextSuggestedKeepaliveAt) {
+    const nextSuggestedDate = new Date(nextSuggestedKeepaliveAt);
+    if (!Number.isNaN(nextSuggestedDate.getTime()) && nextSuggestedDate.getTime() <= now.getTime()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isRecoveredProfileHealthSignal(signal) {
+  return signal === 'profile-health-risk'
+    || signal === 'rebuild-profile'
+    || /^Persistent browser profile last exit type was /u.test(signal);
+}
+
+function governanceRiskSignals({ governance = null, reusableSession = null, recoveredProfileHealth = false } = {}) {
+  const signals = [
     governance?.policyDecision?.riskCauseCode,
     governance?.policyDecision?.riskAction,
     ...(governance?.policyDecision?.driftReasons ?? []),
     ...(governance?.networkDrift?.reasons ?? []),
     ...(reusableSession?.profileHealth?.warnings ?? []),
   ].map((value) => normalizeText(value)).filter(Boolean);
+  if (recoveredProfileHealth) {
+    return [
+      ...signals.filter((signal) => !isRecoveredProfileHealthSignal(signal)),
+      'profile-health-recovered-after-session-reuse',
+    ];
+  }
+  return signals;
 }
 
 export function buildSessionRepairPlan(health = {}) {
@@ -255,7 +310,14 @@ async function resolveGovernanceBackedSessionLease(siteKey, purpose, options = {
     },
   }, deps.siteSessionGovernanceDeps ?? deps);
 
-  const status = governanceStatusFromDecision({ governance, reusableSession, requirement });
+  const recoveredProfileHealth = profileHealthRiskRecovered({
+    governance,
+    reusableSession,
+    now: options.now instanceof Date ? options.now : new Date(),
+  });
+  const status = recoveredProfileHealth
+    ? 'ready'
+    : governanceStatusFromDecision({ governance, reusableSession, requirement });
   const reason = status === 'ready'
     ? undefined
     : governanceReasonFromDecision({ governance, reusableSession });
@@ -266,7 +328,7 @@ async function resolveGovernanceBackedSessionLease(siteKey, purpose, options = {
     mode: requirement === 'required' ? 'authenticated' : 'reusable-profile',
     status,
     reason,
-    riskSignals: governanceRiskSignals({ governance, reusableSession }),
+    riskSignals: governanceRiskSignals({ governance, reusableSession, recoveredProfileHealth }),
     browserProfileRoot: options.browserProfileRoot,
     userDataDir: reusableSession.userDataDir ?? authContext.userDataDir ?? options.userDataDir,
     expiresAt: reusableSession.authSessionStateSummary?.nextSuggestedKeepaliveAt

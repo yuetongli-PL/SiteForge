@@ -73,7 +73,8 @@ test('bilibili native resolver maps offline dash playurl payload to video and au
   ]);
   assert.deepEqual(resolved.resources.map((resource) => resource.mediaType), ['video', 'audio']);
   assert.equal(resolved.resources[0].expectedBytes, 4096);
-  assert.equal(resolved.resources[0].headers.Referer, 'https://www.bilibili.com/');
+  assert.equal(resolved.resources[0].headers.Referer, 'https://www.bilibili.com/video/BV1fixturePage/');
+  assert.equal(resolved.resources[0].headers['User-Agent'], 'Mozilla/5.0 Browser-Wiki-Skill native resolver');
   assert.equal(resolved.resources[0].sourceUrl, 'https://www.bilibili.com/video/BV1fixturePage/');
   assert.equal(resolved.resources[0].referer, 'https://www.bilibili.com/video/BV1fixturePage/');
   assert.equal(resolved.resources[0].metadata.streamType, 'video');
@@ -263,6 +264,8 @@ test('bilibili ordinary BV input can resolve through injected API evidence contr
   assert.equal(resolved.resources[0].url, 'https://upos.example.test/injected/video.flv');
   assert.equal(resolved.resources[0].metadata.bvid, 'BV1injectedEvidence');
   assert.equal(resolved.resources[0].metadata.cid, '9101');
+  assert.equal(resolved.resources[0].referer, 'https://www.bilibili.com/video/BV1injectedEvidence/');
+  assert.equal(resolved.resources[0].headers.Referer, 'https://www.bilibili.com/video/BV1injectedEvidence/');
   assert.equal(resolved.metadata.resolution.inputKind, 'video-detail');
 });
 
@@ -394,6 +397,73 @@ test('bilibili native resolver fetches view and playurl evidence through injecte
   assert.equal(resolved.resources[0].metadata.bvid, 'BV1fetchInjected');
   assert.equal(resolved.resources[0].metadata.cid, '7301');
   assert.equal(resolved.metadata.resolution.inputKind, 'video-detail');
+});
+
+test('bilibili native resolver handles live API playurl result sentinel string', async () => {
+  const { resolved } = await resolveBilibili({
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/video/BV1liveApiShape/',
+    bilibiliViewPayload: {
+      code: 0,
+      data: {
+        bvid: 'BV1liveApiShape',
+        aid: 88001,
+        title: 'Live API Shape',
+        pages: [{ cid: 8800101, page: 1, part: 'Live Shape Part' }],
+      },
+    },
+    playUrlPayloads: {
+      8800101: {
+        bvid: 'BV1liveApiShape',
+        cid: 8800101,
+        payload: {
+          code: 0,
+          data: {
+            result: 'suee',
+            quality: 80,
+            dash: {
+              video: [{
+                id: 32,
+                baseUrl: 'https://upos.example.test/live-shape/video-low.m4s',
+                mimeType: 'video/mp4',
+                bandwidth: 800000,
+                codecs: 'avc1.64001f',
+              }, {
+                id: 80,
+                baseUrl: 'https://upos.example.test/live-shape/video-best.m4s',
+                mimeType: 'video/mp4',
+                bandwidth: 2400000,
+                codecs: 'avc1.640032',
+              }],
+              audio: [{
+                id: 30216,
+                baseUrl: 'https://upos.example.test/live-shape/audio-low.m4s',
+                mimeType: 'audio/mp4',
+                bandwidth: 64000,
+                codecs: 'mp4a.40.2',
+              }, {
+                id: 30280,
+                baseUrl: 'https://upos.example.test/live-shape/audio-best.m4s',
+                mimeType: 'audio/mp4',
+                bandwidth: 128000,
+                codecs: 'mp4a.40.2',
+              }],
+            },
+          },
+        },
+      },
+    },
+    dryRun: true,
+  });
+
+  assert.equal(resolved.resources.length, 2);
+  assert.deepEqual(resolved.resources.map((resource) => resource.url), [
+    'https://upos.example.test/live-shape/video-best.m4s',
+    'https://upos.example.test/live-shape/audio-best.m4s',
+  ]);
+  assert.deepEqual(resolved.resources.map((resource) => resource.metadata.muxRole), ['video', 'audio']);
+  assert.equal(resolved.resources[0].groupId, 'bilibili:BV1liveApiShape:p1');
+  assert.equal(resolved.completeness.complete, true);
 });
 
 test('bilibili native API fetch can expand collection evidence through injected fetch', async () => {

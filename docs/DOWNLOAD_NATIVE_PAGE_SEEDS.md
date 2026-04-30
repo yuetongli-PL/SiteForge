@@ -102,8 +102,10 @@ page fetches, or live smoke validation.
   downloads, but it is explicit opt-in only (`--enable-derived-mux`,
   `--mux-derived-media`, `--dash-mux`, or injected mux hook). DASH audio and
   video streams with the same `groupId` can be muxed after both stream
-  resources complete. Tests use an injected mux hook; live ffmpeg/download
-  validation remains not-run.
+  resources complete. The approved Bilibili BV validation at
+  `runs\live-validation\bilibili-dash-mux\20260430T213818_native_BV1WjDDBGE3p`
+  passed with native resources, no legacy fallback, a derived mux artifact, and
+  ffprobe evidence.
 - Douyin signing, live API discovery, cache refresh, and profile side effects
   remain in the existing action/query layer. Native resolution can consume
   fixture/API detail payloads, fixture HTML JSON payloads, injected fetch JSON,
@@ -121,4 +123,6 @@ page fetches, or live smoke validation.
   approved audit command for allowlisted actions and never spawns child
   commands; login, keepalive, and profile rebuild still need a separately
   approved path before any real operation is run.
-- Live smoke and real download verification remain `not-run`.
+- Live smoke and real download verification remain `not-run` for sites and
+  cases without an explicit approved artifact. Bilibili `bilibili-dash-mux` is
+  the current approved real-download exception.

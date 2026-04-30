@@ -551,15 +551,18 @@ async function runProcess(command, args = [], options = {}) {
 }
 
 async function muxWithFfmpeg(muxPlan, { ffmpegPath = 'ffmpeg', spawnProcess = runProcess } = {}) {
+  const videoFile = muxPlan.videoFile ?? muxPlan.video?.result?.filePath;
+  const audioFile = muxPlan.audioFile ?? muxPlan.audio?.result?.filePath;
+  const outputFile = muxPlan.outputFile ?? muxPlan.outputPath;
   const result = await spawnProcess(ffmpegPath, [
     '-y',
     '-i',
-    muxPlan.video.result.filePath,
+    videoFile,
     '-i',
-    muxPlan.audio.result.filePath,
+    audioFile,
     '-c',
     'copy',
-    muxPlan.outputPath,
+    outputFile,
   ]);
   if (result?.code !== 0) {
     return {

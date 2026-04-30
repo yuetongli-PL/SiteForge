@@ -452,7 +452,8 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /Re-check the current ahead count before\s+any publication step/u);
   assert.match(releaseGate, /node --test tests\\node\\\*\.test\.mjs`: 692 passed, 0 failed/u);
   assert.match(releaseGate, /python -m unittest discover -s tests\\python -p "test_\*\.py"`: 46 tests OK/u);
-  assert.match(releaseGate, /Real download: `not-run`/u);
+  assert.match(releaseGate, /Bilibili DASH mux live validation: `passed`/u);
+  assert.match(releaseGate, /Real download: `passed` for approved Bilibili DASH mux only/u);
 });
 
 test('download runner docs describe hybrid native migration without live claims', async () => {

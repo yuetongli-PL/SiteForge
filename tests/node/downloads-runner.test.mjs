@@ -1339,6 +1339,105 @@ test('download runner executes bilibili legacy adapter when no resources are res
   assert.equal(result.manifest.legacy.entrypoint.endsWith(path.join('src', 'entrypoints', 'sites', 'bilibili-action.mjs')), true);
 });
 
+test('download runner executes Bilibili native DASH resources without legacy fallback', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-runner-bili-native-dash-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  let genericExecutorInvoked = false;
+  let legacyInvoked = false;
+  const fetchedPaths = [];
+  const result = await runDownloadTask({
+    site: 'bilibili',
+    input: 'https://www.bilibili.com/video/BV1runnerNativeDash/',
+    dryRun: false,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+    resolveNetwork: true,
+    enableDerivedMux: true,
+  }, {
+    acquireSessionLease: async () => ({
+      siteKey: 'bilibili',
+      host: 'www.bilibili.com',
+      status: 'ready',
+      mode: 'authenticated',
+      riskSignals: [],
+    }),
+    releaseSessionLease: async () => {},
+    mockResolverFetchImpl: async (url) => {
+      const parsed = new URL(url);
+      fetchedPaths.push(parsed.pathname);
+      if (parsed.pathname === '/x/web-interface/view') {
+        return {
+          code: 0,
+          data: {
+            bvid: 'BV1runnerNativeDash',
+            aid: 62001,
+            title: 'Runner Native DASH',
+            pages: [{ cid: 6200101, page: 1, part: 'Runner Part' }],
+          },
+        };
+      }
+      if (parsed.pathname === '/x/player/playurl') {
+        return {
+          code: 0,
+          data: {
+            result: 'suee',
+            dash: {
+              video: [{
+                id: 80,
+                baseUrl: 'https://upos.example.test/runner/video.m4s',
+                mimeType: 'video/mp4',
+                bandwidth: 2400000,
+              }],
+              audio: [{
+                id: 30280,
+                baseUrl: 'https://upos.example.test/runner/audio.m4s',
+                mimeType: 'audio/mp4',
+                bandwidth: 128000,
+              }],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected Bilibili API URL: ${url}`);
+    },
+    executeResolvedDownloadTask: async (resolvedTask, plan, sessionLease, options) => {
+      genericExecutorInvoked = true;
+      assert.equal(options.enableDerivedMux, true);
+      assert.equal(sessionLease.status, 'ready');
+      assert.equal(resolvedTask.resources.length, 2);
+      assert.deepEqual(resolvedTask.resources.map((resource) => resource.metadata.muxRole), ['video', 'audio']);
+      assert.deepEqual([...new Set(resolvedTask.resources.map((resource) => resource.groupId))], [
+        'bilibili:BV1runnerNativeDash:p1',
+      ]);
+      return normalizeDownloadRunManifest({
+        siteKey: plan.siteKey,
+        status: 'passed',
+        counts: {
+          expected: 2,
+          attempted: 2,
+          downloaded: 2,
+          skipped: 0,
+          failed: 0,
+        },
+        session: sessionLease,
+      });
+    },
+    executeLegacyDownloadTask: async () => {
+      legacyInvoked = true;
+      throw new Error('legacy adapter should not run when Bilibili native DASH resources resolve');
+    },
+  });
+
+  assert.deepEqual(fetchedPaths, ['/x/web-interface/view', '/x/player/playurl']);
+  assert.equal(genericExecutorInvoked, true);
+  assert.equal(legacyInvoked, false);
+  assert.equal(result.resolvedTask.metadata.resolver.method, 'native-bilibili-resource-seeds');
+  assert.equal(result.resolvedTask.completeness.complete, true);
+  assert.equal(result.manifest.status, 'passed');
+});
+
 test('download runner passes native miss trace into legacy fallback options', async (t) => {
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-runner-native-miss-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));
@@ -1837,6 +1936,77 @@ test('download executor muxes completed audio and video resources as a derived a
   assert.equal(artifacts.queue.length, 2);
   assert.equal(artifacts.downloads.length, 3);
   assert.equal(artifacts.downloads[2].derived, true);
+});
+
+test('download executor default ffmpeg muxer accepts derived file arguments', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-executor-ffmpeg-mux-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+
+  const plan = normalizeDownloadTaskPlan({
+    siteKey: 'bilibili',
+    host: 'www.bilibili.com',
+    taskType: 'video',
+    source: { input: 'https://www.bilibili.com/video/BV1muxFfmpeg/' },
+    policy: { dryRun: false, concurrency: 2, retries: 0, retryBackoffMs: 0 },
+    output: { root: runRoot },
+  });
+  const spawnCalls = [];
+  const manifest = await executeResolvedDownloadTask({
+    planId: plan.id,
+    siteKey: 'bilibili',
+    taskType: 'video',
+    resources: [{
+      id: 'dash-video',
+      url: 'https://upos.example.test/mux/video.m4s',
+      fileName: 'dash-video.m4s',
+      mediaType: 'video',
+      groupId: 'bilibili:BV1muxFfmpeg:p1',
+      metadata: {
+        muxRole: 'video',
+        muxKind: 'dash-audio-video',
+      },
+    }, {
+      id: 'dash-audio',
+      url: 'https://upos.example.test/mux/audio.m4s',
+      fileName: 'dash-audio.m4s',
+      mediaType: 'audio',
+      groupId: 'bilibili:BV1muxFfmpeg:p1',
+      metadata: {
+        muxRole: 'audio',
+        muxKind: 'dash-audio-video',
+      },
+    }],
+  }, plan, null, {
+    runRoot,
+    dryRun: false,
+    enableDerivedMux: true,
+  }, {
+    fetchImpl: async (url) => {
+      const payload = Buffer.from(String(url).includes('video') ? 'video stream' : 'audio stream', 'utf8');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+        },
+      };
+    },
+    spawnProcess: async (command, args) => {
+      spawnCalls.push({ command, args });
+      await writeFile(args.at(-1), 'muxed stream', 'utf8');
+      return { code: 0, stderr: '' };
+    },
+  });
+
+  assert.equal(spawnCalls.length, 1);
+  assert.equal(spawnCalls[0].command, 'ffmpeg');
+  assert.equal(spawnCalls[0].args.includes('-i'), true);
+  const muxFile = manifest.files.find((entry) => entry.derived === true);
+  assert.equal(Boolean(muxFile), true);
+  assert.equal(await readFile(muxFile.filePath, 'utf8'), 'muxed stream');
+  const artifacts = await assertDownloadRunArtifactBundle(manifest);
+  assert.equal(artifacts.downloads.at(-1).reason, 'dash-mux');
+  assert.equal(manifest.status, 'passed');
 });
 
 test('download executor reports incomplete mux groups as derived failures', async (t) => {

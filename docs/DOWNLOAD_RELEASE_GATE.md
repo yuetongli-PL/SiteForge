@@ -346,13 +346,19 @@ Latest local offline evidence on `main`:
     10 passed, 0 failed.
   - `node --test tests\node\download-xiaohongshu-page-seed-resolver.test.mjs`:
     8 passed, 0 failed.
-- Bilibili DASH mux live validation: `blocked`.
-  `runs\live-validation\bilibili-dash-mux\20260430T053612_BV1WjDDBGE3p\session-health\manifest.json`
-  recorded `profile-health-risk`; no download, mux file, or downloads JSONL was
-  produced.
-- Live smoke: `not-run`.
+- Bilibili DASH mux live validation: `passed`.
+  `runs\live-validation\bilibili-dash-mux\20260430T213818_native_BV1WjDDBGE3p`
+  contains `manifest.json`, `resolved-task.json`, `queue.json`,
+  `downloads.jsonl`, original DASH stream files, and a derived mux file.
+  `resolved-task.json` records `native-bilibili-resource-seeds`, the manifest
+  has no `legacy` field, and `downloads.jsonl` records derived
+  `reason: dash-mux`. ffprobe verified H.264 video plus AAC audio in the mux
+  file.
+- Live smoke: `not-run` except the approved Bilibili DASH mux real-download
+  validation above.
 - Real login: `not-run`.
-- Real download: `not-run`.
+- Real download: `passed` for approved Bilibili DASH mux only; other sites and
+  cases remain `not-run` unless separately approved.
 
 ## Publication Boundary
 

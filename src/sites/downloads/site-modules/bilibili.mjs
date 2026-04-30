@@ -3,6 +3,7 @@
 import {
   addCommonProfileFlags,
   addLoginFlags,
+  isHttpUrl,
   legacyItems,
   normalizeText,
   normalizePositiveInteger,
@@ -473,11 +474,20 @@ async function requestWithInjectedEvidenceSeeds(request = {}, plan = {}, session
 }
 
 function payloadData(payload = {}) {
-  return payload.data?.data
-    ?? payload.data?.result
-    ?? payload.data
-    ?? payload.result
-    ?? payload;
+  const data = payload.data;
+  if (isObject(data)) {
+    if (isObject(data.data)) {
+      return data.data;
+    }
+    if (isObject(data.result)) {
+      return data.result;
+    }
+    return data;
+  }
+  if (isObject(payload.result)) {
+    return payload.result;
+  }
+  return payload;
 }
 
 function streamUrl(stream = {}) {
@@ -491,6 +501,20 @@ function streamUrl(stream = {}) {
     stream.backup_url?.[0],
     stream.backupUrls?.[0],
   );
+}
+
+function streamRank(stream = {}) {
+  const bandwidth = Number(stream.bandwidth ?? stream.band_width ?? 0);
+  const quality = Number(stream.quality ?? stream.qn ?? stream.id ?? stream.audioQuality ?? 0);
+  return (Number.isFinite(bandwidth) ? bandwidth : 0) * 1000
+    + (Number.isFinite(quality) ? quality : 0);
+}
+
+function preferredDashStreams(streams = []) {
+  return toArray(streams)
+    .filter((stream) => isObject(stream) && streamUrl(stream))
+    .sort((left, right) => streamRank(right) - streamRank(left))
+    .slice(0, 1);
 }
 
 function streamSeed(stream = {}, inherited = {}, mediaType = 'video', index = 0, muxEligible = false) {
@@ -517,6 +541,10 @@ function streamSeed(stream = {}, inherited = {}, mediaType = 'video', index = 0,
     title: firstText(inherited.title && titleSuffix ? `${inherited.title}-${titleSuffix}` : '', inherited.title, titleSuffix),
     sourceUrl: inherited.sourceUrl,
     referer: inherited.sourceUrl,
+    headers: {
+      Referer: inherited.sourceUrl,
+      'User-Agent': 'Mozilla/5.0 Browser-Wiki-Skill native resolver',
+    },
     expectedBytes: stream.size,
     priority: stream.priority ?? index,
     groupId: inherited.groupId,
@@ -547,13 +575,13 @@ function seedsFromPayload(payload = {}, request = {}, plan = {}, inheritedOverri
   const seeds = [];
 
   const dash = data.dash ?? data.videoInfo?.dash ?? data.playInfo?.dash;
-  for (const stream of toArray(dash?.video)) {
+  for (const stream of preferredDashStreams(dash?.video)) {
     const seed = streamSeed(stream, inherited, 'video', seeds.length, true);
     if (seed) {
       seeds.push(seed);
     }
   }
-  for (const stream of toArray(dash?.audio)) {
+  for (const stream of preferredDashStreams(dash?.audio)) {
     const seed = streamSeed(stream, inherited, 'audio', seeds.length, true);
     if (seed) {
       seeds.push(seed);
@@ -603,13 +631,13 @@ function pageEntriesFromViewPayload(payload = {}, request = {}, plan = {}) {
   const sourceUrl = firstText(
     request.inputUrl,
     request.url,
-    request.input,
+    isHttpUrl(request.input) ? request.input : '',
     data.short_link_v2,
     data.short_link,
     payload.pageUrl,
-    plan.source?.canonicalUrl,
-    plan.source?.input,
     bilibiliVideoUrl(bvid),
+    plan.source?.canonicalUrl,
+    isHttpUrl(plan.source?.input) ? plan.source.input : '',
   );
   const pages = toArray(data.pages?.length ? data.pages : payload.pages?.length ? payload.pages : [{
     cid: data.cid ?? payload.cid,

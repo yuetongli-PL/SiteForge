@@ -1,193 +1,259 @@
-# Browser-Wiki-Skill
+<h1 align="center">Browser-Wiki-Skill</h1>
 
-Browser-Wiki-Skill 是一个本地优先的多站点能力层工程。它不是把每个网站写成单独脚本，而是把站点识别、页面采集、能力建模、会话治理、下载边界、知识库编译和 Codex Skill 生成放进同一套可验证架构里。
+<p align="center">
+  A reusable Site Capability Layer for AI agents to understand, adapt to, and automate real websites.
+</p>
 
-当前重点是 Site Capability Layer：用统一的 Kernel、Capability Services、SiteAdapter 和 Downloader 边界，让新增站点可以按同一套契约接入，同时避免把站点语义、会话材料或高权限逻辑扩散到低权限执行路径。
+<p align="center">
+  <img src="https://img.shields.io/badge/status-active-brightgreen" alt="Status: active" />
+  <img src="https://img.shields.io/badge/runtime-Node.js%20%2B%20Python-blue" alt="Runtime: Node.js + Python" />
+  <img src="https://img.shields.io/badge/site%20capability%20layer-verified-6f42c1" alt="Site Capability Layer: verified" />
+  <img src="https://img.shields.io/badge/agent-ready-7c3aed" alt="Agent ready" />
+  <img src="https://img.shields.io/badge/license-not%20specified-lightgrey" alt="License: not specified" />
+</p>
 
-## Architecture Overview
+<p align="center">
+  <a href="#why">Why</a> ·
+  <a href="#core-idea">Core Idea</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#roadmap">Roadmap</a>
+</p>
+
+Browser-Wiki-Skill is a reusable Site Capability Layer that helps AI agents understand, adapt to, and automate real websites through structured browser behavior, API discovery, and site-specific capability adapters.
+
+It is not a one-off browser automation script collection. It is an architecture for turning real website behavior into governed, reusable capabilities: browser capture, API knowledge, session health, risk states, download policies, and repo-local Codex skills.
+
+## Why
+
+Most browser automation projects are fragile.
+
+They are usually tightly coupled to one website's DOM structure, request pattern, login state, and anti-abuse behavior. Once the website changes, the automation breaks, and the reason is often hidden inside script failure logs.
+
+Browser-Wiki-Skill solves this by introducing a reusable **Site Capability Layer**.
+
+It separates:
+
+- generic browser and pipeline orchestration
+- reusable capability services
+- site-specific adapters
+- structured API knowledge
+- session and risk state handling
+- low-permission downloader execution
+- governed artifact storage
+
+So agents can work with websites in a more stable, explainable, and reusable way.
+
+## Core Idea
+
+Browser-Wiki-Skill treats each website as a set of discoverable and reusable capabilities.
+
+Instead of hardcoding one-off browser scripts, it builds a layered system that can:
+
+1. capture real browser behavior
+2. discover useful network interfaces
+3. normalize site-specific data
+4. store reusable API and execution knowledge
+5. preserve session and risk boundaries
+6. expose stable capabilities to agents and skills
+
+The goal is simple: a website should not be a pile of DOM selectors. It should become a documented capability surface that an AI agent can inspect, reason about, and reuse safely.
+
+## Features
+
+### Site Capability Layer
+
+A layered architecture that separates site-agnostic orchestration from site-specific logic. The implementation is tracked in `CONTRIBUTING.md` as a 20-section Site Capability Layer matrix, currently marked `verified`.
+
+### API Discovery
+
+Captures observed browser network requests as candidates, records redacted evidence, and prevents automatic promotion into a verified API catalog. API promotion requires explicit evidence, adapter validation, schema compatibility, and policy gates.
+
+Status: **Done for core infrastructure**, **Experimental for live site-specific evidence freshness**.
+
+### Session View And Session Governance
+
+Represents reusable login state through minimized session manifests and `SessionView` boundaries. Download and social consumers receive only governed session views, not raw cookies, browser profiles, or credential containers.
+
+Status: **In progress**. Core contracts and tests exist; live recovery remains operator-approved and site-specific.
+
+### Risk State And Health Recovery
+
+Normalizes login walls, rate limits, CAPTCHA-like surfaces, profile health risks, platform risk, permission failures, and recovery paths into structured states and reason codes.
+
+Status: **Done for core taxonomy and gates**, **Experimental for live account/session freshness**.
+
+### SiteAdapter
+
+Encapsulates website-specific behavior such as URL classification, node/API interpretation, pagination rules, login-state signals, health-signal mapping, field normalization, and capability mapping.
+
+Status: **Done for registered adapters**, with continued site-specific hardening expected.
+
+### Artifact System
+
+Stores inventories, manifests, API candidates, catalog evidence, lifecycle events, download queues, redaction audits, and skill generation outputs as structured artifacts.
+
+Status: **Done for governed artifact families**.
+
+### Unified Download Runner
+
+Moves downloads behind a low-permission runner with dry-run planning, manifests, queues, resume, retry, and native resource seed support. Legacy fallback remains behind explicit boundaries.
+
+Status: **In progress**. Core runner is implemented; some live native resolver paths remain evidence-dependent.
+
+## Use Cases
+
+Browser-Wiki-Skill can be used for:
+
+- building browser-based AI agents
+- discovering website data APIs from real user flows
+- converting website-specific behavior into reusable adapters
+- reusing authenticated browser sessions without persisting raw secrets
+- detecting login, permission, CAPTCHA, rate-limit, and profile-health states
+- creating structured website capability knowledge
+- reducing repeated work when supporting new websites
+- producing repo-local Codex skills from governed site knowledge
+
+For end users, this can eventually help agents:
+
+- explain why a website task failed
+- recover from login or session failures with human-visible boundaries
+- avoid repeating the same verification steps
+- reuse known workflows across similar websites
+- make browser automation more stable and auditable
+
+## Architecture
 
 ```mermaid
-flowchart TB
-    User["User request<br/>URL, site intent, download task, skill generation"] --> Entrypoints["Entrypoints<br/>src/entrypoints/**"]
+flowchart TD
+    User["User task"] --> Agent["AI Agent / Codex workflow"]
 
-    Entrypoints --> Kernel["Kernel / Pipeline Runtime<br/>site-agnostic orchestration"]
-    Kernel --> Services["Capability Services<br/>discovery, inventory, API, risk, redaction, policy, schemas"]
-    Kernel --> AdapterResolver["SiteAdapter Resolver<br/>host and URL classification"]
+    Agent --> Entrypoints["Entrypoints<br/>src/entrypoints/**"]
+    Entrypoints --> Kernel["Site Capability Kernel<br/>src/kernel + pipeline runtime"]
 
-    AdapterResolver --> SiteAdapters["SiteAdapters<br/>site identity, page/API semantics, health signals"]
-    Services --> Artifacts["Governed Artifacts<br/>inventories, manifests, audits, catalogs"]
-    SiteAdapters --> Artifacts
+    Kernel --> Browser["Browser / Pipeline Runtime"]
+    Browser --> Capture["Request, response, DOM and page-fact capture"]
 
-    Artifacts --> Planner["Planner Policy Handoff<br/>StandardTaskList + DownloadPolicy"]
-    Planner --> Downloader["Downloader Runner<br/>low-permission consumer"]
-    Downloader --> DownloadArtifacts["Download Manifests<br/>queue, downloads.jsonl, report.md"]
+    Capture --> Discovery["API Discovery Service"]
+    Discovery --> Knowledge["API and capability artifacts"]
 
-    Artifacts --> KB["Knowledge Base Compiler"]
-    KB --> Skills["Repo-local Skills<br/>skills/*/SKILL.md"]
+    Kernel --> Services["Capability Services"]
+    Services --> Risk["RiskState + reason codes"]
+    Services --> Session["SessionView + session manifests"]
+    Services --> Guard["SecurityGuard + redaction audits"]
+    Services --> Policy["DownloadPolicy + StandardTaskList"]
 
-    Config["config/site-registry.json<br/>config/site-capabilities.json"] --> AdapterResolver
-    Profiles["profiles/*.json<br/>capability profiles, not browser profiles"] --> Services
+    Kernel --> Adapter["SiteAdapter Resolver"]
+    Adapter --> URL["URL classifier"]
+    Adapter --> Semantics["Node and API semantics"]
+    Adapter --> Health["Health signal mapping"]
+    Adapter --> Normalize["Data normalizer"]
+
+    Knowledge --> Capability["Reusable site capabilities"]
+    Policy --> Downloader["Low-permission downloader runner"]
+    Capability --> Skill["Repo-local Codex skills"]
+    Capability --> Agent
 ```
 
-核心分层：
+The kernel is intentionally light. It owns orchestration, lifecycle, context, artifact routing, schema governance, and safety boundaries. It does not own site-specific semantics.
 
-- `Kernel / Pipeline Runtime` 只负责协调、生命周期、上下文和通用安全语义，不写具体站点规则。
-- `Capability Services` 提供跨站复用机制，包括 DOM/API discovery、inventory、risk、redaction、policy、schema、hook 和 artifact 写入保护。
-- `SiteAdapter` 负责站点专属解释：URL 家族、页面类型、节点语义、API 语义、分页、登录/风险信号、字段标准化。
-- `Downloader` 只消费经过治理的 `StandardTaskList`、`DownloadPolicy`、最小化 `SessionView` 和已解析资源，不接触原始 cookies、profile 或站点专属高权限逻辑。
-- `Skills` 是产物，不是临时脚本；repo-local `skills/*` 是 Codex 可复用指令源。
+Capability services are reusable. They provide discovery, inventory, API candidate handling, redaction, reason semantics, session views, risk state, policy handoff, lifecycle events, and schema compatibility.
 
-## Data Flow
+SiteAdapters isolate each website. They own URL families, page/API interpretation, pagination, login and restriction signals, field normalization, and capability mapping.
 
-```mermaid
-sequenceDiagram
-    participant CLI as Entrypoint
-    participant Kernel as Kernel Runtime
-    participant Adapter as SiteAdapter
-    participant Services as Capability Services
-    participant Store as Artifacts / Config
-    participant DL as Downloader
-    participant Skill as Skill Generator
+The downloader is a low-permission consumer. It only receives governed tasks, policies, minimal session views, and resolved resources.
 
-    CLI->>Kernel: normalize request
-    Kernel->>Adapter: classify URL and site intent
-    Kernel->>Services: run capture, discovery, risk, schema, redaction gates
-    Services->>Store: write redacted inventories and manifests
-    Adapter->>Store: write semantic decisions, never raw secrets
-    Store->>Services: verified catalog / policy inputs
-    Services->>DL: governed task list and policy only
-    DL->>Store: plan, manifest, queue, report
-    Store->>Skill: compiled knowledge and capability facts
-    Skill->>Store: repo-local SKILL.md and references
-```
+## Capability Matrix
 
-这条数据流的关键约束是“先治理，后执行”。观察到的 API、DOM 节点、登录状态或下载资源不会自动升级为可执行能力；它们必须经过 SiteAdapter 判断、schema 兼容、redaction、policy handoff 和测试证据。
+| Capability | Common Service | SiteAdapter Required | Status |
+| --- | ---: | ---: | --- |
+| Request and page capture | Yes | Partial | Done |
+| API candidate discovery | Yes | Partial | Done |
+| Verified API catalog promotion | Yes | Yes | Experimental |
+| Session reuse boundary | Yes | Site validation | In progress |
+| Risk and health detection | Yes | Yes | Done |
+| URL classification | No | Yes | Done |
+| Request signing / site auth quirks | No | Yes | Planned |
+| Pagination parsing | Partial | Yes | In progress |
+| Data normalization | Partial | Yes | In progress |
+| Artifact generation | Yes | No | Done |
+| Redaction and secret scanning | Yes | No | Done |
+| Unified download planning | Yes | Partial | In progress |
+| Native resource resolution | Partial | Yes | Experimental |
+| Repo-local skill generation | Yes | Yes | Done |
 
-## Boundary Model
+Status vocabulary:
 
-```mermaid
-flowchart LR
-    subgraph SiteSpecific["Site-specific layer"]
-        A1["SiteAdapter"]
-        A2["site modules<br/>src/sites/*"]
-    end
+- **Done**: implemented with focused tests and documented evidence.
+- **In progress**: implemented for core paths, still expanding coverage or live evidence.
+- **Experimental**: usable in constrained paths, but freshness and site-specific evidence matter.
+- **Planned**: intentionally documented as a future or site-specific capability.
 
-    subgraph Shared["Shared capability layer"]
-        B1["ReasonCode"]
-        B2["RiskState"]
-        B3["SessionView"]
-        B4["SecurityGuard"]
-        B5["Schema governance"]
-        B6["LifecycleEvent"]
-    end
+## Concepts
 
-    subgraph Consumers["Low-permission consumers"]
-        C1["Downloader"]
-        C2["Skill generator"]
-        C3["Reports"]
-    end
+### Site Capability Layer
 
-    A1 --> Shared
-    A2 --> Shared
-    Shared --> Consumers
-    A1 -. "no direct raw session handoff" .-> C1
-    A2 -. "no Kernel semantic leakage" .-> C1
-```
+The architecture boundary that turns website behavior into reusable, governed capability surfaces.
 
-安全边界：
+### Site Capability Kernel
 
-- 不持久化 raw credentials、cookies、CSRF、Authorization、SESSDATA、tokens、session ids、browser profiles 或等价敏感材料。
-- 不实现 CAPTCHA/MFA/anti-bot/access-control bypass，不做 credential extraction 或 silent privilege expansion。
-- `profiles/*.json` 是站点能力配置，不是浏览器 profile 目录。
-- `runs/`、`book-content/`、`.playwright-mcp/`、下载媒体、截图、运行日志属于本地 runtime artifacts，不应提交。
-- 登录态能力使用 `SessionView`、manifest 和 health gate 表示；下载器不得读取原始会话容器。
+The site-agnostic orchestration layer. It coordinates lifecycle, context, schemas, artifacts, and safety boundaries without embedding concrete site rules.
 
-## Site Onboarding Architecture
+### Capability Services
 
-裸 URL 默认是完整站点接入，而不是只加一个 profile 或 skill。一个站点要被视为接入完成，需要覆盖：
+Shared services for discovery, inventory, API candidates, reason codes, redaction, risk state, session views, policy handoff, artifacts, and lifecycle hooks.
 
-- registry：`config/site-registry.json`
-- capabilities：`config/site-capabilities.json`
-- profile：`profiles/*.json`
-- adapter：`src/sites/core/adapters/*`
-- crawler/script metadata：`crawler-scripts/*`
-- repo-local skill：`skills/<site>/SKILL.md`
-- discovery artifacts：`NODE_INVENTORY`、`API_INVENTORY`、`UNKNOWN_NODE_REPORT`、`SITE_CAPABILITY_REPORT`、`DISCOVERY_AUDIT`
-- tests：SiteAdapter contract、onboarding discovery、registry/profile/skill generation、站点专属 fixtures
-- matrix：`CONTRIBUTING.md` 的 Site Capability Layer Implementation Matrix
+### SiteAdapter
 
-如果登录墙、付费/VIP、CAPTCHA、risk-control、权限检查或 rate limit 阻断了 discovery，记录为 blocked surface；不要绕过。
+A site-specific adapter for URL classification, semantic interpretation, health signals, pagination, field normalization, and capability mapping.
 
-## Download Architecture
+### SessionProvider / SessionView
 
-```mermaid
-flowchart TB
-    Request["Download request"] --> Parser["src/entrypoints/sites/download.mjs"]
-    Parser --> Registry["Download registry<br/>src/sites/downloads/registry.mjs"]
-    Registry --> Modules["Site modules<br/>src/sites/downloads/site-modules/*"]
-    Modules --> Seeds["Resource seeds<br/>native evidence, injected fixtures, low-permission fetches"]
-    Seeds --> Policy["DownloadPolicy + StandardTaskList"]
-    Policy --> Runner["Runner<br/>dry-run by default"]
-    Runner --> Executor["Generic executor<br/>fetch, queue, retry, resume, mux"]
-    Runner --> Legacy["Legacy adapter fallback<br/>only behind explicit boundaries"]
-    Executor --> Manifest["plan.json<br/>resolved-task.json<br/>manifest.json<br/>queue.json<br/>downloads.jsonl<br/>report.md"]
-    Legacy --> Manifest
-```
+This repo currently implements the boundary as session manifests, session runners, and `SessionView`. The public provider abstraction is still evolving, so session reuse is documented as **In progress** rather than a stable public API.
 
-下载器迁移目标是把下载行为放到统一 runner 后面。runner 默认 dry-run，支持 `--execute`、`--resume`、`--retry-failed`，并把状态写成稳定 manifest。站点模块可以解析资源，但下载执行层保持站点无关。
+### RiskStateMachine
 
-BZ888 有一个独立 public-direct 脚本：
+Implemented as `RiskState`, reason codes, health recovery, and execution gates. It classifies risks such as login walls, rate limits, CAPTCHA-like surfaces, account restrictions, and profile-health failures.
 
-```powershell
-python .\src\sites\bz888\download\python\bz888.py --book-url https://www.bz888888888.com/52/52885/ --out-dir .\book-content\bz888-direct
-```
+### Artifact System
 
-它只读取公开 HTML，解码 GBK/GB18030，生成 TXT 和 manifest。遇到 Cloudflare challenge 时返回 `blocked-by-cloudflare-challenge`，不读取 cookies、不接收 cookie 参数、不复用浏览器 profile，也不把 challenge 视为可绕过目标。
+Structured outputs for inventories, API candidates, catalogs, download manifests, queues, redaction audits, lifecycle events, reports, and skill generation.
 
-## Repository Layout
+### API Discovery
 
-| Path | Role |
-| --- | --- |
-| `src/entrypoints/` | CLI and workflow entrypoints. |
-| `src/kernel/` | Site-agnostic orchestration and readiness contracts. |
-| `src/pipeline/` | Capture, expand, KB, and skill pipeline runtime. |
-| `src/sites/capability/` | Shared Site Capability Layer services and governed contracts. |
-| `src/sites/core/adapters/` | SiteAdapter implementations and resolver. |
-| `src/sites/downloads/` | Unified download runner, contracts, modules, resource seeds, recovery. |
-| `src/sites/sessions/` | Session manifests, repair commands, release gates, runner contracts. |
-| `config/` | Stable site registry and capability truth. |
-| `profiles/` | Site capability profiles, redacted and repo-safe. |
-| `skills/` | Repo-local Codex Skill sources. |
-| `crawler-scripts/` | Generated crawler scripts and metadata. |
-| `tests/` | Node/Python contract, unit, boundary, and integration tests. |
-| `tools/` | Release audit, secret scan, reports, and local maintenance helpers. |
+The capture-to-candidate flow that records observed network behavior as redacted evidence. Observed APIs are not automatically promoted to verified capability.
 
-Long-lived documentation lives in root files only:
+## Supported Sites
 
-- `README.md` for architecture and operator orientation.
-- `CONTRIBUTING.md` for safety gates, matrix, focused regression batches, and release checks.
-- `AGENTS.md` for Codex execution rules.
+The current registry includes 21 site families. Support levels differ by site and capability; many catalog sites are read-only metadata integrations, not download targets.
 
-The repository-level `docs/` directory is retired.
+| Site family | Discovery | Session | Risk detection | Adapter | Status |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `www.22biqu.com` | Done | Not required | Partial | Done | Done |
+| `www.qidian.com` | Done | Site-specific | Partial | Done | Done |
+| `www.bz888888888.com` | Done | Not required | Done | Done | Experimental, Cloudflare challenge boundary |
+| `www.bilibili.com` | Done | Site-specific | Done | Done | In progress |
+| `www.douyin.com` | Done | Site-specific | Done | Done | In progress |
+| `www.xiaohongshu.com` | Done | Site-specific | Done | Done | In progress |
+| `x.com` | Done | Site-specific | Done | Done | Experimental |
+| `www.instagram.com` | Done | Site-specific | Done | Done | Experimental |
+| `jable.tv` | Done | Not required | Partial | Done | Done |
+| `moodyz.com` | Done | Not required | Partial | Done | Done |
+| Official AV catalog sites | Done | Not required | Partial | Done | Done for public metadata |
 
-## Supported Site Families
-
-The current registry covers 21 site families across public reading, video/catalog, social, Xiaohongshu, and official catalog workflows.
-
-| Family | Examples | Architecture notes |
-| --- | --- | --- |
-| Public reading | `www.22biqu.com`, `www.qidian.com`, `www.bz888888888.com` | Chapter-content adapters, public navigation, governed download boundaries. |
-| Video/catalog | `www.bilibili.com`, `www.douyin.com`, `www.xiaohongshu.com`, `jable.tv`, `moodyz.com` | SiteAdapter classification, page facts, native resource seeds where evidence is safe. |
-| Social | `x.com`, `www.instagram.com` | Read-only social actions, session health gates, media/archive artifacts, no raw auth persistence. |
-| Official AV catalog | `rookie-av.jp`, `madonna-av.com`, `dahlia-av.jp`, `www.sod.co.jp`, `s1s1s1.com`, `attackers.net`, `www.t-powers.co.jp`, `www.8man.jp`, `www.dogma.co.jp`, `www.km-produce.com`, `www.maxing.jp` | Public list/detail/profile metadata, release catalog aggregation, skipped/blocked coverage recorded explicitly. |
-
-AV release aggregation entrypoint:
-
-```powershell
-node .\src\entrypoints\sites\jp-av-release-catalog.mjs --start 2026-01-01 --end 2026-05-04
-```
+Official AV catalog sites include `rookie-av.jp`, `madonna-av.com`, `dahlia-av.jp`, `www.sod.co.jp`, `s1s1s1.com`, `attackers.net`, `www.t-powers.co.jp`, `www.8man.jp`, `www.dogma.co.jp`, `www.km-produce.com`, and `www.maxing.jp`.
 
 ## Quick Start
+
+This repository currently has no `package.json`, so there is no `npm install` or `npm run dev` setup. The stable local workflow uses direct Node.js and Python entrypoints.
+
+Clone the repository:
+
+```bash
+git clone https://github.com/yuetongli-PL/Browser-Wiki-Skill.git
+cd Browser-Wiki-Skill
+```
 
 Initialize the local PowerShell environment:
 
@@ -195,7 +261,7 @@ Initialize the local PowerShell environment:
 . .\scripts\bootstrap.ps1
 ```
 
-Run the full pipeline for a site:
+Run a full pipeline against a site:
 
 ```powershell
 node .\src\entrypoints\pipeline\run-pipeline.mjs https://www.22biqu.com/
@@ -208,7 +274,7 @@ node .\src\entrypoints\pipeline\generate-skill.mjs https://www.22biqu.com/
 node .\src\entrypoints\pipeline\generate-skill.mjs https://moodyz.com/works/date --skill-name moodyz-works
 ```
 
-Run focused checks:
+Run focused validation:
 
 ```powershell
 node --test .\tests\node\site-capability-matrix.test.mjs
@@ -218,27 +284,151 @@ node .\tools\prepublish-secret-scan.mjs
 git diff --check
 ```
 
-Run broad local validation when preparing a release-sized change:
+Run broad local validation before release-sized changes:
 
 ```powershell
 node --test .\tests\node\*.test.mjs
 python -m unittest discover -s .\tests\python -p "test_*.py"
 ```
 
-## Operational Governance
+## Basic Usage
 
-For Douyin and similar login-gated sites, the repo assumes no dedicated IP. Keep automation on the same trusted local network once a profile is healthy; do not rotate exits to evade risk. If captcha, verify page, rate limit, login wall, or platform-risk signals appear, quarantine the profile-network tuple and recover in a visible browser.
+> The public API is still experimental and may change as the Site Capability Layer evolves.
 
-Authenticated workflows stay read-only unless an entrypoint explicitly documents otherwise. `site-login`, `site-keepalive`, `site-doctor`, social live verification, and download release gates must preserve the same boundary: no raw cookies in artifacts, no profile persistence in repo files, no bypass behavior.
+Use the CLI entrypoints directly.
+
+Run site pipeline:
+
+```powershell
+node .\src\entrypoints\pipeline\run-pipeline.mjs https://www.22biqu.com/
+```
+
+Inspect site onboarding and health surfaces:
+
+```powershell
+node .\src\entrypoints\sites\site-doctor.mjs https://www.22biqu.com/
+```
+
+Plan downloads through the unified runner:
+
+```powershell
+node .\src\entrypoints\sites\download.mjs https://www.bilibili.com/video/BV... --dry-run
+```
+
+Aggregate public official AV release metadata:
+
+```powershell
+node .\src\entrypoints\sites\jp-av-release-catalog.mjs --start 2026-01-01 --end 2026-05-04
+```
+
+BZ888 public-direct script:
+
+```powershell
+python .\src\sites\bz888\download\python\bz888.py --book-url https://www.bz888888888.com/52/52885/ --out-dir .\book-content\bz888-direct
+```
+
+The BZ888 path reads only public HTML and stops with `blocked-by-cloudflare-challenge` when the site serves a challenge. It does not read cookies, browser profiles, or challenge-derived credentials.
+
+## Design Principles
+
+- **Capability-first, not script-first**<br>
+  Websites are modeled as reusable capabilities, not one-off automation scripts.
+
+- **Lightweight kernel, pluggable services**<br>
+  The kernel handles orchestration, context, artifacts, schemas, lifecycle, and safety boundaries.
+
+- **Site-specific logic stays isolated**<br>
+  Each website keeps its own adapter for URL patterns, semantic interpretation, auth/risk signals, pagination, and normalization.
+
+- **Learn from real browser behavior**<br>
+  API knowledge should come from actual observed browser requests, then pass explicit validation before reuse.
+
+- **Explainable automation**<br>
+  Failures are represented as structured states and reason codes, not silent script errors.
+
+- **Low-permission execution**<br>
+  Downloaders and reports consume governed artifacts, not raw browser state.
+
+## Roadmap
+
+- [x] Define Site Capability Layer architecture
+- [x] Add Site Capability Kernel contracts
+- [x] Add request and response capture foundations
+- [x] Add API candidate discovery and governed catalog artifacts
+- [x] Add SiteAdapter contracts and registered adapters
+- [x] Add SessionView and trust-boundary tests
+- [x] Add RiskState, reason codes, and health recovery gates
+- [x] Add artifact redaction and prepublish secret scan
+- [x] Add unified download runner foundation
+- [x] Add repo-local skill generation paths
+- [ ] Stabilize a public JavaScript API surface
+- [ ] Expand live API verification evidence per site
+- [ ] Continue reducing legacy downloader fallback paths
+- [ ] Improve human-visible recovery flow for login, session, and profile-health risks
+- [ ] Add clearer release/versioning policy
+
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/entrypoints/` | CLI and workflow entrypoints. |
+| `src/kernel/` | Site-agnostic kernel contracts and readiness checks. |
+| `src/pipeline/` | Capture, expand, knowledge-base, and skill pipeline runtime. |
+| `src/sites/capability/` | Shared Site Capability Layer services and governed contracts. |
+| `src/sites/core/adapters/` | SiteAdapter implementations and resolver. |
+| `src/sites/downloads/` | Unified download runner, policies, modules, resource seeds, and recovery. |
+| `src/sites/sessions/` | Session manifests, repair commands, release gates, and runner contracts. |
+| `config/` | Stable site registry and capability truth. |
+| `profiles/` | Repo-safe site capability profiles, not browser profile directories. |
+| `skills/` | Repo-local Codex Skill sources. |
+| `crawler-scripts/` | Generated crawler scripts and metadata. |
+| `tests/` | Node and Python contract, unit, boundary, and integration tests. |
+| `tools/` | Release audit, secret scan, reports, and maintenance helpers. |
+
+Long-lived project guidance lives in root files:
+
+- `README.md` for project orientation.
+- `CONTRIBUTING.md` for safety gates, Site Capability matrix, and verification batches.
+- `AGENTS.md` for Codex execution rules.
+- `SECURITY.md` for sensitive-data and automation boundaries.
+
+## Contributing
+
+Start with `CONTRIBUTING.md` and `AGENTS.md`.
+
+Before staging changes:
+
+```powershell
+git status --short
+node .\tools\prepublish-secret-scan.mjs
+git diff --check
+```
+
+For Site Capability Layer work, update the implementation matrix in `CONTRIBUTING.md` and run the smallest focused test batch close to the changed behavior.
+
+Do not commit:
+
+- raw credentials, cookies, CSRF values, authorization headers, SESSDATA, tokens, or session ids
+- browser profile directories
+- `.playwright-mcp/`, `runs/`, `book-content/`, downloaded media, logs, or local runtime artifacts
+- CAPTCHA, MFA, anti-bot, access-control, or platform-risk bypass logic
+
+## Help And Maintenance
+
+Use GitHub issues for project questions, bug reports, and capability requests. Security-sensitive reports should follow `SECURITY.md` and must not include raw secrets, cookies, profile paths, or screenshots containing credentials.
+
+Current maintenance is repository-local and contributor-driven. The canonical source of truth for implementation status is the Site Capability Layer matrix in `CONTRIBUTING.md`.
+
+## License
+
+No `LICENSE` file is currently present in this repository. Until a license is added, do not assume MIT, Apache-2.0, or any other open-source license.
 
 ## Source Of Truth
 
-Use these files to understand current state:
-
-- `CONTRIBUTING.md`: Site Capability Layer matrix, focused regression batches, safety gates, release checks.
+- `CONTRIBUTING.md`: Site Capability Layer matrix, focused regression batches, safety gates, and release checks.
 - `config/site-registry.json`: registered site families and implementation paths.
 - `config/site-capabilities.json`: stable capability facts by host.
 - `schema/profile-schemas.mjs`: checked-in profile validation rules.
 - `tools/prepublish-secret-scan.mjs`: repository safety scan before publication.
 
-The Site Capability Layer is considered complete only when the matrix in `CONTRIBUTING.md` shows sections 1-20 as `verified` and review accepts the final state. Future work should keep the same architecture boundary: site-specific interpretation in SiteAdapters, reusable mechanisms in Capability Services, and low-permission execution in the downloader.
+This README is intentionally short enough to act as a GitHub project homepage. Detailed operational gates live in `CONTRIBUTING.md`.

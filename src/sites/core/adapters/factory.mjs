@@ -29,15 +29,29 @@ export function createCatalogAdapter({
   inferPageType = () => null,
   normalizeDisplayLabel = ({ value }) => cleanText(value),
   classifyPath = () => ({ kind: null, detail: null }),
+  classifyNode,
+  classifyApi,
+  detectRestrictionPage = null,
+  describeApiCandidateSemantics,
+  validateApiCandidate,
+  getApiCatalogUpgradePolicy,
+  probeHealth,
+  normalizeHealthSignal,
+  getRecoveryPolicy,
 } = {}) {
   const normalizedHosts = normalizeHosts(hosts);
   const resolvedMatches = matches ?? (({ host, profile } = {}) => {
     const resolvedHost = String(host ?? profile?.host ?? '').toLowerCase();
     return normalizedHosts.has(resolvedHost);
   });
+  const {
+    validateApiCandidate: _genericValidateApiCandidate,
+    getApiCatalogUpgradePolicy: _genericGetApiCatalogUpgradePolicy,
+    ...genericAdapterDefaults
+  } = genericNavigationAdapter;
 
-  return Object.freeze({
-    ...genericNavigationAdapter,
+  const adapter = {
+    ...genericAdapterDefaults,
     id,
     siteKey,
     matches: resolvedMatches,
@@ -53,5 +67,35 @@ export function createCatalogAdapter({
     runtimePolicy({ profile } = {}) {
       return createNavigationRuntimePolicy(profile);
     },
-  });
+  };
+
+  if (typeof validateApiCandidate === 'function') {
+    adapter.validateApiCandidate = validateApiCandidate;
+  }
+  if (typeof classifyNode === 'function') {
+    adapter.classifyNode = classifyNode;
+  }
+  if (typeof classifyApi === 'function') {
+    adapter.classifyApi = classifyApi;
+  }
+  if (typeof detectRestrictionPage === 'function') {
+    adapter.detectRestrictionPage = detectRestrictionPage;
+  }
+  if (typeof describeApiCandidateSemantics === 'function') {
+    adapter.describeApiCandidateSemantics = describeApiCandidateSemantics;
+  }
+  if (typeof getApiCatalogUpgradePolicy === 'function') {
+    adapter.getApiCatalogUpgradePolicy = getApiCatalogUpgradePolicy;
+  }
+  if (typeof probeHealth === 'function') {
+    adapter.probeHealth = probeHealth;
+  }
+  if (typeof normalizeHealthSignal === 'function') {
+    adapter.normalizeHealthSignal = normalizeHealthSignal;
+  }
+  if (typeof getRecoveryPolicy === 'function') {
+    adapter.getRecoveryPolicy = getRecoveryPolicy;
+  }
+
+  return Object.freeze(adapter);
 }

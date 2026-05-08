@@ -48,6 +48,19 @@ import { REASON_CODE_SCHEMA_VERSION } from '../../src/sites/capability/reason-co
 import { RISK_STATE_SCHEMA_VERSION } from '../../src/sites/capability/risk-state.mjs';
 import { SECURITY_GUARD_SCHEMA_VERSION } from '../../src/sites/capability/security-guard.mjs';
 import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/sites/capability/session-view.mjs';
+import {
+  GRAPH_DOCS_SUMMARY_SCHEMA_VERSION,
+  GRAPH_EDGE_SCHEMA_VERSION,
+  GRAPH_MANIFEST_SCHEMA_VERSION,
+  GRAPH_NODE_SCHEMA_VERSION,
+  GRAPH_NODE_TYPES,
+  GRAPH_QUERY_RESULT_SCHEMA_VERSION,
+  GRAPH_VALIDATION_REPORT_SCHEMA_VERSION,
+  SITE_CAPABILITY_GRAPH_SCHEMA_VERSION,
+  createLayerSourceAuthSessionRequirementInventorySummary,
+  createLayerSourceRiskPolicyInventorySummary,
+  createLayerSourceSignerDependencyInventorySummary,
+} from '../../src/sites/capability/site-capability-graph.mjs';
 import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/sites/capability/standard-task-list.mjs';
 import {
   assertSchemaCompatible,
@@ -65,6 +78,53 @@ import {
 } from '../../src/sites/capability/schema-inventory.mjs';
 
 const CONTRIBUTING_URL = new URL('../../CONTRIBUTING.md', import.meta.url);
+const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/sites/capability/site-capability-graph.mjs';
+const LAYER_SOURCE_INVENTORY_SUMMARY_NAMES = [
+  'LayerSourceRiskPolicyInventorySummary',
+  'LayerSourceAuthSessionRequirementInventorySummary',
+  'LayerSourceSignerDependencyInventorySummary',
+];
+
+function createSyntheticLayerSourceInputs() {
+  return {
+    siteCapabilities: {
+      version: 1,
+      sites: {
+        'synthetic.example': {
+          host: 'synthetic.example',
+          siteKey: 'synthetic',
+          pageTypes: ['auth-page'],
+          capabilityFamilies: ['download-content'],
+          supportedIntents: ['download-book'],
+          safeActionKinds: ['navigate'],
+          approvalActionKinds: ['download-submit'],
+          downloader: {
+            supported: true,
+            requiresLogin: true,
+            liveAccessStatus: 'auth_required',
+          },
+        },
+      },
+    },
+    siteRegistry: {
+      version: 1,
+      sites: {
+        'synthetic.example': {
+          host: 'synthetic.example',
+          siteKey: 'synthetic',
+          downloadSessionRequirement: 'required',
+          downloadTaskTypes: ['book'],
+          capabilityFamilies: ['download-content'],
+          downloadSupport: {
+            supported: true,
+            requiresLogin: true,
+            unsupportedLiveReasonCode: 'auth_required',
+          },
+        },
+      },
+    },
+  };
+}
 
 async function readFocusedRegressionBatchDefinition() {
   const markdown = await readFile(CONTRIBUTING_URL, 'utf8');
@@ -78,6 +138,17 @@ async function readFocusedRegressionBatchDefinition() {
 test('schema inventory records current versioned schema evidence', () => {
   const expected = new Map([
     ['reasonCode', REASON_CODE_SCHEMA_VERSION],
+    ['SiteCapabilityGraph', SITE_CAPABILITY_GRAPH_SCHEMA_VERSION],
+    ['GraphManifest', GRAPH_MANIFEST_SCHEMA_VERSION],
+    ['GraphNode', GRAPH_NODE_SCHEMA_VERSION],
+    ...GRAPH_NODE_TYPES.map((name) => [name, GRAPH_NODE_SCHEMA_VERSION]),
+    ['GraphEdge', GRAPH_EDGE_SCHEMA_VERSION],
+    ['GraphValidationReport', GRAPH_VALIDATION_REPORT_SCHEMA_VERSION],
+    ['GraphQueryResult', GRAPH_QUERY_RESULT_SCHEMA_VERSION],
+    ['GraphDocsSummary', GRAPH_DOCS_SUMMARY_SCHEMA_VERSION],
+    ['LayerSourceRiskPolicyInventorySummary', GRAPH_QUERY_RESULT_SCHEMA_VERSION],
+    ['LayerSourceAuthSessionRequirementInventorySummary', GRAPH_QUERY_RESULT_SCHEMA_VERSION],
+    ['LayerSourceSignerDependencyInventorySummary', GRAPH_QUERY_RESULT_SCHEMA_VERSION],
     ['LifecycleEvent', LIFECYCLE_EVENT_SCHEMA_VERSION],
     ['ApiCandidate', API_CANDIDATE_SCHEMA_VERSION],
     ['ApiCatalogEntry', API_CATALOG_ENTRY_SCHEMA_VERSION],
@@ -108,6 +179,48 @@ test('schema inventory records current versioned schema evidence', () => {
     assert.equal(entry.version, version);
     assert.match(entry.sourcePath, /^src\//u);
     assert.notEqual(entry.status, 'missing');
+  }
+});
+
+test('schema inventory governs all GraphNode subtype schema names', () => {
+  for (const name of GRAPH_NODE_TYPES) {
+    const entry = getSchemaInventoryEntry(name);
+    const registryEntry = getCompatibilitySchema(name);
+
+    assert.notEqual(entry, null, `${name} must be listed in schema inventory`);
+    assert.notEqual(registryEntry, null, `${name} must be listed in compatibility registry`);
+    assert.equal(entry.version, GRAPH_NODE_SCHEMA_VERSION);
+    assert.equal(entry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(registryEntry.version, GRAPH_NODE_SCHEMA_VERSION);
+    assert.equal(registryEntry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.notEqual(entry.status, 'missing');
+  }
+});
+
+test('schema inventory governs Layer-source inventory summary schema names', () => {
+  const inputs = createSyntheticLayerSourceInputs();
+  const summaries = new Map([
+    ['LayerSourceRiskPolicyInventorySummary', createLayerSourceRiskPolicyInventorySummary(inputs)],
+    [
+      'LayerSourceAuthSessionRequirementInventorySummary',
+      createLayerSourceAuthSessionRequirementInventorySummary(inputs),
+    ],
+    ['LayerSourceSignerDependencyInventorySummary', createLayerSourceSignerDependencyInventorySummary(inputs)],
+  ]);
+
+  for (const name of LAYER_SOURCE_INVENTORY_SUMMARY_NAMES) {
+    const entry = getSchemaInventoryEntry(name);
+    const registryEntry = getCompatibilitySchema(name);
+    const summary = summaries.get(name);
+
+    assert.notEqual(entry, null);
+    assert.notEqual(registryEntry, null);
+    assert.equal(entry.version, GRAPH_QUERY_RESULT_SCHEMA_VERSION);
+    assert.equal(entry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(registryEntry.version, GRAPH_QUERY_RESULT_SCHEMA_VERSION);
+    assert.equal(registryEntry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(summary.schemaVersion, GRAPH_QUERY_RESULT_SCHEMA_VERSION);
+    assert.equal(assertSchemaCompatible(name, summary), true);
   }
 });
 

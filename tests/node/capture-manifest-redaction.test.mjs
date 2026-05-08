@@ -1038,7 +1038,7 @@ test('writeCaptureManifest fails closed before response schema verification writ
     await assert.rejects(
       () => writeCaptureManifest(manifest),
       (error) => {
-        assert.match(error.message, /bodyShape and responseSchemaHash are required/u);
+        assert.match(error.message, /lacks bodyShape or responseSchemaHash/u);
         assert.equal(String(error).includes('synthetic-capture-response-schema-verifier'), false);
         assert.equal(String(error).includes('https://api.bilibili.com'), false);
         return true;

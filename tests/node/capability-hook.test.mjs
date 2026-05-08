@@ -1125,6 +1125,7 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
     [
       'src/pipeline/stages/capture.mjs',
       'src/sites/capability/api-candidates.mjs',
+      'src/sites/capability/site-capability-graph.mjs',
       'src/sites/capability/site-health-execution-gate.mjs',
       'src/sites/capability/site-health-recovery.mjs',
       'src/sites/downloads/executor.mjs',
@@ -1149,8 +1150,10 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
   for (const filePath of producerFiles) {
     const source = fs.readFileSync(filePath, 'utf8');
     const relativePath = path.relative(REPO_ROOT, filePath);
-    const isSiteHealthProducer = relativePath.replaceAll(path.sep, '/').startsWith('src/sites/capability/site-health-');
-    if (!isSiteHealthProducer) {
+    const normalizedPath = relativePath.replaceAll(path.sep, '/');
+    const isSiteHealthProducer = normalizedPath.startsWith('src/sites/capability/site-health-');
+    const isDescriptorOnlyGraphDocsProducer = normalizedPath === 'src/sites/capability/site-capability-graph.mjs';
+    if (!isSiteHealthProducer && !isDescriptorOnlyGraphDocsProducer) {
       assert.match(
         source,
         /matchCapabilityHooksForLifecycleEvent|lifecycleEventWithCapabilityHookMatches/u,

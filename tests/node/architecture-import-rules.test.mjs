@@ -183,7 +183,9 @@ const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/sites/capability/api-discovery.mjs',
   'src/sites/capability/data-flow-evidence.mjs',
   'src/sites/capability/lifecycle-events.mjs',
+  'src/sites/capability/planner/plan-artifact.mjs',
   'src/sites/capability/planner-policy-handoff.mjs',
+  'src/sites/capability/site-capability-graph-artifacts.mjs',
   'src/sites/catalog/index.mjs',
   'src/sites/downloads/artifacts.mjs',
   'src/sites/downloads/executor.mjs',
@@ -268,6 +270,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/sites/capability/data-flow-evidence.mjs', 2],
   ['src/sites/capability/lifecycle-events.mjs', 3],
   ['src/sites/capability/planner-policy-handoff.mjs', 2],
+  ['src/sites/capability/site-capability-graph-artifacts.mjs', 3],
   ['src/sites/capability/session-view.mjs', 2],
   ['src/sites/catalog/index.mjs', 2],
   ['src/sites/douyin/actions/router.mjs', 2],
@@ -1272,6 +1275,7 @@ test('planner policy handoff stays independent from downloader execution and ses
       'src/sites/capability/reason-codes.mjs',
       'src/sites/capability/schema-governance.mjs',
       'src/sites/capability/security-guard.mjs',
+      'src/sites/capability/site-capability-graph.mjs',
       'src/sites/capability/site-health-execution-gate.mjs',
       'src/sites/capability/standard-task-list.mjs',
       'src/sites/capability/trust-boundary.mjs',
@@ -1427,7 +1431,9 @@ test('script shims only target src entrypoints or tools', async () => {
     if (!resolved) {
       return false;
     }
-    return !resolved.startsWith('src/entrypoints/') && !resolved.startsWith('tools/');
+    return !resolved.startsWith('src/entrypoints/')
+      && !resolved.startsWith('src/infra/cli/')
+      && !resolved.startsWith('tools/');
   });
   assert.deepEqual(
     invalid.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),

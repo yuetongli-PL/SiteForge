@@ -22,6 +22,7 @@ import {
   summarizeLifecycleEventProducerInventory,
   writeLifecycleEventArtifact,
 } from '../../src/sites/capability/lifecycle-events.mjs';
+import * as lifecycleEvents from '../../src/sites/capability/lifecycle-events.mjs';
 import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -52,8 +53,63 @@ function discoverRuntimeLifecycleProducerEventTypes() {
     });
   return [...new Set(producerFiles.flatMap((filePath) => {
     const source = fs.readFileSync(filePath, 'utf8');
-    return [...source.matchAll(/\beventType:\s*'([^']+)'/gu)].map((match) => match[1]);
+    const constantValuesByName = new Map(
+      [...source.matchAll(/\b(?:export\s+)?const\s+([A-Z0-9_]+)\s*=\s*'([^']+)'/gu)]
+        .map((match) => [match[1], match[2]]),
+    );
+    const literalEventTypes = [...source.matchAll(/\beventType:\s*'([^']+)'/gu)]
+      .map((match) => match[1]);
+    const constantEventTypes = [...source.matchAll(/\beventType:\s*([A-Z0-9_]+)/gu)]
+      .map((match) => constantValuesByName.get(match[1]))
+      .filter(Boolean);
+    return [
+      ...literalEventTypes,
+      ...constantEventTypes,
+    ];
   }))].sort();
+}
+
+function loadLifecycleEventSubscriberRegistryApi() {
+  const create = lifecycleEvents.createLifecycleEventSubscriberRegistry;
+  if (typeof create !== 'function') {
+    throw new Error(
+      'LifecycleEvent subscriber registry export is required: '
+      + 'createLifecycleEventSubscriberRegistry',
+    );
+  }
+  return { create };
+}
+
+function registerLifecycleSubscriber(registry, descriptor, subscriber) {
+  if (typeof registry.registerSubscriber === 'function') {
+    return registry.registerSubscriber({ ...descriptor, subscriber });
+  }
+  if (typeof registry.register === 'function') {
+    return registry.register({ ...descriptor, subscriber });
+  }
+  throw new Error('LifecycleEvent subscriber registry must expose registerSubscriber()');
+}
+
+function assertNoFunctionValues(value, pathLabel = 'value') {
+  if (typeof value === 'function') {
+    throw new Error(`${pathLabel} must not include function values`);
+  }
+  if (!value || typeof value !== 'object') {
+    return true;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    assertNoFunctionValues(child, `${pathLabel}.${key}`);
+  }
+  return true;
+}
+
+function captureThrownMessage(fn) {
+  try {
+    fn();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error('Expected function to throw');
 }
 
 test('LifecycleEvent preserves optional trace and correlation identifiers', () => {
@@ -86,6 +142,215 @@ test('LifecycleEvent preserves optional trace and correlation identifiers', () =
       'adapterVersion',
     ],
   }), true);
+});
+
+test('LifecycleEvent subscriber registry dispatches normalized events only to matching in-memory subscribers', async () => {
+  const { create } = loadLifecycleEventSubscriberRegistryApi();
+  const registry = create();
+  const received = [];
+  const nonMatchingReceived = [];
+
+  registerLifecycleSubscriber(registry, {
+    subscriberId: 'synthetic-in-memory-subscriber',
+    eventTypes: ['test.lifecycle.registry.match'],
+    descriptorOnly: true,
+    inMemory: true,
+    externalTelemetry: false,
+    writesArtifacts: false,
+    writesLogs: false,
+    redactionRequired: true,
+  }, async (event) => {
+    received.push(event);
+    return {
+      subscriberId: 'synthetic-in-memory-subscriber',
+      eventType: event.eventType,
+      traceId: event.traceId,
+    };
+  });
+  registerLifecycleSubscriber(registry, {
+    subscriberId: 'synthetic-non-matching-subscriber',
+    eventTypes: ['test.lifecycle.registry.other'],
+    descriptorOnly: true,
+    inMemory: true,
+    externalTelemetry: false,
+    writesArtifacts: false,
+    writesLogs: false,
+    redactionRequired: true,
+  }, async (event) => {
+    nonMatchingReceived.push(event);
+    return {
+      subscriberId: 'synthetic-non-matching-subscriber',
+      eventType: event.eventType,
+    };
+  });
+
+  const result = await registry.dispatch({
+    eventType: 'test.lifecycle.registry.match',
+    traceId: 'trace-synthetic-subscriber-registry',
+    correlationId: 'correlation-synthetic-subscriber-registry',
+    taskId: 'task-synthetic-subscriber-registry',
+    siteKey: 'example',
+    taskType: 'registry-test',
+    adapterVersion: 'fixture-adapter-v1',
+    createdAt: '2026-05-07T00:00:00.000Z',
+    details: {
+      status: 'blocked',
+    },
+  });
+
+  assert.equal(assertLifecycleEventCompatible(result.event), true);
+  assert.equal(result.event.schemaVersion, LIFECYCLE_EVENT_SCHEMA_VERSION);
+  assert.equal(result.event.eventType, 'test.lifecycle.registry.match');
+  assert.equal(received.length, 1);
+  assert.equal(nonMatchingReceived.length, 0);
+  assert.equal(received[0].schemaVersion, LIFECYCLE_EVENT_SCHEMA_VERSION);
+  assert.equal(received[0].eventType, 'test.lifecycle.registry.match');
+  assert.deepEqual(result.subscriberResults, [{
+    subscriberId: 'synthetic-in-memory-subscriber',
+    eventType: 'test.lifecycle.registry.match',
+    traceId: 'trace-synthetic-subscriber-registry',
+  }]);
+});
+
+test('LifecycleEvent subscriber registry lists safe descriptors without functions', () => {
+  const { create } = loadLifecycleEventSubscriberRegistryApi();
+  const registry = create();
+
+  registerLifecycleSubscriber(registry, {
+    subscriberId: 'synthetic-descriptor-only-subscriber',
+    eventTypes: ['test.lifecycle.registry.descriptor'],
+    descriptorOnly: true,
+    inMemory: true,
+    externalTelemetry: false,
+    writesArtifacts: false,
+    writesLogs: false,
+    redactionRequired: true,
+    owner: 'Layer',
+  }, async () => ({
+    subscriberId: 'synthetic-descriptor-only-subscriber',
+    status: 'received',
+  }));
+
+  const descriptors = registry.listSubscriberDescriptors();
+
+  assert.equal(Array.isArray(descriptors), true);
+  assert.equal(descriptors.length, 1);
+  assert.equal(descriptors[0].subscriberId, 'synthetic-descriptor-only-subscriber');
+  assert.deepEqual(descriptors[0].eventTypes, ['test.lifecycle.registry.descriptor']);
+  assert.equal(descriptors[0].redactionRequired, true);
+  assert.equal(assertNoFunctionValues(descriptors), true);
+  assert.equal(JSON.stringify(descriptors).includes('subscriber'), true);
+  assert.equal(JSON.stringify(descriptors).includes('async'), false);
+  assert.equal(JSON.stringify(descriptors).includes('function'), false);
+  assert.equal(JSON.stringify(descriptors).includes('synthetic-secret-value'), false);
+});
+
+test('LifecycleEvent subscriber registry rejects telemetry write and redaction bypass descriptors', () => {
+  const { create } = loadLifecycleEventSubscriberRegistryApi();
+  const registry = create();
+  const baseDescriptor = {
+    subscriberId: 'synthetic-rejected-subscriber',
+    eventTypes: ['test.lifecycle.registry.rejected'],
+    descriptorOnly: true,
+    inMemory: true,
+    externalTelemetry: false,
+    writesArtifacts: false,
+    writesLogs: false,
+    redactionRequired: true,
+  };
+
+  for (const { name, descriptor, pattern } of [
+    {
+      name: 'externalTelemetry',
+      descriptor: { externalTelemetry: true },
+      pattern: /externalTelemetry.*false|externalTelemetry.*disabled|external telemetry/i,
+    },
+    {
+      name: 'writesArtifacts',
+      descriptor: { writesArtifacts: true },
+      pattern: /writesArtifacts.*false|writesArtifacts.*disabled|artifacts/i,
+    },
+    {
+      name: 'writesLogs',
+      descriptor: { writesLogs: true },
+      pattern: /writesLogs.*false|writesLogs.*disabled|logs/i,
+    },
+    {
+      name: 'redactionRequired',
+      descriptor: { redactionRequired: false },
+      pattern: /redactionRequired.*true|redaction required/i,
+    },
+  ]) {
+    assert.throws(
+      () => registerLifecycleSubscriber(registry, {
+        ...baseDescriptor,
+        subscriberId: `synthetic-rejected-${name}`,
+        ...descriptor,
+      }, async () => ({ status: 'unused' })),
+      pattern,
+      name,
+    );
+  }
+});
+
+test('LifecycleEvent subscriber registry rejects sensitive descriptor patterns without echoing values', () => {
+  const { create } = loadLifecycleEventSubscriberRegistryApi();
+  const registry = create();
+  const baseDescriptor = {
+    subscriberId: 'synthetic-sensitive-rejected-subscriber',
+    eventTypes: ['test.lifecycle.registry.sensitive'],
+    descriptorOnly: true,
+    inMemory: true,
+    externalTelemetry: false,
+    writesArtifacts: false,
+    writesLogs: false,
+    redactionRequired: true,
+  };
+
+  for (const { name, descriptor, pattern } of [
+    {
+      name: 'authorization header text',
+      descriptor: {
+        description: 'Authorization: Bearer synthetic-secret-value',
+      },
+      pattern: /forbidden|sensitive|authorization/i,
+    },
+    {
+      name: 'cookie key',
+      descriptor: {
+        cookie: REDACTION_PLACEHOLDER,
+      },
+      pattern: /forbidden|sensitive|cookie/i,
+    },
+    {
+      name: 'session id key',
+      descriptor: {
+        sessionId: REDACTION_PLACEHOLDER,
+      },
+      pattern: /forbidden|sensitive|sessionId|session/i,
+    },
+    {
+      name: 'browser profile key',
+      descriptor: {
+        browserProfile: REDACTION_PLACEHOLDER,
+      },
+      pattern: /forbidden|sensitive|browserProfile|profile/i,
+    },
+  ]) {
+    let message;
+    try {
+      registerLifecycleSubscriber(registry, {
+        ...baseDescriptor,
+        subscriberId: `synthetic-sensitive-rejected-${name.replaceAll(' ', '-')}`,
+        ...descriptor,
+      }, async () => ({ status: 'unused' }));
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    assert.ok(message, `${name} must fail closed`);
+    assert.match(message, pattern, name);
+    assert.doesNotMatch(message, /synthetic-secret-value/u, name);
+  }
 });
 
 test('LifecycleEvent observability field guard rejects incomplete events', () => {
@@ -132,10 +397,11 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   const summary = summarizeLifecycleEventProducerInventory({ inventory });
   assert.deepEqual(summary, {
     schemaVersion: LIFECYCLE_EVENT_PRODUCER_INVENTORY_SCHEMA_VERSION,
-    eventTypeCount: 19,
+    eventTypeCount: 20,
     producerModuleCounts: {
       'src/sites/capability/api-candidates.mjs': 6,
       'src/sites/capability/site-health-execution-gate.mjs': 3,
+      'src/sites/capability/site-capability-graph.mjs': 1,
       'src/pipeline/stages/capture.mjs': 2,
       'src/sites/downloads/executor.mjs': 3,
       'src/sites/downloads/legacy-executor.mjs': 2,
@@ -165,6 +431,7 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
     inventoriedOnlyEventTypes: [
       'api.candidate.verified',
       'api.catalog.verification.written',
+      'graph.docs.summary.generated',
       'session.run.completed',
     ],
   });
@@ -176,6 +443,12 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   for (const producer of inventory.producers) {
     assert.equal(fs.existsSync(path.join(REPO_ROOT, producer.sourceModule)), true);
   }
+  assert.deepEqual(producersByEventType.get('graph.docs.summary.generated'), {
+    eventType: 'graph.docs.summary.generated',
+    producerId: 'site-capability-graph.docs-summary-generated',
+    sourceModule: 'src/sites/capability/site-capability-graph.mjs',
+    profileStatus: 'inventoried',
+  });
 
   const json = JSON.stringify(inventory);
   assert.equal(json.includes('Bearer '), false);

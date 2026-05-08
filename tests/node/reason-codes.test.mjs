@@ -121,13 +121,38 @@ const CURRENT_API_CODES = [
   'api-catalog-write-failed',
 ];
 
+const CURRENT_GRAPH_CODES = [
+  'graph-schema-invalid',
+  'graph-node-id-duplicate',
+  'graph-edge-id-duplicate',
+  'graph-edge-broken',
+  'graph-capability-missing-route',
+  'graph-capability-missing-risk-policy',
+  'graph-capability-missing-auth-requirement',
+  'graph-capability-missing-session-requirement',
+  'graph-non-readonly-missing-approval',
+  'graph-artifact-redaction-required',
+  'graph-endpoint-missing-auth-requirement',
+  'graph-endpoint-missing-session-requirement',
+  'graph-endpoint-missing-signer',
+  'graph-endpoint-missing-schema',
+  'graph-version-incompatible',
+  'graph-agent-capability-missing-test-evidence',
+  'graph-observed-candidate-promoted-without-verification',
+  'graph-planner-no-route',
+  'graph-planner-context-unsatisfied',
+  'graph-route-forbidden-by-risk',
+  'graph-docs-generation-failed',
+  'graph-runtime-consumer-disabled',
+];
+
 test('reasonCode catalog is versioned and internally valid', () => {
   assert.equal(REASON_CODE_SCHEMA_VERSION, 1);
   assert.equal(assertReasonCodeCatalogValid(), true);
   assert.equal(REASON_CODE_CATALOG.length, listReasonCodeDefinitions().length);
 });
 
-test('reasonCode catalog covers current capture, session, risk, downloader, and API codes', () => {
+test('reasonCode catalog covers current capture, session, risk, downloader, API, and graph codes', () => {
   for (const code of [
     ...CURRENT_CAPTURE_CODES,
     ...CURRENT_SESSION_CODES,
@@ -136,9 +161,23 @@ test('reasonCode catalog covers current capture, session, risk, downloader, and 
     ...CURRENT_ARTIFACT_CODES,
     ...CURRENT_SCHEMA_CODES,
     ...CURRENT_API_CODES,
+    ...CURRENT_GRAPH_CODES,
   ]) {
     assert.equal(isKnownReasonCode(code), true, `${code} should be in the reasonCode catalog`);
   }
+});
+
+test('graph reasonCodes fail closed and preserve catalog promotion semantics', () => {
+  for (const code of CURRENT_GRAPH_CODES) {
+    const definition = requireReasonCodeDefinition(code, { family: 'graph' });
+    assert.equal(definition.retryable, false, `${code} should not retry invalid graph data`);
+    assert.equal(definition.manualRecoveryNeeded, true, `${code} should require manual graph repair`);
+    assert.equal(definition.artifactWriteAllowed, false, `${code} should fail closed for artifact writes`);
+  }
+
+  const promotedCandidate = reasonCodeSummary('graph-observed-candidate-promoted-without-verification');
+  assert.equal(promotedCandidate.catalogAction, 'block');
+  assert.equal(promotedCandidate.degradable, false);
 });
 
 test('reasonCode lookups preserve family and recovery semantics', () => {

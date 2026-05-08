@@ -24,6 +24,7 @@ test('src-first code layout exists', async () => {
     expectPathExists('src/pipeline'),
     expectPathExists('src/sites'),
     expectPathExists('src/infra'),
+    expectPathExists('src/infra/cli'),
     expectPathExists('src/shared'),
     expectPathExists('src/skills'),
   ]);
@@ -174,7 +175,6 @@ test('flat site aliases and old microdirectories stay removed', async () => {
     expectPathMissing('src/shared/markdown'),
     expectPathMissing('src/shared/text'),
     expectPathMissing('src/shared/urls'),
-    expectPathMissing('src/infra/cli'),
     expectPathMissing('src/infra/fs'),
     expectPathMissing('src/entrypoints/compat'),
   ]);

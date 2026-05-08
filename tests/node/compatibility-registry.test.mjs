@@ -2,6 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  GRAPH_NODE_SCHEMA_VERSION,
+  GRAPH_NODE_TYPES,
+  GRAPH_QUERY_RESULT_SCHEMA_VERSION,
+  createLayerSourceAuthSessionRequirementInventorySummary,
+  createLayerSourceRiskPolicyInventorySummary,
+  createLayerSourceSignerDependencyInventorySummary,
+  assertLayerSourceAuthSessionRequirementInventorySummaryCompatibility,
+  assertLayerSourceRiskPolicyInventorySummaryCompatibility,
+  assertLayerSourceSignerDependencyInventorySummaryCompatibility,
+} from '../../src/sites/capability/site-capability-graph.mjs';
+import {
   assertSchemaCompatible,
   getCompatibilitySchema,
   listCompatibilitySchemas,
@@ -33,6 +44,17 @@ const REGISTERED_SCHEMA_NAMES = [
   'SiteAdapterCandidateDecision',
   'SiteAdapterCatalogUpgradePolicy',
   'reasonCode',
+  'SiteCapabilityGraph',
+  'GraphManifest',
+  'GraphNode',
+  ...GRAPH_NODE_TYPES,
+  'GraphEdge',
+  'GraphValidationReport',
+  'GraphQueryResult',
+  'LayerSourceRiskPolicyInventorySummary',
+  'LayerSourceAuthSessionRequirementInventorySummary',
+  'LayerSourceSignerDependencyInventorySummary',
+  'GraphDocsSummary',
   'SessionView',
   'DownloadPolicy',
   'StandardTaskList',
@@ -47,7 +69,271 @@ const REGISTERED_SCHEMA_NAMES = [
   'ManifestArtifactBundle',
 ];
 
+const LAYER_SOURCE_INVENTORY_SUMMARY_NAMES = [
+  'LayerSourceRiskPolicyInventorySummary',
+  'LayerSourceAuthSessionRequirementInventorySummary',
+  'LayerSourceSignerDependencyInventorySummary',
+];
+const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/sites/capability/site-capability-graph.mjs';
+
+function createSyntheticGraphNodePayload(type) {
+  const base = {
+    schemaVersion: GRAPH_NODE_SCHEMA_VERSION,
+    id: `node:synthetic:${type}`,
+    type,
+  };
+  const byType = {
+    SiteNode: {
+      siteKey: 'synthetic.example',
+      hostFamily: ['synthetic.example'],
+    },
+    CapabilityNode: {
+      siteKey: 'synthetic.example',
+      capabilityKey: 'read-public-page',
+      capabilityFamily: 'navigate-page',
+      mode: 'readOnly',
+      requiresApproval: false,
+      supportedTaskTypes: ['open-page'],
+      routeRefs: ['route:synthetic.example:public'],
+      riskPolicyRef: 'risk-policy:synthetic.example:normal',
+    },
+    RouteNode: {
+      siteKey: 'synthetic.example',
+      routeKind: 'page',
+      urlPattern: 'https://synthetic.example/:id',
+      pageType: 'public-detail',
+      capabilityRefs: ['capability:synthetic.example:read-public-page'],
+      riskPolicyRef: 'risk-policy:synthetic.example:normal',
+    },
+    EndpointNode: {
+      siteKey: 'synthetic.example',
+      endpointKind: 'api',
+      lifecycleState: 'cataloged',
+      methodFamily: 'GET',
+      routeRefs: ['route:synthetic.example:public'],
+      capabilityRefs: ['capability:synthetic.example:read-public-page'],
+      authRequirementRef: 'auth:synthetic.example:none',
+      sessionRequirementRef: 'session:synthetic.example:none',
+      signerRef: 'signer:synthetic.example:none',
+      requestSchemaRef: 'schema:synthetic-request',
+      responseSchemaRef: 'schema:synthetic-response',
+      riskPolicyRef: 'risk-policy:synthetic.example:normal',
+      versionRef: 'version:synthetic-endpoint-v1',
+    },
+    AuthRequirementNode: {
+      authKind: 'none',
+      requiredFor: ['open-page'],
+      proofType: 'public',
+    },
+    SessionRequirementNode: {
+      purpose: 'read-public-page',
+      scope: 'public',
+      ttlClass: 'none',
+      permissionClass: 'none',
+      profileIsolation: 'not-required',
+      networkContextClass: 'public',
+      auditRequired: false,
+      revocationRequired: false,
+    },
+    SignerNode: {
+      siteKey: 'synthetic.example',
+      signerKind: 'none',
+      versionRef: 'version:synthetic-signer-v1',
+      supportedEndpointRefs: ['endpoint:synthetic.example:public'],
+    },
+    RiskPolicyNode: {
+      state: 'normal',
+      allowedActions: ['navigate'],
+      blockedActions: [],
+      requiresApproval: false,
+      cooldownRequired: false,
+      isolationRequired: false,
+      manualRecoveryRequired: false,
+      degradable: true,
+      artifactWriteAllowed: true,
+      sourceRefs: ['config/site-capabilities.json'],
+    },
+    SchemaNode: {
+      schemaName: 'SyntheticNodeSchema',
+      governedVersion: GRAPH_NODE_SCHEMA_VERSION,
+      owner: 'Capability',
+      sourcePath: SITE_CAPABILITY_GRAPH_SOURCE_PATH,
+    },
+    ArtifactContractNode: {
+      artifactFamily: 'synthetic-descriptor',
+      redactionRequired: true,
+      schemaRef: 'schema:synthetic-artifact',
+      writeGuard: 'SecurityGuard redaction required',
+      auditRequired: true,
+    },
+    ArtifactNode: {
+      artifactFamily: 'synthetic-descriptor',
+      redactionRequired: true,
+      schemaRef: 'schema:synthetic-artifact',
+      writeGuard: 'SecurityGuard redaction required',
+      auditRequired: true,
+    },
+    TestEvidenceNode: {
+      testPath: 'tests/node/compatibility-registry.test.mjs',
+      command: 'node --test tests/node/compatibility-registry.test.mjs',
+      result: 'passed',
+      fixtureType: 'synthetic-redacted',
+    },
+    TestNode: {
+      testPath: 'tests/node/compatibility-registry.test.mjs',
+      command: 'node --test tests/node/compatibility-registry.test.mjs',
+      result: 'passed',
+      fixtureType: 'synthetic-redacted',
+    },
+    VersionNode: {
+      versionKind: 'schema',
+      version: '1',
+    },
+    FailureModeNode: {
+      reasonCode: 'synthetic-public-error',
+      retryable: false,
+      cooldownRequired: false,
+      isolationRequired: false,
+      manualRecoveryRequired: false,
+      degradable: true,
+      artifactWriteAllowed: true,
+    },
+    ObservabilityNode: {
+      eventName: 'synthetic.public.event',
+      requiredFields: ['traceId'],
+    },
+  };
+
+  return {
+    ...base,
+    ...byType[type],
+  };
+}
+
+function createSyntheticLayerSourceInputs() {
+  return {
+    siteCapabilities: {
+      version: 1,
+      sites: {
+        'synthetic.example': {
+          host: 'synthetic.example',
+          siteKey: 'synthetic',
+          pageTypes: ['auth-page'],
+          capabilityFamilies: ['download-content'],
+          supportedIntents: ['download-book'],
+          safeActionKinds: ['navigate'],
+          approvalActionKinds: ['download-submit'],
+          downloader: {
+            supported: true,
+            requiresLogin: true,
+            liveAccessStatus: 'auth_required',
+          },
+        },
+      },
+    },
+    siteRegistry: {
+      version: 1,
+      sites: {
+        'synthetic.example': {
+          host: 'synthetic.example',
+          siteKey: 'synthetic',
+          downloadSessionRequirement: 'required',
+          downloadTaskTypes: ['book'],
+          capabilityFamilies: ['download-content'],
+          downloadSupport: {
+            supported: true,
+            requiresLogin: true,
+            unsupportedLiveReasonCode: 'auth_required',
+          },
+        },
+      },
+    },
+  };
+}
+
 function compatiblePayloadFor(schema) {
+  if (schema.name === 'SiteCapabilityGraph') {
+    return {
+      schemaVersion: schema.version,
+      graphVersion: 'synthetic-graph-v1',
+      manifest: {
+        schemaVersion: 1,
+        graphSchemaVersion: schema.version,
+        graphDataVersion: 'synthetic-graph-v1',
+      },
+      nodes: [],
+      edges: [],
+    };
+  }
+  if (schema.name === 'GraphManifest') {
+    return {
+      schemaVersion: schema.version,
+      graphSchemaVersion: 1,
+      graphDataVersion: 'synthetic-graph-v1',
+    };
+  }
+  if (schema.name === 'GraphNode') {
+    return createSyntheticGraphNodePayload('SiteNode');
+  }
+  if (GRAPH_NODE_TYPES.includes(schema.name)) {
+    return createSyntheticGraphNodePayload(schema.name);
+  }
+  if (schema.name === 'GraphEdge') {
+    return {
+      schemaVersion: schema.version,
+      id: 'edge:synthetic:site:capability',
+      type: 'site_declares_capability',
+      from: 'site:synthetic.example',
+      to: 'capability:synthetic.example:open-public-page',
+    };
+  }
+  if (schema.name === 'GraphValidationReport') {
+    return {
+      schemaVersion: schema.version,
+      graphVersion: 'synthetic-graph-v1',
+      result: 'passed',
+      findings: [],
+    };
+  }
+  if (schema.name === 'GraphQueryResult') {
+    return {
+      schemaVersion: schema.version,
+      graphVersion: 'synthetic-graph-v1',
+      queryName: 'listSites',
+      items: [],
+    };
+  }
+  if (schema.name === 'GraphDocsSummary') {
+    return {
+      schemaVersion: schema.version,
+      graphVersion: 'synthetic-graph-v1',
+      artifactFamily: 'site-capability-graph-docs',
+      redactionRequired: true,
+      sections: {
+        capabilityList: [],
+        dependencyMap: [],
+        dependencyMapByEdgeType: [],
+        routeDependencySummary: [],
+        endpointImpactMap: [],
+        authRequirementSummary: [],
+        signerDependencySummary: [],
+        riskPolicySummary: [],
+        failureModeSummary: [],
+        agentExposedCapabilityList: [],
+        testCoverageSummary: [],
+        layerDesignSourceReferences: [],
+      },
+    };
+  }
+  if (schema.name === 'LayerSourceRiskPolicyInventorySummary') {
+    return createLayerSourceRiskPolicyInventorySummary(createSyntheticLayerSourceInputs());
+  }
+  if (schema.name === 'LayerSourceAuthSessionRequirementInventorySummary') {
+    return createLayerSourceAuthSessionRequirementInventorySummary(createSyntheticLayerSourceInputs());
+  }
+  if (schema.name === 'LayerSourceSignerDependencyInventorySummary') {
+    return createLayerSourceSignerDependencyInventorySummary(createSyntheticLayerSourceInputs());
+  }
   if (schema.name === 'CapabilityHookEventTypeRegistry') {
     return createCapabilityHookEventTypeRegistry();
   }
@@ -106,6 +392,58 @@ test('compatibility registry exposes current core schema versions', () => {
 test('compatibility registry accepts current schema payload versions', () => {
   for (const schema of listCompatibilitySchemas()) {
     assert.equal(assertSchemaCompatible(schema.name, compatiblePayloadFor(schema)), true);
+  }
+});
+
+test('compatibility registry governs all GraphNode subtype schema names', () => {
+  for (const name of GRAPH_NODE_TYPES) {
+    const registryEntry = getCompatibilitySchema(name);
+    const inventoryEntry = getSchemaInventoryEntry(name);
+    const payload = createSyntheticGraphNodePayload(name);
+
+    assert.notEqual(registryEntry, null, `${name} must be listed in compatibility registry`);
+    assert.notEqual(inventoryEntry, null, `${name} must be listed in schema inventory`);
+    assert.equal(registryEntry.version, GRAPH_NODE_SCHEMA_VERSION);
+    assert.equal(inventoryEntry.version, GRAPH_NODE_SCHEMA_VERSION);
+    assert.equal(registryEntry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(inventoryEntry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(assertSchemaCompatible(name, payload), true);
+  }
+});
+
+test('compatibility registry governs Layer-source inventory summary schema names', () => {
+  const inputs = createSyntheticLayerSourceInputs();
+  const summaries = new Map([
+    ['LayerSourceRiskPolicyInventorySummary', createLayerSourceRiskPolicyInventorySummary(inputs)],
+    [
+      'LayerSourceAuthSessionRequirementInventorySummary',
+      createLayerSourceAuthSessionRequirementInventorySummary(inputs),
+    ],
+    ['LayerSourceSignerDependencyInventorySummary', createLayerSourceSignerDependencyInventorySummary(inputs)],
+  ]);
+  const directAssertions = new Map([
+    ['LayerSourceRiskPolicyInventorySummary', assertLayerSourceRiskPolicyInventorySummaryCompatibility],
+    [
+      'LayerSourceAuthSessionRequirementInventorySummary',
+      assertLayerSourceAuthSessionRequirementInventorySummaryCompatibility,
+    ],
+    ['LayerSourceSignerDependencyInventorySummary', assertLayerSourceSignerDependencyInventorySummaryCompatibility],
+  ]);
+
+  for (const name of LAYER_SOURCE_INVENTORY_SUMMARY_NAMES) {
+    const registryEntry = getCompatibilitySchema(name);
+    const inventoryEntry = getSchemaInventoryEntry(name);
+    const summary = summaries.get(name);
+
+    assert.notEqual(registryEntry, null);
+    assert.notEqual(inventoryEntry, null);
+    assert.equal(registryEntry.version, GRAPH_QUERY_RESULT_SCHEMA_VERSION);
+    assert.equal(inventoryEntry.version, GRAPH_QUERY_RESULT_SCHEMA_VERSION);
+    assert.equal(registryEntry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(inventoryEntry.sourcePath, SITE_CAPABILITY_GRAPH_SOURCE_PATH);
+    assert.equal(summary.schemaVersion, GRAPH_QUERY_RESULT_SCHEMA_VERSION);
+    assert.equal(directAssertions.get(name)(summary), true);
+    assert.equal(assertSchemaCompatible(name, summary), true);
   }
 });
 

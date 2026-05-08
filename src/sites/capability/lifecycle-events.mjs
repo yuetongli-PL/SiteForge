@@ -4,6 +4,7 @@ import { writeTextFile } from '../../infra/io.mjs';
 import { normalizeReasonCode } from './reason-codes.mjs';
 import {
   assertNoForbiddenPatterns,
+  isSensitiveFieldName,
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
 } from './security-guard.mjs';
@@ -260,6 +261,12 @@ const LIFECYCLE_EVENT_PRODUCER_DESCRIPTORS = Object.freeze([
     producerId: 'capture-stage.manifest-write',
     sourceModule: 'src/pipeline/stages/capture.mjs',
     profileStatus: 'profiled',
+  },
+  {
+    eventType: 'graph.docs.summary.generated',
+    producerId: 'site-capability-graph.docs-summary-generated',
+    sourceModule: 'src/sites/capability/site-capability-graph.mjs',
+    profileStatus: 'inventoried',
   },
   {
     eventType: 'download.executor.before_download',
@@ -631,6 +638,152 @@ export function composeLifecycleSubscribers(...subscriberGroups) {
     }
   }
   return subscribers;
+}
+
+function normalizeLifecycleSubscriberEventTypes(eventTypes = ['*']) {
+  if (!Array.isArray(eventTypes) || eventTypes.length === 0) {
+    throw new Error('Lifecycle event subscriber eventTypes must be a non-empty array');
+  }
+  const normalized = eventTypes.map((eventType) => {
+    const text = normalizeText(eventType);
+    if (!text) {
+      throw new Error('Lifecycle event subscriber eventTypes must contain non-empty strings');
+    }
+    return text;
+  });
+  return [...new Set(normalized)];
+}
+
+function assertLifecycleSubscriberDescriptorHasNoSensitiveFields(value, path = []) {
+  if (!value || typeof value !== 'object') {
+    return true;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = [...path, key];
+    if (isSensitiveFieldName(key)) {
+      throw new Error(`Lifecycle event subscriber descriptor contains sensitive field: ${childPath.join('.')}`);
+    }
+    assertLifecycleSubscriberDescriptorHasNoSensitiveFields(child, childPath);
+  }
+  return true;
+}
+
+function normalizeLifecycleSubscriberDescriptor({
+  subscriberId,
+  eventTypes = ['*'],
+  redactionRequired = true,
+  externalTelemetry = false,
+  writesArtifacts = false,
+  writesLogs = false,
+  ...extraDescriptorFields
+} = {}) {
+  assertLifecycleSubscriberDescriptorHasNoSensitiveFields(extraDescriptorFields);
+  assertNoForbiddenPatterns(extraDescriptorFields);
+  const id = normalizeText(subscriberId);
+  if (!id) {
+    throw new Error('Lifecycle event subscriber subscriberId is required');
+  }
+  if (redactionRequired !== true) {
+    throw new Error('Lifecycle event subscriber redactionRequired must be true');
+  }
+  if (externalTelemetry !== false) {
+    throw new Error('Lifecycle event subscriber externalTelemetry must be false');
+  }
+  if (writesArtifacts !== false) {
+    throw new Error('Lifecycle event subscriber writesArtifacts must be false');
+  }
+  if (writesLogs !== false) {
+    throw new Error('Lifecycle event subscriber writesLogs must be false');
+  }
+  const descriptor = {
+    subscriberId: id,
+    eventTypes: normalizeLifecycleSubscriberEventTypes(eventTypes),
+    redactionRequired: true,
+    externalTelemetry: false,
+    writesArtifacts: false,
+    writesLogs: false,
+    descriptorOnly: true,
+  };
+  assertNoForbiddenPatterns(descriptor);
+  return descriptor;
+}
+
+function subscriberMatchesEvent(descriptor, eventType) {
+  return descriptor.eventTypes.includes('*') || descriptor.eventTypes.includes(eventType);
+}
+
+export function createLifecycleEventSubscriberRegistry({
+  subscribers = [],
+} = {}) {
+  if (!Array.isArray(subscribers)) {
+    throw new Error('Lifecycle event subscriber registry subscribers must be an array');
+  }
+  const registry = new Map();
+
+  function registerSubscriber({
+    subscriberId,
+    eventTypes = ['*'],
+    redactionRequired = true,
+    externalTelemetry = false,
+    writesArtifacts = false,
+    writesLogs = false,
+    subscriber,
+    ...extraDescriptorFields
+  } = {}) {
+    if (typeof subscriber !== 'function') {
+      throw new Error('Lifecycle event subscriber must be a function');
+    }
+    const descriptor = normalizeLifecycleSubscriberDescriptor({
+      subscriberId,
+      eventTypes,
+      redactionRequired,
+      externalTelemetry,
+      writesArtifacts,
+      writesLogs,
+      ...extraDescriptorFields,
+    });
+    registry.set(descriptor.subscriberId, {
+      descriptor,
+      subscriber,
+    });
+    return descriptor;
+  }
+
+  function unregisterSubscriber(subscriberId) {
+    const id = normalizeText(subscriberId);
+    if (!id) {
+      throw new Error('Lifecycle event subscriber subscriberId is required');
+    }
+    return registry.delete(id);
+  }
+
+  function listSubscriberDescriptors() {
+    return [...registry.values()].map(({ descriptor }) => ({
+      ...descriptor,
+      eventTypes: [...descriptor.eventTypes],
+    }));
+  }
+
+  async function dispatch(event) {
+    const normalized = normalizeLifecycleEvent(event);
+    const matchingSubscribers = [...registry.values()]
+      .filter(({ descriptor }) => subscriberMatchesEvent(descriptor, normalized.eventType))
+      .map(({ subscriber }) => subscriber);
+    return await dispatchLifecycleEvent(normalized, {
+      subscribers: matchingSubscribers,
+    });
+  }
+
+  for (const subscriber of subscribers) {
+    registerSubscriber(subscriber);
+  }
+
+  return {
+    registerSubscriber,
+    unregisterSubscriber,
+    listSubscriberDescriptors,
+    dispatch,
+  };
 }
 
 export async function dispatchLifecycleEvent(event, {

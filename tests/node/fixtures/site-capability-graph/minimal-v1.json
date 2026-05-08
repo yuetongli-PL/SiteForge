@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "graphVersion": "synthetic-graph-v1",
+  "manifest": {
+    "schemaVersion": 1,
+    "graphSchemaVersion": 1,
+    "graphDataVersion": "synthetic-graph-v1",
+    "layerCompatibility": {
+      "kernelCompatibilityVersion": "synthetic-kernel-v1",
+      "siteAdapterVersion": "synthetic-adapter-v1",
+      "downloaderCompatibilityVersion": "synthetic-downloader-v1"
+    },
+    "sourceInventories": [
+      "config/site-capabilities.json",
+      "config/site-registry.json"
+    ]
+  },
+  "nodes": [
+    {
+      "schemaVersion": 1,
+      "id": "site:synthetic.example",
+      "type": "SiteNode",
+      "siteKey": "synthetic.example",
+      "hostFamily": [
+        "synthetic.example"
+      ],
+      "adapterRef": {
+        "id": "synthetic-adapter",
+        "version": "synthetic-adapter-v1"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "capability:synthetic.example:open-public-page",
+      "type": "CapabilityNode",
+      "siteKey": "synthetic.example",
+      "capabilityKey": "open-public-page",
+      "capabilityFamily": "navigate-to-author",
+      "mode": "readOnly",
+      "requiresApproval": false,
+      "supportedTaskTypes": [
+        "open-page"
+      ],
+      "routeRefs": [
+        "route:synthetic.example:public-page"
+      ],
+      "riskPolicyRef": "risk-policy:synthetic.example:normal-readonly",
+      "sourceRefs": [
+        "config/site-capabilities.json"
+      ],
+      "testEvidenceRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:synthetic.example:public-page",
+      "type": "RouteNode",
+      "siteKey": "synthetic.example",
+      "routeKind": "page",
+      "urlPattern": "https://synthetic.example/public/:id",
+      "pageType": "public-detail",
+      "capabilityRefs": [
+        "capability:synthetic.example:open-public-page"
+      ],
+      "adapterRef": {
+        "id": "synthetic-adapter",
+        "version": "synthetic-adapter-v1"
+      },
+      "riskPolicyRef": "risk-policy:synthetic.example:normal-readonly",
+      "sourceRefs": [
+        "src/sites/core/adapters/generic-navigation.mjs"
+      ],
+      "testEvidenceRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "risk-policy:synthetic.example:normal-readonly",
+      "type": "RiskPolicyNode",
+      "state": "normal",
+      "allowedActions": [
+        "read"
+      ],
+      "blockedActions": [
+        "write"
+      ],
+      "requiresApproval": false,
+      "cooldownRequired": false,
+      "isolationRequired": false,
+      "manualRecoveryRequired": false,
+      "degradable": true,
+      "artifactWriteAllowed": true,
+      "sourceRefs": [
+        "config/site-capabilities.json"
+      ],
+      "reasonCodeRefs": []
+    },
+    {
+      "schemaVersion": 1,
+      "id": "schema:SiteCapabilityGraph",
+      "type": "SchemaNode",
+      "schemaName": "SiteCapabilityGraph",
+      "governedVersion": 1,
+      "owner": "Capability",
+      "sourcePath": "src/sites/capability/site-capability-graph.mjs"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "artifact:graph-validation-report",
+      "type": "ArtifactContractNode",
+      "artifactFamily": "site-capability-graph",
+      "redactionRequired": true,
+      "schemaRef": "schema:GraphValidationReport",
+      "writeGuard": "SecurityGuard/Redaction",
+      "auditRequired": true
+    },
+    {
+      "schemaVersion": 1,
+      "id": "test:site-capability-graph-schema",
+      "type": "TestEvidenceNode",
+      "testPath": "tests/node/site-capability-graph-schema.test.mjs",
+      "command": "node --test tests/node/site-capability-graph-schema.test.mjs",
+      "result": "synthetic-fixture-compatible",
+      "fixtureType": "synthetic-redacted"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "version:synthetic-graph-v1",
+      "type": "VersionNode",
+      "versionKind": "graphDataVersion",
+      "version": "synthetic-graph-v1"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "failure:graph-schema-invalid",
+      "type": "FailureModeNode",
+      "reasonCode": "graph-schema-invalid",
+      "retryable": false,
+      "cooldownRequired": false,
+      "isolationRequired": false,
+      "manualRecoveryRequired": true,
+      "degradable": false,
+      "artifactWriteAllowed": false
+    },
+    {
+      "schemaVersion": 1,
+      "id": "observability:graph-validation-completed",
+      "type": "ObservabilityNode",
+      "eventName": "graph.validation.completed",
+      "requiredFields": [
+        "traceId",
+        "correlationId",
+        "graphVersion",
+        "schemaVersion",
+        "validationResult"
+      ],
+      "producerRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "schemaVersion": 1,
+      "id": "edge:site:declares:open-public-page",
+      "type": "site_declares_capability",
+      "from": "site:synthetic.example",
+      "to": "capability:synthetic.example:open-public-page",
+      "sourceRefs": [
+        "config/site-capabilities.json"
+      ],
+      "testEvidenceRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "edge:capability:route:open-public-page",
+      "type": "capability_exposed_on_route",
+      "from": "capability:synthetic.example:open-public-page",
+      "to": "route:synthetic.example:public-page",
+      "testEvidenceRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "edge:capability:risk:open-public-page",
+      "type": "capability_guarded_by_risk_policy",
+      "from": "capability:synthetic.example:open-public-page",
+      "to": "risk-policy:synthetic.example:normal-readonly",
+      "testEvidenceRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "edge:artifact:redaction:graph-validation-report",
+      "type": "artifact_guarded_by_redaction",
+      "from": "artifact:graph-validation-report",
+      "to": "schema:SiteCapabilityGraph",
+      "testEvidenceRefs": [
+        "test:site-capability-graph-schema"
+      ]
+    }
+  ]
+}

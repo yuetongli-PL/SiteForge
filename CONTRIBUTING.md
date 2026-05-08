@@ -24,6 +24,29 @@ node tools\prepublish-secret-scan.mjs
 git diff --check
 ```
 
+## Release And Versioning Policy
+
+Release scope is the set of source, tests, config, schema, repo-local skills,
+tools, and root-document edits that directly belong to the current batch.
+Before staging, re-run `git status --short --branch --untracked-files=all` and
+separate unrelated dirty work from the release report. Local runtime outputs,
+browser profile material, downloaded media, logs, generated run artifacts, raw
+session material, and unrelated dirty files are excluded from release scope.
+
+Contract versions are governed by compatibility evidence. Additive compatible
+fields keep the current schema or artifact version and must preserve existing
+compatibility tests. Incompatible persisted or public contract changes require
+an explicit version bump, schema inventory or compatibility registry updates,
+migration or rejection tests, matrix evidence, and Agent B acceptance before a
+status or release claim is promoted.
+
+Passing local validation does not imply a tag, package version bump, push, PR,
+publication, live capability claim, or live authenticated validation. Those
+actions require an explicit operator request. Release-sized changes must rerun
+the broad Node/Python checks, `node tools\prepublish-secret-scan.mjs`, and
+`git diff --check`; live claims additionally require explicit approval,
+bounded scope, stop conditions, and sanitized artifacts.
+
 ## Safety Boundaries
 
 - Do not commit raw credentials, cookies, CSRF values, authorization headers,
@@ -71,6 +94,107 @@ Do not recreate retired root shims. Use canonical locations:
 If a caller still depends on old root paths such as `run-pipeline.mjs`,
 `download_book.py`, `site-registry.json`, or `site-capabilities.json`, migrate
 that caller instead of adding compatibility back.
+
+## CLI Progress Feedback
+
+Primary long-running Node CLI tasks use `src/infra/cli/progress.mjs` and centralized
+copy in `src/infra/cli/progress-copy.mjs`. The renderer is site-agnostic and
+supports task, stage, subtask, current item, artifacts, warnings, failures,
+download bytes, speed, ETA, retries, skipped-existing counts, and verified
+counts.
+
+Rules for new CLI tasks:
+
+- Keep stdout machine-readable when the entrypoint returns JSON. Human progress
+  goes to stderr.
+- `--json` suppresses human progress and must not mix text into stdout.
+- `--quiet` suppresses human progress.
+- `--progress auto|interactive|plain`, `--force-tty`, and `--no-tty` are the
+  supported control flags.
+- Interactive mode may use ANSI refresh, Unicode icons, spinner frames,
+  progress bars, percent, ETA, and speed.
+- Plain mode must be stable line-by-line text with no cursor control, no
+  animation frames, and no color by default.
+- `build` defaults to a human-readable package-manager-style progress panel and
+  summary. It must not dump raw JSON unless `--json` or `--debug` explicitly
+  requests diagnostics.
+- Build-specific modes are `--verbose`, `--debug`, `--no-color`, `--ascii`, and
+  `--compact`. Keep these flags local to build unless another CLI has a matching
+  UX need and tests.
+- Non-TTY confirmation and selection APIs must not block; they return defaults
+  or throw a clear non-TTY error.
+- Failure output must include task, stage, reason, safe-stop text, next action,
+  and report path when available.
+- Never print raw credentials, cookies, CSRF values, authorization headers,
+  SESSDATA, tokens, session ids, browser profile roots, user data directories,
+  or equivalent sensitive material.
+- CAPTCHA, MFA, platform risk, rate limits, permission checks, and
+  access-control pages are manual safety boundaries. Progress messages must
+  report a safe stop, not bypass behavior.
+
+Current progress-enabled entrypoints:
+
+```powershell
+node .\src\entrypoints\pipeline\run-pipeline.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\generate-skill.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\capture.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\expand-states.mjs <url> --initial-manifest <path> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\collect-book-content.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\analyze-states.mjs <url> --expanded-dir <dir> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\abstract-interactions.mjs <url> --analysis-dir <dir> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\nl-entry.mjs <url> --abstraction-dir <dir> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\generate-docs.mjs <url> --nl-entry-dir <dir> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\govern-interactions.mjs <url> --docs-dir <dir> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\compile-wiki.mjs compile <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\compile-wiki.mjs lint --kb-dir <dir> [--json|--quiet|--progress plain]
+node .\src\entrypoints\pipeline\generate-crawler-script.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\download.mjs --site <site> --input <target> [--execute] [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\site-doctor.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\site-login.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\site-keepalive.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\nl-site-login.mjs "<request>" [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\session.mjs health --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\session-repair-plan.mjs --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\bilibili-action.mjs <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\douyin-action.mjs <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\xiaohongshu-action.mjs <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\jable-ranking.mjs <url> --query <text> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\jp-av-release-catalog.mjs --start <date> --end <date> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\moodyz-month-catalog.mjs --month <YYYY-MM> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\site-credentials.mjs <set|show|delete> <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\site-scaffold.mjs <url> --archetype <type> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\bilibili-open-page.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\bilibili-extract-links.mjs <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\social-auth-import.mjs --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\douyin-export-cookies.mjs [url] [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\x-action.mjs <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\instagram-action.mjs <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\douyin-query-follow.mjs [url] [--json|--quiet|--progress plain]
+node .\src\entrypoints\sites\douyin-resolve-media.mjs <url...> [--json|--quiet|--progress plain]
+node .\scripts\social-live-verify.mjs --live --site <site> [--json|--quiet|--progress plain]
+node .\scripts\social-kb-refresh.mjs [--execute] [--json|--quiet|--progress plain]
+node .\scripts\social-live-resume.mjs --state <path> [--json|--quiet|--progress plain]
+node .\scripts\social-live-report.mjs [--json|--quiet|--progress plain]
+node .\scripts\social-live-dashboard.mjs [--quiet|--progress plain]
+node .\scripts\social-auth-recover.mjs [--execute] [--json|--quiet|--progress plain]
+node .\scripts\social-health-watch.mjs [--execute] [--json|--quiet|--progress plain]
+node .\scripts\social-command-templates.mjs [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs build|skill|doctor|download ...
+```
+
+Focused tests:
+
+```powershell
+node --test tests\node\progress-renderer.test.mjs tests\node\progress-cli-integration.test.mjs
+```
+
+Wrapper scripts under `scripts/` and thin src entrypoints may stay progress-free
+when they only forward to a progress-enabled canonical module. Remaining
+specialized candidates should be migrated by runtime value, not mechanically.
+Social helper scripts that operators run directly, including
+`social-auth-recover.mjs`, `social-health-watch.mjs`, and
+`social-command-templates.mjs`, now share the renderer and keep `--json`
+machine-readable.
 
 ## New Site Onboarding
 
@@ -358,13 +482,13 @@ This compact matrix is the durable Site Capability Layer progress ledger. Short-
 - Requirement summary: Prefer directly related tests for each batch, record focused regression batch definitions, and defer wildcard Node/Python full suites to broad validation checkpoints.
 - Current status: `verified`
 - Existing code evidence: `CONTRIBUTING.md#focused-regression-batch-definition`, `src/sites/capability/focused-regression-batches.mjs`, and layeredValidationPolicy evidence in regression batch definitions.
-- Existing test evidence: `tests/node/site-capability-regression-batches.test.mjs`, `tests/node/site-capability-matrix.test.mjs`, `tests/node/downloads-runner.test.mjs`, `tests/node/session-view.test.mjs`, `tests/node/security-guard-redaction.test.mjs`, `tests/node/risk-state.test.mjs`, `tests/node/reason-codes.test.mjs`, LifecycleEvent coverage in `tests/node/capability-hook.test.mjs`, `tests/node/standard-task-list.test.mjs`, and `tests/node/download-policy.test.mjs`.
-- Verification command: `node --test tests\node\site-capability-regression-batches.test.mjs tests\node\site-capability-matrix.test.mjs tests\node\downloads-runner.test.mjs tests\node\session-view.test.mjs tests\node\security-guard-redaction.test.mjs tests\node\risk-state.test.mjs tests\node\reason-codes.test.mjs tests\node\capability-hook.test.mjs tests\node\standard-task-list.test.mjs tests\node\download-policy.test.mjs`
-- Verification result: Focused regression batch strategy passed; directly related tests remain the required batch-level gate while broad wildcard suites are reserved for release checkpoints.
-- Current gaps: Keep `Focused Regression Batch Definition` synchronized with new high-risk modules.
-- Next smallest task: Add new focused batches when API, health, or downloader contracts expand.
+- Existing test evidence: `tests/node/site-capability-regression-batches.test.mjs`, `tests/node/site-capability-matrix.test.mjs`, `tests/node/downloads-runner.test.mjs`, `tests/node/session-view.test.mjs`, `tests/node/security-guard-redaction.test.mjs`, `tests/node/risk-state.test.mjs`, `tests/node/reason-codes.test.mjs`, LifecycleEvent coverage in `tests/node/capability-hook.test.mjs`, `tests/node/standard-task-list.test.mjs`, `tests/node/download-policy.test.mjs`, `tests/node/site-capability-graph-matrix.test.mjs`, and `tests/node/site-capability-graph-final-validation.test.mjs`.
+- Verification command: `node --test tests\node\site-capability-regression-batches.test.mjs tests\node\site-capability-matrix.test.mjs tests\node\downloads-runner.test.mjs tests\node\session-view.test.mjs tests\node\security-guard-redaction.test.mjs tests\node\risk-state.test.mjs tests\node\reason-codes.test.mjs tests\node\capability-hook.test.mjs tests\node\standard-task-list.test.mjs tests\node\download-policy.test.mjs`; `node --test tests\node\site-capability-graph-matrix.test.mjs tests\node\site-capability-graph-final-validation.test.mjs`
+- Verification result: Focused regression batch strategy passed; directly related tests remain the required batch-level gate while broad wildcard suites are reserved for release checkpoints. Current Site Capability Graph closure validation passed on 2026-05-08 with matrix 108/108 and final-validation 8/8 after adding a verified-section blocker guard, moving legacy no-op partial wording behind the final validation gate, compressing the Section 20 legacy descriptor pipeline regression tail, and compressing source-alias fail-closed regressions into strict data-driven tables.
+- Current gaps: Keep `Focused Regression Batch Definition` synchronized with new high-risk modules. Site Capability Graph delivery/no-op history is retained as regression coverage only and must not become new completion evidence.
+- Next smallest task: Add new focused batches when API, health, downloader, or Graph final-validation contracts expand.
 - Risk notes: Do not report unrun broad suites as passed.
-- Last updated: 2026-05-04T13:45:00+08:00
+- Last updated: 2026-05-08T00:00:00+08:00
 
 ### 18. New site onboarding completion
 - Section name: New site onboarding completion
@@ -384,9 +508,9 @@ This compact matrix is the durable Site Capability Layer progress ledger. Short-
 - Requirement summary: Keep standard artifact families, schema inventory, and onboarding inventories discoverable and versioned.
 - Current status: `verified`
 - Existing code evidence: `src/sites/capability/artifact-schema.mjs`, `schema-inventory.mjs`, onboarding artifact names, API catalog artifacts, and manifest bundle compatibility.
-- Existing test evidence: `tests/node/schema-inventory.test.mjs`, `tests/node/schema-governance.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, and `tests/node/api-candidates.test.mjs`.
-- Verification command: `node --test tests\node\schema-inventory.test.mjs tests\node\schema-governance.test.mjs tests\node\site-onboarding-discovery.test.mjs tests\node\api-candidates.test.mjs`
-- Verification result: Standard artifact focused gate passed for ArtifactReferenceSet, ManifestArtifactBundle, LifecycleEvent, ApiCatalogIndex, StandardTaskList, onboarding inventories, and redaction audits.
+- Existing test evidence: `tests/node/schema-inventory.test.mjs`, `tests/node/schema-governance.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/api-candidates.test.mjs`, and `tests/node/site-capability-graph-matrix.test.mjs`. Current Site Capability Graph review-gate regression coverage is `Site Capability Graph Section 19 recent live integration review gates regression batch stays promotion-blocking`, covering aggregate execution boundary handoff, non-goal live consumer compatibility, and docs-output live consumer dispatch compatibility review gates without live wiring or promotion. Current Graph Section 18 external dispatch acceptance preflight coverage records `createGraphDocsOutputLiveConsumerExternalDispatchAcceptancePreflight()` as descriptor-only / blocked / redactionRequired evidence before any docs-output external dispatch can be considered.
+- Verification command: `node --test tests\node\schema-inventory.test.mjs tests\node\schema-governance.test.mjs tests\node\site-onboarding-discovery.test.mjs tests\node\api-candidates.test.mjs`; `node --test tests\node\site-capability-graph-matrix.test.mjs --test-name-pattern "recent live integration review gates regression batch"`; `node --test tests\node\site-capability-graph-artifact-writer.test.mjs --test-name-pattern "external dispatch acceptance preflight"`; `node --test tests\node\site-capability-graph-matrix.test.mjs --test-name-pattern "external dispatch acceptance preflight"`
+- Verification result: Standard artifact focused gate passed for ArtifactReferenceSet, ManifestArtifactBundle, LifecycleEvent, ApiCatalogIndex, StandardTaskList, onboarding inventories, and redaction audits. Current Site Capability Graph review-gate regression focused matrix validation passed 1/1 and full matrix validation passed 79/79 on 2026-05-07; this is durable ledger evidence only and does not enable live consumer wiring, repo/docs/runtime writes, external telemetry/dispatch, SiteAdapter, downloader, SessionView, or status promotion. Current Graph Section 18 external dispatch acceptance preflight focused artifact-writer validation passed 4/4 and focused matrix validation passed 1/1 on 2026-05-07; this keeps external dispatch, external telemetry, docs/repo/runtime writes, SiteAdapter, downloader, SessionView, task runner, and status promotion disabled.
 - Current gaps: Keep generated inventories compact and avoid duplicate docs.
 - Next smallest task: Fold dated status snapshots into matrix or CONTRIBUTING instead of adding more standalone docs.
 - Risk notes: Artifact schemas must remain compatible before writes proceed.
@@ -396,14 +520,14 @@ This compact matrix is the durable Site Capability Layer progress ledger. Short-
 - Section name: Final goal
 - Requirement summary: Keep Sections 1-19 verified, preserve safety boundaries, keep docs compact, and maintain final validation evidence.
 - Current status: `verified`
-- Existing code evidence: Sections 1-19 record code-backed evidence across Kernel, SiteAdapter, Capability Services, downloader boundary, schema governance, health recovery, discovery, and artifacts.
-- Existing test evidence: The current focused validation set covers matrix/regression, download, API, security, lifecycle, health, onboarding, architecture gates, BZ888 OCR challenge boundary, redacted registry profile fallback, and Cloudflare challenge reason recovery.
-- Verification command: `node --test tests\node\site-capability-matrix.test.mjs tests\node\download-site-modules.test.mjs tests\node\site-registry.test.mjs tests\node\profile-validation.test.mjs tests\node\generate-skill.test.mjs tests\node\site-onboarding-discovery.test.mjs`; `python -m unittest .\tests\python\test_download_book.py`
-- Verification result: 2026-05-04 final validation evidence: matrix focused gate passed; regression focused gate passed; download focused gate passed; API focused gate passed; security focused gate passed; BZ888 onboarding/downloader/OCR/profile-fallback/Cloudflare-reason focused gates passed; live BZ888 execute produced governed challenge-stop manifest `20260504T062914706Z-bz888-generic-resource`; separate human-visible browser validation confirmed the target BZ888 catalog/chapter pages were readable after manual challenge completion without exposing raw cookies to the repo or downloader; live X auth recovery passed at 2026-05-04T13:48:09+08:00.
-- Current gaps: Broad wildcard Node/Python validation can be rerun at release time; BZ888 direct downloader access remains blocked by Cloudflare challenge and must stay a recorded boundary rather than a bypass target; X public primary author-chain expansion remains a non-auth navigation gap.
-- Next smallest task: Before staging, rerun the compact prepublish checklist in `CONTRIBUTING.md`.
-- Risk notes: The 14 non-Douyin remaining items are consolidated here; Xiaohongshu fresh evidence, Bilibili UP-space diagnostics, native-miss-diagnostics-v1, profile-health-risk manual boundaries, and repo-local skills remain recorded without raw cookies, authorization headers, or CAPTCHA bypass.
-- Last updated: 2026-05-04T15:22:01+08:00
+- Existing code evidence: Sections 1-19 record code-backed evidence across Kernel, SiteAdapter, Capability Services, downloader boundary, schema governance, health recovery, discovery, and artifacts. Current Site Capability Graph final validation evidence lives in `src/sites/capability/site-capability-graph-final-validation.mjs`, with planner/Layer relationship evidence in `planner-policy-handoff.mjs` and lifecycle producer inventory evidence in `lifecycle-events.mjs`.
+- Existing test evidence: The current focused validation set covers matrix/regression, download, API, security, lifecycle, health, onboarding, architecture gates, BZ888 OCR challenge boundary, redacted registry profile fallback, Cloudflare challenge reason recovery, Site Capability Graph matrix closure, final validation, planner/policy handoff, redaction persistence, lifecycle producer inventory, and observability boundaries.
+- Verification command: `node --test tests\node\site-capability-matrix.test.mjs tests\node\download-site-modules.test.mjs tests\node\site-registry.test.mjs tests\node\profile-validation.test.mjs tests\node\generate-skill.test.mjs tests\node\site-onboarding-discovery.test.mjs`; `python -m unittest .\tests\python\test_download_book.py`; `node --test tests\node\site-capability-graph-matrix.test.mjs tests\node\site-capability-graph-final-validation.test.mjs tests\node\planner-policy-handoff.test.mjs tests\node\lifecycle-events.test.mjs tests\node\site-capability-graph-observability.test.mjs`
+- Verification result: 2026-05-04 final validation evidence: matrix focused gate passed; regression focused gate passed; download focused gate passed; API focused gate passed; security focused gate passed; BZ888 onboarding/downloader/OCR/profile-fallback/Cloudflare-reason focused gates passed; live BZ888 execute produced governed challenge-stop manifest `20260504T062914706Z-bz888-generic-resource`; separate human-visible browser validation confirmed the target BZ888 catalog/chapter pages were readable after manual challenge completion without exposing raw cookies to the repo or downloader; live X auth recovery passed at 2026-05-04T13:48:09+08:00. 2026-05-08 Site Capability Graph final validation passed with `verified=20`, `partial=0`, `gaps=[]`, matrix 108/108 after Section 20 legacy descriptor pipeline and source-alias fail-closed regression compression, final-validation 8/8, planner-policy handoff 40/40, lifecycle-events 15/15, observability 53/53, and Agent B `Accepted`. 2026-05-08 release-scope broad validation passed with explicit Node test-file list 1971/1971, Python unittest discovery 58/58, prepublish secret scan 589 candidate files, and `git diff --check`.
+- Current gaps: Future release-time broad wildcard validation should be rerun after additional changes; BZ888 direct downloader access remains blocked by Cloudflare challenge and must stay a recorded boundary rather than a bypass target; X public primary author-chain expansion remains a non-auth navigation gap. Site Capability Graph has no open partial section after the final validation gate.
+- Next smallest task: Before staging, rerun the compact prepublish checklist in `CONTRIBUTING.md` and keep Graph delivery/no-op history as regression-only context.
+- Risk notes: The 14 non-Douyin remaining items are consolidated here; Xiaohongshu fresh evidence, Bilibili UP-space diagnostics, native-miss-diagnostics-v1, profile-health-risk manual boundaries, and repo-local skills remain recorded without raw cookies, authorization headers, or CAPTCHA bypass. Graph completion is invalid if future changes reintroduce partial-state blockers, runtime execution, repo/docs/runtime writes, external telemetry, SiteAdapter/downloader invocation, SessionView materialization, or sensitive-material persistence.
+- Last updated: 2026-05-08T00:00:00+08:00
 
 
 ## Focused Regression Batch Definition

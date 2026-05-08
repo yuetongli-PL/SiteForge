@@ -319,6 +319,34 @@ python -m unittest discover -s .\tests\python -p "test_*.py"
 
 Use the CLI entrypoints directly:
 
+Primary long-running Node CLI entrypoints now share the same progress feedback
+system. Human progress is written to stderr, so stdout stays machine-readable
+for JSON callers. Interactive terminals get a restrained live status line;
+CI, pipes, redirected output, and `--no-tty` get stable line-by-line text.
+Use `--json` to keep only JSON output, `--quiet` to suppress human progress,
+`--progress plain` to force copyable logs, and `--force-tty` only when a caller
+knows stderr supports ANSI refresh.
+
+`build` now uses a package-manager-style progress view. In an interactive TTY it
+renders a compact pipeline panel with overall stage progress, current stage,
+elapsed time, pending/running/completed/warning/failed/skipped state, and
+width-aware item/path display. In plain mode it emits stable stage lines, then a
+human summary with artifacts, quality warnings, and next commands. The default
+human mode no longer dumps raw JSON; use `--json` for machine-readable output,
+`--verbose` for full paths and stage details, `--debug` for stack traces and raw
+diagnostics, `--no-color` to disable ANSI color, `--ascii` to disable Unicode
+glyphs, and `--compact` for shorter output.
+
+Unified facade:
+
+```powershell
+node .\src\entrypoints\cli.mjs build https://www.22biqu.com/
+node .\src\entrypoints\cli.mjs skill https://www.22biqu.com/
+node .\src\entrypoints\cli.mjs doctor https://www.22biqu.com/
+node .\src\entrypoints\cli.mjs download plan https://www.bilibili.com/video/BV...
+node .\src\entrypoints\cli.mjs download execute https://www.bilibili.com/video/BV... --site bilibili
+```
+
 Run site pipeline:
 
 ```powershell
@@ -334,8 +362,55 @@ node .\src\entrypoints\sites\site-doctor.mjs https://www.22biqu.com/
 Plan downloads through the unified runner:
 
 ```powershell
-node .\src\entrypoints\sites\download.mjs https://www.bilibili.com/video/BV... --dry-run
+node .\src\entrypoints\sites\download.mjs --input https://www.bilibili.com/video/BV... --site bilibili
 ```
+
+Progress examples:
+
+```text
+[build] start status=pending message="生成站点 Skill"
+[build] stage=1/10 name=capture status=running message="观察网站结构"
+[build] stage=1/10 name=capture status=success message="Captured page facts"
+[build] status=success message="Skill generated" skill=skills/example/SKILL.md
+
+[download] start status=pending message="规划下载任务"
+[download] stage=1/1 name=plan status=skipped message="Dry run only; no download was attempted"
+
+[doctor] start status=pending message="站点健康诊断"
+[doctor] stage=1/7 name=session status=success message=unified-session-runner
+[doctor] stage=4/7 name=capture status=success message=success
+```
+
+Failures use the same recovery shape everywhere:
+
+```text
+[build] status=failed stage=capture reason="verification or access-control page"
+[build] safety="系统已安全停止，未尝试绕过 CAPTCHA、MFA、平台风控、限流、权限或访问控制。"
+[build] next="node src/entrypoints/sites/site-doctor.mjs https://example.com --no-headless --reuse-login-state"
+```
+
+The progress layer never prints raw cookies, tokens, authorization headers,
+session ids, browser profile material, or user data directories. CAPTCHA, MFA,
+platform risk, rate limits, permission checks, and access-control pages remain
+manual safety boundaries; the CLI reports a safe stop instead of attempting a
+bypass.
+
+The same renderer is also wired into session/login recovery commands, social
+site action commands, and catalog/list collection commands such as
+`site-login.mjs`, `site-keepalive.mjs`, `session.mjs`,
+`session-repair-plan.mjs`, `bilibili-action.mjs`, `douyin-action.mjs`,
+`xiaohongshu-action.mjs`, `jable-ranking.mjs`,
+`jp-av-release-catalog.mjs`, `moodyz-month-catalog.mjs`,
+`site-credentials.mjs`, `site-scaffold.mjs`, `bilibili-open-page.mjs`,
+`bilibili-extract-links.mjs`, `social-auth-import.mjs`,
+`generate-crawler-script.mjs`, `douyin-export-cookies.mjs`,
+`x-action.mjs`, `instagram-action.mjs`, `douyin-query-follow.mjs`, and
+`douyin-resolve-media.mjs`. The same renderer is available in social operations
+helpers including `social-live-verify.mjs`, `social-kb-refresh.mjs`,
+`social-live-resume.mjs`, `social-live-report.mjs`, and
+`social-live-dashboard.mjs`; operator-facing recovery and planning helpers
+`social-auth-recover.mjs`, `social-health-watch.mjs`, and
+`social-command-templates.mjs` use the same renderer.
 
 Aggregate public official AV release metadata:
 
@@ -384,7 +459,7 @@ The BZ888 path reads only public HTML and stops with `blocked-by-cloudflare-chal
 - [ ] Expand live API verification evidence per site
 - [ ] Continue reducing legacy downloader fallback paths
 - [ ] Improve human-visible recovery flow for login, session, and profile-health risks
-- [ ] Add clearer release/versioning policy
+- [x] Add clearer release/versioning policy
 
 ## Repository Layout
 
@@ -431,6 +506,27 @@ Do not commit:
 - browser profile directories
 - `.playwright-mcp/`, `runs/`, `book-content/`, downloaded media, logs, or local runtime artifacts
 - CAPTCHA, MFA, anti-bot, access-control, or platform-risk bypass logic
+
+## Release And Versioning
+
+Release readiness is evidence-based, not date-based. A change is release-owned
+only when its source, test, config, skill, tool, or root-document edits match the
+current batch scope and the worktree has been rechecked immediately before
+staging. Local runtime outputs, browser profile material, downloaded media,
+logs, generated run artifacts, and unrelated dirty files stay out of release
+scope.
+
+Schema and contract versions change only when the persisted or public contract
+changes. Additive compatible fields keep the current version and must keep
+existing compatibility tests green. Incompatible contract changes require an
+explicit version bump, compatibility or migration tests, matrix evidence, and
+Agent B acceptance before any status or release claim is promoted.
+
+No tag, package version bump, push, PR, publication, live capability claim, or
+live authenticated validation is implied by local tests passing. Release-sized
+changes must rerun the broad Node/Python checks, the prepublish secret scan, and
+`git diff --check`; live claims additionally need explicit operator approval and
+sanitized artifacts.
 
 ## Help And Maintenance
 

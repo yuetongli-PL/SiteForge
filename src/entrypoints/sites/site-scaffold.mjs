@@ -5,6 +5,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
 import { pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost, uniqueSortedStrings } from '../../shared/normalize.mjs';
 import { PROFILE_ARCHETYPES, resolveProfilePrimaryArchetype } from '../../sites/core/archetypes.mjs';
@@ -36,7 +40,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-scaffold.mjs <url> --archetype <navigation-catalog|chapter-content> [--profiles-dir <dir>] [--profile-path <path>] [--out-dir <dir>] [--timeout <ms>]
+  node src/entrypoints/sites/site-scaffold.mjs <url> --archetype <navigation-catalog|chapter-content> [--profiles-dir <dir>] [--profile-path <path>] [--out-dir <dir>] [--timeout <ms>] [--json] [--quiet] [--progress auto|interactive|plain]
 `;
 
 const TEMPLATE_BY_ARCHETYPE = Object.freeze({
@@ -639,7 +643,7 @@ export async function scaffoldSite(inputUrl, options = {}, deps = {}) {
   return result;
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -655,6 +659,11 @@ function parseCliArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--archetype': {
         const { value, nextIndex } = readValue(index);
@@ -705,7 +714,23 @@ async function runCli() {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const result = await scaffoldSite(parsed.inputUrl, parsed.options);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: parsed.inputUrl,
+    options: parsed.options,
+    taskId: 'siteScaffold',
+    title: 'Site scaffold',
+    stageId: 'siteScaffold',
+    stageTitle: 'Create site profile scaffold',
+    run: (stageOptions) => scaffoldSite(parsed.inputUrl, stageOptions),
+    successMessage: (stageResult) => stageResult?.profilePath ?? stageResult?.host,
+    artifacts: (stageResult) => [
+      stageResult?.profilePath ? { label: 'profile', path: stageResult.profilePath } : null,
+      stageResult?.reports?.json ? { label: 'report', path: stageResult.reports.json } : null,
+    ].filter(Boolean),
+    isFailureResult: (stageResult) => stageResult?.status === 'failed',
+    failureReason: (stageResult) => stageResult?.reason ?? 'site scaffold failed',
+    failureTitle: 'Site scaffold failed',
+  });
   writeJsonStdout(result);
 }
 

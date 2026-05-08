@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
+
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 
@@ -26,6 +28,11 @@ Options:
   --run-root <dir>                  Live smoke run root. Default: runs/social-live-verify.
   --cooldown-minutes <n>            Cooldown template value. Default: 30.
   --format <text|json>              Output format. Default: text.
+  --json                            Alias for --format json.
+  --quiet                           Suppress human progress and text output.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -55,10 +62,20 @@ export function parseArgs(argv) {
     runRoot: path.join('runs', 'social-live-verify'),
     cooldownMinutes: '30',
     format: 'text',
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    const progressOption = parseProgressCliOption(argv, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -90,6 +107,9 @@ export function parseArgs(argv) {
   if (options.account) {
     options.xAccount = options.account;
     options.igAccount = options.account;
+  }
+  if (options.json) {
+    options.format = 'json';
   }
   if (!['x', 'instagram', 'all'].includes(String(options.site))) {
     throw new Error(`Invalid --site: ${options.site}`);
@@ -244,11 +264,30 @@ export async function main(argv) {
     return;
   }
   const templates = buildTemplates(options);
+  const progress = createCliProgressRenderer(options);
+  const task = progress.task({
+    id: 'socialCommandTemplates',
+    title: 'Social command templates',
+    totalStages: 1,
+    item: options.site,
+  });
+  const stage = task.stage({
+    id: 'templates',
+    title: 'Build command templates',
+    index: 1,
+    current: templates.sites.length,
+    total: templates.sites.length,
+    item: options.site,
+  });
+  stage.succeed({ message: `Generated ${templates.sites.length} site template(s)` });
+  task.succeed({ message: 'Command templates generated' });
   if (options.format === 'json') {
     process.stdout.write(`${JSON.stringify(templates, null, 2)}\n`);
     return;
   }
-  printText(templates);
+  if (!options.quiet) {
+    printText(templates);
+  }
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

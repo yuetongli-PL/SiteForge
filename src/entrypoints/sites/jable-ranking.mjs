@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
 import { upsertSiteCapabilities } from '../../sites/catalog/capabilities.mjs';
 import { upsertSiteRegistryRecord } from '../../sites/catalog/registry.mjs';
 import {
@@ -31,7 +34,7 @@ const SUPPORTED_RANKING_MODES = ['combined', 'recent', 'most-viewed', 'most-favo
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0 Safari/537.36';
 const execFile = promisify(execFileCallback);
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = [...argv];
   const positionals = [];
   const flags = {};
@@ -65,6 +68,11 @@ function parseArgs(argv) {
     maxTagPages: normalizeJableLimit(flags['max-tag-pages'], DEFAULT_OPTIONS.maxTagPages),
     groupConcurrency: normalizeJableLimit(flags['group-concurrency'], DEFAULT_OPTIONS.groupConcurrency),
     writeSiteMetadata: !flags['no-write'] && !flags['no-site-metadata'],
+    json: flags.json === true,
+    quiet: flags.quiet === true,
+    progressMode: flags.progress ? String(flags.progress) : undefined,
+    forceTty: flags['force-tty'] === true,
+    noTty: flags['no-tty'] === true,
   };
 }
 
@@ -444,6 +452,9 @@ function printHelp() {
     '  --workspace-root <dir>   Override workspace root',
     '  --no-site-metadata       Fetch/plan only; skip registry and capability writes',
     '  --no-write               Alias for --no-site-metadata',
+    '  --json                   Keep stdout as JSON and suppress progress',
+    '  --quiet                  Suppress human progress on stderr',
+    '  --progress <mode>        auto | interactive | plain',
   ].join('\n') + '\n');
 }
 
@@ -457,7 +468,19 @@ async function main() {
   if (!args.query && !args.targetLabel && !createDirectJableTarget(args.url, null)) {
     throw new Error('Provide either --query or --target-label.');
   }
-  const result = await queryJableRanking(args.url, args);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: args.url,
+    options: args,
+    taskId: 'jableRanking',
+    title: 'Jable ranking',
+    stageId: 'jableRanking',
+    stageTitle: 'Query ranking',
+    run: (stageOptions) => queryJableRanking(args.url, stageOptions),
+    successMessage: (stageResult) => `${stageResult?.results?.length ?? 0} results`,
+    isFailureResult: (stageResult) => stageResult?.ok !== true,
+    failureReason: (stageResult) => stageResult?.reason ?? 'ranking query failed',
+    failureTitle: 'Jable ranking failed',
+  });
   writeJsonStdout(result);
 }
 

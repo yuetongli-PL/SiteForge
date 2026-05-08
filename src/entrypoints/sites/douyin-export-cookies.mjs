@@ -13,6 +13,9 @@ import {
 } from '../../infra/browser/launcher.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import {
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import {
   createSessionTarget,
   resolveSidecarPath,
 } from '../../sites/douyin/live/export.mjs';
@@ -31,7 +34,7 @@ function normalizeText(value) {
   return String(value ?? '').trim();
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = [...argv];
   const positionals = [];
   const flags = {};
@@ -79,6 +82,11 @@ function parseArgs(argv) {
       headless: flags.headless === true ? true : flags['no-headless'] === true ? false : undefined,
       reuseLoginState: flags['no-reuse-login-state'] === true ? false : true,
       autoLogin: flags['no-auto-login'] === true ? false : true,
+      json: flags.json === true,
+      quiet: flags.quiet === true,
+      progressMode: flags.progress ? String(flags.progress) : undefined,
+      forceTty: flags['force-tty'] === true,
+      noTty: flags['no-tty'] === true,
     },
   };
 }
@@ -270,7 +278,25 @@ export { exportDouyinCookies };
 export async function runDouyinExportCookiesCli(argv = process.argv.slice(2)) {
   initializeCliUtf8();
   const parsed = parseArgs(argv);
-  const report = await exportDouyinCookies(parsed.inputUrl, parsed.options);
+  const report = await runSingleStageCliWithProgress({
+    inputUrl: parsed.inputUrl,
+    options: parsed.options,
+    taskId: 'douyinExportCookies',
+    title: 'Export Douyin cookie summary',
+    stageId: 'douyinExportCookies',
+    stageTitle: '导出抖音脱敏 Cookie 摘要',
+    run: (stageOptions) => exportDouyinCookies(parsed.inputUrl, stageOptions),
+    successMessage: (result) => `exported ${result?.cookieCount ?? 0} redacted cookies`,
+    artifacts: (result) => [
+      result?.path ? { label: 'Cookie summary', path: result.path } : null,
+      result?.sidecarPath ? { label: 'Sidecar', path: result.sidecarPath } : null,
+      result?.redactionAuditPath ? { label: 'Redaction audit', path: result.redactionAuditPath } : null,
+      result?.sidecarRedactionAuditPath ? { label: 'Sidecar audit', path: result.sidecarRedactionAuditPath } : null,
+    ].filter(Boolean),
+    warningResult: (result) => Boolean(result?.warning),
+    failureTitle: 'Douyin cookie export safely stopped',
+    nextStep: 'node src/entrypoints/sites/site-login.mjs https://www.douyin.com/ --no-headless --reuse-login-state',
+  });
   writeJsonStdout(report);
 }
 

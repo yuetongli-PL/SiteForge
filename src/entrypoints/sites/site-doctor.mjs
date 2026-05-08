@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { createProgressRenderer } from '../../infra/cli/progress.mjs';
+import { doctorStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { ensureDir, pathExists, readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost, toArray, uniqueSortedStrings } from '../../shared/normalize.mjs';
@@ -92,7 +94,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-doctor.mjs <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download]
+  node src/entrypoints/sites/site-doctor.mjs <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download] [--json] [--quiet] [--progress auto|interactive|plain]
 `;
 
 const AUTH_PROBE_WAIT_POLICY = {
@@ -177,6 +179,32 @@ function createCheck(name) {
     details: null,
     error: null,
   };
+}
+
+function startDoctorProgressStage(progress, id, index, total, item) {
+  return progress?.stage?.({
+    id,
+    index,
+    total,
+    title: doctorStageTitle(id),
+    item,
+  });
+}
+
+function finishDoctorProgressStage(stage, check, fallbackMessage = null) {
+  if (!stage || !check) {
+    return;
+  }
+  const message = check.error?.message ?? fallbackMessage ?? check.details?.manifestPath ?? check.details?.status ?? check.status;
+  if (check.status === 'pass') {
+    stage.succeed({ message });
+  } else if (check.status === 'skipped') {
+    stage.skip({ message });
+  } else if (check.status === 'fail') {
+    stage.fail({ message });
+  } else {
+    stage.warn({ message });
+  }
 }
 
 function markPass(check, details = null) {
@@ -2285,8 +2313,12 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   let authProbe = null;
   let keepalivePreflight = null;
   let scenarioSuite = null;
+  const progress = options.progress ?? null;
+  const progressTotal = 7;
+  let profileProgress = null;
 
   try {
+    const sessionProgress = startDoctorProgressStage(progress, 'session', 1, progressTotal, inputUrl);
     if (settings.sessionManifest) {
       const sessionManifest = await (runtime.readSessionRunManifest ?? readSessionRunManifest)(settings.sessionManifest);
       report.sessionHealth = summarizeSessionRunManifest(sessionManifest);
@@ -2313,7 +2345,11 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
         report.warnings.push(`Could not generate unified session health manifest; continuing with legacy session provider: ${error?.message ?? String(error)}`);
       }
     }
+    sessionProgress?.succeed?.({
+      message: report.sessionHealth?.status ?? report.sessionProvider,
+    });
 
+    profileProgress = startDoctorProgressStage(progress, 'profile', 2, progressTotal, settings.profilePath);
     if (!await runtime.pathExists(settings.profilePath)) {
       throw new Error(`Missing site profile: ${settings.profilePath}`);
     }
@@ -2326,6 +2362,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       archetype: report.site.archetype,
       warnings: validatedProfile.warnings ?? [],
     });
+    finishDoctorProgressStage(profileProgress, report.profile, report.site.archetype);
     sample = chooseSample(validatedProfile.profile, settings.query);
     report.sample = sample ? { ...sample } : null;
     if (!sample) {
@@ -2515,6 +2552,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     }
   } catch (error) {
     markFail(report.profile, error);
+    finishDoctorProgressStage(profileProgress, report.profile);
     if (Array.isArray(error?.errors)) {
       report.missingFields.push(...error.errors.map((entry) => entry.path));
     }
@@ -2539,6 +2577,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     return report;
   }
 
+  const crawlerProgress = startDoctorProgressStage(progress, 'crawler', 3, progressTotal, inputUrl);
   try {
     const crawlerResult = await runtime.ensureCrawlerScript(inputUrl, {
       profilePath: settings.profilePath,
@@ -2554,11 +2593,13 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   } catch (error) {
     markFail(report.crawler, error);
   }
+  finishDoctorProgressStage(crawlerProgress, report.crawler);
 
   let captureManifest = null;
   let initialRestriction = null;
   let activeRestriction = null;
   let restrictionRecovery = null;
+  const captureProgress = startDoctorProgressStage(progress, 'capture', 4, progressTotal, inputUrl);
   try {
     captureManifest = await runtime.capture(inputUrl, {
       outDir: path.join(reportDir, 'capture'),
@@ -2618,6 +2659,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   } catch (error) {
     markFail(report.capture, error);
   }
+  finishDoctorProgressStage(captureProgress, report.capture);
 
   const isChapter = report.site.archetype === PROFILE_ARCHETYPES.CHAPTER_CONTENT;
   const hasDownloader = Boolean(validatedProfile.profile?.downloader);
@@ -2628,6 +2670,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
 
   if (captureManifest?.files?.manifest) {
     if (activeRestriction?.restrictionDetected) {
+      const riskProgress = startDoctorProgressStage(progress, 'risk', 6, progressTotal, inputUrl);
       const restrictionMessage = `Xiaohongshu capture remained on restriction page${activeRestriction.riskPageCode ? ` ${activeRestriction.riskPageCode}` : ''}.`;
       markSkipped(report.expand, restrictionMessage);
       try {
@@ -2670,8 +2713,10 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
         report.riskCauseCode = activeRestriction.riskCauseCode ?? report.riskCauseCode;
         report.riskAction = activeRestriction.riskAction ?? report.riskAction;
       }
+      riskProgress?.fail?.({ message: restrictionMessage });
     } else {
     try {
+      const expandProgress = startDoctorProgressStage(progress, 'expand', 5, progressTotal, inputUrl);
       const expandManifest = await runtime.expandStates(inputUrl, {
         initialManifestPath: captureManifest.files.manifest,
         outDir: path.join(reportDir, 'expand'),
@@ -2744,6 +2789,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       if (budget.hit && budget.stopReason) {
         report.warnings.push(`Doctor expansion hit its configured budget: ${budget.stopReason}`);
       }
+      finishDoctorProgressStage(expandProgress, report.expand, `${expandManifest.summary?.capturedStates ?? 0} states`);
 
       if (sample) {
         if (searchState) {
@@ -2807,6 +2853,8 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       }
     } catch (error) {
       markFail(report.expand, error);
+      const expandProgress = startDoctorProgressStage(progress, 'expand', 5, progressTotal, inputUrl);
+      finishDoctorProgressStage(expandProgress, report.expand);
       if (report.detail.status === 'pending') {
         markSkipped(report.detail, 'Expansion failed before detail validation could run.');
       }
@@ -2849,6 +2897,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   }
 
   if (report.download) {
+    const downloadProgress = startDoctorProgressStage(progress, 'download', 7, progressTotal, inputUrl);
     if (!settings.checkDownload) {
       markSkipped(report.download, 'Download validation is disabled by default. Pass --check-download to enable it.');
     } else if (!isChapter && !sample?.url && !validatedProfile.profile?.downloader) {
@@ -2904,6 +2953,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
         });
       }
     }
+    finishDoctorProgressStage(downloadProgress, report.download);
   }
 
   report.nextActions = buildNextActions(report, sample);
@@ -3029,6 +3079,24 @@ export function parseCliArgs(argv) {
       case '--check-download':
         options.checkDownload = true;
         break;
+      case '--json':
+        options.json = true;
+        break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(index);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
       case '--headless':
         options.headless = true;
         break;
@@ -3070,12 +3138,51 @@ async function runCli() {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const result = await siteDoctor(parsed.inputUrl, parsed.options);
-  writeJsonStdout(result);
+  const progress = createProgressRenderer({
+    stdout: process.stdout,
+    stderr: process.stderr,
+    mode: parsed.options.progressMode ?? 'auto',
+    forceTty: parsed.options.forceTty,
+    noTty: parsed.options.noTty,
+    json: parsed.options.json,
+    quiet: parsed.options.quiet,
+  });
+  const task = progress.task({
+    id: 'doctor',
+    title: '站点健康诊断',
+    item: parsed.inputUrl,
+  });
+  const {
+    json: _json,
+    quiet: _quiet,
+    progressMode: _progressMode,
+    forceTty: _forceTty,
+    noTty: _noTty,
+    ...doctorOptions
+  } = parsed.options;
+  const result = await siteDoctor(parsed.inputUrl, { ...doctorOptions, progress: task });
   const failingChecks = ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'download']
     .map((key) => result[key])
     .filter(Boolean)
     .filter((check) => check.status === 'fail');
+  const artifacts = [
+    result.reports?.json ? { label: 'report', path: result.reports.json } : null,
+    result.reports?.markdown ? { label: 'markdown', path: result.reports.markdown } : null,
+  ].filter(Boolean);
+  if (failingChecks.length > 0 || result.riskCauseCode || result.antiCrawlReasonCode) {
+    task.warn({
+      message: result.riskCauseCode ?? result.antiCrawlReasonCode ?? `${failingChecks.length} checks failed`,
+      artifacts,
+      warnings: result.warnings,
+    });
+  } else {
+    task.succeed({
+      message: 'healthy',
+      artifacts,
+      warnings: result.warnings,
+    });
+  }
+  writeJsonStdout(result);
   if (failingChecks.length > 0) {
     process.exitCode = 1;
   }

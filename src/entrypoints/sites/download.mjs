@@ -25,6 +25,7 @@ import {
 } from '../../sites/capability/security-guard.mjs';
 import { readJsonFile } from '../../infra/io.mjs';
 import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
+import { createProgressRenderer } from '../../infra/cli/progress.mjs';
 
 const HELP = `Usage:
   node src/entrypoints/sites/download.mjs --site <site> --input <url-or-target> [options]
@@ -76,6 +77,10 @@ Options:
   --plan-json                       Emit a no-write resolved plan JSON to stdout and exit.
   --no-write                        Alias for --plan-json.
   --json                            Print the full runner result JSON.
+  --quiet                           Suppress human progress on stderr.
+  --progress <mode>                 auto | interactive | plain.
+  --force-tty                       Force interactive progress.
+  --no-tty                          Force plain progress.
   -h, --help                        Show this help.
 `;
 
@@ -300,6 +305,21 @@ export function parseArgs(argv) {
       case '--json':
         options.json = true;
         break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--progress': {
+        const read = readValue(argv, index, arg);
+        options.progressMode = read.value;
+        index = read.nextIndex;
+        break;
+      }
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
       default:
         if (!options.input) {
           options.input = arg;
@@ -419,6 +439,15 @@ export async function main(argv) {
     process.stdout.write(`${HELP}\n`);
     return;
   }
+  const progress = createProgressRenderer({
+    stdout: process.stdout,
+    stderr: process.stderr,
+    mode: options.progressMode ?? 'auto',
+    forceTty: options.forceTty,
+    noTty: options.noTty,
+    json: options.json || options.planJson,
+    quiet: options.quiet,
+  });
   if (options.planJson) {
     const definition = await resolveDownloadSiteDefinition(options, {
       workspaceRoot: process.cwd(),
@@ -445,6 +474,11 @@ export async function main(argv) {
       plannerHandoff,
     }
     : options;
+  const task = progress.task({
+    id: 'download',
+    title: options.dryRun ? '规划下载任务' : '执行下载任务',
+    item: options.input,
+  });
   const result = await runDownloadTask(request, {
     dryRun: options.dryRun,
     runRoot: options.outDir,
@@ -468,7 +502,53 @@ export async function main(argv) {
     ...(options.sessionStatus ? { sessionStatus: options.sessionStatus } : {}),
     ...(options.sessionReason ? { sessionReason: options.sessionReason } : {}),
     resolveNetwork: options.resolveNetwork,
+    progress: task,
   }, defaultResolverDeps(options));
+  const artifacts = [
+    result.manifest?.artifacts?.manifest ? { label: 'manifest', path: result.manifest.artifacts.manifest } : null,
+    result.manifest?.artifacts?.reportMarkdown ? { label: 'report', path: result.manifest.artifacts.reportMarkdown } : null,
+  ].filter(Boolean);
+  if (result.manifest.status === 'passed') {
+    task.succeed({
+      message: `${result.manifest.counts.downloaded}/${result.manifest.counts.expected} completed`,
+      completedItems: result.manifest.counts.downloaded,
+      failedItems: result.manifest.counts.failed,
+      skippedExisting: result.manifest.counts.skipped,
+      artifacts,
+    });
+  } else if (result.manifest.status === 'skipped') {
+    task.skip({
+      message: result.manifest.reason ?? 'Download skipped',
+      completedItems: result.manifest.counts.downloaded,
+      failedItems: result.manifest.counts.failed,
+      skippedExisting: result.manifest.counts.skipped,
+      artifacts,
+    });
+  } else if (['blocked', 'failed'].includes(result.manifest.status)) {
+    task.fail({
+      message: result.manifest.reason ?? 'Download failed',
+      completedItems: result.manifest.counts.downloaded,
+      failedItems: result.manifest.counts.failed,
+      skippedExisting: result.manifest.counts.skipped,
+      artifacts,
+    });
+    progress.failure({
+      taskId: 'download',
+      title: 'Download stopped safely',
+      stage: 'download',
+      reason: result.manifest.reason ?? 'download failed',
+      nextStep: result.manifest.resumeCommand ?? `node src/entrypoints/sites/download.mjs --site ${options.site ?? result.plan.siteKey} --input "${options.input ?? ''}"`,
+      report: result.manifest.artifacts?.reportMarkdown,
+    });
+  } else {
+    task.warn({
+      message: result.manifest.reason ?? result.manifest.status,
+      completedItems: result.manifest.counts.downloaded,
+      failedItems: result.manifest.counts.failed,
+      skippedExisting: result.manifest.counts.skipped,
+      artifacts,
+    });
+  }
   if (options.json) {
     process.stdout.write(downloadCliJson(result));
     return;

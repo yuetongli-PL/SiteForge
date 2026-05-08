@@ -5,6 +5,8 @@ import {
 } from 'node:fs/promises';
 import process from 'node:process';
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { createProgressRenderer } from '../../infra/cli/progress.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { ensureDir, writeTextFile } from '../../infra/io.mjs';
 import { toPosixPath, uniqueSortedStrings } from '../../shared/normalize.mjs';
 import { upsertSiteCapabilities } from '../../sites/catalog/capabilities.mjs';
@@ -113,6 +115,11 @@ export function parseCliArgs(argv) {
       approvalPath: flags.approval,
       nlIntentsPath: flags['nl-intents'],
       interactionModelPath: flags['interaction-model'],
+      json: flags.json === true,
+      quiet: flags.quiet === true,
+      progressMode: flags.progress,
+      forceTty: flags['force-tty'] === true,
+      noTty: flags['no-tty'] === true,
     },
   };
 }
@@ -120,7 +127,7 @@ export function parseCliArgs(argv) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/generate-skill.mjs <url> [--kb-dir <dir>] [--out-dir <dir>] [--skill-name <name>] [--wiki-index <path>] [--wiki-schema <path>] [--flows-dir <dir>] [--recovery <path>] [--approval <path>] [--nl-intents <path>] [--interaction-model <path>]',
+    '  node src/entrypoints/pipeline/generate-skill.mjs <url> [--kb-dir <dir>] [--out-dir <dir>] [--skill-name <name>] [--wiki-index <path>] [--wiki-schema <path>] [--flows-dir <dir>] [--recovery <path>] [--approval <path>] [--nl-intents <path>] [--interaction-model <path>] [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty]',
   ].join('\n'));
 }
 
@@ -134,6 +141,54 @@ export async function runCli() {
   if (!parsed.inputUrl) {
     throw new Error('Missing <url>.');
   }
-  const result = await generateSkill(parsed.inputUrl, parsed.options);
+  const progress = createProgressRenderer({
+    stdout: process.stdout,
+    stderr: process.stderr,
+    mode: parsed.options.progressMode ?? 'auto',
+    forceTty: parsed.options.forceTty,
+    noTty: parsed.options.noTty,
+    json: parsed.options.json,
+    quiet: parsed.options.quiet,
+  });
+  const task = progress.task({
+    id: 'skill',
+    title: pipelineStageTitle('skill'),
+    totalStages: 1,
+    item: parsed.inputUrl,
+  });
+  let result;
+  try {
+    const stage = task.stage({
+      id: 'skill',
+      title: pipelineStageTitle('skill'),
+      index: 1,
+      total: 1,
+      item: parsed.inputUrl,
+    });
+    const {
+      json: _json,
+      quiet: _quiet,
+      progressMode: _progressMode,
+      forceTty: _forceTty,
+      noTty: _noTty,
+      ...skillOptions
+    } = parsed.options;
+    result = await generateSkill(parsed.inputUrl, skillOptions);
+    stage.succeed({ message: result.skillDir });
+    task.succeed({
+      message: 'Skill generated',
+      artifacts: [{ label: 'skill', path: result.skillDir }],
+    });
+  } catch (error) {
+    task.fail({ message: error?.message ?? String(error) });
+    progress.failure({
+      taskId: 'skill',
+      title: 'Skill generation failed',
+      stage: pipelineStageTitle('skill'),
+      reason: error?.message ?? String(error),
+      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl}`,
+    });
+    throw error;
+  }
   writeJsonStdout(result);
 }

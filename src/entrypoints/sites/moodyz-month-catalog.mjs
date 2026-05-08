@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { runSingleStageCliWithProgress } from '../../infra/cli/progress-cli.mjs';
 import { collectMoodyzMonthCatalog } from '../../sites/moodyz/queries/month-catalog.mjs';
 
 const USER_AGENT = 'Mozilla/5.0 Browser-Wiki-Skill moodyz catalog';
 const execFile = promisify(execFileCallback);
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const flags = {};
   const positionals = [];
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,6 +46,11 @@ function parseArgs(argv) {
     year: Number.parseInt(match.groups.year, 10),
     month: Number.parseInt(match.groups.month, 10),
     concurrency: flags.concurrency ? Number.parseInt(String(flags.concurrency), 10) : 6,
+    json: flags.json === true,
+    quiet: flags.quiet === true,
+    progressMode: flags.progress ? String(flags.progress) : undefined,
+    forceTty: flags['force-tty'] === true,
+    noTty: flags['no-tty'] === true,
   };
 }
 
@@ -90,11 +96,23 @@ async function fetchHtml(url) {
 export async function main(argv = process.argv.slice(2)) {
   initializeCliUtf8();
   const options = parseArgs(argv);
-  const catalog = await collectMoodyzMonthCatalog({
-    year: options.year,
-    month: options.month,
-    concurrency: options.concurrency,
-    fetchHtml,
+  const catalog = await runSingleStageCliWithProgress({
+    inputUrl: `${options.year}-${String(options.month).padStart(2, '0')}`,
+    options,
+    taskId: 'moodyzMonthCatalog',
+    title: 'Moodyz month catalog',
+    stageId: 'moodyzMonthCatalog',
+    stageTitle: 'Collect month catalog',
+    run: (stageOptions) => collectMoodyzMonthCatalog({
+      year: stageOptions.year,
+      month: stageOptions.month,
+      concurrency: stageOptions.concurrency,
+      fetchHtml,
+    }),
+    successMessage: (result) => `${result?.items?.length ?? result?.works?.length ?? 0} items`,
+    isFailureResult: (result) => result?.ok === false,
+    failureReason: (result) => result?.reason ?? 'catalog collection failed',
+    failureTitle: 'Moodyz month catalog failed',
   });
   writeJsonStdout(catalog);
   return catalog;

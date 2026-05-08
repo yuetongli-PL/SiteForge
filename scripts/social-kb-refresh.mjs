@@ -6,6 +6,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-kb-refresh');
@@ -58,6 +60,11 @@ Options:
   --browser-profile-root <dir>      Forwarded to site-doctor.
   --user-data-dir <dir>             Forwarded to site-doctor.
   --headless|--no-headless          Forwarded to site-doctor. Default: --no-headless.
+  --json                            Suppress human progress for machine-readable output.
+  --quiet                           Suppress human progress.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 
 Case ids:
@@ -131,11 +138,20 @@ export function parseArgs(argv) {
     browserProfileRoot: null,
     userDataDir: null,
     headless: false,
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token.startsWith('--progress=')) {
+      options.progressMode = token.slice('--progress='.length);
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -150,6 +166,24 @@ export function parseArgs(argv) {
       case '--fail-fast':
         options.failFast = true;
         break;
+      case '--json':
+        options.json = true;
+        break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(argv, index, token);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
       case '--dry-run':
         options.execute = false;
         break;
@@ -921,11 +955,50 @@ export async function main(argv) {
     return;
   }
   if (options.watch) {
-    const scheduledManifestPath = await executeScheduledPlan(options);
+    const scheduled = await runSingleStageCliWithProgress({
+      inputUrl: `${selected.length} social KB refresh case(s)`,
+      options,
+      taskId: 'socialKbRefresh',
+      title: 'Social KB refresh',
+      stageId: 'socialKbRefresh',
+      stageTitle: '刷新社交站点知识库状态',
+      run: async (stageOptions) => {
+        const manifestPath = await executeScheduledPlan(stageOptions);
+        return {
+          manifestPath,
+          status: process.exitCode ? 'warning' : 'success',
+        };
+      },
+      successMessage: (result) => `lastManifest=${result?.manifestPath ?? 'none'}`,
+      artifacts: (result) => result?.manifestPath ? [{ label: 'Manifest', path: result.manifestPath }] : [],
+      warningResult: (result) => result?.status === 'warning',
+      failureTitle: 'Social KB refresh safely stopped',
+      nextStep: 'Inspect the generated manifest and retry blocked cases after manual recovery.',
+    });
+    const scheduledManifestPath = scheduled.manifestPath;
     process.stdout.write(`\nLast manifest: ${scheduledManifestPath}\n`);
     return;
   }
-  await executePlan(selected, manifest, manifestPath);
+  await runSingleStageCliWithProgress({
+    inputUrl: `${selected.length} social KB refresh case(s)`,
+    options,
+    taskId: 'socialKbRefresh',
+    title: 'Social KB refresh',
+    stageId: 'socialKbRefresh',
+    stageTitle: '刷新社交站点知识库状态',
+    run: async () => {
+      await executePlan(selected, manifest, manifestPath);
+      return {
+        manifestPath,
+        status: process.exitCode ? 'warning' : 'success',
+      };
+    },
+    successMessage: (result) => `manifest=${result?.manifestPath ?? 'none'}`,
+    artifacts: (result) => result?.manifestPath ? [{ label: 'Manifest', path: result.manifestPath }] : [],
+    warningResult: (result) => result?.status === 'warning',
+    failureTitle: 'Social KB refresh safely stopped',
+    nextStep: 'Inspect the generated manifest and retry blocked cases after manual recovery.',
+  });
   process.stdout.write(`\nManifest: ${manifestPath}\n`);
 }
 

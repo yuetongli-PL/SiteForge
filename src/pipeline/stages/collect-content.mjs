@@ -4,6 +4,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { ensureDir, firstExistingPath, pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -815,6 +820,11 @@ export function parseCliArgs(argv) {
   };
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--expanded-dir': {
         const { value, nextIndex } = readValue(index);
@@ -870,7 +880,7 @@ export function parseCliArgs(argv) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/collect-book-content.mjs <url> [--expanded-dir <dir>] [--search-query <text>] [--book-title <title>] [--book-url <url>] [--skip-fallback] [--out-dir <dir>]',
+    '  node src/entrypoints/pipeline/collect-book-content.mjs <url> [--expanded-dir <dir>] [--search-query <text>] [--book-title <title>] [--book-url <url>] [--skip-fallback] [--out-dir <dir>] [--json] [--quiet] [--progress auto|interactive|plain]',
   ].join('\n'));
 }
 
@@ -884,7 +894,20 @@ export async function runCli() {
   if (!parsed.inputUrl) {
     throw new Error('Missing <url>.');
   }
-  const result = await collectBookContent(parsed.inputUrl, parsed.options);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: parsed.inputUrl,
+    options: parsed.options,
+    taskId: 'bookContent',
+    title: pipelineStageTitle('bookContent'),
+    stageId: 'bookContent',
+    run: (stageOptions) => collectBookContent(parsed.inputUrl, stageOptions),
+    successMessage: (stageResult) => stageResult?.outDir,
+    artifacts: (stageResult) => [
+      stageResult?.files?.manifest ? { label: 'manifest', path: stageResult.files.manifest } : null,
+      stageResult?.outDir ? { label: 'book-content', path: stageResult.outDir } : null,
+    ].filter(Boolean),
+    failureTitle: 'Content sample collection failed',
+    nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl}`,
+  });
   console.log(JSON.stringify(summarizeStdout(result), null, 2));
 }
-

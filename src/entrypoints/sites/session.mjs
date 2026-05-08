@@ -4,6 +4,11 @@ import process from 'node:process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  createCliProgressRenderer,
+  parseProgressCliOption,
+  stripProgressCliOptions,
+} from '../../infra/cli/progress-cli.mjs';
 import { runSessionTask } from '../../sites/sessions/runner.mjs';
 
 const HELP = `Usage:
@@ -28,6 +33,10 @@ Options:
   --reason <reason>                 Inject health reason/risk cause.
   --risk-signal <signal>            Add a risk signal. Can be repeated.
   --json                            Print JSON only.
+  --quiet                           Suppress human progress on stderr.
+  --progress <mode>                 auto | interactive | plain.
+  --force-tty                       Force interactive progress.
+  --no-tty                          Force plain progress.
   -h, --help                        Show this help.
 `;
 
@@ -60,6 +69,14 @@ export function parseArgs(argv = []) {
       case '--json':
         options.json = true;
         break;
+      case '--quiet':
+      case '--progress':
+      case '--force-tty':
+      case '--no-tty': {
+        const progressOption = parseProgressCliOption(argv, arg, index, options);
+        index = progressOption.nextIndex;
+        break;
+      }
       case '--session-required':
         options.sessionRequired = true;
         break;
@@ -130,7 +147,45 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   if (!options.site) {
     throw new Error('Missing required --site');
   }
-  const result = await runSessionTask(options, {}, deps);
+  const progress = createCliProgressRenderer(options);
+  const task = progress.task({
+    id: 'session',
+    title: 'Session health',
+    totalStages: 1,
+    item: options.site,
+  });
+  const stage = task.stage({
+    id: options.action ?? 'health',
+    title: options.action === 'plan-repair' ? 'Plan session repair' : 'Check session health',
+    index: 1,
+    total: 1,
+    item: options.site,
+  });
+  let result;
+  try {
+    result = await (deps.runSessionTask ?? runSessionTask)(stripProgressCliOptions(options), {}, deps);
+    const manifest = result.manifest ?? {};
+    const message = `${manifest.status ?? 'unknown'} ${manifest.reason ?? ''}`.trim();
+    if (['ready', 'healthy', 'ok'].includes(String(manifest.status ?? '').toLowerCase())) {
+      stage.succeed({ message });
+      task.succeed({ message, artifacts: manifest.artifacts?.manifest ? [{ label: 'manifest', path: manifest.artifacts.manifest }] : [] });
+    } else {
+      stage.warn({ message });
+      task.warn({ message, artifacts: manifest.artifacts?.manifest ? [{ label: 'manifest', path: manifest.artifacts.manifest }] : [] });
+    }
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    stage.fail({ message: reason });
+    task.fail({ message: reason });
+    progress.failure({
+      taskId: 'session',
+      title: 'Session health failed',
+      stage: stage.title,
+      reason,
+      nextStep: options.site ? `node src/entrypoints/sites/session-repair-plan.mjs --site ${options.site}` : undefined,
+    });
+    throw error;
+  }
   const output = options.json ? `${JSON.stringify(result.manifest, null, 2)}\n` : render(result);
   deps.stdout?.write ? deps.stdout.write(output) : process.stdout.write(output);
   return result;

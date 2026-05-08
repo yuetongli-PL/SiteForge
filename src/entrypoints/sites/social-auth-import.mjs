@@ -5,6 +5,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import {
+  createCliProgressRenderer,
+  parseProgressCliOption,
+  stripProgressCliOptions,
+} from '../../infra/cli/progress-cli.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { resolveSiteBrowserSessionOptions, inspectLoginState } from '../../infra/auth/site-auth.mjs';
 import { ensureDir, readJsonFile, writeTextFile } from '../../infra/io.mjs';
@@ -59,7 +64,12 @@ Options:
   --timeout <ms>            Browser timeout. Default: 30000.
   --user-data-dir <dir>     Override the persistent browser profile directory.
   --browser-path <path>     Override Chrome/Chromium executable.
-  --browser-profile-root <dir> Override Browser-Wiki-Skill profile root.`;
+  --browser-profile-root <dir> Override Browser-Wiki-Skill profile root.
+  --json                    Keep stdout as JSON and suppress progress.
+  --quiet                   Suppress human progress on stderr.
+  --progress <mode>         auto | interactive | plain.
+  --force-tty               Force interactive progress.
+  --no-tty                  Force plain progress.`;
 }
 
 export function socialAuthImportRedactionAuditPath(manifestPath) {
@@ -136,6 +146,11 @@ export function parseArgs(argv = process.argv.slice(2)) {
     browserPath: null,
     browserProfileRoot: null,
     allowArgvCookieHeader: false,
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
   };
 
   const readValue = (index) => {
@@ -148,6 +163,11 @@ export function parseArgs(argv = process.argv.slice(2)) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    const progressOption = parseProgressCliOption(argv, arg, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (arg) {
       case '--help':
       case '-h':
@@ -628,7 +648,56 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(usage());
     return 0;
   }
-  const manifest = await runImport(options);
+  const progress = createCliProgressRenderer({
+    ...options,
+    json: options.json,
+  });
+  const task = progress.task({
+    id: 'socialAuthImport',
+    title: 'Social auth import',
+    totalStages: 1,
+    item: options.site,
+  });
+  const stage = task.stage({
+    id: 'import',
+    title: 'Import governed auth state',
+    index: 1,
+    total: 1,
+    item: options.site,
+  });
+  let manifest;
+  try {
+    manifest = await runImport(stripProgressCliOptions(options));
+    const message = `${manifest.status ?? 'unknown'} ${manifest.mode ?? ''}`.trim();
+    if (manifest.status === 'failed' || manifest.status === 'imported-not-authenticated') {
+      stage.fail({ message });
+      task.fail({ message });
+      progress.failure({
+        taskId: 'socialAuthImport',
+        title: 'Social auth import failed',
+        stage: 'Import governed auth state',
+        reason: manifest.reason ?? manifest.status ?? 'auth import failed',
+        report: manifest.manifestPath,
+      });
+    } else {
+      stage.succeed({ message });
+      task.succeed({
+        message,
+        artifacts: manifest.manifestPath ? [{ label: 'manifest', path: manifest.manifestPath }] : [],
+      });
+    }
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    stage.fail({ message: reason });
+    task.fail({ message: reason });
+    progress.failure({
+      taskId: 'socialAuthImport',
+      title: 'Social auth import failed',
+      stage: 'Import governed auth state',
+      reason,
+    });
+    throw error;
+  }
   console.log(JSON.stringify(socialAuthImportCliSummary(manifest), null, 2));
   return manifest.status === 'failed' || manifest.status === 'imported-not-authenticated' ? 1 : 0;
 }

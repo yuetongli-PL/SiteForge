@@ -8,6 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../../infra/cli.mjs';
+import { runSingleStageCliWithProgress } from '../../../infra/cli/progress-cli.mjs';
 import {
   ensureAuthenticatedSession,
   exportDownloadSessionPassthrough,
@@ -6714,6 +6715,11 @@ Options:
   --session-health-plan             Generate and consume a unified session health manifest first.
   --no-session-health-plan          Use the legacy session provider path.
   --format <json|markdown>          Output format. Default: json.
+  --json                            Force JSON output and suppress human progress.
+  --quiet                           Suppress human progress.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -6809,8 +6815,53 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {
     dryRun: flags['dry-run'] === true,
     resume: flags['no-resume'] === true ? false : flags.resume === true ? true : undefined,
     downloadMedia: flags['download-media'] === true || flags.download === true,
-    outputFormat: lastFlagValue(flags, 'format', 'json'),
+    outputFormat: flags.json === true ? 'json' : lastFlagValue(flags, 'format', 'json'),
+    json: flags.json === true,
+    quiet: flags.quiet === true,
+    progressMode: lastFlagValue(flags, 'progress'),
+    forceTty: flags['force-tty'] === true,
+    noTty: flags['no-tty'] === true,
   };
+}
+
+function socialProgressSubject(parsed = {}) {
+  const site = normalizeText(parsed.site) || 'social';
+  const action = normalizeText(parsed.action) || 'action';
+  return `${site}:${action}`;
+}
+
+function socialProgressArtifacts(result = {}) {
+  const artifacts = result?.artifacts && typeof result.artifacts === 'object'
+    ? result.artifacts
+    : {};
+  return Object.entries(artifacts)
+    .filter(([, value]) => typeof value === 'string' && value)
+    .filter(([key]) => [
+      'runDir',
+      'manifest',
+      'report',
+      'items',
+      'downloads',
+      'mediaManifest',
+      'mediaQueue',
+      'state',
+      'indexCsv',
+      'indexHtml',
+    ].includes(key))
+    .map(([key, value]) => ({ label: key, path: value }));
+}
+
+function socialProgressMessage(result = {}) {
+  const outcome = normalizeText(result?.outcome?.status) || (result?.ok === true ? 'completed' : 'stopped');
+  const reason = normalizeText(result?.outcome?.reason);
+  const itemCount = Number(result?.result?.archive?.items?.length ?? result?.counts?.items ?? 0);
+  const downloadTotal = Number(result?.download?.downloads?.length ?? result?.artifacts?.downloads?.total ?? 0);
+  return [
+    outcome,
+    reason ? `reason=${reason}` : '',
+    itemCount ? `items=${itemCount}` : '',
+    downloadTotal ? `downloads=${downloadTotal}` : '',
+  ].filter(Boolean).join(' ');
 }
 
 export async function runSocialActionCli(argv = process.argv.slice(2), defaults = {}) {
@@ -6820,7 +6871,24 @@ export async function runSocialActionCli(argv = process.argv.slice(2), defaults 
     process.stdout.write(SOCIAL_ACTION_HELP);
     return { help: SOCIAL_ACTION_HELP };
   }
-  const result = await runSocialAction(parsed);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: socialProgressSubject(parsed),
+    options: parsed,
+    taskId: 'socialAction',
+    title: 'Social site action',
+    stageId: 'socialAction',
+    stageTitle: '运行社交站点任务',
+    run: (stageOptions) => runSocialAction(stageOptions),
+    successMessage: socialProgressMessage,
+    artifacts: socialProgressArtifacts,
+    warningResult: (stageResult) => stageResult?.result?.archive?.complete === false,
+    isFailureResult: (stageResult) => stageResult?.ok !== true,
+    failureReason: (stageResult) => normalizeText(stageResult?.outcome?.reason)
+      || normalizeText(stageResult?.sessionGate?.reason)
+      || 'social action failed',
+    failureTitle: 'Social action safely stopped',
+    nextStep: 'Inspect the generated report and run the suggested recovery command from the recovery runbook.',
+  });
   if (String(parsed.outputFormat ?? 'json').toLowerCase() === 'markdown') {
     process.stdout.write(result.markdown || '');
   } else {

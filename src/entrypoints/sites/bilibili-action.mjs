@@ -5,6 +5,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  createCliProgressRenderer,
+  parseProgressCliOption,
+  stripProgressCliOptions,
+} from '../../infra/cli/progress-cli.mjs';
 import { runBilibiliAction } from '../../sites/bilibili/actions/router.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +20,7 @@ const HELP = `Usage:
   node src/entrypoints/sites/bilibili-action.mjs download <url-or-bv>... [--out-dir <dir>] [--concurrency <n>] [--max-playlist-items <n>] [--reuse-login-state|--no-reuse-login-state] [--auto-login-bootstrap|--no-auto-login-bootstrap] [--skip-existing] [--retry-failed-only] [--resume|--no-resume] [--dry-run]
   node src/entrypoints/sites/bilibili-action.mjs login [<url>] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--reuse-login-state|--no-reuse-login-state]
   node src/entrypoints/sites/bilibili-action.mjs preflight <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--reuse-login-state|--no-reuse-login-state]
+  Add [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty] to any command.
 `;
 
 function readValue(argv, index) {
@@ -24,7 +30,7 @@ function readValue(argv, index) {
   return { value: argv[index + 1], nextIndex: index + 1 };
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -46,6 +52,11 @@ function parseCliArgs(argv) {
       } else {
         throw new Error(`Unexpected positional argument: ${token}`);
       }
+      continue;
+    }
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
       continue;
     }
     switch (token) {
@@ -155,12 +166,56 @@ export async function cli(argv = process.argv.slice(2), deps = {}) {
     process.stdout.write(HELP);
     return 0;
   }
-  const report = await (deps.runBilibiliAction ?? runBilibiliAction)({
-    action: parsed.action,
-    targetUrl: parsed.targetUrl,
-    items: parsed.items,
-    ...parsed.options,
-  }, deps.routerDeps ?? {});
+  const progress = createCliProgressRenderer(parsed.options);
+  const task = progress.task({
+    id: 'bilibiliAction',
+    title: 'Bilibili action',
+    totalStages: 1,
+    item: parsed.targetUrl ?? parsed.items?.[0],
+  });
+  const stage = task.stage({
+    id: parsed.action,
+    title: `Run ${parsed.action}`,
+    index: 1,
+    total: 1,
+    item: parsed.targetUrl ?? parsed.items?.[0],
+  });
+  let report;
+  try {
+    report = await (deps.runBilibiliAction ?? runBilibiliAction)({
+      action: parsed.action,
+      targetUrl: parsed.targetUrl,
+      items: parsed.items,
+      ...stripProgressCliOptions(parsed.options),
+    }, deps.routerDeps ?? {});
+    const message = report.ok ? 'ok' : (report.reason ?? report.status ?? 'failed');
+    if (report.ok) {
+      stage.succeed({ message });
+      task.succeed({ message });
+    } else {
+      stage.fail({ message });
+      task.fail({ message });
+      progress.failure({
+        taskId: 'bilibiliAction',
+        title: 'Bilibili action failed',
+        stage: `Run ${parsed.action}`,
+        reason: message,
+        nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.bilibili.com/ --no-headless --reuse-login-state',
+      });
+    }
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    stage.fail({ message: reason });
+    task.fail({ message: reason });
+    progress.failure({
+      taskId: 'bilibiliAction',
+      title: 'Bilibili action failed',
+      stage: `Run ${parsed.action}`,
+      reason,
+      nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.bilibili.com/ --no-headless --reuse-login-state',
+    });
+    throw error;
+  }
   writeJsonStdout(report);
   return report.ok ? 0 : 1;
 }

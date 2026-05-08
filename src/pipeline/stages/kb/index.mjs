@@ -12,6 +12,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8, writeJsonStdout } from '../../../infra/cli.mjs';
+import {
+  createCliProgressRenderer,
+  stripProgressCliOptions,
+} from '../../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../../infra/cli/progress-copy.mjs';
 import { appendJsonLine, appendTextFile, ensureDir, pathExists, readJsonFile, writeJsonFile, writeJsonLines, writeTextFile } from '../../../infra/io.mjs';
 import { markdownLink, renderTable as sharedRenderTable } from '../../../shared/markdown.mjs';
 import { mdEscape } from '../../../shared/markdown.mjs';
@@ -1680,8 +1685,8 @@ export async function compileKnowledgeBase(inputUrl, options = {}) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/compile-wiki.mjs compile <url> [--kb-dir <dir>] [--capture-dir <dir>] [--expanded-states-dir <dir>] [--book-content-dir <dir>] [--analysis-dir <dir>] [--analysis-manifest <path>] [--abstraction-dir <dir>] [--abstraction-manifest <path>] [--nl-entry-dir <dir>] [--nl-entry-manifest <path>] [--docs-dir <dir>] [--docs-manifest <path>] [--governance-dir <dir>] [--strict <true|false>]',
-    '  node src/entrypoints/pipeline/compile-wiki.mjs lint --kb-dir <dir> [--report-dir <dir>] [--fail-on-warnings <true|false>]',
+    '  node src/entrypoints/pipeline/compile-wiki.mjs compile <url> [--kb-dir <dir>] [--capture-dir <dir>] [--expanded-states-dir <dir>] [--book-content-dir <dir>] [--analysis-dir <dir>] [--analysis-manifest <path>] [--abstraction-dir <dir>] [--abstraction-manifest <path>] [--nl-entry-dir <dir>] [--nl-entry-manifest <path>] [--docs-dir <dir>] [--docs-manifest <path>] [--governance-dir <dir>] [--strict <true|false>] [--json] [--quiet] [--progress auto|interactive|plain]',
+    '  node src/entrypoints/pipeline/compile-wiki.mjs lint --kb-dir <dir> [--report-dir <dir>] [--fail-on-warnings <true|false>] [--json] [--quiet] [--progress auto|interactive|plain]',
   ].join('\n'));
 }
 
@@ -1728,6 +1733,11 @@ export function parseCliArgs(argv) {
         docsManifestPath: flags['docs-manifest'],
         governanceDir: flags['governance-dir'],
         strict: parseBooleanFlag(flags.strict, true),
+        json: flags.json === true,
+        quiet: flags.quiet === true,
+        progressMode: flags.progress,
+        forceTty: flags['force-tty'] === true,
+        noTty: flags['no-tty'] === true,
       },
     };
   }
@@ -1739,6 +1749,11 @@ export function parseCliArgs(argv) {
       options: {
         reportDir: flags['report-dir'],
         failOnWarnings: parseBooleanFlag(flags['fail-on-warnings'], false),
+        json: flags.json === true,
+        quiet: flags.quiet === true,
+        progressMode: flags.progress,
+        forceTty: flags['force-tty'] === true,
+        noTty: flags['no-tty'] === true,
       },
     };
   }
@@ -1758,7 +1773,41 @@ export async function runCli() {
     if (!parsed.inputUrl) {
       throw new Error('compile requires <url>.');
     }
-    const result = await compileKnowledgeBase(parsed.inputUrl, parsed.options);
+    const progress = createCliProgressRenderer(parsed.options);
+    const task = progress.task({
+      id: 'knowledgeBase',
+      title: pipelineStageTitle('knowledgeBase'),
+      totalStages: 1,
+      item: parsed.inputUrl,
+    });
+    const stage = task.stage({
+      id: 'knowledgeBase',
+      title: pipelineStageTitle('knowledgeBase'),
+      index: 1,
+      total: 1,
+      item: parsed.inputUrl,
+    });
+    let result;
+    try {
+      result = await compileKnowledgeBase(parsed.inputUrl, stripProgressCliOptions(parsed.options));
+      stage.succeed({ message: result.kbDir });
+      task.succeed({
+        message: result.kbDir,
+        artifacts: [{ label: 'kb', path: result.kbDir }],
+      });
+    } catch (error) {
+      const reason = error?.message ?? String(error);
+      stage.fail({ message: reason });
+      task.fail({ message: reason });
+      progress.failure({
+        taskId: 'knowledgeBase',
+        title: 'Knowledge base compilation failed',
+        stage: pipelineStageTitle('knowledgeBase'),
+        reason,
+        nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl}`,
+      });
+      throw error;
+    }
     writeJsonStdout({
       kbDir: result.kbDir,
       pages: result.pages,
@@ -1772,7 +1821,43 @@ export async function runCli() {
     if (!parsed.kbDir) {
       throw new Error('lint requires --kb-dir <dir>.');
     }
-    const result = await lintKnowledgeBase(parsed.kbDir, parsed.options);
+    const progress = createCliProgressRenderer(parsed.options);
+    const task = progress.task({
+      id: 'knowledgeBaseLint',
+      title: 'Lint knowledge base',
+      totalStages: 1,
+      item: parsed.kbDir,
+    });
+    const stage = task.stage({
+      id: 'knowledgeBaseLint',
+      title: 'Lint knowledge base',
+      index: 1,
+      total: 1,
+      item: parsed.kbDir,
+    });
+    let result;
+    try {
+      result = await lintKnowledgeBase(parsed.kbDir, stripProgressCliOptions(parsed.options));
+      const message = `${result.lintReport.summary.errorCount} errors, ${result.lintReport.summary.warningCount} warnings`;
+      if (result.lintReport.summary.passed) {
+        stage.succeed({ message });
+        task.succeed({ message });
+      } else {
+        stage.warn({ message });
+        task.warn({ message });
+      }
+    } catch (error) {
+      const reason = error?.message ?? String(error);
+      stage.fail({ message: reason });
+      task.fail({ message: reason });
+      progress.failure({
+        taskId: 'knowledgeBaseLint',
+        title: 'Knowledge base lint failed',
+        stage: 'Lint knowledge base',
+        reason,
+      });
+      throw error;
+    }
     writeJsonStdout({
       kbDir: parsed.kbDir,
       errors: result.lintReport.summary.errorCount,
@@ -1781,6 +1866,3 @@ export async function runCli() {
     });
   }
 }
-
-
-

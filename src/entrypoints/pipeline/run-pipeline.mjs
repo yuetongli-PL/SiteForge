@@ -2,10 +2,14 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  createBuildProgressController,
+  renderBuildSummary,
+} from '../../infra/cli/build-progress.mjs';
 
 import { executePipeline } from '../../pipeline/engine/engine.mjs';
 import { normalizePipelineOptions, toBoolean } from '../../pipeline/engine/options.mjs';
-import { summarizePipelineStages } from '../../pipeline/engine/stage-spec.mjs';
+import { PIPELINE_STAGE_SPECS, summarizePipelineStages } from '../../pipeline/engine/stage-spec.mjs';
 import { DEFAULT_PIPELINE_RUNTIME, resolvePipelineRuntime } from '../../pipeline/runtime/create-default-runtime.mjs';
 import { prepareRedactedArtifactJsonWithAudit, redactValue } from '../../sites/capability/security-guard.mjs';
 import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
@@ -282,11 +286,13 @@ export async function runPipeline(inputUrl, options = {}, runtime = DEFAULT_PIPE
     ({ generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
       stageSpecs,
       stageImpls: wrappedStageImpls,
+      progress: options.progress,
     }));
   } else {
     ({ generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
       stageSpecs,
       stageImpls,
+      progress: options.progress,
     }));
   }
 
@@ -368,6 +374,16 @@ Options:
   --no-headless                Run browser with a visible window
   --full-page                  Force full-page screenshot (default)
   --no-full-page               Disable full-page screenshot
+  --json                       Keep stdout as JSON and suppress progress
+  --quiet                      Suppress human progress on stderr
+  --verbose                    Show more details and full paths in human output
+  --debug                      Show stack traces and raw diagnostic JSON
+  --no-color                   Disable ANSI colors
+  --ascii                      Disable Unicode glyphs
+  --compact                    Use compact line-oriented output
+  --progress <mode>            auto | interactive | plain
+  --no-tty                     Force plain progress
+  --force-tty                  Force interactive progress
   --help                       Show this help
 
 Notes:
@@ -375,7 +391,7 @@ Notes:
 `);
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   const args = [...argv];
   const options = {};
   let url = null;
@@ -561,6 +577,39 @@ function parseCliArgs(argv) {
       case '--help':
         options.help = true;
         break;
+      case '--json':
+        options.json = true;
+        break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--verbose':
+        options.verbose = true;
+        break;
+      case '--debug':
+        options.debug = true;
+        break;
+      case '--no-color':
+        options.noColor = true;
+        break;
+      case '--ascii':
+        options.ascii = true;
+        break;
+      case '--compact':
+        options.compact = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(current, index);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
+      case '--no-tty':
+        options.noTty = true;
+        break;
+      case '--force-tty':
+        options.forceTty = true;
+        break;
       default:
         throw new Error(`Unknown argument: ${current}`);
     }
@@ -580,8 +629,46 @@ async function runCli() {
     return;
   }
 
-  const result = await runPipeline(url, options);
-  process.stdout.write(pipelineCliJson(result));
+  const startedAt = Date.now();
+  const progress = createBuildProgressController({
+    inputUrl: url,
+    stageSpecs: PIPELINE_STAGE_SPECS,
+    options,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+  let result;
+  try {
+    result = await runPipeline(url, { ...options, progress });
+    if (result.pipelineBlockedByRisk) {
+      progress.fail(new Error(result.antiCrawlReasonCode ?? result.riskCauseCode ?? 'verification or access-control page'));
+    } else {
+      await progress.complete(result);
+    }
+  } catch (error) {
+    progress.fail(error);
+    if (options.debug && error?.stack) {
+      process.stderr.write(`${error.stack}\n`);
+    }
+    throw error;
+  }
+  if (options.json) {
+    process.stdout.write(pipelineCliJson(result));
+    return;
+  }
+  if (options.quiet) {
+    process.stdout.write(`Skill: ${result.skillDir}\n`);
+    return;
+  }
+  process.stdout.write(renderBuildSummary(result, {
+    ...options,
+    durationMs: Date.now() - startedAt,
+    columns: process.stdout.columns,
+  }));
+  if (options.debug) {
+    process.stdout.write('\nDebug JSON\n\n');
+    process.stdout.write(pipelineCliJson(result));
+  }
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

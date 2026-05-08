@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import {
   openBilibiliPageInLocalBrowser,
   resolveBilibiliOpenDecision,
   writeBilibiliOpenReport,
@@ -29,7 +33,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/bilibili-open-page.mjs <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--out-dir <dir>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--auto-login-bootstrap|--no-auto-login-bootstrap]
+  node src/entrypoints/sites/bilibili-open-page.mjs <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--out-dir <dir>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--auto-login-bootstrap|--no-auto-login-bootstrap] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Notes:
   - Public bilibili pages are still classified as builtin-browser targets; when this local helper is invoked directly, it opens them locally as a fallback because the built-in browser cannot be controlled from this CLI.
@@ -83,7 +87,7 @@ function mergeOptions(options = {}) {
   };
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -99,6 +103,11 @@ function parseCliArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--profile-path': {
         const { value, nextIndex } = readValue(index);
@@ -357,7 +366,24 @@ export async function runBilibiliOpenCli() {
     return;
   }
 
-  const report = await openBilibiliPage(parsed.targetUrl, parsed.options);
+  const report = await runSingleStageCliWithProgress({
+    inputUrl: parsed.targetUrl,
+    options: parsed.options,
+    taskId: 'bilibiliOpenPage',
+    title: 'Bilibili open page',
+    stageId: 'bilibiliOpenPage',
+    stageTitle: 'Open page',
+    run: (stageOptions) => openBilibiliPage(parsed.targetUrl, stageOptions),
+    successMessage: (stageResult) => stageResult?.result?.opened ? 'opened' : stageResult?.result?.reason,
+    artifacts: (stageResult) => [
+      stageResult?.reports?.json ? { label: 'report', path: stageResult.reports.json } : null,
+      stageResult?.reports?.markdown ? { label: 'markdown', path: stageResult.reports.markdown } : null,
+    ].filter(Boolean),
+    isFailureResult: (stageResult) => stageResult?.result?.opened !== true,
+    failureReason: (stageResult) => stageResult?.result?.reason ?? 'open page failed',
+    failureTitle: 'Bilibili open page failed',
+    nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.bilibili.com/ --no-headless --reuse-login-state',
+  });
   writeJsonStdout(report);
   if (report.result.opened !== true) {
     process.exitCode = 1;

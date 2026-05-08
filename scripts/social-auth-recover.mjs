@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
 import { writeSocialManifestJsonWithAudit } from '../tools/social-redaction.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,11 @@ Options:
   --user-data-dir <dir>             Forwarded to site-login/site-keepalive/social-live-verify.
   --headless|--no-headless          Forwarded to keepalive checks. Default: --no-headless.
   --auto-login|--no-auto-login      Allow credential-based login attempts. Default: --no-auto-login.
+  --json                            Print the generated or final manifest JSON only.
+  --quiet                           Suppress human progress and plan text.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -91,11 +97,21 @@ export function parseArgs(argv) {
     userDataDir: null,
     headless: false,
     autoLogin: false,
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    const progressOption = parseProgressCliOption(argv, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -280,6 +296,13 @@ function shellQuote(value) {
 
 export function formatCommand(command) {
   return [command.command, ...command.args].map(shellQuote).join(' ');
+}
+
+function redactCommandLineForDisplay(commandLine) {
+  return String(commandLine ?? '').replace(
+    /(--(?:profile-path|browser-profile-root|user-data-dir|browser-path)\s+)(?:"[^"]+"|\S+)/gu,
+    '$1[REDACTED]',
+  );
 }
 
 export function buildRecoveryPlan(options, runId = timestampForDir()) {
@@ -630,20 +653,47 @@ async function executeSiteRecovery(site, options) {
   return result;
 }
 
-async function executePlan(plan, options, manifest, manifestPath) {
+async function executePlan(plan, options, manifest, manifestPath, progressContext = {}) {
   await writeManifest(manifestPath, manifest);
+  let index = 0;
   for (const site of plan.sites) {
+    index += 1;
+    const stage = progressContext.task?.stage({
+      id: `recover-${site.site}`,
+      title: `Recover ${site.label} auth`,
+      index,
+      total: plan.sites.length,
+      item: site.site,
+    });
+    stage?.update({ message: 'Running keepalive/auth recovery' });
     const result = await executeSiteRecovery(site, options);
     manifest.results.push(result);
     await writeManifest(manifestPath, manifest);
+    if (result.status === 'recovered') {
+      stage?.succeed({ message: result.reason ?? 'Recovered' });
+    } else {
+      stage?.warn({ message: result.reason ?? result.status });
+    }
   }
   manifest.status = manifest.results.every((result) => result.status === 'recovered') ? 'passed' : 'blocked';
   manifest.finishedAt = new Date().toISOString();
   await writeManifest(manifestPath, manifest);
+  if (manifest.status === 'passed') {
+    progressContext.task?.succeed({
+      message: 'Auth recovery completed',
+      artifacts: [{ label: 'Manifest', path: manifestPath }],
+    });
+  } else {
+    progressContext.task?.warn({
+      message: 'Auth recovery needs manual action',
+      artifacts: [{ label: 'Manifest', path: manifestPath }],
+      warnings: ['Manual login, CAPTCHA, MFA, platform risk, rate limit, permission, and access-control boundaries are not bypassed.'],
+    });
+  }
   if (manifest.status !== 'passed') {
     process.exitCode = 1;
   }
-  return manifestPath;
+  return manifest;
 }
 
 function printPlan(plan, options, manifestPath) {
@@ -651,11 +701,11 @@ function printPlan(plan, options, manifestPath) {
   process.stdout.write(`Manifest: ${manifestPath}\n\n`);
   for (const site of plan.sites) {
     process.stdout.write(`${site.label} (${site.site})\n`);
-    process.stdout.write(`  keepalive: ${site.commandLines.keepalive}\n`);
-    process.stdout.write(`  manual:    ${site.commandLines.manualLogin}\n`);
+    process.stdout.write(`  keepalive: ${redactCommandLineForDisplay(site.commandLines.keepalive)}\n`);
+    process.stdout.write(`  manual:    ${redactCommandLineForDisplay(site.commandLines.manualLogin)}\n`);
     if (site.commandLines.verify.length) {
       for (const verify of site.commandLines.verify) {
-        process.stdout.write(`  verify ${verify.caseId}: ${verify.command}\n`);
+        process.stdout.write(`  verify ${verify.caseId}: ${redactCommandLineForDisplay(verify.command)}\n`);
       }
     }
     process.stdout.write('\n');
@@ -672,14 +722,46 @@ export async function main(argv) {
   const plan = buildRecoveryPlan(options, runId);
   const manifestPath = path.join(plan.runDir, 'manifest.json');
   const manifest = buildManifest(plan, options, manifestPath);
+  const progress = createCliProgressRenderer(options);
+  const task = progress.task({
+    id: 'socialAuthRecovery',
+    title: 'Social auth recovery',
+    totalStages: options.execute ? plan.sites.length : 1,
+    item: options.site,
+  });
   await writeManifest(manifestPath, manifest);
-  printPlan(plan, options, manifestPath);
   if (!options.execute) {
-    process.stdout.write('Dry-run only. Re-run with --execute to run keepalive/auth recovery.\n');
+    const stage = task.stage({
+      id: 'plan',
+      title: 'Build recovery plan',
+      index: 1,
+      total: 1,
+      current: 1,
+      item: options.site,
+    });
+    stage.succeed({ message: `Planned ${plan.sites.length} site(s)` });
+  }
+  if (!options.json && !options.quiet) {
+    printPlan(plan, options, manifestPath);
+  }
+  if (!options.execute) {
+    task.succeed({
+      message: 'Recovery plan generated',
+      artifacts: [{ label: 'Manifest', path: manifestPath }],
+    });
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+    } else if (!options.quiet) {
+      process.stdout.write('Dry-run only. Re-run with --execute to run keepalive/auth recovery.\n');
+    }
     return;
   }
-  await executePlan(plan, options, manifest, manifestPath);
-  process.stdout.write(`\nManifest: ${manifestPath}\n`);
+  const finalManifest = await executePlan(plan, options, manifest, manifestPath, { progress, task });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(finalManifest, null, 2)}\n`);
+  } else if (!options.quiet) {
+    process.stdout.write(`\nManifest: ${manifestPath}\n`);
+  }
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

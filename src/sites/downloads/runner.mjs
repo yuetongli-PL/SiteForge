@@ -814,6 +814,7 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
         dryRun,
         workspaceRoot,
         liveValidation: options.liveValidation,
+        progress: options.progress,
       },
       deps.executorDeps ?? deps,
     );

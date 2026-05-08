@@ -5,6 +5,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { enrichBilibiliPageFactsForState } from '../../sites/bilibili/model/surfacing.mjs';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { cleanText } from '../../shared/normalize.mjs';
 import { buildRunManifest } from '../engine/run-manifest.mjs';
 import { inferPageTypeFromUrl, isContentDetailPageType, toSemanticPageType } from '../../sites/core/page-types.mjs';
@@ -3009,6 +3014,11 @@ Options:
   --book-content-dir <dir>  Optional book-content output directory
   --book-content-manifest <path> Optional book-content-manifest.json path
   --out-dir <dir>           Root output directory
+  --json                    Keep stdout as JSON and suppress progress
+  --quiet                   Suppress human progress on stderr
+  --progress <mode>         auto | interactive | plain
+  --force-tty               Force interactive progress
+  --no-tty                  Force plain progress
   --help                    Show this help
 `);
 }
@@ -3036,6 +3046,12 @@ export function parseCliArgs(argv) {
         throw new Error(`Unexpected argument: ${current}`);
       }
       url = current;
+      continue;
+    }
+
+    const progressOption = parseProgressCliOption(args, current, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
       continue;
     }
 
@@ -3097,11 +3113,23 @@ export async function runCli() {
       return;
     }
 
-    const analysisManifest = await analyzeStates(url, options);
+    const analysisManifest = await runSingleStageCliWithProgress({
+      inputUrl: url,
+      options,
+      taskId: 'analysis',
+      title: pipelineStageTitle('analysis'),
+      stageId: 'analysis',
+      run: (stageOptions) => analyzeStates(url, stageOptions),
+      successMessage: (result) => result?.outDir,
+      artifacts: (result) => [
+        result?.outDir ? { label: 'analysis', path: result.outDir } : null,
+      ].filter(Boolean),
+      failureTitle: 'State analysis failed',
+      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url}`,
+    });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(analysisManifest), null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
   }
 }
-

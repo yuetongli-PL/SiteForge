@@ -4,6 +4,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import {
   ensureAuthenticatedSession,
@@ -4073,7 +4078,6 @@ export async function expandStates(inputUrl, options = {}) {
         effectiveSearchQueries,
         topManifest,
       });
-
       let restoreSourceBeforeNextTrigger = false;
       for (let triggerIndex = 0; triggerIndex < sourceContext.triggers.length; triggerIndex += 1) {
         if (topManifest.summary.capturedStates >= settings.maxCapturedStates) {
@@ -4300,6 +4304,12 @@ export function parseCliArgs(argv) {
       continue;
     }
 
+    const progressOption = parseProgressCliOption(args, current, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
+
     if (current.startsWith('--initial-manifest')) {
       const { value, nextIndex } = readValue(current, index);
       options.initialManifestPath = value;
@@ -4472,6 +4482,11 @@ Options:
   --no-auto-login           Disable credential auto-login
   --headless                Run browser headless (default except visible-by-default Douyin and Xiaohongshu flows)
   --no-headless             Run browser with a visible window
+  --json                    Keep stdout as JSON and suppress progress
+  --quiet                   Suppress human progress on stderr
+  --progress <mode>         auto | interactive | plain
+  --force-tty               Force interactive progress
+  --no-tty                  Force plain progress
   --help                    Show this help
 `;
 
@@ -4488,7 +4503,23 @@ export async function runCli() {
       return;
     }
 
-    const manifest = await expandStates(url, options);
+    const manifest = await runSingleStageCliWithProgress({
+      inputUrl: url,
+      options,
+      taskId: 'expanded',
+      title: pipelineStageTitle('expanded'),
+      stageId: 'expanded',
+      run: (stageOptions) => expandStates(url, stageOptions),
+      successMessage: (result) => result?.outDir,
+      artifacts: (result) => [
+        result?.manifestPath ? { label: 'manifest', path: result.manifestPath } : null,
+        result?.outDir ? { label: 'expanded', path: result.outDir } : null,
+      ].filter(Boolean),
+      isFailureResult: (result) => result?.summary?.failedTriggers > 0 && result?.summary?.capturedStates === 0,
+      failureReason: (result) => `${result?.summary?.failedTriggers ?? 0} trigger(s) failed and no new states were captured`,
+      failureTitle: 'Expand states failed',
+      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url} --no-headless --reuse-login-state`,
+    });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
     if (manifest.summary.failedTriggers > 0 && manifest.summary.capturedStates === 0) {
       process.exitCode = 1;
@@ -4498,4 +4529,3 @@ export async function runCli() {
     process.exitCode = 1;
   }
 }
-

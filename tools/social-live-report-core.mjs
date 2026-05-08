@@ -25,6 +25,11 @@ Options:
   --site <x|instagram|all>          Site filter. Default: all.
   --limit <n>                       Max manifests per site. Default: 10.
   --no-write                        Print report JSON without writing files.
+  --json                            Print report JSON without human progress.
+  --quiet                           Suppress human progress.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -40,10 +45,19 @@ export function parseArgs(argv) {
     site: 'all',
     limit: '10',
     write: true,
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token.startsWith('--progress=')) {
+      options.progressMode = token.slice('--progress='.length);
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -52,6 +66,25 @@ export function parseArgs(argv) {
       case '--no-write':
         options.write = false;
         break;
+      case '--json':
+        options.write = false;
+        options.json = true;
+        break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(argv, index, token);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
       case '--runs-root':
       case '--out-dir':
       case '--site':

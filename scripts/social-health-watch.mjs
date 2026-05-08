@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
 import { writeSocialManifestJsonWithAudit } from '../tools/social-redaction.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,11 @@ Options:
   --browser-profile-root <dir>      Forwarded to child commands.
   --user-data-dir <dir>             Forwarded to child commands.
   --headless|--no-headless          Forwarded to child commands. Default: --no-headless.
+  --json                            Print the generated or final manifest JSON only.
+  --quiet                           Suppress human progress and plan text.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -60,10 +66,20 @@ export function parseArgs(argv) {
     browserProfileRoot: null,
     userDataDir: null,
     headless: false,
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    const progressOption = parseProgressCliOption(argv, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -118,6 +134,13 @@ function shellQuote(value) {
 
 function formatCommand(command, args) {
   return [command, ...args].map(shellQuote).join(' ');
+}
+
+function redactCommandLineForDisplay(commandLine) {
+  return String(commandLine ?? '').replace(
+    /(--(?:profile-path|browser-profile-root|user-data-dir|browser-path)\s+)(?:"[^"]+"|\S+)/gu,
+    '$1[REDACTED]',
+  );
 }
 
 function timestampForDir(date = new Date()) {
@@ -229,20 +252,48 @@ async function writeManifest(plan) {
   return manifestPath;
 }
 
-export async function executePlan(plan, options) {
+export async function executePlan(plan, options, progressContext = {}) {
   const manifestPath = await writeManifest(plan);
+  const totalCommands = plan.sites.reduce((count, site) => count + site.commands.length, 0);
+  let commandIndex = 0;
   for (const site of plan.sites) {
     for (const command of site.commands) {
+      commandIndex += 1;
+      const stage = progressContext.task?.stage({
+        id: command.type,
+        title: `${site.site} ${command.type}`,
+        index: commandIndex,
+        total: totalCommands,
+        item: site.site,
+      });
+      stage?.update({ message: 'Running health command' });
       const result = await runCommand(command, Number(options.timeout));
       plan.results.push({ site: site.site, nextSuggestedKeepalive: site.nextSuggestedKeepalive, ...result });
       await writeManifest(plan);
+      if (result.status === 'passed') {
+        stage?.succeed({ message: result.status });
+      } else {
+        stage?.warn({ message: result.status });
+      }
     }
   }
   plan.status = plan.results.every((result) => result.status === 'passed') ? 'passed' : 'blocked';
   plan.finishedAt = new Date().toISOString();
   await writeManifest(plan);
+  if (plan.status === 'passed') {
+    progressContext.task?.succeed({
+      message: 'Health watch completed',
+      artifacts: [{ label: 'Manifest', path: manifestPath }],
+    });
+  } else {
+    progressContext.task?.warn({
+      message: 'Health watch needs manual action',
+      artifacts: [{ label: 'Manifest', path: manifestPath }],
+      warnings: ['Manual login, CAPTCHA, MFA, platform risk, rate limit, permission, and access-control boundaries are not bypassed.'],
+    });
+  }
   if (plan.status !== 'passed') process.exitCode = 1;
-  return manifestPath;
+  return { manifestPath, plan };
 }
 
 function printPlan(plan, manifestPath) {
@@ -252,7 +303,7 @@ function printPlan(plan, manifestPath) {
   for (const site of plan.sites) {
     process.stdout.write(`${site.site}\n`);
     for (const command of site.commands) {
-      process.stdout.write(`  ${command.type}: ${command.commandLine}\n`);
+      process.stdout.write(`  ${command.type}: ${redactCommandLineForDisplay(command.commandLine)}\n`);
     }
   }
 }
@@ -264,13 +315,44 @@ export async function main(argv) {
     return;
   }
   const plan = buildHealthPlan(options);
+  const progress = createCliProgressRenderer(options);
+  const task = progress.task({
+    id: 'socialHealthWatch',
+    title: 'Social health watch',
+    totalStages: options.execute ? plan.sites.reduce((count, site) => count + site.commands.length, 0) : 1,
+    item: options.site,
+  });
   const manifestPath = await writeManifest(plan);
-  printPlan(plan, manifestPath);
   if (!options.execute) {
-    process.stdout.write('Dry-run only. Re-run with --execute to run keepalive/auth doctor.\n');
+    const stage = task.stage({
+      id: 'plan',
+      title: 'Build health plan',
+      index: 1,
+      total: 1,
+      current: 1,
+      item: options.site,
+    });
+    stage.succeed({ message: `Planned ${plan.sites.length} site(s)` });
+  }
+  if (!options.json && !options.quiet) {
+    printPlan(plan, manifestPath);
+  }
+  if (!options.execute) {
+    task.succeed({
+      message: 'Health plan generated',
+      artifacts: [{ label: 'Manifest', path: manifestPath }],
+    });
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+    } else if (!options.quiet) {
+      process.stdout.write('Dry-run only. Re-run with --execute to run keepalive/auth doctor.\n');
+    }
     return;
   }
-  await executePlan(plan, options);
+  const result = await executePlan(plan, options, { progress, task });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result.plan, null, 2)}\n`);
+  }
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

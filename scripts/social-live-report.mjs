@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import {
   HELP,
   buildReport,
@@ -23,8 +24,31 @@ export async function main(argv) {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const report = await buildReport(options);
-  const outputs = await writeReport(options, report);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: `${options.site} social live report`,
+    options: {
+      ...options,
+      json: options.json === true || options.write === false,
+    },
+    taskId: 'socialLiveReport',
+    title: 'Social live report',
+    stageId: 'socialLiveReport',
+    stageTitle: '汇总社交 live 报告',
+    run: async (stageOptions) => {
+      const report = await buildReport(stageOptions);
+      const outputs = await writeReport(stageOptions, report);
+      return { report, outputs };
+    },
+    successMessage: (stageResult) => `rows=${stageResult?.report?.totalRows ?? 0}`,
+    artifacts: (stageResult) => [
+      stageResult?.outputs?.jsonPath ? { label: 'JSON', path: stageResult.outputs.jsonPath } : null,
+      stageResult?.outputs?.markdownPath ? { label: 'Markdown', path: stageResult.outputs.markdownPath } : null,
+    ].filter(Boolean),
+    failureTitle: 'Social live report safely stopped',
+    nextStep: 'Check the runs root and rerun the report after the expected manifests exist.',
+  });
+  const report = result.report;
+  const outputs = result.outputs;
   if (outputs) {
     process.stdout.write(`JSON: ${outputs.jsonPath}\nMarkdown: ${outputs.markdownPath}\n`);
   } else {

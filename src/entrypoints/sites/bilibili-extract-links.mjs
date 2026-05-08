@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { resolvePersistentUserDataDir } from '../../infra/browser/profile-store.mjs';
+import {
+  createCliProgressRenderer,
+  parseProgressCliOption,
+  stripProgressCliOptions,
+} from '../../infra/cli/progress-cli.mjs';
 
 const WAIT_POLICY = {
   useLoadEvent: false,
@@ -15,7 +20,7 @@ const WAIT_POLICY = {
   idleMs: 400,
 };
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   if (!argv.length || argv.includes('--help') || argv.includes('-h')) {
     return { help: true };
   }
@@ -33,6 +38,11 @@ function parseArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     const next = () => {
       index += 1;
       return rest[index];
@@ -106,24 +116,40 @@ function extractVideoLinks(maxItems) {
 export async function runBilibiliExtractLinksCli() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
-    process.stdout.write('Usage: node src/entrypoints/sites/bilibili-extract-links.mjs <url> [--max-items <n>] [--profile-root <dir>] [--browser-path <path>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--headless|--no-headless]\n');
+    process.stdout.write('Usage: node src/entrypoints/sites/bilibili-extract-links.mjs <url> [--max-items <n>] [--profile-root <dir>] [--browser-path <path>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--headless|--no-headless] [--json] [--quiet] [--progress auto|interactive|plain]\n');
     process.exit(0);
   }
   if (!options.url) {
     throw new Error('A bilibili URL is required.');
   }
 
-  const userDataDir = options.reuseLoginState
+  const progress = createCliProgressRenderer(options);
+  const task = progress.task({
+    id: 'bilibiliExtractLinks',
+    title: 'Bilibili extract links',
+    totalStages: 1,
+    item: options.url,
+  });
+  const stage = task.stage({
+    id: 'extract',
+    title: 'Extract video links',
+    index: 1,
+    total: 1,
+    item: options.url,
+  });
+
+  const runOptions = stripProgressCliOptions(options);
+  const userDataDir = runOptions.reuseLoginState
     ? resolvePersistentUserDataDir('https://www.bilibili.com/', { rootDir: options.profileRoot ?? undefined })
     : null;
 
   const session = await openBrowserSession({
-    browserPath: options.browserPath,
+    browserPath: runOptions.browserPath,
     userDataDir,
     cleanupUserDataDirOnShutdown: false,
-    headless: options.headless,
-    timeoutMs: options.timeoutMs,
-    startupUrl: options.url,
+    headless: runOptions.headless,
+    timeoutMs: runOptions.timeoutMs,
+    startupUrl: runOptions.url,
     viewport: {
       width: 1440,
       height: 900,
@@ -134,14 +160,28 @@ export async function runBilibiliExtractLinksCli() {
 
   try {
     await session.waitForSettled(WAIT_POLICY);
-    const metadata = await session.getPageMetadata(options.url);
-    const entries = await session.callPageFunction(extractVideoLinks, options.maxItems);
+    const metadata = await session.getPageMetadata(runOptions.url);
+    const entries = await session.callPageFunction(extractVideoLinks, runOptions.maxItems);
+    stage.succeed({ message: `${entries.length} links` });
+    task.succeed({ message: `${entries.length} links` });
     process.stdout.write(`${JSON.stringify({
-      url: options.url,
+      url: runOptions.url,
       finalUrl: metadata.url,
       title: metadata.title,
       entries,
     }, null, 2)}\n`);
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    stage.fail({ message: reason });
+    task.fail({ message: reason });
+    progress.failure({
+      taskId: 'bilibiliExtractLinks',
+      title: 'Bilibili link extraction failed',
+      stage: 'Extract video links',
+      reason,
+      nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.bilibili.com/ --no-headless --reuse-login-state',
+    });
+    throw error;
   } finally {
     await session.close();
   }

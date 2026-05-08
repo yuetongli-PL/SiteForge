@@ -5,6 +5,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
 import { resolveSiteAuthProfile } from '../../infra/auth/site-auth.mjs';
 import { resolveProfilePathForUrl } from '../../sites/core/profiles.mjs';
 import {
@@ -19,7 +23,7 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-credentials.mjs <set|show|delete> <url> [--profile-path <path>] [--username <value>] [--password <value>]
+  node src/entrypoints/sites/site-credentials.mjs <set|show|delete> <url> [--profile-path <path>] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Notes:
   - Credentials are stored in Windows Credential Manager as Generic Credentials.
@@ -36,7 +40,7 @@ function mergeOptions(inputUrl, options = {}) {
   return merged;
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -52,6 +56,11 @@ function parseCliArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--profile-path': {
         const { value, nextIndex } = readValue(index);
@@ -160,7 +169,23 @@ async function runCli() {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const report = await siteCredentials(parsed.action, parsed.inputUrl, parsed.options);
+  const report = await runSingleStageCliWithProgress({
+    inputUrl: parsed.action,
+    options: parsed.options,
+    taskId: 'siteCredentials',
+    title: 'Site credentials',
+    stageId: 'siteCredentials',
+    stageTitle: `Credential ${parsed.action}`,
+    run: (stageOptions) => siteCredentials(parsed.action, parsed.inputUrl, stageOptions),
+    successMessage: (result) => result?.action,
+    isFailureResult: (result) => (
+      parsed.action === 'set' && result?.stored !== true
+    ) || (
+      parsed.action === 'delete' && result?.deleted !== true && result?.found !== false
+    ),
+    failureReason: (result) => result?.action ?? 'credential action failed',
+    failureTitle: 'Site credential action failed',
+  });
   writeJsonStdout(report);
   if ((parsed.action === 'set' && report.stored !== true) || (parsed.action === 'delete' && report.deleted !== true && report.found !== false)) {
     process.exitCode = 1;

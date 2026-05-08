@@ -5,6 +5,7 @@ import process from 'node:process';
 
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../../infra/cli.mjs';
+import { runSingleStageCliWithProgress } from '../../../infra/cli/progress-cli.mjs';
 import {
   ensureAuthenticatedSession,
   resolveAuthKeepaliveUrl,
@@ -1391,8 +1392,22 @@ export function parseDouyinMediaResolverArgs(argv) {
       headless: flags.headless === true ? true : flags['no-headless'] === true ? false : undefined,
       reuseLoginState: flags['no-reuse-login-state'] === true ? false : true,
       autoLogin: flags['no-auto-login'] === true ? false : true,
+      json: flags.json === true,
+      quiet: flags.quiet === true,
+      progressMode: flags.progress ? String(flags.progress) : undefined,
+      forceTty: flags['force-tty'] === true,
+      noTty: flags['no-tty'] === true,
     },
   };
+}
+
+function douyinMediaProgressMessage(report = {}) {
+  const summary = report?.summary ?? {};
+  return [
+    `total=${Number(summary.total ?? 0)}`,
+    `resolved=${Number(summary.resolved ?? 0)}`,
+    `failed=${Number(summary.failed ?? 0)}`,
+  ].join(' ');
 }
 
 export async function runDouyinMediaResolverCli(argv = process.argv.slice(2)) {
@@ -1407,7 +1422,21 @@ export async function runDouyinMediaResolverCli(argv = process.argv.slice(2)) {
       .map((value) => normalizeText(value))
       .filter(Boolean);
   }
-  const report = await resolveDouyinMediaBatch(items, parsed.options);
+  const report = await runSingleStageCliWithProgress({
+    inputUrl: `${items.length} douyin media item(s)`,
+    options: parsed.options,
+    taskId: 'douyinMediaResolver',
+    title: 'Douyin media resolver',
+    stageId: 'douyinMediaResolver',
+    stageTitle: '解析抖音媒体资源',
+    run: (stageOptions) => resolveDouyinMediaBatch(items, stageOptions),
+    successMessage: douyinMediaProgressMessage,
+    warningResult: (stageResult) => Number(stageResult?.summary?.failed ?? 0) > 0,
+    isFailureResult: (stageResult) => Number(stageResult?.summary?.failed ?? 0) > 0,
+    failureReason: (stageResult) => `failed=${Number(stageResult?.summary?.failed ?? 0)} resolved=${Number(stageResult?.summary?.resolved ?? 0)}`,
+    failureTitle: 'Douyin media resolver safely stopped',
+    nextStep: 'Refresh the Douyin login session, then retry the resolver for only the failed media items.',
+  });
   writeJsonStdout(report);
   if (report?.summary?.failed > 0) {
     process.exitCode = 1;

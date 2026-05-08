@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { runSingleStageCliWithProgress } from '../../infra/cli/progress-cli.mjs';
 import { collectJpAvReleaseCatalog } from '../../sites/jp-av-catalog/queries/release-catalog.mjs';
 
 const USER_AGENT = 'Mozilla/5.0 Browser-Wiki-Skill jp-av release catalog';
 const execFile = promisify(execFileCallback);
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const flags = {};
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -38,6 +39,11 @@ function parseArgs(argv) {
     endDate: String(flags.end ?? flags['end-date'] ?? '2026-05-04'),
     concurrency: flags.concurrency ? Number.parseInt(String(flags.concurrency), 10) : 6,
     maxPages: flags['max-pages'] ? Number.parseInt(String(flags['max-pages']), 10) : 80,
+    json: flags.json === true,
+    quiet: flags.quiet === true,
+    progressMode: flags.progress ? String(flags.progress) : undefined,
+    forceTty: flags['force-tty'] === true,
+    noTty: flags['no-tty'] === true,
   };
 }
 
@@ -100,9 +106,21 @@ async function fetchHtml(url, options = {}) {
 export async function main(argv = process.argv.slice(2)) {
   initializeCliUtf8();
   const options = parseArgs(argv);
-  const catalog = await collectJpAvReleaseCatalog({
-    ...options,
-    fetchHtml,
+  const catalog = await runSingleStageCliWithProgress({
+    inputUrl: `${options.startDate}..${options.endDate}`,
+    options,
+    taskId: 'jpAvReleaseCatalog',
+    title: 'JP AV release catalog',
+    stageId: 'jpAvReleaseCatalog',
+    stageTitle: 'Collect release catalog',
+    run: (stageOptions) => collectJpAvReleaseCatalog({
+      ...stageOptions,
+      fetchHtml,
+    }),
+    successMessage: (result) => `${result?.items?.length ?? result?.works?.length ?? 0} items`,
+    isFailureResult: (result) => result?.ok === false,
+    failureReason: (result) => result?.reason ?? 'catalog collection failed',
+    failureTitle: 'JP AV release catalog failed',
   });
   writeJsonStdout(catalog);
   return catalog;

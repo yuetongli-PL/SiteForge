@@ -6,6 +6,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-resume');
@@ -25,6 +27,11 @@ Options:
   --max-cycles <n>                  Maximum automatic execution planning cycles. Default: 10.
   --run-root <dir>                  Output root. Default: runs/social-live-resume.
   --format <text|json>              Output format. Default: text.
+  --json                            Force JSON output and suppress human progress.
+  --quiet                           Suppress human progress.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -44,10 +51,19 @@ export function parseArgs(argv) {
     maxCycles: '10',
     runRoot: DEFAULT_RUN_ROOT,
     format: 'text',
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token.startsWith('--progress=')) {
+      options.progressMode = token.slice('--progress='.length);
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -64,6 +80,25 @@ export function parseArgs(argv) {
         options.execute = false;
         options.autoExecute = false;
         break;
+      case '--json':
+        options.format = 'json';
+        options.json = true;
+        break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(argv, index, token);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
       case '--state':
       case '--site':
       case '--cooldown-minutes':
@@ -425,7 +460,20 @@ export async function main(argv) {
     return;
   }
   if (options.autoExecute) {
-    const result = await runResumeLoop(options);
+    const result = await runSingleStageCliWithProgress({
+      inputUrl: `${options.site} social resume`,
+      options,
+      taskId: 'socialLiveResume',
+      title: 'Social live resume',
+      stageId: 'socialLiveResume',
+      stageTitle: '恢复社交 live 任务',
+      run: (stageOptions) => runResumeLoop(stageOptions),
+      successMessage: (stageResult) => `stop=${stageResult?.stopReason ?? 'unknown'} cycles=${stageResult?.cycles ?? 0} attempts=${stageResult?.attempts ?? 0}`,
+      artifacts: (stageResult) => stageResult?.finalState ? [{ label: 'Final state', path: stageResult.finalState }] : [],
+      warningResult: (stageResult) => !['complete', 'no-candidates'].includes(String(stageResult?.stopReason ?? '')),
+      failureTitle: 'Social live resume safely stopped',
+      nextStep: 'Inspect the generated resume manifests and rerun only ready candidates after cooldown.',
+    });
     if (options.format === 'json') {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else {

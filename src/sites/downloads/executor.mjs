@@ -1069,6 +1069,7 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
   const retryFailedOnly = Boolean(options.retryFailedOnly ?? plan.policy?.retryFailedOnly ?? false);
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const resources = resolvedTask.resources;
+  const progress = options.progress;
   const recoveryMode = retryFailedOnly ? 'retry-failed' : resume ? 'resume' : 'none';
   const recoveryState = await loadDownloadRecoveryState(layout, resources, recoveryMode);
   const recoveryProblems = [...(recoveryState.problems ?? [])];
@@ -1093,6 +1094,15 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
   });
 
   if (dryRun) {
+    const dryRunStage = progress?.stage?.({
+      id: 'plan',
+      index: 1,
+      total: 1,
+      title: '规划下载资源',
+      current: resources.length,
+      total: resources.length,
+      item: plan.source?.input,
+    });
     await writeRedactedJsonArtifact(layout.queuePath, queue);
     await writeRedactedJsonLinesArtifact(layout.downloadsJsonlPath, []);
     const manifest = normalizeDownloadRunManifest({
@@ -1176,6 +1186,11 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
       layout,
       recoveryProblems,
     }));
+    dryRunStage?.skip?.({
+      message: 'Dry run only; no download was attempted',
+      completedItems: 0,
+      skippedExisting: resources.length,
+    });
     return manifest;
   }
 
@@ -1227,6 +1242,16 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
 
   const results = await mapWithConcurrency(resources, plan.policy?.concurrency ?? options.concurrency ?? 4, async (resource, index) => {
     const filePath = queue[index].filePath;
+    const resourceProgress = progress?.stage?.({
+      id: resource.id ?? `resource-${index + 1}`,
+      index: index + 1,
+      total: resources.length,
+      title: '下载资源',
+      current: index,
+      totalBytes: resource.expectedBytes,
+      item: resource.fileName ?? resource.url,
+      message: `${index + 1}/${resources.length}`,
+    });
     const previousStatus = queue[index].status;
     if (resume || retryFailedOnly) {
       const recovered = await recoverCompletedResource(
@@ -1238,6 +1263,12 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
       if (recovered.result) {
         queue[index] = applyResultToQueue(queue[index], recovered.result);
         await writeRedactedJsonArtifact(layout.queuePath, queue);
+        resourceProgress?.succeed?.({
+          message: 'Recovered existing download',
+          downloadedBytes: recovered.result.bytes,
+          completedItems: index + 1,
+          skippedExisting: 1,
+        });
         return recovered.result;
       }
       if (recovered.problem) {
@@ -1246,6 +1277,10 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
           const failed = failedControlResult(resource, queue[index], recovered.problem.reason, recovered.problem.detail);
           queue[index] = applyResultToQueue(queue[index], failed);
           await writeRedactedJsonArtifact(layout.queuePath, queue);
+          resourceProgress?.fail?.({
+            message: recovered.problem.reason,
+            failedItems: 1,
+          });
           return failed;
         }
       }
@@ -1253,6 +1288,10 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
         const skipped = skippedControlResult(resource, queue[index], 'retry-failed-not-failed');
         queue[index] = applyResultToQueue(queue[index], skipped);
         await writeRedactedJsonArtifact(layout.queuePath, queue);
+        resourceProgress?.skip?.({
+          message: 'retry-failed skipped previously successful item',
+          skippedExisting: 1,
+        });
         return skipped;
       }
     }
@@ -1261,11 +1300,21 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
       if (existing) {
         queue[index] = applyResultToQueue(queue[index], existing);
         await writeRedactedJsonArtifact(layout.queuePath, queue);
+        resourceProgress?.skip?.({
+          message: 'Skipped existing file',
+          downloadedBytes: existing.bytes,
+          skippedExisting: 1,
+        });
         return existing;
       }
     }
     queue[index] = { ...queue[index], status: 'running' };
     await writeRedactedJsonArtifact(layout.queuePath, queue);
+    resourceProgress?.update?.({
+      message: 'Downloading',
+      downloadedBytes: 0,
+      retryCount: plan.policy?.retries ?? options.retries ?? 0,
+    });
     const result = await downloadWithRetry(resource, filePath, {
       fetchImpl,
       verify,
@@ -1275,6 +1324,20 @@ export async function executeResolvedDownloadTask(resolvedTaskInput, plan, sessi
     });
     queue[index] = applyResultToQueue(queue[index], result);
     await writeRedactedJsonArtifact(layout.queuePath, queue);
+    if (result.ok) {
+      resourceProgress?.succeed?.({
+        message: verify ? 'Downloaded and verified' : 'Downloaded',
+        downloadedBytes: result.bytes,
+        completedItems: index + 1,
+        verified: verify ? 1 : 0,
+      });
+    } else {
+      resourceProgress?.fail?.({
+        message: result.reason ?? result.error ?? 'download failed',
+        downloadedBytes: result.bytes,
+        failedItems: 1,
+      });
+    }
     return result;
   });
   const derivedResults = await buildDerivedMuxResults(resources, queue, results, layout, options, deps);

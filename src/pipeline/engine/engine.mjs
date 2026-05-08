@@ -1,5 +1,6 @@
 import { DEFAULT_STAGE_RUNNERS } from './runners.mjs';
 import { DEFAULT_STAGE_VALIDATORS } from './validators.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 
 export function resolveStageImplementation(stageImpls, stageSpec) {
   const stageImpl = stageImpls[stageSpec.implKey];
@@ -62,6 +63,7 @@ export async function executePipeline(
     generatedAt = new Date().toISOString(),
     stageRunners = DEFAULT_STAGE_RUNNERS,
     stageValidators = DEFAULT_STAGE_VALIDATORS,
+    progress = null,
   },
 ) {
   const stageResults = {};
@@ -72,13 +74,57 @@ export async function executePipeline(
     stageResults,
   };
 
-  for (const stageSpec of stageSpecs) {
-    stageResults[stageSpec.name] = await executePipelineStage(
-      stageSpec,
-      pipelineContext,
-      stageImpls,
-      { stageRunners, stageValidators },
-    );
+  for (const [index, stageSpec] of stageSpecs.entries()) {
+    const stageProgress = progress?.stage?.({
+      id: stageSpec.name,
+      title: pipelineStageTitle(stageSpec.name),
+      index: index + 1,
+      total: stageSpecs.length,
+      item: inputUrl,
+    });
+    try {
+      stageResults[stageSpec.name] = await executePipelineStage(
+        stageSpec,
+        pipelineContext,
+        stageImpls,
+        { stageRunners, stageValidators },
+      );
+      const resultStatus = stageResults[stageSpec.name]?.status;
+      const result = stageResults[stageSpec.name];
+      const message = result?.outDir
+        ?? result?.kbDir
+        ?? result?.skillDir
+        ?? 'Stage completed';
+      const warningCount = Number(result?.lintSummary?.warningCount ?? 0)
+        + Number(Array.isArray(result?.warnings) ? result.warnings.length : 0);
+      if (resultStatus === 'skipped') {
+        stageProgress?.skip?.({
+          message: result?.reason ?? 'Stage skipped',
+        });
+      } else if (warningCount > 0) {
+        stageProgress?.warn?.({
+          message,
+          outputDir: result?.outDir ?? result?.kbDir ?? result?.skillDir,
+          summary: result?.summary ?? result?.lintSummary ?? null,
+          warnings: result?.warnings ?? [],
+          current: result?.pages ?? result?.summary?.documents ?? result?.summary?.analyzedStates,
+          total: result?.pages ?? result?.summary?.inputStates ?? result?.summary?.documents,
+        });
+      } else {
+        stageProgress?.succeed?.({
+          message,
+          outputDir: result?.outDir ?? result?.kbDir ?? result?.skillDir,
+          summary: result?.summary ?? result?.lintSummary ?? null,
+          current: result?.pages ?? result?.summary?.documents ?? result?.summary?.analyzedStates,
+          total: result?.pages ?? result?.summary?.inputStates ?? result?.summary?.documents,
+        });
+      }
+    } catch (error) {
+      stageProgress?.fail?.({
+        message: error?.message ?? String(error),
+      });
+      throw error;
+    }
   }
 
   return {

@@ -4,6 +4,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { ensureDir, pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
 import {
   loadOptionalManifest,
@@ -1430,6 +1435,11 @@ Options:
   --analysis-dir <dir>        Optional third-step output directory override
   --expanded-dir <dir>        Optional second-step output directory override
   --out-dir <dir>             Root output directory
+  --json                      Keep stdout as JSON and suppress progress
+  --quiet                     Suppress human progress on stderr
+  --progress <mode>           auto | interactive | plain
+  --force-tty                 Force interactive progress
+  --no-tty                    Force plain progress
   --help                      Show this help
 `);
 }
@@ -1457,6 +1467,12 @@ export function parseCliArgs(argv) {
         throw new Error(`Unexpected argument: ${current}`);
       }
       url = current;
+      continue;
+    }
+
+    const progressOption = parseProgressCliOption(args, current, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
       continue;
     }
 
@@ -1518,11 +1534,23 @@ export async function runCli() {
       return;
     }
 
-    const manifest = await generateDocs(url, options);
+    const manifest = await runSingleStageCliWithProgress({
+      inputUrl: url,
+      options,
+      taskId: 'docs',
+      title: pipelineStageTitle('docs'),
+      stageId: 'docs',
+      run: (stageOptions) => generateDocs(url, stageOptions),
+      successMessage: (result) => result?.outDir,
+      artifacts: (result) => [
+        result?.outDir ? { label: 'docs', path: result.outDir } : null,
+      ].filter(Boolean),
+      failureTitle: 'Documentation generation failed',
+      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url}`,
+    });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
   }
 }
-

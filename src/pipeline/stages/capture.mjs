@@ -4,6 +4,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { NETWORK_IDLE_QUIET_MS, openBrowserSession } from '../../infra/browser/session.mjs';
 import {
   ensureAuthenticatedSession,
@@ -722,6 +727,14 @@ function captureCandidateFromResultOrRequest(resultOrRequest = {}) {
   return apiCandidateFromObservedRequest(resultOrRequest);
 }
 
+function isSchemaVerifiableResponseSummary(summary = {}) {
+  return Boolean(
+    normalizeCaptureLifecycleText(summary?.responseSchemaHash)
+    && summary?.bodyShape
+    && typeof summary.bodyShape === 'object'
+  );
+}
+
 function buildCaptureResponseSchemaVerificationRecords(manifest, candidateInputs = []) {
   const config = captureResponseSchemaVerificationConfig(manifest);
   if (!config) {
@@ -746,12 +759,22 @@ function buildCaptureResponseSchemaVerificationRecords(manifest, candidateInputs
     throw new Error('Capture response schema verification requires matching response summaries');
   }
   for (const candidateId of requestedIds) {
-    if (!selectedSummaries.some((summary) => summary?.candidateId === candidateId)) {
+    const summary = selectedSummaries.find((item) => item?.candidateId === candidateId);
+    if (!summary) {
       throw new Error(`Capture response schema verification response summary not found: ${candidateId}`);
     }
+    if (!isSchemaVerifiableResponseSummary(summary)) {
+      throw new Error(
+        `Capture response schema verification response summary lacks bodyShape or responseSchemaHash: ${candidateId}`,
+      );
+    }
+  }
+  const schemaSummaries = selectedSummaries.filter(isSchemaVerifiableResponseSummary);
+  if (schemaSummaries.length === 0) {
+    return [];
   }
 
-  return selectedSummaries.map((summary) => {
+  return schemaSummaries.map((summary) => {
     const candidate = candidateById.get(summary?.candidateId);
     if (!candidate) {
       throw new Error(`Capture response schema verification candidate not found: ${summary?.candidateId}`);
@@ -1736,6 +1759,12 @@ export function parseCliArgs(argv) {
       continue;
     }
 
+    const progressOption = parseProgressCliOption(args, current, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
+
     if (current.startsWith('--out-dir')) {
       const { value, nextIndex } = readValue(current, index);
       options.outDir = value;
@@ -1867,6 +1896,11 @@ Options:
   --no-auto-login          Disable credential auto-login
   --headless               Run browser headless (default except visible-by-default Douyin and Xiaohongshu flows)
   --no-headless            Run browser with a visible window
+  --json                   Keep stdout as JSON and suppress progress
+  --quiet                  Suppress human progress on stderr
+  --progress <mode>        auto | interactive | plain
+  --force-tty              Force interactive progress
+  --no-tty                 Force plain progress
   --help                   Show this help
 `;
 
@@ -1883,7 +1917,23 @@ export async function runCli() {
       return;
     }
 
-    const manifest = await capture(url, options);
+    const manifest = await runSingleStageCliWithProgress({
+      inputUrl: url,
+      options,
+      taskId: 'capture',
+      title: pipelineStageTitle('capture'),
+      stageId: 'capture',
+      run: (stageOptions) => capture(url, stageOptions),
+      successMessage: (result) => result?.files?.manifest ?? result?.outDir,
+      artifacts: (result) => [
+        result?.files?.manifest ? { label: 'manifest', path: result.files.manifest } : null,
+        result?.outDir ? { label: 'capture', path: result.outDir } : null,
+      ].filter(Boolean),
+      isFailureResult: (result) => result?.status !== 'success',
+      failureReason: (result) => result?.error?.message ?? result?.status ?? 'Capture failed',
+      failureTitle: 'Capture failed',
+      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url} --no-headless --reuse-login-state`,
+    });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
 
     if (manifest.status !== 'success') {
@@ -1897,4 +1947,3 @@ export async function runCli() {
     process.exitCode = 1;
   }
 }
-

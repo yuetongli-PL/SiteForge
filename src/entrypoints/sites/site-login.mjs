@@ -5,6 +5,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
 import { ensureDir, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost } from '../../shared/normalize.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
@@ -67,7 +71,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-login.mjs <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--wait-for-manual-login|--no-wait-for-manual-login] [--username <value>] [--password <value>]
+  node src/entrypoints/sites/site-login.mjs <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--wait-for-manual-login|--no-wait-for-manual-login] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Notes:
   - Explicit --username / --password overrides WinCred and environment variables.
@@ -553,7 +557,7 @@ async function inspectConfirmedLoginStateWithRetry(runtime, session, authConfig,
   return await runtime.inspectLoginState(session, authConfig);
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -569,6 +573,11 @@ function parseCliArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--profile-path': {
         const { value, nextIndex } = readValue(index);
@@ -1028,7 +1037,24 @@ async function runCli() {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const report = await siteLogin(parsed.inputUrl, parsed.options);
+  const report = await runSingleStageCliWithProgress({
+    inputUrl: parsed.inputUrl,
+    options: parsed.options,
+    taskId: 'siteLogin',
+    title: 'Site login',
+    stageId: 'siteLogin',
+    stageTitle: 'Check login state',
+    run: (stageOptions) => siteLogin(parsed.inputUrl, stageOptions),
+    successMessage: (result) => result?.auth?.status,
+    artifacts: (result) => [
+      result?.reports?.json ? { label: 'report', path: result.reports.json } : null,
+      result?.reports?.markdown ? { label: 'markdown', path: result.reports.markdown } : null,
+    ].filter(Boolean),
+    isFailureResult: (result) => !['authenticated', 'session-reused', 'manual-login-complete'].includes(result?.auth?.status),
+    failureReason: (result) => result?.auth?.riskCauseCode ?? result?.auth?.status ?? 'login failed',
+    failureTitle: 'Site login requires manual recovery',
+    nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl} --no-headless --reuse-login-state`,
+  });
   writeJsonStdout(report);
   if (!['authenticated', 'session-reused', 'manual-login-complete'].includes(report.auth.status)) {
     process.exitCode = 1;

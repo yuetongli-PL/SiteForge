@@ -4,6 +4,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
 import { pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { normalizeText, normalizeUrlNoFragment, sanitizeHost } from '../../shared/normalize.mjs';
 import {
@@ -24,7 +28,7 @@ const DEFAULT_OPTIONS = {
   knowledgeBaseDir: undefined,
   profilePath: undefined,
 };
-const HELP = 'Usage:\n  node src/entrypoints/pipeline/generate-crawler-script.mjs <url> [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--profile-path <path>]';
+const HELP = 'Usage:\n  node src/entrypoints/pipeline/generate-crawler-script.mjs <url> [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--profile-path <path>] [--json] [--quiet] [--progress auto|interactive|plain]';
 
 function mergeOptions(inputUrl, options = {}) {
   const parsed = new URL(inputUrl);
@@ -364,7 +368,7 @@ export async function ensureCrawlerScript(inputUrl, options = {}) {
   };
 }
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -378,6 +382,11 @@ function parseCliArgs(argv) {
   };
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--crawler-scripts-dir': {
         const { value, nextIndex } = readValue(index);
@@ -404,6 +413,14 @@ function parseCliArgs(argv) {
   return { help: false, inputUrl, options };
 }
 
+function crawlerArtifacts(result) {
+  return [
+    result?.scriptPath ? { label: 'Crawler', path: result.scriptPath } : null,
+    result?.metaPath ? { label: 'Metadata', path: result.metaPath } : null,
+    result?.registryPath ? { label: 'Registry', path: result.registryPath } : null,
+  ].filter(Boolean);
+}
+
 async function runCli() {
   initializeCliUtf8();
   const parsed = parseCliArgs(process.argv.slice(2));
@@ -411,7 +428,19 @@ async function runCli() {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const result = await ensureCrawlerScript(parsed.inputUrl, parsed.options);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: parsed.inputUrl,
+    options: parsed.options,
+    taskId: 'crawlerScript',
+    title: 'Generate crawler script',
+    stageId: 'crawlerScript',
+    stageTitle: '生成站点爬虫脚本',
+    run: (stageOptions) => ensureCrawlerScript(parsed.inputUrl, stageOptions),
+    successMessage: (stageResult) => `crawler script ${stageResult?.status ?? 'ready'}`,
+    artifacts: crawlerArtifacts,
+    failureTitle: 'Crawler script generation failed',
+    nextStep: 'Run site-doctor for the URL and repair the site profile before regenerating the crawler script.',
+  });
   writeJsonStdout(result);
 }
 

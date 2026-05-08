@@ -4,6 +4,11 @@ import process from 'node:process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  createCliProgressRenderer,
+  parseProgressCliOption,
+  stripProgressCliOptions,
+} from '../../infra/cli/progress-cli.mjs';
 import { readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import {
   REDACTION_PLACEHOLDER,
@@ -35,6 +40,10 @@ Options:
   --approve-action <action>         Approval token for command construction in --execute mode.
   --out-file <path>                 Write the dry-run/approval audit manifest to a JSON file.
   --json                            Print JSON only.
+  --quiet                           Suppress human progress on stderr.
+  --progress <mode>                 auto | interactive | plain.
+  --force-tty                       Force interactive progress.
+  --no-tty                          Force plain progress.
   --execute                         Build an approved repair command; never spawns child commands.
   -h, --help                        Show this help.
 `;
@@ -63,6 +72,14 @@ export function parseArgs(argv) {
       case '--json':
         options.json = true;
         break;
+      case '--quiet':
+      case '--progress':
+      case '--force-tty':
+      case '--no-tty': {
+        const progressOption = parseProgressCliOption(argv, arg, index, options);
+        index = progressOption.nextIndex;
+        break;
+      }
       case '--execute':
         options.execute = true;
         break;
@@ -451,7 +468,43 @@ function render(result) {
 
 export async function main(argv = process.argv.slice(2), deps = {}) {
   const options = parseArgs(argv);
-  const result = await buildSessionRepairPlanResult(options, deps);
+  const progress = createCliProgressRenderer(options);
+  const task = progress.task({
+    id: 'sessionRepair',
+    title: 'Session repair plan',
+    totalStages: 1,
+    item: options.site,
+  });
+  const stage = task.stage({
+    id: 'sessionRepair',
+    title: 'Plan session repair',
+    index: 1,
+    total: 1,
+    item: options.site,
+  });
+  let result;
+  try {
+    result = await buildSessionRepairPlanResult(stripProgressCliOptions(options), deps);
+    const plan = result.repairPlan ?? result.plan ?? {};
+    const message = `${result.status ?? 'unknown'} ${plan.action ?? ''}`.trim();
+    stage.succeed({ message });
+    task.succeed({
+      message,
+      artifacts: result.audit?.manifest ? [{ label: 'audit', path: result.audit.manifest }] : [],
+    });
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    stage.fail({ message: reason });
+    task.fail({ message: reason });
+    progress.failure({
+      taskId: 'sessionRepair',
+      title: 'Session repair planning failed',
+      stage: 'Plan session repair',
+      reason,
+      nextStep: options.site ? `node src/entrypoints/sites/site-login.mjs https://${options.host ?? options.site}/ --no-headless --reuse-login-state` : undefined,
+    });
+    throw error;
+  }
   const output = options.json ? sessionRepairPlanCliJson(result) : render(result);
   deps.stdout?.write ? deps.stdout.write(output) : process.stdout.write(output);
   return result;

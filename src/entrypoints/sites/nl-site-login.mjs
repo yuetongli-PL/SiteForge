@@ -5,11 +5,15 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
 import { parseNaturalLanguageSiteLoginRequest } from '../../infra/auth/site-login-natural.mjs';
 import { siteLogin } from './site-login.mjs';
 
 const HELP = `Usage:
-  node src/entrypoints/sites/nl-site-login.mjs <natural-language-request> [--out-dir <dir>] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>]
+  node src/entrypoints/sites/nl-site-login.mjs <natural-language-request> [--out-dir <dir>] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Examples:
   node src/entrypoints/sites/nl-site-login.mjs "登录 B 站，账号 foo@example.com，密码 123456，打开浏览器等我扫码"
@@ -20,7 +24,7 @@ Notes:
   - Environment variables such as BILIBILI_USERNAME / BILIBILI_PASSWORD are still safer than inline passwords.
 `;
 
-function parseCliArgs(argv) {
+export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { help: true };
   }
@@ -51,6 +55,11 @@ function parseCliArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--profile-path': {
         const { value, nextIndex } = readValue(index);
@@ -129,7 +138,23 @@ async function runCli() {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const result = await runNaturalLanguageSiteLogin(parsed.requestText, parsed.options);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: 'natural-language-request',
+    options: parsed.options,
+    taskId: 'nlSiteLogin',
+    title: 'Natural-language site login',
+    stageId: 'nlSiteLogin',
+    stageTitle: 'Parse and run login',
+    run: (stageOptions) => runNaturalLanguageSiteLogin(parsed.requestText, stageOptions),
+    successMessage: (stageResult) => stageResult?.report?.auth?.status,
+    artifacts: (stageResult) => [
+      stageResult?.report?.reports?.json ? { label: 'report', path: stageResult.report.reports.json } : null,
+    ].filter(Boolean),
+    isFailureResult: (stageResult) => !['authenticated', 'session-reused', 'manual-login-complete'].includes(stageResult?.report?.auth?.status),
+    failureReason: (stageResult) => stageResult?.report?.auth?.riskCauseCode ?? stageResult?.report?.auth?.status ?? 'login failed',
+    failureTitle: 'Natural-language site login requires manual recovery',
+    nextStep: 'node src/entrypoints/sites/site-login.mjs <url> --no-headless --reuse-login-state',
+  });
   writeJsonStdout(result);
   if (!['authenticated', 'session-reused', 'manual-login-complete'].includes(result.report.auth.status)) {
     process.exitCode = 1;

@@ -554,7 +554,7 @@ test('native seed resolvers strip artifact-facing sensitive seed fields', async 
     dryRun: true,
   };
 
-  const { resolved } = await resolveFixture(fixture, request, {
+  const { plan, resolved } = await resolveFixture(fixture, request, {
     siteKey: 'douyin',
     status: 'ready',
     headers: {
@@ -570,8 +570,8 @@ test('native seed resolvers strip artifact-facing sensitive seed fields', async 
   assert.equal(resource.url, 'https://v3-web.example.test/schema/sensitive-play.mp4');
   assert.equal(resource.id.includes('synthetic-seed'), false);
   assert.equal(resource.fileName, '0001-download.mp4');
-  assert.equal(resource.sourceUrl, 'https://www.douyin.com/?recommend=1');
-  assert.equal(resource.referer, 'https://www.douyin.com/?recommend=1');
+  assert.equal(resource.sourceUrl, plan.source.canonicalUrl);
+  assert.equal(resource.referer, plan.source.canonicalUrl);
   assert.equal(resource.headers.Cookie, undefined);
   assert.equal(resource.headers.Authorization, undefined);
   assert.equal(resource.headers['X-CSRF-Token'], undefined);

@@ -6,6 +6,7 @@ import process from 'node:process';
 
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../../infra/cli.mjs';
+import { runSingleStageCliWithProgress } from '../../../infra/cli/progress-cli.mjs';
 import {
   ensureDir,
   pathExists,
@@ -2603,14 +2604,42 @@ export function parseDouyinFollowQueryArgs(argv) {
       sessionOpenRetries: flags['session-open-retries'] ? Number(flags['session-open-retries']) : DEFAULT_OPTIONS.sessionOpenRetries,
       userScanRetries: flags['user-scan-retries'] ? Number(flags['user-scan-retries']) : DEFAULT_OPTIONS.userScanRetries,
       workspaceRoot: flags['workspace-root'] ? String(flags['workspace-root']) : process.cwd(),
+      json: flags.json === true,
+      quiet: flags.quiet === true,
+      progressMode: flags.progress ? String(flags.progress) : undefined,
+      forceTty: flags['force-tty'] === true,
+      noTty: flags['no-tty'] === true,
     },
   };
+}
+
+function douyinFollowProgressMessage(report = {}) {
+  const result = report?.result ?? {};
+  return [
+    result?.queryType ?? 'follow-query',
+    `scanned=${Number(result.scannedUsers ?? 0)}`,
+    `matchedUsers=${Number(result.matchedUsers ?? 0)}`,
+    `matchedVideos=${Number(result.matchedVideos ?? 0)}`,
+    result.partial === true ? 'partial=true' : '',
+  ].filter(Boolean).join(' ');
 }
 
 export async function runDouyinFollowQueryCli(argv = process.argv.slice(2)) {
   initializeCliUtf8();
   const parsed = parseDouyinFollowQueryArgs(argv);
-  const report = await queryDouyinFollow(parsed.inputUrl, parsed.options);
+  const report = await runSingleStageCliWithProgress({
+    inputUrl: parsed.inputUrl,
+    options: parsed.options,
+    taskId: 'douyinFollowQuery',
+    title: 'Douyin follow query',
+    stageId: 'douyinFollowQuery',
+    stageTitle: '查询抖音关注动态',
+    run: (stageOptions) => queryDouyinFollow(parsed.inputUrl, stageOptions),
+    successMessage: douyinFollowProgressMessage,
+    warningResult: (stageResult) => stageResult?.result?.partial === true,
+    failureTitle: 'Douyin follow query safely stopped',
+    nextStep: 'node src/entrypoints/sites/site-login.mjs https://www.douyin.com/ --no-headless --reuse-login-state',
+  });
   const projectedResult = projectDouyinFollowResult(report?.result ?? {}, parsed.options.output);
   if ((normalizeText(parsed.options.format) || 'json') === 'markdown') {
     process.stdout.write(renderDouyinFollowResultMarkdown(report, projectedResult));

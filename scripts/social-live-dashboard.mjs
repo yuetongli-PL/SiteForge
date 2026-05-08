@@ -9,6 +9,7 @@ import {
   buildReport,
   parseArgs as parseReportArgs,
 } from '../tools/social-live-report-core.mjs';
+import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -26,6 +27,10 @@ Options:
   --site <x|instagram|all>          Site filter. Default: all.
   --limit <n>                       Max manifests per site. Default: 10.
   --no-write                        Print dashboard HTML without writing files.
+  --quiet                           Suppress human progress.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
 
@@ -41,10 +46,18 @@ export function parseArgs(argv) {
     site: 'all',
     limit: '10',
     write: true,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token.startsWith('--progress=')) {
+      options.progressMode = token.slice('--progress='.length);
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -53,6 +66,21 @@ export function parseArgs(argv) {
       case '--no-write':
         options.write = false;
         break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(argv, index, token);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
       case '--runs-root':
       case '--out-dir':
       case '--site':
@@ -326,8 +354,28 @@ export async function main(argv) {
     process.stdout.write(`${HELP}\n`);
     return;
   }
-  const dashboard = await buildDashboard(options);
-  const outputs = await writeDashboard(options, dashboard.html);
+  const result = await runSingleStageCliWithProgress({
+    inputUrl: `${options.site} social live dashboard`,
+    options: {
+      ...options,
+      json: options.write === false,
+    },
+    taskId: 'socialLiveDashboard',
+    title: 'Social live dashboard',
+    stageId: 'socialLiveDashboard',
+    stageTitle: '生成社交 live 仪表盘',
+    run: async (stageOptions) => {
+      const dashboard = await buildDashboard(stageOptions);
+      const outputs = await writeDashboard(stageOptions, dashboard.html);
+      return { dashboard, outputs };
+    },
+    successMessage: (stageResult) => `rows=${stageResult?.dashboard?.report?.totalRows ?? 0}`,
+    artifacts: (stageResult) => stageResult?.outputs?.htmlPath ? [{ label: 'HTML', path: stageResult.outputs.htmlPath }] : [],
+    failureTitle: 'Social live dashboard safely stopped',
+    nextStep: 'Check the runs root and rerun after social live manifests exist.',
+  });
+  const dashboard = result.dashboard;
+  const outputs = result.outputs;
   if (outputs) {
     process.stdout.write(`HTML: ${outputs.htmlPath}\n`);
   } else {

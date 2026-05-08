@@ -6,6 +6,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-verify');
@@ -45,6 +47,11 @@ Options:
   --browser-profile-root <dir>      Forwarded to action and site-doctor commands.
   --user-data-dir <dir>             Forwarded to site-doctor.
   --headless|--no-headless          Forwarded to site-doctor. Default for matrix: --no-headless.
+  --json                            Suppress human progress for machine-readable output.
+  --quiet                           Suppress human progress.
+  --progress <auto|interactive|plain>
+  --force-tty                       Force interactive progress rendering.
+  --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 
 Matrix ids:
@@ -109,6 +116,11 @@ export function parseArgs(argv) {
     browserProfileRoot: null,
     userDataDir: null,
     headless: false,
+    json: false,
+    quiet: false,
+    progressMode: undefined,
+    forceTty: false,
+    noTty: false,
     help: false,
     explicitOptions: [],
   };
@@ -120,6 +132,10 @@ export function parseArgs(argv) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token.startsWith('--progress=')) {
+      options.progressMode = token.slice('--progress='.length);
+      continue;
+    }
     switch (token) {
       case '-h':
       case '--help':
@@ -158,6 +174,24 @@ export function parseArgs(argv) {
       case '--fail-fast':
         options.failFast = true;
         break;
+      case '--json':
+        options.json = true;
+        break;
+      case '--quiet':
+        options.quiet = true;
+        break;
+      case '--force-tty':
+        options.forceTty = true;
+        break;
+      case '--no-tty':
+        options.noTty = true;
+        break;
+      case '--progress': {
+        const { value, nextIndex } = readValue(argv, index, token);
+        options.progressMode = value;
+        index = nextIndex;
+        break;
+      }
       case '--case': {
         const { value, nextIndex } = readValue(argv, index, token);
         options.cases.push(value);
@@ -1397,8 +1431,27 @@ async function main(argv) {
     process.stdout.write('Dry-run only. Re-run with --execute to run live commands and write a manifest.\n');
     return;
   }
-  const manifestPath = await executePlan(selected, options, runId);
-  process.stdout.write(`\nManifest: ${manifestPath}\n`);
+  const execution = await runSingleStageCliWithProgress({
+    inputUrl: `${selected.length} live matrix case(s)`,
+    options,
+    taskId: 'socialLiveVerify',
+    title: 'Social live verification',
+    stageId: 'socialLiveVerify',
+    stageTitle: '验证社交 live 矩阵',
+    run: async (stageOptions) => {
+      const manifestPath = await executePlan(selected, stageOptions, runId);
+      return {
+        manifestPath,
+        status: process.exitCode ? 'warning' : 'success',
+      };
+    },
+    successMessage: (result) => `manifest=${result?.manifestPath ?? 'none'}`,
+    artifacts: (result) => result?.manifestPath ? [{ label: 'Manifest', path: result.manifestPath }] : [],
+    warningResult: (result) => result?.status === 'warning',
+    failureTitle: 'Social live verification safely stopped',
+    nextStep: 'Inspect the generated manifest and rerun only blocked or failed cases after manual recovery.',
+  });
+  process.stdout.write(`\nManifest: ${execution.manifestPath}\n`);
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

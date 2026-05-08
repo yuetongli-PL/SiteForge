@@ -6,6 +6,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  parseProgressCliOption,
+  runSingleStageCliWithProgress,
+} from '../../infra/cli/progress-cli.mjs';
+import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { pathExists, readJsonFile, writeJsonFile } from '../../infra/io.mjs';
 import {
   loadOptionalManifest,
@@ -1977,6 +1982,11 @@ Options:
   --analysis-dir <dir>        Directory containing third-step outputs
   --expanded-dir <dir>        Optional second-step output directory for fallback evidence
   --out-dir <dir>             Root output directory
+  --json                      Keep stdout as JSON and suppress progress
+  --quiet                     Suppress human progress on stderr
+  --progress <mode>           auto | interactive | plain
+  --force-tty                 Force interactive progress
+  --no-tty                    Force plain progress
   --help                      Show this help
 `);
 }
@@ -2004,6 +2014,12 @@ export function parseCliArgs(argv) {
         throw new Error(`Unexpected argument: ${current}`);
       }
       url = current;
+      continue;
+    }
+
+    const progressOption = parseProgressCliOption(args, current, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
       continue;
     }
 
@@ -2053,7 +2069,20 @@ export async function runCli() {
       return;
     }
 
-    const manifest = await abstractInteractions(url, options);
+    const manifest = await runSingleStageCliWithProgress({
+      inputUrl: url,
+      options,
+      taskId: 'abstraction',
+      title: pipelineStageTitle('abstraction'),
+      stageId: 'abstraction',
+      run: (stageOptions) => abstractInteractions(url, stageOptions),
+      successMessage: (result) => result?.outDir,
+      artifacts: (result) => [
+        result?.outDir ? { label: 'abstraction', path: result.outDir } : null,
+      ].filter(Boolean),
+      failureTitle: 'Interaction abstraction failed',
+      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url}`,
+    });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);

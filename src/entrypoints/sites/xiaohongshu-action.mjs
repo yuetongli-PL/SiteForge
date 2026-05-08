@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
 import {
+  createCliProgressRenderer,
+  stripProgressCliOptions,
+} from '../../infra/cli/progress-cli.mjs';
+import {
   actionSessionMetadataFromOptions,
   readSessionRunManifest,
   sessionOptionsFromRunManifest,
@@ -44,6 +48,11 @@ Options:
   --no-session-health-plan          Use the legacy session provider path.
   --format <json|markdown>          Output format. Default: json.
   --output <full|summary|download>  Output payload shape. Default: full.
+  --json                            Suppress human progress; output remains JSON unless --format markdown is used.
+  --quiet                           Suppress human progress on stderr.
+  --progress <mode>                 auto | interactive | plain.
+  --force-tty                       Force interactive progress.
+  --no-tty                          Force plain progress.
   -h, --help                        Show this help.
 `;
 
@@ -144,6 +153,11 @@ export function parseXiaohongshuActionArgs(argv = process.argv.slice(2)) {
         : undefined,
     output: flags.output ? String(flags.output) : 'full',
     outputFormat: flags.format ? String(flags.format) : 'json',
+    json: flags.json === true,
+    quiet: flags.quiet === true,
+    progressMode: flags.progress ? String(flags.progress) : undefined,
+    forceTty: flags['force-tty'] === true,
+    noTty: flags['no-tty'] === true,
     followedUsers: flags['followed-users'] === true,
     followedUserLimit: flags['followed-user-limit'] ? Number(flags['followed-user-limit']) : undefined,
     download: {
@@ -259,14 +273,61 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
     return { help: XIAOHONGSHU_ACTION_HELP };
   }
   const request = await buildXiaohongshuActionRequest(parsed);
+  const progress = createCliProgressRenderer({
+    ...parsed,
+    json: parsed.json || String(parsed.outputFormat || 'json').toLowerCase() === 'json',
+  });
+  const task = progress.task({
+    id: 'xiaohongshuAction',
+    title: 'Xiaohongshu action',
+    totalStages: 1,
+    item: parsed.items?.[0] ?? parsed.queries?.[0] ?? parsed.action,
+  });
+  const stage = task.stage({
+    id: parsed.action,
+    title: `Run ${parsed.action}`,
+    index: 1,
+    total: 1,
+    item: parsed.items?.[0] ?? parsed.queries?.[0] ?? parsed.action,
+  });
   const sessionMetadata = await actionSessionMetadataFromOptions(parsed, {
     siteKey: 'xiaohongshu',
     host: 'www.xiaohongshu.com',
   });
-  const result = {
-    ...await runXiaohongshuAction(request),
-    ...sessionMetadata,
-  };
+  let result;
+  try {
+    result = {
+      ...await runXiaohongshuAction(stripProgressCliOptions(request)),
+      ...sessionMetadata,
+    };
+    const message = result?.ok === true ? 'ok' : (result?.reason ?? result?.status ?? 'failed');
+    if (result?.ok === true) {
+      stage.succeed({ message });
+      task.succeed({ message });
+    } else {
+      stage.fail({ message });
+      task.fail({ message });
+      progress.failure({
+        taskId: 'xiaohongshuAction',
+        title: 'Xiaohongshu action failed',
+        stage: `Run ${parsed.action}`,
+        reason: message,
+        nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
+      });
+    }
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    stage.fail({ message: reason });
+    task.fail({ message: reason });
+    progress.failure({
+      taskId: 'xiaohongshuAction',
+      title: 'Xiaohongshu action failed',
+      stage: `Run ${parsed.action}`,
+      reason,
+      nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
+    });
+    throw error;
+  }
   const outputFormat = String(parsed.outputFormat || 'json').trim().toLowerCase();
   if (outputFormat === 'markdown') {
     process.stdout.write(xiaohongshuActionCliMarkdown(

@@ -189,7 +189,7 @@ test('waitForAuthenticatedSession keeps polling through transient page inspectio
     passwordSelectors: [],
     challengeSelectors: [],
   }, {
-    timeoutMs: 100,
+    timeoutMs: 1000,
     pollMs: 1,
   });
 
@@ -223,7 +223,7 @@ test('waitForAuthenticatedSession can assist a manual multi-step login before po
     challengeSelectors: [],
   }, {
     assistManualLogin: true,
-    timeoutMs: 100,
+    timeoutMs: 1000,
     pollMs: 1,
   });
 

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
-import { capture } from '../../src/entrypoints/pipeline/capture.mjs';
+import { capture, writeCaptureManifest } from '../../src/entrypoints/pipeline/capture.mjs';
 import { derivePageFacts, expandStates } from '../../src/entrypoints/pipeline/expand-states.mjs';
 import { BrowserSession } from '../../src/infra/browser/session.mjs';
 import { API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION } from '../../src/sites/capability/api-candidates.mjs';
@@ -634,6 +634,83 @@ test('capture writes runtime observed network requests into redacted api candida
       () => access(path.join(path.dirname(manifest.files.manifest), 'catalog')),
       /ENOENT/u,
     );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('capture skips automatic response schema verification summaries without body evidence', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-capture-response-schema-skip-'));
+  const manifestPath = path.join(workspace, 'manifest.json');
+
+  try {
+    const manifest = {
+      traceId: 'capture:test:response-schema-skip',
+      correlationId: 'capture:test',
+      inputUrl: 'https://example.com/',
+      finalUrl: 'https://example.com/',
+      title: 'Response Schema Skip',
+      capturedAt: '2026-05-05T00:00:00.000Z',
+      status: 'success',
+      outDir: workspace,
+      files: {
+        html: path.join(workspace, 'page.html'),
+        snapshot: path.join(workspace, 'dom-snapshot.json'),
+        screenshot: path.join(workspace, 'screenshot.png'),
+        manifest: manifestPath,
+      },
+      page: {
+        viewportWidth: 1200,
+        viewportHeight: 800,
+      },
+      pageFacts: null,
+      runtimeEvidence: null,
+      error: null,
+      responseSchemaVerification: {
+        enabled: true,
+        verifierId: 'focused-test',
+        verifiedAt: '2026-05-05T00:00:00.000Z',
+      },
+      networkRequests: [
+        {
+          siteKey: 'example',
+          method: 'GET',
+          url: 'https://example.com/api/feed',
+          headers: {
+            accept: 'application/json',
+          },
+          source: 'browser-network-tracker',
+        },
+      ],
+      networkResponseSummaries: [
+        {
+          schemaVersion: API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION,
+          candidateId: 'response-without-body-evidence',
+          siteKey: 'example',
+          capturedAt: '2026-05-05T00:00:00.000Z',
+          source: 'cdp.Network.responseReceived',
+          statusCode: 200,
+          contentType: 'text/html;charset=utf-8',
+          headerNames: ['content-type'],
+          metadata: {
+            requestId: 'response-without-body-evidence',
+            resourceType: 'Document',
+          },
+        },
+      ],
+    };
+
+    await writeFile(manifest.files.html, '<html><body>ok</body></html>', 'utf8');
+    await writeFile(manifest.files.snapshot, JSON.stringify({ documents: [] }, null, 2), 'utf8');
+    await writeFile(manifest.files.screenshot, Buffer.from('image'));
+
+    await writeCaptureManifest(manifest);
+
+    const written = JSON.parse(await readFile(manifestPath, 'utf8'));
+    assert.equal(written.status, 'success');
+    assert.equal(written.files.apiCandidates.length, 1);
+    assert.equal(Object.hasOwn(written.files, 'apiResponseSchemaVerifications'), false);
+    assert.equal(Object.hasOwn(written.files, 'apiResponseSchemaVerificationRedactionAudits'), false);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

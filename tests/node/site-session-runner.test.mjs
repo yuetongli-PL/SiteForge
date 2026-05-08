@@ -1258,6 +1258,29 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /Current closeout verification/u);
 });
 
+test('release and versioning policy documents scope compatibility and publication boundaries', async () => {
+  const contributing = await readFile(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8');
+  const readme = await readFile(path.join(process.cwd(), 'README.md'), 'utf8');
+
+  assert.match(contributing, /Release And Versioning Policy/u);
+  assert.match(contributing, /Release scope is the set of source, tests, config, schema, repo-local skills,\s+tools, and root-document edits/u);
+  assert.match(contributing, /git status --short --branch --untracked-files=all/u);
+  assert.match(contributing, /browser profile material, downloaded media, logs, generated run artifacts, raw\s+session material, and unrelated dirty files are excluded/u);
+  assert.match(contributing, /Contract versions are governed by compatibility evidence/u);
+  assert.match(contributing, /Additive compatible\s+fields keep the current schema or artifact version/u);
+  assert.match(contributing, /Incompatible persisted or public contract changes require\s+an explicit version bump/u);
+  assert.match(contributing, /schema inventory or compatibility registry updates/u);
+  assert.match(contributing, /Agent B acceptance/u);
+  assert.match(contributing, /Passing local validation does not imply a tag, package version bump, push, PR,\s+publication, live capability claim, or live authenticated validation/u);
+  assert.match(contributing, /node tools\\prepublish-secret-scan\.mjs/u);
+  assert.match(contributing, /live claims additionally require explicit approval,\s+bounded scope, stop conditions, and sanitized artifacts/u);
+
+  assert.match(readme, /- \[x\] Add clearer release\/versioning policy/u);
+  assert.match(readme, /## Release And Versioning/u);
+  assert.match(readme, /Release readiness is evidence-based, not date-based/u);
+  assert.match(readme, /No tag, package version bump, push, PR, publication, live capability claim, or\s+live authenticated validation is implied by local tests passing/u);
+});
+
 test('download runner docs describe hybrid native migration without live claims', async () => {
   const runnerDoc = await readFile(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8');
 

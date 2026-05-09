@@ -30,14 +30,14 @@ test('social-auth-recover builds X keepalive, manual login, and verification com
   const site = plan.sites[0];
 
   assert.equal(site.site, 'x');
-  assert.match(site.commandLines.keepalive, /site-keepalive\.mjs/u);
+  assert.match(site.commandLines.keepalive, /src\/entrypoints\/cli\.mjs site keepalive/u);
   assert.match(site.commandLines.keepalive, /--no-auto-login/u);
   assert.match(site.commandLines.keepalive, /--user-data-dir/u);
-  assert.match(site.commandLines.manualLogin, /site-login\.mjs/u);
+  assert.match(site.commandLines.manualLogin, /src\/entrypoints\/cli\.mjs site login/u);
   assert.match(site.commandLines.manualLogin, /--wait-for-manual-login/u);
   assert.match(site.commandLines.manualLogin, /--manual-timeout 67890/u);
   assert.equal(site.commandLines.verify[0].caseId, 'x-auth-doctor');
-  assert.match(site.commandLines.verify[0].command, /social-live-verify\.mjs/u);
+  assert.match(site.commandLines.verify[0].command, /src\/entrypoints\/cli\.mjs social live-verify/u);
   assert.match(site.commandLines.verify[0].command, /--case-timeout 22222/u);
 });
 

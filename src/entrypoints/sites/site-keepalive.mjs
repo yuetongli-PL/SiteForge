@@ -34,7 +34,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-keepalive.mjs <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--refresh-follow-cache] [--recent-active-days <n>] [--recent-active-users-limit <n>] [--json] [--quiet] [--progress auto|interactive|plain]
+  node src/entrypoints/cli.mjs site keepalive <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--refresh-follow-cache] [--recent-active-days <n>] [--recent-active-users-limit <n>] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Notes:
   - This command opens the site's verification page, reuses the persistent browser profile, and refreshes login state when possible.
@@ -318,7 +318,7 @@ async function runCli() {
     isFailureResult: (result) => result?.keepalive?.status !== 'kept-alive',
     failureReason: (result) => result?.keepalive?.riskCauseCode ?? result?.keepalive?.status ?? 'keepalive failed',
     failureTitle: 'Site keepalive requires manual recovery',
-    nextStep: `node src/entrypoints/sites/site-login.mjs ${parsed.inputUrl} --no-headless --reuse-login-state`,
+    nextStep: `node src/entrypoints/cli.mjs site login ${parsed.inputUrl} --no-headless --reuse-login-state`,
   });
   writeJsonStdout(report);
   if (report.keepalive.status !== 'kept-alive') {

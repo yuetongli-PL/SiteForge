@@ -73,7 +73,9 @@ test('session repair plan execute mode blocks without matching approval', async 
   assert.equal(result.execution.command.command, 'site-login');
   assert.deepEqual(result.execution.command.argv, [
     'node',
-    'src/entrypoints/sites/site-login.mjs',
+    'src/entrypoints/cli.mjs',
+    'site',
+    'login',
     'https://www.douyin.com/',
   ]);
 });
@@ -285,7 +287,9 @@ test('session repair plan execute mode records approved command without spawning
   assert.equal(result.execution.reason, 'command-construction-only');
   assert.deepEqual(result.execution.command.argv, [
     'node',
-    'src/entrypoints/sites/site-keepalive.mjs',
+    'src/entrypoints/cli.mjs',
+    'site',
+    'keepalive',
     'https://www.instagram.com/',
   ]);
   const persisted = JSON.parse(await readFile(outFile, 'utf8'));
@@ -485,4 +489,3 @@ test('session repair plan execute mode blocks dangerous repair actions', async (
   assert.equal(result.execution.reason, 'dangerous-action-requires-human-runbook');
   assert.equal(result.execution.command, null);
 });
-

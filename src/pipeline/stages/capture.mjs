@@ -1932,7 +1932,7 @@ export async function runCli() {
       isFailureResult: (result) => result?.status !== 'success',
       failureReason: (result) => result?.error?.message ?? result?.status ?? 'Capture failed',
       failureTitle: 'Capture failed',
-      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url} --no-headless --reuse-login-state`,
+      nextStep: `node src/entrypoints/cli.mjs site doctor ${url} --no-headless --reuse-login-state`,
     });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
 

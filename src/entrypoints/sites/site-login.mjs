@@ -71,7 +71,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-login.mjs <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--wait-for-manual-login|--no-wait-for-manual-login] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
+  node src/entrypoints/cli.mjs site login <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--wait-for-manual-login|--no-wait-for-manual-login] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Notes:
   - Explicit --username / --password overrides WinCred and environment variables.
@@ -1053,7 +1053,7 @@ async function runCli() {
     isFailureResult: (result) => !['authenticated', 'session-reused', 'manual-login-complete'].includes(result?.auth?.status),
     failureReason: (result) => result?.auth?.riskCauseCode ?? result?.auth?.status ?? 'login failed',
     failureTitle: 'Site login requires manual recovery',
-    nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl} --no-headless --reuse-login-state`,
+    nextStep: `node src/entrypoints/cli.mjs site doctor ${parsed.inputUrl} --no-headless --reuse-login-state`,
   });
   writeJsonStdout(report);
   if (!['authenticated', 'session-reused', 'manual-login-complete'].includes(report.auth.status)) {

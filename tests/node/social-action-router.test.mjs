@@ -2883,8 +2883,8 @@ test('social action CLI help exposes unified session flags without running actio
     const result = await runSocialActionCli(['--help'], { site: 'x' });
 
     assert.deepEqual(result, { help: SOCIAL_ACTION_HELP });
-    assert.match(output, /x-action\.mjs/u);
-    assert.match(output, /instagram-action\.mjs/u);
+    assert.match(output, /node src\/entrypoints\/cli\.mjs x action/u);
+    assert.match(output, /node src\/entrypoints\/cli\.mjs instagram action/u);
     assert.match(output, /--session-manifest <path>/u);
     assert.match(output, /--session-health-plan/u);
     assert.match(output, /--no-session-health-plan/u);
@@ -2999,7 +2999,7 @@ test('social action dry-run suggests session repair command for blocked session 
   assert.match(result.markdown, /Session traceability gate: blocked \(session-health-manifest-missing\)/u);
   assert.match(
     result.markdown,
-    /Next session repair command: node src\/entrypoints\/sites\/session-repair-plan\.mjs --site x --session-gate-reason session-health-manifest-missing/u,
+    /Next session repair command: node src\/entrypoints\/cli\.mjs site repair-plan --site x --session-gate-reason session-health-manifest-missing/u,
   );
 });
 
@@ -3047,7 +3047,7 @@ test('runSocialAction blocks required actions before opening browser when sessio
   assert.match(result.markdown, /Session traceability gate: blocked \(session-invalid\)/u);
   assert.match(
     result.markdown,
-    /Next session repair command: node src\/entrypoints\/sites\/session-repair-plan\.mjs --site x --session-gate-reason session-invalid/u,
+    /Next session repair command: node src\/entrypoints\/cli\.mjs site repair-plan --site x --session-gate-reason session-invalid/u,
   );
 });
 

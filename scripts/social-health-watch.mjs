@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
+import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
 import { writeSocialManifestJsonWithAudit } from '../tools/social-redaction.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -28,7 +29,7 @@ const SITES = Object.freeze({
 });
 
 const HELP = `Usage:
-  node scripts/social-health-watch.mjs [--execute] [--site x|instagram|all] [options]
+  node src/entrypoints/cli.mjs social health-watch [--execute] [--site x|instagram|all] [options]
 
 Dry-run by default. In execute mode, runs keepalive and auth doctor sequentially.
 
@@ -126,14 +127,8 @@ function addOptional(args, flag, value) {
   if (value !== null && value !== undefined && String(value).trim() !== '') args.push(flag, String(value));
 }
 
-function shellQuote(value) {
-  const text = String(value);
-  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) return text;
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 function formatCommand(command, args) {
-  return [command, ...args].map(shellQuote).join(' ');
+  return displayCommandForExecutable(command, args);
 }
 
 function redactCommandLineForDisplay(commandLine) {

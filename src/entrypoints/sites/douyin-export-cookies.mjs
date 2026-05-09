@@ -295,7 +295,7 @@ export async function runDouyinExportCookiesCli(argv = process.argv.slice(2)) {
     ].filter(Boolean),
     warningResult: (result) => Boolean(result?.warning),
     failureTitle: 'Douyin cookie export safely stopped',
-    nextStep: 'node src/entrypoints/sites/site-login.mjs https://www.douyin.com/ --no-headless --reuse-login-state',
+    nextStep: 'node src/entrypoints/cli.mjs site login https://www.douyin.com/ --no-headless --reuse-login-state',
   });
   writeJsonStdout(report);
 }

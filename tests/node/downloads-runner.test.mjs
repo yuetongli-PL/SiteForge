@@ -3129,7 +3129,7 @@ test('legacy executor maps blocked legacy failures into blocked manifests', asyn
 
   assert.equal(manifest.status, 'blocked');
   assert.equal(manifest.reason, 'login-bootstrap-failed');
-  assert.equal(manifest.resumeCommand.includes('--execute'), true);
+  assert.match(manifest.resumeCommand, /node src\/entrypoints\/cli\.mjs download execute/u);
   const persisted = await readJsonFile(manifest.artifacts.manifest);
   assert.equal(typeof persisted.artifacts.standardTaskList, 'string');
   const standardTaskList = await readJsonFile(persisted.artifacts.standardTaskList);

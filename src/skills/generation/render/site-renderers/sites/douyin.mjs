@@ -152,7 +152,7 @@ function renderDouyinSkillMd(input) {
       `- Safe actions: \`${safeActions.join('`, `')}\``,
       `- Supported tasks: ${supportedTasks.join('、') || '在已观测 Douyin 状态空间内查询和导航'}.`,
       '- Public navigation model: home, search, video detail, user homepage, and approved category pages remain public read-only surfaces.',
-      '- Follow-query entrypoint: `node src/entrypoints/sites/douyin-query-follow.mjs https://www.douyin.com/?recommend=1 --intent list-followed-updates --window 今天`.',
+      '- Follow-query entrypoint: `node src/entrypoints/cli.mjs douyin follow https://www.douyin.com/?recommend=1 --intent list-followed-updates --window 今天`.',
     ],
     sampleCoverageLines: [
       `- 视频样本: ${samples.videos.join(', ') || 'none'}`,
@@ -165,7 +165,7 @@ function renderDouyinSkillMd(input) {
     executionPolicyLines: [
       '- Public Douyin pages MUST use the built-in browser.',
       '- Authenticated Douyin pages MUST use the local-profile browser with a reusable persisted session.',
-      '- Login bootstrap MUST run through `node .\\src\\entrypoints\\sites\\site-login.mjs https://www.douyin.com/ --profile-path profiles/www.douyin.com.json --no-headless --reuse-login-state --no-auto-login`.',
+      '- Login bootstrap MUST run through `node .\\src\\entrypoints\\cli.mjs site login https://www.douyin.com/ --profile-path profiles/www.douyin.com.json --no-headless --reuse-login-state --no-auto-login`.',
       '- The first Douyin login is always manual in a visible browser; do not save or submit account credentials automatically.',
       '- Authenticated read-only subpages include `/user/self?showTab=post|like|collect|history` and `/follow?tab=feed|user`.',
       '- `list-followed-users` and `list-followed-updates` are cache-first authenticated read-only queries backed by the local persisted profile.',

@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -30,7 +31,7 @@ const BLOCKED_REASON_CODES = new Set([
 ]);
 
 const HELP = `Usage:
-  node scripts/social-kb-refresh.mjs [--execute] [--fail-fast] [--case <id>] [--site x|instagram|all] [--surface <name>] [options]
+  node src/entrypoints/cli.mjs social kb-refresh [--execute] [--fail-fast] [--case <id>] [--site x|instagram|all] [--surface <name>] [options]
 
 Defaults to dry-run plan mode. Dry-run writes a manifest with commands and expected artifacts, but does not touch live sites.
 Use --plan-only or --plan-json for no-write audit planning.
@@ -548,16 +549,8 @@ export function filterMatrix(matrix, options) {
   return selected;
 }
 
-function shellQuote(value) {
-  const text = String(value);
-  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 export function formatCommand(entry) {
-  return [entry.command, ...entry.args].map(shellQuote).join(' ');
+  return displayCommandForExecutable(entry.command, entry.args);
 }
 
 function timeoutPolicyForOptions(options) {

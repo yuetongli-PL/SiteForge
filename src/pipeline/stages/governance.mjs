@@ -1494,7 +1494,7 @@ export async function runCli() {
         result?.outDir ? { label: 'governance', path: result.outDir } : null,
       ].filter(Boolean),
       failureTitle: 'Governance generation failed',
-      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url}`,
+      nextStep: `node src/entrypoints/cli.mjs site doctor ${url}`,
     });
     process.stdout.write(`${JSON.stringify(manifest.summary, null, 2)}\n`);
   } catch (error) {

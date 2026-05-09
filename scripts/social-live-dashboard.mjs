@@ -17,7 +17,7 @@ const DEFAULT_RUNS_ROOT = path.join(REPO_ROOT, 'runs');
 const DEFAULT_OUT_DIR = path.join(REPO_ROOT, 'runs', 'social-live-dashboard');
 
 const HELP = `Usage:
-  node scripts/social-live-dashboard.mjs [--runs-root <dir>] [--out-dir <dir>] [options]
+  node src/entrypoints/cli.mjs social dashboard [--runs-root <dir>] [--out-dir <dir>] [options]
 
 Builds a local HTML dashboard from the social-live-report JSON aggregation.
 

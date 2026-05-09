@@ -9,6 +9,7 @@ import {
   parseProgressCliOption,
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
+import { formatCommand, unifiedCliArgv } from '../../infra/cli/command-map.mjs';
 import { readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import {
   REDACTION_PLACEHOLDER,
@@ -23,7 +24,7 @@ import {
 } from '../../sites/downloads/session-manager.mjs';
 
 const HELP = `Usage:
-  node src/entrypoints/sites/session-repair-plan.mjs --site <site> [options]
+  node src/entrypoints/cli.mjs site repair-plan --site <site> [options]
 
 Dry-run by default. This command prints session repair guidance only; it does
 not execute login, keepalive, profile rebuild, or live smoke work.
@@ -124,23 +125,22 @@ function repairCommandForPlan(repairPlan = {}, options = {}, health = {}) {
   if (!command || !url) {
     return null;
   }
-  const base = ['node'];
   if (command === 'site-keepalive') {
     return {
       command,
-      argv: [...base, 'src/entrypoints/sites/site-keepalive.mjs', url],
+      argv: unifiedCliArgv(['site', 'keepalive', url]),
     };
   }
   if (command === 'site-login') {
     return {
       command,
-      argv: [...base, 'src/entrypoints/sites/site-login.mjs', url],
+      argv: unifiedCliArgv(['site', 'login', url]),
     };
   }
   if (command === 'site-doctor') {
     return {
       command,
-      argv: [...base, 'src/entrypoints/sites/site-doctor.mjs', url],
+      argv: unifiedCliArgv(['site', 'doctor', url]),
     };
   }
   return null;
@@ -501,7 +501,11 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
       title: 'Session repair planning failed',
       stage: 'Plan session repair',
       reason,
-      nextStep: options.site ? `node src/entrypoints/sites/site-login.mjs https://${options.host ?? options.site}/ --no-headless --reuse-login-state` : undefined,
+      nextStep: options.site ? formatCommand([
+        ...unifiedCliArgv(['site', 'login', `https://${options.host ?? options.site}/`]),
+        '--no-headless',
+        '--reuse-login-state',
+      ]) : undefined,
     });
     throw error;
   }

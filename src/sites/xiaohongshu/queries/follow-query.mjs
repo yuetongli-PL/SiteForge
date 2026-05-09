@@ -27,7 +27,7 @@ const MODULE_DIR = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
 
 const HELP = `Usage:
-  node src/entrypoints/sites/xiaohongshu-query-follow.mjs [url] [--intent list-followed-users|list-followed-updates] [--format json|markdown] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--limit <n>] [--per-user-limit <n>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state]
+  node src/entrypoints/cli.mjs xiaohongshu follow [url] [--intent list-followed-users|list-followed-updates] [--format json|markdown] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--limit <n>] [--per-user-limit <n>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state]
 
 Notes:
   - The default URL is ${DEFAULT_INPUT_URL}

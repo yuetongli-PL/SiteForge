@@ -46,7 +46,8 @@ test('install social health task script dry-run builds stable schtasks create ar
 
   assert.equal(plan.mode, 'dry-run');
   assert.equal(plan.taskName, '\\Browser-Wiki-Skill\\SocialHealthX');
-  assert.equal(plan.taskRunCommand.includes('social-health-watch.mjs'), true);
+  assert.equal(plan.taskRunCommand.includes('src\\entrypoints\\cli.mjs'), true);
+  assert.equal(plan.taskRunCommand.includes('social health-watch'), true);
   assert.equal(plan.taskRunCommand.includes('--execute'), true);
   assert.deepEqual(plan.schtasksArgs.slice(0, 8), ['/Create', '/F', '/SC', 'MINUTE', '/MO', '45', '/TN', plan.taskName]);
   assert.equal(plan.schtasksArgs[plan.schtasksArgs.indexOf('/TR') + 1], plan.taskRunCommand);

@@ -26,9 +26,11 @@ import {
 import { readJsonFile } from '../../infra/io.mjs';
 import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
 import { createProgressRenderer } from '../../infra/cli/progress.mjs';
+import { downloadCliCommand } from '../../infra/cli/command-map.mjs';
 
 const HELP = `Usage:
-  node src/entrypoints/sites/download.mjs --site <site> --input <url-or-target> [options]
+  node src/entrypoints/cli.mjs download plan <url-or-target> --site <site> [options]
+  node src/entrypoints/cli.mjs download execute <url-or-target> --site <site> [options]
 
 Defaults to dry-run. Use --execute only when the generated plan is safe to run.
 
@@ -537,7 +539,11 @@ export async function main(argv) {
       title: 'Download stopped safely',
       stage: 'download',
       reason: result.manifest.reason ?? 'download failed',
-      nextStep: result.manifest.resumeCommand ?? `node src/entrypoints/sites/download.mjs --site ${options.site ?? result.plan.siteKey} --input "${options.input ?? ''}"`,
+      nextStep: result.manifest.resumeCommand ?? downloadCliCommand({
+        mode: 'plan',
+        site: options.site ?? result.plan.siteKey,
+        input: options.input ?? '',
+      }),
       report: result.manifest.artifacts?.reportMarkdown,
     });
   } else {

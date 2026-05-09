@@ -101,9 +101,9 @@ test('generate-skill CLI returns the expected summary shape', async () => {
 test('site-doctor and site-scaffold CLIs expose stable help output', () => {
   const doctorHelp = runNodeCli(path.join('scripts', 'site-doctor.mjs'), ['--help']);
   assert.equal(doctorHelp.status, 0);
-  assert.match(doctorHelp.stdout, /node src[\\/]entrypoints[\\/]sites[\\/]site-doctor\.mjs <url>/u);
+  assert.match(doctorHelp.stdout, /node src[\\/]entrypoints[\\/]cli\.mjs site doctor <url>/u);
 
   const scaffoldHelp = runNodeCli(path.join('scripts', 'site-scaffold.mjs'), ['--help']);
   assert.equal(scaffoldHelp.status, 0);
-  assert.match(scaffoldHelp.stdout, /node src[\\/]entrypoints[\\/]sites[\\/]site-scaffold\.mjs <url> --archetype/u);
+  assert.match(scaffoldHelp.stdout, /node src[\\/]entrypoints[\\/]cli\.mjs site scaffold <url> --archetype/u);
 });

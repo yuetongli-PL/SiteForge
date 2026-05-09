@@ -170,6 +170,7 @@ const DYNAMIC_FS_IMPORT_PATTERN = /\bimport\(\s*['"](?:node:fs|node:fs\/promises
 
 const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/entrypoints/sites/session-repair-plan.mjs',
+  'src/entrypoints/sites/site-capability-compile.mjs',
   'src/entrypoints/sites/site-doctor.mjs',
   'src/entrypoints/sites/site-login.mjs',
   'src/entrypoints/sites/site-scaffold.mjs',
@@ -434,7 +435,7 @@ function collectHighRiskRuntimeArtifactWriteGuardFailures(fileRelativePath, sour
 
 function hasRedactionGuardedArtifactEvidence(sourceText) {
   ARTIFACT_WRITE_SINK_PATTERN.lastIndex = 0;
-  return /prepareRedactedArtifactJsonWithAudit\(/u.test(sourceText)
+  return /(?:prepareRedactedArtifactJsonWithAudit|prepareCompilerDerivedArtifact)\(/u.test(sourceText)
     && /\b(?:redactionAudit|RedactionAudit|auditPath|auditJson)\b/u.test(sourceText)
     && ARTIFACT_WRITE_SINK_PATTERN.test(sourceText);
 }

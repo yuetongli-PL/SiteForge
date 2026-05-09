@@ -2638,7 +2638,7 @@ export async function runDouyinFollowQueryCli(argv = process.argv.slice(2)) {
     successMessage: douyinFollowProgressMessage,
     warningResult: (stageResult) => stageResult?.result?.partial === true,
     failureTitle: 'Douyin follow query safely stopped',
-    nextStep: 'node src/entrypoints/sites/site-login.mjs https://www.douyin.com/ --no-headless --reuse-login-state',
+    nextStep: 'node src/entrypoints/cli.mjs site login https://www.douyin.com/ --no-headless --reuse-login-state',
   });
   const projectedResult = projectDouyinFollowResult(report?.result ?? {}, parsed.options.output);
   if ((normalizeText(parsed.options.format) || 'json') === 'markdown') {

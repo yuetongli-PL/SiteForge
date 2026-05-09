@@ -1247,7 +1247,7 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /Blocked audit rows include a `repairPlan` guidance object/u);
   assert.match(releaseGate, /Repair Plan/u);
   assert.match(releaseGate, /Next session repair command/u);
-  assert.match(releaseGate, /session-repair-plan\.mjs --site/u);
+  assert.match(releaseGate, /src\/entrypoints\/cli\.mjs site repair-plan --site/u);
   assert.match(releaseGate, /Offline only; no live\/login\/download side effects/u);
   assert.match(releaseGate, /Current Local Evidence/u);
   assert.match(releaseGate, /clean worktree\s+verified before evidence capture/u);

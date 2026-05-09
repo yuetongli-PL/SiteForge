@@ -23,7 +23,7 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-credentials.mjs <set|show|delete> <url> [--profile-path <path>] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
+  node src/entrypoints/cli.mjs site credentials <set|show|delete> <url> [--profile-path <path>] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
 
 Notes:
   - Credentials are stored in Windows Credential Manager as Generic Credentials.

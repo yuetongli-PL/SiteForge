@@ -9,6 +9,7 @@ import {
   writeJsonFile,
   writeTextFile,
 } from '../../infra/io.mjs';
+import { downloadCliCommand } from '../../infra/cli/command-map.mjs';
 import {
   normalizeDownloadRunManifest,
   normalizeResolvedDownloadTask,
@@ -347,20 +348,22 @@ async function resolveDownloadsJsonlOutputPath(layout, recoveryProblems = []) {
   return layout.downloadsJsonlPath;
 }
 
-function cliQuote(value) {
-  return `"${String(value).replace(/"/gu, '\\"')}"`;
-}
-
 function buildResumeCommand(plan, layout) {
-  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
-  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
-  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --resume`;
+  return downloadCliCommand({
+    mode: 'execute',
+    site: plan.siteKey,
+    input: plan.source?.input,
+    args: ['--run-dir', layout.runDir, '--resume'],
+  });
 }
 
 function buildRetryFailedCommand(plan, layout) {
-  const siteArg = plan.siteKey ? ` --site ${plan.siteKey}` : '';
-  const inputArg = plan.source?.input ? ` --input ${cliQuote(plan.source.input)}` : '';
-  return `node src/entrypoints/sites/download.mjs${siteArg}${inputArg} --execute --run-dir ${cliQuote(layout.runDir)} --retry-failed`;
+  return downloadCliCommand({
+    mode: 'execute',
+    site: plan.siteKey,
+    input: plan.source?.input,
+    args: ['--run-dir', layout.runDir, '--retry-failed'],
+  });
 }
 
 function explainManifestStatus(manifest) {

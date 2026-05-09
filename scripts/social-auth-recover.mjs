@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
+import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
 import { writeSocialManifestJsonWithAudit } from '../tools/social-redaction.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,7 @@ const SITE_CONFIGS = Object.freeze({
 });
 
 const HELP = `Usage:
-  node scripts/social-auth-recover.mjs [--execute] [--site x|instagram|all] [--manual] [--verify] [options]
+  node src/entrypoints/cli.mjs social auth-recover [--execute] [--site x|instagram|all] [--manual] [--verify] [options]
 
 Defaults to dry-run plan mode. Use --execute to run keepalive/auth checks.
 
@@ -286,16 +287,8 @@ function verifyCommand(config, options, outDir, caseId) {
   return nodeCommand(path.join('scripts', 'social-live-verify.mjs'), args);
 }
 
-function shellQuote(value) {
-  const text = String(value);
-  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 export function formatCommand(command) {
-  return [command.command, ...command.args].map(shellQuote).join(' ');
+  return displayCommandForExecutable(command.command, command.args);
 }
 
 function redactCommandLineForDisplay(commandLine) {

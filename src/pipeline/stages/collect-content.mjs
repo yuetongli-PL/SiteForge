@@ -907,7 +907,7 @@ export async function runCli() {
       stageResult?.outDir ? { label: 'book-content', path: stageResult.outDir } : null,
     ].filter(Boolean),
     failureTitle: 'Content sample collection failed',
-    nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl}`,
+    nextStep: `node src/entrypoints/cli.mjs site doctor ${parsed.inputUrl}`,
   });
   console.log(JSON.stringify(summarizeStdout(result), null, 2));
 }

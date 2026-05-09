@@ -7,13 +7,14 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-verify');
 
 const HELP = `Usage:
-  node scripts/social-live-verify.mjs --live --site x|instagram|all --run-root <dir> [--case <id>] [options]
+  node src/entrypoints/cli.mjs social live-verify --live --site x|instagram|all --run-root <dir> [--case <id>] [options]
 
 Defaults to not-run mode. No live plan is emitted unless --live and every live boundary is explicit.
 No live commands are executed unless both --live and --execute are present.
@@ -703,16 +704,8 @@ export function filterMatrix(matrix, options) {
   return selected;
 }
 
-function shellQuote(value) {
-  const text = String(value);
-  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 function formatCommand(entry) {
-  return [entry.command, ...entry.args].map(shellQuote).join(' ');
+  return displayCommandForExecutable(entry.command, entry.args);
 }
 
 export function buildPlanJson(entries, options, runId) {

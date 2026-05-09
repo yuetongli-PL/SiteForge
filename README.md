@@ -343,6 +343,7 @@ Unified facade:
 node .\src\entrypoints\cli.mjs build https://www.22biqu.com/
 node .\src\entrypoints\cli.mjs skill https://www.22biqu.com/
 node .\src\entrypoints\cli.mjs doctor https://www.22biqu.com/
+node .\src\entrypoints\cli.mjs site capability-compile --site qidian --json
 node .\src\entrypoints\cli.mjs download plan https://www.bilibili.com/video/BV...
 node .\src\entrypoints\cli.mjs download execute https://www.bilibili.com/video/BV... --site bilibili
 ```
@@ -356,13 +357,19 @@ node .\src\entrypoints\pipeline\run-pipeline.mjs https://www.22biqu.com/
 Inspect site onboarding and health surfaces:
 
 ```powershell
-node .\src\entrypoints\sites\site-doctor.mjs https://www.22biqu.com/
+node .\src\entrypoints\cli.mjs site doctor https://www.22biqu.com/
+```
+
+Compile descriptor-only Site Capability Graph and Planner dry-run evidence:
+
+```powershell
+node .\src\entrypoints\cli.mjs site capability-compile --site qidian --json
 ```
 
 Plan downloads through the unified runner:
 
 ```powershell
-node .\src\entrypoints\sites\download.mjs --input https://www.bilibili.com/video/BV... --site bilibili
+node .\src\entrypoints\cli.mjs download plan https://www.bilibili.com/video/BV... --site bilibili
 ```
 
 Progress examples:
@@ -386,7 +393,7 @@ Failures use the same recovery shape everywhere:
 ```text
 [build] status=failed stage=capture reason="verification or access-control page"
 [build] safety="系统已安全停止，未尝试绕过 CAPTCHA、MFA、平台风控、限流、权限或访问控制。"
-[build] next="node src/entrypoints/sites/site-doctor.mjs https://example.com --no-headless --reuse-login-state"
+[build] next="node src/entrypoints/cli.mjs site doctor https://example.com --no-headless --reuse-login-state"
 ```
 
 The progress layer never prints raw cookies, tokens, authorization headers,
@@ -415,7 +422,7 @@ helpers including `social-live-verify.mjs`, `social-kb-refresh.mjs`,
 Aggregate public official AV release metadata:
 
 ```powershell
-node .\src\entrypoints\sites\jp-av-release-catalog.mjs --start 2026-01-01 --end 2026-05-04
+node .\src\entrypoints\cli.mjs catalog jp-av-release --start 2026-01-01 --end 2026-05-04
 ```
 
 BZ888 public-direct script:
@@ -855,19 +862,19 @@ node .\src\entrypoints\pipeline\run-pipeline.mjs https://www.22biqu.com/
 检查站点接入与健康状态：
 
 ```powershell
-node .\src\entrypoints\sites\site-doctor.mjs https://www.22biqu.com/
+node .\src\entrypoints\cli.mjs site doctor https://www.22biqu.com/
 ```
 
 通过统一 runner 规划下载：
 
 ```powershell
-node .\src\entrypoints\sites\download.mjs https://www.bilibili.com/video/BV... --dry-run
+node .\src\entrypoints\cli.mjs download plan https://www.bilibili.com/video/BV...
 ```
 
 聚合公开官方 AV 发行元数据：
 
 ```powershell
-node .\src\entrypoints\sites\jp-av-release-catalog.mjs --start 2026-01-01 --end 2026-05-04
+node .\src\entrypoints\cli.mjs catalog jp-av-release --start 2026-01-01 --end 2026-05-04
 ```
 
 BZ888 公开直连脚本：

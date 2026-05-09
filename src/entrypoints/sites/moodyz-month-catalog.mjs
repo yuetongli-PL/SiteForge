@@ -40,7 +40,7 @@ export function parseArgs(argv) {
   const monthText = String(flags.month ?? positionals[0] ?? '').trim();
   const match = monthText.match(/^(?<year>\d{4})-(?<month>\d{1,2})$/u);
   if (!match) {
-    throw new Error('Usage: node src/entrypoints/sites/moodyz-month-catalog.mjs --month YYYY-MM');
+    throw new Error('Usage: node src/entrypoints/cli.mjs catalog moodyz-month --month YYYY-MM');
   }
   return {
     year: Number.parseInt(match.groups.year, 10),

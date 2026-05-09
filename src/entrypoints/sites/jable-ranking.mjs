@@ -441,8 +441,8 @@ export async function queryJableRanking(url, options = {}) {
 function printHelp() {
   process.stdout.write([
     'Usage:',
-    '  node src/entrypoints/sites/jable-ranking.mjs <url> --query "<natural language>"',
-    '  node src/entrypoints/sites/jable-ranking.mjs <url> --target-label "<label>" --sort combined --limit 3',
+    '  node src/entrypoints/cli.mjs catalog jable-ranking <url> --query "<natural language>"',
+    '  node src/entrypoints/cli.mjs catalog jable-ranking <url> --target-label "<label>" --sort combined --limit 3',
     '',
     'Options:',
     '  --query <text>           Natural-language query, e.g. "黑丝分类，近期最佳推荐三部"',

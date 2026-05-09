@@ -104,7 +104,7 @@ test('download-release-audit audits download and social matrix session gates off
   const blockedMatrix = audit.rows.find((row) => row.id === 'x-full-archive');
   assert.equal(blockedMatrix.repairPlan.command, 'session-repair-plan');
   assert.equal(blockedMatrix.repairPlan.auditManifest, path.join(outDir, 'download-release-audit.json'));
-  assert.match(blockedMatrix.repairPlan.commandText, /session-repair-plan\.mjs/u);
+  assert.match(blockedMatrix.repairPlan.commandText, /src\/entrypoints\/cli\.mjs site repair-plan/u);
   assert.match(blockedMatrix.repairPlan.commandText, /--site x/u);
   assert.equal(blockedMatrix.nativeFallbackReason, 'x-social-cursor-replay-required');
   assert.equal(blockedMatrix.nativeResolverMethod, 'native-x-social-resource-seeds');
@@ -117,7 +117,7 @@ test('download-release-audit audits download and social matrix session gates off
   assert.match(markdown, /x-social-cursor-replay-required/u);
   assert.match(markdown, /x\/native-x-social-resource-seeds/u);
   assert.match(markdown, /Repair Plan/u);
-  assert.match(markdown, /session-repair-plan\.mjs/u);
+  assert.match(markdown, /src\/entrypoints\/cli\.mjs site repair-plan/u);
 });
 
 test('download-release-audit no-write guidance avoids unwritten audit manifest paths', async (t) => {

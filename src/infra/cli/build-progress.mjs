@@ -254,7 +254,7 @@ export function renderBuildFailure(error, state, options = {}) {
     '',
     'Try',
     `  node ./src/entrypoints/cli.mjs build ${state.inputUrl} --verbose`,
-    `  node ./src/entrypoints/sites/site-doctor.mjs ${state.inputUrl}`,
+    `  node ./src/entrypoints/cli.mjs site doctor ${state.inputUrl}`,
     '',
     'Debug',
     '  Run with --debug to show stack trace and raw diagnostic JSON.',

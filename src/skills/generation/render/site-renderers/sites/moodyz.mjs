@@ -57,7 +57,7 @@ function renderMoodyzSkillMd(input) {
       `- Search queries: ${samples.searchQueries.join(', ') || 'none'}`,
     ],
     executionPolicyLines: [
-      '- Month-level work lists must use the project entrypoint `node src/entrypoints/sites/moodyz-month-catalog.mjs --month YYYY-MM` or the same daily-probe strategy.',
+      '- Month-level work lists must use the project entrypoint `node src/entrypoints/cli.mjs catalog moodyz-month --month YYYY-MM` or the same daily-probe strategy.',
       '- Do not rely only on `/works/date`, search snippets, or a rendered page excerpt for monthly totals.',
       '- Probe every day in the requested month with `/works/list/date/YYYY-MM-DD`, keep dates that contain real `/works/detail/` links, and de-duplicate by detail URL before reporting totals.',
     ],
@@ -117,7 +117,7 @@ function renderMoodyzIndexReference(input) {
     notesTitle: '## Download notes',
     notesLines: [
       '- This site skill is currently navigation-centric: it covers search, work pages, actress pages, category/list pages, and utility pages.',
-      '- Month-level release catalogs are resolved by daily `/works/list/date/YYYY-MM-DD` probes via `node src/entrypoints/sites/moodyz-month-catalog.mjs --month YYYY-MM`.',
+      '- Month-level release catalogs are resolved by daily `/works/list/date/YYYY-MM-DD` probes via `node src/entrypoints/cli.mjs catalog moodyz-month --month YYYY-MM`.',
       '- There is no verified chapter-reading or full-download flow in the current observed moodyz model.',
     ],
   });

@@ -1804,7 +1804,7 @@ export async function runCli() {
         title: 'Knowledge base compilation failed',
         stage: pipelineStageTitle('knowledgeBase'),
         reason,
-        nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl}`,
+        nextStep: `node src/entrypoints/cli.mjs site doctor ${parsed.inputUrl}`,
       });
       throw error;
     }

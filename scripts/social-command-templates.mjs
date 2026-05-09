@@ -5,12 +5,13 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
+import { unifiedCliCommandForScript } from '../src/infra/cli/command-map.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 
 const HELP = `Usage:
-  node scripts/social-command-templates.mjs [--site x|instagram|all] [options]
+  node src/entrypoints/cli.mjs social templates [--site x|instagram|all] [options]
 
 Prints reusable X/Instagram production, resume, cooldown, health, and KB refresh command templates.
 
@@ -120,16 +121,8 @@ export function parseArgs(argv) {
   return options;
 }
 
-function shellQuote(value) {
-  const text = String(value);
-  if (/^[A-Za-z0-9_./:@=\\<>-]+$/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 function nodeLine(script, args) {
-  return ['node', script, ...args].map(shellQuote).join(' ');
+  return unifiedCliCommandForScript(script, args);
 }
 
 function siteEntries(options) {

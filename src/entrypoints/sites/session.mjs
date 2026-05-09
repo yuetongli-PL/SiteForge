@@ -9,10 +9,12 @@ import {
   parseProgressCliOption,
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
+import { sessionRepairPlanCommand } from '../../infra/cli/command-map.mjs';
 import { runSessionTask } from '../../sites/sessions/runner.mjs';
 
 const HELP = `Usage:
-  node src/entrypoints/sites/session.mjs <health|plan-repair> --site <site> [options]
+  node src/entrypoints/cli.mjs session health --site <site> [options]
+  node src/entrypoints/cli.mjs session repair-plan --site <site> [options]
 
 Health+Plan only. This command writes a sanitized session manifest and never
 executes login, keepalive, profile rebuild, live smoke, or downloads.
@@ -182,7 +184,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
       title: 'Session health failed',
       stage: stage.title,
       reason,
-      nextStep: options.site ? `node src/entrypoints/sites/session-repair-plan.mjs --site ${options.site}` : undefined,
+      nextStep: options.site ? sessionRepairPlanCommand(['--site', options.site]) : undefined,
     });
     throw error;
   }

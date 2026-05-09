@@ -94,7 +94,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-doctor.mjs <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download] [--json] [--quiet] [--progress auto|interactive|plain]
+  node src/entrypoints/cli.mjs site doctor <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download] [--json] [--quiet] [--progress auto|interactive|plain]
 `;
 
 const AUTH_PROBE_WAIT_POLICY = {
@@ -1965,7 +1965,7 @@ function buildNextActions(report, sample) {
     !sample ? 'Add profile.validationSamples.videoSearchQuery, profile.search.knownQueries[0], or pass --query for search validation.' : null,
     xiaohongshuAuthBootstrapNeeded ? 'Run Xiaohongshu site-login in a visible browser and complete one manual login so /notification can be reused.' : null,
     xiaohongshuAuthBootstrapNeeded ? 'After manual login finishes, rerun site-doctor to validate notification-inbox with the persistent Xiaohongshu profile.' : null,
-    genericAuthBootstrapNeeded ? `Run ${authSiteLabel} site-login in a visible browser: node .\\src\\entrypoints\\sites\\site-login.mjs ${report.site.url} --no-headless --reuse-login-state.` : null,
+    genericAuthBootstrapNeeded ? `Run ${authSiteLabel} site-login in a visible browser: node .\\src\\entrypoints\\cli.mjs site login ${report.site.url} --no-headless --reuse-login-state.` : null,
     genericAuthBootstrapNeeded ? `Reuse an existing browser session with --user-data-dir or BWS_${authEnvToken}_USER_DATA_DIR, then rerun site-doctor.` : null,
     report.search?.status === 'fail' ? 'Update search selectors or the sample query until a search-results page is reachable.' : null,
     report.detail?.status === 'fail' ? 'Confirm content/detail path prefixes and result link selectors.' : null,

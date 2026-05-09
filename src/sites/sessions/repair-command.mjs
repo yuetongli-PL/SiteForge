@@ -1,14 +1,11 @@
 // @ts-check
 
-const SESSION_REPAIR_PLAN_ENTRYPOINT = 'src/entrypoints/sites/session-repair-plan.mjs';
+import {
+  formatCommand,
+  unifiedCliArgv,
+} from '../../infra/cli/command-map.mjs';
 
-export function quoteCommandArg(value) {
-  const text = String(value ?? '');
-  if (!/[\s"]/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
+export { quoteCommandArg } from '../../infra/cli/command-map.mjs';
 
 export function buildSessionRepairPlanCommand({
   site,
@@ -19,12 +16,12 @@ export function buildSessionRepairPlanCommand({
   if (!siteKey) {
     return null;
   }
-  const argv = [
-    'node',
-    SESSION_REPAIR_PLAN_ENTRYPOINT,
+  const argv = unifiedCliArgv([
+    'site',
+    'repair-plan',
     '--site',
     siteKey,
-  ];
+  ]);
   if (auditManifest) {
     argv.push('--audit-manifest', String(auditManifest));
   } else {
@@ -33,7 +30,7 @@ export function buildSessionRepairPlanCommand({
   return {
     command: 'session-repair-plan',
     argv,
-    commandText: argv.map(quoteCommandArg).join(' '),
+    commandText: formatCommand(argv),
     auditManifest: auditManifest ? String(auditManifest) : undefined,
   };
 }

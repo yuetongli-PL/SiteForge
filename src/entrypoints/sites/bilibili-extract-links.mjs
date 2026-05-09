@@ -116,7 +116,7 @@ function extractVideoLinks(maxItems) {
 export async function runBilibiliExtractLinksCli() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
-    process.stdout.write('Usage: node src/entrypoints/sites/bilibili-extract-links.mjs <url> [--max-items <n>] [--profile-root <dir>] [--browser-path <path>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--headless|--no-headless] [--json] [--quiet] [--progress auto|interactive|plain]\n');
+    process.stdout.write('Usage: node src/entrypoints/cli.mjs bilibili extract-links <url> [--max-items <n>] [--profile-root <dir>] [--browser-path <path>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--headless|--no-headless] [--json] [--quiet] [--progress auto|interactive|plain]\n');
     process.exit(0);
   }
   if (!options.url) {
@@ -179,7 +179,7 @@ export async function runBilibiliExtractLinksCli() {
       title: 'Bilibili link extraction failed',
       stage: 'Extract video links',
       reason,
-      nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.bilibili.com/ --no-headless --reuse-login-state',
+      nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.bilibili.com/ --no-headless --reuse-login-state',
     });
     throw error;
   } finally {

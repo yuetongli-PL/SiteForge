@@ -186,7 +186,7 @@ export async function runCli() {
       title: 'Skill generation failed',
       stage: pipelineStageTitle('skill'),
       reason: error?.message ?? String(error),
-      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${parsed.inputUrl}`,
+      nextStep: `node src/entrypoints/cli.mjs site doctor ${parsed.inputUrl}`,
     });
     throw error;
   }

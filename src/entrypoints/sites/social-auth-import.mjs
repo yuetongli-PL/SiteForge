@@ -47,9 +47,9 @@ const DEFAULT_COOKIE_TTL_DAYS = 30;
 
 function usage() {
   return `Usage:
-  node scripts/social-auth-import.mjs --site x --cookie-file <cookies.json|cookies.txt> --execute
-  node scripts/social-auth-import.mjs --site x --cookie-header-env X_COOKIE_HEADER --execute
-  node scripts/social-auth-import.mjs --site x --cookie-header "auth_token=...; ct0=..." --allow-argv-cookie-header --execute
+  node src/entrypoints/cli.mjs social auth-import --site x --cookie-file <cookies.json|cookies.txt> --execute
+  node src/entrypoints/cli.mjs social auth-import --site x --cookie-header-env X_COOKIE_HEADER --execute
+  node src/entrypoints/cli.mjs social auth-import --site x --cookie-header "auth_token=...; ct0=..." --allow-argv-cookie-header --execute
 
 Options:
   --site x|instagram        Target site. Default: x.

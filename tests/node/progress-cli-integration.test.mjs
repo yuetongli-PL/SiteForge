@@ -52,6 +52,10 @@ import {
   runSingleStageCliWithProgress,
   stripProgressCliOptions,
 } from '../../src/infra/cli/progress-cli.mjs';
+import {
+  siteCapabilityCompileCommand,
+  unifiedCliArgsForScript,
+} from '../../src/infra/cli/command-map.mjs';
 
 function createStream({ isTTY = false, columns = 80 } = {}) {
   let output = '';
@@ -425,6 +429,100 @@ test('unified CLI facade routes build, skill, doctor, and download commands', ()
 
   const execute = resolveCliDispatch(['download', 'execute', 'BV1abc', '--site', 'bilibili']);
   assert.deepEqual(execute.args, ['--input', 'BV1abc', '--execute', '--site', 'bilibili']);
+});
+
+test('unified CLI facade routes domain command tree', () => {
+  const cases = [
+    [['site', 'doctor', 'https://example.com'], 'site-doctor.mjs', ['https://example.com']],
+    [['site', 'capability-compile', '--site', 'qidian', '--json'], 'site-capability-compile.mjs', ['--site', 'qidian', '--json']],
+    [['site', 'login', 'https://example.com', '--json'], 'site-login.mjs', ['https://example.com', '--json']],
+    [['site', 'keepalive', 'https://example.com'], 'site-keepalive.mjs', ['https://example.com']],
+    [['site', 'scaffold', 'https://example.com', '--archetype', 'navigation-catalog'], 'site-scaffold.mjs', ['https://example.com', '--archetype', 'navigation-catalog']],
+    [['site', 'credentials', 'show', 'https://example.com'], 'site-credentials.mjs', ['show', 'https://example.com']],
+    [['site', 'nl-login', '登录 B 站'], 'nl-site-login.mjs', ['登录 B 站']],
+    [['site', 'repair-plan', '--site', 'x'], 'session-repair-plan.mjs', ['--site', 'x']],
+    [['session', 'health', '--site', 'x'], 'session.mjs', ['health', '--site', 'x']],
+    [['session', 'repair-plan', '--site', 'x'], 'session.mjs', ['plan-repair', '--site', 'x']],
+    [['social', 'live-verify', '--live', '--site', 'x'], 'social-live-verify.mjs', ['--live', '--site', 'x']],
+    [['social', 'kb-refresh', '--site', 'x'], 'social-kb-refresh.mjs', ['--site', 'x']],
+    [['social', 'resume', '--state', 'manifest.json'], 'social-live-resume.mjs', ['--state', 'manifest.json']],
+    [['social', 'report', '--json'], 'social-live-report.mjs', ['--json']],
+    [['social', 'dashboard', '--quiet'], 'social-live-dashboard.mjs', ['--quiet']],
+    [['social', 'auth-recover', '--site', 'x'], 'social-auth-recover.mjs', ['--site', 'x']],
+    [['social', 'health-watch', '--site', 'x'], 'social-health-watch.mjs', ['--site', 'x']],
+    [['social', 'templates', '--site', 'all'], 'social-command-templates.mjs', ['--site', 'all']],
+    [['social', 'auth-import', '--site', 'x'], 'social-auth-import.mjs', ['--site', 'x']],
+    [['catalog', 'jable-ranking', 'https://jable.tv/', '--query', 'test'], 'jable-ranking.mjs', ['https://jable.tv/', '--query', 'test']],
+    [['catalog', 'jp-av-release', '--start', '2026-01-01'], 'jp-av-release-catalog.mjs', ['--start', '2026-01-01']],
+    [['catalog', 'moodyz-month', '--month', '2026-05'], 'moodyz-month-catalog.mjs', ['--month', '2026-05']],
+    [['bilibili', 'action', 'download', 'BV1abc', '--progress', 'plain'], 'bilibili-action.mjs', ['download', 'BV1abc', '--progress', 'plain']],
+    [['bilibili', 'open', 'https://www.bilibili.com/'], 'bilibili-open-page.mjs', ['https://www.bilibili.com/']],
+    [['bilibili', 'extract-links', 'https://www.bilibili.com/'], 'bilibili-extract-links.mjs', ['https://www.bilibili.com/']],
+    [['douyin', 'action', 'download', 'https://www.douyin.com/video/1'], 'douyin-action.mjs', ['download', 'https://www.douyin.com/video/1']],
+    [['douyin', 'follow', 'https://www.douyin.com/?recommend=1'], 'douyin-query-follow.mjs', ['https://www.douyin.com/?recommend=1']],
+    [['douyin', 'resolve-media', 'https://www.douyin.com/video/1'], 'douyin-resolve-media.mjs', ['https://www.douyin.com/video/1']],
+    [['douyin', 'export-cookies', '--json'], 'douyin-export-cookies.mjs', ['--json']],
+    [['xiaohongshu', 'action', 'download', 'https://www.xiaohongshu.com/explore/1'], 'xiaohongshu-action.mjs', ['download', 'https://www.xiaohongshu.com/explore/1']],
+    [['xiaohongshu', 'follow', 'https://www.xiaohongshu.com/notification'], 'xiaohongshu-query-follow.mjs', ['https://www.xiaohongshu.com/notification']],
+    [['x', 'action', 'account-info', 'openai'], 'x-action.mjs', ['account-info', 'openai']],
+    [['instagram', 'action', 'account-info', 'instagram'], 'instagram-action.mjs', ['account-info', 'instagram']],
+  ];
+  for (const [argv, expectedScript, expectedArgs] of cases) {
+    const dispatch = resolveCliDispatch(argv);
+    assert.equal(path.basename(dispatch.script), expectedScript);
+    assert.deepEqual(dispatch.args, expectedArgs);
+  }
+});
+
+test('unified CLI command map exposes descriptor-only site capability compile', () => {
+  assert.deepEqual(
+    unifiedCliArgsForScript('src/entrypoints/sites/site-capability-compile.mjs'),
+    ['site', 'capability-compile'],
+  );
+  assert.equal(
+    siteCapabilityCompileCommand(['--site', 'qidian', '--json']),
+    'node src/entrypoints/cli.mjs site capability-compile --site qidian --json',
+  );
+});
+
+test('unified CLI facade exposes top-level, domain, and forwarded help', () => {
+  const top = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), '--help'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(top.status, 0, top.stderr);
+  assert.match(top.stdout, /Domains:/u);
+  assert.match(top.stdout, /node src\/entrypoints\/cli\.mjs social templates --site all/u);
+
+  const site = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'site', '--help'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(site.status, 0, site.stderr);
+  assert.match(site.stdout, /node src\/entrypoints\/cli\.mjs site <command>/u);
+  assert.match(site.stdout, /repair-plan/u);
+
+  const social = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'social', '--help'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(social.status, 0, social.stderr);
+  assert.match(social.stdout, /live-verify/u);
+  assert.match(social.stdout, /auth-recover/u);
+
+  const download = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'download', '--help'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(download.status, 0, download.stderr);
+  assert.match(download.stdout, /Defaults to dry-run/u);
+
+  const unknown = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'site', 'unknown'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /Unknown site command/u);
 });
 
 test('social live helper scripts accept shared progress flags', () => {

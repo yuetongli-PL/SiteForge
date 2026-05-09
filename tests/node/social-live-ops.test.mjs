@@ -42,16 +42,16 @@ test('social-command-templates emits unified X and Instagram commands', () => {
   ]));
 
   assert.deepEqual(templates.sites.map((site) => site.site), ['x', 'instagram']);
-  assert.match(templates.sites[0].productionCommands[0], /x-action\.mjs full-archive openai/u);
-  assert.match(templates.sites[0].resumeCommand, /social-live-resume\.mjs --site x/u);
-  assert.match(templates.sites[1].kbWatchCommand, /social-kb-refresh\.mjs --execute --site instagram --watch/u);
+  assert.match(templates.sites[0].productionCommands[0], /src\/entrypoints\/cli\.mjs x action full-archive openai/u);
+  assert.match(templates.sites[0].resumeCommand, /src\/entrypoints\/cli\.mjs social resume --site x/u);
+  assert.match(templates.sites[1].kbWatchCommand, /src\/entrypoints\/cli\.mjs social kb-refresh --execute --site instagram --watch/u);
   for (const site of templates.sites) {
     assert.ok(site.dryRunCommands.every((command) => command.risk.includes('dry-run')));
     assert.ok(site.executeCommands.every((command) => command.risk.includes('execute')));
-    assert.match(site.planJsonCommand, /social-live-verify\.mjs --plan-json/u);
-    assert.match(site.kbRefreshCommand, /social-kb-refresh\.mjs --plan-only/u);
-    assert.match(site.kbPlanJsonCommand, /social-kb-refresh\.mjs --plan-json/u);
-    assert.match(site.kbExecuteCommand, /social-kb-refresh\.mjs --execute/u);
+    assert.match(site.planJsonCommand, /src\/entrypoints\/cli\.mjs social live-verify --plan-json/u);
+    assert.match(site.kbRefreshCommand, /src\/entrypoints\/cli\.mjs social kb-refresh --plan-only/u);
+    assert.match(site.kbPlanJsonCommand, /src\/entrypoints\/cli\.mjs social kb-refresh --plan-json/u);
+    assert.match(site.kbExecuteCommand, /src\/entrypoints\/cli\.mjs social kb-refresh --execute/u);
     for (const command of site.productionCommands) {
       assert.match(command, /--session-health-plan/u);
     }
@@ -66,9 +66,9 @@ test('social-health-watch dry-run plan includes session health, keepalive, auth 
   assert.equal(plan.nextSuggestedKeepalive, '2026-04-26T01:30:00.000Z');
   assert.equal(plan.sites.length, 1);
   assert.deepEqual(plan.sites[0].commands.map((command) => command.type), ['session-health', 'keepalive', 'auth-doctor']);
-  assert.match(plan.sites[0].commands[0].commandLine, /session\.mjs health/u);
-  assert.match(plan.sites[0].commands[1].commandLine, /site-keepalive\.mjs/u);
-  assert.match(plan.sites[0].commands[2].commandLine, /site-doctor\.mjs/u);
+  assert.match(plan.sites[0].commands[0].commandLine, /src\/entrypoints\/cli\.mjs session health/u);
+  assert.match(plan.sites[0].commands[1].commandLine, /src\/entrypoints\/cli\.mjs site keepalive/u);
+  assert.match(plan.sites[0].commands[2].commandLine, /src\/entrypoints\/cli\.mjs site doctor/u);
   assert.match(plan.sites[0].commands[2].commandLine, /--session-manifest/u);
 });
 
@@ -237,13 +237,13 @@ test('social-live-report surfaces social action session gate summaries', async (
   assert.equal(passedRow.sessionRepairPlan, undefined);
   assert.equal(blockedRow.sessionGate.status, 'blocked');
   assert.equal(blockedRow.sessionRepairPlan.command, 'session-repair-plan');
-  assert.match(blockedRow.sessionRepairPlan.commandText, /session-repair-plan\.mjs --site x --session-gate-reason session-health-manifest-missing/u);
+  assert.match(blockedRow.sessionRepairPlan.commandText, /src\/entrypoints\/cli\.mjs site repair-plan --site x --session-gate-reason session-health-manifest-missing/u);
   assert.equal(report.summary.x.sessionGates.passed, 1);
   assert.equal(report.summary.x.sessionGates.blocked, 1);
   assert.match(markdown, /Session Gate/u);
   assert.match(markdown, /passed \(unified-session-health-manifest\)/u);
   assert.match(markdown, /Repair Plan/u);
-  assert.match(markdown, /session-repair-plan\.mjs --site x --session-gate-reason session-health-manifest-missing/u);
+  assert.match(markdown, /src\/entrypoints\/cli\.mjs site repair-plan --site x --session-gate-reason session-health-manifest-missing/u);
 });
 
 test('social-live-report surfaces state-only started runs as stale when no process owns them', async (t) => {

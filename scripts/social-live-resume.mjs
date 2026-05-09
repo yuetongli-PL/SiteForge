@@ -7,13 +7,14 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+import { actionCliCommand } from '../src/infra/cli/command-map.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-resume');
 
 const HELP = `Usage:
-  node scripts/social-live-resume.mjs --state <state-or-manifest.json> [options]
+  node src/entrypoints/cli.mjs social resume --state <state-or-manifest.json> [options]
 
 Plans X full archive resume attempts from prior state/manifest artifacts. Defaults to dry-run.
 
@@ -125,12 +126,6 @@ export function parseArgs(argv) {
   return options;
 }
 
-function shellQuote(value) {
-  const text = String(value);
-  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) return text;
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 async function pathExists(filePath) {
   try {
     await stat(filePath);
@@ -209,20 +204,26 @@ function extractAttemptRecords(json, sourcePath) {
 }
 
 function commandForRecord(record) {
-  if (record.command) return ensureActionSessionTraceability(record.command);
+  if (record.command) return ensureActionSessionTraceability(rewriteKnownCommandLine(record.command));
   const account = record.account ?? '<account>';
-  let command;
-  if (record.site === 'instagram') {
-    command = ['node', path.join('src', 'entrypoints', 'sites', 'instagram-action.mjs'), 'full-archive', account, '--run-dir', record.artifactRoot].map(shellQuote).join(' ');
-  } else {
-    command = ['node', path.join('src', 'entrypoints', 'sites', 'x-action.mjs'), 'full-archive', account, '--run-dir', record.artifactRoot].map(shellQuote).join(' ');
-  }
+  const command = actionCliCommand(record.site === 'instagram' ? 'instagram' : 'x', [
+    'full-archive',
+    account,
+    '--run-dir',
+    record.artifactRoot,
+  ]);
   return ensureActionSessionTraceability(command);
+}
+
+function rewriteKnownCommandLine(command) {
+  return String(command ?? '')
+    .replace(/^node\s+src[\\/]entrypoints[\\/]sites[\\/]x-action\.mjs\s+/u, 'node src/entrypoints/cli.mjs x action ')
+    .replace(/^node\s+src[\\/]entrypoints[\\/]sites[\\/]instagram-action\.mjs\s+/u, 'node src/entrypoints/cli.mjs instagram action ');
 }
 
 function ensureActionSessionTraceability(command) {
   const text = String(command ?? '');
-  if (!/(?:x|instagram)-action\.mjs(?:\s|$)/u.test(text)) return text;
+  if (!/(?:x|instagram)-action\.mjs(?:\s|$)|src\/entrypoints\/cli\.mjs\s+(?:x|instagram)\s+action(?:\s|$)/u.test(text)) return text;
   if (/(?:^|\s)--session-(?:health-plan|manifest)(?:\s|$)/u.test(text)) return text;
   return `${text} --session-health-plan`;
 }

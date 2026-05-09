@@ -16,7 +16,9 @@ test('session repair command builds session gate reason guidance', () => {
   assert.equal(command.command, 'session-repair-plan');
   assert.deepEqual(command.argv, [
     'node',
-    'src/entrypoints/sites/session-repair-plan.mjs',
+    'src/entrypoints/cli.mjs',
+    'site',
+    'repair-plan',
     '--site',
     'x',
     '--session-gate-reason',
@@ -24,7 +26,7 @@ test('session repair command builds session gate reason guidance', () => {
   ]);
   assert.equal(
     command.commandText,
-    'node src/entrypoints/sites/session-repair-plan.mjs --site x --session-gate-reason session-health-manifest-missing',
+    'node src/entrypoints/cli.mjs site repair-plan --site x --session-gate-reason session-health-manifest-missing',
   );
 });
 
@@ -37,7 +39,9 @@ test('session repair command builds audit manifest guidance with quoting', () =>
   assert.equal(command.auditManifest, 'runs/download release audit/download-release-audit.json');
   assert.deepEqual(command.argv, [
     'node',
-    'src/entrypoints/sites/session-repair-plan.mjs',
+    'src/entrypoints/cli.mjs',
+    'site',
+    'repair-plan',
     '--site',
     'instagram',
     '--audit-manifest',
@@ -45,7 +49,7 @@ test('session repair command builds audit manifest guidance with quoting', () =>
   ]);
   assert.equal(
     command.commandText,
-    'node src/entrypoints/sites/session-repair-plan.mjs --site instagram --audit-manifest "runs/download release audit/download-release-audit.json"',
+    'node src/entrypoints/cli.mjs site repair-plan --site instagram --audit-manifest "runs/download release audit/download-release-audit.json"',
   );
 });
 

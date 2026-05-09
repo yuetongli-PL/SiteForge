@@ -134,7 +134,7 @@ test('failure renderer includes stage, reason, safety, next step, and report', (
     taskId: 'build',
     stage: 'capture',
     reason: 'verification or access-control page',
-    nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://example.com --no-headless',
+    nextStep: 'node src/entrypoints/cli.mjs site doctor https://example.com --no-headless',
     report: 'runs/sites/site-doctor/example/report.md',
   });
   assert.match(output, /\[build\] status=failed stage=capture reason="verification or access-control page"/u);

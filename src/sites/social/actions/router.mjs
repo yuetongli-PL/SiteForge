@@ -8,6 +8,11 @@ import { readFile, stat } from 'node:fs/promises';
 
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../../infra/cli.mjs';
+import {
+  actionCliCommand,
+  siteLoginCommand,
+  unifiedCliCommand,
+} from '../../../infra/cli/command-map.mjs';
 import { runSingleStageCliWithProgress } from '../../../infra/cli/progress-cli.mjs';
 import {
   ensureAuthenticatedSession,
@@ -4579,7 +4584,12 @@ function summarizeSocialAuthHealth(plan, settings, authContext = {}, authResult 
   const healthy = identityConfirmed || loggedIn || status === 'already-authenticated' || status === 'authenticated';
   const runtimeAuthExpired = runtimeRisk?.authExpired === true;
   const profilePath = settings.profilePath ? path.resolve(settings.profilePath) : SOCIAL_SITES[plan.siteKey].defaultProfilePath;
-  const recoveryCommand = `node .\\src\\entrypoints\\sites\\site-login.mjs ${SOCIAL_SITES[plan.siteKey].homeUrl} --profile-path ${profilePath} --no-headless --reuse-login-state`;
+  const recoveryCommand = siteLoginCommand(SOCIAL_SITES[plan.siteKey].homeUrl, [
+    '--profile-path',
+    profilePath,
+    '--no-headless',
+    '--reuse-login-state',
+  ]);
   const recoveryReason = runtimeAuthExpired
     ? `session-${runtimeRisk.stopReason || 'expired'}`
     : healthy
@@ -5140,20 +5150,12 @@ function formatArchiveComplete(value) {
   return 'unknown';
 }
 
-function quoteCommandArg(value) {
-  const text = String(value ?? '');
-  if (/^[A-Za-z0-9_./:@=\\-]+$/u.test(text)) {
-    return text;
-  }
-  return `"${text.replace(/"/gu, '\\"')}"`;
-}
-
 function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
   const plan = result.plan || {};
   const settings = result.settings || result._settings || {};
-  const script = path.join('src', 'entrypoints', 'sites', `${plan.siteKey || result.siteKey}-action.mjs`);
+  const site = plan.siteKey || result.siteKey || 'x';
   const action = settings.fullArchive && plan.action === 'profile-content' ? 'full-archive' : (plan.action || 'profile-content');
-  const args = [script, action];
+  const args = [action];
   if (plan.account && !['followed-users', 'followed-posts-by-date', 'search'].includes(plan.action)) {
     args.push(plan.account);
   }
@@ -5199,7 +5201,7 @@ function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
     args.push('--risk-retries', String(settings.riskRetries));
   }
   args.push(...extraArgs);
-  return ['node', ...args].map(quoteCommandArg).join(' ');
+  return actionCliCommand(site, args);
 }
 
 function buildRecoveryRunbook(result, layout) {
@@ -5230,7 +5232,7 @@ function buildRecoveryRunbook(result, layout) {
     addCommand(
       'resume-after-cooldown',
       'rate-limited',
-      ['node', path.join('scripts', 'social-live-resume.mjs'), '--state', layout.manifestPath, '--site', site, '--execute', '--cooldown-minutes', '30', '--max-attempts', '3'].map(quoteCommandArg).join(' '),
+      unifiedCliCommand(['social', 'resume', '--state', layout.manifestPath, '--site', site, '--execute', '--cooldown-minutes', '30', '--max-attempts', '3']),
       'Let the cooldown expire, then let the resume runner continue from the saved cursor/state.',
     );
   }
@@ -5238,7 +5240,7 @@ function buildRecoveryRunbook(result, layout) {
     addCommand(
       'inspect-api-drift',
       result.completeness.driftReasons[0],
-      ['node', path.join('scripts', 'social-live-report.mjs'), '--runs-root', layout.runDir, '--site', site].map(quoteCommandArg).join(' '),
+      unifiedCliCommand(['social', 'report', '--runs-root', layout.runDir, '--site', site]),
       `Inspect ${path.basename(layout.apiCapturePath)} and ${path.basename(layout.apiDriftSamplesPath)} before changing API parsing rules.`,
     );
   }
@@ -6691,8 +6693,8 @@ function lastFlagValue(flags, key, fallback = undefined) {
 }
 
 export const SOCIAL_ACTION_HELP = `Usage:
-  node src/entrypoints/sites/x-action.mjs <action> <account-or-query> [options]
-  node src/entrypoints/sites/instagram-action.mjs <action> <account-or-query> [options]
+  node src/entrypoints/cli.mjs x action <action> <account-or-query> [options]
+  node src/entrypoints/cli.mjs instagram action <action> <account-or-query> [options]
 
 Common actions include profile-content, full-archive, search, profile-following,
 profile-followers, followed-posts-by-date, and account-info.

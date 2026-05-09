@@ -2633,7 +2633,7 @@ export async function runCli() {
         result?.outDir ? { label: 'nl-entry', path: result.outDir } : null,
       ].filter(Boolean),
       failureTitle: 'Natural-language entry generation failed',
-      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url}`,
+      nextStep: `node src/entrypoints/cli.mjs site doctor ${url}`,
     });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
   } catch (error) {

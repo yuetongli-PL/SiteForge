@@ -3125,7 +3125,7 @@ export async function runCli() {
         result?.outDir ? { label: 'analysis', path: result.outDir } : null,
       ].filter(Boolean),
       failureTitle: 'State analysis failed',
-      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url}`,
+      nextStep: `node src/entrypoints/cli.mjs site doctor ${url}`,
     });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(analysisManifest), null, 2)}\n`);
   } catch (error) {

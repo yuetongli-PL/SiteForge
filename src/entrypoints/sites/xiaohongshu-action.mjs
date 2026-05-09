@@ -24,8 +24,8 @@ import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
 import { runXiaohongshuAction } from '../../sites/xiaohongshu/actions/router.mjs';
 
 export const XIAOHONGSHU_ACTION_HELP = `Usage:
-  node src/entrypoints/sites/xiaohongshu-action.mjs download <note-url|author-url|query> [options]
-  node src/entrypoints/sites/xiaohongshu-action.mjs download --followed-users [options]
+  node src/entrypoints/cli.mjs xiaohongshu action download <note-url|author-url|query> [options]
+  node src/entrypoints/cli.mjs xiaohongshu action download --followed-users [options]
 
 Defaults to dry-run behavior unless the underlying action is explicitly
 configured to execute downloads.
@@ -312,7 +312,7 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
         title: 'Xiaohongshu action failed',
         stage: `Run ${parsed.action}`,
         reason: message,
-        nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
+        nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
       });
     }
   } catch (error) {
@@ -324,7 +324,7 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
       title: 'Xiaohongshu action failed',
       stage: `Run ${parsed.action}`,
       reason,
-      nextStep: 'node src/entrypoints/sites/site-doctor.mjs https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
+      nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
     });
     throw error;
   }

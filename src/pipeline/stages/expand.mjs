@@ -4518,7 +4518,7 @@ export async function runCli() {
       isFailureResult: (result) => result?.summary?.failedTriggers > 0 && result?.summary?.capturedStates === 0,
       failureReason: (result) => `${result?.summary?.failedTriggers ?? 0} trigger(s) failed and no new states were captured`,
       failureTitle: 'Expand states failed',
-      nextStep: `node src/entrypoints/sites/site-doctor.mjs ${url} --no-headless --reuse-login-state`,
+      nextStep: `node src/entrypoints/cli.mjs site doctor ${url} --no-headless --reuse-login-state`,
     });
     process.stdout.write(`${JSON.stringify(summarizeForStdout(manifest), null, 2)}\n`);
     if (manifest.summary.failedTriggers > 0 && manifest.summary.capturedStates === 0) {

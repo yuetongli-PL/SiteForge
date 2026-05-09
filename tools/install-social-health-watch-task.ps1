@@ -69,16 +69,18 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 }
 
 $resolvedRepoRoot = (Resolve-Path $RepoRoot).Path
-$watchScript = Join-Path $resolvedRepoRoot 'scripts\social-health-watch.mjs'
-if (-not (Test-Path -LiteralPath $watchScript -PathType Leaf)) {
-  throw "Missing social health watch script: $watchScript"
+$cliScript = Join-Path $resolvedRepoRoot 'src\entrypoints\cli.mjs'
+if (-not (Test-Path -LiteralPath $cliScript -PathType Leaf)) {
+  throw "Missing unified CLI script: $cliScript"
 }
 
 $effectiveTaskName = ConvertTo-StableTaskName -Name $TaskName -ScopedToUser $UserScope.IsPresent
 $runRoot = Join-Path $resolvedRepoRoot 'runs\social-health-watch'
 $taskActionArgs = @(
   $NodePath,
-  $watchScript,
+  $cliScript,
+  'social',
+  'health-watch',
   '--execute',
   '--site',
   $Site,

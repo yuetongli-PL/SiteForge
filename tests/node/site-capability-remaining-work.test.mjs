@@ -31,9 +31,9 @@ test('manual profile health recovery boundaries live in contributor guidance', a
     'Do not delete, rebuild, or mutate a browser profile automatically.',
     'Do not bypass CAPTCHA',
     'Do not extract or persist raw cookies',
-    'social-health-watch.mjs --site x',
-    'social-health-watch.mjs --site instagram',
-    'bilibili-action.mjs login',
+    'node .\\src\\entrypoints\\cli.mjs social health-watch --site x',
+    'node .\\src\\entrypoints\\cli.mjs social health-watch --site instagram',
+    'node .\\src\\entrypoints\\cli.mjs bilibili action login',
   ]) {
     assert.equal(contributing.includes(expected), true, `${expected} should be present`);
   }

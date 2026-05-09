@@ -40,7 +40,7 @@ const DEFAULT_OPTIONS = {
 };
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-scaffold.mjs <url> --archetype <navigation-catalog|chapter-content> [--profiles-dir <dir>] [--profile-path <path>] [--out-dir <dir>] [--timeout <ms>] [--json] [--quiet] [--progress auto|interactive|plain]
+  node src/entrypoints/cli.mjs site scaffold <url> --archetype <navigation-catalog|chapter-content> [--profiles-dir <dir>] [--profile-path <path>] [--out-dir <dir>] [--timeout <ms>] [--json] [--quiet] [--progress auto|interactive|plain]
 `;
 
 const TEMPLATE_BY_ARCHETYPE = Object.freeze({

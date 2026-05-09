@@ -16,7 +16,7 @@ test('download session report suggests repair plan command only for blocked gate
 
   assert.match(
     blockedLines.join('\n'),
-    /Next session repair command: node src\/entrypoints\/sites\/session-repair-plan\.mjs --site x --session-gate-reason session-health-manifest-missing/u,
+    /Next session repair command: node src\/entrypoints\/cli\.mjs site repair-plan --site x --session-gate-reason session-health-manifest-missing/u,
   );
 
   const passedLines = renderSessionTraceabilityLines({

@@ -69,7 +69,10 @@ sources. They must stay free of browser profile paths and session material.
 
 ## Documentation Source Of Truth
 
-The repository-level `docs/` directory is retired. Keep long-lived project guidance in these root documents only:
+The repository-level `docs/` directory is retired except for explicit,
+goal-scoped acceptance artifacts requested by an operator, such as
+`docs/site-capability-compiler-executor/`. Keep durable project guidance in
+these root documents:
 
 - `README.md`: public overview, supported workflows, source layout, and common commands.
 - `AGENTS.md`: repo-local execution rules for Codex and A/B loop work.
@@ -78,6 +81,38 @@ The repository-level `docs/` directory is retired. Keep long-lived project guida
 Short-lived handoff reports, one-off release notes, dated validation snapshots,
 and status tables should be folded into one of those sources or deleted.
 
+## Site Capability Compiler / Executor Status
+
+The current Site Capability Compiler / Executor implementation lives in:
+
+- `src/sites/capability/compiler/`
+- `src/sites/capability/execution/`
+- `src/entrypoints/sites/site-capability-compile.mjs`
+- `tests/node/site-capability-compiler-executor/`
+
+Current optimized scope: config-backed compile loading from repo-local
+`config/site-registry.json` and `config/site-capabilities.json` with repo-local
+path guards, source digest and incremental compile summaries, manifest digest
+governance, descriptor-only Graph emission with redacted compiler provenance,
+Planner dry-run consumption of validated compiler-built Graphs,
+`ExecutionPolicyDecision` preflight, redacted `CoverageDelta` artifact queue
+preparation, and optional compiler artifact writes guarded by SecurityGuard /
+Redaction.
+
+Focused validation:
+
+```powershell
+node --test tests\node\site-capability-compiler-executor\*.test.mjs
+node --test tests\node\progress-cli-integration.test.mjs
+node tools\prepublish-secret-scan.mjs
+git diff --check -- docs\site-capability-compiler-executor src\sites\capability\compiler src\sites\capability\execution src\entrypoints\sites\site-capability-compile.mjs tests\node\site-capability-compiler-executor CONTRIBUTING.md
+```
+
+Safety boundaries remain unchanged: the compiler only consumes repo-local
+descriptors or redacted artifacts, Planner only consumes validated Graphs, and
+execution descriptors do not invoke downloader, SiteAdapter, SessionView,
+browser runtime, external telemetry, or live site access.
+
 ## Root Compatibility Migration
 
 Do not recreate retired root shims. Use canonical locations:
@@ -85,9 +120,10 @@ Do not recreate retired root shims. Use canonical locations:
 - Pipeline CLI: `src/entrypoints/pipeline/run-pipeline.mjs`,
   `src/entrypoints/pipeline/generate-skill.mjs`, and
   `src/entrypoints/pipeline/generate-crawler-script.mjs`.
-- Site CLI: `src/entrypoints/sites/site-doctor.mjs`,
-  `src/entrypoints/sites/site-scaffold.mjs`, and site-specific entrypoints under
-  `src/entrypoints/sites/`.
+- Public CLI facade: `src/entrypoints/cli.mjs`.
+- Compatibility site entrypoints remain under `src/entrypoints/sites/` and
+  `scripts/`, but new documentation and generated commands should route
+  through `node .\src\entrypoints\cli.mjs ...`.
 - Python entrypoints: `src/sites/**/python/*.py`.
 - Metadata: `config/site-registry.json` and `config/site-capabilities.json`.
 
@@ -148,38 +184,38 @@ node .\src\entrypoints\pipeline\govern-interactions.mjs <url> --docs-dir <dir> [
 node .\src\entrypoints\pipeline\compile-wiki.mjs compile <url> [--json|--quiet|--progress plain]
 node .\src\entrypoints\pipeline\compile-wiki.mjs lint --kb-dir <dir> [--json|--quiet|--progress plain]
 node .\src\entrypoints\pipeline\generate-crawler-script.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\download.mjs --site <site> --input <target> [--execute] [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\site-doctor.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\site-login.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\site-keepalive.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\nl-site-login.mjs "<request>" [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\session.mjs health --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\session-repair-plan.mjs --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\bilibili-action.mjs <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\douyin-action.mjs <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\xiaohongshu-action.mjs <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\jable-ranking.mjs <url> --query <text> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\jp-av-release-catalog.mjs --start <date> --end <date> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\moodyz-month-catalog.mjs --month <YYYY-MM> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\site-credentials.mjs <set|show|delete> <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\site-scaffold.mjs <url> --archetype <type> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\bilibili-open-page.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\bilibili-extract-links.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\social-auth-import.mjs --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\douyin-export-cookies.mjs [url] [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\x-action.mjs <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\instagram-action.mjs <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\douyin-query-follow.mjs [url] [--json|--quiet|--progress plain]
-node .\src\entrypoints\sites\douyin-resolve-media.mjs <url...> [--json|--quiet|--progress plain]
-node .\scripts\social-live-verify.mjs --live --site <site> [--json|--quiet|--progress plain]
-node .\scripts\social-kb-refresh.mjs [--execute] [--json|--quiet|--progress plain]
-node .\scripts\social-live-resume.mjs --state <path> [--json|--quiet|--progress plain]
-node .\scripts\social-live-report.mjs [--json|--quiet|--progress plain]
-node .\scripts\social-live-dashboard.mjs [--quiet|--progress plain]
-node .\scripts\social-auth-recover.mjs [--execute] [--json|--quiet|--progress plain]
-node .\scripts\social-health-watch.mjs [--execute] [--json|--quiet|--progress plain]
-node .\scripts\social-command-templates.mjs [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs build|skill|doctor|download ...
+node .\src\entrypoints\cli.mjs download plan <target> --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs download execute <target> --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site doctor <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site login <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site keepalive <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site nl-login "<request>" [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs session health --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site repair-plan --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs bilibili action <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs douyin action <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs xiaohongshu action <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs catalog jable-ranking <url> --query <text> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs catalog jp-av-release --start <date> --end <date> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs catalog moodyz-month --month <YYYY-MM> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site credentials <set|show|delete> <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs site scaffold <url> --archetype <type> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs bilibili open <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs bilibili extract-links <url> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social auth-import --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs douyin export-cookies [url] [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs x action <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs instagram action <action> ... [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs douyin follow [url] [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs douyin resolve-media <url...> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social live-verify --live --site <site> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social kb-refresh [--execute] [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social resume --state <path> [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social report [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social dashboard [--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social auth-recover [--execute] [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social health-watch [--execute] [--json|--quiet|--progress plain]
+node .\src\entrypoints\cli.mjs social templates [--json|--quiet|--progress plain]
 ```
 
 Focused tests:
@@ -235,9 +271,9 @@ manual safety boundaries for X, Instagram, and authenticated Bilibili surfaces.
 Useful manual verification commands:
 
 ```powershell
-node .\scripts\social-health-watch.mjs --site x
-node .\scripts\social-health-watch.mjs --site instagram
-node .\src\entrypoints\sites\bilibili-action.mjs login https://www.bilibili.com/
+node .\src\entrypoints\cli.mjs social health-watch --site x
+node .\src\entrypoints\cli.mjs social health-watch --site instagram
+node .\src\entrypoints\cli.mjs bilibili action login https://www.bilibili.com/
 ```
 
 ## Skill Source And Install Sync
@@ -630,10 +666,10 @@ Hybrid native status is not a live-capability claim; live smoke, real login, and
 
 ### Download Commands
 ```powershell
-node src\entrypoints\sites\download.mjs --site bilibili --input BV1example --json
-node src\entrypoints\sites\download.mjs --site bilibili --input BV1example --execute --json
-node src\entrypoints\sites\download.mjs --site example --input https://example.com/file --execute --run-dir runs\downloads\example\run --resume
-node src\entrypoints\sites\download.mjs --site example --input https://example.com/file --execute --run-dir runs\downloads\example\run --retry-failed
+node src\entrypoints\cli.mjs download plan BV1example --site bilibili --json
+node src\entrypoints\cli.mjs download execute BV1example --site bilibili --json
+node src\entrypoints\cli.mjs download execute https://example.com/file --site example --run-dir runs\downloads\example\run --resume
+node src\entrypoints\cli.mjs download execute https://example.com/file --site example --run-dir runs\downloads\example\run --retry-failed
 ```
 
 ### Download Native / Legacy Ownership
@@ -753,7 +789,7 @@ node --test tests\node\downloads-runner.test.mjs tests\node\download-site-module
 
 Accepted session providers are `unified-session-runner` and `legacy-session-provider`. Required-session download and site-doctor CLI runs default to a read-only unified health plan via `--session-health-plan`; `--session-manifest <path>` consumes an existing unified health manifest without triggering login, keepalive, profile rebuild, cookie import, or live downloads. `--no-session-health-plan` is the explicit escape hatch for legacy-provider runs.
 
-Before any live-capability claim, run the offline audit: `node scripts/download-release-audit.mjs --runs-root runs --out-dir runs/download-release-audit`. Blocked audit rows include a `repairPlan` guidance object, and Markdown reports include `Repair Plan` plus `Next session repair command`, for example `node src/entrypoints/sites/session-repair-plan.mjs --site x --audit-manifest runs/download-release-audit/download-release-audit.json`. Offline only; no live/login/download side effects.
+Before any live-capability claim, run the offline audit: `node scripts/download-release-audit.mjs --runs-root runs --out-dir runs/download-release-audit`. Blocked audit rows include a `repairPlan` guidance object, and Markdown reports include `Repair Plan` plus `Next session repair command`, for example `node src/entrypoints/cli.mjs site repair-plan --site x --audit-manifest runs/download-release-audit/download-release-audit.json`. Offline only; no live/login/download side effects.
 
 #### Resolver Evidence Gate
 
@@ -786,7 +822,7 @@ Do not remove a legacy fallback in the same change that introduces an unproven n
 
 ## Social Live Verification
 
-`scripts/social-live-verify.mjs` is the repeatable live acceptance runner for X and Instagram. `scripts/social-kb-refresh.mjs` refreshes scenario-level KB state. `scripts/social-live-resume.mjs`, `scripts/social-live-report.mjs`, `scripts/social-health-watch.mjs`, and `scripts/social-command-templates.mjs` cover archive resume planning, report aggregation, account health checks, and reusable command templates. These scripts are plan-first.
+`node src/entrypoints/cli.mjs social live-verify` is the repeatable live acceptance runner for X and Instagram. `node src/entrypoints/cli.mjs social kb-refresh` refreshes scenario-level KB state. `social resume`, `social report`, `social health-watch`, and `social templates` cover archive resume planning, report aggregation, account health checks, and reusable command templates. These commands are plan-first.
 
 Default mode is `not-run`. `social-live-verify` requires explicit `--live`, `--site`, account, item limit, timeout, case timeout, and `--run-root` before it emits even a dry-run live plan. `--execute` is rejected unless `--live` is present and runs selected commands sequentially.
 
@@ -794,27 +830,27 @@ Default mode is `not-run`. `social-live-verify` requires explicit `--live`, `--s
 
 | User wording | Intent | Command shape |
 | --- | --- | --- |
-| `resume full archive` | `resume-full-archive` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type posts --full-archive --run-dir <previous-or-new-run> --session-health-plan` |
-| `continue after rate limit cooldown` | `resume-after-cooldown` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type posts --full-archive --risk-backoff-ms <ms> --risk-retries <n> --session-health-plan` |
-| `fast media download` | `media-fast-download` | `node src/entrypoints/sites/<site>-action.mjs profile-content <handle> --content-type media --download-media --max-media-downloads <n> --session-health-plan` |
-| `session health check` | `health-check` | `node scripts/social-auth-recover.mjs --execute --site x|instagram --verify` |
-| `live acceptance report` | `live-acceptance-report` | `node scripts/social-live-verify.mjs --live --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` plus explicit limits, timeouts, and `--run-root` |
-| `scenario KB refresh` | `kb-refresh` | `node scripts/social-kb-refresh.mjs --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
+| `resume full archive` | `resume-full-archive` | `node src/entrypoints/cli.mjs x action profile-content <handle> --content-type posts --full-archive --run-dir <previous-or-new-run> --session-health-plan` or `node src/entrypoints/cli.mjs instagram action ...` |
+| `continue after rate limit cooldown` | `resume-after-cooldown` | `node src/entrypoints/cli.mjs x action profile-content <handle> --content-type posts --full-archive --risk-backoff-ms <ms> --risk-retries <n> --session-health-plan` |
+| `fast media download` | `media-fast-download` | `node src/entrypoints/cli.mjs x action profile-content <handle> --content-type media --download-media --max-media-downloads <n> --session-health-plan` |
+| `session health check` | `health-check` | `node src/entrypoints/cli.mjs social auth-recover --execute --site x|instagram --verify` |
+| `live acceptance report` | `live-acceptance-report` | `node src/entrypoints/cli.mjs social live-verify --live --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` plus explicit limits, timeouts, and `--run-root` |
+| `scenario KB refresh` | `kb-refresh` | `node src/entrypoints/cli.mjs social kb-refresh --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
 
 Social matrix status values are `passed`, `failed`, `blocked`, `skipped`, and `unknown`. Artifact classification wins over raw process exit code when an artifact reports blocked or skipped. Login wall, challenge, expired session, platform throttle, rate limit, anti-crawl signal, and missing reusable login state must not be reported as live success.
 
 Useful commands:
 
 ```powershell
-node .\scripts\social-live-verify.mjs
-node .\scripts\social-live-verify.mjs --live --site instagram --case instagram-followed-date --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
-node .\scripts\social-kb-refresh.mjs --site all
-node .\scripts\social-auth-recover.mjs --site x --verify
-node .\scripts\social-live-resume.mjs --state .\runs\social-live-verify\<timestamp>\manifest.json --cooldown-minutes 30 --max-attempts 3
-node .\scripts\social-live-report.mjs
-node .\scripts\social-health-watch.mjs --site all
-node .\scripts\social-command-templates.mjs --site all
-node .\scripts\social-live-verify.mjs --live --execute --site all --x-account opensource --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
+node .\src\entrypoints\cli.mjs social live-verify
+node .\src\entrypoints\cli.mjs social live-verify --live --site instagram --case instagram-followed-date --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
+node .\src\entrypoints\cli.mjs social kb-refresh --site all
+node .\src\entrypoints\cli.mjs social auth-recover --site x --verify
+node .\src\entrypoints\cli.mjs social resume --state .\runs\social-live-verify\<timestamp>\manifest.json --cooldown-minutes 30 --max-attempts 3
+node .\src\entrypoints\cli.mjs social report
+node .\src\entrypoints\cli.mjs social health-watch --site all
+node .\src\entrypoints\cli.mjs social templates --site all
+node .\src\entrypoints\cli.mjs social live-verify --live --execute --site all --x-account opensource --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
 ```
 
 Auth recovery remains bounded: use `social-auth-recover` for reusable-profile health checks and visible manual login guidance; cookie import manifests record cookie names/domains and missing required cookie names but never cookie values. Do not automate password/challenge bypass.

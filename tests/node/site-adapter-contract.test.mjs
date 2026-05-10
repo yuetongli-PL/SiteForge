@@ -634,23 +634,57 @@ test('generic-navigation adapter rejects candidates outside its site key with an
   assert.equal(Object.hasOwn(decision, 'catalogPath'), false);
 });
 
-test('adapters without site-specific validation do not inherit generic decisions', () => {
-  for (const adapterId of ['chapter-content']) {
-    const adapter = listSiteAdapters().find((candidate) => candidate.id === adapterId);
-    assert.notEqual(adapter, undefined);
-    assert.equal(
-      Object.hasOwn(adapter, 'validateApiCandidate'),
-      false,
-      `${adapterId} must not inherit generic-navigation candidate validation without an explicit site adapter implementation`,
-    );
-    assert.equal(adapter.validateApiCandidate, undefined);
-    assert.equal(
-      Object.hasOwn(adapter, 'getApiCatalogUpgradePolicy'),
-      false,
-      `${adapterId} must not inherit generic-navigation catalog upgrade policy without an explicit site adapter implementation`,
-    );
-    assert.equal(adapter.getApiCatalogUpgradePolicy, undefined);
-  }
+test('chapter-content adapter validates observed public page requests without catalog auto-promotion', () => {
+  const adapter = listSiteAdapters().find((candidate) => candidate.id === 'chapter-content');
+  assert.notEqual(adapter, undefined);
+  assert.equal(typeof adapter.validateApiCandidate, 'function');
+  assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
+
+  const observedCandidate = createSyntheticCandidate({
+    id: '22biqu-home-candidate',
+    siteKey: 'www.22biqu.com',
+    status: 'observed',
+    endpoint: {
+      method: 'GET',
+      url: 'https://www.22biqu.com/',
+    },
+  });
+  const decision = adapter.validateApiCandidate({
+    candidate: observedCandidate,
+    validatedAt: '2026-05-10T00:00:00.000Z',
+  });
+
+  assert.equal(decision.contractVersion, SITE_ADAPTER_CANDIDATE_DECISION_VERSION);
+  assert.equal(decision.adapterId, 'chapter-content');
+  assert.equal(decision.candidateId, '22biqu-home-candidate');
+  assert.equal(decision.siteKey, 'www.22biqu.com');
+  assert.equal(decision.decision, 'accepted');
+  assert.equal(Object.hasOwn(decision, 'artifactPath'), false);
+  assert.equal(Object.hasOwn(decision, 'catalogPath'), false);
+
+  const policy = adapter.getApiCatalogUpgradePolicy({
+    candidate: observedCandidate,
+    siteAdapterDecision: decision,
+    decidedAt: '2026-05-10T00:00:00.000Z',
+  });
+  assert.equal(policy.contractVersion, SITE_ADAPTER_CATALOG_UPGRADE_POLICY_VERSION);
+  assert.equal(policy.adapterId, 'chapter-content');
+  assert.equal(policy.siteKey, 'www.22biqu.com');
+  assert.equal(policy.allowCatalogUpgrade, false);
+  assert.equal(policy.reasonCode, 'api-catalog-entry-blocked');
+
+  const staticDecision = adapter.validateApiCandidate({
+    candidate: createSyntheticCandidate({
+      id: '22biqu-static-candidate',
+      siteKey: 'www.22biqu.com',
+      endpoint: {
+        method: 'GET',
+        url: 'https://www.22biqu.com/static/app.js',
+      },
+    }),
+  });
+  assert.equal(staticDecision.decision, 'rejected');
+  assert.equal(staticDecision.reasonCode, 'api-verification-failed');
 });
 
 test('jable adapter exposes concrete redacted API candidate semantics evidence', () => {

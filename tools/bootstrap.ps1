@@ -6,4 +6,4 @@ $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUTF8 = '1'
 $env:NODE_NO_WARNINGS = $env:NODE_NO_WARNINGS
 
-Write-Host 'Browser-Wiki-Skill console initialized for UTF-8.'
+Write-Host 'SiteForge console initialized for UTF-8.'

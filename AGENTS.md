@@ -6,7 +6,7 @@ Project path:
 
 `C:\Users\lyt-p\Desktop\Browser-Wiki-Skill`
 
-This repository implements Browser-Wiki-Skill. The current long-term goal is the multi-site Site Capability Layer. `README.md`, `CONTRIBUTING.md`, and this `AGENTS.md` file are the working references.
+This repository implements SiteForge. The current workspace path still uses the legacy `Browser-Wiki-Skill` directory name. The current long-term goal is the multi-site Site Capability Layer. `README.md`, `CONTRIBUTING.md`, and this `AGENTS.md` file are the working references.
 
 ## Working Rules
 

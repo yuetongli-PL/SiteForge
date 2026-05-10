@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-09
 
-This plan initializes the Browser-Wiki-Skill Site Capability Planner Layer
+This plan initializes the SiteForge Site Capability Planner Layer
 migration. It is intentionally incremental. Do not attempt a one-shot rewrite of
 the existing Site Capability Layer, Site Capability Graph, SiteAdapter, or
 downloader stack.

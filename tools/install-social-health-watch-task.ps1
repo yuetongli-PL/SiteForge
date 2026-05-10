@@ -12,7 +12,7 @@ param(
 
   [string] $RepoRoot,
 
-  [string] $TaskName = 'BrowserWikiSkillSocialHealthWatch',
+  [string] $TaskName = 'SiteForgeSocialHealthWatch',
 
   [switch] $UserScope,
 
@@ -36,10 +36,10 @@ function ConvertTo-StableTaskName {
 
   if ($ScopedToUser) {
     $safeUser = ($env:USERNAME -replace '[\\/:"<>|?*]+', '_')
-    return "\Browser-Wiki-Skill\$safeUser\$Name"
+    return "\SiteForge\$safeUser\$Name"
   }
 
-  return "\Browser-Wiki-Skill\$Name"
+  return "\SiteForge\$Name"
 }
 
 function ConvertTo-CmdArgument {

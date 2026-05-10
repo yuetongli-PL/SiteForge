@@ -10,7 +10,7 @@ import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import { runSingleStageCliWithProgress } from '../../infra/cli/progress-cli.mjs';
 import { collectMoodyzMonthCatalog } from '../../sites/moodyz/queries/month-catalog.mjs';
 
-const USER_AGENT = 'Mozilla/5.0 Browser-Wiki-Skill moodyz catalog';
+const USER_AGENT = 'Mozilla/5.0 SiteForge moodyz catalog';
 const execFile = promisify(execFileCallback);
 
 export function parseArgs(argv) {

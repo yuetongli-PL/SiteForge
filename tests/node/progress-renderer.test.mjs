@@ -209,7 +209,7 @@ test('build progress TTY panel keeps pending stages distinct and uses cursor ref
   progress.stage({ id: 'expanded', index: 2, total: 3, item: 'trigger:nav' });
   const output = stripAnsi(stderr.output());
   assert.match(stderr.output(), /\x1b\[/u);
-  assert.match(output, /Browser Wiki Skill/u);
+  assert.match(output, /SiteForge/u);
   assert.match(output, /1\/3 stages|0\/3 stages/u);
   assert.match(output, /✓\s+1\. 观察网站结构/u);
   assert.match(output, /2\. 探索页面状态\s+running/u);

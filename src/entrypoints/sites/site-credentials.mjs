@@ -118,7 +118,7 @@ export async function siteCredentials(action, inputUrl, options = {}, deps = {})
       {
         username: settings.username,
         password: settings.password,
-        comment: `Browser-Wiki-Skill login for ${authProfile?.profile?.host ?? inputUrl}`,
+        comment: `SiteForge login for ${authProfile?.profile?.host ?? inputUrl}`,
       },
       deps.credentialManagerDeps ?? {},
     );

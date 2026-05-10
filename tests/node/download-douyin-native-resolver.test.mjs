@@ -390,7 +390,7 @@ test('douyin native resolver records sanitized signed API and header evidence on
     douyinApiUrl: 'https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=7321000000000000103&a_bogus=secret-a&msToken=secret-m&verifyFp=secret-v',
     fetchHeaders: {
       Cookie: 'sessionid=secret',
-      'User-Agent': 'Browser-Wiki-Skill test',
+      'User-Agent': 'SiteForge test',
     },
     dryRun: true,
   }, {

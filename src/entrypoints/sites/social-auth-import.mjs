@@ -64,7 +64,7 @@ Options:
   --timeout <ms>            Browser timeout. Default: 30000.
   --user-data-dir <dir>     Override the persistent browser profile directory.
   --browser-path <path>     Override Chrome/Chromium executable.
-  --browser-profile-root <dir> Override Browser-Wiki-Skill profile root.
+  --browser-profile-root <dir> Override SiteForge profile root.
   --json                    Keep stdout as JSON and suppress progress.
   --quiet                   Suppress human progress on stderr.
   --progress <mode>         auto | interactive | plain.

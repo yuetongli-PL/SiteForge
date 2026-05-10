@@ -132,16 +132,35 @@ def derive_persistent_profile_key(input_value: str | None) -> str:
     return sanitize_host(normalized)
 
 
-def resolve_default_persistent_browser_root() -> Path:
+def persistent_browser_root_candidates() -> tuple[Path, Path]:
     if sys.platform == "win32":
-        return Path(
+        app_data_root = Path(
             os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
-        ) / "Browser-Wiki-Skill" / "browser-profiles"
+        )
+        return (
+            app_data_root / "SiteForge" / "browser-profiles",
+            app_data_root / "Browser-Wiki-Skill" / "browser-profiles",
+        )
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Browser-Wiki-Skill" / "browser-profiles"
-    return Path(
+        app_support_root = Path.home() / "Library" / "Application Support"
+        return (
+            app_support_root / "SiteForge" / "browser-profiles",
+            app_support_root / "Browser-Wiki-Skill" / "browser-profiles",
+        )
+    state_root = Path(
         os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local" / "state")
-    ) / "browser-wiki-skill" / "browser-profiles"
+    )
+    return (
+        state_root / "siteforge" / "browser-profiles",
+        state_root / "browser-wiki-skill" / "browser-profiles",
+    )
+
+
+def resolve_default_persistent_browser_root() -> Path:
+    preferred, legacy = persistent_browser_root_candidates()
+    if legacy.exists() and not preferred.exists():
+        return legacy
+    return preferred
 
 
 def resolve_persistent_user_data_dir(input_value: str, root_dir: str | Path | None = None) -> Path:

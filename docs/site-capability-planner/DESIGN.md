@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-09
 
-This document initializes the Browser-Wiki-Skill Site Capability Planner Layer.
+This document initializes the SiteForge Site Capability Planner Layer.
 The Planner is the task decision layer between a normalized user task and the
 existing Site Capability Graph plus Site Capability Layer. This is a design
 document only; verified implementation status is tracked in

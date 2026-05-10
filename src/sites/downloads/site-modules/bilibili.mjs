@@ -179,7 +179,7 @@ function bilibiliApiHeaders(request = {}, sessionLease = null) {
   return {
     Accept: 'application/json, text/plain, */*',
     Referer: 'https://www.bilibili.com/',
-    'User-Agent': 'Mozilla/5.0 Browser-Wiki-Skill native resolver',
+    'User-Agent': 'Mozilla/5.0 SiteForge native resolver',
     ...normalizeSessionLeaseConsumerHeaders(sessionLease),
     ...normalizeDownloadResourceConsumerHeaders(request.headers),
   };
@@ -683,7 +683,7 @@ function streamSeed(stream = {}, inherited = {}, mediaType = 'video', index = 0,
     referer: inherited.sourceUrl,
     headers: {
       Referer: inherited.sourceUrl,
-      'User-Agent': 'Mozilla/5.0 Browser-Wiki-Skill native resolver',
+      'User-Agent': 'Mozilla/5.0 SiteForge native resolver',
     },
     expectedBytes: stream.size,
     priority: stream.priority ?? index,

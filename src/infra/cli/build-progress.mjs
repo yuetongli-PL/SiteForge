@@ -444,7 +444,7 @@ export class BuildProgressController {
     const elapsed = formatDuration(Date.now() - this.startedAt);
     const currentProgress = this.#currentStageProgress(current);
     const lines = [
-      color(this.color, 'bold', 'Browser Wiki Skill'),
+      color(this.color, 'bold', 'SiteForge'),
       '',
       `Generating site skill for ${site}`,
       '',

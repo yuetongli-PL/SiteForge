@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-05
 
-This document is the local source of truth for the first Site Capability Graph migration inside Browser-Wiki-Skill.
+This document is the local source of truth for the first Site Capability Graph migration inside SiteForge.
 
 The Site Capability Graph is the declarative capability knowledge model for the Site Capability Layer. It describes what a site can do, which routes and endpoints support those capabilities, what auth/session/risk/schema/artifact/test/version/failure-mode constraints apply, and which Layer components are allowed to consume that knowledge.
 

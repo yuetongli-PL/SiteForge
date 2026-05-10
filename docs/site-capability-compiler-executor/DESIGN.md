@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-10
 
-This document initializes the Browser-Wiki-Skill Site Capability Compiler and
+This document initializes the SiteForge Site Capability Compiler and
 Execution System. It defines the compile-time path that turns governed site
 facts into a validated Site Capability Graph, the Planner consumption boundary,
 and the execution feedback path through the existing Site Capability Layer.

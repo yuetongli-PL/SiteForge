@@ -178,7 +178,7 @@ class DownloadXiaohongshuTests(unittest.TestCase):
             "Cookie": "sid=abc123; web_session=xyz",
             "Referer": "https://www.xiaohongshu.com/explore/note-image",
             "Origin": "https://www.xiaohongshu.com",
-            "User-Agent": "Browser-Wiki-Skill Test Agent",
+            "User-Agent": "SiteForge Test Agent",
         }
 
         with TemporaryDirectory() as temp_dir:

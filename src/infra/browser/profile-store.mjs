@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { existsSync } from 'node:fs';
 import { access, readFile, stat } from 'node:fs/promises';
 
 import { sanitizeHost } from '../../shared/normalize.mjs';
@@ -39,28 +40,39 @@ export function derivePersistentProfileKey(input) {
   return sanitizeHost(normalized);
 }
 
+export function resolvePersistentBrowserRootBrandPaths({
+  platform = process.platform,
+  homeDir = os.homedir(),
+  localAppData = process.env.LOCALAPPDATA,
+  xdgStateHome = process.env.XDG_STATE_HOME,
+} = {}) {
+  if (platform === 'win32') {
+    const appDataRoot = localAppData || path.win32.join(homeDir, 'AppData', 'Local');
+    return {
+      preferred: path.win32.join(appDataRoot, 'SiteForge', 'browser-profiles'),
+      legacy: path.win32.join(appDataRoot, 'Browser-Wiki-Skill', 'browser-profiles'),
+    };
+  }
+  if (platform === 'darwin') {
+    const appSupportRoot = path.posix.join(homeDir, 'Library', 'Application Support');
+    return {
+      preferred: path.posix.join(appSupportRoot, 'SiteForge', 'browser-profiles'),
+      legacy: path.posix.join(appSupportRoot, 'Browser-Wiki-Skill', 'browser-profiles'),
+    };
+  }
+  const stateRoot = xdgStateHome || path.posix.join(homeDir, '.local', 'state');
+  return {
+    preferred: path.posix.join(stateRoot, 'siteforge', 'browser-profiles'),
+    legacy: path.posix.join(stateRoot, 'browser-wiki-skill', 'browser-profiles'),
+  };
+}
+
 export function resolveDefaultPersistentBrowserRoot() {
-  if (process.platform === 'win32') {
-    return path.join(
-      process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-      'Browser-Wiki-Skill',
-      'browser-profiles',
-    );
+  const { preferred, legacy } = resolvePersistentBrowserRootBrandPaths();
+  if (existsSync(legacy) && !existsSync(preferred)) {
+    return legacy;
   }
-  if (process.platform === 'darwin') {
-    return path.join(
-      os.homedir(),
-      'Library',
-      'Application Support',
-      'Browser-Wiki-Skill',
-      'browser-profiles',
-    );
-  }
-  return path.join(
-    process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'),
-    'browser-wiki-skill',
-    'browser-profiles',
-  );
+  return preferred;
 }
 
 export function resolvePersistentUserDataDir(input, { rootDir } = {}) {

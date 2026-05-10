@@ -150,7 +150,7 @@ function createReady22BiquLease(purpose = 'download:book') {
     riskSignals: [],
     purpose,
     headers: {
-      'User-Agent': 'Browser-Wiki-Skill 22biqu test fixture',
+      'User-Agent': 'SiteForge 22biqu test fixture',
       Cookie: 'fixture-session=1',
     },
   };
@@ -450,7 +450,7 @@ test('22biqu runner passes request mockFetchImpl into native directory resolver'
   });
 
   assert.deepEqual(fetchCalls.map((entry) => entry.url), ['https://www.22biqu.com/biqu456/']);
-  assert.equal(fetchCalls[0].headers['User-Agent'], 'Browser-Wiki-Skill 22biqu test fixture');
+  assert.equal(fetchCalls[0].headers['User-Agent'], 'SiteForge 22biqu test fixture');
   assert.equal(fetchCalls[0].headers.Cookie, undefined);
   assert.equal(fetchCalls[0].headers.cookie, undefined);
   assert.equal(result.resolvedTask.resources.length, 4);

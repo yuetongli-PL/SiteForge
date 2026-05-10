@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-10
 
-This plan initializes the Browser-Wiki-Skill migration for Site Capability
+This plan initializes the SiteForge migration for Site Capability
 Compiler, Graph Builder integration, Planner consumption, and Layer-governed
 Execution. The migration is intentionally incremental and must not rewrite the
 existing Site Capability Layer, Graph, Planner, SiteAdapter, downloader, or

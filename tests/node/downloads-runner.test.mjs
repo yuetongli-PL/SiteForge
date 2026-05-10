@@ -3564,7 +3564,7 @@ test('download runner executes Bilibili native DASH resources without legacy fal
   for (const headers of fetchedHeaders) {
     assert.equal(headers.Accept, 'application/json, text/plain, */*');
     assert.equal(headers.Referer, 'https://www.bilibili.com/video/BV1runnerNativeDash/');
-    assert.equal(headers['User-Agent'], 'Mozilla/5.0 Browser-Wiki-Skill native resolver');
+    assert.equal(headers['User-Agent'], 'Mozilla/5.0 SiteForge native resolver');
     assert.equal(headers.Range, 'bytes=0-1023');
     assert.equal(headers.Authorization, undefined);
     assert.equal(headers.Cookie, undefined);
@@ -3869,7 +3869,7 @@ test('xiaohongshu fetched-html resolver keeps injected page-fetch cookies behind
   assert.equal(resolved.resources.length, 1);
   assert.equal(fetchedHeaders.length, 1);
   assert.equal(fetchedHeaders[0].Accept, 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
-  assert.equal(fetchedHeaders[0]['User-Agent'], 'Mozilla/5.0 Browser-Wiki-Skill native resolver');
+  assert.equal(fetchedHeaders[0]['User-Agent'], 'Mozilla/5.0 SiteForge native resolver');
   assert.equal(fetchedHeaders[0].Range, 'bytes=1024-2047');
   assert.equal(fetchedHeaders[0].Referer, 'https://www.xiaohongshu.com/explore/synthetic-note');
   assert.equal(fetchedHeaders[0].Authorization, undefined);

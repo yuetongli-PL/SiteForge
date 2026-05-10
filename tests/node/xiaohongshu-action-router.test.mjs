@@ -987,7 +987,7 @@ test('runXiaohongshuAction reuses exported session headers for page fetches and 
         },
         async evaluateValue(expression) {
           if (expression.includes('navigator.userAgent')) {
-            return 'Browser-Wiki-Skill Test UA';
+            return 'SiteForge Test UA';
           }
           if (expression.includes('navigator.languages')) {
             return 'zh-CN, en-US';
@@ -1034,10 +1034,10 @@ test('runXiaohongshuAction reuses exported session headers for page fetches and 
   assert.equal(result.downloadSession?.cookieCount, 2);
   assert.equal(observedFetchHeaders.length, 2);
   assert.match(String(observedFetchHeaders[0].Cookie ?? ''), /sid=abc123/u);
-  assert.equal(observedFetchHeaders[0]['User-Agent'], 'Browser-Wiki-Skill Test UA');
+  assert.equal(observedFetchHeaders[0]['User-Agent'], 'SiteForge Test UA');
   assert.equal(capturedPayload.length, 1);
   assert.match(String(capturedPayload[0].downloadBundle.headers.Cookie ?? ''), /web_session=xyz789/u);
-  assert.equal(capturedPayload[0].downloadBundle.assets[0].headers['User-Agent'], 'Browser-Wiki-Skill Test UA');
+  assert.equal(capturedPayload[0].downloadBundle.assets[0].headers['User-Agent'], 'SiteForge Test UA');
   assert.equal(capturedPayload[0].downloadBundle.assets[0].headers.Referer, 'https://www.xiaohongshu.com/explore/note-image');
 });
 
@@ -1365,7 +1365,7 @@ test('runXiaohongshuAction consumes Xiaohongshu passthrough sidecar headers when
         },
         headers: {
           Cookie: 'sid=abc123; web_session=xyz789',
-          'User-Agent': 'Browser-Wiki-Skill Sidecar UA',
+          'User-Agent': 'SiteForge Sidecar UA',
           'Accept-Language': 'zh-CN, en-US',
           Referer: 'https://www.xiaohongshu.com/notification',
           Origin: 'https://www.xiaohongshu.com',
@@ -1404,7 +1404,7 @@ test('runXiaohongshuAction consumes Xiaohongshu passthrough sidecar headers when
   assert.equal(result.ok, true);
   assert.equal(result.downloadSession?.status, 'sidecar-reused');
   assert.equal(result.downloadSession?.cookieCount, 2);
-  assert.equal(capturedPayload[0].downloadBundle.headers['User-Agent'], 'Browser-Wiki-Skill Sidecar UA');
+  assert.equal(capturedPayload[0].downloadBundle.headers['User-Agent'], 'SiteForge Sidecar UA');
 });
 
 test('runXiaohongshuAction refreshes an expired passthrough sidecar before downloading', async () => {

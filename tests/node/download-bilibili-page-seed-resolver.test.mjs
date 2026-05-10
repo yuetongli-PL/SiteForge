@@ -74,7 +74,7 @@ test('bilibili native resolver maps offline dash playurl payload to video and au
   assert.deepEqual(resolved.resources.map((resource) => resource.mediaType), ['video', 'audio']);
   assert.equal(resolved.resources[0].expectedBytes, 4096);
   assert.equal(resolved.resources[0].headers.Referer, 'https://www.bilibili.com/video/BV1fixturePage/');
-  assert.equal(resolved.resources[0].headers['User-Agent'], 'Mozilla/5.0 Browser-Wiki-Skill native resolver');
+  assert.equal(resolved.resources[0].headers['User-Agent'], 'Mozilla/5.0 SiteForge native resolver');
   assert.equal(resolved.resources[0].sourceUrl, 'https://www.bilibili.com/video/BV1fixturePage/');
   assert.equal(resolved.resources[0].referer, 'https://www.bilibili.com/video/BV1fixturePage/');
   assert.equal(resolved.resources[0].metadata.streamType, 'video');

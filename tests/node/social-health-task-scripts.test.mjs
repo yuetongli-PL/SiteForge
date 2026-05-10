@@ -45,7 +45,7 @@ test('install social health task script dry-run builds stable schtasks create ar
   const plan = JSON.parse(stdout);
 
   assert.equal(plan.mode, 'dry-run');
-  assert.equal(plan.taskName, '\\Browser-Wiki-Skill\\SocialHealthX');
+  assert.equal(plan.taskName, '\\SiteForge\\SocialHealthX');
   assert.equal(plan.taskRunCommand.includes('src\\entrypoints\\cli.mjs'), true);
   assert.equal(plan.taskRunCommand.includes('social health-watch'), true);
   assert.equal(plan.taskRunCommand.includes('--execute'), true);
@@ -67,7 +67,7 @@ test('install social health task script supports user-scoped task names without 
 
   assert.equal(plan.mode, 'dry-run');
   assert.equal(plan.userScope, true);
-  assert.match(plan.taskName, /^\\Browser-Wiki-Skill\\[^\\]+\\BrowserWikiSkillSocialHealthWatch$/u);
+  assert.match(plan.taskName, /^\\SiteForge\\[^\\]+\\SiteForgeSocialHealthWatch$/u);
   assert.equal(plan.schtasksArgs[plan.schtasksArgs.indexOf('/MO') + 1], '120');
   assert.match(plan.taskRunCommand, /--site instagram/u);
 });
@@ -81,8 +81,21 @@ test('uninstall social health task script dry-run builds stable schtasks delete 
   const plan = JSON.parse(stdout);
 
   assert.equal(plan.mode, 'dry-run');
-  assert.equal(plan.taskName, '\\Browser-Wiki-Skill\\SocialHealthX');
+  assert.equal(plan.taskName, '\\SiteForge\\SocialHealthX');
   assert.deepEqual(plan.schtasksArgs, ['/Delete', '/F', '/TN', plan.taskName]);
+});
+
+test('task scripts preserve explicit absolute legacy task names for compatibility', async () => {
+  const legacyName = '\\Browser-Wiki-Skill\\LegacySocialHealthWatch';
+  const { stdout } = await runPowerShell(UNINSTALL_SCRIPT, [
+    '-Json',
+    '-TaskName',
+    legacyName,
+  ]);
+  const plan = JSON.parse(stdout);
+
+  assert.equal(plan.taskName, legacyName);
+  assert.deepEqual(plan.schtasksArgs, ['/Delete', '/F', '/TN', legacyName]);
 });
 
 test('task scripts keep execution gated behind Execute and support WhatIf', async () => {

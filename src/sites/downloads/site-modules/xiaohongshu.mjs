@@ -446,7 +446,7 @@ async function fetchedHtmlEvidence(request = {}, plan = {}, sessionLease = null,
       method: 'GET',
       headers: {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'User-Agent': 'Mozilla/5.0 Browser-Wiki-Skill native resolver',
+        'User-Agent': 'Mozilla/5.0 SiteForge native resolver',
         ...normalizeSessionLeasePageFetchHeaders(sessionLease),
         ...normalizeDownloadResourceConsumerHeaders(request.headers),
       },

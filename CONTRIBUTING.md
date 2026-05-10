@@ -81,6 +81,22 @@ these root documents:
 Short-lived handoff reports, one-off release notes, dated validation snapshots,
 and status tables should be folded into one of those sources or deleted.
 
+## SiteForge Rename Compatibility Record
+
+The user-facing product brand is SiteForge. The physical workspace directory,
+legacy GitHub URL examples, historical evidence fixtures, and old runtime
+profile roots may still contain `Browser-Wiki-Skill` until external repository,
+path, and operator-managed profile migration is explicitly requested.
+
+New default persistent browser profile roots prefer SiteForge-branded paths.
+Runtime code retains Browser-Wiki-Skill fallback candidates only to preserve
+existing local profiles without moving, reading, or rewriting browser profile
+material. Existing `BrowserWikiSkill:*` Windows Credential Manager targets
+remain compatibility identifiers until an operator explicitly approves a
+credential-target migration. Do not rewrite `runs/`, `profiles/`, downloaded
+media, generated crawler metadata, or test fixtures whose purpose is to prove
+legacy-path redaction or compatibility.
+
 ## Site Capability Compiler / Executor Status
 
 The current Site Capability Compiler / Executor implementation lives in:

@@ -10,7 +10,7 @@ import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import { runSingleStageCliWithProgress } from '../../infra/cli/progress-cli.mjs';
 import { collectJpAvReleaseCatalog } from '../../sites/jp-av-catalog/queries/release-catalog.mjs';
 
-const USER_AGENT = 'Mozilla/5.0 Browser-Wiki-Skill jp-av release catalog';
+const USER_AGENT = 'Mozilla/5.0 SiteForge jp-av release catalog';
 const execFile = promisify(execFileCallback);
 
 export function parseArgs(argv) {

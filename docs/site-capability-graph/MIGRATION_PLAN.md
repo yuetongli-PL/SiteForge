@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-05
 
-This plan initializes the Browser-Wiki-Skill Site Capability Graph migration. It is intentionally incremental: do not attempt a one-shot rewrite of the Site Capability Layer.
+This plan initializes the SiteForge Site Capability Graph migration. It is intentionally incremental: do not attempt a one-shot rewrite of the Site Capability Layer.
 
 ## Current project structure overview
 

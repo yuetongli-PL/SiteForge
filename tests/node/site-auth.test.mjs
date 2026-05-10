@@ -8,6 +8,7 @@ import { pathExists, readJsonFile } from '../../src/infra/io.mjs';
 import {
   derivePersistentProfileKey,
   inspectPersistentProfileHealth,
+  resolvePersistentBrowserRootBrandPaths,
   resolvePersistentUserDataDir,
 } from '../../src/infra/browser/profile-store.mjs';
 import {
@@ -304,6 +305,31 @@ test('resolvePersistentUserDataDir keeps bilibili subdomains on one shared direc
   assert.equal(
     resolvePersistentUserDataDir('https://space.bilibili.com/1202350411/fans/follow', { rootDir }),
     path.join(rootDir, 'bilibili.com'),
+  );
+});
+
+test('persistent browser root brand paths prefer SiteForge while preserving legacy fallback candidates', () => {
+  assert.deepEqual(
+    resolvePersistentBrowserRootBrandPaths({
+      platform: 'win32',
+      homeDir: 'C:\\Users\\example',
+      localAppData: 'C:\\Users\\example\\AppData\\Local',
+    }),
+    {
+      preferred: 'C:\\Users\\example\\AppData\\Local\\SiteForge\\browser-profiles',
+      legacy: 'C:\\Users\\example\\AppData\\Local\\Browser-Wiki-Skill\\browser-profiles',
+    },
+  );
+  assert.deepEqual(
+    resolvePersistentBrowserRootBrandPaths({
+      platform: 'linux',
+      homeDir: '/home/example',
+      xdgStateHome: '/home/example/.local/state',
+    }),
+    {
+      preferred: '/home/example/.local/state/siteforge/browser-profiles',
+      legacy: '/home/example/.local/state/browser-wiki-skill/browser-profiles',
+    },
   );
 });
 

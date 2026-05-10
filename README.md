@@ -279,6 +279,14 @@ git clone https://github.com/yuetongli-PL/SiteForge.git
 cd SiteForge
 ```
 
+If you checked out this repo before the recent history cleanup, update your local copy to the rewritten history before running pipelines:
+
+```powershell
+git fetch origin
+git checkout main
+git reset --hard origin/main
+```
+
 The recommended local checkout path is `C:\Users\lyt-p\Desktop\SiteForge`. The legacy GitHub URL `https://github.com/yuetongli-PL/Browser-Wiki-Skill.git` and legacy local path `C:\Users\lyt-p\Desktop\Browser-Wiki-Skill` are kept only as redirect / compatibility references. If an active Codex session is still running from the legacy path, close it and rename the directory externally rather than renaming the current working directory in place.
 
 Initialize the local PowerShell environment:

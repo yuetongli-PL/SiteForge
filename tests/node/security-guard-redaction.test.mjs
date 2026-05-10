@@ -11,6 +11,7 @@ import {
   redactBody,
   redactError,
   redactHeaders,
+  redactPublicIdentifierText,
   redactUrl,
   redactValue,
   scanForbiddenPatterns,
@@ -20,8 +21,12 @@ test('redaction helper identifies sensitive field and header names', () => {
   assert.equal(SECURITY_GUARD_SCHEMA_VERSION, 1);
   assert.equal(isSensitiveFieldName('authorization'), true);
   assert.equal(isSensitiveFieldName('x-csrf-token'), true);
+  assert.equal(isSensitiveFieldName('x-auth-token'), true);
+  assert.equal(isSensitiveFieldName('x-api-key'), true);
+  assert.equal(isSensitiveFieldName('token'), true);
   assert.equal(isSensitiveFieldName('refresh_token'), true);
   assert.equal(isSensitiveFieldName('content-type'), false);
+  assert.equal(isSensitiveFieldName('auth'), false);
 });
 
 test('redactValue removes synthetic sensitive fields without changing safe fields', () => {
@@ -81,31 +86,38 @@ test('redactHeaders removes synthetic credential headers', () => {
   const result = redactHeaders({
     authorization: 'Bearer synthetic-bearer-token',
     cookie: 'synthetic_cookie_name=synthetic_cookie_value',
+    'x-auth-token': 'synthetic-x-auth-token',
+    'x-api-key': 'synthetic-x-api-key',
     accept: 'application/json',
   });
 
   assert.deepEqual(result.headers, {
     authorization: REDACTION_PLACEHOLDER,
     cookie: REDACTION_PLACEHOLDER,
+    'x-auth-token': REDACTION_PLACEHOLDER,
+    'x-api-key': REDACTION_PLACEHOLDER,
     accept: 'application/json',
   });
   assert.deepEqual(result.audit.redactedPaths.sort(), [
     'headers.authorization',
     'headers.cookie',
+    'headers.x-api-key',
+    'headers.x-auth-token',
   ]);
 });
 
 test('redactUrl removes synthetic query secrets and userinfo', () => {
   const result = redactUrl(
-    'https://synthetic-user:synthetic-pass@example.invalid/path?csrf_token=synthetic-csrf&safe=1&refresh_token=synthetic-refresh',
+    'https://synthetic-user:synthetic-pass@example.invalid/path?csrf_token=synthetic-csrf&safe=1&refresh_token=synthetic-refresh&auth=synthetic-auth',
   );
 
   assert.equal(
     result.url,
-    'https://%5BREDACTED%5D:%5BREDACTED%5D@example.invalid/path?csrf_token=%5BREDACTED%5D&safe=1&refresh_token=%5BREDACTED%5D',
+    'https://%5BREDACTED%5D:%5BREDACTED%5D@example.invalid/path?csrf_token=%5BREDACTED%5D&safe=1&refresh_token=%5BREDACTED%5D&auth=%5BREDACTED%5D',
   );
   assert.deepEqual(result.audit.redactedPaths.sort(), [
     'url.password',
+    'url.query.auth',
     'url.query.csrf_token',
     'url.query.refresh_token',
     'url.username',
@@ -127,19 +139,49 @@ test('redactUrl removes synthetic query secrets and userinfo', () => {
       path: 'url.query.refresh_token',
       reason: 'sensitive-query-param',
     },
+    {
+      path: 'url.query.auth',
+      reason: 'sensitive-query-param',
+    },
   ]);
+});
+
+test('redaction helpers remove IP hosts and public identifier text', () => {
+  const urlResult = redactUrl(
+    'https://203.0.113.7/api/items?access_token=synthetic-ip-token&safe=1',
+  );
+  const redactedUrl = new URL(urlResult.url);
+  assert.equal(redactedUrl.hostname, 'redacted-ip.invalid');
+  assert.equal(redactedUrl.pathname, '/api/items');
+  assert.equal(redactedUrl.searchParams.get('access_token'), REDACTION_PLACEHOLDER);
+  assert.equal(redactedUrl.searchParams.get('safe'), '1');
+  assert.ok(urlResult.audit.redactedPaths.includes('url.hostname'));
+  assert.ok(urlResult.audit.redactedPaths.includes('url.query.access_token'));
+
+  const textResult = redactPublicIdentifierText(
+    'Profile Alice alice@example.invalid 203.0.113.7 BrowserProfile run-handler.mjs',
+  );
+  assert.equal(textResult.value.includes('Alice'), false);
+  assert.equal(textResult.value.includes('alice@example.invalid'), false);
+  assert.equal(textResult.value.includes('203.0.113.7'), false);
+  assert.equal(textResult.value.includes('BrowserProfile'), false);
+  assert.equal(textResult.value.includes('run-handler.mjs'), false);
 });
 
 test('redactBody handles JSON and text payloads with synthetic secrets', () => {
   const jsonResult = redactBody(JSON.stringify({
     body: {
       SESSDATA: 'synthetic-sessdata-value',
+      auth: 'synthetic-body-auth',
+      token: 'synthetic-body-token',
       note: 'safe synthetic note',
     },
   }));
   assert.equal(jsonResult.body, JSON.stringify({
     body: {
       SESSDATA: REDACTION_PLACEHOLDER,
+      auth: REDACTION_PLACEHOLDER,
+      token: REDACTION_PLACEHOLDER,
       note: 'safe synthetic note',
     },
   }));
@@ -218,6 +260,21 @@ test('forbidden pattern scanner supports fail-closed artifact guards', () => {
   assert.equal(assertNoForbiddenPatterns({
     message: `refresh_token=${REDACTION_PLACEHOLDER}`,
   }), true);
+  assert.equal(assertNoForbiddenPatterns({
+    requirement: {
+      auth: 'optional',
+    },
+  }), true);
+  assert.throws(
+    () => assertNoForbiddenPatterns({
+      request: {
+        body: {
+          auth: 'synthetic-body-auth',
+        },
+      },
+    }),
+    /Forbidden sensitive pattern/u,
+  );
 });
 
 test('artifact JSON helper prepares a redacted audit sidecar', () => {

@@ -100,9 +100,101 @@ test('ApiDiscovery maps observed requests to versioned candidates without catalo
   assert.equal(candidate.siteKey, 'example');
   assert.equal(candidate.status, 'observed');
   assert.equal(candidate.endpoint.method, 'post');
-  assert.equal(candidate.endpoint.url.includes('synthetic-api-token'), true);
+  assert.equal(candidate.endpoint.url.includes('synthetic-api-token'), false);
+  assert.equal(candidate.endpoint.url.includes('safe=1'), true);
+  assert.equal(candidate.canonicalEndpointKey, 'example:POST:example.invalid/api/items');
+  assert.equal(candidate.canonicalEndpointKey.includes('synthetic-api-token'), false);
+  assert.equal(candidate.target.endpointKind, 'rest-json');
+  assert.equal(candidate.target.roleHint, 'detail');
+  assert.equal(candidate.target.parameterShape.includes('query-template'), true);
+  assert.equal(candidate.target.queryKeys.includes('access_token'), false);
+  assert.equal(candidate.target.queryKeys.includes('safe'), true);
+  assert.equal(candidate.target.riskClass, 'request-protection-requires-review');
+  assert.equal(candidate.target.observedApiAutoPromotionAllowed, false);
+  assert.equal(JSON.stringify(candidate.target).includes('synthetic-api-token'), false);
+  assert.equal(candidate.request.headers.authorization, REDACTION_PLACEHOLDER);
+  assert.equal(candidate.request.body.csrf, REDACTION_PLACEHOLDER);
   assert.equal(Object.hasOwn(candidate, 'candidateId'), false);
   assert.equal(Object.hasOwn(candidate, 'version'), false);
+});
+
+test('ApiDiscovery redacts IP hosts and sensitive query key names from observed targets', () => {
+  const candidate = apiCandidateFromObservedRequest({
+    siteKey: 'example',
+    method: 'GET',
+    url: 'https://203.0.113.7/api/items?access_token=synthetic-ip-token&session_id=synthetic-session&safe=1',
+    source: 'synthetic-observed-request',
+  });
+
+  const serialized = JSON.stringify(candidate);
+  assert.equal(serialized.includes('203.0.113.7'), false);
+  assert.equal(serialized.includes('synthetic-ip-token'), false);
+  assert.equal(serialized.includes('synthetic-session'), false);
+  assert.equal(candidate.canonicalEndpointKey, 'example:GET:redacted-ip.invalid/api/items');
+  assert.equal(candidate.target.canonicalEndpointKey, 'example:GET:redacted-ip.invalid/api/items');
+  assert.equal(candidate.target.queryKeys.includes('access_token'), false);
+  assert.equal(candidate.target.queryKeys.includes('session_id'), false);
+  assert.equal(candidate.target.queryKeys.includes('safe'), true);
+  assert.equal(candidate.target.riskClass, 'auth-session-requires-review');
+});
+
+test('ApiDiscovery preserves transport surfaces as observed-only candidates', () => {
+  const cases = [
+    {
+      raw: {
+        id: 'synthetic-websocket',
+        siteKey: 'example',
+        method: 'GET',
+        url: 'wss://example.invalid/socket?access_token=synthetic-websocket-token',
+        transport: 'websocket',
+        resourceType: 'WebSocket',
+        source: 'cdp.Network.webSocketCreated',
+      },
+      transport: 'websocket',
+      endpointKind: 'websocket-endpoint',
+    },
+    {
+      raw: {
+        id: 'synthetic-sse',
+        siteKey: 'example',
+        method: 'GET',
+        url: 'https://example.invalid/events?session_id=synthetic-sse-session',
+        resourceType: 'EventSource',
+        source: 'cdp.Network.requestWillBeSent',
+      },
+      transport: 'sse',
+      endpointKind: 'sse-endpoint',
+    },
+    {
+      raw: {
+        id: 'synthetic-preflight',
+        siteKey: 'example',
+        method: 'OPTIONS',
+        url: 'https://example.invalid/api/items?csrf_token=synthetic-preflight-csrf',
+        resourceType: 'Preflight',
+        source: 'cdp.Network.requestWillBeSent',
+      },
+      transport: 'preflight',
+      endpointKind: 'preflight-endpoint',
+    },
+  ];
+
+  for (const { raw, transport, endpointKind } of cases) {
+    const candidate = apiCandidateFromObservedRequest(raw);
+    assert.equal(candidate.status, 'observed');
+    assert.equal(candidate.target.transport, transport);
+    assert.equal(candidate.target.endpointKind, endpointKind);
+    assert.equal(candidate.target.riskClass, 'transport-surface-requires-review');
+    assert.equal(candidate.target.observedApiAutoPromotionAllowed, false);
+    assert.equal(candidate.target.resourceType, raw.resourceType ?? 'unknown');
+    assert.equal(Object.hasOwn(candidate, 'candidateId'), false);
+    assert.equal(Object.hasOwn(candidate, 'version'), false);
+    assert.equal(Object.hasOwn(candidate, 'catalogEntry'), false);
+    assert.equal(Object.hasOwn(candidate, 'route'), false);
+    assert.equal(JSON.stringify(candidate).includes('synthetic-websocket-token'), false);
+    assert.equal(JSON.stringify(candidate).includes('synthetic-sse-session'), false);
+    assert.equal(JSON.stringify(candidate).includes('synthetic-preflight-csrf'), false);
+  }
 });
 
 test('ApiDiscovery writes redacted candidate artifacts and does not create catalog artifacts', async () => {
@@ -120,10 +212,14 @@ test('ApiDiscovery writes redacted candidate artifacts and does not create catal
         headers: {
           authorization: 'Bearer synthetic-api-token',
           cookie: 'SESSDATA=synthetic-sessdata',
+          'x-auth-token': 'synthetic-x-auth-token',
+          'x-api-key': 'synthetic-x-api-key',
           accept: 'application/json',
         },
         body: {
           csrf: 'synthetic-csrf-token',
+          token: 'synthetic-body-token',
+          auth: 'synthetic-body-auth',
           safe: true,
         },
         observedAt: '2026-04-30T00:00:00.000Z',
@@ -141,23 +237,144 @@ test('ApiDiscovery writes redacted candidate artifacts and does not create catal
 
     assert.equal(artifact.schemaVersion, API_CANDIDATE_SCHEMA_VERSION);
     assert.equal(artifact.status, 'observed');
+    assert.equal(artifact.canonicalEndpointKey, 'example:GET:example.invalid/api/items');
+    assert.equal(artifact.target.observedApiAutoPromotionAllowed, false);
+    assert.equal(JSON.stringify(artifact.target).includes('synthetic-api-token'), false);
     assert.equal(artifact.endpoint.url.includes('synthetic-api-token'), false);
     assert.equal(artifact.endpoint.url.includes('safe=1'), true);
     assert.equal(artifact.request.headers.authorization, REDACTION_PLACEHOLDER);
     assert.equal(artifact.request.headers.cookie, REDACTION_PLACEHOLDER);
+    assert.equal(artifact.request.headers['x-auth-token'], REDACTION_PLACEHOLDER);
+    assert.equal(artifact.request.headers['x-api-key'], REDACTION_PLACEHOLDER);
     assert.equal(artifact.request.headers.accept, 'application/json');
     assert.equal(artifact.request.body.csrf, REDACTION_PLACEHOLDER);
+    assert.equal(artifact.request.body.token, REDACTION_PLACEHOLDER);
+    assert.equal(artifact.request.body.auth, REDACTION_PLACEHOLDER);
     assert.equal(Object.hasOwn(artifact, 'candidateId'), false);
     assert.equal(Object.hasOwn(artifact, 'version'), false);
     assert.equal(artifactText.includes('synthetic-api-token'), false);
     assert.equal(artifactText.includes('synthetic-sessdata'), false);
     assert.equal(artifactText.includes('synthetic-csrf-token'), false);
+    assert.equal(artifactText.includes('synthetic-x-auth-token'), false);
+    assert.equal(artifactText.includes('synthetic-x-api-key'), false);
+    assert.equal(artifactText.includes('synthetic-body-token'), false);
+    assert.equal(artifactText.includes('synthetic-body-auth'), false);
     assert.equal(audit.redactedPaths.includes('endpoint.url'), false);
     assert.equal(audit.redactedPaths.includes('request.headers.authorization'), true);
     assert.equal(audit.redactedPaths.includes('request.headers.cookie'), true);
+    assert.equal(audit.redactedPaths.includes('request.headers.x-auth-token'), true);
+    assert.equal(audit.redactedPaths.includes('request.headers.x-api-key'), true);
     assert.equal(audit.redactedPaths.includes('request.body.csrf'), true);
     assert.equal(auditText.includes('synthetic-api-token'), false);
     await assert.rejects(access(catalogPath), /ENOENT/u);
+  } finally {
+    await rm(runDir, { force: true, recursive: true });
+  }
+});
+
+test('ApiDiscovery correlates preflight and follow-up requests without catalog promotion', async () => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'api-discovery-preflight-correlation-'));
+  try {
+    const candidatesDir = path.join(runDir, 'api-candidates');
+    const auditsDir = path.join(runDir, 'redaction-audits');
+
+    const results = await writeApiCandidateArtifactsFromObservedRequests([
+      {
+        id: 'synthetic-preflight-candidate',
+        siteKey: 'example',
+        method: 'OPTIONS',
+        url: 'https://example.invalid/api/items?csrf_token=synthetic-preflight-csrf',
+        resourceType: 'Preflight',
+        headers: {
+          authorization: 'Bearer synthetic-preflight-token',
+        },
+        observedAt: '2026-05-10T06:30:00.000Z',
+      },
+      {
+        id: 'synthetic-follow-up-candidate',
+        siteKey: 'example',
+        method: 'POST',
+        url: 'https://example.invalid/api/items?access_token=synthetic-follow-up-token',
+        resourceType: 'XHR',
+        headers: {
+          authorization: 'Bearer synthetic-follow-up-token',
+          accept: 'application/json',
+        },
+        body: {
+          csrf: 'synthetic-follow-up-csrf',
+          safe: true,
+        },
+        observedAt: '2026-05-10T06:30:01.000Z',
+      },
+    ], {
+      outputDir: candidatesDir,
+      redactionAuditDir: auditsDir,
+    });
+
+    assert.equal(results.length, 2);
+    const preflightText = await readFile(results[0].artifactPath, 'utf8');
+    const followUpText = await readFile(results[1].artifactPath, 'utf8');
+    const preflight = JSON.parse(preflightText);
+    const followUp = JSON.parse(followUpText);
+
+    assert.equal(preflight.status, 'observed');
+    assert.equal(followUp.status, 'observed');
+    assert.equal(preflight.target.transport, 'preflight');
+    assert.equal(preflight.target.preflightCorrelation.status, 'correlated_observed_request');
+    assert.deepEqual(preflight.target.preflightCorrelation.followUpCandidateIds, ['synthetic-follow-up-candidate']);
+    assert.equal(preflight.target.preflightCorrelation.canonicalEndpointPathKey, 'example:example.invalid/api/items');
+    assert.equal(preflight.target.preflightCorrelation.observedOnly, true);
+    assert.equal(preflight.target.preflightCorrelation.catalogPromotionAllowed, false);
+    assert.equal(followUp.target.preflightObserved, true);
+    assert.equal(followUp.target.preflightCorrelation.status, 'preflight_observed');
+    assert.deepEqual(followUp.target.preflightCorrelation.preflightCandidateIds, ['synthetic-preflight-candidate']);
+    assert.equal(followUp.target.observedApiAutoPromotionAllowed, false);
+    assert.equal(Object.hasOwn(preflight, 'catalogEntry'), false);
+    assert.equal(Object.hasOwn(followUp, 'catalogEntry'), false);
+    assert.equal(preflightText.includes('synthetic-preflight-csrf'), false);
+    assert.equal(preflightText.includes('synthetic-preflight-token'), false);
+    assert.equal(followUpText.includes('synthetic-follow-up-token'), false);
+    assert.equal(followUpText.includes('synthetic-follow-up-csrf'), false);
+  } finally {
+    await rm(runDir, { force: true, recursive: true });
+  }
+});
+
+test('ApiDiscovery generates safe candidate ids for preflight correlation when request ids are absent or unsafe', async () => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'api-discovery-preflight-safe-ids-'));
+  try {
+    const results = await writeApiCandidateArtifactsFromObservedRequests([
+      {
+        siteKey: 'example',
+        method: 'OPTIONS',
+        url: 'https://example.invalid/api/no-id?csrf_token=synthetic-preflight-csrf',
+        resourceType: 'Preflight',
+      },
+      {
+        id: 'https://example.invalid/run-handler.mjs?access_token=synthetic-id-token',
+        siteKey: 'example',
+        method: 'POST',
+        url: 'https://example.invalid/api/no-id?access_token=synthetic-follow-up-token',
+        resourceType: 'XHR',
+      },
+    ], {
+      outputDir: path.join(runDir, 'api-candidates'),
+      redactionAuditDir: path.join(runDir, 'redaction-audits'),
+    });
+
+    const preflightText = await readFile(results[0].artifactPath, 'utf8');
+    const followUpText = await readFile(results[1].artifactPath, 'utf8');
+    const preflight = JSON.parse(preflightText);
+    const followUp = JSON.parse(followUpText);
+
+    assert.equal(preflight.id, 'observed-candidate-1');
+    assert.equal(followUp.id, 'observed-candidate-2');
+    assert.deepEqual(preflight.target.preflightCorrelation.followUpCandidateIds, ['observed-candidate-2']);
+    assert.deepEqual(followUp.target.preflightCorrelation.preflightCandidateIds, ['observed-candidate-1']);
+    assert.equal(preflightText.includes('synthetic-preflight-csrf'), false);
+    assert.equal(followUpText.includes('run-handler.mjs'), false);
+    assert.equal(followUpText.includes('synthetic-id-token'), false);
+    assert.equal(followUpText.includes('synthetic-follow-up-token'), false);
   } finally {
     await rm(runDir, { force: true, recursive: true });
   }

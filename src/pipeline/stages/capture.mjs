@@ -37,6 +37,7 @@ import { assertSchemaCompatible } from '../../sites/capability/compatibility-reg
 import {
   assertNoForbiddenPatterns,
   prepareRedactedArtifactJsonWithAudit,
+  redactPublicIdentifierText,
   redactValue,
 } from '../../sites/capability/security-guard.mjs';
 import {
@@ -348,10 +349,89 @@ async function attachObservedNetworkRequests(manifest, session, settings, inputU
     return;
   }
 
+  appendRedactedNetworkRequests(manifest, observedRequests);
+}
+
+function appendRedactedNetworkRequests(manifest, observedRequests) {
   const redacted = redactValue(observedRequests).value;
   if (Array.isArray(redacted) && redacted.length > 0) {
-    manifest.networkRequests = redacted;
+    manifest.networkRequests = [
+      ...(Array.isArray(manifest.networkRequests) ? manifest.networkRequests : []),
+      ...redacted,
+    ];
   }
+}
+
+async function attachObservedPageResourceApiHints(manifest, session, settings, inputUrl) {
+  if (typeof session?.getObservedPageResourceApiHints !== 'function') {
+    return;
+  }
+
+  const siteKey = resolveCaptureNetworkSiteKey(inputUrl, settings.siteProfile);
+  if (!siteKey) {
+    return;
+  }
+
+  const observedRequests = await session.getObservedPageResourceApiHints({ siteKey });
+  if (!Array.isArray(observedRequests) || observedRequests.length === 0) {
+    return;
+  }
+
+  appendRedactedNetworkRequests(manifest, observedRequests);
+}
+
+function appendRedactedRouteHints(manifest, routeHints) {
+  const redacted = redactValue(routeHints).value;
+  const sanitizeEntry = (entry, collection, index) => Object.fromEntries(
+    Object.entries(entry ?? {}).map(([key, value]) => [
+      key,
+      typeof value === 'string'
+        ? redactPublicIdentifierText(value, {
+          path: ['routeHints', collection, String(index), key],
+          maxLength: 500,
+        }).value
+        : value,
+    ]),
+  );
+  const jsRoutes = Array.isArray(redacted?.jsRoutes)
+    ? redacted.jsRoutes.map((entry, index) => sanitizeEntry(entry, 'jsRoutes', index))
+    : [];
+  const scriptRoutes = Array.isArray(redacted?.scriptRoutes)
+    ? redacted.scriptRoutes.map((entry, index) => sanitizeEntry(entry, 'scriptRoutes', index))
+    : [];
+  if (jsRoutes.length > 0) {
+    manifest.jsRoutes = [
+      ...(Array.isArray(manifest.jsRoutes) ? manifest.jsRoutes : []),
+      ...jsRoutes,
+    ];
+  }
+  if (scriptRoutes.length > 0) {
+    manifest.scriptRoutes = [
+      ...(Array.isArray(manifest.scriptRoutes) ? manifest.scriptRoutes : []),
+      ...scriptRoutes,
+    ];
+  }
+}
+
+async function attachObservedPageDomRouteHints(manifest, session, settings, inputUrl) {
+  if (typeof session?.getObservedPageDomRouteHints !== 'function') {
+    return;
+  }
+
+  const siteKey = resolveCaptureNetworkSiteKey(inputUrl, settings.siteProfile);
+  if (!siteKey) {
+    return;
+  }
+
+  const routeHints = await session.getObservedPageDomRouteHints({ siteKey });
+  if (
+    (!Array.isArray(routeHints?.jsRoutes) || routeHints.jsRoutes.length === 0)
+    && (!Array.isArray(routeHints?.scriptRoutes) || routeHints.scriptRoutes.length === 0)
+  ) {
+    return;
+  }
+
+  appendRedactedRouteHints(manifest, routeHints);
 }
 
 function setManifestNetworkResponseSummaries(manifest, responseSummaries) {
@@ -1689,6 +1769,8 @@ export async function capture(inputUrl, options = {}) {
 
         manifest.status = manifest.error ? (artifactCount > 0 ? 'partial' : 'failed') : 'success';
         await attachObservedNetworkRequests(manifest, session, settings, inputUrl);
+        await attachObservedPageResourceApiHints(manifest, session, settings, inputUrl);
+        await attachObservedPageDomRouteHints(manifest, session, settings, inputUrl);
         await attachObservedNetworkResponseSummaries(manifest, session, settings, inputUrl);
         await writeCaptureManifest(manifest);
         await closeSessionQuietly(session);

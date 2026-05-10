@@ -439,6 +439,206 @@ test('BrowserSession evaluateValue retries a transient Runtime.evaluate timeout 
   assert.equal(attempts, 2);
 });
 
+test('BrowserSession collects redacted page resource API hints from performance entries', async () => {
+  const session = new BrowserSession({
+    client: {
+      async send(method, params) {
+        assert.equal(method, 'Runtime.evaluate');
+        assert.match(params.expression, /performance\.getEntriesByType\('resource'\)/u);
+        assert.match(params.expression, /form\[action\]/u);
+        assert.match(params.expression, /data-api-url/u);
+        assert.equal(params.expression.includes('formData'), false);
+        assert.equal(params.expression.includes('localStorage'), false);
+        assert.equal(params.expression.includes('sessionStorage'), false);
+        assert.equal(params.expression.includes('document.cookie'), false);
+        assert.equal(params.expression.includes('headers'), false);
+        assert.equal(params.expression.includes('Authorization'), false);
+        assert.equal(params.expression.includes('sourceMap'), false);
+        assert.equal(params.expression.includes("querySelectorAll('input"), false);
+        return {
+          result: {
+            value: [
+              {
+                name: 'https://example.invalid/static/app.js',
+                initiatorType: 'script',
+              },
+              {
+                name: 'https://example.invalid/api?access_token=synthetic-resource-token',
+                initiatorType: 'img',
+              },
+              {
+                name: 'https://example.invalid/metrics/beacon',
+                initiatorType: 'beacon',
+              },
+              {
+                name: 'https://example.invalid/events?session_id=synthetic-event-session',
+                initiatorType: 'eventsource',
+              },
+              {
+                name: 'https://example.invalid/data/config.json?token=synthetic-json-token',
+                initiatorType: 'link',
+              },
+              {
+                name: 'https://example.invalid/api/hidden-search?csrf=synthetic-dom-api-csrf',
+                initiatorType: 'dom-endpoint',
+                method: 'POST',
+                source: 'browser.dom.api-hint',
+                descriptorSource: 'data-api-url',
+                headers: {
+                  authorization: 'Bearer synthetic-api-auth',
+                },
+                profileDescriptor: 'synthetic-profile-marker',
+              },
+              {
+                name: 'https://example.invalid/static/logo.png',
+                initiatorType: 'dom-endpoint',
+                method: 'TRACE',
+                source: 'browser.dom.api-hint',
+                descriptorSource: 'data-url',
+              },
+            ],
+          },
+        };
+      },
+    },
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    timeoutMs: 50,
+    networkTracker: { dispose() {} },
+  });
+
+  const hints = await session.getObservedPageResourceApiHints({
+    siteKey: 'example',
+  });
+
+  assert.equal(hints.length, 5);
+  assert.deepEqual(
+    hints.map((hint) => [hint.method, hint.resourceType, hint.source, hint.status]),
+    [
+      ['GET', 'Other', 'browser.performance.resource', 'observed'],
+      ['GET', 'Beacon', 'browser.performance.resource', 'observed'],
+      ['GET', 'EventSource', 'browser.performance.resource', 'observed'],
+      ['GET', 'Other', 'browser.performance.resource', 'observed'],
+      ['POST', 'Other', 'browser.dom.api-hint', 'observed'],
+    ],
+  );
+  assert.equal(hints[2].transport, 'sse');
+  assert.equal(hints[4].evidence.initiatorType, 'dom-endpoint');
+  assert.equal(JSON.stringify(hints).includes('synthetic-resource-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-event-session'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-json-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-dom-api-csrf'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-api-auth'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-profile-marker'), false);
+  assert.equal(hints.some((hint) => hint.url.includes('/static/app.js')), false);
+  assert.equal(hints.some((hint) => hint.url.includes('/static/logo.png')), false);
+});
+
+test('BrowserSession collects redacted DOM route hints from descriptors without script source', async () => {
+  const session = new BrowserSession({
+    client: {
+      async send(method, params) {
+        assert.equal(method, 'Runtime.evaluate');
+        assert.match(params.expression, /querySelectorAll/u);
+        assert.match(params.expression, /__NEXT_DATA__/u);
+        assert.match(params.expression, /history\.state/u);
+        assert.equal(params.expression.includes('rawSource'), false);
+        assert.equal(params.expression.includes('textContent'), true);
+        assert.equal(params.expression.includes('localStorage'), false);
+        assert.equal(params.expression.includes('sessionStorage'), false);
+        assert.equal(params.expression.includes('document.cookie'), false);
+        assert.equal(params.expression.includes('sourceMap'), false);
+        return {
+          result: {
+            value: {
+              jsRoutes: [
+                {
+                  routePath: 'https://example.invalid/works/42?access_token=synthetic-route-token',
+                  label: 'Profile Alice alice@example.invalid 203.0.113.7 BrowserProfile run-handler.mjs',
+                  descriptorSource: 'href',
+                },
+                {
+                  routePath: '/settings?session_id=synthetic-data-route-session',
+                  label: 'Settings',
+                  descriptorSource: 'data-route',
+                },
+                {
+                  routePath: '/profile/me?access_token=synthetic-runtime-route-token',
+                  label: 'window.location.pathname',
+                  nodeKind: 'runtime-route',
+                  descriptorSource: 'window.location.pathname',
+                },
+                {
+                  routePath: '/checkout/review?session_id=synthetic-history-route-session',
+                  label: 'window.history.state.location.pathname',
+                  nodeKind: 'runtime-route',
+                  descriptorSource: 'window.history.state.location.pathname',
+                  rawState: {
+                    token: 'synthetic-history-raw-token',
+                  },
+                },
+                {
+                  routePath: `/search/${'x'.repeat(700)}?access_token=synthetic-overlong-history-token`,
+                  label: 'window.history.state.route',
+                  nodeKind: 'runtime-route',
+                  descriptorSource: 'window.history.state.route',
+                },
+                {
+                  routePath: 'https://example.invalid/static/site.css',
+                  label: 'stylesheet',
+                  descriptorSource: 'link.stylesheet',
+                },
+              ],
+              scriptRoutes: [
+                {
+                  scriptUrl: 'https://example.invalid/assets/app.js?token=synthetic-script-token',
+                  label: 'Signed in as Alice alice@example.invalid 203.0.113.7 BrowserProfile run-handler.mjs',
+                  descriptorSource: 'script.src',
+                },
+              ],
+            },
+          },
+        };
+      },
+    },
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    timeoutMs: 50,
+    networkTracker: { dispose() {} },
+  });
+
+  const hints = await session.getObservedPageDomRouteHints({
+    siteKey: 'example',
+  });
+
+  assert.equal(hints.jsRoutes.length, 5);
+  assert.equal(hints.scriptRoutes.length, 1);
+  assert.equal(hints.jsRoutes.every((entry) => entry.status === 'observed'), true);
+  assert.equal(hints.jsRoutes.filter((entry) => entry.source === 'browser.dom.route-hint').length, 2);
+  assert.equal(hints.jsRoutes.filter((entry) => entry.source === 'browser.runtime.route-hint').length, 3);
+  assert.equal(hints.jsRoutes[2].nodeKind, 'runtime-route');
+  assert.equal(hints.jsRoutes[3].descriptorSource, 'window.history.state.location.pathname');
+  assert.equal(hints.jsRoutes[4].descriptorSource, 'window.history.state.route');
+  assert.equal(hints.jsRoutes[4].routePath.length <= 500, true);
+  assert.equal(hints.scriptRoutes[0].source, 'browser.dom.script-src-route-hint');
+  assert.equal(Object.hasOwn(hints.jsRoutes[0], 'rawSource'), false);
+  assert.equal(Object.hasOwn(hints.jsRoutes[3], 'rawState'), false);
+  assert.equal(Object.hasOwn(hints.scriptRoutes[0], 'sourceText'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-route-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-data-route-session'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-runtime-route-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-history-route-session'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-history-raw-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-overlong-history-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-script-token'), false);
+  assert.equal(JSON.stringify(hints).includes('Alice'), false);
+  assert.equal(JSON.stringify(hints).includes('alice@example.invalid'), false);
+  assert.equal(JSON.stringify(hints).includes('203.0.113.7'), false);
+  assert.equal(JSON.stringify(hints).includes('BrowserProfile'), false);
+  assert.equal(JSON.stringify(hints).includes('run-handler.mjs'), false);
+  assert.equal(hints.jsRoutes.some((entry) => String(entry.routePath).includes('site.css')), false);
+});
+
 test('BrowserSession callPageFunction retries a transient Runtime.evaluate timeout once', async () => {
   let attempts = 0;
   const session = new BrowserSession({

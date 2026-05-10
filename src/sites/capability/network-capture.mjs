@@ -42,12 +42,28 @@ function normalizeText(value) {
 
 function normalizeCdpRequestEvent(event = {}) {
   const method = normalizeText(event.method ?? event.params?.method);
+  if (method === 'Network.webSocketCreated') {
+    const params = event.params ?? event;
+    return {
+      method,
+      params: {
+        ...params,
+        type: params.type ?? 'WebSocket',
+      },
+      request: {
+        method: 'GET',
+        url: params.url,
+        headers: {},
+      },
+    };
+  }
   if (method && method !== 'Network.requestWillBeSent') {
     throw new Error(`Unsupported network capture event: ${method}`);
   }
   const params = event.params ?? event;
   const request = params.request ?? {};
   return {
+    method: method ?? 'Network.requestWillBeSent',
     params,
     request,
   };
@@ -101,6 +117,39 @@ function compactAudit(...audits) {
   };
 }
 
+function inferNetworkTransport({ method, resourceType, url }) {
+  const normalizedMethod = normalizeText(method)?.toUpperCase() ?? 'GET';
+  const normalizedResourceType = String(resourceType ?? '').toLowerCase();
+  const rawUrl = String(url ?? '').trim().toLowerCase();
+  if (normalizedResourceType === 'websocket' || rawUrl.startsWith('ws:') || rawUrl.startsWith('wss:')) {
+    return 'websocket';
+  }
+  if (normalizedResourceType === 'eventsource') {
+    return 'sse';
+  }
+  if (normalizedMethod === 'OPTIONS' || normalizedResourceType === 'preflight') {
+    return 'preflight';
+  }
+  return 'http';
+}
+
+function redactedRedirectEvidence(redirectResponse = null) {
+  if (!redirectResponse || typeof redirectResponse !== 'object' || Array.isArray(redirectResponse)) {
+    return null;
+  }
+  const redactedUrl = redirectResponse.url ? redactUrl(redirectResponse.url) : null;
+  return {
+    evidence: {
+      statusCode: Number.isInteger(Number(redirectResponse.status))
+        ? Number(redirectResponse.status)
+        : undefined,
+      url: redactedUrl?.url,
+      mimeType: normalizeText(redirectResponse.mimeType),
+    },
+    audit: redactedUrl?.audit,
+  };
+}
+
 function collectForbiddenSiteSemanticFields(value, path = []) {
   if (!value || typeof value !== 'object') {
     return [];
@@ -139,7 +188,7 @@ export function observedRequestFromNetworkCaptureEvent(event = {}, {
   if (!normalizedSiteKey) {
     throw new Error('NetworkCapture observed request siteKey is required');
   }
-  const { params, request } = normalizeCdpRequestEvent(event);
+  const { method: eventMethod, params, request } = normalizeCdpRequestEvent(event);
   const rawUrl = normalizeText(request.url ?? params.url);
   if (!rawUrl) {
     throw new Error('NetworkCapture observed request url is required');
@@ -149,27 +198,41 @@ export function observedRequestFromNetworkCaptureEvent(event = {}, {
   const redactedHeaders = redactHeaders(request.headers ?? {});
   const redactedBody = redactBody(request.postData ?? request.body);
   const redactedDocumentUrl = params.documentURL ? redactUrl(params.documentURL) : null;
+  const redirect = redactedRedirectEvidence(params.redirectResponse);
   const audit = compactAudit(
     redactedUrl.audit,
     redactedHeaders.audit,
     redactedBody.audit,
     redactedDocumentUrl?.audit,
+    redirect?.audit,
   );
+  const resourceType = normalizeText(params.type);
+  const method = normalizeText(request.method) ?? 'GET';
+  const transport = inferNetworkTransport({
+    method,
+    resourceType,
+    url: rawUrl,
+  });
 
   const observedRequest = {
     schemaVersion: NETWORK_CAPTURE_REQUEST_SCHEMA_VERSION,
     id: normalizeText(params.requestId),
     siteKey: normalizedSiteKey,
     status: 'observed',
-    method: normalizeText(request.method) ?? 'GET',
+    method,
     url: redactedUrl.url,
-    source,
+    source: eventMethod === 'Network.webSocketCreated' ? 'cdp.Network.webSocketCreated' : source,
     observedAt: normalizeText(observedAt ?? event.observedAt ?? params.wallTime),
+    transport,
+    resourceType: resourceType ?? 'unknown',
     headers: redactedHeaders.headers,
     body: redactedBody.body,
     evidence: {
-      event: 'Network.requestWillBeSent',
-      resourceType: normalizeText(params.type),
+      event: eventMethod ?? 'Network.requestWillBeSent',
+      resourceType,
+      transport,
+      preflight: transport === 'preflight',
+      redirect: redirect?.evidence,
       documentUrl: redactedDocumentUrl?.url,
       initiatorType: normalizeText(params.initiator?.type),
     },

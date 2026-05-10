@@ -210,6 +210,145 @@ test('expand captured state manifest redacts synthetic query secrets before pers
   }
 });
 
+test('expandStates persists DOM trigger outcome inventories for budgeted unattempted triggers', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-expand-trigger-outcomes-'));
+  const baseUrl = 'https://example.com/';
+  const detailOneUrl = 'https://example.com/detail/1?access_token=synthetic-expand-trigger-token';
+  const detailTwoUrl = 'https://example.com/detail/2?csrf_token=synthetic-expand-trigger-csrf';
+  const detailThreeUrl = 'https://example.com/detail/3?session_id=synthetic-expand-trigger-session';
+  const manifestPath = await createInitialManifest(workspace, baseUrl);
+  const screenshotBase64 = Buffer.from('expand-trigger-outcomes-image').toString('base64');
+  const views = {
+    [baseUrl]: {
+      signature: {
+        finalUrl: baseUrl,
+        title: 'Home',
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        pageType: 'home',
+        fingerprint: { state: 'home' },
+        pageFacts: null,
+      },
+      triggers: [
+        {
+          kind: 'content-link',
+          label: 'Detail One',
+          href: detailOneUrl,
+          locator: {
+            primary: 'dom',
+            tagName: 'a',
+            role: 'link',
+            href: detailOneUrl,
+            domPath: 'body > main:nth-of-type(1) > a:nth-of-type(1)',
+            textSnippet: 'Detail One',
+          },
+        },
+        {
+          kind: 'content-link',
+          label: 'Detail Two',
+          href: detailTwoUrl,
+          locator: {
+            primary: 'dom',
+            tagName: 'a',
+            role: 'link',
+            href: detailTwoUrl,
+            domPath: 'body > main:nth-of-type(1) > a:nth-of-type(2)',
+            textSnippet: 'Detail Two',
+          },
+        },
+        {
+          kind: 'content-link',
+          label: 'Detail Three',
+          href: detailThreeUrl,
+          locator: {
+            primary: 'a11y',
+            tagName: 'a',
+            role: 'link',
+            href: detailThreeUrl,
+            domPath: 'body > main:nth-of-type(1) > a:nth-of-type(3)',
+            textSnippet: 'Detail Three',
+          },
+        },
+      ],
+    },
+    [detailOneUrl]: {
+      signature: {
+        finalUrl: detailOneUrl,
+        title: 'Detail One',
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        pageType: 'content-detail-page',
+        fingerprint: { state: 'detail-one' },
+        pageFacts: null,
+      },
+      triggers: [],
+    },
+  };
+  const fakeSession = {
+    currentViewKey: baseUrl,
+    async navigateAndWait(url) {
+      this.currentViewKey = url;
+    },
+    async waitForSettled() {},
+    async invokeHelperMethod(methodName) {
+      if (methodName === 'pageComputeStateSignature') {
+        return views[this.currentViewKey].signature;
+      }
+      if (methodName === 'pageDiscoverTriggers') {
+        return views[this.currentViewKey].triggers;
+      }
+      throw new Error(`unexpected helper method: ${methodName}`);
+    },
+    async captureHtml() {
+      return `<html><body>${this.currentViewKey}</body></html>`;
+    },
+    async captureSnapshot() {
+      return { view: this.currentViewKey };
+    },
+    async captureScreenshot() {
+      return {
+        data: screenshotBase64,
+        usedViewportFallback: false,
+        primaryError: null,
+      };
+    },
+    async close() {},
+  };
+
+  try {
+    const manifest = await expandStates(baseUrl, {
+      initialManifestPath: manifestPath,
+      outDir: path.join(workspace, 'expanded'),
+      runtimeFactory: async () => fakeSession,
+      maxTriggers: 6,
+      maxCapturedStates: 1,
+      searchQueries: [],
+      captureChapterArtifacts: false,
+    });
+
+    assert.equal(manifest.candidateTriggers.length, 3);
+    assert.equal(manifest.budgetSkippedTriggers.length, 2);
+    assert.equal(manifest.unattemptedTriggers.length, 2);
+    assert.equal(manifest.budgetSkippedTriggers.every((entry) => entry.discoveryStatus === 'skipped_by_budget'), true);
+    assert.equal(manifest.unattemptedTriggers.every((entry) => entry.discoveryStatus === 'unattempted'), true);
+    assert.equal(manifest.unattemptedTriggers.some((entry) => entry.locator?.primary === 'a11y'), true);
+    assert.equal(
+      JSON.stringify([
+        ...manifest.candidateTriggers,
+        ...manifest.budgetSkippedTriggers,
+        ...manifest.unattemptedTriggers,
+      ]).includes('synthetic-expand-trigger'),
+      false,
+    );
+    const persisted = JSON.parse(await readFile(path.join(manifest.outDir, 'states-manifest.json'), 'utf8'));
+    assert.equal(JSON.stringify(persisted).includes('synthetic-expand-trigger'), false);
+    assert.equal(persisted.unattemptedTriggers.length, 2);
+    assert.equal(persisted.budgetSkippedTriggers[0].href.includes('[REDACTED]'), true);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 function createXiaohongshuSiteProfile() {
   return {
     host: 'www.xiaohongshu.com',
@@ -517,6 +656,8 @@ test('capture writes runtime observed network requests into redacted api candida
   const screenshotBase64 = Buffer.from('network-image').toString('base64');
   const observedSiteKeys = [];
   const observedResponseSiteKeys = [];
+  const observedResourceHintSiteKeys = [];
+  const observedRouteHintSiteKeys = [];
 
   const fakeSession = {
     async navigateAndWait() {},
@@ -577,6 +718,73 @@ test('capture writes runtime observed network requests into redacted api candida
         },
       ];
     },
+    async getObservedPageResourceApiHints({ siteKey }) {
+      observedResourceHintSiteKeys.push(siteKey);
+      return [
+        {
+          siteKey,
+          method: 'GET',
+          url: 'https://example.com/api/hidden-feed.json?session_id=synthetic-resource-session',
+          headers: {},
+          source: 'browser.performance.resource',
+          resourceType: 'Fetch',
+          evidence: {
+            resourceType: 'Fetch',
+            initiatorType: 'resource-timing',
+          },
+        },
+        {
+          siteKey,
+          method: 'POST',
+          url: 'https://example.com/api/hidden-form?csrf=synthetic-dom-api-csrf',
+          headers: {},
+          source: 'browser.dom.api-hint',
+          resourceType: 'Other',
+          evidence: {
+            resourceType: 'Other',
+            initiatorType: 'dom-endpoint',
+            descriptorSource: 'data-api-url',
+          },
+        },
+      ];
+    },
+    async getObservedPageDomRouteHints({ siteKey }) {
+      observedRouteHintSiteKeys.push(siteKey);
+      return {
+        jsRoutes: [
+          {
+            id: 'dom-route-detail',
+            routePath: 'https://example.com/works/42?access_token=synthetic-dom-route-token',
+            label: 'Profile Alice alice@example.invalid 203.0.113.7 BrowserProfile run-handler.mjs',
+            source: 'browser.dom.route-hint',
+            descriptorSource: 'href',
+            status: 'observed',
+            siteKey,
+          },
+          {
+            id: 'dom-route-settings',
+            routePath: '/settings?session_id=synthetic-dom-route-session',
+            label: 'Settings Route',
+            source: 'browser.dom.route-hint',
+            descriptorSource: 'data-route',
+            status: 'observed',
+            siteKey,
+          },
+        ],
+        scriptRoutes: [
+          {
+            id: 'script-route-app',
+            routePath: 'https://example.com/assets/app.js?token=synthetic-script-route-token',
+            scriptUrl: 'https://example.com/assets/app.js?token=synthetic-script-route-token',
+            label: 'Signed in as Alice alice@example.invalid 203.0.113.7 BrowserProfile run-handler.mjs',
+            source: 'browser.dom.script-src-route-hint',
+            descriptorSource: 'script.src',
+            status: 'observed',
+            siteKey,
+          },
+        ],
+      };
+    },
     async close() {},
   };
 
@@ -592,8 +800,27 @@ test('capture writes runtime observed network requests into redacted api candida
     assert.equal(manifest.status, 'success');
     assert.deepEqual(observedSiteKeys, ['example']);
     assert.deepEqual(observedResponseSiteKeys, ['example']);
+    assert.deepEqual(observedResourceHintSiteKeys, ['example']);
+    assert.deepEqual(observedRouteHintSiteKeys, ['example']);
     assert.equal(manifest.networkRequests[0].headers.authorization, REDACTION_PLACEHOLDER);
     assert.equal(manifest.networkRequests[0].body.csrf, REDACTION_PLACEHOLDER);
+    assert.equal(manifest.networkRequests[1].source, 'browser.performance.resource');
+    assert.equal(manifest.networkRequests[1].url.includes('synthetic-resource-session'), false);
+    assert.equal(manifest.networkRequests[2].source, 'browser.dom.api-hint');
+    assert.equal(manifest.networkRequests[2].method, 'POST');
+    assert.equal(manifest.networkRequests[2].url.includes('synthetic-dom-api-csrf'), false);
+    assert.equal(manifest.jsRoutes.length, 2);
+    assert.equal(manifest.scriptRoutes.length, 1);
+    assert.equal(manifest.jsRoutes[0].source, 'browser.dom.route-hint');
+    assert.equal(manifest.scriptRoutes[0].source, 'browser.dom.script-src-route-hint');
+    assert.equal(Object.hasOwn(manifest.jsRoutes[0], 'rawSource'), false);
+    assert.equal(JSON.stringify(manifest.jsRoutes).includes('synthetic-dom-route'), false);
+    assert.equal(JSON.stringify(manifest.scriptRoutes).includes('synthetic-script-route-token'), false);
+    assert.equal(JSON.stringify(manifest.jsRoutes).includes('Alice'), false);
+    assert.equal(JSON.stringify(manifest.jsRoutes).includes('alice@example.invalid'), false);
+    assert.equal(JSON.stringify(manifest.jsRoutes).includes('203.0.113.7'), false);
+    assert.equal(JSON.stringify(manifest.jsRoutes).includes('BrowserProfile'), false);
+    assert.equal(JSON.stringify(manifest.scriptRoutes).includes('run-handler.mjs'), false);
     assert.equal(manifest.networkResponseSummaries[0].siteKey, 'example');
     assert.equal(manifest.networkResponseSummaries[0].statusCode, 200);
     assert.equal(Object.hasOwn(manifest.networkResponseSummaries[0], 'headers'), false);
@@ -603,9 +830,19 @@ test('capture writes runtime observed network requests into redacted api candida
     assert.equal(JSON.stringify(manifest).includes('synthetic-capture-runtime-csrf'), false);
 
     const written = JSON.parse(await readFile(manifest.files.manifest, 'utf8'));
-    assert.equal(written.networkRequests.length, 1);
+    assert.equal(written.networkRequests.length, 3);
     assert.equal(written.networkResponseSummaries.length, 1);
     assert.equal(written.networkRequests[0].siteKey, 'example');
+    assert.equal(written.networkRequests[1].source, 'browser.performance.resource');
+    assert.equal(written.networkRequests[1].url.includes('synthetic-resource-session'), false);
+    assert.equal(written.networkRequests[2].source, 'browser.dom.api-hint');
+    assert.equal(written.networkRequests[2].url.includes('synthetic-dom-api-csrf'), false);
+    assert.equal(written.jsRoutes.length, 2);
+    assert.equal(written.scriptRoutes.length, 1);
+    assert.equal(written.jsRoutes[0].source, 'browser.dom.route-hint');
+    assert.equal(written.scriptRoutes[0].source, 'browser.dom.script-src-route-hint');
+    assert.equal(Object.hasOwn(written.jsRoutes[0], 'rawSource'), false);
+    assert.equal(Object.hasOwn(written.scriptRoutes[0], 'sourceText'), false);
     assert.equal(written.networkResponseSummaries[0].siteKey, 'example');
     assert.equal(written.networkResponseSummaries[0].candidateId, 'synthetic-runtime-response-candidate');
     assert.equal(Object.hasOwn(written.networkResponseSummaries[0], 'headers'), false);
@@ -613,10 +850,19 @@ test('capture writes runtime observed network requests into redacted api candida
     assert.equal(Object.hasOwn(written.networkResponseSummaries[0], 'catalogEntry'), false);
     assert.equal(written.networkRequests[0].headers.authorization, REDACTION_PLACEHOLDER);
     assert.equal(written.networkRequests[0].body.csrf, REDACTION_PLACEHOLDER);
-    assert.equal(written.files.apiCandidates.length, 1);
-    assert.equal(written.files.apiCandidateRedactionAudits.length, 1);
+    assert.equal(written.files.apiCandidates.length, 3);
+    assert.equal(written.files.apiCandidateRedactionAudits.length, 3);
     assert.equal(JSON.stringify(written).includes('synthetic-capture-runtime-token'), false);
     assert.equal(JSON.stringify(written).includes('synthetic-capture-runtime-csrf'), false);
+    assert.equal(JSON.stringify(written).includes('synthetic-resource-session'), false);
+    assert.equal(JSON.stringify(written).includes('synthetic-dom-api-csrf'), false);
+    assert.equal(JSON.stringify(written).includes('synthetic-dom-route'), false);
+    assert.equal(JSON.stringify(written).includes('synthetic-script-route-token'), false);
+    assert.equal(JSON.stringify(written).includes('Alice'), false);
+    assert.equal(JSON.stringify(written).includes('alice@example.invalid'), false);
+    assert.equal(JSON.stringify(written).includes('203.0.113.7'), false);
+    assert.equal(JSON.stringify(written).includes('BrowserProfile'), false);
+    assert.equal(JSON.stringify(written).includes('run-handler.mjs'), false);
 
     const candidate = JSON.parse(await readFile(written.files.apiCandidates[0], 'utf8'));
     assert.equal(candidate.status, 'observed');
@@ -624,6 +870,17 @@ test('capture writes runtime observed network requests into redacted api candida
     assert.equal(candidate.source, 'browser-network-tracker');
     assert.equal(candidate.request.headers.authorization, REDACTION_PLACEHOLDER);
     assert.equal(candidate.request.body.csrf, REDACTION_PLACEHOLDER);
+    const resourceCandidate = JSON.parse(await readFile(written.files.apiCandidates[1], 'utf8'));
+    assert.equal(resourceCandidate.status, 'observed');
+    assert.equal(resourceCandidate.source, 'browser.performance.resource');
+    assert.equal(resourceCandidate.target.endpointKind, 'rest-json');
+    assert.equal(resourceCandidate.endpoint.url.includes('synthetic-resource-session'), false);
+    const domHintCandidate = JSON.parse(await readFile(written.files.apiCandidates[2], 'utf8'));
+    assert.equal(domHintCandidate.status, 'observed');
+    assert.equal(domHintCandidate.source, 'browser.dom.api-hint');
+    assert.equal(domHintCandidate.endpoint.method, 'POST');
+    assert.equal(domHintCandidate.target.observedApiAutoPromotionAllowed, false);
+    assert.equal(domHintCandidate.endpoint.url.includes('synthetic-dom-api-csrf'), false);
     assert.equal(Object.hasOwn(written.files, 'apiCatalog'), false);
     assert.equal(Object.hasOwn(written.files, 'apiCatalogEntry'), false);
     await assert.rejects(

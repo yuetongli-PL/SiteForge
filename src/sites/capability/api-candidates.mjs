@@ -52,6 +52,8 @@ const API_CANDIDATE_LIFECYCLE_STATUS_SET = new Set([
   'candidate',
   'verified',
 ]);
+const API_RESPONSE_SHAPE_MAX_FIELDS = 20;
+const API_RESPONSE_SHAPE_MAX_FIELD_NAME_LENGTH = 120;
 
 function summarizeRedactionAudit(audit = {}) {
   return {
@@ -288,15 +290,18 @@ function summarizeResponseValueShape(value, depth = 0) {
   }
   if (value && typeof value === 'object') {
     const keys = Object.keys(value).sort();
+    const boundedKeys = keys.slice(0, API_RESPONSE_SHAPE_MAX_FIELDS);
     const fields = Object.fromEntries(
-      keys.map((key) => [
-        key,
+      boundedKeys.map((key) => [
+        key.slice(0, API_RESPONSE_SHAPE_MAX_FIELD_NAME_LENGTH),
         depth >= 2 ? { type: Array.isArray(value[key]) ? 'array' : typeof value[key] } : summarizeResponseValueShape(value[key], depth + 1),
       ]),
     );
     return {
       type: 'object',
       fields,
+      fieldCount: keys.length,
+      fieldsTruncated: keys.length > API_RESPONSE_SHAPE_MAX_FIELDS,
     };
   }
   return { type: typeof value };
@@ -362,6 +367,7 @@ export function createApiCandidateResponseCaptureSummary({
       ...(responseSchemaHash ? { responseSchemaHash } : {}),
       ...(bodyShape ? { responseFieldSummary: bodyShape } : {}),
     },
+    redactionRequired: true,
   };
 }
 
@@ -517,6 +523,8 @@ export function normalizeApiCandidate(raw = {}) {
     id: normalizeText(raw.id) ?? `${siteKey}:${endpoint.method}:${endpoint.url}`,
     siteKey,
     status,
+    canonicalEndpointKey: normalizeText(raw.canonicalEndpointKey),
+    target: normalizeObject(raw.target),
     endpoint,
     source: normalizeText(raw.source) ?? 'observed',
     observedAt: normalizeText(raw.observedAt),
@@ -1163,7 +1171,7 @@ export function createApiCandidateMultiAspectVerificationResult({
       },
       aspectVerifierIds: {
         responseSchema: response.verifierId,
-        auth: auth.verifierId,
+        authRequirement: auth.verifierId,
         pagination: pagination.verifierId,
         risk: risk.verifierId,
       },

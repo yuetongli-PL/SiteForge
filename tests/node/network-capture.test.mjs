@@ -179,6 +179,98 @@ test('NetworkCapture observed requests do not classify site semantics', () => {
   );
 });
 
+test('NetworkCapture preserves transport surfaces as redacted observed evidence', () => {
+  const websocket = observedRequestFromNetworkCaptureEvent({
+    method: 'Network.webSocketCreated',
+    params: {
+      requestId: 'synthetic-websocket-request',
+      url: 'wss://example.invalid/socket?access_token=synthetic-websocket-token',
+    },
+  }, {
+    siteKey: 'example',
+    observedAt: '2026-05-01T00:00:03.000Z',
+  });
+  const sse = observedRequestFromNetworkCaptureEvent(createRequestWillBeSentEvent({
+    params: {
+      requestId: 'synthetic-sse-request',
+      type: 'EventSource',
+      request: {
+        method: 'GET',
+        url: 'https://example.invalid/events?session_id=synthetic-sse-session',
+        headers: {
+          authorization: 'Bearer synthetic-sse-token',
+        },
+      },
+    },
+  }), {
+    siteKey: 'example',
+  });
+  const preflight = observedRequestFromNetworkCaptureEvent(createRequestWillBeSentEvent({
+    params: {
+      requestId: 'synthetic-preflight-request',
+      type: 'Preflight',
+      request: {
+        method: 'OPTIONS',
+        url: 'https://example.invalid/api/items?csrf_token=synthetic-preflight-csrf',
+        headers: {
+          authorization: 'Bearer synthetic-preflight-token',
+        },
+      },
+    },
+  }), {
+    siteKey: 'example',
+  });
+  const redirect = observedRequestFromNetworkCaptureEvent(createRequestWillBeSentEvent({
+    params: {
+      requestId: 'synthetic-redirect-request',
+      request: {
+        method: 'GET',
+        url: 'https://example.invalid/api/redirected',
+        headers: {},
+      },
+      redirectResponse: {
+        status: 302,
+        url: 'https://example.invalid/login?access_token=synthetic-redirect-token',
+        mimeType: 'text/html',
+        headers: {
+          authorization: 'Bearer synthetic-redirect-token',
+          cookie: 'SESSDATA=synthetic-redirect-sessdata',
+        },
+      },
+    },
+  }), {
+    siteKey: 'example',
+  });
+
+  assert.equal(websocket.transport, 'websocket');
+  assert.equal(websocket.resourceType, 'WebSocket');
+  assert.equal(websocket.source, 'cdp.Network.webSocketCreated');
+  assert.equal(websocket.evidence.event, 'Network.webSocketCreated');
+  assert.equal(websocket.url.includes('synthetic-websocket-token'), false);
+  assert.equal(sse.transport, 'sse');
+  assert.equal(sse.resourceType, 'EventSource');
+  assert.equal(sse.headers.authorization, REDACTION_PLACEHOLDER);
+  assert.equal(preflight.transport, 'preflight');
+  assert.equal(preflight.evidence.preflight, true);
+  assert.equal(redirect.transport, 'http');
+  assert.deepEqual(redirect.evidence.redirect, {
+    statusCode: 302,
+    url: 'https://example.invalid/login?access_token=%5BREDACTED%5D',
+    mimeType: 'text/html',
+  });
+  assert.equal(Object.hasOwn(redirect.evidence.redirect, 'headers'), false);
+  assert.equal(Object.hasOwn(redirect.evidence.redirect, 'body'), false);
+  assert.equal(JSON.stringify([websocket, sse, preflight, redirect]).includes('synthetic-websocket-token'), false);
+  assert.equal(JSON.stringify([websocket, sse, preflight, redirect]).includes('synthetic-sse-session'), false);
+  assert.equal(JSON.stringify([websocket, sse, preflight, redirect]).includes('synthetic-preflight-csrf'), false);
+  assert.equal(JSON.stringify([websocket, sse, preflight, redirect]).includes('synthetic-redirect-token'), false);
+  assert.equal(assertNoForbiddenPatterns([websocket, sse, preflight, redirect]), true);
+  assert.equal(assertNoNetworkCaptureSiteSemanticClassification(websocket), true);
+  assert.equal(assertNoNetworkCaptureSiteSemanticClassification(sse), true);
+  assert.equal(assertNoNetworkCaptureSiteSemanticClassification(preflight), true);
+  assert.equal(assertNoNetworkCaptureSiteSemanticClassification(redirect), true);
+});
+
 test('Browser network tracker exposes bounded redacted observed request lists', () => {
   const client = createFakeCdpClient();
   const tracker = createNetworkTracker(client, 'session-1', {
@@ -370,6 +462,79 @@ test('Browser network tracker exposes bounded in-memory response summaries witho
   assert.deepEqual(session.getObservedNetworkResponseSummaries({ siteKey: 'example' }), []);
 });
 
+test('Browser network tracker records SSE without blocking network idle', async () => {
+  const client = createFakeCdpClient();
+  const tracker = createNetworkTracker(client, 'session-1', {
+    maxObservedRequests: 4,
+  });
+  const session = new BrowserSession({
+    client,
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    networkTracker: tracker,
+  });
+
+  client.emit('Network.requestWillBeSent', createRequestWillBeSentEvent({
+    params: {
+      requestId: 'synthetic-eventsource-request',
+      type: 'EventSource',
+      request: {
+        method: 'GET',
+        url: 'https://example.invalid/events?session_id=synthetic-sse-session',
+        headers: {
+          authorization: 'Bearer synthetic-sse-token',
+        },
+      },
+    },
+  }));
+
+  await tracker.waitForIdle({ quietMs: 10, timeoutMs: 500 });
+  const observed = session.getObservedNetworkRequests({ siteKey: 'example' });
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0].transport, 'sse');
+  assert.equal(observed[0].headers.authorization, REDACTION_PLACEHOLDER);
+  assert.equal(JSON.stringify(observed).includes('synthetic-sse-session'), false);
+  assert.equal(JSON.stringify(observed).includes('synthetic-sse-token'), false);
+  tracker.dispose();
+});
+
+test('BrowserSession extracts redacted page resource API hints as observed requests', async () => {
+  const session = new BrowserSession({
+    client: {
+      async send(method) {
+        assert.equal(method, 'Runtime.evaluate');
+        return {
+          result: {
+            value: [
+              {
+                name: 'https://example.invalid/api/hidden-feed?access_token=synthetic-resource-token',
+                initiatorType: 'fetch',
+              },
+              {
+                name: 'https://example.invalid/assets/site.css',
+                initiatorType: 'link',
+              },
+            ],
+          },
+        };
+      },
+    },
+    sessionId: 'synthetic-session',
+    targetId: 'synthetic-target',
+    networkTracker: null,
+  });
+
+  const hints = await session.getObservedPageResourceApiHints({ siteKey: 'example' });
+
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0].source, 'browser.performance.resource');
+  assert.equal(hints[0].siteKey, 'example');
+  assert.equal(hints[0].resourceType, 'Fetch');
+  assert.equal(hints[0].url.includes('synthetic-resource-token'), false);
+  assert.equal(JSON.stringify(hints).includes('synthetic-resource-token'), false);
+  assert.equal(assertNoForbiddenPatterns(hints), true);
+});
+
 test('NetworkCapture request lists feed ApiDiscovery without catalog promotion', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-network-capture-'));
   try {
@@ -419,6 +584,10 @@ test('NetworkCapture normalizes synthetic CDP response events into bounded respo
           id: 'synthetic-item-id',
           title: 'Synthetic title',
         }],
+        ...Object.fromEntries(Array.from({ length: 25 }, (_, index) => [
+          `extra-${index}-${'x'.repeat(200)}`,
+          `value-${index}`,
+        ])),
       },
     },
   }), {
@@ -427,6 +596,7 @@ test('NetworkCapture normalizes synthetic CDP response events into bounded respo
   });
 
   assert.equal(assertSchemaCompatible('ApiResponseCaptureSummary', summary), true);
+  assert.equal(summary.redactionRequired, true);
   assert.equal(summary.candidateId, 'synthetic-response-candidate');
   assert.equal(summary.siteKey, 'example');
   assert.equal(summary.source, 'cdp.Network.responseReceived');
@@ -434,6 +604,10 @@ test('NetworkCapture normalizes synthetic CDP response events into bounded respo
   assert.equal(summary.contentType, 'application/json');
   assert.deepEqual(summary.headerNames, ['cache-control', 'content-type']);
   assert.equal(summary.bodyShape.type, 'object');
+  assert.equal(Object.keys(summary.bodyShape.fields).length, 20);
+  assert.equal(Object.keys(summary.bodyShape.fields).every((field) => field.length <= 120), true);
+  assert.equal(summary.bodyShape.fieldCount, 26);
+  assert.equal(summary.bodyShape.fieldsTruncated, true);
   assert.match(summary.responseSchemaHash, /^sha256:[a-f0-9]{64}$/u);
   assert.equal(summary.metadata.requestId, 'synthetic-request-1');
   assert.equal(summary.metadata.resourceType, 'XHR');

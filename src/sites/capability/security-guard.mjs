@@ -10,6 +10,14 @@ const SENSITIVE_KEY_PATTERNS = Object.freeze([
   /csrf|xsrf/iu,
   /sessdata/iu,
   /xsec[_-]?token/iu,
+  /^token$/iu,
+  /(?:^|[_-])token$/iu,
+  /^x[_-]?auth[_-]?token$/iu,
+  /^x[_-]?api[_-]?key$/iu,
+  /^api[_-]?key$/iu,
+  /secret/iu,
+  /^password$/iu,
+  /raw[_-]?(?:body|headers?)/iu,
   /(?:^|[_-])access[_-]?token$/iu,
   /(?:^|[_-])refresh[_-]?token$/iu,
   /(?:^|[_-])session[_-]?id$/iu,
@@ -20,6 +28,10 @@ const SENSITIVE_KEY_PATTERNS = Object.freeze([
   /session[_-]?material/iu,
   /raw[_-]?session[_-]?lease/iu,
   /device[_-]?fingerprint/iu,
+]);
+
+const SENSITIVE_BODY_KEY_PATTERNS = Object.freeze([
+  /^auth$/iu,
 ]);
 
 const FORBIDDEN_VALUE_PATTERNS = Object.freeze([
@@ -33,7 +45,11 @@ const FORBIDDEN_VALUE_PATTERNS = Object.freeze([
   },
   {
     name: 'sensitive-query-assignment',
-    pattern: /(?:access_token|refresh_token|xsec_token|csrf(?:_token)?|session(?:_id)?)=(?!\[REDACTED\]|%5BREDACTED%5D)[^&\s;]+/iu,
+    pattern: /(?:access_token|refresh_token|xsec_token|csrf(?:_token)?|session(?:_id)?|token|auth|api[_-]?key|secret|password)=(?!\[REDACTED\]|%5BREDACTED%5D)[^&\s;]+/iu,
+  },
+  {
+    name: 'sensitive-json-assignment',
+    pattern: /"(?:token|api[_-]?key|secret|password|raw[_-]?body)"\s*:\s*"(?!\[REDACTED\]|%5BREDACTED%5D)[^"]+"/iu,
   },
   {
     name: 'cookie-header',
@@ -46,6 +62,35 @@ const FORBIDDEN_VALUE_PATTERNS = Object.freeze([
   {
     name: 'profile-reference',
     pattern: /\b(?:profile[_-]?ref|profile[_-]?path|browser[_-]?profile|user[_-]?data[_-]?dir)\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^,;\r\n]+/iu,
+  },
+]);
+
+const IPV4_HOST_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/u;
+const PUBLIC_IDENTIFIER_TEXT_PATTERNS = Object.freeze([
+  {
+    name: 'email-address',
+    pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu,
+    replacement: '[REDACTED_EMAIL]',
+  },
+  {
+    name: 'ip-address',
+    pattern: /\b(?:\d{1,3}\.){3}\d{1,3}\b/gu,
+    replacement: '[REDACTED_IP]',
+  },
+  {
+    name: 'profile-path',
+    pattern: /(?:[A-Za-z]:\\|\/Users\/|\/home\/|AppData\\|BrowserProfile|browser[_-]?profile|user[_-]?data[_-]?dir)[^\s?#'"]*/giu,
+    replacement: '[REDACTED_PATH]',
+  },
+  {
+    name: 'account-label',
+    pattern: /\b(?:my\s+account|profile|signed\s+in\s+as|logged\s+in\s+as|account\s+for|user\s+account)\s*[:=-]?\s*[^/?#&|,;]{1,80}/giu,
+    replacement: '[REDACTED_ACCOUNT]',
+  },
+  {
+    name: 'script-reference',
+    pattern: /\b[\w.-]+\.(?:mjs|cjs|cmd|bat|ps1|sh|exe|dll)\b/giu,
+    replacement: '[REDACTED_REF]',
   },
 ]);
 
@@ -109,6 +154,26 @@ function redactSensitiveText(value, path, audit) {
   return text;
 }
 
+function redactBodySpecificKeys(value, path, audit) {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => redactBodySpecificKeys(item, [...path, String(index)], audit));
+  }
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = [...path, key];
+    if (SENSITIVE_BODY_KEY_PATTERNS.some((pattern) => pattern.test(key))) {
+      output[key] = REDACTION_PLACEHOLDER;
+      appendRedaction(audit, childPath);
+      continue;
+    }
+    output[key] = redactBodySpecificKeys(child, childPath, audit);
+  }
+  return output;
+}
+
 function redactValueInternal(value, path, audit) {
   if (Array.isArray(value)) {
     return value.map((item, index) => redactValueInternal(item, [...path, String(index)], audit));
@@ -136,6 +201,36 @@ export function redactValue(value) {
   const audit = createAudit();
   return {
     value: redactValueInternal(value, [], audit),
+    audit,
+  };
+}
+
+export function redactPublicIdentifierText(value, {
+  path = ['text'],
+  maxLength,
+} = {}) {
+  const audit = createAudit();
+  let text = redactSensitiveText(String(value ?? ''), path, audit);
+  for (const { name, pattern, replacement } of PUBLIC_IDENTIFIER_TEXT_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(text)) {
+      pattern.lastIndex = 0;
+      text = text.replace(pattern, replacement);
+      audit.findings.push({
+        path: pathToString(path),
+        pattern: name,
+      });
+      appendRedaction(audit, path, {
+        reason: 'public-identifier-pattern',
+        pattern: name,
+      });
+    }
+  }
+  const boundedLength = Number(maxLength);
+  return {
+    value: Number.isFinite(boundedLength) && boundedLength > 0
+      ? text.slice(0, boundedLength)
+      : text,
     audit,
   };
 }
@@ -185,8 +280,14 @@ export function redactUrl(input) {
       reason: 'url-userinfo',
     });
   }
+  if (IPV4_HOST_PATTERN.test(parsed.hostname)) {
+    parsed.hostname = 'redacted-ip.invalid';
+    appendRedaction(audit, ['url', 'hostname'], {
+      reason: 'url-ip-host',
+    });
+  }
   for (const key of [...parsed.searchParams.keys()]) {
-    if (!isSensitiveFieldName(key)) {
+    if (!isSensitiveFieldName(key) && !/^auth$/iu.test(key)) {
       continue;
     }
     parsed.searchParams.set(key, REDACTION_PLACEHOLDER);
@@ -203,8 +304,9 @@ export function redactUrl(input) {
 export function redactBody(body) {
   if (typeof body !== 'string') {
     const { value, audit } = redactValue(body);
+    const bodyValue = redactBodySpecificKeys(value, ['body'], audit);
     return {
-      body: value,
+      body: bodyValue,
       audit,
     };
   }
@@ -214,8 +316,9 @@ export function redactBody(body) {
     try {
       const parsed = JSON.parse(body);
       const { value, audit } = redactValue(parsed);
+      const bodyValue = redactBodySpecificKeys(value, ['body'], audit);
       return {
-        body: JSON.stringify(value),
+        body: JSON.stringify(bodyValue),
         audit,
       };
     } catch {
@@ -259,6 +362,20 @@ function scanForbiddenValues(value, path, findings) {
   if (typeof value !== 'string') {
     return;
   }
+  const normalizedPath = path.map((part) => String(part ?? '').toLowerCase());
+  const lastPath = normalizedPath.at(-1) ?? '';
+  const hasBodyContainer = normalizedPath.some((part) => /^(?:body|rawbody|raw_body)$/u.test(part));
+  if (
+    hasBodyContainer
+    && lastPath === 'auth'
+    && value !== REDACTION_PLACEHOLDER
+    && value !== encodeURIComponent(REDACTION_PLACEHOLDER)
+  ) {
+    findings.push({
+      path: pathToString(path),
+      pattern: 'sensitive-body-auth-field',
+    });
+  }
   for (const { name, pattern } of FORBIDDEN_VALUE_PATTERNS) {
     if (pattern.test(value)) {
       findings.push({
@@ -288,6 +405,7 @@ export function assertNoForbiddenPatterns(value) {
 
 export function prepareRedactedArtifactJson(value, { space = 2 } = {}) {
   const redacted = redactValue(value);
+  assertNoForbiddenPatterns(redacted.value);
   const json = JSON.stringify(redacted.value, null, space);
   assertNoForbiddenPatterns(json);
   return {

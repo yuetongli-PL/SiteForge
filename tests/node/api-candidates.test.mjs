@@ -1588,7 +1588,7 @@ test('multi-aspect verification producer composes safe fixture summaries', () =>
   assert.equal(result.metadata.aspects.riskState, 'normal');
   assert.equal(result.metadata.aspects.riskLevel, 'low');
   assert.equal(result.metadata.aspectVerifierIds.responseSchema, 'synthetic-multi-aspect-fixture-verifier-response');
-  assert.equal(result.metadata.aspectVerifierIds.auth, 'synthetic-multi-aspect-fixture-verifier-auth');
+  assert.equal(result.metadata.aspectVerifierIds.authRequirement, 'synthetic-multi-aspect-fixture-verifier-auth');
   assert.equal(result.metadata.aspectVerifierIds.pagination, 'synthetic-multi-aspect-fixture-verifier-pagination');
   assert.equal(result.metadata.aspectVerifierIds.risk, 'synthetic-multi-aspect-fixture-verifier-risk');
   assert.equal(Object.hasOwn(result.metadata.aspects, 'responseBody'), false);

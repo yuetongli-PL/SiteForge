@@ -12,6 +12,7 @@ import {
   observedRequestFromNetworkCaptureEvent,
   responseSummaryFromNetworkCaptureEvent,
 } from '../../sites/capability/network-capture.mjs';
+import { redactPublicIdentifierText, redactValue } from '../../sites/capability/security-guard.mjs';
 
 export const SNAPSHOT_STYLES = ['display', 'visibility', 'opacity', 'position', 'z-index'];
 export const NETWORK_IDLE_QUIET_MS = 500;
@@ -24,6 +25,9 @@ const DEFAULT_SESSION_OPEN_RETRIES = 2;
 const DOM_QUIET_RECOVERY_READY_TIMEOUT_MS = 2_000;
 const DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT = 100;
 const PENDING_NETWORK_CAPTURE_SITE_KEY = 'pending-site';
+const RESOURCE_HINT_API_PATTERN = /(?:\/api(?:\/|$|[?#])|\/graphql\b|graphql|\.json(?:$|[?#])|\/ajax\/|\/xhr\/|\/v\d+\/|\/web\/v\d+\/)/iu;
+const RESOURCE_HINT_INITIATOR_TYPES = new Set(['beacon', 'eventsource', 'fetch', 'xmlhttprequest']);
+const ROUTE_HINT_PATTERN = /(?:^\/(?!\/)|\/(?:app|detail|item|search|profile|user|work|works|book|video|author|creator|tag|category|settings|login|vip|paywall|checkout|account)(?:\/|$|[?#])|[?&](?:route|page|tab|view)=|route|router|\.m?js(?:$|[?#]))/iu;
 
 function formatEvaluationError(result, fallback) {
   return (
@@ -75,6 +79,75 @@ function incrementCounter(target, key, amount = 1) {
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function shouldTrackRequestForNetworkIdle(event = {}) {
+  const params = event.params ?? event;
+  const request = params.request ?? {};
+  const resourceType = String(params.type ?? '').trim().toLowerCase();
+  const url = String(request.url ?? params.url ?? '').trim().toLowerCase();
+  if (resourceType === 'eventsource' || resourceType === 'websocket') {
+    return false;
+  }
+  if (url.startsWith('ws:') || url.startsWith('wss:')) {
+    return false;
+  }
+  return true;
+}
+
+function isLikelyApiResourceHint(entry = {}) {
+  const url = String(entry.name ?? entry.url ?? '').trim();
+  const initiatorType = String(entry.initiatorType ?? entry.resourceType ?? '').trim().toLowerCase();
+  return Boolean(url) && (
+    RESOURCE_HINT_INITIATOR_TYPES.has(initiatorType)
+    || RESOURCE_HINT_API_PATTERN.test(url)
+  );
+}
+
+function resourceTypeFromInitiatorType(value) {
+  const initiatorType = String(value ?? '').trim().toLowerCase();
+  if (initiatorType === 'xmlhttprequest') {
+    return 'XHR';
+  }
+  if (initiatorType === 'eventsource') {
+    return 'EventSource';
+  }
+  if (initiatorType === 'beacon') {
+    return 'Beacon';
+  }
+  if (initiatorType === 'fetch') {
+    return 'Fetch';
+  }
+  return 'Other';
+}
+
+function safeApiHintMethod(value) {
+  const method = String(value ?? '').trim().toUpperCase();
+  return /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/u.test(method) ? method : 'GET';
+}
+
+function isLikelyRouteHint(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return false;
+  }
+  return ROUTE_HINT_PATTERN.test(text);
+}
+
+function routeHintId(prefix, index) {
+  return `${prefix}-${String(index + 1).padStart(3, '0')}`;
+}
+
+function boundedRouteHintText(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return undefined;
+  }
+  const redacted = String(redactPublicIdentifierText(text, {
+    path: ['routeHint'],
+    maxLength: 500,
+  }).value ?? '').trim();
+  return redacted || undefined;
 }
 
 export function createNetworkTracker(client, sessionId, {
@@ -155,7 +228,9 @@ export function createNetworkTracker(client, sessionId, {
       if (!params?.requestId) {
         return;
       }
-      inflight.add(params.requestId);
+      if (shouldTrackRequestForNetworkIdle(event)) {
+        inflight.add(params.requestId);
+      }
       appendObservedRequest(event);
       markActivity();
     },
@@ -166,6 +241,18 @@ export function createNetworkTracker(client, sessionId, {
     'Network.responseReceived',
     (event) => {
       appendObservedResponseSummary(event);
+      markActivity();
+    },
+    { sessionId },
+  );
+
+  const offWebSocketCreated = client.on(
+    'Network.webSocketCreated',
+    (event) => {
+      appendObservedRequest({
+        method: 'Network.webSocketCreated',
+        params: event?.params ?? event,
+      });
       markActivity();
     },
     { sessionId },
@@ -232,6 +319,7 @@ export function createNetworkTracker(client, sessionId, {
     dispose() {
       offRequest();
       offResponse();
+      offWebSocketCreated();
       offFinished();
       offFailed();
     },
@@ -320,6 +408,254 @@ export class BrowserSession {
 
   getObservedNetworkResponseSummaries(options = {}) {
     return this.networkTracker?.getObservedResponseSummaries?.(options) ?? [];
+  }
+
+  async getObservedPageResourceApiHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = {}) {
+    const normalizedSiteKey = String(siteKey ?? '').trim();
+    if (!normalizedSiteKey) {
+      throw new Error('Page resource API hints siteKey is required');
+    }
+    const readLimit = Math.max(0, Number(limit) || 0);
+    if (readLimit <= 0) {
+      return [];
+    }
+
+    let resourceHints = [];
+    try {
+      resourceHints = await this.callPageFunction((maxHints) => {
+        const attr = (node, name) => node?.getAttribute?.(name) || '';
+        const endpointAttrs = [
+          'action',
+          'data-api',
+          'data-api-url',
+          'data-endpoint',
+          'data-endpoint-url',
+          'data-request-url',
+          'data-fetch-url',
+          'data-url',
+        ];
+        const resourceEntries = typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
+          ? performance.getEntriesByType('resource')
+          : [];
+        const linkEntries = typeof document !== 'undefined'
+          ? [...document.querySelectorAll('link[href][rel], script[src]')]
+          .map((node) => ({
+            name: node.href || node.src,
+            initiatorType: node.tagName === 'SCRIPT' ? 'script' : String(node.rel || 'link'),
+          }))
+          : [];
+        const domEndpointEntries = typeof document !== 'undefined'
+          ? [...document.querySelectorAll('form[action], [data-api], [data-api-url], [data-endpoint], [data-endpoint-url], [data-request-url], [data-fetch-url], [data-url]')]
+          .flatMap((node) => endpointAttrs
+            .map((name) => ({
+              name: attr(node, name),
+              initiatorType: 'dom-endpoint',
+              method: node.tagName === 'FORM' ? String(node.method || 'GET') : 'GET',
+              source: 'browser.dom.api-hint',
+              descriptorSource: name,
+            })))
+          : [];
+        return [...resourceEntries, ...linkEntries, ...domEndpointEntries]
+          .map((entry) => ({
+            name: String(entry.name || ''),
+            initiatorType: String(entry.initiatorType || ''),
+            method: String(entry.method || 'GET'),
+            source: String(entry.source || 'browser.performance.resource'),
+            descriptorSource: String(entry.descriptorSource || entry.initiatorType || ''),
+          }))
+          .filter((entry) => entry.name)
+          .slice(-maxHints);
+      }, readLimit);
+    } catch {
+      return [];
+    }
+
+    if (!Array.isArray(resourceHints) || resourceHints.length === 0) {
+      return [];
+    }
+    return resourceHints
+      .filter(isLikelyApiResourceHint)
+      .slice(-readLimit)
+      .map((entry, index) => observedRequestFromNetworkCaptureEvent({
+        method: 'Network.requestWillBeSent',
+        params: {
+          requestId: `resource-hint-${index + 1}`,
+          type: resourceTypeFromInitiatorType(entry.initiatorType),
+          request: {
+            method: safeApiHintMethod(entry.method),
+            url: entry.name,
+            headers: {},
+          },
+          initiator: {
+            type: entry.initiatorType === 'dom-endpoint' ? 'dom-endpoint' : 'resource-timing',
+            descriptorSource: entry.descriptorSource,
+          },
+        },
+      }, {
+        siteKey: normalizedSiteKey,
+        source: entry.source || 'browser.performance.resource',
+      }));
+  }
+
+  async getObservedPageDomRouteHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = {}) {
+    const normalizedSiteKey = String(siteKey ?? '').trim();
+    if (!normalizedSiteKey) {
+      throw new Error('Page DOM route hints siteKey is required');
+    }
+    const readLimit = Math.max(0, Number(limit) || 0);
+    if (readLimit <= 0) {
+      return {
+        jsRoutes: [],
+        scriptRoutes: [],
+      };
+    }
+
+    let routeHints = {};
+    try {
+      routeHints = await this.callPageFunction((maxHints) => {
+        const attr = (node, name) => node?.getAttribute?.(name) || '';
+        const text = (node) => String(node?.textContent || node?.getAttribute?.('aria-label') || '').trim().slice(0, 120);
+        const routeAttrs = [
+          'data-route',
+          'data-router-path',
+          'data-path',
+          'data-href',
+          'data-url',
+          'to',
+        ];
+        const jsRoutes = [];
+        const scriptRoutes = [];
+        const pushRoute = (raw, source, node, { nodeKind = 'js-route', label } = {}) => {
+          if (jsRoutes.length >= maxHints) {
+            return;
+          }
+          const value = String(raw || '').trim().slice(0, 500);
+          if (!value) {
+            return;
+          }
+          jsRoutes.push({
+            routePath: value,
+            label: String(label || '').trim().slice(0, 120) || text(node) || value,
+            nodeKind,
+            descriptorSource: source,
+          });
+        };
+        const pushRuntimeRoute = (raw, source) => {
+          pushRoute(raw, source, document.body, {
+            nodeKind: 'runtime-route',
+            label: source,
+          });
+        };
+        const routeStateKey = /^(?:as|href|page|path|pathname|route|url)$/iu;
+        const routeStateContainerKey = /(?:location|page|route|router|state|transition|view)$/iu;
+        const pushRuntimeRoutesFromState = (record, source, depth = 0) => {
+          if (!record || typeof record !== 'object' || depth > 2 || jsRoutes.length >= maxHints) {
+            return;
+          }
+          for (const [key, value] of Object.entries(record)) {
+            if (jsRoutes.length >= maxHints) {
+              return;
+            }
+            if (typeof value === 'string' && routeStateKey.test(key)) {
+              pushRuntimeRoute(value, `${source}.${key}`);
+              continue;
+            }
+            if (
+              value
+              && typeof value === 'object'
+              && !Array.isArray(value)
+              && routeStateContainerKey.test(key)
+            ) {
+              pushRuntimeRoutesFromState(value, `${source}.${key}`, depth + 1);
+            }
+          }
+        };
+        for (const node of [...document.querySelectorAll('a[href], area[href]')]) {
+          pushRoute(node.href || attr(node, 'href'), 'href', node);
+        }
+        for (const node of [...document.querySelectorAll(routeAttrs.map((name) => `[${name}]`).join(','))]) {
+          for (const name of routeAttrs) {
+            pushRoute(attr(node, name), name, node);
+          }
+        }
+        for (const node of [...document.querySelectorAll('link[href][rel]')]) {
+          const rel = String(attr(node, 'rel')).toLowerCase();
+          if (/\\b(?:modulepreload|prefetch|preload|prerender)\\b/u.test(rel)) {
+            pushRoute(node.href || attr(node, 'href'), `link.${rel}`, node);
+          }
+        }
+        for (const node of [...document.querySelectorAll('script[src]')]) {
+          const src = node.src || attr(node, 'src');
+          if (src) {
+            scriptRoutes.push({
+              routePath: src,
+              scriptUrl: src,
+              label: src,
+              descriptorSource: 'script.src',
+            });
+          }
+        }
+        if (typeof window !== 'undefined' && window.location) {
+          pushRuntimeRoute(window.location.pathname, 'window.location.pathname');
+          pushRuntimeRoute(window.location.hash, 'window.location.hash');
+        }
+        const nextPage = typeof window !== 'undefined'
+          ? window.__NEXT_DATA__?.page
+          : '';
+        pushRuntimeRoute(nextPage, 'window.__NEXT_DATA__.page');
+        const remixPath = typeof window !== 'undefined'
+          ? window.__remixContext?.state?.location?.pathname
+          : '';
+        pushRuntimeRoute(remixPath, 'window.__remixContext.state.location.pathname');
+        const historyState = typeof window !== 'undefined'
+          ? window.history?.state
+          : null;
+        pushRuntimeRoutesFromState(historyState, 'window.history.state');
+        return {
+          jsRoutes: jsRoutes.slice(-maxHints),
+          scriptRoutes: scriptRoutes.slice(-maxHints),
+        };
+      }, readLimit);
+    } catch {
+      return {
+        jsRoutes: [],
+        scriptRoutes: [],
+      };
+    }
+
+    const jsRoutes = Array.isArray(routeHints?.jsRoutes) ? routeHints.jsRoutes : [];
+    const scriptRoutes = Array.isArray(routeHints?.scriptRoutes) ? routeHints.scriptRoutes : [];
+    const cleanRoutes = jsRoutes
+      .filter((entry) => isLikelyRouteHint(entry?.routePath ?? entry?.href ?? entry?.path))
+      .slice(-readLimit)
+      .map((entry, index) => ({
+        id: routeHintId('dom-route-hint', index),
+        routePath: boundedRouteHintText(entry.routePath ?? entry.href ?? entry.path),
+        label: boundedRouteHintText(entry.label),
+        nodeKind: entry.nodeKind ?? 'js-route',
+        source: entry.nodeKind === 'runtime-route' ? 'browser.runtime.route-hint' : 'browser.dom.route-hint',
+        descriptorSource: boundedRouteHintText(entry.descriptorSource),
+        status: 'observed',
+        siteKey: normalizedSiteKey,
+      }));
+    const cleanScriptRoutes = scriptRoutes
+      .filter((entry) => isLikelyRouteHint(entry?.scriptUrl ?? entry?.routePath ?? entry?.src))
+      .slice(-readLimit)
+      .map((entry, index) => ({
+        id: routeHintId('script-route-hint', index),
+        routePath: boundedRouteHintText(entry.routePath ?? entry.scriptUrl ?? entry.src),
+        scriptUrl: boundedRouteHintText(entry.scriptUrl ?? entry.routePath ?? entry.src),
+        label: boundedRouteHintText(entry.label),
+        nodeKind: 'script-route',
+        source: 'browser.dom.script-src-route-hint',
+        descriptorSource: boundedRouteHintText(entry.descriptorSource),
+        status: 'observed',
+        siteKey: normalizedSiteKey,
+      }));
+    return redactValue({
+      jsRoutes: cleanRoutes,
+      scriptRoutes: cleanScriptRoutes,
+    }).value;
   }
 
   async send(method, params = {}, timeoutMs = this.timeoutMs) {

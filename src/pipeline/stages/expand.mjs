@@ -28,6 +28,7 @@ import { resolveSiteAdapter } from '../../sites/core/adapters/resolver.mjs';
 import {
   prepareRedactedArtifactJson,
   prepareRedactedArtifactJsonWithAudit,
+  redactValue,
 } from '../../sites/capability/security-guard.mjs';
 import { isDouyinSiteProfile, resolveDouyinHeadlessDefault } from '../../sites/douyin/model/site.mjs';
 import {
@@ -1204,9 +1205,124 @@ function buildTopLevelManifest(inputUrl, baseUrl, layout) {
       failedTriggers: 0,
     },
     budget: null,
+    candidateTriggers: [],
+    policySkippedTriggers: [],
+    budgetSkippedTriggers: [],
+    unattemptedTriggers: [],
+    failedTriggers: [],
+    duplicateTriggers: [],
     warnings: [],
     states: [],
   };
+}
+
+function triggerIdentityParts(trigger = {}, metadata = {}) {
+  return {
+    kind: trigger.kind ?? trigger.type ?? null,
+    label: trigger.label ?? trigger.name ?? trigger.locator?.label ?? null,
+    href: normalizeUrlNoFragment(trigger.href ?? trigger.url ?? trigger.locator?.href ?? null),
+    queryText: trigger.queryText ?? null,
+    semanticRole: trigger.semanticRole ?? null,
+    locator: {
+      primary: trigger.locator?.primary ?? null,
+      tagName: trigger.locator?.tagName ?? null,
+      role: trigger.locator?.role ?? null,
+      id: trigger.locator?.id ?? trigger.id ?? null,
+      ariaControls: trigger.locator?.ariaControls ?? trigger.ariaControls ?? null,
+      domPath: trigger.locator?.domPath ?? trigger.domPath ?? null,
+      textSnippet: trigger.locator?.textSnippet ?? trigger.textSnippet ?? null,
+      inputName: trigger.locator?.inputName ?? null,
+      formAction: trigger.locator?.formAction ?? null,
+      submitSelector: trigger.locator?.submitSelector ?? null,
+    },
+    sourceStateId: metadata.sourceStateId ?? null,
+    sourceUrl: normalizeUrlNoFragment(metadata.sourceUrl ?? null),
+    pageType: metadata.pageType ?? null,
+  };
+}
+
+function triggerOutcomeId(trigger = {}, metadata = {}) {
+  const redactedIdentity = redactValue(triggerIdentityParts(trigger, metadata)).value;
+  const digest = createHash('sha256')
+    .update(JSON.stringify(redactedIdentity))
+    .digest('hex')
+    .slice(0, 16);
+  return `trigger:${metadata.discoveryStatus ?? metadata.status ?? 'observed'}:${digest}`;
+}
+
+function createTriggerOutcomeRecord(trigger = {}, metadata = {}) {
+  const record = {
+    id: triggerOutcomeId(trigger, metadata),
+    kind: trigger.kind ?? trigger.type ?? 'trigger',
+    label: trigger.label ?? trigger.name ?? trigger.locator?.label ?? trigger.kind ?? 'trigger',
+    href: normalizeUrlNoFragment(trigger.href ?? trigger.url ?? trigger.locator?.href ?? null),
+    queryText: trigger.queryText ?? null,
+    semanticRole: trigger.semanticRole ?? null,
+    locator: trigger.locator && typeof trigger.locator === 'object'
+      ? {
+          primary: trigger.locator.primary ?? null,
+          tagName: trigger.locator.tagName ?? null,
+          role: trigger.locator.role ?? null,
+          id: trigger.locator.id ?? null,
+          ariaControls: trigger.locator.ariaControls ?? null,
+          href: normalizeUrlNoFragment(trigger.locator.href ?? null),
+          domPath: trigger.locator.domPath ?? null,
+          textSnippet: trigger.locator.textSnippet ?? null,
+          inputName: trigger.locator.inputName ?? null,
+          formAction: trigger.locator.formAction ?? null,
+          submitSelector: trigger.locator.submitSelector ?? null,
+        }
+      : null,
+    source: metadata.source ?? 'expand-trigger-outcome',
+    sourceStateId: metadata.sourceStateId ?? null,
+    sourceUrl: normalizeUrlNoFragment(metadata.sourceUrl ?? null),
+    pageType: metadata.pageType ?? null,
+    status: metadata.status ?? metadata.discoveryStatus ?? 'discovered',
+    discoveryStatus: metadata.discoveryStatus ?? 'discovered',
+    reasonCode: metadata.reasonCode ?? null,
+    reason: metadata.reason ?? null,
+    attempted: metadata.attempted === true,
+  };
+  return redactValue(record).value;
+}
+
+function appendTriggerOutcome(topManifest, bucketName, trigger, metadata = {}) {
+  if (!trigger || typeof trigger !== 'object' || Array.isArray(trigger)) {
+    return;
+  }
+  const bucket = topManifest[bucketName];
+  if (!Array.isArray(bucket)) {
+    return;
+  }
+  const record = createTriggerOutcomeRecord(trigger, metadata);
+  if (bucket.some((entry) => entry.id === record.id)) {
+    return;
+  }
+  bucket.push(record);
+}
+
+function appendTriggerOutcomes(topManifest, bucketName, triggers = [], metadata = {}) {
+  for (const trigger of Array.isArray(triggers) ? triggers : []) {
+    appendTriggerOutcome(topManifest, bucketName, trigger, metadata);
+  }
+}
+
+function triggerSelectionKey(trigger = {}) {
+  return JSON.stringify([
+    trigger.kind ?? null,
+    trigger.label ?? null,
+    normalizeUrlNoFragment(trigger.href ?? trigger.locator?.href ?? null),
+    trigger.queryText ?? null,
+    trigger.semanticRole ?? null,
+    trigger.locator?.domPath ?? null,
+    trigger.locator?.id ?? null,
+  ]);
+}
+
+function collectUnselectedTriggers(allTriggers = [], selectedTriggers = []) {
+  const selectedKeys = new Set((Array.isArray(selectedTriggers) ? selectedTriggers : []).map(triggerSelectionKey));
+  return (Array.isArray(allTriggers) ? allTriggers : [])
+    .filter((trigger) => !selectedKeys.has(triggerSelectionKey(trigger)));
 }
 
 async function writeTopLevelManifest(manifestPath, manifest) {
@@ -3968,6 +4084,34 @@ async function loadSourceContext({
     buildPageFactsSyntheticTriggers(sourceSignature.pageType, sourceSignature.pageFacts),
   );
   topManifest.summary.discoveredTriggers += mergedTriggers.length;
+  appendTriggerOutcomes(topManifest, 'candidateTriggers', mergedTriggers, {
+    source: 'expand-candidate-trigger',
+    sourceStateId: context.stateId,
+    sourceUrl: sourceSignature.finalUrl || context.sourceUrl,
+    pageType: sourceSignature.pageType,
+    status: 'discovered',
+    discoveryStatus: 'discovered',
+    reasonCode: 'expand.trigger_discovered',
+    attempted: false,
+  });
+  const selectedTriggers = selectTriggersForPage(
+    sourceSignature.pageType,
+    mergedTriggers,
+    settings,
+    siteProfile,
+    { includeSearchQueries: context.includeSearchQueries },
+  );
+  appendTriggerOutcomes(topManifest, 'policySkippedTriggers', collectUnselectedTriggers(mergedTriggers, selectedTriggers), {
+    source: 'expand-policy-skipped-trigger',
+    sourceStateId: context.stateId,
+    sourceUrl: sourceSignature.finalUrl || context.sourceUrl,
+    pageType: sourceSignature.pageType,
+    status: 'skipped_by_policy',
+    discoveryStatus: 'skipped_by_policy',
+    reasonCode: 'expand.trigger_not_selected_by_policy_or_quota',
+    reason: 'Trigger was observed but not selected by page policy, quota, or priority rules.',
+    attempted: false,
+  });
 
   return {
     ...context,
@@ -3975,13 +4119,7 @@ async function loadSourceContext({
     sourceSignature,
     sourceFingerprintJson,
     discoveredTriggers: mergedTriggers,
-    triggers: selectTriggersForPage(
-      sourceSignature.pageType,
-      mergedTriggers,
-      settings,
-      siteProfile,
-      { includeSearchQueries: context.includeSearchQueries },
-    ),
+    triggers: selectedTriggers,
   };
 }
 
@@ -4081,6 +4219,29 @@ export async function expandStates(inputUrl, options = {}) {
       let restoreSourceBeforeNextTrigger = false;
       for (let triggerIndex = 0; triggerIndex < sourceContext.triggers.length; triggerIndex += 1) {
         if (topManifest.summary.capturedStates >= settings.maxCapturedStates) {
+          const remainingTriggers = sourceContext.triggers.slice(triggerIndex);
+          appendTriggerOutcomes(topManifest, 'budgetSkippedTriggers', remainingTriggers, {
+            source: 'expand-budget-skipped-trigger',
+            sourceStateId: context.stateId,
+            sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+            pageType: sourceContext.pageType,
+            status: 'skipped_by_budget',
+            discoveryStatus: 'skipped_by_budget',
+            reasonCode: 'expand.max_captured_states',
+            reason: `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
+            attempted: false,
+          });
+          appendTriggerOutcomes(topManifest, 'unattemptedTriggers', remainingTriggers, {
+            source: 'expand-unattempted-trigger',
+            sourceStateId: context.stateId,
+            sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+            pageType: sourceContext.pageType,
+            status: 'unattempted',
+            discoveryStatus: 'unattempted',
+            reasonCode: 'expand.max_captured_states',
+            reason: `Expansion stopped before this trigger could be attempted because maxCapturedStates=${settings.maxCapturedStates}`,
+            attempted: false,
+          });
           markBudgetStop(
             topManifest,
             `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
@@ -4105,6 +4266,17 @@ export async function expandStates(inputUrl, options = {}) {
           const executeResult = await executeTrigger(session, trigger, siteProfile, settings);
           if (!executeResult?.clicked) {
             topManifest.summary.failedTriggers += 1;
+            appendTriggerOutcome(topManifest, 'failedTriggers', trigger, {
+              source: 'expand-failed-trigger',
+              sourceStateId: context.stateId,
+              sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+              pageType: sourceContext.pageType,
+              status: 'failed_trigger',
+              discoveryStatus: 'failed_trigger',
+              reasonCode: 'TRIGGER_NOT_FOUND',
+              reason: executeResult?.reason || 'Trigger could not be resolved',
+              attempted: true,
+            });
             topManifest.states.push(
               createStateIndexEntry({
                 stateId,
@@ -4172,6 +4344,17 @@ export async function expandStates(inputUrl, options = {}) {
 
           if (capturedDedupKeys.has(dedupKey)) {
             topManifest.summary.duplicateStates += 1;
+            appendTriggerOutcome(topManifest, 'duplicateTriggers', trigger, {
+              source: 'expand-duplicate-trigger',
+              sourceStateId: context.stateId,
+              sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+              pageType: sourceContext.pageType,
+              status: 'duplicate_trigger',
+              discoveryStatus: 'duplicate_trigger',
+              reasonCode: 'expand.duplicate_state',
+              reason: `Trigger reached already captured state ${capturedDedupKeys.get(dedupKey)}`,
+              attempted: true,
+            });
             topManifest.states.push(
               createStateIndexEntry({
                 stateId,
@@ -4211,6 +4394,29 @@ export async function expandStates(inputUrl, options = {}) {
             topManifest.summary.capturedStates += 1;
             capturedDedupKeys.set(dedupKey, stateId);
             if (topManifest.summary.capturedStates >= settings.maxCapturedStates) {
+              const remainingTriggers = sourceContext.triggers.slice(triggerIndex + 1);
+              appendTriggerOutcomes(topManifest, 'budgetSkippedTriggers', remainingTriggers, {
+                source: 'expand-budget-skipped-trigger',
+                sourceStateId: context.stateId,
+                sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+                pageType: sourceContext.pageType,
+                status: 'skipped_by_budget',
+                discoveryStatus: 'skipped_by_budget',
+                reasonCode: 'expand.max_captured_states',
+                reason: `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
+                attempted: false,
+              });
+              appendTriggerOutcomes(topManifest, 'unattemptedTriggers', remainingTriggers, {
+                source: 'expand-unattempted-trigger',
+                sourceStateId: context.stateId,
+                sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+                pageType: sourceContext.pageType,
+                status: 'unattempted',
+                discoveryStatus: 'unattempted',
+                reasonCode: 'expand.max_captured_states',
+                reason: `Expansion stopped before this trigger could be attempted because maxCapturedStates=${settings.maxCapturedStates}`,
+                attempted: false,
+              });
               markBudgetStop(
                 topManifest,
                 `Expansion stopped after reaching maxCapturedStates=${settings.maxCapturedStates}`,
@@ -4226,12 +4432,34 @@ export async function expandStates(inputUrl, options = {}) {
             }
           } else {
             topManifest.summary.failedTriggers += 1;
+            appendTriggerOutcome(topManifest, 'failedTriggers', trigger, {
+              source: 'expand-failed-trigger',
+              sourceStateId: context.stateId,
+              sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+              pageType: sourceContext.pageType,
+              status: 'failed_trigger',
+              discoveryStatus: 'failed_trigger',
+              reasonCode: stateManifest.error?.code ?? 'TRIGGER_CAPTURE_FAILED',
+              reason: stateManifest.error?.message ?? 'Triggered state capture failed',
+              attempted: true,
+            });
           }
 
           topManifest.states.push(topLevelStateEntryFromManifest(stateManifest));
         } catch (error) {
           restoreSourceBeforeNextTrigger = Boolean(nextTrigger && requiresSourceDom(nextTrigger));
           topManifest.summary.failedTriggers += 1;
+          appendTriggerOutcome(topManifest, 'failedTriggers', trigger, {
+            source: 'expand-failed-trigger',
+            sourceStateId: context.stateId,
+            sourceUrl: sourceContext.sourceSignature?.finalUrl || context.sourceUrl,
+            pageType: sourceContext.pageType,
+            status: 'failed_trigger',
+            discoveryStatus: 'failed_trigger',
+            reasonCode: 'TRIGGER_EXECUTION_FAILED',
+            reason: error.message,
+            attempted: true,
+          });
           topManifest.states.push(
             createStateIndexEntry({
               stateId,

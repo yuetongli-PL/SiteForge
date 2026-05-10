@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import process from 'node:process';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { parseCliArgs, pipelineCliJson, runPipeline } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
 import { PIPELINE_STAGE_SPECS } from '../../src/pipeline/engine/stage-spec.mjs';
@@ -643,8 +644,8 @@ test('runPipeline writes a redacted partial preview result after final expanded-
     assert.equal(expandAttempts, 2);
     assert.equal(analysisCalls, 0);
     assert.equal(result.pipelinePartial, true);
-    assert.equal(result.kbDir, null);
-    assert.equal(result.skillDir, null);
+    assert.equal(result.kbDir, path.join(expandedOutDir, 'partial-knowledge-base'));
+    assert.equal(result.skillDir, path.join(expandedOutDir, 'partial-skill', '22biqu'));
     assert.equal(result.stages.capture.status, 'success');
     assert.equal(result.stages.expanded.stage, 'expanded');
     assert.equal(result.stages.expanded.status, 'partial');
@@ -653,7 +654,13 @@ test('runPipeline writes a redacted partial preview result after final expanded-
     assert.equal(result.stages.expanded.attempts, 2);
     assert.equal(result.stages.expanded.failed, true);
     assert.equal(result.stages.analysis.status, 'skipped');
-    assert.equal(result.stages.knowledgeBase.status, 'skipped');
+    assert.equal(result.stages.knowledgeBase.status, 'partial');
+    assert.equal(result.stages.knowledgeBase.kbDir, result.kbDir);
+    assert.equal(result.stages.knowledgeBase.redactionRequired, true);
+    assert.equal(result.partialKnowledgeBase.repoLocalKnowledgeBaseWriteSkipped, false);
+    assert.equal(result.stages.skill.status, 'partial');
+    assert.equal(result.stages.skill.skillDir, result.skillDir);
+    assert.equal(result.stages.skill.repoLocalSkillUpdated, false);
     assert.equal(result.partialPreview.result.sourceCaptureRefs.manifestPath, path.join(buildStageDir(workspace, 'capture'), 'manifest.json'));
     assert.equal(result.partialPreview.result.redactionRequired, true);
     assert.equal(result.partialPreview.result.noBypassAttempted, true);
@@ -670,7 +677,219 @@ test('runPipeline writes a redacted partial preview result after final expanded-
     assert.doesNotMatch(artifactJson, /synthetic-expand-partial-secret|Authorization: Bearer/iu);
     assert.match(artifactJson, /"status": "partial"/u);
     assert.match(auditJson, /forbidden-pattern/u);
+
+    const partialKbJson = await readFile(result.partialKnowledgeBase.resultPath, 'utf8');
+    const partialSkillJson = await readFile(result.partialSkill.resultPath, 'utf8');
+    const partialSkillMd = await readFile(result.partialSkill.skillMdPath, 'utf8');
+    const partialSkillAudit = await readFile(result.partialSkill.skillMdRedactionAuditPath, 'utf8');
+    assert.match(partialKbJson, /"artifactFamily": "pipeline-partial-knowledge-base"/u);
+    assert.match(partialKbJson, /"sourceCaptureRefs"/u);
+    assert.match(partialKbJson, /"failedStage": "expanded"/u);
+    assert.match(partialSkillJson, /"artifactFamily": "pipeline-partial-skill-preview"/u);
+    assert.match(partialSkillJson, /"repoLocalSkillUpdated": false/u);
+    assert.match(partialSkillMd, /Partial Skill Preview/u);
+    assert.match(partialSkillMd, /Status: `partial`/u);
+    assert.doesNotMatch(
+      `${partialKbJson}\n${partialSkillJson}\n${partialSkillMd}`,
+      /synthetic-expand-partial-secret|Authorization: Bearer/iu,
+    );
+    assert.match(partialSkillAudit, /schemaVersion/u);
   } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline redirects partial skill previews away from repo-local skill directories', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-partial-skill-safe-'));
+  const originalCwd = process.cwd();
+  const repoSkillDir = path.join(workspace, 'skills', '22biqu');
+  const repoSkillFile = path.join(repoSkillDir, 'SKILL.md');
+  const expandedOutDir = path.join(workspace, 'runs', 'preview', '22biqu', 'expanded');
+
+  try {
+    await mkdir(repoSkillDir, { recursive: true });
+    await writeFile(repoSkillFile, 'existing repo-local skill\n', 'utf8');
+    process.chdir(workspace);
+
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async capture(url) {
+        return {
+          status: 'success',
+          outDir: buildStageDir(workspace, 'capture'),
+          files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+          finalUrl: url,
+          title: 'Captured Before Safe Redirect',
+          capturedAt: '2026-04-15T00:00:00.000Z',
+        };
+      },
+      async expandStates() {
+        throw new Error('page.goto: net::ERR_CONNECTION_CLOSED');
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      expandedOutDir,
+      skillOutDir: repoSkillDir,
+      reuseLoginState: false,
+      autoLogin: false,
+    }, stageImpls);
+
+    assert.equal(result.pipelinePartial, true);
+    assert.equal(result.partialSkill.repoLocalSkillUpdated, false);
+    assert.equal(result.partialSkill.repoLocalSkillWriteSkipped, true);
+    assert.equal(result.partialSkill.repoLocalSkillWriteSkippedReason, 'requested-skills-path');
+    assert.equal(result.partialSkill.requestedSkillOutDir, repoSkillDir);
+    assert.equal(result.skillDir, path.join(expandedOutDir, 'partial-skill', '22biqu'));
+    assert.equal(await readFile(repoSkillFile, 'utf8'), 'existing repo-local skill\n');
+    assert.match(await readFile(path.join(result.skillDir, 'SKILL.md'), 'utf8'), /Partial Skill Preview/u);
+  } finally {
+    process.chdir(originalCwd);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline redirects partial skill previews away from repo-local config directories', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-partial-config-safe-'));
+  const originalCwd = process.cwd();
+  const configPreviewDir = path.join(workspace, 'config', 'site-metadata-preview');
+  const configFile = path.join(configPreviewDir, 'site-registry.json');
+  const expandedOutDir = path.join(workspace, 'runs', 'preview', '22biqu', 'expanded');
+
+  try {
+    await mkdir(configPreviewDir, { recursive: true });
+    await writeFile(configFile, '{"existing":true}\n', 'utf8');
+    process.chdir(workspace);
+
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async capture(url) {
+        return {
+          status: 'success',
+          outDir: buildStageDir(workspace, 'capture'),
+          files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+          finalUrl: url,
+          title: 'Captured Before Config Safe Redirect',
+          capturedAt: '2026-04-15T00:00:00.000Z',
+        };
+      },
+      async expandStates() {
+        throw new Error('page.goto: net::ERR_CONNECTION_CLOSED');
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      expandedOutDir,
+      skillOutDir: configPreviewDir,
+      reuseLoginState: false,
+      autoLogin: false,
+    }, stageImpls);
+
+    assert.equal(result.pipelinePartial, true);
+    assert.equal(result.partialSkill.repoLocalSkillUpdated, false);
+    assert.equal(result.partialSkill.repoLocalSkillWriteSkipped, true);
+    assert.equal(result.partialSkill.repoLocalSkillWriteSkippedReason, 'requested-config-path');
+    assert.equal(result.partialSkill.requestedSkillOutDir, configPreviewDir);
+    assert.equal(result.skillDir, path.join(expandedOutDir, 'partial-skill', '22biqu'));
+    assert.equal(await readFile(configFile, 'utf8'), '{"existing":true}\n');
+    assert.match(await readFile(path.join(result.skillDir, 'SKILL.md'), 'utf8'), /Partial Skill Preview/u);
+  } finally {
+    process.chdir(originalCwd);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline redirects partial skill previews away from non-runtime repo paths', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-partial-skill-repo-safe-'));
+  const originalCwd = process.cwd();
+  const repoDocsDir = path.join(workspace, 'docs', 'generated-skill-preview');
+  const repoDocsFile = path.join(repoDocsDir, 'existing.md');
+  const expandedOutDir = path.join(workspace, 'runs', 'preview', '22biqu', 'expanded');
+
+  try {
+    await mkdir(repoDocsDir, { recursive: true });
+    await writeFile(repoDocsFile, 'existing repo docs\n', 'utf8');
+    process.chdir(workspace);
+
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async capture(url) {
+        return {
+          status: 'success',
+          outDir: buildStageDir(workspace, 'capture'),
+          files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+          finalUrl: url,
+          title: 'Captured Before Repo Path Safe Redirect',
+          capturedAt: '2026-04-15T00:00:00.000Z',
+        };
+      },
+      async expandStates() {
+        throw new Error('page.goto: net::ERR_CONNECTION_CLOSED');
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      expandedOutDir,
+      skillOutDir: repoDocsDir,
+      reuseLoginState: false,
+      autoLogin: false,
+    }, stageImpls);
+
+    assert.equal(result.pipelinePartial, true);
+    assert.equal(result.partialSkill.repoLocalSkillUpdated, false);
+    assert.equal(result.partialSkill.repoLocalSkillWriteSkipped, true);
+    assert.equal(result.partialSkill.repoLocalSkillWriteSkippedReason, 'requested-repo-path');
+    assert.equal(result.skillDir, path.join(expandedOutDir, 'partial-skill', '22biqu'));
+    assert.equal(await readFile(repoDocsFile, 'utf8'), 'existing repo docs\n');
+  } finally {
+    process.chdir(originalCwd);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline redirects partial knowledge base previews away from repo-local config directories', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-partial-kb-config-safe-'));
+  const originalCwd = process.cwd();
+  const configPreviewDir = path.join(workspace, 'config', 'partial-kb-preview');
+  const configFile = path.join(configPreviewDir, 'site-capabilities.json');
+  const expandedOutDir = path.join(workspace, 'runs', 'preview', '22biqu', 'expanded');
+
+  try {
+    await mkdir(configPreviewDir, { recursive: true });
+    await writeFile(configFile, '{"existing":true}\n', 'utf8');
+    process.chdir(workspace);
+
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async capture(url) {
+        return {
+          status: 'success',
+          outDir: buildStageDir(workspace, 'capture'),
+          files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+          finalUrl: url,
+          title: 'Captured Before Partial KB Config Safe Redirect',
+          capturedAt: '2026-04-15T00:00:00.000Z',
+        };
+      },
+      async expandStates() {
+        throw new Error('page.goto: net::ERR_CONNECTION_CLOSED');
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      expandedOutDir,
+      kbDir: configPreviewDir,
+      skillOutDir: path.join(expandedOutDir, 'partial-skill', '22biqu'),
+      reuseLoginState: false,
+      autoLogin: false,
+    }, stageImpls);
+
+    assert.equal(result.pipelinePartial, true);
+    assert.equal(result.partialKnowledgeBase.repoLocalKnowledgeBaseWriteSkipped, true);
+    assert.equal(result.partialKnowledgeBase.repoLocalKnowledgeBaseWriteSkippedReason, 'requested-config-path');
+    assert.equal(result.partialKnowledgeBase.requestedKbDir, configPreviewDir);
+    assert.equal(result.stages.knowledgeBase.repoLocalKnowledgeBaseWriteSkipped, true);
+    assert.equal(result.kbDir, path.join(expandedOutDir, 'partial-knowledge-base'));
+    assert.equal(await readFile(configFile, 'utf8'), '{"existing":true}\n');
+    assert.match(await readFile(result.partialKnowledgeBase.resultPath, 'utf8'), /pipeline-partial-knowledge-base/u);
+  } finally {
+    process.chdir(originalCwd);
     await rm(workspace, { recursive: true, force: true });
   }
 });

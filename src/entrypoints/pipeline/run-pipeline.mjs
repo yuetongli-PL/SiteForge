@@ -10,6 +10,7 @@ import { writeTextFile } from '../../infra/io.mjs';
 
 import { executePipeline } from '../../pipeline/engine/engine.mjs';
 import { normalizePipelineOptions, toBoolean } from '../../pipeline/engine/options.mjs';
+import { writePartialPreviewArtifacts } from '../../pipeline/engine/partial-preview-artifacts.mjs';
 import { isTransientNavigationError } from '../../pipeline/engine/runners.mjs';
 import { PIPELINE_STAGE_SPECS, summarizePipelineStages } from '../../pipeline/engine/stage-spec.mjs';
 import { DEFAULT_PIPELINE_RUNTIME, resolvePipelineRuntime } from '../../pipeline/runtime/create-default-runtime.mjs';
@@ -262,18 +263,54 @@ async function maybeBuildPartialPreviewResult({
     error,
   });
   const partialPreview = await writePartialPreviewResult(payload, settings);
+  const partialArtifacts = await writePartialPreviewArtifacts({
+    inputUrl,
+    generatedAt,
+    settings,
+    partialPreviewResult: partialPreview.result,
+  });
+  const stages = {
+    ...partialPreview.result.stages,
+    knowledgeBase: {
+      status: 'partial',
+      kbDir: partialArtifacts.knowledgeBase.kbDir,
+      resultPath: partialArtifacts.knowledgeBase.resultPath,
+      redactionAuditPath: partialArtifacts.knowledgeBase.resultRedactionAuditPath,
+      reasonCode: partialPreview.result.reasonCode,
+      redactionRequired: true,
+      failedStage: 'expanded',
+      requestedKbDir: partialArtifacts.knowledgeBase.requestedKbDir,
+      repoLocalKnowledgeBaseWriteSkipped: partialArtifacts.knowledgeBase.repoLocalKnowledgeBaseWriteSkipped,
+      repoLocalKnowledgeBaseWriteSkippedReason: partialArtifacts.knowledgeBase.repoLocalKnowledgeBaseWriteSkippedReason,
+    },
+    skill: {
+      status: 'partial',
+      skillDir: partialArtifacts.skill.skillDir,
+      skillName: partialArtifacts.skill.skillName,
+      references: partialArtifacts.skill.references,
+      warnings: partialArtifacts.skill.warnings,
+      resultPath: partialArtifacts.skill.resultPath,
+      redactionAuditPath: partialArtifacts.skill.resultRedactionAuditPath,
+      reasonCode: partialPreview.result.reasonCode,
+      redactionRequired: true,
+      repoLocalSkillUpdated: false,
+      failedStage: 'expanded',
+    },
+  };
   return {
     inputUrl,
     generatedAt,
-    kbDir: null,
-    skillDir: null,
+    kbDir: partialArtifacts.knowledgeBase.kbDir,
+    skillDir: partialArtifacts.skill.skillDir,
     skillName: settings.skillName,
     authKeepalive,
     riskRecovery,
     pipelineBlockedByRisk: false,
     pipelinePartial: true,
     partialPreview,
-    stages: partialPreview.result.stages,
+    partialKnowledgeBase: partialArtifacts.knowledgeBase,
+    partialSkill: partialArtifacts.skill,
+    stages,
   };
 }
 

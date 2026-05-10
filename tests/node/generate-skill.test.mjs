@@ -54,14 +54,14 @@ test('generateSkill produces stable jable skill documents from a self-contained 
     assert.match(skillMd, /^---\nname: jable\n/su);
     assert.match(skillMd, /\n# jable Skill\n/su);
     assert.match(skillMd, /Instruction-only Skill for https:\/\/jable\.tv\//u);
-    assert.match(skillMd, /Ranking query entrypoint: `node src\/entrypoints\/sites\/jable-ranking\.mjs <url> --query/u);
+    assert.match(skillMd, /Ranking query entrypoint: `node src\/entrypoints\/cli\.mjs catalog jable-ranking <url> --query/u);
     assert.match(skillMd, /## Sample coverage/u);
     assert.match(skillMd, /JUR-652/u);
     assert.match(skillMd, /Aoi Tsukasa/u);
 
     assert.match(indexMd, /^# jable Index\n/su);
     assert.match(indexMd, /## Notes/u);
-    assert.match(indexMd, /node src\/entrypoints\/sites\/jable-ranking\.mjs https:\/\/jable\.tv\/ --query/u);
+    assert.match(indexMd, /node src\/entrypoints\/cli\.mjs catalog jable-ranking https:\/\/jable\.tv\/ --query/u);
     assert.match(indexMd, /JUR-652/u);
     assert.match(indexMd, /big-tits/u);
     assert.match(indexMd, /(knowledge-base|compiled-kb)[\\/].+raw[\\/]step-6-docs[\\/]/u);
@@ -112,7 +112,7 @@ test('generateSkill produces stable moodyz skill documents from a self-contained
     assert.match(skillMd, /^---\nname: moodyz-works\n/su);
     assert.match(skillMd, /\n# moodyz Skill\n/su);
     assert.match(skillMd, /Instruction-only Skill for https:\/\/moodyz\.com\/works\/date/u);
-    assert.match(skillMd, /moodyz-month-catalog\.mjs --month YYYY-MM/u);
+    assert.match(skillMd, /node src\/entrypoints\/cli\.mjs catalog moodyz-month --month YYYY-MM/u);
     assert.match(skillMd, /Probe every day in the requested month with `\/works\/list\/date\/YYYY-MM-DD`/u);
     assert.match(skillMd, /MIAA-001/u);
     assert.match(skillMd, /Alice/u);
@@ -176,7 +176,7 @@ test('generateSkill produces stable xiaohongshu skill documents from a self-cont
     assert.match(skillMd, /\/explore\/<noteId>/u);
     assert.match(skillMd, /browse the discover page/u);
     assert.match(skillMd, /query followed users with a reusable authenticated profile/u);
-    assert.match(skillMd, /xiaohongshu-query-follow\.mjs/u);
+    assert.match(skillMd, /node src\/entrypoints\/cli\.mjs xiaohongshu follow/u);
     assert.match(skillMd, /login\/register pages without submitting credentials automatically/u);
     assert.match(skillMd, /credential input and submission are always manual and never automatic/u);
 

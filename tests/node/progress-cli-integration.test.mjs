@@ -55,6 +55,7 @@ import {
 import {
   siteCapabilityCompileCommand,
   unifiedCliArgsForScript,
+  unifiedCliCommandForScript,
 } from '../../src/infra/cli/command-map.mjs';
 
 function createStream({ isTTY = false, columns = 80 } = {}) {
@@ -141,12 +142,14 @@ test('site-doctor parser accepts progress flags while keeping JSON-compatible de
     '--quiet',
     '--json',
     '--no-tty',
+    '--capability-compile-dry-run',
   ]);
   assert.equal(parsed.inputUrl, 'https://www.22biqu.com/');
   assert.equal(parsed.options.progressMode, 'plain');
   assert.equal(parsed.options.quiet, true);
   assert.equal(parsed.options.json, true);
   assert.equal(parsed.options.noTty, true);
+  assert.equal(parsed.options.capabilityCompileDryRun, true);
 });
 
 test('single-stage pipeline parsers accept shared progress flags', () => {
@@ -482,6 +485,21 @@ test('unified CLI command map exposes descriptor-only site capability compile', 
   assert.equal(
     siteCapabilityCompileCommand(['--site', 'qidian', '--json']),
     'node src/entrypoints/cli.mjs site capability-compile --site qidian --json',
+  );
+});
+
+test('unified CLI command map translates legacy session subcommands', () => {
+  assert.equal(
+    unifiedCliCommandForScript('src/entrypoints/sites/session.mjs', ['health', '--site', 'x']),
+    'node src/entrypoints/cli.mjs session health --site x',
+  );
+  assert.equal(
+    unifiedCliCommandForScript('src/entrypoints/sites/session.mjs', ['plan-repair', '--site', 'x']),
+    'node src/entrypoints/cli.mjs session repair-plan --site x',
+  );
+  assert.equal(
+    unifiedCliCommandForScript('src/entrypoints/sites/session.mjs', ['--site', 'x']),
+    'node src/entrypoints/cli.mjs session health --site x',
   );
 });
 

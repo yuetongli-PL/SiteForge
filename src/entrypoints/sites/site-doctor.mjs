@@ -57,6 +57,9 @@ import {
   SiteHealthRecoveryEngine,
   normalizeSiteAdapterHealthSignal,
 } from '../../sites/capability/site-health-recovery.mjs';
+import {
+  runSiteCapabilityCompile,
+} from './site-capability-compile.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
@@ -90,11 +93,12 @@ const DEFAULT_OPTIONS = {
   crawlerScriptsDir: path.join(REPO_ROOT, 'crawler-scripts'),
   knowledgeBaseDir: undefined,
   checkDownload: false,
+  capabilityCompileDryRun: false,
   pythonCommand: 'pypy3',
 };
 
 const HELP = `Usage:
-  node src/entrypoints/cli.mjs site doctor <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download] [--json] [--quiet] [--progress auto|interactive|plain]
+  node src/entrypoints/cli.mjs site doctor <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download] [--capability-compile-dry-run] [--json] [--quiet] [--progress auto|interactive|plain]
 `;
 
 const AUTH_PROBE_WAIT_POLICY = {
@@ -154,6 +158,7 @@ function mergeOptions(inputUrl, options = {}) {
   merged.timeoutMs = normalizeNumber(merged.timeoutMs, 'timeoutMs');
   merged.maxTriggers = normalizeNumber(merged.maxTriggers, 'maxTriggers');
   merged.maxCapturedStates = normalizeNumber(merged.maxCapturedStates, 'maxCapturedStates');
+  merged.capabilityCompileDryRun = normalizeBoolean(merged.capabilityCompileDryRun, 'capabilityCompileDryRun');
   const hasExplicitHeadless = Object.prototype.hasOwnProperty.call(options, 'headless');
   merged.headless = normalizeBoolean(
     hasExplicitHeadless
@@ -738,7 +743,7 @@ function buildReportMarkdown(report) {
     '',
   ];
 
-  for (const key of ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'download']) {
+  for (const key of ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'capabilityCompile', 'download']) {
     const check = report[key];
     if (!check) {
       continue;
@@ -1014,10 +1019,25 @@ function siteOnboardingDiscoveryArtifactPaths(reportDir) {
   return {
     directory: discoveryDir,
     NODE_INVENTORY: path.join(discoveryDir, 'NODE_INVENTORY.md'),
+    NODE_INVENTORY_JSON: path.join(discoveryDir, 'NODE_INVENTORY.json'),
     API_INVENTORY: path.join(discoveryDir, 'API_INVENTORY.md'),
+    API_INVENTORY_JSON: path.join(discoveryDir, 'API_INVENTORY.json'),
     UNKNOWN_NODE_REPORT: path.join(discoveryDir, 'UNKNOWN_NODE_REPORT.md'),
+    UNKNOWN_NODE_REPORT_JSON: path.join(discoveryDir, 'UNKNOWN_NODE_REPORT.json'),
+    BLOCKED_NODE_REPORT: path.join(discoveryDir, 'BLOCKED_NODE_REPORT.md'),
+    BLOCKED_NODE_REPORT_JSON: path.join(discoveryDir, 'BLOCKED_NODE_REPORT.json'),
+    UNKNOWN_API_REPORT: path.join(discoveryDir, 'UNKNOWN_API_REPORT.md'),
+    UNKNOWN_API_REPORT_JSON: path.join(discoveryDir, 'UNKNOWN_API_REPORT.json'),
+    BLOCKED_API_REPORT: path.join(discoveryDir, 'BLOCKED_API_REPORT.md'),
+    BLOCKED_API_REPORT_JSON: path.join(discoveryDir, 'BLOCKED_API_REPORT.json'),
+    CAPABILITY_TARGETS: path.join(discoveryDir, 'CAPABILITY_TARGETS.md'),
+    CAPABILITY_TARGETS_JSON: path.join(discoveryDir, 'CAPABILITY_TARGETS.json'),
+    CAPABILITY_GAP_REPORT: path.join(discoveryDir, 'CAPABILITY_GAP_REPORT.md'),
+    CAPABILITY_GAP_REPORT_JSON: path.join(discoveryDir, 'CAPABILITY_GAP_REPORT.json'),
     SITE_CAPABILITY_REPORT: path.join(discoveryDir, 'SITE_CAPABILITY_REPORT.md'),
+    SITE_CAPABILITY_REPORT_JSON: path.join(discoveryDir, 'SITE_CAPABILITY_REPORT.json'),
     DISCOVERY_AUDIT: path.join(discoveryDir, 'DISCOVERY_AUDIT.md'),
+    DISCOVERY_AUDIT_JSON: path.join(discoveryDir, 'DISCOVERY_AUDIT.json'),
   };
 }
 
@@ -1048,13 +1068,49 @@ async function writeSiteOnboardingDiscoveryArtifacts({
     discoveredApis: discoveryInput.discoveredApis,
     adapter,
   });
+  const artifactNames = [
+    'NODE_INVENTORY',
+    'API_INVENTORY',
+    'UNKNOWN_NODE_REPORT',
+    'BLOCKED_NODE_REPORT',
+    'UNKNOWN_API_REPORT',
+    'BLOCKED_API_REPORT',
+    'CAPABILITY_TARGETS',
+    'CAPABILITY_GAP_REPORT',
+    'SITE_CAPABILITY_REPORT',
+    'DISCOVERY_AUDIT',
+  ];
+  const preparedJson = Object.fromEntries(artifactNames.map((artifactName) => [
+    artifactName,
+    prepareRedactedArtifactJson(artifacts.objects[artifactName]).json,
+  ]));
+  const preparedMarkdown = Object.fromEntries(artifactNames.map((artifactName) => {
+    const redacted = redactValue(artifacts.markdown[artifactName]);
+    assertNoForbiddenPatterns(redacted.value);
+    return [artifactName, redacted.value];
+  }));
 
   await ensureDir(paths.directory);
-  await writeTextFile(paths.NODE_INVENTORY, artifacts.markdown.NODE_INVENTORY);
-  await writeTextFile(paths.API_INVENTORY, artifacts.markdown.API_INVENTORY);
-  await writeTextFile(paths.UNKNOWN_NODE_REPORT, artifacts.markdown.UNKNOWN_NODE_REPORT);
-  await writeTextFile(paths.SITE_CAPABILITY_REPORT, artifacts.markdown.SITE_CAPABILITY_REPORT);
-  await writeTextFile(paths.DISCOVERY_AUDIT, artifacts.markdown.DISCOVERY_AUDIT);
+  await writeTextFile(paths.NODE_INVENTORY_JSON, preparedJson.NODE_INVENTORY);
+  await writeTextFile(paths.API_INVENTORY_JSON, preparedJson.API_INVENTORY);
+  await writeTextFile(paths.UNKNOWN_NODE_REPORT_JSON, preparedJson.UNKNOWN_NODE_REPORT);
+  await writeTextFile(paths.BLOCKED_NODE_REPORT_JSON, preparedJson.BLOCKED_NODE_REPORT);
+  await writeTextFile(paths.UNKNOWN_API_REPORT_JSON, preparedJson.UNKNOWN_API_REPORT);
+  await writeTextFile(paths.BLOCKED_API_REPORT_JSON, preparedJson.BLOCKED_API_REPORT);
+  await writeTextFile(paths.CAPABILITY_TARGETS_JSON, preparedJson.CAPABILITY_TARGETS);
+  await writeTextFile(paths.CAPABILITY_GAP_REPORT_JSON, preparedJson.CAPABILITY_GAP_REPORT);
+  await writeTextFile(paths.SITE_CAPABILITY_REPORT_JSON, preparedJson.SITE_CAPABILITY_REPORT);
+  await writeTextFile(paths.DISCOVERY_AUDIT_JSON, preparedJson.DISCOVERY_AUDIT);
+  await writeTextFile(paths.NODE_INVENTORY, preparedMarkdown.NODE_INVENTORY);
+  await writeTextFile(paths.API_INVENTORY, preparedMarkdown.API_INVENTORY);
+  await writeTextFile(paths.UNKNOWN_NODE_REPORT, preparedMarkdown.UNKNOWN_NODE_REPORT);
+  await writeTextFile(paths.BLOCKED_NODE_REPORT, preparedMarkdown.BLOCKED_NODE_REPORT);
+  await writeTextFile(paths.UNKNOWN_API_REPORT, preparedMarkdown.UNKNOWN_API_REPORT);
+  await writeTextFile(paths.BLOCKED_API_REPORT, preparedMarkdown.BLOCKED_API_REPORT);
+  await writeTextFile(paths.CAPABILITY_TARGETS, preparedMarkdown.CAPABILITY_TARGETS);
+  await writeTextFile(paths.CAPABILITY_GAP_REPORT, preparedMarkdown.CAPABILITY_GAP_REPORT);
+  await writeTextFile(paths.SITE_CAPABILITY_REPORT, preparedMarkdown.SITE_CAPABILITY_REPORT);
+  await writeTextFile(paths.DISCOVERY_AUDIT, preparedMarkdown.DISCOVERY_AUDIT);
 
   const summary = {
     ...paths,
@@ -1069,6 +1125,10 @@ async function writeSiteOnboardingDiscoveryArtifacts({
     failures: artifacts.gate.failures,
     unknownNodes: artifacts.objects.UNKNOWN_NODE_REPORT.nodes.length,
     unknownApis: artifacts.objects.UNKNOWN_NODE_REPORT.apis.length,
+    blockedNodes: artifacts.objects.BLOCKED_NODE_REPORT.entries.length,
+    blockedApis: artifacts.objects.BLOCKED_API_REPORT.entries.length,
+    capabilityTargets: artifacts.objects.CAPABILITY_TARGETS.targets.length,
+    capabilityGaps: artifacts.objects.CAPABILITY_GAP_REPORT.gaps.length,
   };
   report.reports.siteOnboardingDiscovery = summary;
   return summary;
@@ -2227,6 +2287,31 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
   };
 }
 
+function summarizeCapabilityCompileDryRun(result = {}) {
+  return {
+    command: result.command ?? 'site-capability-compile',
+    descriptorOnly: result.descriptorOnly === true,
+    siteId: result.siteId ?? null,
+    siteKey: result.siteKey ?? null,
+    compileId: result.compileId ?? null,
+    graphValidationResult: result.graphValidationResult ?? null,
+    planStatus: result.planStatus ?? null,
+    plannerHandoffReady: result.plannerHandoffReady === true,
+    executionPolicyStatus: result.executionPolicyStatus ?? null,
+    coverageCompleteness: result.coverageCompleteness ?? null,
+    unknownNodeCount: result.unknownNodeCount ?? null,
+    capabilityCount: result.capabilityCount ?? null,
+    routeCount: result.routeCount ?? null,
+    executionPathCount: result.executionPathCount ?? null,
+    executionAttempted: result.executionAttempted === true,
+    liveCaptureAttempted: result.liveCaptureAttempted === true,
+    downloaderInvocationAllowed: result.downloaderInvocationAllowed === true,
+    siteAdapterInvocationAllowed: result.siteAdapterInvocationAllowed === true,
+    sessionMaterializationAllowed: result.sessionMaterializationAllowed === true,
+    redactionRequired: result.redactionRequired === true,
+  };
+}
+
 export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   const settings = mergeOptions(inputUrl, options);
   const reportDir = path.join(settings.outDir, `${formatTimestampForDir()}_${sanitizeHost(settings.host)}`);
@@ -2255,6 +2340,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     runSessionTask,
     validateProfileFile,
     resolveSite,
+    runSiteCapabilityCompile,
     ...deps,
   };
 
@@ -2276,6 +2362,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     detail: createCheck('detail'),
     author: null,
     chapter: null,
+    capabilityCompile: settings.capabilityCompileDryRun ? createCheck('capabilityCompile') : null,
     download: null,
     adapterRecommendation: null,
     scenarios: [],
@@ -2313,8 +2400,10 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   let authProbe = null;
   let keepalivePreflight = null;
   let scenarioSuite = null;
+  let downloadSiteKey = null;
   const progress = options.progress ?? null;
-  const progressTotal = 7;
+  const progressOffset = settings.capabilityCompileDryRun ? 1 : 0;
+  const progressTotal = 7 + progressOffset;
   let profileProgress = null;
 
   try {
@@ -2387,8 +2476,36 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     });
     report.adapterRecommendation = buildAdapterRecommendation(siteIdentity.adapterId);
     report.site.siteKey = siteIdentity.siteKey ?? null;
+    downloadSiteKey = resolveCanonicalSiteKey({ inputUrl, profile: validatedProfile.profile });
     if (report.adapterRecommendation.startsWith('site-specific-adapter:')) {
       report.warnings.push(`Using existing site-specific adapter ${siteIdentity.adapterId}.`);
+    }
+    if (report.capabilityCompile) {
+      const capabilityCompileProgress = startDoctorProgressStage(progress, 'capabilityCompile', 3, progressTotal, inputUrl);
+      try {
+        const compileResult = await runtime.runSiteCapabilityCompile({
+          site: siteIdentity?.siteKey ?? downloadSiteKey,
+          url: inputUrl,
+          writeArtifacts: false,
+        });
+        markPass(report.capabilityCompile, summarizeCapabilityCompileDryRun(compileResult));
+      } catch (error) {
+        markFail(report.capabilityCompile, error, {
+          descriptorOnly: true,
+          executionAttempted: false,
+          liveCaptureAttempted: false,
+          downloaderInvocationAllowed: false,
+          siteAdapterInvocationAllowed: false,
+          sessionMaterializationAllowed: false,
+          redactionRequired: true,
+        });
+        report.warnings.push(`Site capability compile dry-run failed: ${error?.message ?? String(error)}`);
+      }
+      finishDoctorProgressStage(
+        capabilityCompileProgress,
+        report.capabilityCompile,
+        report.capabilityCompile.details?.graphValidationResult ?? undefined,
+      );
     }
     scenarioSuite = resolveSiteDoctorScenarioSuite({
       siteKey: siteIdentity.siteKey,
@@ -2552,6 +2669,9 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     }
   } catch (error) {
     markFail(report.profile, error);
+    if (report.capabilityCompile?.status === 'pending') {
+      markSkipped(report.capabilityCompile, 'Profile validation failed before capability compile dry-run could run.');
+    }
     finishDoctorProgressStage(profileProgress, report.profile);
     if (Array.isArray(error?.errors)) {
       report.missingFields.push(...error.errors.map((entry) => entry.path));
@@ -2577,7 +2697,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
     return report;
   }
 
-  const crawlerProgress = startDoctorProgressStage(progress, 'crawler', 3, progressTotal, inputUrl);
+  const crawlerProgress = startDoctorProgressStage(progress, 'crawler', 3 + progressOffset, progressTotal, inputUrl);
   try {
     const crawlerResult = await runtime.ensureCrawlerScript(inputUrl, {
       profilePath: settings.profilePath,
@@ -2599,7 +2719,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   let initialRestriction = null;
   let activeRestriction = null;
   let restrictionRecovery = null;
-  const captureProgress = startDoctorProgressStage(progress, 'capture', 4, progressTotal, inputUrl);
+  const captureProgress = startDoctorProgressStage(progress, 'capture', 4 + progressOffset, progressTotal, inputUrl);
   try {
     captureManifest = await runtime.capture(inputUrl, {
       outDir: path.join(reportDir, 'capture'),
@@ -2666,11 +2786,11 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   report.author = isChapter ? null : createCheck('author');
   report.chapter = isChapter ? createCheck('chapter') : null;
   report.download = (isChapter || hasDownloader) ? createCheck('download') : null;
-  const downloadSiteKey = resolveCanonicalSiteKey({ inputUrl, profile: validatedProfile.profile });
+  downloadSiteKey ??= resolveCanonicalSiteKey({ inputUrl, profile: validatedProfile.profile });
 
   if (captureManifest?.files?.manifest) {
     if (activeRestriction?.restrictionDetected) {
-      const riskProgress = startDoctorProgressStage(progress, 'risk', 6, progressTotal, inputUrl);
+      const riskProgress = startDoctorProgressStage(progress, 'risk', 6 + progressOffset, progressTotal, inputUrl);
       const restrictionMessage = `Xiaohongshu capture remained on restriction page${activeRestriction.riskPageCode ? ` ${activeRestriction.riskPageCode}` : ''}.`;
       markSkipped(report.expand, restrictionMessage);
       try {
@@ -2716,7 +2836,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       riskProgress?.fail?.({ message: restrictionMessage });
     } else {
     try {
-      const expandProgress = startDoctorProgressStage(progress, 'expand', 5, progressTotal, inputUrl);
+      const expandProgress = startDoctorProgressStage(progress, 'expand', 5 + progressOffset, progressTotal, inputUrl);
       const expandManifest = await runtime.expandStates(inputUrl, {
         initialManifestPath: captureManifest.files.manifest,
         outDir: path.join(reportDir, 'expand'),
@@ -2853,7 +2973,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
       }
     } catch (error) {
       markFail(report.expand, error);
-      const expandProgress = startDoctorProgressStage(progress, 'expand', 5, progressTotal, inputUrl);
+      const expandProgress = startDoctorProgressStage(progress, 'expand', 5 + progressOffset, progressTotal, inputUrl);
       finishDoctorProgressStage(expandProgress, report.expand);
       if (report.detail.status === 'pending') {
         markSkipped(report.detail, 'Expansion failed before detail validation could run.');
@@ -2897,7 +3017,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
   }
 
   if (report.download) {
-    const downloadProgress = startDoctorProgressStage(progress, 'download', 7, progressTotal, inputUrl);
+    const downloadProgress = startDoctorProgressStage(progress, 'download', 7 + progressOffset, progressTotal, inputUrl);
     if (!settings.checkDownload) {
       markSkipped(report.download, 'Download validation is disabled by default. Pass --check-download to enable it.');
     } else if (!isChapter && !sample?.url && !validatedProfile.profile?.downloader) {
@@ -3079,6 +3199,9 @@ export function parseCliArgs(argv) {
       case '--check-download':
         options.checkDownload = true;
         break;
+      case '--capability-compile-dry-run':
+        options.capabilityCompileDryRun = true;
+        break;
       case '--json':
         options.json = true;
         break;
@@ -3161,7 +3284,7 @@ async function runCli() {
     ...doctorOptions
   } = parsed.options;
   const result = await siteDoctor(parsed.inputUrl, { ...doctorOptions, progress: task });
-  const failingChecks = ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'download']
+  const failingChecks = ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'capabilityCompile', 'download']
     .map((key) => result[key])
     .filter(Boolean)
     .filter((check) => check.status === 'fail');

@@ -389,12 +389,39 @@ test('site-doctor validates a generic navigation host with stubbed runtime steps
   try {
     const profilePath = path.join(workspace, 'example.com.json');
     await writeFile(profilePath, `${JSON.stringify(createNavigationProfile(), null, 2)}\n`, 'utf8');
+    const compileCalls = [];
 
     const report = await siteDoctor('https://example.com/', {
       profilePath,
       outDir: path.join(workspace, 'doctor'),
+      capabilityCompileDryRun: true,
     }, {
       resolveSite: async () => ({ adapter: { id: 'generic-navigation' } }),
+      runSiteCapabilityCompile: async (options) => {
+        compileCalls.push(options);
+        return {
+          command: 'site-capability-compile',
+          descriptorOnly: true,
+          siteId: 'site:example.com',
+          siteKey: 'example',
+          compileId: 'compile:example.com',
+          graphValidationResult: 'passed',
+          planStatus: 'ready',
+          plannerHandoffReady: true,
+          executionPolicyStatus: 'ready',
+          coverageCompleteness: 'partial',
+          unknownNodeCount: 0,
+          capabilityCount: 2,
+          routeCount: 2,
+          executionPathCount: 2,
+          executionAttempted: false,
+          liveCaptureAttempted: false,
+          downloaderInvocationAllowed: false,
+          siteAdapterInvocationAllowed: false,
+          sessionMaterializationAllowed: false,
+          redactionRequired: true,
+        };
+      },
       ensureCrawlerScript: async () => ({
         status: 'generated',
         scriptPath: path.join(workspace, 'crawler.py'),
@@ -423,6 +450,30 @@ test('site-doctor validates a generic navigation host with stubbed runtime steps
         summary: {
           capturedStates: 3,
         },
+        budgetSkippedTriggers: [
+          {
+            kind: 'pagination-link',
+            label: 'Next page',
+            href: 'https://example.com/search?page=2&token=synthetic-doctor-trigger-token',
+            locator: {
+              role: 'link',
+              href: 'https://example.com/search?page=2&token=synthetic-doctor-trigger-token',
+              textSnippet: 'Next page',
+            },
+          },
+        ],
+        unattemptedTriggers: [
+          {
+            kind: 'menu-button',
+            label: 'Filters',
+            locator: {
+              primary: 'a11y',
+              role: 'button',
+              ariaControls: 'filters-panel',
+              textSnippet: 'Filters',
+            },
+          },
+        ],
         warnings: [],
         states: [
           {
@@ -466,14 +517,53 @@ test('site-doctor validates a generic navigation host with stubbed runtime steps
     assert.equal(report.search.valid, true);
     assert.equal(report.detail.valid, true);
     assert.equal(report.author?.valid, true);
+    assert.equal(compileCalls.length, 1);
+    assert.equal(compileCalls[0].site, 'generic-navigation');
+    assert.equal(compileCalls[0].url, 'https://example.com/');
+    assert.equal(compileCalls[0].intent, undefined);
+    assert.equal(compileCalls[0].writeArtifacts, false);
+    assert.equal(report.capabilityCompile?.valid, true);
+    assert.equal(report.capabilityCompile?.details?.descriptorOnly, true);
+    assert.equal(report.capabilityCompile?.details?.graphValidationResult, 'passed');
+    assert.equal(report.capabilityCompile?.details?.executionAttempted, false);
+    assert.equal(report.capabilityCompile?.details?.downloaderInvocationAllowed, false);
     assert.equal(report.adapterRecommendation, 'reuse-generic');
     assert.equal(report.reports.siteOnboardingDiscovery?.nodes > 0, true);
     assert.equal(report.reports.siteOnboardingDiscovery?.apis, 1);
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.NODE_INVENTORY), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.NODE_INVENTORY_JSON), true);
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.API_INVENTORY), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.API_INVENTORY_JSON), true);
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.UNKNOWN_NODE_REPORT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.UNKNOWN_NODE_REPORT_JSON), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.BLOCKED_NODE_REPORT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.BLOCKED_NODE_REPORT_JSON), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.UNKNOWN_API_REPORT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.UNKNOWN_API_REPORT_JSON), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.BLOCKED_API_REPORT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.BLOCKED_API_REPORT_JSON), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.CAPABILITY_TARGETS), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.CAPABILITY_TARGETS_JSON), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.CAPABILITY_GAP_REPORT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.CAPABILITY_GAP_REPORT_JSON), true);
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.SITE_CAPABILITY_REPORT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.SITE_CAPABILITY_REPORT_JSON), true);
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.DISCOVERY_AUDIT), true);
+    assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.DISCOVERY_AUDIT_JSON), true);
+    const capabilityReport = await readJsonFile(report.reports.siteOnboardingDiscovery.SITE_CAPABILITY_REPORT_JSON);
+    assert.equal(capabilityReport.discoveryScorecard.architecture.pass, true);
+    assert.equal(capabilityReport.discoveryScorecard.evidence.pass, false);
+    assert.equal(capabilityReport.summary.ninetyPointArchitectureReady, true);
+    assert.equal(capabilityReport.summary.fullDiscoveryArtifactReady, true);
+    assert.equal(capabilityReport.modeSemantics.unboundedCrawlAllowed, false);
+    const nodeInventory = await readJsonFile(report.reports.siteOnboardingDiscovery.NODE_INVENTORY_JSON);
+    const blockedNodeReport = await readJsonFile(report.reports.siteOnboardingDiscovery.BLOCKED_NODE_REPORT_JSON);
+    assert.equal(nodeInventory.entries.some((entry) => entry.discoveryStatus === 'skipped_by_budget'), true);
+    assert.equal(nodeInventory.entries.some((entry) => entry.discoveryStatus === 'unattempted'), true);
+    assert.equal(blockedNodeReport.entries.some((entry) => entry.discoveryStatus === 'unattempted'), true);
+    assert.equal(JSON.stringify(nodeInventory).includes('synthetic-doctor-trigger-token'), false);
+    const capabilityGapReport = await readJsonFile(report.reports.siteOnboardingDiscovery.CAPABILITY_GAP_REPORT_JSON);
+    assert.equal(capabilityGapReport.artifactName, 'CAPABILITY_GAP_REPORT');
     assert.equal(await pathExists(report.reports.json), true);
     assert.equal(await pathExists(report.reports.markdown), true);
   } finally {

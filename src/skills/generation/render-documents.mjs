@@ -16,7 +16,10 @@ import {
   renderKnownSiteRecoveryReference,
   renderKnownSiteSkillMd,
 } from './site-render-inputs.mjs';
-import { renderSiteCapabilityGraphStatusLines } from './render/site-renderers/shared.mjs';
+import {
+  renderSiteCapabilityCompilerStatusLines,
+  renderSiteCapabilityGraphStatusLines,
+} from './render/site-renderers/shared.mjs';
 import {
   resolveCapabilityFamilies,
   resolvePrimaryArchetype,
@@ -60,6 +63,10 @@ export function renderSkillMd(context, outputs) {
     '## Site Capability Graph status',
     '',
     ...renderSiteCapabilityGraphStatusLines(),
+    '',
+    '## Site Capability Compiler status',
+    '',
+    ...renderSiteCapabilityCompilerStatusLines(),
     '',
     '## Reading order',
     '',

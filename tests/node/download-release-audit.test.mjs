@@ -88,15 +88,48 @@ test('download-release-audit audits download and social matrix session gates off
   }, null, 2)}\n`, 'utf8');
 
   const outDir = path.join(rootDir, 'audit');
-  const audit = await buildAudit(parseArgs(['--runs-root', rootDir, '--out-dir', outDir]));
+  const compileCalls = [];
+  const audit = await buildAudit(parseArgs(['--runs-root', rootDir, '--out-dir', outDir]), {
+    runSiteCapabilityCompile: async ({ site, writeArtifacts }) => {
+      compileCalls.push({ site, writeArtifacts });
+      return {
+        descriptorOnly: true,
+        siteId: `site:${site}`,
+        siteKey: site,
+        graphValidationResult: 'passed',
+        planStatus: 'ready',
+        plannerHandoffReady: true,
+        executionPolicyStatus: 'ready',
+        coverageCompleteness: site === 'x' ? 'complete' : 'partial',
+        unknownNodeCount: 0,
+        capabilityCount: 3,
+        routeCount: 4,
+        executionPathCount: 2,
+        executionAttempted: false,
+        liveCaptureAttempted: false,
+        downloaderInvocationAllowed: false,
+        siteAdapterInvocationAllowed: false,
+        sessionMaterializationAllowed: false,
+        redactionRequired: true,
+      };
+    },
+  });
   const outputs = await writeAudit(parseArgs(['--runs-root', rootDir, '--out-dir', outDir]), audit);
   const markdown = await readFile(outputs.markdownPath, 'utf8');
 
   assert.equal(audit.summary.total, 3);
   assert.equal(audit.summary.statuses.passed, 1);
   assert.equal(audit.summary.statuses.blocked, 2);
+  assert.deepEqual(compileCalls, [
+    { site: 'instagram', writeArtifacts: false },
+    { site: 'x', writeArtifacts: false },
+  ]);
+  assert.equal(audit.capabilityCompileCoverage.x.status, 'ready');
+  assert.equal(audit.capabilityCompileCoverage.x.coverageCompleteness, 'complete');
   const downloadRow = audit.rows.find((row) => row.id === 'download-run');
   assert.equal(downloadRow.healthManifest, healthManifest);
+  assert.equal(downloadRow.capabilityCompile.status, 'ready');
+  assert.equal(downloadRow.capabilityCompile.executionAttempted, false);
   assert.equal(downloadRow.nativeFallbackReason, 'bilibili-playurl-evidence-missing');
   assert.equal(downloadRow.nativeResolverMethod, 'native-bilibili-page-seeds');
   assert.equal(downloadRow.nativeResolverAdapter, 'bilibili');
@@ -116,6 +149,9 @@ test('download-release-audit audits download and social matrix session gates off
   assert.match(markdown, /bilibili\/native-bilibili-page-seeds/u);
   assert.match(markdown, /x-social-cursor-replay-required/u);
   assert.match(markdown, /x\/native-x-social-resource-seeds/u);
+  assert.match(markdown, /Compile Coverage/u);
+  assert.match(markdown, /ready\/complete/u);
+  assert.match(markdown, /passed\/ready/u);
   assert.match(markdown, /Repair Plan/u);
   assert.match(markdown, /src\/entrypoints\/cli\.mjs site repair-plan/u);
 });

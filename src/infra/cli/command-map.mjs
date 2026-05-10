@@ -76,6 +76,9 @@ export function unifiedCliCommandForScript(scriptPath, args = []) {
   if (normalizeScriptPath(scriptPath) === 'src/entrypoints/sites/download.mjs') {
     return downloadCliCommandFromLegacyArgs(args);
   }
+  if (normalizeScriptPath(scriptPath) === 'src/entrypoints/sites/session.mjs') {
+    return sessionCliCommandFromLegacyArgs(args);
+  }
   return unifiedCliCommand([...prefix, ...args]);
 }
 
@@ -130,6 +133,9 @@ export function displayCommandForExecutable(command, args = []) {
   if (normalizeScriptPath(scriptArg) === 'src/entrypoints/sites/download.mjs') {
     return unifiedCliCommandForScript(scriptArg, normalizedArgs.slice(1));
   }
+  if (normalizeScriptPath(scriptArg) === 'src/entrypoints/sites/session.mjs') {
+    return unifiedCliCommandForScript(scriptArg, normalizedArgs.slice(1));
+  }
   const unifiedPrefix = unifiedCliArgsForScript(scriptArg);
   if (!unifiedPrefix) {
     return formatCommand(['node', ...normalizedArgs]);
@@ -162,4 +168,17 @@ function downloadCliCommandFromLegacyArgs(args = []) {
     passthrough.push(arg);
   }
   return downloadCliCommand({ mode, input, site, args: passthrough });
+}
+
+function sessionCliCommandFromLegacyArgs(args = []) {
+  const rest = args.map((arg) => String(arg));
+  const [mode, ...passthrough] = rest;
+  if (!mode || mode.startsWith('-') || mode === 'health') {
+    const commandArgs = mode === 'health' ? passthrough : rest;
+    return unifiedCliCommand(['session', 'health', ...commandArgs]);
+  }
+  if (mode === 'plan-repair') {
+    return unifiedCliCommand(['session', 'repair-plan', ...passthrough]);
+  }
+  return unifiedCliCommand(['session', ...rest]);
 }

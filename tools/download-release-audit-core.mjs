@@ -4,6 +4,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { runSiteCapabilityCompile } from '../src/entrypoints/sites/site-capability-compile.mjs';
 import { evaluateAuthenticatedSessionReleaseGate } from '../src/sites/sessions/release-gate.mjs';
 import { buildSessionRepairPlanCommand } from '../src/sites/sessions/repair-command.mjs';
 
@@ -221,7 +222,71 @@ function addRepairGuidance(rows = [], options = {}) {
   });
 }
 
-export async function buildAudit(options = {}) {
+function summarizeCapabilityCompileCoverage(result = {}) {
+  return {
+    status: result.graphValidationResult === 'passed' && result.planStatus === 'ready' ? 'ready' : 'attention',
+    descriptorOnly: result.descriptorOnly === true,
+    siteId: result.siteId ?? null,
+    siteKey: result.siteKey ?? null,
+    graphValidationResult: result.graphValidationResult ?? null,
+    planStatus: result.planStatus ?? null,
+    plannerHandoffReady: result.plannerHandoffReady === true,
+    executionPolicyStatus: result.executionPolicyStatus ?? null,
+    coverageCompleteness: result.coverageCompleteness ?? null,
+    unknownNodeCount: result.unknownNodeCount ?? null,
+    capabilityCount: result.capabilityCount ?? null,
+    routeCount: result.routeCount ?? null,
+    executionPathCount: result.executionPathCount ?? null,
+    executionAttempted: result.executionAttempted === true,
+    liveCaptureAttempted: result.liveCaptureAttempted === true,
+    downloaderInvocationAllowed: result.downloaderInvocationAllowed === true,
+    siteAdapterInvocationAllowed: result.siteAdapterInvocationAllowed === true,
+    sessionMaterializationAllowed: result.sessionMaterializationAllowed === true,
+    redactionRequired: result.redactionRequired === true,
+  };
+}
+
+function unavailableCapabilityCompileCoverage(site, error) {
+  return {
+    status: 'unavailable',
+    descriptorOnly: true,
+    siteKey: site,
+    reason: error?.code ?? error?.message ?? String(error),
+    executionAttempted: false,
+    liveCaptureAttempted: false,
+    downloaderInvocationAllowed: false,
+    siteAdapterInvocationAllowed: false,
+    sessionMaterializationAllowed: false,
+    redactionRequired: true,
+  };
+}
+
+async function buildCapabilityCompileCoverage(rows = [], deps = {}) {
+  const compile = deps.runSiteCapabilityCompile ?? runSiteCapabilityCompile;
+  const sites = [...new Set(rows.map((row) => normalizeSite(row.site)).filter((site) => site && site !== 'unknown'))].sort();
+  const coverage = new Map();
+  for (const site of sites) {
+    try {
+      coverage.set(site, summarizeCapabilityCompileCoverage(await compile({
+        site,
+        writeArtifacts: false,
+      })));
+    } catch (error) {
+      coverage.set(site, unavailableCapabilityCompileCoverage(site, error));
+    }
+  }
+  return coverage;
+}
+
+function attachCapabilityCompileCoverage(rows = [], coverage = new Map()) {
+  return rows.map((row) => {
+    const site = normalizeSite(row.site);
+    const capabilityCompile = coverage.get(site);
+    return capabilityCompile ? { ...row, capabilityCompile } : row;
+  });
+}
+
+export async function buildAudit(options = {}, deps = {}) {
   const explicit = options.manifests?.length
     ? options.manifests.map((entry) => path.resolve(entry))
     : await findManifestFiles(options.runsRoot ?? DEFAULT_RUNS_ROOT);
@@ -234,11 +299,13 @@ export async function buildAudit(options = {}) {
       skipped.push({ manifestPath, reason: error?.message ?? String(error) });
     }
   }
-  const guidedRows = addRepairGuidance(rows, options);
+  const capabilityCompileCoverage = await buildCapabilityCompileCoverage(rows, deps);
+  const guidedRows = addRepairGuidance(attachCapabilityCompileCoverage(rows, capabilityCompileCoverage), options);
   return {
     generatedAt: new Date().toISOString(),
     manifests: explicit.length,
     summary: summarize(guidedRows),
+    capabilityCompileCoverage: Object.fromEntries(capabilityCompileCoverage.entries()),
     rows: guidedRows,
     skipped,
   };
@@ -252,12 +319,18 @@ function renderMarkdown(audit = {}) {
     `Rows: ${audit.summary?.total ?? 0}`,
     `Statuses: ${JSON.stringify(audit.summary?.statuses ?? {})}`,
     '',
-    '| Site | ID | Kind | Gate | Reason | Provider | Native Fallback | Native Resolver | Manifest | Repair Plan |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Site | ID | Kind | Gate | Reason | Provider | Native Fallback | Native Resolver | Compile Coverage | Compile Plan | Manifest | Repair Plan |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const row of audit.rows ?? []) {
     const nativeResolver = [row.nativeResolverAdapter, row.nativeResolverMethod].filter(Boolean).join('/');
-    lines.push(`| ${row.site} | ${row.id} | ${row.kind} | ${row.status} | ${row.reason ?? ''} | ${row.provider ?? ''} | ${row.nativeFallbackReason ?? ''} | ${nativeResolver} | ${row.manifestPath} | ${row.repairPlan?.commandText ?? ''} |`);
+    const compileCoverage = row.capabilityCompile
+      ? [row.capabilityCompile.status, row.capabilityCompile.coverageCompleteness].filter(Boolean).join('/')
+      : '';
+    const compilePlan = row.capabilityCompile
+      ? [row.capabilityCompile.graphValidationResult, row.capabilityCompile.planStatus].filter(Boolean).join('/')
+      : '';
+    lines.push(`| ${row.site} | ${row.id} | ${row.kind} | ${row.status} | ${row.reason ?? ''} | ${row.provider ?? ''} | ${row.nativeFallbackReason ?? ''} | ${nativeResolver} | ${compileCoverage} | ${compilePlan} | ${row.manifestPath} | ${row.repairPlan?.commandText ?? ''} |`);
   }
   if (audit.skipped?.length) {
     lines.push('', '## Skipped');

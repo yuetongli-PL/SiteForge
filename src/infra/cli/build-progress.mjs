@@ -135,7 +135,8 @@ function collectQuality(result) {
 
 function hasWarnings(result) {
   const quality = collectQuality(result);
-  return quality.warnings > 0
+  return result?.pipelinePartial === true
+    || quality.warnings > 0
     || quality.orphanPages > 0
     || quality.pendingRiskConfirmations > 0
     || quality.evidenceGaps > 0
@@ -167,9 +168,12 @@ export function renderBuildSummary(result, options = {}) {
   const stdoutColumns = Number(options.columns ?? 100) || 100;
   const verbose = options.verbose === true;
   const useGlyphs = options.ascii ? GLYPHS.ascii : GLYPHS.unicode;
+  const partial = result?.pipelinePartial === true;
   const warning = hasWarnings(result);
   const statusIcon = warning ? useGlyphs.warning : useGlyphs.completed;
-  const statusText = warning ? 'Site skill generated with warnings' : 'Site skill generated';
+  const statusText = partial
+    ? 'Partial preview generated'
+    : warning ? 'Site skill generated with warnings' : 'Site skill generated';
   const skillName = result?.skillName ?? basenameSkillFromUrl(result?.inputUrl);
   const quality = collectQuality(result);
   const numbers = summarizeNumbers(result);
@@ -188,7 +192,7 @@ export function renderBuildSummary(result, options = {}) {
   lines.push(row('Documents', numbers.documents));
   lines.push(row('Warnings', quality.warnings));
   lines.push(row('Duration', formatDuration(durationMs)));
-  lines.push(row('Status', warning ? 'Generated with warnings' : 'Generated'));
+  lines.push(row('Status', partial ? 'Partial' : warning ? 'Generated with warnings' : 'Generated'));
   lines.push('');
   lines.push('Artifacts');
   lines.push('');
@@ -200,6 +204,11 @@ export function renderBuildSummary(result, options = {}) {
   if (result?.kbDir) {
     lines.push('  Knowledge Base');
     lines.push(`    ${relativeOrCompactPath(result.kbDir, { verbose, maxWidth: pathWidth })}`);
+    lines.push('');
+  }
+  if (result?.partialPreview?.artifactPath) {
+    lines.push('  Partial Preview');
+    lines.push(`    ${relativeOrCompactPath(result.partialPreview.artifactPath, { verbose, maxWidth: pathWidth })}`);
     lines.push('');
   }
   const refs = result?.stages?.skill?.references ?? [];
@@ -351,10 +360,13 @@ export class BuildProgressController {
     }
     const warning = hasWarnings(result);
     if (this.mode === 'plain') {
-      const statusText = warning ? 'Site skill generated with warnings.' : 'Site skill generated.';
+      const statusText = result?.pipelinePartial === true
+        ? 'Partial preview generated.'
+        : warning ? 'Site skill generated with warnings.' : 'Site skill generated.';
       this.stream.write(`${statusText}\n`);
       if (result?.skillDir) this.stream.write(`Skill: ${relativeOrCompactPath(result.skillDir, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
       if (result?.kbDir) this.stream.write(`Knowledge base: ${relativeOrCompactPath(result.kbDir, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
+      if (result?.partialPreview?.artifactPath) this.stream.write(`Partial preview: ${relativeOrCompactPath(result.partialPreview.artifactPath, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
       const quality = collectQuality(result);
       this.stream.write(`Warnings: ${quality.warnings}\n`);
     }

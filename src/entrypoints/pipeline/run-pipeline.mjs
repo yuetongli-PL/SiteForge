@@ -6,15 +6,21 @@ import {
   createBuildProgressController,
   renderBuildSummary,
 } from '../../infra/cli/build-progress.mjs';
+import { writeTextFile } from '../../infra/io.mjs';
 
 import { executePipeline } from '../../pipeline/engine/engine.mjs';
 import { normalizePipelineOptions, toBoolean } from '../../pipeline/engine/options.mjs';
+import { isTransientNavigationError } from '../../pipeline/engine/runners.mjs';
 import { PIPELINE_STAGE_SPECS, summarizePipelineStages } from '../../pipeline/engine/stage-spec.mjs';
 import { DEFAULT_PIPELINE_RUNTIME, resolvePipelineRuntime } from '../../pipeline/runtime/create-default-runtime.mjs';
 import { prepareRedactedArtifactJsonWithAudit, redactValue } from '../../sites/capability/security-guard.mjs';
 import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
 import { normalizeRiskTransition } from '../../sites/capability/risk-state.mjs';
 import { resolveSiteAdapter } from '../../sites/core/adapters/resolver.mjs';
+
+const PARTIAL_PREVIEW_SCHEMA_VERSION = 1;
+const PARTIAL_PREVIEW_RESULT_FILE = 'partial-preview-result.json';
+const PARTIAL_PREVIEW_AUDIT_FILE = 'partial-preview-result.redaction-audit.json';
 
 function summarizeAuthKeepalive(authKeepalive) {
   return {
@@ -87,6 +93,188 @@ function buildBlockedStageSummaries(stageSpecs, captureManifest, reason) {
       reason,
     }];
   }));
+}
+
+function stageStateFlags(status) {
+  return {
+    blocked: status === 'blocked',
+    failed: status === 'failed',
+    unknown: status === 'unknown',
+    skipped: status === 'skipped',
+  };
+}
+
+function safeErrorSummary(error) {
+  return {
+    name: error instanceof Error ? error.name : undefined,
+    code: error && typeof error === 'object' ? (error.code ?? null) : null,
+    message: error?.message ?? String(error),
+    transientReason: error && typeof error === 'object' ? (error.transientReason ?? null) : null,
+  };
+}
+
+function sourceCaptureRefs(captureManifest = {}) {
+  return {
+    status: captureManifest.status ?? 'success',
+    outDir: captureManifest.outDir ?? null,
+    manifestPath: captureManifest.files?.manifest ?? null,
+    finalUrl: captureManifest.finalUrl ?? null,
+    title: captureManifest.title ?? null,
+    capturedAt: captureManifest.capturedAt ?? null,
+  };
+}
+
+function classifyExpandedFailure(error) {
+  const retryable = error?.retryable === true || isTransientNavigationError(error);
+  const reasonCode = retryable ? 'expand-navigation-failed' : 'expand-stage-failed';
+  const recovery = reasonCodeSummary(reasonCode);
+  return {
+    reasonCode,
+    retryable: retryable || recovery.retryable,
+    attempts: Number.isFinite(Number(error?.attempts)) ? Number(error.attempts) : 1,
+    recovery,
+  };
+}
+
+function buildPartialStageSummaries(stageSpecs, stageResults, failedStageName, failedStageSummary) {
+  const summaries = {};
+  let afterFailedStage = false;
+  for (const stageSpec of stageSpecs) {
+    if (stageSpec.name === failedStageName) {
+      summaries[stageSpec.name] = failedStageSummary;
+      afterFailedStage = true;
+      continue;
+    }
+    if (!afterFailedStage && stageResults[stageSpec.name]) {
+      summaries[stageSpec.name] = stageSpec.summarize(stageResults[stageSpec.name]);
+      continue;
+    }
+    summaries[stageSpec.name] = {
+      status: 'skipped',
+      reason: `Skipped because ${failedStageName} did not complete.`,
+      reasonCode: failedStageSummary.reasonCode,
+      ...stageStateFlags('skipped'),
+    };
+  }
+  return summaries;
+}
+
+function buildPartialPreviewPayload({
+  inputUrl,
+  generatedAt,
+  settings,
+  stageSpecs,
+  stageResults,
+  error,
+}) {
+  const failure = classifyExpandedFailure(error);
+  const expandedStage = {
+    stage: 'expanded',
+    status: 'partial',
+    outDir: settings.expandedOutDir,
+    reasonCode: failure.reasonCode,
+    retryable: failure.retryable,
+    attempts: failure.attempts,
+    recovery: failure.recovery,
+    error: safeErrorSummary(error),
+    ...stageStateFlags('failed'),
+  };
+  const stages = buildPartialStageSummaries(stageSpecs, stageResults, 'expanded', expandedStage);
+  const downstreamGaps = stageSpecs
+    .filter((stageSpec) => !['capture', 'expanded'].includes(stageSpec.name))
+    .map((stageSpec) => ({
+      stage: stageSpec.name,
+      status: 'skipped',
+      reasonCode: failure.reasonCode,
+      reason: 'Expanded-state evidence is partial after final expand failure.',
+      ...stageStateFlags('skipped'),
+    }));
+
+  return {
+    schemaVersion: PARTIAL_PREVIEW_SCHEMA_VERSION,
+    artifactFamily: 'pipeline-partial-preview-result',
+    inputUrl,
+    generatedAt,
+    status: 'partial',
+    failedStage: 'expanded',
+    reasonCode: failure.reasonCode,
+    retryable: failure.retryable,
+    attempts: failure.attempts,
+    redactionRequired: true,
+    noBypassAttempted: true,
+    loginStateReuse: settings.reuseLoginState === false ? 'disabled' : 'not-recorded',
+    sourceCaptureRefs: sourceCaptureRefs(stageResults.capture),
+    stage: {
+      stage: 'expanded',
+      status: 'failed',
+      reasonCode: failure.reasonCode,
+      retryable: failure.retryable,
+      attempts: failure.attempts,
+      ...stageStateFlags('failed'),
+    },
+    stages,
+    gaps: [
+      {
+        stage: 'expanded',
+        status: 'failed',
+        reasonCode: failure.reasonCode,
+        retryable: failure.retryable,
+        attempts: failure.attempts,
+        ...stageStateFlags('failed'),
+      },
+      ...downstreamGaps,
+    ],
+  };
+}
+
+async function writePartialPreviewResult(payload, settings) {
+  const artifactPath = path.join(settings.expandedOutDir, PARTIAL_PREVIEW_RESULT_FILE);
+  const redactionAuditPath = path.join(settings.expandedOutDir, PARTIAL_PREVIEW_AUDIT_FILE);
+  const prepared = prepareRedactedArtifactJsonWithAudit(payload);
+  await writeTextFile(artifactPath, prepared.json);
+  await writeTextFile(redactionAuditPath, prepared.auditJson);
+  return {
+    artifactPath,
+    redactionAuditPath,
+    result: prepared.value,
+    redactionAudit: prepared.auditValue,
+  };
+}
+
+async function maybeBuildPartialPreviewResult({
+  error,
+  inputUrl,
+  generatedAt,
+  settings,
+  stageSpecs,
+  authKeepalive,
+  riskRecovery,
+}) {
+  if (error?.pipelineStage !== 'expanded' || !error?.stageResults?.capture) {
+    return null;
+  }
+  const payload = buildPartialPreviewPayload({
+    inputUrl,
+    generatedAt,
+    settings,
+    stageSpecs,
+    stageResults: error.stageResults,
+    error,
+  });
+  const partialPreview = await writePartialPreviewResult(payload, settings);
+  return {
+    inputUrl,
+    generatedAt,
+    kbDir: null,
+    skillDir: null,
+    skillName: settings.skillName,
+    authKeepalive,
+    riskRecovery,
+    pipelineBlockedByRisk: false,
+    pipelinePartial: true,
+    partialPreview,
+    stages: partialPreview.result.stages,
+  };
 }
 
 function summarizeRiskRecovery(result = null) {
@@ -283,17 +471,51 @@ export async function runPipeline(inputUrl, options = {}, runtime = DEFAULT_PIPE
       ...stageImpls,
       capture: async () => riskAwareCapture.captureManifest,
     };
-    ({ generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
-      stageSpecs,
-      stageImpls: wrappedStageImpls,
-      progress: options.progress,
-    }));
+    try {
+      ({ generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
+        stageSpecs,
+        stageImpls: wrappedStageImpls,
+        generatedAt,
+        progress: options.progress,
+      }));
+    } catch (error) {
+      const partialResult = await maybeBuildPartialPreviewResult({
+        error,
+        inputUrl,
+        generatedAt,
+        settings,
+        stageSpecs,
+        authKeepalive: summarizedAuthKeepalive,
+        riskRecovery,
+      });
+      if (partialResult) {
+        return partialResult;
+      }
+      throw error;
+    }
   } else {
-    ({ generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
-      stageSpecs,
-      stageImpls,
-      progress: options.progress,
-    }));
+    try {
+      ({ generatedAt, stageResults } = await executePipeline(inputUrl, settings, {
+        stageSpecs,
+        stageImpls,
+        generatedAt,
+        progress: options.progress,
+      }));
+    } catch (error) {
+      const partialResult = await maybeBuildPartialPreviewResult({
+        error,
+        inputUrl,
+        generatedAt,
+        settings,
+        stageSpecs,
+        authKeepalive: summarizedAuthKeepalive,
+        riskRecovery,
+      });
+      if (partialResult) {
+        return partialResult;
+      }
+      throw error;
+    }
   }
 
   return {

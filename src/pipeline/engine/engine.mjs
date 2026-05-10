@@ -18,6 +18,20 @@ function ensureStageDependencies(stageSpec, stageResults) {
   }
 }
 
+function attachPipelineStageFailure(error, {
+  stageSpec,
+  stageIndex,
+  stageResults,
+} = {}) {
+  const target = error && typeof error === 'object'
+    ? error
+    : new Error(String(error));
+  target.pipelineStage = stageSpec?.name ?? null;
+  target.pipelineStageIndex = stageIndex;
+  target.stageResults = { ...stageResults };
+  return target;
+}
+
 export async function executePipelineStage(
   stageSpec,
   pipelineContext,
@@ -123,7 +137,11 @@ export async function executePipeline(
       stageProgress?.fail?.({
         message: error?.message ?? String(error),
       });
-      throw error;
+      throw attachPipelineStageFailure(error, {
+        stageSpec,
+        stageIndex: index + 1,
+        stageResults,
+      });
     }
   }
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 import { parseCliArgs, pipelineCliJson, runPipeline } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
 import { PIPELINE_STAGE_SPECS } from '../../src/pipeline/engine/stage-spec.mjs';
@@ -541,6 +541,135 @@ test('runPipeline retries transient lock errors on retry-enabled stages', async 
     const result = await runPipeline('https://jable.tv/', {}, stageImpls);
     assert.equal(attempts, 2);
     assert.equal(result.stages.capture.title, 'Retried Capture');
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline retries transient browser navigation errors on expanded stage without rerunning capture', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-expand-retry-'));
+  let captureAttempts = 0;
+  let expandAttempts = 0;
+
+  try {
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async capture(url) {
+        captureAttempts += 1;
+        return {
+          status: 'success',
+          outDir: buildStageDir(workspace, 'capture'),
+          files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+          finalUrl: url,
+          title: 'Captured Once',
+          capturedAt: '2026-04-15T00:00:00.000Z',
+        };
+      },
+      async expandStates() {
+        expandAttempts += 1;
+        if (expandAttempts === 1) {
+          throw new Error('page.goto: net::ERR_CONNECTION_CLOSED at https://www.22biqu.com/');
+        }
+        return {
+          outDir: buildStageDir(workspace, 'expanded'),
+          summary: {
+            discoveredTriggers: 1,
+            attemptedTriggers: 1,
+            capturedStates: 2,
+            duplicateStates: 0,
+            noopTriggers: 0,
+            failedTriggers: 0,
+          },
+        };
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      expandedOutDir: buildStageDir(workspace, 'expanded-root'),
+      reuseLoginState: false,
+      autoLogin: false,
+    }, stageImpls);
+
+    assert.equal(captureAttempts, 1);
+    assert.equal(expandAttempts, 2);
+    assert.equal(result.pipelinePartial, undefined);
+    assert.equal(result.stages.capture.title, 'Captured Once');
+    assert.equal(result.stages.expanded.status, 'success');
+    assert.equal(result.stages.knowledgeBase.status, 'success');
+    assert.equal(result.stages.skill.status, 'success');
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline writes a redacted partial preview result after final expanded-stage transient failure', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-expand-partial-'));
+  let captureAttempts = 0;
+  let expandAttempts = 0;
+  let analysisCalls = 0;
+  const expandedOutDir = buildStageDir(workspace, 'expanded-root');
+
+  try {
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async capture(url) {
+        captureAttempts += 1;
+        return {
+          status: 'success',
+          outDir: buildStageDir(workspace, 'capture'),
+          files: { manifest: path.join(buildStageDir(workspace, 'capture'), 'manifest.json') },
+          finalUrl: url,
+          title: 'Captured Before Expand Failure',
+          capturedAt: '2026-04-15T00:00:00.000Z',
+        };
+      },
+      async expandStates() {
+        expandAttempts += 1;
+        throw new Error(
+          'page.goto: net::ERR_CONNECTION_CLOSED Authorization: Bearer synthetic-expand-partial-secret',
+        );
+      },
+      async analyzeStates() {
+        analysisCalls += 1;
+        throw new Error('analysis should not run after partial expanded-stage failure');
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      expandedOutDir,
+      reuseLoginState: false,
+      autoLogin: false,
+    }, stageImpls);
+
+    assert.equal(captureAttempts, 1);
+    assert.equal(expandAttempts, 2);
+    assert.equal(analysisCalls, 0);
+    assert.equal(result.pipelinePartial, true);
+    assert.equal(result.kbDir, null);
+    assert.equal(result.skillDir, null);
+    assert.equal(result.stages.capture.status, 'success');
+    assert.equal(result.stages.expanded.stage, 'expanded');
+    assert.equal(result.stages.expanded.status, 'partial');
+    assert.equal(result.stages.expanded.reasonCode, 'expand-navigation-failed');
+    assert.equal(result.stages.expanded.retryable, true);
+    assert.equal(result.stages.expanded.attempts, 2);
+    assert.equal(result.stages.expanded.failed, true);
+    assert.equal(result.stages.analysis.status, 'skipped');
+    assert.equal(result.stages.knowledgeBase.status, 'skipped');
+    assert.equal(result.partialPreview.result.sourceCaptureRefs.manifestPath, path.join(buildStageDir(workspace, 'capture'), 'manifest.json'));
+    assert.equal(result.partialPreview.result.redactionRequired, true);
+    assert.equal(result.partialPreview.result.noBypassAttempted, true);
+    assert.equal(result.partialPreview.result.gaps.some((gap) => gap.status === 'skipped'), true);
+    assert.doesNotMatch(
+      JSON.stringify(result.partialPreview.result),
+      /synthetic-expand-partial-secret|Authorization: Bearer/iu,
+    );
+
+    const artifactJson = await readFile(result.partialPreview.artifactPath, 'utf8');
+    const auditJson = await readFile(result.partialPreview.redactionAuditPath, 'utf8');
+    assert.equal(result.partialPreview.artifactPath, path.join(expandedOutDir, 'partial-preview-result.json'));
+    assert.equal(result.partialPreview.redactionAuditPath, path.join(expandedOutDir, 'partial-preview-result.redaction-audit.json'));
+    assert.doesNotMatch(artifactJson, /synthetic-expand-partial-secret|Authorization: Bearer/iu);
+    assert.match(artifactJson, /"status": "partial"/u);
+    assert.match(auditJson, /forbidden-pattern/u);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

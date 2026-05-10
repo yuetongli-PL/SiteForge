@@ -7,6 +7,35 @@ export function isTransientLockError(error) {
   return /EBUSY|resource busy or locked|lockfile/i.test(message);
 }
 
+export function isTransientNavigationError(error) {
+  const message = error?.message ? String(error.message) : String(error);
+  return /net::ERR_(?:CONNECTION_CLOSED|CONNECTION_RESET|CONNECTION_ABORTED|NETWORK_CHANGED|INTERNET_DISCONNECTED)|ECONNRESET|EPIPE|socket hang up|CDP socket closed|WebSocket is not open|browser has disconnected|target closed|page crashed|navigation timeout/i.test(message);
+}
+
+export function classifyTransientStageError(error) {
+  if (isTransientLockError(error)) {
+    return 'transient-lock-error';
+  }
+  if (isTransientNavigationError(error)) {
+    return 'transient-navigation-failure';
+  }
+  return null;
+}
+
+function attachRetryMetadata(error, metadata = {}) {
+  if (error && typeof error === 'object') {
+    error.attempts = metadata.attempts;
+    error.retryable = metadata.retryable === true;
+    error.transientReason = metadata.transientReason ?? null;
+    return error;
+  }
+  const wrapped = new Error(String(error));
+  wrapped.attempts = metadata.attempts;
+  wrapped.retryable = metadata.retryable === true;
+  wrapped.transientReason = metadata.transientReason ?? null;
+  return wrapped;
+}
+
 export async function runStage(stageName, action) {
   try {
     return await action();
@@ -23,13 +52,22 @@ export async function runStageWithRetry(stageName, action, { attempts = 2, retry
       return await runStage(stageName, action);
     } catch (error) {
       lastError = error;
-      if (attempt >= attempts || !isTransientLockError(error)) {
-        throw error;
+      const transientReason = classifyTransientStageError(error);
+      if (attempt >= attempts || !transientReason) {
+        throw attachRetryMetadata(error, {
+          attempts: attempt,
+          retryable: Boolean(transientReason),
+          transientReason,
+        });
       }
       await delay(retryDelayMs);
     }
   }
-  throw lastError;
+  throw attachRetryMetadata(lastError, {
+    attempts,
+    retryable: Boolean(classifyTransientStageError(lastError)),
+    transientReason: classifyTransientStageError(lastError),
+  });
 }
 
 export const DEFAULT_STAGE_RUNNERS = {

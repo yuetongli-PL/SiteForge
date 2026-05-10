@@ -889,6 +889,7 @@ test('download registry exposes dry-run plans for every configured download site
     'bz888',
     'douyin',
     'instagram',
+    'jable',
     'x',
     'xiaohongshu',
   ]);
@@ -904,7 +905,10 @@ test('download registry exposes dry-run plans for every configured download site
     });
     assert.equal(result.plan.siteKey, definition.siteKey);
     assert.equal(result.manifest.status, 'skipped');
-    assert.equal(result.manifest.reason, 'dry-run');
+    assert.equal(
+      result.manifest.reason,
+      definition.siteKey === 'jable' ? 'jable-native-resolver-required' : 'dry-run',
+    );
     assert.equal(result.manifest.artifacts.manifest.endsWith('manifest.json'), true);
     assert.equal((await readJsonFile(result.manifest.artifacts.manifest)).planId, result.plan.id);
   }
@@ -1563,6 +1567,102 @@ test('download terminal no-resolved-resources writes an empty StandardTaskList a
     JSON.stringify(lifecycleEvent),
     /synthetic-|headers|authorization|cookie|csrf|Bearer|profilePath|browserProfileRoot|userDataDir/iu,
   );
+});
+
+test('jable experimental download placeholder skips with native resolver reason and no legacy spawn', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-jable-placeholder-'));
+  const dryRunRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-jable-placeholder-dry-run-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  t.after(() => rm(dryRunRoot, { recursive: true, force: true }));
+  let legacySpawned = false;
+  let genericExecutorUsed = false;
+
+  const result = await runDownloadTask({
+    site: 'jable',
+    taskType: 'video',
+    input: 'jable-native-placeholder',
+    dryRun: false,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot,
+  }, {
+    acquireSessionLease: async () => ({
+      siteKey: 'jable',
+      host: 'jable.tv',
+      mode: 'anonymous',
+      status: 'ready',
+      riskSignals: [],
+    }),
+    releaseSessionLease: async () => {},
+    executeLegacyDownloadTask: async () => {
+      legacySpawned = true;
+      throw new Error('legacy executor should not run for Jable experimental placeholder');
+    },
+    executeResolvedDownloadTask: async () => {
+      genericExecutorUsed = true;
+      throw new Error('generic executor should not run without resolved Jable resources');
+    },
+  });
+
+  assert.equal(legacySpawned, false);
+  assert.equal(genericExecutorUsed, false);
+  assert.equal(result.definition.siteKey, 'jable');
+  assert.equal(result.definition.legacyEntrypoint, null);
+  assert.equal(result.plan.resolver.method, 'native-jable-resource-seeds');
+  assert.equal(result.plan.legacy, undefined);
+  assert.equal(result.resolvedTask.resources.length, 0);
+  assert.equal(result.resolvedTask.completeness.reason, 'jable-native-resolver-required');
+  assert.equal(result.manifest.status, 'skipped');
+  assert.equal(result.manifest.reason, 'jable-native-resolver-required');
+
+  const persisted = await readJsonFile(result.manifest.artifacts.manifest);
+  assert.equal(persisted.status, 'skipped');
+  assert.equal(persisted.reason, 'jable-native-resolver-required');
+  assert.equal(persisted.reasonRecovery.retryable, false);
+  assert.equal(persisted.reasonRecovery.degradable, true);
+  assert.equal(persisted.reasonRecovery.artifactWriteAllowed, true);
+
+  const artifactPayload = [
+    JSON.stringify(persisted),
+    await readFile(persisted.artifacts.plan, 'utf8'),
+    await readFile(persisted.artifacts.resolvedTask, 'utf8'),
+    await readFile(persisted.artifacts.standardTaskList, 'utf8'),
+    await readFile(persisted.artifacts.queue, 'utf8'),
+    await readFile(persisted.artifacts.downloadsJsonl, 'utf8'),
+  ].join('\n');
+  assert.doesNotMatch(
+    artifactPayload,
+    /cookie|authorization|csrf|Bearer|m3u8|\.mp4|https:\/\/jable\.tv\/videos\/|player/iu,
+  );
+
+  const dryRunResult = await runDownloadTask({
+    site: 'jable',
+    taskType: 'video',
+    input: 'jable-native-placeholder',
+    dryRun: true,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    runRoot: dryRunRoot,
+  }, {
+    acquireSessionLease: async () => ({
+      siteKey: 'jable',
+      host: 'jable.tv',
+      mode: 'anonymous',
+      status: 'ready',
+      riskSignals: [],
+    }),
+    releaseSessionLease: async () => {},
+    executeLegacyDownloadTask: async () => {
+      throw new Error('legacy executor should not run for Jable dry-run placeholder');
+    },
+    executeResolvedDownloadTask: async () => {
+      throw new Error('generic executor should not run for Jable dry-run placeholder');
+    },
+  });
+  assert.equal(dryRunResult.manifest.status, 'skipped');
+  assert.equal(dryRunResult.manifest.reason, 'jable-native-resolver-required');
+  const dryRunPersisted = await readJsonFile(dryRunResult.manifest.artifacts.manifest);
+  assert.equal(dryRunPersisted.reason, 'jable-native-resolver-required');
 });
 
 test('download terminal lifecycle subscriber failure fails closed before manifest write', async (t) => {

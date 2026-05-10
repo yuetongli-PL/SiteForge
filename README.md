@@ -258,11 +258,13 @@ The current registry includes 21 site families. Support levels differ by site an
 | `www.xiaohongshu.com` | Done | Site-specific | Done | Done | In progress |
 | `x.com` | Done | Site-specific | Done | Done | Experimental |
 | `www.instagram.com` | Done | Site-specific | Done | Done | Experimental |
-| `jable.tv` | Done | Not required | Partial | Done | Done |
+| `jable.tv` | Done | Not required | Partial | Done | Done; download placeholder experimental |
 | `moodyz.com` | Done | Not required | Partial | Done | Done |
 | Official AV catalog sites | Done | Not required | Partial | Done | Done for public metadata |
 
 Official AV catalog sites include `rookie-av.jp`, `madonna-av.com`, `dahlia-av.jp`, `www.sod.co.jp`, `s1s1s1.com`, `attackers.net`, `www.t-powers.co.jp`, `www.8man.jp`, `www.dogma.co.jp`, `www.km-produce.com`, and `www.maxing.jp`.
+
+Jable download routing is an experimental placeholder only. It can produce an auditable `jable-native-resolver-required` manifest through the unified download runner, but it does not parse Jable player pages, raw media URLs, CDN URLs, manifests, sessions, or browser profiles.
 
 <a id="en-quick-start"></a>
 
@@ -792,11 +794,13 @@ Downloader 是低权限消费者，只接收受治理的任务、策略、最小
 | `www.xiaohongshu.com` | Done | Site-specific | Done | Done | In progress |
 | `x.com` | Done | Site-specific | Done | Done | Experimental |
 | `www.instagram.com` | Done | Site-specific | Done | Done | Experimental |
-| `jable.tv` | Done | Not required | Partial | Done | Done |
+| `jable.tv` | Done | Not required | Partial | Done | Done; download placeholder experimental |
 | `moodyz.com` | Done | Not required | Partial | Done | Done |
 | 官方 AV catalog 站点 | Done | Not required | Partial | Done | Done for public metadata |
 
 官方 AV catalog 站点包括 `rookie-av.jp`、`madonna-av.com`、`dahlia-av.jp`、`www.sod.co.jp`、`s1s1s1.com`、`attackers.net`、`www.t-powers.co.jp`、`www.8man.jp`、`www.dogma.co.jp`、`www.km-produce.com` 和 `www.maxing.jp`。
+
+Jable 下载路由只是实验占位。它可以通过统一下载 runner 产出可审计的 `jable-native-resolver-required` manifest，但不会解析 Jable 播放器页面、原始媒体 URL、CDN URL、manifest、session 或浏览器 profile。
 
 <a id="zh-quick-start"></a>
 

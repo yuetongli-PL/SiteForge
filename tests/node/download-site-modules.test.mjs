@@ -30,6 +30,7 @@ test('download site argv builders live in per-site module files', async () => {
     'xiaohongshu.mjs',
     '22biqu.mjs',
     'bz888.mjs',
+    'jable.mjs',
     'social.mjs',
   ]) {
     await access(path.join(moduleDir, fileName));
@@ -50,12 +51,12 @@ test('download site argv builders live in per-site module files', async () => {
   }
 });
 
-test('download site modules expose all configured legacy download sites', () => {
+test('download site modules expose all configured download sites', () => {
   assert.deepEqual(
     listDownloadSiteModules().map((module) => module.siteKey).sort(),
-    ['22biqu', 'bilibili', 'bz888', 'douyin', 'instagram', 'x', 'xiaohongshu'],
+    ['22biqu', 'bilibili', 'bz888', 'douyin', 'instagram', 'jable', 'x', 'xiaohongshu'],
   );
-  for (const siteKey of ['bilibili', 'douyin', 'xiaohongshu', '22biqu', 'bz888', 'x', 'instagram']) {
+  for (const siteKey of ['bilibili', 'douyin', 'xiaohongshu', '22biqu', 'bz888', 'x', 'instagram', 'jable']) {
     assert.equal(getDownloadSiteModule(siteKey)?.siteKey, siteKey);
   }
 });
@@ -87,6 +88,52 @@ test('download modules create plans and preserve legacy-required resource resolu
   assert.equal(plan.legacy.entrypoint.endsWith(path.join('src', 'entrypoints', 'sites', 'bilibili-action.mjs')), true);
   assert.equal(resolved.resources.length, 0);
   assert.equal(resolved.completeness.reason, 'legacy-downloader-required');
+});
+
+test('jable experimental download placeholder resolves to native miss without legacy fallback', async () => {
+  const capabilities = await readJsonFile(path.join(REPO_ROOT, 'config', 'site-capabilities.json'));
+  const jableCapabilities = capabilities.sites['jable.tv'];
+  assert.equal(jableCapabilities.downloader.status, 'experimental');
+  assert.deepEqual(jableCapabilities.downloader.taskTypes, ['video', 'media-bundle']);
+  assert.equal(jableCapabilities.downloader.reasonCode, 'jable-native-resolver-required');
+  assert.equal(JSON.stringify(jableCapabilities).includes('downloader_not_allowed'), false);
+
+  const registry = await readJsonFile(path.join(REPO_ROOT, 'config', 'site-registry.json'));
+  const jableRegistry = registry.sites['jable.tv'];
+  assert.equal(jableRegistry.siteKey, 'jable');
+  assert.equal(jableRegistry.adapterId, 'jable');
+  assert.equal(Object.hasOwn(jableRegistry, 'legacyEntrypoint'), false);
+  assert.equal(jableRegistry.downloadSupport.status, 'experimental');
+  assert.equal(jableRegistry.downloadSupport.reasonCode, 'jable-native-resolver-required');
+  assert.equal(JSON.stringify(jableRegistry).includes('downloader_not_allowed'), false);
+
+  const definition = await resolveDownloadSiteDefinition({ site: 'jable' }, { workspaceRoot: REPO_ROOT });
+  const plan = await createDownloadPlan({
+    site: 'jable',
+    taskType: 'video',
+    input: 'jable-native-placeholder',
+    dryRun: true,
+  }, {
+    workspaceRoot: REPO_ROOT,
+    definition,
+  });
+  const resolved = await resolveDownloadResources(plan, null, {
+    request: { site: 'jable', taskType: 'video', input: 'jable-native-placeholder' },
+    workspaceRoot: REPO_ROOT,
+    definition,
+  });
+
+  assert.equal(definition.siteKey, 'jable');
+  assert.equal(definition.adapterId, 'jable');
+  assert.equal(definition.legacyEntrypoint, null);
+  assert.equal(definition.resolverMethod, 'native-jable-resource-seeds');
+  assert.equal(plan.resolver.method, 'native-jable-resource-seeds');
+  assert.equal(plan.legacy, undefined);
+  assert.equal(resolved.resources.length, 0);
+  assert.equal(resolved.groups.length, 0);
+  assert.equal(resolved.metadata.resolver.method, 'native-jable-resource-seeds');
+  assert.equal(resolved.completeness.reason, 'jable-native-resolver-required');
+  assert.equal(resolved.completeness.complete, false);
 });
 
 test('22biqu native resolver maps provided chapter data to download resources', async () => {

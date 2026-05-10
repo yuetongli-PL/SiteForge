@@ -6,12 +6,17 @@ import { constants as fsConstants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { renderKnownSiteSkillMd } from '../../src/skills/generation/site-render-inputs.mjs';
-import { renderSiteCapabilityGraphStatusLines } from '../../src/skills/generation/render/site-renderers/shared.mjs';
+import {
+  renderSiteCapabilityCompilerStatusLines,
+  renderSiteCapabilityGraphStatusLines,
+} from '../../src/skills/generation/render/site-renderers/shared.mjs';
 
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SKILLS_DIR = path.join(WORKSPACE_ROOT, 'skills');
 const GRAPH_SECTION_HEADING = '## Site Capability Graph status';
 const GRAPH_STATUS_LINES = renderSiteCapabilityGraphStatusLines();
+const COMPILER_SECTION_HEADING = '## Site Capability Compiler status';
+const COMPILER_STATUS_LINES = renderSiteCapabilityCompilerStatusLines();
 
 async function pathExists(filePath) {
   try {
@@ -132,6 +137,17 @@ test('known-site renderers retain the shared Site Capability Graph status block'
     assert.equal(skillMd.split(GRAPH_SECTION_HEADING).length - 1, 1);
     for (const line of GRAPH_STATUS_LINES) {
       assert.match(skillMd, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'), `${site.skillName} renderer is missing Graph line: ${line}`);
+    }
+  }
+});
+
+test('known-site renderers expose the shared Site Capability Compiler status block', () => {
+  for (const site of knownSiteRenderCases) {
+    const skillMd = renderKnownSiteSkillMd(buildKnownSiteRenderContext(site), knownSiteOutputs);
+    assert.equal(typeof skillMd, 'string', `${site.skillName} renderer must produce a skill`);
+    assert.equal(skillMd.split(COMPILER_SECTION_HEADING).length - 1, 1);
+    for (const line of COMPILER_STATUS_LINES) {
+      assert.match(skillMd, new RegExp(line.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'), `${site.skillName} renderer is missing Compiler line: ${line}`);
     }
   }
 });

@@ -12,6 +12,7 @@ import {
   resolveExecutorKind,
 } from './site-modules/common.mjs';
 import douyinModule from './site-modules/douyin.mjs';
+import jableModule from './site-modules/jable.mjs';
 import { createSocialSiteModule } from './site-modules/social.mjs';
 import xiaohongshuModule from './site-modules/xiaohongshu.mjs';
 import {
@@ -90,6 +91,7 @@ const SITE_MODULES = Object.freeze(Object.fromEntries([
   bz888Module,
   bilibiliModule,
   douyinModule,
+  jableModule,
   xiaohongshuModule,
   createSocialSiteModule('x'),
   createSocialSiteModule('instagram'),

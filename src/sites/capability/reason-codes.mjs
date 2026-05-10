@@ -339,6 +339,15 @@ export const REASON_CODE_CATALOG = Object.freeze([
     description: 'The download resolver did not produce any concrete downloadable resources.',
   }),
   defineReasonCode({
+    code: 'jable-native-resolver-required',
+    family: 'download',
+    source: 'src/sites/downloads/site-modules/jable.mjs',
+    retryable: false,
+    degradable: true,
+    artifactWriteAllowed: true,
+    description: 'Jable download routing is experimental and requires a safety-reviewed native resolver before resources can be produced.',
+  }),
+  defineReasonCode({
     code: 'bilibili-api-evidence-unavailable',
     family: 'download',
     source: 'src/sites/downloads/site-modules/bilibili.mjs',

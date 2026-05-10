@@ -98,7 +98,27 @@
       "canonicalBaseUrl": "https://jable.tv/",
       "siteArchetype": "catalog-detail",
       "host": "jable.tv",
+      "siteKey": "jable",
+      "adapterId": "jable",
       "repoSkillDir": "skills/jable",
+      "downloadPlanner": "src/sites/downloads/modules.mjs",
+      "downloadResolver": "src/sites/downloads/modules.mjs",
+      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadSessionRequirement": "none",
+      "downloadTaskTypes": [
+        "video",
+        "media-bundle"
+      ],
+      "downloadResolverMethod": "native-jable-resource-seeds",
+      "downloadSupport": {
+        "status": "experimental",
+        "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "reasonCode": "jable-native-resolver-required",
+        "reason": "Jable video download routing is an experimental placeholder; no native resource resolver has been safety-reviewed yet."
+      },
       "rankingQueryEntrypoint": "src/entrypoints/sites/jable-ranking.mjs"
     },
     "rookie-av.jp": {

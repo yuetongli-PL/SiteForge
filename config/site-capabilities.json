@@ -156,6 +156,7 @@
         "search-results-page"
       ],
       "capabilityFamilies": [
+        "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
@@ -177,6 +178,8 @@
         "search-submit"
       ],
       "host": "jable.tv",
+      "siteKey": "jable",
+      "adapterId": "jable",
       "rankingSupported": true,
       "rankingModes": [
         "combined",
@@ -184,7 +187,33 @@
         "most-viewed",
         "most-favourited"
       ],
-      "categoryTaxonomySupported": true
+      "categoryTaxonomySupported": true,
+      "downloader": {
+        "status": "experimental",
+        "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "reasonCode": "jable-native-resolver-required",
+        "reason": "Jable video download routing is an experimental placeholder; no native resource resolver has been safety-reviewed yet."
+      },
+      "routingNotes": [
+        "Catalog navigation and ranking queries remain read-only.",
+        "Download routing may produce an auditable native miss only; do not parse player pages or media URLs for this site."
+      ],
+      "reasonCodes": [
+        "unsupported_url",
+        "unsupported_capability",
+        "parse_failed",
+        "missing_required_field",
+        "pagination_exhausted",
+        "network_failed",
+        "auth_required",
+        "age_gate_or_access_gate",
+        "blocked_by_policy",
+        "jable-native-resolver-required",
+        "schema_validation_failed"
+      ]
     },
     "rookie-av.jp": {
       "baseUrl": "https://rookie-av.jp/",

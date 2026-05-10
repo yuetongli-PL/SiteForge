@@ -131,6 +131,10 @@ function mergeRegistryDefinition(base, registryRecord = {}, capabilitiesRecord =
     downloadPlanner: registryRecord.downloadPlanner ?? base.downloadPlanner,
     downloadResolver: registryRecord.downloadResolver ?? base.downloadResolver,
     downloadExecutor: registryRecord.downloadExecutor ?? base.downloadExecutor,
+    taskType: registryRecord.downloadTaskTypes?.[0] ?? capabilitiesRecord.downloader?.taskTypes?.[0] ?? base.taskType,
+    taskTypes: registryRecord.downloadTaskTypes ?? capabilitiesRecord.downloader?.taskTypes ?? base.taskTypes,
+    sessionRequirement: registryRecord.downloadSessionRequirement ?? base.sessionRequirement,
+    resolverMethod: registryRecord.downloadResolverMethod ?? base.resolverMethod,
     capabilityFamilies: [
       ...(base.capabilityFamilies ?? []),
       ...(registryRecord.capabilityFamilies ?? []),
@@ -156,7 +160,9 @@ export async function listDownloadSiteDefinitions(workspaceRoot = process.cwd(),
       ...(capabilitiesRecord.capabilityFamilies ?? []),
     ].includes('download-content');
     const hasDownloadEntrypoint = Boolean(registryRecord.downloadEntrypoint);
-    if (!hasDownloadCapability && !hasDownloadEntrypoint && !byHost.has(host)) {
+    const downloadStatus = registryRecord.downloadSupport?.status ?? capabilitiesRecord.downloader?.status;
+    const hasExperimentalDownloadSupport = downloadStatus === 'experimental';
+    if (!hasDownloadCapability && !hasDownloadEntrypoint && !hasExperimentalDownloadSupport && !byHost.has(host)) {
       continue;
     }
     byHost.set(host, mergeRegistryDefinition(byHost.get(host) ?? { host }, registryRecord, capabilitiesRecord));

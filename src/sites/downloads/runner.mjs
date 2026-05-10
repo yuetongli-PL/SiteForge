@@ -153,6 +153,28 @@ function nativeFallbackTrace(resolvedTask = {}) {
   return trace;
 }
 
+const EMPTY_RESOLUTION_TERMINAL_REASON_ALLOWLIST = Object.freeze([
+  'jable-native-resolver-required',
+]);
+
+function emptyResolutionTerminalReason(resolvedTask = {}) {
+  const reason = String(resolvedTask?.completeness?.reason ?? '').trim();
+  if (EMPTY_RESOLUTION_TERMINAL_REASON_ALLOWLIST.includes(reason)) {
+    return reason;
+  }
+  return 'no-resolved-resources';
+}
+
+function shouldWriteEmptyResolutionTerminalManifest(resolvedTask = {}, dryRun = false) {
+  if (resolvedTask?.resources?.length !== 0) {
+    return false;
+  }
+  if (!dryRun) {
+    return true;
+  }
+  return emptyResolutionTerminalReason(resolvedTask) !== 'no-resolved-resources';
+}
+
 async function loadResumeResolvedTask(plan, options = {}) {
   if (!Boolean(options.resume ?? plan.resume ?? false)) {
     return null;
@@ -543,6 +565,7 @@ async function writeTerminalManifest({
     siteKey: plan.siteKey,
     status,
     reason,
+    dryRun: Boolean(options.dryRun ?? plan.policy?.dryRun ?? false),
     counts: {
       expected: normalizedResolvedTask?.resources?.length ?? 0,
       attempted: 0,
@@ -766,8 +789,8 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
       resolvedTask: normalizedResolvedTask,
       sessionLease: downloaderSessionLease,
     });
-    if (!dryRun && normalizedResolvedTask.resources.length === 0) {
-      if (plan.legacy?.entrypoint) {
+    if (shouldWriteEmptyResolutionTerminalManifest(normalizedResolvedTask, dryRun)) {
+      if (!dryRun && plan.legacy?.entrypoint) {
         const manifest = await (deps.executeLegacyDownloadTask ?? executeLegacyDownloadTask)(
           plan,
           downloaderSessionLease,
@@ -793,7 +816,7 @@ export async function runDownloadTask(request = {}, options = {}, deps = {}) {
         sessionLease: downloaderSessionLease,
         resolvedTask: normalizedResolvedTask,
         status: 'skipped',
-        reason: 'no-resolved-resources',
+        reason: emptyResolutionTerminalReason(normalizedResolvedTask),
         options,
         lifecycleEventSubscribers: deps.lifecycleEventSubscribers,
         capabilityHookRegistry: deps.capabilityHookRegistry,

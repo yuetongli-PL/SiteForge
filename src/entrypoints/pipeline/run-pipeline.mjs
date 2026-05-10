@@ -365,6 +365,8 @@ Options:
   --kb-dir <dir>               Final knowledge base directory
   --skill-out-dir <dir>        Final skill directory
   --skill-name <name>          Override default skill name
+  --metadata-config-dir <dir>  Write generated site metadata to this config sandbox
+  --metadata-runtime-dir <dir> Write runtime site metadata to this sandbox
   --strict <true|false>        Strict mode for compileKnowledgeBase
   --reuse-login-state          Reuse a persistent per-site browser profile
   --no-reuse-login-state       Disable persistent login-state reuse
@@ -541,6 +543,26 @@ export function parseCliArgs(argv) {
       case '--skill-name': {
         const { value, nextIndex } = readValue(current, index);
         options.skillName = value;
+        index = nextIndex;
+        break;
+      }
+      case '--metadata-config-dir':
+      case '--site-metadata-config-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.siteMetadataOptions = {
+          ...(options.siteMetadataOptions ?? {}),
+          configDir: value,
+        };
+        index = nextIndex;
+        break;
+      }
+      case '--metadata-runtime-dir':
+      case '--site-metadata-runtime-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.siteMetadataOptions = {
+          ...(options.siteMetadataOptions ?? {}),
+          runtimeDir: value,
+        };
         index = nextIndex;
         break;
       }

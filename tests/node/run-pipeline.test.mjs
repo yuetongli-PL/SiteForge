@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 
-import { pipelineCliJson, runPipeline } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
+import { parseCliArgs, pipelineCliJson, runPipeline } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
 import { PIPELINE_STAGE_SPECS } from '../../src/pipeline/engine/stage-spec.mjs';
 import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
 
@@ -158,12 +158,32 @@ test('pipeline CLI JSON stdout fails closed without raw cause exposure', () => {
   );
 });
 
+test('runPipeline CLI accepts metadata sandbox directories', () => {
+  const parsed = parseCliArgs([
+    'https://www.22biqu.com/',
+    '--metadata-config-dir',
+    'runs/preview/site-metadata/config',
+    '--metadata-runtime-dir',
+    'runs/preview/site-metadata/runtime',
+  ]);
+
+  assert.equal(parsed.url, 'https://www.22biqu.com/');
+  assert.deepEqual(parsed.options.siteMetadataOptions, {
+    configDir: 'runs/preview/site-metadata/config',
+    runtimeDir: 'runs/preview/site-metadata/runtime',
+  });
+});
+
 test('runPipeline smoke test wires stages in order and passes derived paths', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-'));
   const calls = [];
   const inputUrl = 'https://jable.tv/videos/ipx-001/';
 
   const stageDir = (name) => buildStageDir(workspace, name);
+  const siteMetadataOptions = {
+    configDir: path.join(workspace, 'site-metadata-config'),
+    runtimeDir: path.join(workspace, 'site-metadata-runtime'),
+  };
 
   const stageImpls = createSuccessfulStageImpls(workspace, {
     async capture(url, options) {
@@ -276,6 +296,7 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
         autoLogin: true,
         maxCapturedStates: 7,
         strict: false,
+        siteMetadataOptions,
       },
       stageImpls,
     );
@@ -303,9 +324,11 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
     assert.equal(calls[7].options.docsDir, stageDir('docs'));
     assert.equal(calls[8].options.governanceDir, stageDir('governance'));
     assert.equal(calls[8].options.strict, false);
+    assert.deepEqual(calls[8].options.siteMetadataOptions, siteMetadataOptions);
     assert.equal(calls[9].options.kbDir, stageDir('kb'));
     assert.equal(calls[9].options.outDir, stageDir('skill-root'));
     assert.equal(calls[9].options.skillName, 'jable-videos');
+    assert.deepEqual(calls[9].options.siteMetadataOptions, siteMetadataOptions);
 
     assert.deepEqual(calls[0].options.searchQueries, undefined);
     assert.deepEqual(calls[1].options.searchQueries, ['IPX-001', 'Jable']);

@@ -82,6 +82,18 @@ export async function generateSkill(url, options = {}) {
   });
 }
 
+function buildCliSiteMetadataOptions(flags = {}) {
+  const options = {
+    ...(flags['metadata-config-dir'] || flags['site-metadata-config-dir']
+      ? { configDir: flags['metadata-config-dir'] ?? flags['site-metadata-config-dir'] }
+      : {}),
+    ...(flags['metadata-runtime-dir'] || flags['site-metadata-runtime-dir']
+      ? { runtimeDir: flags['metadata-runtime-dir'] ?? flags['site-metadata-runtime-dir'] }
+      : {}),
+  };
+  return Object.keys(options).length ? options : undefined;
+}
+
 export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {
     return { command: 'help' };
@@ -117,6 +129,7 @@ export function parseCliArgs(argv) {
       nlIntentsPath: flags['nl-intents'],
       interactionModelPath: flags['interaction-model'],
       compileSummaryPath: flags['compile-summary'],
+      siteMetadataOptions: buildCliSiteMetadataOptions(flags),
       json: flags.json === true,
       quiet: flags.quiet === true,
       progressMode: flags.progress,
@@ -129,7 +142,7 @@ export function parseCliArgs(argv) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/generate-skill.mjs <url> [--kb-dir <dir>] [--out-dir <dir>] [--skill-name <name>] [--wiki-index <path>] [--wiki-schema <path>] [--flows-dir <dir>] [--recovery <path>] [--approval <path>] [--nl-intents <path>] [--interaction-model <path>] [--compile-summary <path>] [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty]',
+    '  node src/entrypoints/pipeline/generate-skill.mjs <url> [--kb-dir <dir>] [--out-dir <dir>] [--skill-name <name>] [--wiki-index <path>] [--wiki-schema <path>] [--flows-dir <dir>] [--recovery <path>] [--approval <path>] [--nl-intents <path>] [--interaction-model <path>] [--compile-summary <path>] [--metadata-config-dir <dir>] [--metadata-runtime-dir <dir>] [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty]',
   ].join('\n'));
 }
 

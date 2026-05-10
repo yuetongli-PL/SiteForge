@@ -31,6 +31,7 @@ const DEFAULT_PIPELINE_OPTIONS = {
   kbDir: undefined,
   skillOutDir: undefined,
   skillName: undefined,
+  siteMetadataOptions: undefined,
   strict: true,
 };
 
@@ -115,6 +116,17 @@ export function mergePipelineOptions(options = {}) {
     if (merged[key]) {
       merged[key] = path.resolve(merged[key]);
     }
+  }
+  if (merged.siteMetadataOptions && typeof merged.siteMetadataOptions === 'object') {
+    merged.siteMetadataOptions = {
+      ...merged.siteMetadataOptions,
+      ...(merged.siteMetadataOptions.configDir
+        ? { configDir: path.resolve(merged.siteMetadataOptions.configDir) }
+        : {}),
+      ...(merged.siteMetadataOptions.runtimeDir
+        ? { runtimeDir: path.resolve(merged.siteMetadataOptions.runtimeDir) }
+        : {}),
+    };
   }
 
   merged.timeoutMs = Number(merged.timeoutMs);

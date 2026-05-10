@@ -75,6 +75,10 @@ test('generateSkill CLI accepts an explicit compile summary artifact path', () =
     'https://www.bilibili.com/',
     '--compile-summary',
     'runs/sites/site-capability-compile/bilibili/site-compile-result-summary.json',
+    '--metadata-config-dir',
+    'runs/preview/site-metadata/config',
+    '--metadata-runtime-dir',
+    'runs/preview/site-metadata/runtime',
   ]);
 
   assert.equal(parsed.command, 'generate');
@@ -82,6 +86,10 @@ test('generateSkill CLI accepts an explicit compile summary artifact path', () =
     parsed.options.compileSummaryPath,
     'runs/sites/site-capability-compile/bilibili/site-compile-result-summary.json',
   );
+  assert.deepEqual(parsed.options.siteMetadataOptions, {
+    configDir: 'runs/preview/site-metadata/config',
+    runtimeDir: 'runs/preview/site-metadata/runtime',
+  });
 });
 
 test('generateSkill produces stable jable skill documents from a self-contained compiled knowledge base', async () => {

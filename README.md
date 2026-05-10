@@ -184,6 +184,44 @@ SiteAdapters isolate each website. They own URL families, page/API interpretatio
 
 The downloader is a low-permission consumer. It only receives governed tasks, policies, minimal session views, and resolved resources.
 
+### Architecture design (updated)
+
+- `run-pipeline` implements the stage graph and records failure states.
+- `generate-skill` consumes run artifacts and composes governed skill outputs.
+- The `kernel` coordinates lifecycle and artifact movement; it remains site-agnostic.
+- `SiteAdapter` modules own per-site interpretation: URL classification, health signal translation, normalization, and capability mapping.
+- `Capability services` own common contracts: discovery, evidence, risk, policy, redaction, and queue/runstate handling.
+- `session-view` boundaries enforce privacy and login isolation so downloader and lower layers never receive raw credentials or profile files.
+- `LayerConsumerResult` / `CoverageDelta` are now explicit evidence carriers in execution and gate decisions.
+
+## Usage design guide
+
+The recommended workflow is to treat every action as a staged command:
+
+1. Run capture and analysis
+```powershell
+node .\src\entrypoints\pipeline\run-pipeline.mjs <site-url> --skill-name <site> --progress plain
+```
+
+2. Inspect the generated artifact set and review warning states
+```powershell
+git status
+```
+
+3. Generate skill artifacts only from reviewed evidence
+```powershell
+node .\src\entrypoints\pipeline\generate-skill.mjs <site-url> --skill-name <site> --progress plain
+```
+
+4. Apply governance gates and promote only when checks pass
+```powershell
+node .\src\entrypoints\pipeline\run-pipeline.mjs <site-url> --goal validate --progress plain
+```
+
+Failure handling rule:
+- Any `blocked`/`retryable` signal is first-class and should be recorded as partial results where applicable.
+- `partial` artifacts are valid for diagnosis and planning, but are not auto-promoted into repo-local skills.
+
 ## Capability Matrix
 
 | Capability | Common Service | SiteAdapter Required | Status |

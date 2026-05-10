@@ -284,7 +284,7 @@ test('Bilibili concrete site evidence flows through governed producer, API catal
     assert.equal(apiEntries.some((entry) => entry.resourceType === 'websocket'), true);
     assert.equal(capabilityTarget.discoveryState, 'verified');
     assert.equal(capabilityTarget.executableCapabilityAllowed, true);
-    assert.equal(capabilityTarget.mappingSummary.executableEvidenceCount, 4);
+    assert.equal(capabilityTarget.mappingSummary.executableEvidenceCount, 6);
     assert.equal(capabilityTarget.evidenceMappings.some((mapping) =>
       mapping.evidenceDetail?.descriptorKind === 'verified-api-catalog-capability-evidence'
       && mapping.evidenceDetail.sourceApiId === 'artifact:api-catalog:bilibili-video-view-api'
@@ -431,7 +431,7 @@ test('observed producer API needs SiteAdapter policy schema and test gates befor
   }
 });
 
-test('executable capability requires exact adapter schema test policy quorum plus verified API catalog evidence', () => {
+test('executable capability requires exact adapter schema test policy risk approval quorum plus verified API catalog evidence', () => {
   const fixture = createExecutableCapabilityEvidenceFixture({
     capability: 'search-content',
     apiCatalogRef: 'artifact:api-catalog:observed-search-api',
@@ -439,6 +439,8 @@ test('executable capability requires exact adapter schema test policy quorum plu
     schemaRef: 'schema:search-content',
     testEvidenceRefs: ['test:search-content'],
     policyRef: 'policy:search-content',
+    riskRef: 'risk:search-content',
+    approvalRef: 'approval:search-content',
   });
   assert.equal(assertExecutableCapabilityEvidenceFixtureCompatible(fixture), true);
 
@@ -454,7 +456,7 @@ test('executable capability requires exact adapter schema test policy quorum plu
 
   assert.equal(target.discoveryState, 'verified');
   assert.equal(target.executableCapabilityAllowed, true);
-  assert.equal(target.mappingSummary.executableEvidenceCount, 4);
+  assert.equal(target.mappingSummary.executableEvidenceCount, 6);
   assert.equal(target.evidenceMappings.some((mapping) =>
     mapping.evidenceDetail?.descriptorKind === 'verified-api-catalog-capability-evidence'
     && mapping.evidenceDetail.sourceApiId === 'artifact:api-catalog:observed-search-api'
@@ -466,7 +468,7 @@ test('executable capability requires exact adapter schema test policy quorum plu
   assert.throws(
     () => createExecutableCapabilityEvidenceFixture({
       capability: 'search-content',
-      evidenceKinds: ['adapter', 'schema', 'test'],
+      evidenceKinds: ['adapter', 'schema', 'test', 'policy', 'risk'],
     }),
     (error) => error.code === 'capability.executable_quorum_missing',
   );

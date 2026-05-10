@@ -228,6 +228,8 @@ export function createBilibiliExecutableCapabilityEvidenceFixture({
       'test:bilibili:api-catalog-promotion',
     ],
     policyRef: 'policy:bilibili:public-api-catalog',
+    riskRef: 'risk:bilibili:public-video-view-low-risk',
+    approvalRef: 'approval:bilibili:public-read-only',
     apiCatalogRef,
     verifiedAt,
   });

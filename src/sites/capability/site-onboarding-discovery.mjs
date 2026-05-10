@@ -3428,6 +3428,8 @@ function staticAdapterCapabilityFixtureEvidenceEntries(adapter = null) {
         ...(fixture.schemaRef ? ['schema'] : []),
         ...(fixture.testEvidenceRef || fixture.testEvidenceRefs ? ['test'] : []),
         ...(fixture.policyRef ? ['policy'] : []),
+        ...(fixture.riskRef || fixture.riskEvidenceRef ? ['risk'] : []),
+        ...(fixture.approvalRef || fixture.approvalEvidenceRef ? ['approval'] : []),
       ];
       const kinds = evidenceKinds.length ? evidenceKinds : inferredKinds;
       return kinds.map((kind, kindIndex) => {
@@ -3437,6 +3439,8 @@ function staticAdapterCapabilityFixtureEvidenceEntries(adapter = null) {
           kind === 'test' ? fixture.testEvidenceRef : undefined,
           kind === 'test' ? toArray(fixture.testEvidenceRefs)[0] : undefined,
           kind === 'policy' ? fixture.policyRef : undefined,
+          kind === 'risk' ? (fixture.riskRef ?? fixture.riskEvidenceRef) : undefined,
+          kind === 'approval' ? (fixture.approvalRef ?? fixture.approvalEvidenceRef) : undefined,
           fixture.evidenceRef,
           fixture.ref,
           `${kind}:${capability}`,
@@ -3475,6 +3479,8 @@ const REQUIRED_CAPABILITY_EXECUTION_EVIDENCE_KINDS = Object.freeze([
   'schema',
   'test',
   'policy',
+  'risk',
+  'approval',
 ]);
 
 function requiredCapabilityEvidenceStatus(kind) {
@@ -3759,14 +3765,10 @@ export function createCapabilityGapReport(capabilityTargets) {
         evidenceRequirementGapCount: evidenceRequirementGaps.length,
         evidenceCompletionStrategy,
         mappingGaps: capabilityMappingGaps(target),
-        requiredEvidenceStatuses: [
-          'requires_adapter_evidence',
-          'requires_schema_evidence',
-          'requires_test_evidence',
-          'requires_policy_evidence',
-        ],
+        requiredEvidenceStatuses: REQUIRED_CAPABILITY_EXECUTION_EVIDENCE_KINDS
+          .map(requiredCapabilityEvidenceStatus),
         reason: target.discoveryState === 'observed_only'
-          ? 'observed capability requires SiteAdapter, policy, schema, and test evidence before verification'
+          ? 'observed capability requires SiteAdapter, policy, schema, test, risk, and approval evidence before verification'
           : 'capability target has no verified evidence in the controlled discovery scope',
         redactionRequired: true,
       });

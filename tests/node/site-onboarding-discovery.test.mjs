@@ -405,7 +405,7 @@ test('Capability targets map DOM and API evidence without executable promotion',
   );
   assert.equal(searchTarget.mappingSummary.observedEvidenceCount, 2);
   assert.equal(searchTarget.mappingSummary.executableEvidenceCount, 0);
-  assert.equal(searchTarget.mappingSummary.evidenceRequirementGapCount, 4);
+  assert.equal(searchTarget.mappingSummary.evidenceRequirementGapCount, 6);
   assert.deepEqual(
     searchTarget.evidenceRequirementGaps.map((gap) => gap.requiredEvidenceStatus),
     [
@@ -413,6 +413,8 @@ test('Capability targets map DOM and API evidence without executable promotion',
       'requires_schema_evidence',
       'requires_test_evidence',
       'requires_policy_evidence',
+      'requires_risk_evidence',
+      'requires_approval_evidence',
     ],
   );
   assert.equal(searchTarget.evidenceRequirementGaps.every((gap) => gap.redactionRequired === true), true);
@@ -428,6 +430,8 @@ test('Capability targets map DOM and API evidence without executable promotion',
       'requires_schema_evidence',
       'requires_test_evidence',
       'requires_policy_evidence',
+      'requires_risk_evidence',
+      'requires_approval_evidence',
     ],
   );
   assert.equal(searchTarget.evidenceMappings.length, 2);
@@ -461,6 +465,8 @@ test('Capability targets map DOM and API evidence without executable promotion',
   assert.equal(searchTarget.missingEvidenceKinds.includes('schema'), true);
   assert.equal(searchTarget.missingEvidenceKinds.includes('test'), true);
   assert.equal(searchTarget.missingEvidenceKinds.includes('policy'), true);
+  assert.equal(searchTarget.missingEvidenceKinds.includes('risk'), true);
+  assert.equal(searchTarget.missingEvidenceKinds.includes('approval'), true);
   assert.equal(searchTarget.targetSources.some((source) => source.kind === 'node-inventory'), true);
   assert.equal(searchTarget.targetSources.some((source) => source.kind === 'api-response-evidence'), true);
   assert.equal(searchTarget.targetSources.some((source) => String(source.ref).includes('synthetic-query-token')), false);
@@ -473,17 +479,19 @@ test('Capability targets map DOM and API evidence without executable promotion',
     'requires_schema_evidence',
     'requires_test_evidence',
     'requires_policy_evidence',
+    'requires_risk_evidence',
+    'requires_approval_evidence',
   ]);
   assert.deepEqual(searchGap.mappingGaps.map((gap) => gap.gapKind), ['missing-execution-evidence']);
-  assert.equal(searchGap.evidenceRequirementGapCount, 4);
+  assert.equal(searchGap.evidenceRequirementGapCount, 6);
   assert.equal(searchGap.evidenceCompletionStrategy.nextAction, 'collect-required-execution-evidence');
   assert.equal(searchGap.evidenceCompletionStrategy.redactionRequired, true);
   assert.deepEqual(
     searchGap.evidenceRequirementGaps.map((gap) => gap.requiredEvidenceKind),
-    ['adapter', 'schema', 'test', 'policy'],
+    ['adapter', 'schema', 'test', 'policy', 'risk', 'approval'],
   );
   assert.equal(
-    artifacts.objects.CAPABILITY_GAP_REPORT.totalEvidenceRequirementGaps >= 4,
+    artifacts.objects.CAPABILITY_GAP_REPORT.totalEvidenceRequirementGaps >= 6,
     true,
   );
   assert.equal(searchGap.evidenceMappings.length, 2);
@@ -496,7 +504,7 @@ test('Capability targets map DOM and API evidence without executable promotion',
   assertNoSensitiveFixtureMaterial(artifacts);
 });
 
-test('Capability target execution requires explicit adapter schema test and policy evidence', () => {
+test('Capability target execution requires explicit adapter schema test policy risk and approval evidence', () => {
   const observedOnlyArtifacts = createSiteOnboardingDiscoveryArtifacts({
     siteKey: 'example',
     requestedCapabilities: ['search-content'],
@@ -523,6 +531,10 @@ test('Capability target execution requires explicit adapter schema test and poli
   assert.equal(observedTarget.targetSources.some((source) => String(source.ref).includes('synthetic-query-token')), false);
   assert.equal(observedOnlyArtifacts.objects.CAPABILITY_GAP_REPORT.gaps
     .some((gap) => gap.targetId === 'search-content' && gap.missingEvidenceKinds.includes('policy')), true);
+  assert.equal(observedOnlyArtifacts.objects.CAPABILITY_GAP_REPORT.gaps
+    .some((gap) => gap.targetId === 'search-content' && gap.missingEvidenceKinds.includes('risk')), true);
+  assert.equal(observedOnlyArtifacts.objects.CAPABILITY_GAP_REPORT.gaps
+    .some((gap) => gap.targetId === 'search-content' && gap.missingEvidenceKinds.includes('approval')), true);
 
   const verifiedArtifacts = createSiteOnboardingDiscoveryArtifacts({
     siteKey: 'example',
@@ -564,6 +576,24 @@ test('Capability target execution requires explicit adapter schema test and poli
           verificationState: 'verified',
           evidenceKind: 'policy',
           evidenceRef: 'Policy.search-content',
+        },
+        {
+          id: 'risk-search-capability',
+          label: 'search-content',
+          recognizedAs: 'search-content',
+          discoveryStatus: 'verified',
+          verificationState: 'verified',
+          evidenceKind: 'risk',
+          evidenceRef: 'Risk.search-content',
+        },
+        {
+          id: 'approval-search-capability',
+          label: 'search-content',
+          recognizedAs: 'search-content',
+          discoveryStatus: 'verified',
+          verificationState: 'verified',
+          evidenceKind: 'approval',
+          evidenceRef: 'Approval.search-content',
         },
       ],
     },
@@ -622,6 +652,24 @@ test('Capability evidence completion strategy records missing verified claim sep
           verificationState: 'unverified',
           evidenceKind: 'policy',
           evidenceRef: 'policy:search-content',
+        },
+        {
+          id: 'risk-search-capability',
+          label: 'search-content',
+          recognizedAs: 'search-content',
+          discoveryStatus: 'observed_only',
+          verificationState: 'unverified',
+          evidenceKind: 'risk',
+          evidenceRef: 'risk:search-content',
+        },
+        {
+          id: 'approval-search-capability',
+          label: 'search-content',
+          recognizedAs: 'search-content',
+          discoveryStatus: 'observed_only',
+          verificationState: 'unverified',
+          evidenceKind: 'approval',
+          evidenceRef: 'approval:search-content',
         },
       ],
     },
@@ -688,6 +736,22 @@ test('Static SiteAdapter capability evidence can satisfy capability quorum witho
           evidenceKind: 'policy',
           evidenceRef: 'policy:search-content',
         },
+        {
+          id: 'risk-search-content',
+          recognizedAs: 'search-content',
+          discoveryStatus: 'verified',
+          verificationState: 'verified',
+          evidenceKind: 'risk',
+          evidenceRef: 'risk:search-content',
+        },
+        {
+          id: 'approval-search-content',
+          recognizedAs: 'search-content',
+          discoveryStatus: 'verified',
+          verificationState: 'verified',
+          evidenceKind: 'approval',
+          evidenceRef: 'approval:search-content',
+        },
       ],
     }),
   });
@@ -697,10 +761,10 @@ test('Static SiteAdapter capability evidence can satisfy capability quorum witho
   assert.equal(target.discoveryState, 'verified');
   assert.equal(target.verificationState, 'verified');
   assert.equal(target.executableCapabilityAllowed, true);
-  assert.equal(target.mappingSummary.executableEvidenceCount, 4);
+  assert.equal(target.mappingSummary.executableEvidenceCount, 6);
   assert.deepEqual(
     [...target.mappingSummary.mappedSourceKinds].sort(),
-    ['adapter', 'policy', 'schema', 'test'],
+    ['adapter', 'approval', 'policy', 'risk', 'schema', 'test'],
   );
   assert.equal(target.evidenceRequirementGaps.length, 0);
   assert.equal(
@@ -727,11 +791,13 @@ test('Fixture-backed SiteAdapter capability evidence can satisfy explicit quorum
           capability: 'search-content',
           discoveryStatus: 'verified',
           verificationState: 'verified',
-          evidenceKinds: ['adapter', 'schema', 'test', 'policy'],
+          evidenceKinds: ['adapter', 'schema', 'test', 'policy', 'risk', 'approval'],
           adapterRef: 'adapter:search-content?access_token=synthetic-query-token',
           schemaRef: 'schema:search-content',
           testEvidenceRefs: ['tests:search-content'],
           policyRef: 'policy:search-content',
+          riskRef: 'risk:search-content',
+          approvalRef: 'approval:search-content',
         },
       ],
     }),
@@ -744,7 +810,7 @@ test('Fixture-backed SiteAdapter capability evidence can satisfy explicit quorum
   assert.equal(target.executableCapabilityAllowed, true);
   assert.deepEqual(
     [...target.mappingSummary.mappedSourceKinds].sort(),
-    ['adapter', 'policy', 'schema', 'test'],
+    ['adapter', 'approval', 'policy', 'risk', 'schema', 'test'],
   );
   assert.equal(target.targetSources.some((source) => String(source.ref).includes('synthetic-query-token')), false);
   assert.equal(
@@ -766,11 +832,13 @@ test('Fixture-backed capability evidence refs drop unsafe executable and identit
           capability: 'search-content',
           discoveryStatus: 'verified',
           verificationState: 'verified',
-          evidenceKinds: ['adapter', 'schema', 'test', 'policy'],
+          evidenceKinds: ['adapter', 'schema', 'test', 'policy', 'risk', 'approval'],
           adapterRef: 'C:/Users/Alice/AppData/Local/BrowserProfile/Default',
           schemaRef: 'https://example.invalid/schema?access_token=synthetic-query-token',
           testEvidenceRefs: ['run-handler.mjs'],
           policyRef: 'policy:203.0.113.7',
+          riskRef: 'https://example.invalid/risk?session_id=synthetic-session-id',
+          approvalRef: 'approval:203.0.113.8',
         },
       ],
     }),
@@ -787,7 +855,7 @@ test('Fixture-backed capability evidence refs drop unsafe executable and identit
   );
   assert.equal(
     target.targetSources
-      .filter((source) => ['adapter', 'schema', 'test', 'policy'].includes(source.kind))
+      .filter((source) => ['adapter', 'schema', 'test', 'policy', 'risk', 'approval'].includes(source.kind))
       .every((source) => source.ref === 'redacted-evidence-ref'),
     true,
   );
@@ -806,11 +874,13 @@ test('Fixture-backed capability evidence without verified claim stays non-execut
           capability: 'search-content',
           discoveryStatus: 'observed_only',
           verificationState: 'unverified',
-          evidenceKinds: ['adapter', 'schema', 'test', 'policy'],
+          evidenceKinds: ['adapter', 'schema', 'test', 'policy', 'risk', 'approval'],
           adapterRef: 'adapter:search-content?session_id=synthetic-session-id',
           schemaRef: 'schema:search-content',
           testEvidenceRefs: ['tests:search-content'],
           policyRef: 'policy:search-content',
+          riskRef: 'risk:search-content',
+          approvalRef: 'approval:search-content',
         },
       ],
     }),
@@ -852,10 +922,12 @@ test('Fixture-backed mixed verified and unverified evidence does not satisfy exe
           capability: 'search-content',
           discoveryStatus: 'observed_only',
           verificationState: 'unverified',
-          evidenceKinds: ['schema', 'test', 'policy'],
+          evidenceKinds: ['schema', 'test', 'policy', 'risk', 'approval'],
           schemaRef: 'schema:search-content',
           testEvidenceRefs: ['tests:search-content'],
           policyRef: 'policy:search-content',
+          riskRef: 'risk:search-content',
+          approvalRef: 'approval:search-content',
         },
       ],
     }),
@@ -906,13 +978,15 @@ test('Fixture-backed compound evidence kinds do not satisfy exact executable quo
   assert.deepEqual(target.mappingSummary.verifiedExecutionEvidenceKinds, []);
   assert.deepEqual(
     [...target.missingEvidenceKinds].sort(),
-    ['adapter', 'policy', 'schema', 'test'],
+    ['adapter', 'approval', 'policy', 'risk', 'schema', 'test'],
   );
   assert.deepEqual(
     target.evidenceRequirementGaps.map((entry) => entry.requiredEvidenceStatus).sort(),
     [
       'requires_adapter_evidence',
+      'requires_approval_evidence',
       'requires_policy_evidence',
+      'requires_risk_evidence',
       'requires_schema_evidence',
       'requires_test_evidence',
     ],
@@ -947,7 +1021,7 @@ test('Partial static SiteAdapter capability evidence leaves missing quorum gaps'
   assert.equal(target.missingEvidenceKinds.includes('adapter'), false);
   assert.deepEqual(
     [...target.missingEvidenceKinds].sort(),
-    ['policy', 'schema', 'test'],
+    ['approval', 'policy', 'risk', 'schema', 'test'],
   );
   assert.equal(target.mappingSummary.executableEvidenceCount, 0);
 
@@ -956,12 +1030,14 @@ test('Partial static SiteAdapter capability evidence leaves missing quorum gaps'
   assert.equal(gap.gapStatus, 'UNVERIFIED');
   assert.deepEqual(
     [...gap.missingEvidenceKinds].sort(),
-    ['policy', 'schema', 'test'],
+    ['approval', 'policy', 'risk', 'schema', 'test'],
   );
   assert.deepEqual(
     gap.evidenceRequirementGaps.map((entry) => entry.requiredEvidenceStatus).sort(),
     [
+      'requires_approval_evidence',
       'requires_policy_evidence',
+      'requires_risk_evidence',
       'requires_schema_evidence',
       'requires_test_evidence',
     ],
@@ -969,7 +1045,7 @@ test('Partial static SiteAdapter capability evidence leaves missing quorum gaps'
   assertNoSensitiveFixtureMaterial(artifacts);
 });
 
-test('Recognized capability summaries do not bypass adapter schema test and policy quorum', () => {
+test('Recognized capability summaries do not bypass adapter schema test policy risk and approval quorum', () => {
   const artifacts = createSiteOnboardingDiscoveryArtifacts({
     siteKey: 'example',
     requestedCapabilities: ['search-content'],
@@ -988,6 +1064,8 @@ test('Recognized capability summaries do not bypass adapter schema test and poli
   assert.equal(target.missingEvidenceKinds.includes('schema'), true);
   assert.equal(target.missingEvidenceKinds.includes('test'), true);
   assert.equal(target.missingEvidenceKinds.includes('policy'), true);
+  assert.equal(target.missingEvidenceKinds.includes('risk'), true);
+  assert.equal(target.missingEvidenceKinds.includes('approval'), true);
 
   const gap = artifacts.objects.CAPABILITY_GAP_REPORT.gaps
     .find((entry) => entry.targetId === 'search-content');
@@ -1001,6 +1079,8 @@ test('Recognized capability summaries do not bypass adapter schema test and poli
       'requires_schema_evidence',
       'requires_test_evidence',
       'requires_policy_evidence',
+      'requires_risk_evidence',
+      'requires_approval_evidence',
     ],
   );
 });
@@ -1021,7 +1101,7 @@ test('Capability gap requirement details redact unsafe requested capability targ
   assert.equal(unsafeTargets.every((target) => target.desiredState === 'required'), true);
   assert.equal(unsafeTargets.every((target) => target.verificationState === 'unverified'), true);
   assert.equal(unsafeTargets.every((target) => target.executableCapabilityAllowed === false), true);
-  assert.equal(unsafeTargets.every((target) => target.evidenceRequirementGaps.length === 4), true);
+  assert.equal(unsafeTargets.every((target) => target.evidenceRequirementGaps.length === 6), true);
   assert.equal(unsafeTargets.every((target) =>
     target.evidenceRequirementGaps.every((gap) =>
       gap.redactionRequired === true
@@ -1040,7 +1120,7 @@ test('Capability gap requirement details redact unsafe requested capability targ
   const unsafeGaps = artifacts.objects.CAPABILITY_GAP_REPORT.gaps
     .filter((gap) => gap.targetId.includes('redacted'));
   assert.equal(unsafeGaps.length, unsafeTargets.length);
-  assert.equal(unsafeGaps.every((gap) => gap.evidenceRequirementGapCount === 4), true);
+  assert.equal(unsafeGaps.every((gap) => gap.evidenceRequirementGapCount === 6), true);
   assert.equal(
     unsafeGaps.every((gap) =>
       gap.evidenceRequirementGaps.every((evidenceGap) =>
@@ -2839,6 +2919,8 @@ test('Capability controlled-scope closure accounts for target and gap surfaces w
           schemaRef: 'search-schema',
           testEvidenceRef: 'search-test',
           policyRef: 'search-policy',
+          riskRef: 'search-risk',
+          approvalRef: 'search-approval',
         },
       ],
     }),
@@ -2872,6 +2954,8 @@ test('Capability controlled-scope closure accounts for target and gap surfaces w
   assert.equal(capabilityClosure.evidenceCounts.evidenceKindCounts.schema, 1);
   assert.equal(capabilityClosure.evidenceCounts.evidenceKindCounts.test, 1);
   assert.equal(capabilityClosure.evidenceCounts.evidenceKindCounts.policy, 1);
+  assert.equal(capabilityClosure.evidenceCounts.evidenceKindCounts.risk, 1);
+  assert.equal(capabilityClosure.evidenceCounts.evidenceKindCounts.approval, 1);
   assert.equal(capabilityClosure.evidenceCounts.evidenceKindCounts['api-response-evidence'], 1);
   assert.equal(capabilityClosure.evidenceCounts.missingEvidenceKindCounts.adapter >= 1, true);
   assert.equal(capabilityClosure.reportCounts.capabilityGaps, 14);

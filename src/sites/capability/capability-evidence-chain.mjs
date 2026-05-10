@@ -12,6 +12,8 @@ const REQUIRED_EXECUTABLE_CAPABILITY_EVIDENCE_KINDS = Object.freeze([
   'schema',
   'test',
   'policy',
+  'risk',
+  'approval',
 ]);
 
 function normalizeText(value) {
@@ -67,6 +69,8 @@ export function createExecutableCapabilityEvidenceFixture({
   schemaRef,
   testEvidenceRefs = [],
   policyRef,
+  riskRef,
+  approvalRef,
   apiCatalogRef,
   evidenceKinds = REQUIRED_EXECUTABLE_CAPABILITY_EVIDENCE_KINDS,
 } = {}) {
@@ -88,6 +92,8 @@ export function createExecutableCapabilityEvidenceFixture({
       ? testEvidenceRefs
       : [`test:${target}`]).map((ref) => safeEvidenceRef(ref, `test:${target}`)),
     policyRef: safeEvidenceRef(policyRef, `policy:${target}`),
+    riskRef: safeEvidenceRef(riskRef, `risk:${target}`),
+    approvalRef: safeEvidenceRef(approvalRef, `approval:${target}`),
     apiCatalogRef: apiCatalogRef ? safeEvidenceRef(apiCatalogRef, `artifact:api-catalog:${target}`) : undefined,
     verifiedAt: normalizeText(verifiedAt),
     exactQuorumRequired: true,
@@ -120,6 +126,8 @@ export function assertExecutableCapabilityEvidenceFixtureCompatible(fixture = {}
     fixture.adapterRef,
     fixture.schemaRef,
     fixture.policyRef,
+    fixture.riskRef,
+    fixture.approvalRef,
     ...(Array.isArray(fixture.testEvidenceRefs) ? fixture.testEvidenceRefs : []),
     ...(fixture.apiCatalogRef ? [fixture.apiCatalogRef] : []),
   ]) {

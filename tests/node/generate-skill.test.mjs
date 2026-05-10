@@ -26,6 +26,11 @@ function normalizeEol(value) {
   return String(value).replace(/\r\n/g, '\n');
 }
 
+async function writeJsonFile(filePath, payload) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
 test('generateSkill auto-discovers the latest machine-readable compile result summary artifact', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-generate-skill-compile-summary-'));
   const previousCwd = process.cwd();
@@ -301,6 +306,62 @@ test('generateSkill produces stable 22biqu skill documents from a self-contained
   try {
     const spec = build22BiquStageSpec(workspace);
     const fixture = await compileFixtureKnowledgeBase(workspace, spec);
+    const staleBookContentDir = path.join(workspace, 'book-content', 'www.22biqu.com', '20990101T000000000Z_www.22biqu.com_book-content');
+    await writeJsonFile(path.join(staleBookContentDir, 'book-content-manifest.json'), {
+      inputUrl: spec.inputUrl,
+      baseUrl: spec.inputUrl,
+      generatedAt: '2099-01-01T00:00:00.000Z',
+      summary: {
+        books: 0,
+        chapters: 0,
+      },
+      files: {
+        books: 'books.json',
+        authors: 'authors.json',
+        searchResults: 'search-results.json',
+        manifest: 'book-content-manifest.json',
+      },
+    });
+    await writeJsonFile(path.join(staleBookContentDir, 'books.json'), []);
+    await writeJsonFile(path.join(staleBookContentDir, 'authors.json'), []);
+    await writeJsonFile(path.join(staleBookContentDir, 'search-results.json'), []);
+    await writeJsonFile(path.join(fixture.metadataSandbox.configDir, 'site-capabilities.json'), {
+      version: 1,
+      generatedAt: null,
+      sites: {
+        'www.22biqu.com': {
+          baseUrl: spec.inputUrl,
+          siteKey: '22biqu',
+          adapterId: 'chapter-content',
+          primaryArchetype: 'catalog-detail',
+          pageTypes: [],
+          capabilityFamilies: [
+            'navigate-to-author',
+            'navigate-to-content',
+            'navigate-to-utility-page',
+            'open-auth-page',
+            'search-content',
+          ],
+          supportedIntents: [
+            'download-book',
+            'open-auth-page',
+            'open-author',
+            'open-book',
+            'open-category',
+            'open-chapter',
+            'open-utility-page',
+            'search-book',
+          ],
+          safeActionKinds: [
+            'download-book',
+            'navigate',
+          ],
+          approvalActionKinds: [
+            'search-submit',
+          ],
+        },
+      },
+    });
     process.chdir(workspace);
 
     const result = await generateSkill(spec.inputUrl, {
@@ -329,6 +390,7 @@ test('generateSkill produces stable 22biqu skill documents from a self-contained
     assert.match(skillMd, /\n# 22biqu Skill\n/su);
     assert.match(skillMd, /Instruction-only Skill for https:\/\/www\.22biqu\.com\//u);
     assert.match(skillMd, /Download entrypoint: `pypy3 src\/sites\/chapter-content\/download\/python\/book\.py`\./u);
+    assert.match(skillMd, /Safe actions: `download-book`, `navigate`, `search-submit`/u);
     assert.match(skillMd, /search books, open book directories, open author pages, open chapter pages, and download full public novels/u);
 
     assert.match(indexMd, /^# 22biqu Index\n/su);
@@ -341,6 +403,13 @@ test('generateSkill produces stable 22biqu skill documents from a self-contained
     assert.match(flowsMd, /Main path: check local artifact -> if missing, run `pypy3 src\/sites\/chapter-content\/download\/python\/book\.py`/u);
     assert.match(flowsMd, /## Search book/u);
     assert.match(flowsMd, /Freshness rule: search results are only for discovery/u);
+
+    const siteCapabilities = JSON.parse(await readFile(path.join(fixture.metadataSandbox.configDir, 'site-capabilities.json'), 'utf8'));
+    const capabilityRecord = siteCapabilities.sites['www.22biqu.com'];
+    assert.equal(capabilityRecord.pageTypes.includes('chapter-page'), true);
+    assert.equal(capabilityRecord.capabilityFamilies.includes('download-content'), true);
+    assert.equal(capabilityRecord.capabilityFamilies.includes('navigate-to-chapter'), true);
+    assert.equal(capabilityRecord.safeActionKinds.includes('search-submit'), true);
     await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     process.chdir(previousCwd);

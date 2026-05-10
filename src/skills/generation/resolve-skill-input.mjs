@@ -293,9 +293,13 @@ export async function resolveSourceInputs(url, options) {
   const step5RawDir = activeSources.get('step-5-nl-entry') ? path.resolve(kbDir, activeSources.get('step-5-nl-entry').rawDir) : null;
   const step6RawDir = activeSources.get('step-6-docs') ? path.resolve(kbDir, activeSources.get('step-6-docs').rawDir) : null;
   const step7RawDir = activeSources.get('step-7-governance') ? path.resolve(kbDir, activeSources.get('step-7-governance').rawDir) : null;
-  const latestLocalBookContentDir = await findLatestHostKeyedRunDir(locator, 'book-content', { includeRoot: true });
-  const stepBookContentRawDir = latestLocalBookContentDir
-    ?? (activeSources.get('step-book-content') ? path.resolve(kbDir, activeSources.get('step-book-content').rawDir) : null);
+  const activeBookContentRawDir = activeSources.get('step-book-content')
+    ? path.resolve(kbDir, activeSources.get('step-book-content').rawDir)
+    : null;
+  const latestLocalBookContentDir = activeBookContentRawDir
+    ? null
+    : await findLatestHostKeyedRunDir(locator, 'book-content', { includeRoot: true });
+  const stepBookContentRawDir = activeBookContentRawDir ?? latestLocalBookContentDir;
 
   const docsManifestPath = step6RawDir ? path.join(step6RawDir, 'docs-manifest.json') : null;
   const docsManifest = docsManifestPath && await pathExists(docsManifestPath) ? await readJsonFile(docsManifestPath) : { documents: [] };

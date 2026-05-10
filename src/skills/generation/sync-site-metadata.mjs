@@ -35,9 +35,15 @@ export async function syncPublishedSiteMetadata(kind, payload, deps) {
       siteKey: resolvedIdentity.siteKey,
       adapterId: resolvedIdentity.adapterId,
       primaryArchetype: payload.primaryArchetype,
-      pageTypes: resolvePageTypesFromSiteContext(payload.siteContext, [resolveConfiguredPageTypes(payload.siteProfile)]),
+      pageTypes: resolvePageTypesFromSiteContext(payload.siteContext, [
+        resolveConfiguredPageTypes(payload.siteProfile),
+        Array.isArray(payload.siteProfile?.pageTypes) ? payload.siteProfile.pageTypes : [],
+        payload.siteProfile?.semanticPageTypes ?? [],
+      ]),
       capabilityFamilies: payload.capabilityFamilies,
       supportedIntents: payload.supportedIntents,
+      safeActionKinds: payload.safeActionKinds,
+      approvalActionKinds: payload.approvalActionKinds,
     }, payload.siteMetadataOptions ?? {});
     return;
   }

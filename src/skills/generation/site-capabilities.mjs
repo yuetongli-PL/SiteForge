@@ -49,41 +49,39 @@ export function resolvePrimaryArchetype(context) {
 export function resolveSafeActions(context) {
   const intentTypes = new Set((context.intentsDocument.intents ?? []).map((intent) => intent.intentType));
   const siteActions = resolveSafeActionKindsFromSiteContext(context.siteContext, []);
-  if (siteActions.length) {
-    return siteActions.filter((actionId) => {
-      if (actionId === 'download-book') {
-        return intentTypes.has('download-book');
-      }
-      if (actionId === 'search-submit') {
-        return [...intentTypes].some((intentType) => intentType.startsWith('search-'));
-      }
-      return true;
-    });
-  }
-
   const profileActions = uniqueSortedStrings([...(context.siteProfileDocument?.safeActionKinds ?? [])]);
-  if (profileActions.length) {
-    return profileActions.filter((actionId) => {
-      if (actionId === 'download-book') {
-        return intentTypes.has('download-book');
-      }
-      if (actionId === 'search-submit') {
-        return [...intentTypes].some((intentType) => intentType.startsWith('search-'));
-      }
-      return true;
-    });
-  }
+  const fallbackActionIds = siteActions.length || profileActions.length
+    ? []
+    : [
+        ...(context.intentsDocument.intents ?? []).map((intent) => intent.actionId),
+        ...(context.actionsDocument.actions ?? []).map((action) => action.actionId),
+      ];
+  const hasSearchIntent = [...intentTypes].some((intentType) => String(intentType).startsWith('search-'));
+  return uniqueSortedStrings([
+    ...siteActions,
+    ...profileActions,
+    ...fallbackActionIds,
+  ]).filter((actionId) => {
+    if (actionId === 'download-book') {
+      return intentTypes.has('download-book');
+    }
+    if (actionId === 'search-submit') {
+      return hasSearchIntent;
+    }
+    return true;
+  });
+}
 
-  const actionableActions = uniqueSortedStrings((context.intentsDocument.intents ?? []).map((intent) => intent.actionId));
-  if (actionableActions.length) {
-    return actionableActions;
-  }
-
-  return uniqueSortedStrings((context.actionsDocument.actions ?? []).map((action) => action.actionId));
+function resolveObservedPageTypes(siteProfileDocument) {
+  return uniqueSortedStrings([
+    ...resolveConfiguredPageTypes(siteProfileDocument),
+    ...(Array.isArray(siteProfileDocument?.pageTypes) ? siteProfileDocument.pageTypes : []),
+    ...(Array.isArray(siteProfileDocument?.semanticPageTypes) ? siteProfileDocument.semanticPageTypes : []),
+  ]);
 }
 
 export function resolveCapabilityFamilies(context) {
-  const configuredPageTypes = new Set(resolveConfiguredPageTypes(context.siteProfileDocument));
+  const observedPageTypes = new Set(resolveObservedPageTypes(context.siteProfileDocument));
   const siteKey = resolveSemanticSiteKey(context);
   const mappedIntentTypes = new Set(resolveSupportedIntents(context));
   const intentTypes = new Set(
@@ -115,13 +113,13 @@ export function resolveCapabilityFamilies(context) {
     capabilityFamilies.add('download-content');
   }
 
-  if (!configuredPageTypes.has('chapter-page')) {
+  if (!observedPageTypes.has('chapter-page')) {
     capabilityFamilies.delete('navigate-to-chapter');
     if (!['bilibili', 'jable', 'moodyz'].includes(String(siteKey ?? ''))) {
       capabilityFamilies.delete('download-content');
     }
   }
-  if (!configuredPageTypes.has('category-page')) {
+  if (!observedPageTypes.has('category-page')) {
     capabilityFamilies.delete('navigate-to-category');
   }
 

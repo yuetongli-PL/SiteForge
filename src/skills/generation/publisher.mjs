@@ -43,16 +43,20 @@ export async function publishSkill(inputUrl, options, deps) {
     nlIntentsMd: await deps.renderNlIntentsReference(context, outputs),
     interactionModelMd: await deps.renderInteractionModelReference(context, outputs),
   };
+  const resolvedSafeActionKinds = deps.resolveSafeActions?.(context) ?? [];
+  const resolvedApprovalActionKinds = resolveApprovalActionKinds(context);
+  const resolvedSupportedIntents = deps.resolveSupportedIntents(context);
+  const resolvedCapabilityFamilies = deps.resolveCapabilityFamilies(context);
   const coverageRegressionGate = await enforceSkillCoverageRegressionGate({
     cwd: deps.cwd,
     skillName: options.skillName,
     targetDir: skillDir,
     candidateDocuments: documents,
     candidateCoverage: {
-      safeActionKinds: deps.resolveSafeActions?.(context) ?? [],
-      approvalActionKinds: resolveApprovalActionKinds(context),
-      supportedIntents: deps.resolveSupportedIntents(context),
-      capabilityFamilies: deps.resolveCapabilityFamilies(context),
+      safeActionKinds: resolvedSafeActionKinds,
+      approvalActionKinds: resolvedApprovalActionKinds,
+      supportedIntents: resolvedSupportedIntents,
+      capabilityFamilies: resolvedCapabilityFamilies,
     },
   });
 
@@ -79,8 +83,10 @@ export async function publishSkill(inputUrl, options, deps) {
     siteContext: publisherInput.site.siteContext,
     siteProfile: publisherInput.site.siteProfile,
     primaryArchetype: deps.resolvePrimaryArchetype(context),
-    capabilityFamilies: deps.resolveCapabilityFamilies(context),
-    supportedIntents: deps.resolveSupportedIntents(context),
+    capabilityFamilies: resolvedCapabilityFamilies,
+    supportedIntents: resolvedSupportedIntents,
+    safeActionKinds: resolvedSafeActionKinds,
+    approvalActionKinds: resolvedApprovalActionKinds,
     siteMetadataOptions: options.siteMetadataOptions ?? null,
   }, {
     upsertSiteRegistryRecord: deps.upsertSiteRegistryRecord,

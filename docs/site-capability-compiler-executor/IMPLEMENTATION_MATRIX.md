@@ -27,8 +27,21 @@ richer requirement/risk mapping, redacted compiler provenance in generated
 Graphs, a descriptor-only `site-capability-compile` CLI, an
 `ExecutionPolicyDecision` preflight gate, and a redacted `CoverageDelta`
 artifact queue. Additional closeout validation added repo-local config path
-guards and manifest digest governance. Focused compiler-executor validation
-passed 42/42.
+guards, manifest digest governance, an opt-in `site doctor
+--capability-compile-dry-run` check, generated Skill compiler status guidance,
+and download release audit compile coverage summaries. Focused
+compiler-executor validation passed 42/42; focused upper-consumer validation
+passed 67/67.
+
+Capability intake evidence: 2026-05-10 added a pre-compile capability intake
+contract and descriptor-only CLI flow so site onboarding can ask for requested
+capabilities first, prioritize matching static descriptors, and still record
+unconfirmed capabilities under `best_effort_full_coverage` without promoting
+unknown capabilities to verified executable coverage. Missing requested
+capabilities are now exposed as `missingRequestedCapabilities` gap evidence and
+block unrelated Planner/Layer handoff readiness instead of silently planning the
+first available capability. Focused compiler capability-gap validation passed
+23/23 after this update.
 
 ## 1. Core Positioning
 
@@ -131,18 +144,22 @@ passed 42/42.
   allowed capture modes, source types, exclusions, and redaction.
 - Current status: `verified`
 - Existing code evidence: `compiler/schema.mjs` defines coverage and capture
-  enums; `compiler/validator.mjs` validates `SiteCompileScope`;
-  `coverage-report.mjs` checks complete coverage requires evidence;
-  `digest.mjs` records source digests and incremental compile summaries.
+  enums plus `CapabilityIntake` / `CapabilityCoverageSummary` contracts;
+  `compiler/validator.mjs` validates `SiteCompileScope` and capability-intake
+  safety; `capability-intake.mjs` normalizes requested, missing, and
+  unconfirmed capabilities; `coverage-report.mjs` records capability coverage
+  summaries and checks complete coverage requires evidence; `digest.mjs`
+  records source digests and incremental compile summaries.
 - Existing test evidence: `schema-validator.test.mjs`,
-  `static-compiler.test.mjs`, and `config-loader.test.mjs`.
+  `static-compiler.test.mjs`, `compile-entrypoint.test.mjs`, and
+  `config-loader.test.mjs`.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\schema-validator.test.mjs tests\node\site-capability-compiler-executor\static-compiler.test.mjs`.
-- Verification result: Compile scope, digest, config path guard, and coverage validation passed in the 42/42 focused suite.
+- Verification result: Compile scope, capability intake, digest, config path guard, and coverage validation passed in the focused suite; 2026-05-10 capability-gap focused validation passed `schema-validator.test.mjs` 10/10, `static-compiler.test.mjs` 4/4, and `compile-entrypoint.test.mjs` 9/9.
 - Current gaps: None known for static descriptor coverage.
 - Next smallest task: Extend coverage modes when governed capture normalization
   is implemented.
 - Risk notes: No complete coverage claim without evidence.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10T14:30:04+08:00
 - Responsible subagent: CompilerContractSchemaAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.
 
@@ -180,16 +197,20 @@ passed 42/42.
 - Existing code evidence: `compiler/inventory.mjs` implements
   `createCapabilityInventory()` from static and config-backed capability
   config, including mode, auth/session/signer flags, approval requirement,
-  risk policy refs, source refs, and redaction-required descriptors.
+  risk policy refs, source refs, capability-intake status, targeted requested
+  coverage flags, missing requested capability gap fields, unconfirmed
+  best-effort policy, and redaction-required descriptors.
 - Existing test evidence: `static-compiler.test.mjs` verifies one synthetic
-  capability inventory item is generated; `config-loader.test.mjs` verifies
-  derived config capabilities and download requirement mapping.
+  capability inventory item is generated and requested capabilities are
+  prioritized while missing requested capabilities are recorded as unknown
+  coverage; `config-loader.test.mjs` verifies derived config capabilities and
+  download requirement mapping.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\static-compiler.test.mjs`.
-- Verification result: Static and config-backed capability inventory validation passed in the 42/42 focused suite.
+- Verification result: Static, config-backed, and capability-intake inventory validation passed in the focused suite; 2026-05-10 `static-compiler.test.mjs` passed 4/4 with `missingRequestedCapabilities`, `missingRequestedCapabilityCount`, and `capabilityGapStatus` coverage.
 - Current gaps: None known for static capability inventory.
 - Next smallest task: Add adapter metadata summaries when needed.
 - Risk notes: Observed capabilities remain non-promoted until validation gates.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10T14:30:04+08:00
 - Responsible subagent: SiteCapturePathDiscoveryAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.
 
@@ -366,15 +387,20 @@ passed 42/42.
   `prepareExecutionArtifactJsonWithAudit()`; `site-capability-compile.mjs`
   writes optional compiler artifacts only after redaction; `coverage-delta-queue.mjs`
   prepares coverage queue artifacts through the execution artifact guard.
+  `compiler/validator.mjs` and `execution/validator.mjs` now fail closed on
+  unsafe source/evidence/artifact refs before derived artifact writes.
 - Existing test evidence: `artifact-guard.test.mjs`, `compile-entrypoint.test.mjs`,
   `execution-policy.test.mjs`, and `execution-handoff.test.mjs` verify
-  redaction-required artifacts and reject unredacted sensitive material.
+  redaction-required artifacts, reject unredacted sensitive material, and reject
+  raw URL/path/account/IP/query/executable-looking evidence refs.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\artifact-guard.test.mjs tests\node\site-capability-compiler-executor\execution-handoff.test.mjs`.
-- Verification result: Artifact governance validation passed in the 42/42 focused suite.
+- Verification result: 2026-05-10 focused artifact/ref guard validation passed
+  21/21; full compiler-executor suite passed 53/53 with unsafe compiler
+  source/evidence refs and execution artifact/evidence refs rejected.
 - Current gaps: None known for descriptor artifact guards.
 - Next smallest task: Add real writer tests only when a writer is introduced.
 - Risk notes: No derived artifact write path without guard.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10T13:27:11+08:00
 - Responsible subagent: ExecutionPolicySecurityAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.
 
@@ -388,15 +414,21 @@ passed 42/42.
   `config-loader.mjs`, `site-capability-compile.mjs`, `execution/validator.mjs`,
   `execution/policy-gate.mjs`, `execution/coverage-delta-queue.mjs`, and
   `execution/artifact-guard.mjs` use existing SecurityGuard scanners and
-  redaction helpers.
+  redaction helpers. Compiler and execution validators now also enforce an
+  allowlist for source/evidence/artifact refs so raw URLs, local paths, query
+  fragments, account-like refs, IP refs, and executable-looking refs cannot be
+  persisted through compiler/executor artifacts.
 - Existing test evidence: `schema-validator.test.mjs`, `artifact-guard.test.mjs`,
-  `execution-handoff.test.mjs`, and `observability.test.mjs`.
+  `execution-handoff.test.mjs`, `execution-policy.test.mjs`, and
+  `observability.test.mjs`.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\schema-validator.test.mjs tests\node\site-capability-compiler-executor\artifact-guard.test.mjs tests\node\site-capability-compiler-executor\execution-handoff.test.mjs tests\node\site-capability-compiler-executor\observability.test.mjs`; `node tools\prepublish-secret-scan.mjs`.
-- Verification result: Focused trust-boundary validation passed in the 42/42 suite; prepublish secret scan passed, scanning 654 candidate files.
+- Verification result: 2026-05-10 unsafe ref allowlist validation passed in
+  the 21/21 focused suite; full compiler-executor suite passed 53/53 and
+  prepublish secret scan passed across 656 candidate files.
 - Current gaps: None known.
 - Next smallest task: Keep synthetic/redacted fixtures only.
 - Risk notes: Errors must not echo sensitive values.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10T13:27:11+08:00
 - Responsible subagent: ExecutionPolicySecurityAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.
 
@@ -408,7 +440,8 @@ passed 42/42.
   Layer semantics.
 - Current status: `verified`
 - Existing code evidence: `compiler/reason-codes.mjs` defines compiler and
-  execution reasonCode semantics and fail-closed lookup.
+  execution reasonCode semantics and fail-closed lookup, including
+  `compiler.capability_intake_invalid` for unsafe requested capability input.
 - Existing test evidence: `reason-codes.test.mjs` verifies required codes and
   gate semantics.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\reason-codes.test.mjs`.
@@ -417,7 +450,7 @@ passed 42/42.
 - Next smallest task: Fold into central reason catalog if the project chooses a
   single registry.
 - Risk notes: Unknown reason codes fail closed.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10
 - Responsible subagent: CompilerContractSchemaAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.
 
@@ -430,11 +463,16 @@ passed 42/42.
 - Current status: `verified`
 - Existing code evidence: `compiler/observability.mjs` implements
   `createCompilerLifecycleEvent()` and validates required fields, validation
-  result, and redaction event metadata.
+  result, and redaction event metadata; `site-doctor.mjs` can attach an opt-in
+  descriptor-only compile dry-run check; `download-release-audit-core.mjs`
+  attaches per-site compile coverage summaries to release audit rows.
 - Existing test evidence: `observability.test.mjs` accepts a compiler lifecycle
-  event and rejects sensitive values.
+  event and rejects sensitive values; `site-onboarding.test.mjs` verifies the
+  Doctor dry-run check and `download-release-audit.test.mjs` verifies compile
+  coverage release-audit rows.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\observability.test.mjs`.
-- Verification result: Observability validation passed 2/2.
+- Verification result: Observability validation passed 2/2; focused
+  upper-consumer validation passed 67/67.
 - Current gaps: None known for descriptor events.
 - Next smallest task: Add runtime lifecycle dispatch only through Layer-owned
   paths.
@@ -460,13 +498,21 @@ passed 42/42.
   `compile-entrypoint.test.mjs`, `execution-policy.test.mjs`,
   `reason-codes.test.mjs`,
   `observability.test.mjs`, `matrix.test.mjs`, and
-  `final-validation.test.mjs`.
+  `final-validation.test.mjs`; upper-consumer tests cover Doctor dry-run,
+  generated Skill compiler guidance, release-audit compile coverage, and CLI
+  flag parsing. Capability-intake regression tests cover requested capability
+  schema validation, unsafe capability rejection, static targeted coverage,
+  CLI `--capability`, descriptor-only `--ask-capabilities`, and blocked
+  handoff behavior for missing requested capabilities.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\*.test.mjs`.
-- Verification result: Focused compiler-executor suite passed 42/42.
+- Verification result: Focused compiler-executor suite passed 53/53; focused
+  upper-consumer validation passed 67/67. 2026-05-10 capability-gap focused
+  validation passed 23/23 for schema, static compiler, and compile entrypoint
+  coverage.
 - Current gaps: None known for current goal.
 - Next smallest task: Add regression tests with every future behavior change.
 - Risk notes: Do not report unrun tests as passed.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10T14:30:04+08:00
 - Responsible subagent: TestVerificationQualityGateAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.
 
@@ -480,17 +526,22 @@ passed 42/42.
 - Existing code evidence: Final products exist in
   `docs/site-capability-compiler-executor/`,
   `src/sites/capability/compiler/`, `src/sites/capability/execution/`, and
-  `src/entrypoints/sites/site-capability-compile.mjs`.
+  `src/entrypoints/sites/site-capability-compile.mjs`; opt-in consumers now
+  include `site-doctor.mjs`, generated Skill status rendering, and
+  `download-release-audit-core.mjs`. `capability-intake.mjs` and the
+  compile entrypoint provide the pre-compile ask/prioritize/best-effort
+  coverage contract for new site onboarding, including missing requested
+  capability gaps that block unrelated Planner/Layer handoff readiness.
 - Existing test evidence: `matrix.test.mjs` verifies sections 1-20 are
   `verified` with evidence; `final-validation.test.mjs` verifies final docs,
   contracts, schema listings, and runtime import boundaries.
 - Verification command: `node --test tests\node\site-capability-compiler-executor\matrix.test.mjs tests\node\site-capability-compiler-executor\final-validation.test.mjs`; `node --test tests\node\site-capability-compiler-executor\*.test.mjs`; `git diff --check`; `node tools\prepublish-secret-scan.mjs`.
-- Verification result: Matrix/final validation passed 5/5; focused compiler-executor suite passed 42/42; Python unittest passed 58/58; path-specific diff check passed; prepublish secret scan passed, scanning 654 candidate files; broad `node --test tests\node\*.test.mjs` was attempted and timed out after 600 seconds before producing a final pass/fail result.
+- Verification result: Matrix/final validation passed 5/5; focused compiler-executor suite passed 53/53; focused Doctor/Skill/audit upper-consumer validation passed 67/67; Python unittest passed 58/58; path-specific diff check passed; prepublish secret scan passed, scanning 656 candidate files; 2026-05-10 missing requested capability focused validation passed 23/23; broad `node --test tests\node\*.test.mjs` was attempted and timed out after 600 seconds before producing a final pass/fail result.
 - Current gaps: None known for the current descriptor-only compiler/executor
   goal.
 - Next smallest task: Integrate future live execution only through a
   Layer-owned runtime goal.
 - Risk notes: Do not expand beyond descriptor-only contracts without new gates.
-- Last updated: 2026-05-09
+- Last updated: 2026-05-10
 - Responsible subagent: TestVerificationQualityGateAgent
 - TestVerificationQualityGateAgent conclusion: Accepted.

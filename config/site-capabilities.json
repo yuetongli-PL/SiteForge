@@ -4,25 +4,49 @@
   "sites": {
     "www.22biqu.com": {
       "baseUrl": "https://www.22biqu.com/",
-      "pageTypes": [],
+      "pageTypes": [
+        "auth-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "chapter-page",
+        "content-detail-page",
+        "history-page",
+        "home",
+        "search-results-page"
+      ],
       "capabilityFamilies": [
         "download-content",
         "navigate-to-author",
+        "navigate-to-category",
         "navigate-to-chapter",
         "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
         "search-content"
       ],
       "host": "www.22biqu.com",
       "supportedIntents": [
-        "download-book"
+        "download-book",
+        "open-auth-page",
+        "open-author",
+        "open-book",
+        "open-category",
+        "open-chapter",
+        "open-utility-page",
+        "search-book"
       ],
       "safeActionKinds": [
-        "navigate"
+        "download-book",
+        "navigate",
+        "search-submit"
       ],
       "approvalActionKinds": [
         "search-submit"
       ],
-      "primaryArchetype": "chapter-content"
+      "primaryArchetype": "catalog-detail",
+      "siteKey": "22biqu",
+      "adapterId": "chapter-content"
     },
     "www.qidian.com": {
       "baseUrl": "https://www.qidian.com/",

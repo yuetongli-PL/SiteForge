@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, open, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +35,7 @@ const BOOK_CONTENT_FILE_NAMES = {
   authors: 'authors.json',
   searchResults: 'search-results.json',
 };
+const DOWNLOAD_EXCERPT_MAX_BYTES = 8192;
 const CONCRETE_STATUSES = new Set(['initial', 'captured']);
 const EDGE_STATUSES = new Set(['captured', 'duplicate', 'noop', 'failed']);
 const MENU_POPUP_VALUES = new Set(['menu', 'listbox']);
@@ -2449,10 +2450,16 @@ async function readDownloadText(downloadFile) {
   if (!downloadFile || !(await pathExists(downloadFile))) {
     return null;
   }
+  let handle = null;
   try {
-    return await readFile(downloadFile, 'utf8');
+    handle = await open(downloadFile, 'r');
+    const buffer = Buffer.alloc(DOWNLOAD_EXCERPT_MAX_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead).toString('utf8');
   } catch {
     return null;
+  } finally {
+    await handle?.close();
   }
 }
 

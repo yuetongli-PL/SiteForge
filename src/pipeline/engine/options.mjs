@@ -19,6 +19,10 @@ const DEFAULT_PIPELINE_OPTIONS = {
   maxTriggers: 12,
   maxCapturedStates: undefined,
   searchQueries: [],
+  targetBookTitle: undefined,
+  targetBookUrl: undefined,
+  skipFallback: false,
+  chapterFetchConcurrency: undefined,
   examplesPath: undefined,
   captureOutDir: path.resolve(process.cwd(), 'runs', 'pipeline', 'captures'),
   expandedOutDir: path.resolve(process.cwd(), 'runs', 'pipeline', 'expanded-states'),
@@ -138,6 +142,12 @@ export function mergePipelineOptions(options = {}) {
   merged.searchQueries = Array.isArray(merged.searchQueries)
     ? merged.searchQueries.map((value) => normalizeWhitespace(value)).filter(Boolean)
     : (merged.searchQueries ? [normalizeWhitespace(merged.searchQueries)].filter(Boolean) : []);
+  merged.targetBookTitle = normalizeWhitespace(merged.targetBookTitle);
+  merged.targetBookUrl = normalizeWhitespace(merged.targetBookUrl);
+  merged.skipFallback = toBoolean(merged.skipFallback, 'skipFallback');
+  if (merged.chapterFetchConcurrency !== undefined && merged.chapterFetchConcurrency !== null) {
+    merged.chapterFetchConcurrency = Number(merged.chapterFetchConcurrency);
+  }
   merged.headless = toBoolean(merged.headless, 'headless');
   merged.fullPage = toBoolean(merged.fullPage, 'fullPage');
   merged.strict = toBoolean(merged.strict, 'strict');

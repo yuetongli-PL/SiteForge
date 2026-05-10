@@ -166,6 +166,13 @@ test('runPipeline CLI accepts metadata sandbox directories', () => {
     'runs/preview/site-metadata/config',
     '--metadata-runtime-dir',
     'runs/preview/site-metadata/runtime',
+    '--book-title',
+    '玄鉴仙族',
+    '--book-url',
+    'https://www.22biqu.com/biqu5735/',
+    '--skip-fallback',
+    '--chapter-fetch-concurrency',
+    '24',
   ]);
 
   assert.equal(parsed.url, 'https://www.22biqu.com/');
@@ -173,6 +180,10 @@ test('runPipeline CLI accepts metadata sandbox directories', () => {
     configDir: 'runs/preview/site-metadata/config',
     runtimeDir: 'runs/preview/site-metadata/runtime',
   });
+  assert.equal(parsed.options.targetBookTitle, '玄鉴仙族');
+  assert.equal(parsed.options.targetBookUrl, 'https://www.22biqu.com/biqu5735/');
+  assert.equal(parsed.options.skipFallback, true);
+  assert.equal(parsed.options.chapterFetchConcurrency, 24);
 });
 
 test('runPipeline smoke test wires stages in order and passes derived paths', async () => {
@@ -293,6 +304,10 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
         browserProfileRoot: path.join(workspace, 'browser-profiles'),
         userDataDir: path.join(workspace, 'browser-profiles', 'shared'),
         searchQueries: ['  IPX-001  ', 'Jable '],
+        targetBookTitle: '  Fixture Book ',
+        targetBookUrl: ' https://www.22biqu.com/biqu123/ ',
+        skipFallback: true,
+        chapterFetchConcurrency: 7,
         reuseLoginState: true,
         autoLogin: true,
         maxCapturedStates: 7,
@@ -318,6 +333,10 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
     assert.equal(calls[1].options.autoLogin, true);
     assert.equal(calls[2].options.expandedStatesDir, stageDir('expanded'));
     assert.equal(calls[2].options.stageTimeoutMs, 30_000);
+    assert.equal(calls[2].options.targetBookTitle, 'Fixture Book');
+    assert.equal(calls[2].options.targetBookUrl, 'https://www.22biqu.com/biqu123/');
+    assert.equal(calls[2].options.skipFallback, true);
+    assert.equal(calls[2].options.chapterFetchConcurrency, 7);
     assert.equal(calls[3].options.bookContentDir, stageDir('book-content'));
     assert.equal(calls[4].options.analysisDir, stageDir('analysis'));
     assert.equal(calls[5].options.abstractionDir, stageDir('abstraction'));

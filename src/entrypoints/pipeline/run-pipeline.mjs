@@ -612,6 +612,10 @@ Options:
   --max-triggers <n>           Maximum discovered triggers to expand
   --max-captured-states <n>    Maximum newly captured states during expansion
   --search-query <text>        Repeatable search query seed for site search
+  --book-title <title>         Target book title for book-content collection
+  --book-url <url>             Target book URL for book-content collection
+  --skip-fallback              Do not collect expanded-state fallback books
+  --chapter-fetch-concurrency <n> Concurrent public chapter fetches for book-content
   --examples <path>            Optional example utterance JSON file
   --capture-out-dir <dir>      Root output directory for step 1
   --expanded-out-dir <dir>     Root output directory for step 2
@@ -730,6 +734,27 @@ export function parseCliArgs(argv) {
       case '--search-query': {
         const { value, nextIndex } = readValue(current, index);
         options.searchQueries = [...(options.searchQueries ?? []), value];
+        index = nextIndex;
+        break;
+      }
+      case '--book-title': {
+        const { value, nextIndex } = readValue(current, index);
+        options.targetBookTitle = value;
+        index = nextIndex;
+        break;
+      }
+      case '--book-url': {
+        const { value, nextIndex } = readValue(current, index);
+        options.targetBookUrl = value;
+        index = nextIndex;
+        break;
+      }
+      case '--skip-fallback':
+        options.skipFallback = true;
+        break;
+      case '--chapter-fetch-concurrency': {
+        const { value, nextIndex } = readValue(current, index);
+        options.chapterFetchConcurrency = Number(value);
         index = nextIndex;
         break;
       }

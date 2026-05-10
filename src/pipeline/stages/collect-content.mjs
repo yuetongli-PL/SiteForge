@@ -14,6 +14,7 @@ import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../sites/capability/security-guard.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
 const DEFAULT_OPTIONS = {
   expandedStatesDir: undefined,
@@ -21,6 +22,7 @@ const DEFAULT_OPTIONS = {
   searchQueries: [],
   maxFallbackBooks: 3,
   chapterPageLimit: 20,
+  chapterFetchConcurrency: 24,
   requestTimeoutMs: 30_000,
   stageTimeoutMs: undefined,
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
@@ -49,6 +51,16 @@ function normalizeUrlNoFragment(input) {
     return parsed.toString();
   } catch {
     return String(input).split('#')[0];
+  }
+}
+
+function sameOriginUrl(left, right) {
+  try {
+    const leftUrl = new URL(String(left));
+    const rightUrl = new URL(String(right));
+    return leftUrl.protocol === rightUrl.protocol && leftUrl.host === rightUrl.host;
+  } catch {
+    return false;
   }
 }
 
@@ -145,11 +157,15 @@ function isSameChapterChain(left, right) {
 async function loadSiteProfile(inputUrl) {
   try {
     const parsed = new URL(inputUrl);
-    const profilePath = path.join(MODULE_DIR, 'profiles', `${parsed.hostname}.json`);
-    if (!await pathExists(profilePath)) {
-      return null;
+    for (const profilePath of [
+      path.join(process.cwd(), 'profiles', `${parsed.hostname}.json`),
+      path.join(REPO_ROOT, 'profiles', `${parsed.hostname}.json`),
+    ]) {
+      if (await pathExists(profilePath)) {
+        return await readJsonFile(profilePath);
+      }
     }
-    return await readJsonFile(profilePath);
+    return null;
   } catch {
     return null;
   }
@@ -167,6 +183,7 @@ function mergeOptions(inputUrl, options = {}) {
   merged.searchQueries = uniqueSortedStrings(toArray(merged.searchQueries).map((value) => normalizeText(value)));
   merged.maxFallbackBooks = Number(merged.maxFallbackBooks);
   merged.chapterPageLimit = Number(merged.chapterPageLimit);
+  merged.chapterFetchConcurrency = Number(merged.chapterFetchConcurrency);
   merged.requestTimeoutMs = Number(merged.requestTimeoutMs);
   merged.stageTimeoutMs = merged.stageTimeoutMs === undefined || merged.stageTimeoutMs === null || merged.stageTimeoutMs === ''
     ? undefined
@@ -371,6 +388,108 @@ function extractSearchResults(html, baseUrl) {
   };
 }
 
+function hrefNumericId(href) {
+  const match = String(href ?? '').match(/\/(\d+)\.html$/iu);
+  return match ? Number(match[1]) : 0;
+}
+
+function sortChapterEntries(entries) {
+  return [...entries].sort((left, right) => (
+    hrefNumericId(left.href) - hrefNumericId(right.href)
+    || compareNullableStrings(left.title, right.title)
+  ));
+}
+
+function matchesProfileUrlPatterns(url, patterns = [], fallbackPattern) {
+  const normalized = normalizeUrlNoFragment(url);
+  if (!normalized) {
+    return false;
+  }
+  const candidates = toArray(patterns).map((pattern) => normalizeText(pattern)).filter(Boolean);
+  if (!candidates.length && fallbackPattern) {
+    candidates.push(fallbackPattern);
+  }
+  for (const pattern of candidates) {
+    try {
+      if (new RegExp(pattern, 'iu').test(normalized)) {
+        return true;
+      }
+    } catch {
+      // Ignore malformed site profile patterns and keep the fallback boundary.
+    }
+  }
+  return false;
+}
+
+function targetBookUrlMatchesAdapterScope(url, settings) {
+  const patterns = toArray(settings.siteProfile?.bookDetail?.detailUrlPatterns)
+    .map((pattern) => normalizeText(pattern))
+    .filter(Boolean);
+  if (patterns.length > 0) {
+    return matchesProfileUrlPatterns(url, patterns);
+  }
+  try {
+    const baseHost = new URL(settings.baseUrl).hostname;
+    if (/(^|\.)22biqu\.com$/iu.test(baseHost)) {
+      return matchesProfileUrlPatterns(url, [], String.raw`/biqu\d+/?$`);
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+function createTargetBookUrlScopeError(reason) {
+  const error = new Error(`Target book URL is outside the governed site scope: ${reason}.`);
+  error.name = 'TargetBookUrlScopeError';
+  error.code = 'TARGET_BOOK_URL_OUT_OF_SCOPE';
+  error.reasonCode = 'target-book-url-out-of-scope';
+  error.retryable = false;
+  return error;
+}
+
+function validateTargetBookUrlScope(settings) {
+  if (!settings.targetBookUrl) {
+    return;
+  }
+  if (!sameOriginUrl(settings.targetBookUrl, settings.baseUrl)) {
+    throw createTargetBookUrlScopeError('target host does not match pipeline input host');
+  }
+  if (!targetBookUrlMatchesAdapterScope(settings.targetBookUrl, settings)) {
+    throw createTargetBookUrlScopeError('target URL does not match the site adapter book-detail scope');
+  }
+}
+
+function extractChapterEntriesFromHtml(html, finalUrl, detailUrl, chapterUrlPatterns = []) {
+  const bookPath = String(detailUrl ?? '').match(/(\/biqu\d+\/)/iu)?.[1] ?? '';
+  const seen = new Set();
+  const chapters = [];
+  for (const anchor of extractAnchors(html, finalUrl)) {
+    if (bookPath && !String(anchor.href).includes(bookPath)) {
+      continue;
+    }
+    if (!matchesProfileUrlPatterns(anchor.href, chapterUrlPatterns, String.raw`/biqu\d+/\d+\.html$`)) {
+      continue;
+    }
+    if (!anchor.text || seen.has(anchor.href)) {
+      continue;
+    }
+    seen.add(anchor.href);
+    chapters.push({
+      href: anchor.href,
+      title: anchor.text,
+      chapterIndex: chapters.length + 1,
+    });
+  }
+  return chapters;
+}
+
+function resolveDirectoryPageUrl(template, detailUrl, page) {
+  return String(template ?? '')
+    .replaceAll('{detail_url}', detailUrl)
+    .replaceAll('{page}', String(page));
+}
+
 function extractBalancedElementInnerHtml(html, tokenPattern) {
   const tokenRegex = new RegExp(tokenPattern, 'iu');
   const startMatch = tokenRegex.exec(html);
@@ -406,7 +525,8 @@ function extractBalancedElementInnerHtml(html, tokenPattern) {
   return null;
 }
 
-function extractBookDetail(html, finalUrl) {
+function extractBookDetail(html, finalUrl, siteProfile = null) {
+  const detailCfg = siteProfile?.bookDetail ?? {};
   const title = extractTitle(html);
   const bookTitle = extractMetaContent(html, 'og:novel:book_name')
     || extractFirstTextByRegex(html, [
@@ -425,9 +545,12 @@ function extractBookDetail(html, finalUrl) {
     finalUrl,
   );
   const latestChapterUrl = resolveUrl(extractMetaContent(html, 'og:novel:lastest_chapter_url'), finalUrl);
-  const chapterAnchors = extractAnchors(html, finalUrl)
-    .filter((anchor) => /\/biqu\d+\/\d+\.html$/i.test(anchor.href))
-    .filter((anchor) => anchor.text && !/^涓婁竴绔爘涓嬩竴绔爘杩斿洖鐩綍$/u.test(anchor.text));
+  const chapterAnchors = extractChapterEntriesFromHtml(
+    html,
+    finalUrl,
+    finalUrl,
+    detailCfg.chapterUrlPatterns ?? [],
+  ).filter((chapter) => !/^涓婁竴绔爘涓嬩竴绔爘杩斿洖鐩綍$/u.test(chapter.title));
   const seen = new Set();
   const chapters = [];
   for (const anchor of chapterAnchors) {
@@ -451,6 +574,62 @@ function extractBookDetail(html, finalUrl) {
     chapterCount: chapters.length,
     chapters,
   };
+}
+
+async function fetchPaginatedChapterIndex(detailUrl, detailCfg, settings) {
+  const selectors = toArray(detailCfg?.directoryLinkSelectors);
+  const template = detailCfg?.directoryPageUrlTemplate;
+  if (!selectors.length || !template) {
+    return [];
+  }
+
+  const startPage = Number(detailCfg.directoryPageStart ?? 1);
+  const maxPage = Number(detailCfg.directoryPageMax ?? 32);
+  const minimumExpected = Number(detailCfg.directoryMinimumExpected ?? 0);
+  const seenUrls = new Set();
+  const pageSignatures = new Set();
+  const merged = [];
+
+  for (let page = startPage; page <= maxPage; page += 1) {
+    assertWithinCollectionDeadline(settings, 'directory');
+    const pageUrl = resolveDirectoryPageUrl(template, detailUrl, page);
+    const response = await fetchHtml(pageUrl, settings);
+    const pageEntries = extractChapterEntriesFromHtml(
+      response.html,
+      response.finalUrl,
+      detailUrl,
+      detailCfg.chapterUrlPatterns ?? [],
+    );
+    const pageSignature = pageEntries.slice(-12).map((item) => item.href).join('|');
+    if (pageSignature && pageSignatures.has(pageSignature)) {
+      break;
+    }
+    if (pageSignature) {
+      pageSignatures.add(pageSignature);
+    }
+
+    let added = 0;
+    for (const entry of pageEntries) {
+      if (seenUrls.has(entry.href)) {
+        continue;
+      }
+      seenUrls.add(entry.href);
+      merged.push(entry);
+      added += 1;
+    }
+
+    if (page > startPage && added === 0) {
+      break;
+    }
+    if (page > startPage && added < 5 && merged.length >= minimumExpected) {
+      break;
+    }
+  }
+
+  return sortChapterEntries(merged).map((chapter, index) => ({
+    ...chapter,
+    chapterIndex: index + 1,
+  }));
 }
 
 function extractChapterContent(html) {
@@ -676,28 +855,71 @@ async function fetchChapterChain(chapterUrl, settings) {
   };
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const safeConcurrency = Math.max(1, Math.min(Number(concurrency) || 1, items.length || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+  await Promise.all(Array.from({ length: safeConcurrency }, () => worker()));
+  return results;
+}
+
+async function fetchChapterChains(chapters, settings) {
+  return await mapWithConcurrency(
+    chapters,
+    settings.chapterFetchConcurrency,
+    async (chapter) => {
+      const chain = await fetchChapterChain(chapter.href, settings);
+      return {
+        chapterIndex: chapter.chapterIndex,
+        href: chapter.href,
+        title: chain.chapterTitle || chapter.title,
+        pageCount: chain.pages.length,
+        finalUrl: chain.finalUrl,
+        bodyTextLength: chain.fullText.length,
+        fullText: chain.fullText,
+      };
+    },
+  );
+}
+
 async function collectBookPayload(seed, settings, outputs) {
   const detailResponse = await fetchHtml(seed.url, settings);
-  const detail = extractBookDetail(detailResponse.html, detailResponse.finalUrl);
+  const detail = extractBookDetail(detailResponse.html, detailResponse.finalUrl, settings.siteProfile);
   const bookId = buildBookId(detail.finalUrl);
   const bookDir = path.join(outputs.booksDir, slugifyAscii(detail.bookTitle || bookId, bookId));
   const author = await fetchAuthorPage(detail.authorUrl, settings);
   const authorId = buildAuthorId(detail.authorUrl, detail.authorName);
+  const paginatedChapters = await fetchPaginatedChapterIndex(
+    detail.finalUrl,
+    settings.siteProfile?.bookDetail ?? {},
+    settings,
+  );
+  if (paginatedChapters.length > detail.chapters.length) {
+    detail.chapters = paginatedChapters;
+    detail.chapterCount = paginatedChapters.length;
+  }
 
+  const chapterPayloads = await fetchChapterChains(detail.chapters, settings);
   const chapters = [];
   const downloadChunks = [];
-  for (const chapter of detail.chapters) {
-    const chain = await fetchChapterChain(chapter.href, settings);
+  for (const chapter of chapterPayloads) {
     chapters.push({
       chapterIndex: chapter.chapterIndex,
       href: chapter.href,
-      title: chain.chapterTitle || chapter.title,
-      pageCount: chain.pages.length,
-      finalUrl: chain.finalUrl,
-      bodyTextLength: chain.fullText.length,
+      title: chapter.title,
+      pageCount: chapter.pageCount,
+      finalUrl: chapter.finalUrl,
+      bodyTextLength: chapter.bodyTextLength,
     });
-    if (chain.fullText) {
-      downloadChunks.push(`# ${chain.chapterTitle || chapter.title}\n\n${chain.fullText}`);
+    if (chapter.fullText) {
+      downloadChunks.push(`# ${chapter.title}\n\n${chapter.fullText}`);
     }
   }
 
@@ -791,6 +1013,8 @@ export async function collectBookContent(inputUrl, options = {}) {
   settings.collectionDeadlineAtMs = collectionDeadlineAt(settings, startedAtMs);
   const baseUrl = settings.baseUrl;
   const siteProfile = await loadSiteProfile(baseUrl);
+  settings.siteProfile = siteProfile;
+  validateTargetBookUrlScope(settings);
   const outputs = await createOutputLayout(baseUrl, settings.outDir);
 
   const searchResults = [];
@@ -1015,6 +1239,12 @@ export function parseCliArgs(argv) {
         index = nextIndex;
         break;
       }
+      case '--chapter-fetch-concurrency': {
+        const { value, nextIndex } = readValue(index);
+        options.chapterFetchConcurrency = Number(value);
+        index = nextIndex;
+        break;
+      }
       default:
         break;
     }
@@ -1029,7 +1259,7 @@ export function parseCliArgs(argv) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/collect-book-content.mjs <url> [--expanded-dir <dir>] [--search-query <text>] [--book-title <title>] [--book-url <url>] [--skip-fallback] [--stage-timeout <ms>] [--out-dir <dir>] [--json] [--quiet] [--progress auto|interactive|plain]',
+    '  node src/entrypoints/pipeline/collect-book-content.mjs <url> [--expanded-dir <dir>] [--search-query <text>] [--book-title <title>] [--book-url <url>] [--skip-fallback] [--stage-timeout <ms>] [--chapter-fetch-concurrency <n>] [--out-dir <dir>] [--json] [--quiet] [--progress auto|interactive|plain]',
   ].join('\n'));
 }
 

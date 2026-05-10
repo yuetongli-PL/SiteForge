@@ -7,6 +7,11 @@ import path from 'node:path';
 import {
   writeVerifiedApiCatalogArtifactsFromObservedProducerEvidence,
 } from '../../src/sites/capability/api-catalog-promotion.mjs';
+import { apiCandidateFromObservedRequest } from '../../src/sites/capability/api-discovery.mjs';
+import {
+  normalizeSiteAdapterCandidateDecision,
+  writeRuntimeVerifiedApiCatalogStoreArtifacts,
+} from '../../src/sites/capability/api-candidates.mjs';
 import {
   createBilibiliSiteSpecificDiscoveryArtifacts,
   writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProducerEvidence,
@@ -141,6 +146,14 @@ function verificationFixtures() {
       riskState: 'low',
       riskLevel: 'low',
     },
+  };
+}
+
+function promotionEvidence() {
+  return {
+    schemaEvidenceRef: 'schema:synthetic-search-response',
+    policyEvidenceRef: 'policy:synthetic-catalog-upgrade',
+    testEvidenceRefs: ['test:synthetic-api-catalog-promotion'],
   };
 }
 
@@ -301,6 +314,7 @@ test('observed producer API needs SiteAdapter policy schema and test gates befor
         },
       },
       verification: verificationFixtures(),
+      promotionEvidence: promotionEvidence(),
       decidedAt: '2026-05-10T00:02:00.000Z',
       metadata: {
         version: 'catalog-v1',
@@ -327,6 +341,13 @@ test('observed producer API needs SiteAdapter policy schema and test gates befor
     assert.equal(result.observedCandidate.status, 'observed');
     assert.equal(result.verifiedCandidate.status, 'verified');
     assert.equal(result.observedApiAutoPromotionAllowed, false);
+    assert.equal(result.promotionGate.requirements.candidateVerified, true);
+    assert.equal(result.promotionGate.requirements.siteAdapterAccepted, true);
+    assert.equal(result.promotionGate.requirements.schemaEvidence, 'present');
+    assert.equal(result.promotionGate.requirements.policyEvidence, 'present');
+    assert.equal(result.promotionGate.requirements.testEvidence, 'present');
+    assert.equal(result.promotionGate.requirements.redactionAudit, 'present');
+    assert.equal(result.promotionGate.redactionAudit.auditPathCount >= 4, true);
     assert.equal(result.siteAdapterDecision.decision, 'accepted');
     assert.equal(result.catalogUpgradePolicy.allowCatalogUpgrade, true);
     assert.equal(collection.entries.length, 1);
@@ -349,6 +370,7 @@ test('observed producer API needs SiteAdapter policy schema and test gates befor
           reasonCode: 'api-catalog-entry-blocked',
         },
         verification: verificationFixtures(),
+        promotionEvidence: promotionEvidence(),
         decidedAt: '2026-05-10T00:05:00.000Z',
       }, {
         ...blockedPaths,
@@ -356,9 +378,54 @@ test('observed producer API needs SiteAdapter policy schema and test gates befor
         collectionCatalogId: 'blocked-api-catalog',
         collectionCatalogVersion: 'catalog-v1',
       }),
-      /ApiCatalog upgrade decision does not allow catalog entry/u,
+      /requires policy allowCatalogUpgrade=true/u,
     );
     await assertMissingFiles(blockedPaths);
+
+    const missingTestEvidencePaths = catalogPaths(runDir, 'missing-test-evidence');
+    await assert.rejects(
+      () => writeVerifiedApiCatalogArtifactsFromObservedProducerEvidence({
+        observedRequest: observedSearchRequest(),
+        siteAdapterDecision: acceptedSearchDecision(),
+        catalogUpgradePolicy: {
+          adapterId: 'synthetic-adapter',
+          allowCatalogUpgrade: true,
+          evidence: {
+            policy: 'catalog-upgrade-allowed',
+          },
+        },
+        verification: verificationFixtures(),
+        promotionEvidence: {
+          schemaEvidenceRef: 'schema:synthetic-search-response',
+          policyEvidenceRef: 'policy:synthetic-catalog-upgrade',
+          testEvidenceRefs: [],
+        },
+        decidedAt: '2026-05-10T00:07:00.000Z',
+      }, missingTestEvidencePaths),
+      /testEvidenceRefs is required/u,
+    );
+    await assertMissingFiles(missingTestEvidencePaths);
+
+    const observedOnlyPaths = catalogPaths(runDir, 'observed-only');
+    const observedCandidate = apiCandidateFromObservedRequest(observedSearchRequest());
+    const observedDecision = normalizeSiteAdapterCandidateDecision(acceptedSearchDecision(), {
+      candidate: observedCandidate,
+    });
+    await assert.rejects(
+      () => writeRuntimeVerifiedApiCatalogStoreArtifacts({
+        candidate: observedCandidate,
+        siteAdapterDecision: observedDecision,
+        policy: {
+          allowCatalogUpgrade: true,
+        },
+        decidedAt: '2026-05-10T00:08:00.000Z',
+        metadata: {
+          version: 'catalog-v1',
+        },
+      }, observedOnlyPaths),
+      /ApiCatalog upgrade decision does not allow catalog entry/u,
+    );
+    await assertMissingFiles(observedOnlyPaths);
   } finally {
     await rm(runDir, { recursive: true, force: true });
   }

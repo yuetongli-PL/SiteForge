@@ -197,6 +197,14 @@ export async function writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProduc
     siteAdapterDecision,
     catalogUpgradePolicy,
     verification: createBilibiliApiVerificationFixtures(),
+    promotionEvidence: {
+      schemaEvidenceRef: 'schema:bilibili:video-view-response',
+      policyEvidenceRef: 'policy:bilibili:public-api-catalog',
+      testEvidenceRefs: [
+        'test:bilibili:site-adapter-contract',
+        'test:bilibili:api-catalog-promotion',
+      ],
+    },
     decidedAt: BILIBILI_EVIDENCE_TIMESTAMP,
     metadata: {
       version: 'bilibili-api-catalog-fixture-v1',

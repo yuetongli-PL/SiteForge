@@ -170,6 +170,7 @@ const DYNAMIC_FS_IMPORT_PATTERN = /\bimport\(\s*['"](?:node:fs|node:fs\/promises
 
 const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/entrypoints/pipeline/run-pipeline.mjs',
+  'src/entrypoints/sites/site-recompile-preview-summary.mjs',
   'src/entrypoints/sites/session-repair-plan.mjs',
   'src/entrypoints/sites/site-capability-compile.mjs',
   'src/entrypoints/sites/site-doctor.mjs',
@@ -246,6 +247,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
 
 const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/entrypoints/pipeline/run-pipeline.mjs', 3],
+  ['src/entrypoints/sites/site-recompile-preview-summary.mjs', 3],
   ['src/entrypoints/pipeline/generate-crawler-script.mjs', 6],
   ['src/entrypoints/sites/douyin-export-cookies.mjs', 5],
   ['src/entrypoints/sites/session-repair-plan.mjs', 3],

@@ -146,6 +146,7 @@ function renderDouyinSkillMd(input) {
     skillName: context.skillName,
     description: `Instruction-only Skill for ${context.url}. Use when Codex needs to search videos, open verified video pages, open verified user homepages, navigate approved douyin category pages, or inspect authenticated read-only douyin surfaces inside the douyin URL family.`,
     heading: 'douyin Skill',
+    compileResultSummary: context.compileResultSummary,
     scopeLines: [
       `- Site: \`${context.url}\``,
       '- Stay inside the verified `www.douyin.com` URL family.',

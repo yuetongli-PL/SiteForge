@@ -1,10 +1,10 @@
 // @ts-check
 
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { pathExists, readJsonFile, readTextFile } from '../../infra/io.mjs';
+import { findLatestRunDir, pathExists, readJsonFile, readTextFile } from '../../infra/io.mjs';
 import { markdownLink, stripKbMeta } from '../../shared/markdown.mjs';
 import { firstNonEmpty, relativePath, uniqueSortedStrings } from '../../shared/normalize.mjs';
 import {
@@ -13,9 +13,12 @@ import {
   resolveHostKeyedDir,
 } from '../../sites/core/artifact-locator.mjs';
 import { resolveProfilePathForUrl } from '../../sites/core/profiles.mjs';
+import { assertNoForbiddenPatterns } from '../../sites/capability/security-guard.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
+const COMPILE_SUMMARY_ROOT = path.join('runs', 'sites', 'site-capability-compile');
+const COMPILE_SUMMARY_FILE = 'site-compile-result-summary.json';
 
 async function listMarkdownFiles(dirPath) {
   if (!dirPath || !await pathExists(dirPath)) {
@@ -121,6 +124,123 @@ export function findPageById(pagesDocument, pageId) {
   return (pagesDocument?.pages ?? []).find((page) => page.pageId === pageId) ?? null;
 }
 
+function pushUniqueString(values, value) {
+  const text = String(value ?? '').trim();
+  if (!text || values.includes(text)) {
+    return;
+  }
+  values.push(text);
+}
+
+function compileSummarySiteKeys(locator) {
+  const keys = [];
+  for (const key of [
+    locator?.siteContext?.registryRecord?.siteKey,
+    locator?.siteContext?.capabilitiesRecord?.siteKey,
+    locator?.siteIdentity?.siteKey,
+    locator?.siteContext?.registryRecord?.adapterId,
+    locator?.siteContext?.host,
+    locator?.hostKey,
+    locator?.requestedHostKey,
+    ...(locator?.candidateHostKeys ?? []),
+  ]) {
+    pushUniqueString(keys, key);
+  }
+  return keys;
+}
+
+function compileSummaryMatchesLocator(summary, locator) {
+  const summarySiteKey = String(summary?.siteKey ?? summary?.siteSpecificEvidenceSummary?.siteKey ?? '').trim();
+  const allowed = compileSummarySiteKeys(locator);
+  return Boolean(summarySiteKey && allowed.includes(summarySiteKey));
+}
+
+async function readCompileResultSummary(pathValue, { locator, requireSiteMatch = false } = {}) {
+  const resolved = path.resolve(pathValue);
+  if (!await pathExists(resolved)) {
+    throw new Error(`compile summary not found: ${resolved}`);
+  }
+  const summary = await readJsonFile(resolved);
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    throw new Error(`compile summary must be a JSON object: ${resolved}`);
+  }
+  if (summary.redactionRequired !== true) {
+    throw new Error(`compile summary redactionRequired must be true: ${resolved}`);
+  }
+  assertNoForbiddenPatterns(summary);
+  if (requireSiteMatch && !compileSummaryMatchesLocator(summary, locator)) {
+    throw new Error(`compile summary siteKey does not match input URL: ${resolved}`);
+  }
+  return {
+    path: resolved,
+    summary,
+  };
+}
+
+async function pushCompileSummaryCandidate(candidates, seen, filePath) {
+  if (!filePath || seen.has(filePath) || !await pathExists(filePath)) {
+    return;
+  }
+  seen.add(filePath);
+  const fileStat = await stat(filePath);
+  if (!fileStat.isFile()) {
+    return;
+  }
+  candidates.push({
+    path: filePath,
+    mtimeMs: fileStat.mtimeMs,
+  });
+}
+
+async function pushCompileSummaryDirCandidates(candidates, seen, dirPath) {
+  if (!dirPath || !await pathExists(dirPath)) {
+    return;
+  }
+  await pushCompileSummaryCandidate(candidates, seen, path.join(dirPath, COMPILE_SUMMARY_FILE));
+  const entries = await readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      await pushCompileSummaryCandidate(candidates, seen, path.join(dirPath, entry.name, COMPILE_SUMMARY_FILE));
+    }
+  }
+}
+
+async function resolveLatestCompileResultSummary(locator) {
+  const workspaceRoot = path.resolve(locator?.workspaceRoot ?? process.cwd());
+  const rootDir = path.join(workspaceRoot, COMPILE_SUMMARY_ROOT);
+  const candidates = [];
+  const seen = new Set();
+  const keys = compileSummarySiteKeys(locator);
+
+  for (const key of keys) {
+    await pushCompileSummaryDirCandidates(candidates, seen, path.join(rootDir, key));
+  }
+  const latestHostKeyedRunDir = await findLatestHostKeyedRunDir(locator, COMPILE_SUMMARY_ROOT, { includeRoot: false });
+  if (latestHostKeyedRunDir) {
+    await pushCompileSummaryCandidate(candidates, seen, path.join(latestHostKeyedRunDir, COMPILE_SUMMARY_FILE));
+  }
+  await pushCompileSummaryCandidate(candidates, seen, path.join(rootDir, COMPILE_SUMMARY_FILE));
+  const latestRootRunDir = await findLatestRunDir(rootDir);
+  if (latestRootRunDir) {
+    await pushCompileSummaryCandidate(candidates, seen, path.join(latestRootRunDir, COMPILE_SUMMARY_FILE));
+  }
+
+  const matched = [];
+  for (const candidate of candidates) {
+    try {
+      const resolution = await readCompileResultSummary(candidate.path, {
+        locator,
+        requireSiteMatch: true,
+      });
+      matched.push({ ...resolution, mtimeMs: candidate.mtimeMs });
+    } catch {
+      // Ignore stale or wrong-site summaries during automatic discovery.
+    }
+  }
+  matched.sort((left, right) => right.mtimeMs - left.mtimeMs || right.path.localeCompare(left.path, 'en'));
+  return matched[0] ?? null;
+}
+
 export async function resolveSourceInputs(url, options) {
   const warnings = [];
   const workspaceRoot = process.cwd();
@@ -161,6 +281,12 @@ export async function resolveSourceInputs(url, options) {
   const mapToKbPath = buildSourceMapper(kbDir, sourcesDocument);
   const rawToOriginalPath = buildRawToOriginalMapper(kbDir, sourcesDocument);
   const activeSources = new Map((sourcesDocument.activeSources ?? []).map((source) => [source.step, source]));
+  const compileSummaryResolution = options.compileSummaryPath
+    ? await readCompileResultSummary(options.compileSummaryPath, {
+      locator,
+      requireSiteMatch: true,
+    })
+    : await resolveLatestCompileResultSummary(locator);
 
   const step3RawDir = activeSources.get('step-3-analysis') ? path.resolve(kbDir, activeSources.get('step-3-analysis').rawDir) : null;
   const step4RawDir = activeSources.get('step-4-abstraction') ? path.resolve(kbDir, activeSources.get('step-4-abstraction').rawDir) : null;
@@ -428,6 +554,8 @@ export async function resolveSourceInputs(url, options) {
     transitionsDocument,
     siteProfileDocument,
     liveSiteProfileDocument,
+    compileResultSummary: compileSummaryResolution?.summary ?? null,
+    compileResultSummaryPath: compileSummaryResolution?.path ?? null,
     aliasLexiconDocument,
     slotSchemaDocument,
     utterancePatternsDocument,

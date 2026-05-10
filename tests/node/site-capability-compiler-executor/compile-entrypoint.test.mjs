@@ -24,6 +24,14 @@ test('site-capability compile entrypoint returns descriptor-only dry-run summary
   assert.equal(result.planStatus, 'ready');
   assert.equal(result.executionAttempted, false);
   assert.equal(result.downloaderInvocationAllowed, false);
+  assert.equal(result.layerRuntimeConsumerReady, true);
+  assert.equal(result.layerRuntimeConsumerResult.consumerOwner, 'site-capability-layer');
+  assert.equal(result.layerRuntimeConsumerResult.runtimeTaskExecutedByConsumer, false);
+  assert.equal(result.layerRuntimeConsumerResult.directDownloaderInvocationAllowed, false);
+  assert.equal(result.layerRuntimeConsumerResult.directSiteAdapterInvocationAllowed, false);
+  assert.equal(result.layerRuntimeConsumerResult.sessionViewMaterializationAllowed, false);
+  assert.equal(result.layerRuntimeConsumerResult.lifecycleEvent.eventType, 'execution.layer.consumer.receipt');
+  assert.equal(result.layerRuntimeConsumerResult.coverageDeltaArtifactWrite.redactionApplied, true);
   assert.equal(result.coverageCompleteness, 'partial');
   assert.equal(result.unknownNodeCount, 0);
   assert.equal(result.capabilityCount > 0, true);
@@ -50,6 +58,9 @@ test('site-capability compile entrypoint accepts targeted capability intake', as
   assert.equal(result.targetedCapabilityCount >= 1, true);
   assert.equal(result.executionAttempted, false);
   assert.equal(result.downloaderInvocationAllowed, false);
+  assert.equal(result.layerRuntimeConsumerReady, true);
+  assert.equal(result.layerRuntimeConsumerResult.executionFeedback.feedbackSource, 'site-capability-layer');
+  assert.equal(result.layerRuntimeConsumerResult.coverageDelta.evidenceRefs.length > 0, true);
 });
 
 test('site-capability compile entrypoint blocks unrelated handoff for missing requested capability', async () => {
@@ -97,6 +108,7 @@ test('site-capability compile entrypoint blocks missing requested capability eve
   assert.equal(Object.hasOwn(result, 'plannerHandoff'), false);
   assert.equal(result.executionAttempted, false);
   assert.equal(result.downloaderInvocationAllowed, false);
+  assert.equal(Object.hasOwn(result, 'layerRuntimeConsumerResult'), false);
 });
 
 test('site-capability compile entrypoint can return a capability intake questionnaire', async () => {
@@ -133,6 +145,9 @@ test('site-capability compile CLI prints JSON without executing runtime paths', 
   assert.equal(payload.liveCaptureAttempted, false);
   assert.equal(payload.siteAdapterInvocationAllowed, false);
   assert.equal(payload.sessionMaterializationAllowed, false);
+  assert.equal(payload.layerRuntimeConsumerReady, true);
+  assert.equal(payload.layerRuntimeConsumerResult.runtimeTaskExecutedByConsumer, false);
+  assert.equal(payload.layerRuntimeConsumerResult.directDownloaderInvocationAllowed, false);
 });
 
 test('site-capability compile CLI accepts requested capabilities', () => {
@@ -184,15 +199,28 @@ test('site-capability compile CLI prints JSON capability questionnaire', () => {
 test('site-capability compile artifact writes are redacted and audited', async () => {
   const outDir = await mkdtemp(join(tmpdir(), 'bwk-site-capability-compile-'));
   const result = await runSiteCapabilityCompile({
-    site: 'qidian',
-    intent: 'open-book',
+    site: 'bilibili',
+    intent: 'navigate-to-content',
     writeArtifacts: true,
     outDir,
   });
   const manifestJson = await readFile(join(outDir, 'site-compile-manifest.json'), 'utf8');
   const auditJson = await readFile(join(outDir, 'site-compile-manifest.audit.json'), 'utf8');
+  const summaryJson = await readFile(join(outDir, 'site-compile-result-summary.json'), 'utf8');
+  const summaryAuditJson = await readFile(join(outDir, 'site-compile-result-summary.audit.json'), 'utf8');
+  const summary = JSON.parse(summaryJson);
 
   assert.equal(result.artifactWrite.redactionApplied, true);
+  assert.equal(result.artifactWrite.artifactRefs.includes('site-compile-result-summary.json'), true);
+  assert.equal(result.compileResultSummary.artifactType, 'SITE_COMPILE_RESULT_SUMMARY');
+  assert.equal(summary.compileResult.layerRuntimeConsumerReady, true);
+  assert.equal(summary.layerRuntimeConsumerResult.consumerOwner, 'site-capability-layer');
+  assert.equal(summary.layerRuntimeConsumerResult.runtimeTaskExecutedByConsumer, false);
+  assert.equal(summary.siteSpecificEvidenceSummary.siteKey, 'bilibili');
+  assert.equal(summary.siteSpecificEvidenceSummary.observedApiAutoPromotionAllowed, false);
+  assert.equal(summary.siteSpecificEvidenceSummary.executableCapabilityAutoPromotionAllowed, false);
   assert.doesNotMatch(manifestJson, /SESSDATA|Authorization|browserProfilePath|userDataDir/u);
+  assert.doesNotMatch(summaryJson, /SESSDATA|Authorization|browserProfilePath|userDataDir/u);
   assert.match(auditJson, /"redactions": \[\]/u);
+  assert.match(summaryAuditJson, /"redactions": \[\]/u);
 });

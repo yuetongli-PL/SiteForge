@@ -25,6 +25,7 @@ import {
 import {
   createExecutionPolicyDecision,
   createLayerExecutionHandoffDescriptor,
+  createLayerOwnedRuntimeConsumerResult,
 } from '../../sites/capability/execution/index.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -197,6 +198,195 @@ async function maybeWriteCompilerArtifacts({ outDir, manifest, graphBuild }) {
   };
 }
 
+function mergeArtifactWrite(baseWrite, summaryWrite) {
+  if (!summaryWrite) {
+    return baseWrite;
+  }
+  if (!baseWrite) {
+    return summaryWrite;
+  }
+  return {
+    ...baseWrite,
+    artifactRefs: [
+      ...(baseWrite.artifactRefs ?? []),
+      ...(summaryWrite.artifactRefs ?? []),
+    ],
+    auditRefs: [
+      ...(baseWrite.auditRefs ?? []),
+      ...(summaryWrite.auditRefs ?? []),
+    ],
+    redactionRequired: true,
+    redactionApplied: true,
+  };
+}
+
+function createDefaultSiteSpecificEvidenceSummary({ manifest } = {}) {
+  return {
+    schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+    summaryVersion: '1.0.0',
+    summaryType: 'SITE_SPECIFIC_EVIDENCE_SUMMARY',
+    siteKey: manifest.siteKey,
+    status: 'not_configured',
+    descriptorOnly: true,
+    redactionRequired: true,
+    observedApiAutoPromotionAllowed: false,
+    observedCapabilityAutoPromotionAllowed: false,
+    executableCapabilityAutoPromotionAllowed: false,
+    artifactFamilies: [],
+    boundaries: {
+      liveCaptureAttempted: false,
+      runtimeTaskExecuted: false,
+      directDownloaderInvocationAllowed: false,
+      directSiteAdapterInvocationAllowed: false,
+      sessionViewCreated: false,
+    },
+  };
+}
+
+async function createSiteSpecificEvidenceSummaryForManifest(manifest) {
+  if (manifest.siteKey === 'bilibili') {
+    const {
+      createBilibiliSiteSpecificEvidenceSummary,
+    } = await import('../../sites/bilibili/capability-evidence-fixtures.mjs');
+    return createBilibiliSiteSpecificEvidenceSummary();
+  }
+  return createDefaultSiteSpecificEvidenceSummary({ manifest });
+}
+
+function createLayerRuntimeConsumerArtifactSummary(layerRuntimeConsumerResult) {
+  if (!layerRuntimeConsumerResult) {
+    return null;
+  }
+  return {
+    schemaVersion: layerRuntimeConsumerResult.schemaVersion,
+    executionVersion: layerRuntimeConsumerResult.executionVersion,
+    resultType: layerRuntimeConsumerResult.resultType,
+    consumerOwner: layerRuntimeConsumerResult.consumerOwner,
+    executionId: layerRuntimeConsumerResult.executionId,
+    graphVersion: layerRuntimeConsumerResult.graphVersion,
+    plannerVersion: layerRuntimeConsumerResult.plannerVersion,
+    layerCompatibilityVersion: layerRuntimeConsumerResult.layerCompatibilityVersion,
+    policyDecisionStatus: layerRuntimeConsumerResult.policyDecisionStatus,
+    layerReceiptConsumed: layerRuntimeConsumerResult.layerReceiptConsumed,
+    runtimeTaskExecutedByConsumer: layerRuntimeConsumerResult.runtimeTaskExecutedByConsumer,
+    directDownloaderInvocationAllowed: layerRuntimeConsumerResult.directDownloaderInvocationAllowed,
+    directSiteAdapterInvocationAllowed: layerRuntimeConsumerResult.directSiteAdapterInvocationAllowed,
+    sessionViewMaterializationAllowed: layerRuntimeConsumerResult.sessionViewMaterializationAllowed,
+    sensitiveMaterialAllowed: layerRuntimeConsumerResult.rawCredentialMaterialAllowed,
+    executionFeedback: {
+      feedbackSource: layerRuntimeConsumerResult.executionFeedback?.feedbackSource,
+      executionStatus: layerRuntimeConsumerResult.executionFeedback?.executionStatus,
+      reasonCodes: layerRuntimeConsumerResult.executionFeedback?.reasonCodes ?? [],
+      artifactRefCount: layerRuntimeConsumerResult.executionFeedback?.artifactRefs?.length ?? 0,
+    },
+    coverageDelta: {
+      deltaType: layerRuntimeConsumerResult.coverageDelta?.deltaType,
+      coverageBefore: layerRuntimeConsumerResult.coverageDelta?.coverageBefore,
+      coverageAfter: layerRuntimeConsumerResult.coverageDelta?.coverageAfter,
+      affectedNodeRefCount: layerRuntimeConsumerResult.coverageDelta?.affectedNodeRefs?.length ?? 0,
+      affectedCapabilityRefCount: layerRuntimeConsumerResult.coverageDelta?.affectedCapabilityRefs?.length ?? 0,
+      affectedRouteRefCount: layerRuntimeConsumerResult.coverageDelta?.affectedRouteRefs?.length ?? 0,
+      evidenceRefCount: layerRuntimeConsumerResult.coverageDelta?.evidenceRefs?.length ?? 0,
+    },
+    coverageDeltaArtifactWrite: {
+      artifactType: layerRuntimeConsumerResult.coverageDeltaArtifactWrite?.artifactType,
+      redactionRequired: layerRuntimeConsumerResult.coverageDeltaArtifactWrite?.redactionRequired,
+      redactionApplied: layerRuntimeConsumerResult.coverageDeltaArtifactWrite?.redactionApplied,
+      writeAllowed: layerRuntimeConsumerResult.coverageDeltaArtifactWrite?.writeAllowed,
+    },
+    lifecycleEvent: {
+      eventType: layerRuntimeConsumerResult.lifecycleEvent?.eventType,
+      taskId: layerRuntimeConsumerResult.lifecycleEvent?.taskId,
+      siteKey: layerRuntimeConsumerResult.lifecycleEvent?.siteKey,
+      taskType: layerRuntimeConsumerResult.lifecycleEvent?.taskType,
+      traceId: layerRuntimeConsumerResult.lifecycleEvent?.traceId,
+      correlationId: layerRuntimeConsumerResult.lifecycleEvent?.correlationId,
+    },
+    redactionRequired: true,
+  };
+}
+
+function createCompileResultSummaryArtifactValue({
+  result,
+  siteSpecificEvidenceSummary,
+} = {}) {
+  return {
+    schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+    summaryVersion: '1.0.0',
+    artifactType: 'SITE_COMPILE_RESULT_SUMMARY',
+    command: result.command,
+    descriptorOnly: true,
+    siteId: result.siteId,
+    siteKey: result.siteKey,
+    compileId: result.compileId,
+    sourceDigest: result.sourceDigest,
+    compileResult: {
+      graphVersion: result.graphVersion,
+      graphValidationResult: result.graphValidationResult,
+      coverageCompleteness: result.coverageCompleteness,
+      capabilityCount: result.capabilityCount,
+      routeCount: result.routeCount,
+      executionPathCount: result.executionPathCount,
+      requestedCapabilities: result.requestedCapabilities,
+      missingRequestedCapabilityCount: result.missingRequestedCapabilityCount,
+      capabilityGapStatus: result.capabilityGapStatus,
+      normalizedIntent: result.normalizedIntent,
+      planStatus: result.planStatus,
+      plannerHandoffReady: result.plannerHandoffReady,
+      executionPolicyStatus: result.executionPolicyStatus,
+      layerRuntimeConsumerReady: result.layerRuntimeConsumerReady ?? false,
+      reasonCode: result.reasonCode,
+    },
+    layerRuntimeConsumerResult: createLayerRuntimeConsumerArtifactSummary(result.layerRuntimeConsumerResult),
+    siteSpecificEvidenceSummary,
+    boundaries: {
+      executionAttempted: result.executionAttempted,
+      liveCaptureAttempted: result.liveCaptureAttempted,
+      siteAdapterInvocationAllowed: result.siteAdapterInvocationAllowed,
+      downloaderInvocationAllowed: result.downloaderInvocationAllowed,
+      sessionViewCreated: false,
+      runtimeMaterializationAllowed: result.runtimeMaterializationAllowed ?? false,
+    },
+    artifactGovernance: {
+      compilerDerivedArtifactWrite: true,
+      securityGuard: 'prepareCompilerDerivedArtifact',
+      redactionRequired: true,
+      redactionApplied: true,
+      artifactRefs: result.artifactWrite?.artifactRefs ?? [],
+      auditRefs: result.artifactWrite?.auditRefs ?? [],
+    },
+    redactionRequired: true,
+  };
+}
+
+async function writeCompileResultSummaryArtifact({
+  outDir,
+  result,
+  siteSpecificEvidenceSummary,
+} = {}) {
+  await ensureDir(outDir);
+  const summary = createCompileResultSummaryArtifactValue({
+    result,
+    siteSpecificEvidenceSummary,
+  });
+  const prepared = prepareCompilerDerivedArtifact({
+    artifactType: 'SITE_COMPILE_RESULT_SUMMARY',
+    value: summary,
+  });
+  await writeTextFile(path.join(outDir, 'site-compile-result-summary.json'), prepared.artifactJson);
+  await writeTextFile(path.join(outDir, 'site-compile-result-summary.audit.json'), prepared.auditJson);
+  return {
+    compileResultSummary: JSON.parse(prepared.artifactJson),
+    artifactWrite: {
+      outDir,
+      artifactRefs: ['site-compile-result-summary.json'],
+      auditRefs: ['site-compile-result-summary.audit.json'],
+      redactionRequired: true,
+      redactionApplied: true,
+    },
+  };
+}
+
 function createCompileResultBase({ manifest, graphBuild, artifactWrite } = {}) {
   const coverageSummary = manifest.capabilityCoverageSummary ?? {};
   return {
@@ -232,6 +422,39 @@ function createCompileResultBase({ manifest, graphBuild, artifactWrite } = {}) {
     sessionMaterializationAllowed: false,
     redactionRequired: true,
   };
+}
+
+function createDryRunLayerRuntimeConsumerResult({
+  manifest,
+  normalizedIntent,
+  handoffDescriptor,
+  policyDecision,
+  artifactWrite,
+} = {}) {
+  const safeIntent = normalizeCapabilityDescriptor(normalizedIntent) ?? 'default';
+  const artifactRefs = artifactWrite?.artifactRefs?.length
+    ? artifactWrite.artifactRefs.map((_, index) => `artifact:site-capability-compile:${manifest.siteKey}:${index + 1}`)
+    : [`artifact:site-capability-compile:${manifest.siteKey}:dry-run`];
+  return createLayerOwnedRuntimeConsumerResult({
+    handoffDescriptor,
+    policyDecision,
+    layerReceipt: {
+      executionStatus: 'accepted',
+      artifactRefs,
+    },
+    coverageBefore: 'partial',
+    coverageAfter: 'partial',
+    deltaType: 'observed',
+    affectedNodeRefs: [`node:${manifest.siteKey}:static-compile`],
+    affectedCapabilityRefs: [`capability:${manifest.siteKey}:${safeIntent}`],
+    affectedRouteRefs: [`route:${manifest.siteKey}:${safeIntent}`],
+    evidenceRefs: artifactRefs,
+    traceId: `trace:${manifest.compileId}`,
+    correlationId: `correlation:${manifest.compileId}`,
+    siteKey: manifest.siteKey,
+    taskType: 'site-capability-compile-dry-run',
+    adapterVersion: manifest.adapterId,
+  });
 }
 
 function normalizeCapabilityDescriptor(value) {
@@ -312,7 +535,7 @@ export async function runSiteCapabilityCompile(options = {}) {
       })
       : undefined;
     const missingCapability = manifest.capabilityCoverageSummary?.missingRequestedCapabilities?.[0];
-    return {
+    const result = {
       ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
       normalizedIntent: missingCapability,
       planStatus: 'blocked',
@@ -323,6 +546,17 @@ export async function runSiteCapabilityCompile(options = {}) {
       layerHandoffAllowed: false,
       runtimeMaterializationAllowed: false,
     };
+    if (options.writeArtifacts) {
+      const siteSpecificEvidenceSummary = await createSiteSpecificEvidenceSummaryForManifest(manifest);
+      const summaryWrite = await writeCompileResultSummaryArtifact({
+        outDir: options.outDir,
+        result,
+        siteSpecificEvidenceSummary,
+      });
+      result.artifactWrite = mergeArtifactWrite(result.artifactWrite, summaryWrite.artifactWrite);
+      result.compileResultSummary = summaryWrite.compileResultSummary;
+    }
+    return result;
   }
   const firstCapability = manifest.inventories.capabilities[0];
   const normalizedIntent = options.intent ?? firstCapability?.normalizedIntent;
@@ -353,13 +587,35 @@ export async function runSiteCapabilityCompile(options = {}) {
       graphBuild,
     })
     : undefined;
-  return {
+  const layerRuntimeConsumerResult = executionPolicyDecision.layerGovernedDispatchReady
+    ? createDryRunLayerRuntimeConsumerResult({
+      manifest,
+      normalizedIntent,
+      handoffDescriptor: executionHandoff,
+      policyDecision: executionPolicyDecision,
+      artifactWrite,
+    })
+    : undefined;
+  const result = {
     ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
     normalizedIntent,
     planStatus: dryRunResult.planStatus,
     plannerHandoffReady: plannerHandoff.governedHandoffReady,
     executionPolicyStatus: executionPolicyDecision.decisionStatus,
+    layerRuntimeConsumerReady: Boolean(layerRuntimeConsumerResult),
+    ...(layerRuntimeConsumerResult ? { layerRuntimeConsumerResult } : {}),
   };
+  if (options.writeArtifacts) {
+    const siteSpecificEvidenceSummary = await createSiteSpecificEvidenceSummaryForManifest(manifest);
+    const summaryWrite = await writeCompileResultSummaryArtifact({
+      outDir: options.outDir,
+      result,
+      siteSpecificEvidenceSummary,
+    });
+    result.artifactWrite = mergeArtifactWrite(result.artifactWrite, summaryWrite.artifactWrite);
+    result.compileResultSummary = summaryWrite.compileResultSummary;
+  }
+  return result;
 }
 
 async function main() {

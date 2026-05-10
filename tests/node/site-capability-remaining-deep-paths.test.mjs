@@ -8,6 +8,10 @@ import {
   writeVerifiedApiCatalogArtifactsFromObservedProducerEvidence,
 } from '../../src/sites/capability/api-catalog-promotion.mjs';
 import {
+  createBilibiliSiteSpecificDiscoveryArtifacts,
+  writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProducerEvidence,
+} from '../../src/sites/bilibili/capability-evidence-fixtures.mjs';
+import {
   assertExecutableCapabilityEvidenceFixtureCompatible,
   createExecutableCapabilityEvidenceFixture,
 } from '../../src/sites/capability/capability-evidence-chain.mjs';
@@ -214,6 +218,72 @@ test('real producer intake records DOM a11y governed retry and transport API sur
   assert.equal(artifacts.objects.UNKNOWN_NODE_REPORT.artifactName, 'UNKNOWN_NODE_REPORT');
   assert.equal(artifacts.objects.UNKNOWN_API_REPORT.artifactName, 'UNKNOWN_API_REPORT');
   assertNoForbiddenPatterns(artifacts);
+});
+
+test('Bilibili concrete site evidence flows through governed producer, API catalog, and executable capability gates', async () => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bilibili-site-specific-evidence-'));
+  try {
+    const paths = catalogPaths(runDir, 'bilibili');
+    const catalogResult = await writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProducerEvidence({
+      ...paths,
+      collectionGeneratedAt: '2026-05-10T00:10:00.000Z',
+      collectionCatalogId: 'bilibili-api-catalog',
+      collectionCatalogVersion: 'catalog-v1',
+      indexGeneratedAt: '2026-05-10T00:11:00.000Z',
+      indexVersion: 'index-v1',
+      indexLifecycleEventSiteKey: 'bilibili',
+      indexLifecycleEventTaskType: 'site-specific-api-evidence',
+      indexLifecycleEventAdapterVersion: 'bilibili-adapter-fixture-v1',
+    });
+    const artifacts = createBilibiliSiteSpecificDiscoveryArtifacts({
+      apiCatalogRef: 'artifact:api-catalog:bilibili-video-view-api',
+    }).artifacts;
+
+    assert.equal(catalogResult.observedCandidate.siteKey, 'bilibili');
+    assert.equal(catalogResult.verifiedCandidate.status, 'verified');
+    assert.equal(catalogResult.siteAdapterDecision.adapterId, 'bilibili');
+    assert.equal(catalogResult.siteAdapterDecision.decision, 'accepted');
+    assert.equal(catalogResult.catalogUpgradePolicy.allowCatalogUpgrade, true);
+    assert.equal(catalogResult.observedApiAutoPromotionAllowed, false);
+
+    const catalogEntry = JSON.parse(await readFile(paths.catalogPath, 'utf8'));
+    assert.equal(catalogEntry.siteKey, 'bilibili');
+    assert.equal(catalogEntry.status, 'cataloged');
+    assert.equal(catalogEntry.endpoint.url.includes('/x/web-interface/view'), true);
+
+    const nodeEntries = artifacts.objects.NODE_INVENTORY.entries;
+    const apiEntries = artifacts.objects.API_INVENTORY.entries;
+    const capabilityTarget = artifacts.objects.CAPABILITY_TARGETS.targets
+      .find((entry) => entry.targetId === 'navigate-to-content');
+
+    assert.equal(nodeEntries.some((entry) => entry.id.includes('bilibili-video-card')), true);
+    assert.equal(nodeEntries.some((entry) => entry.source === 'accessibilityNodes'), true);
+    assert.equal(nodeEntries.some((entry) =>
+      entry.id.includes('bilibili-up-archive-trigger')
+      && entry.discoveryStatus === 'skipped_by_budget'
+      && entry.attemptResult?.governedAttempt === true), true);
+    assert.equal(apiEntries.some((entry) =>
+      entry.siteKey === 'bilibili'
+      && entry.id === 'bilibili-video-view-api'
+      && entry.discoveryStatus === 'observed_only'
+      && entry.verificationState === 'unverified'), true);
+    assert.equal(apiEntries.some((entry) => entry.method === 'OPTIONS'), true);
+    assert.equal(apiEntries.some((entry) => entry.resourceType === 'websocket'), true);
+    assert.equal(capabilityTarget.discoveryState, 'verified');
+    assert.equal(capabilityTarget.executableCapabilityAllowed, true);
+    assert.equal(capabilityTarget.mappingSummary.executableEvidenceCount, 4);
+    assert.equal(capabilityTarget.evidenceMappings.some((mapping) =>
+      mapping.evidenceDetail?.descriptorKind === 'verified-api-catalog-capability-evidence'
+      && mapping.evidenceDetail.sourceApiId === 'artifact:api-catalog:bilibili-video-view-api'
+      && mapping.evidenceDetail.executableEvidence === true), true);
+    assert.equal(artifacts.objects.CAPABILITY_GAP_REPORT.gaps
+      .some((gap) => gap.targetId === 'navigate-to-content'), false);
+    assertNoForbiddenPatterns(catalogResult);
+    assertNoForbiddenPatterns(catalogEntry);
+    assertNoForbiddenPatterns(artifacts);
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+  }
 });
 
 test('observed producer API needs SiteAdapter policy schema and test gates before catalog promotion', async () => {

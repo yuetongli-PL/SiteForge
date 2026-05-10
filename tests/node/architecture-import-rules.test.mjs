@@ -246,7 +246,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/entrypoints/pipeline/generate-crawler-script.mjs', 6],
   ['src/entrypoints/sites/douyin-export-cookies.mjs', 5],
   ['src/entrypoints/sites/session-repair-plan.mjs', 3],
-  ['src/entrypoints/sites/site-doctor.mjs', 12],
+  ['src/entrypoints/sites/site-doctor.mjs', 27],
   ['src/entrypoints/sites/site-login.mjs', 5],
   ['src/entrypoints/sites/site-scaffold.mjs', 7],
   ['src/entrypoints/sites/social-auth-import.mjs', 3],

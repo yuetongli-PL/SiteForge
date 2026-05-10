@@ -66,7 +66,7 @@ export function renderSkillMd(context, outputs) {
     '',
     '## Site Capability Compiler status',
     '',
-    ...renderSiteCapabilityCompilerStatusLines(),
+    ...renderSiteCapabilityCompilerStatusLines(context.compileResultSummary),
     '',
     '## Reading order',
     '',

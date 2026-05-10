@@ -147,6 +147,7 @@ function renderBilibiliSkillMd(input) {
     skillName: context.skillName,
     description: `Instruction-only Skill for ${context.url}. Use when Codex needs to search videos, open verified video pages, open verified UP profiles, and navigate approved bilibili category/channel pages inside the bilibili URL family.`,
     heading: 'bilibili Skill',
+    compileResultSummary: context.compileResultSummary,
     scopeLines: [
       `- Site: \`${context.url}\``,
       '- Stay inside the verified bilibili URL family: `www.bilibili.com`, `search.bilibili.com`, and `space.bilibili.com`.',

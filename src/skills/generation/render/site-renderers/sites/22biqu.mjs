@@ -15,6 +15,7 @@ function render22BiquSkillMd(input) {
     skillName: context.skillName,
     description: `Instruction-only Skill for ${context.url}. Use when Codex needs to search books, open verified book or author pages, read chapter text, or download a full public novel while staying inside the approved 22biqu URL family.`,
     heading: '22biqu Skill',
+    compileResultSummary: context.compileResultSummary,
     scopeLines: [
       `- Site: \`${context.url}\``,
       '- Stay inside the verified `www.22biqu.com` URL family.',

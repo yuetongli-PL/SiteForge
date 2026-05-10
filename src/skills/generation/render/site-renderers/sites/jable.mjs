@@ -26,6 +26,7 @@ function renderJableSkillMd(input) {
     skillName: context.skillName,
     description: `Instruction-only Skill for ${context.url}. Use when Codex needs to search videos, open verified video or actor pages, navigate the approved jable URL family, or extract objective top-N lists from verified category and tag pages.`,
     heading: 'jable Skill',
+    compileResultSummary: context.compileResultSummary,
     scopeLines: [
       `- Site: \`${context.url}\``,
       '- Stay inside the verified `jable.tv` URL family.',

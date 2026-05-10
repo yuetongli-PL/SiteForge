@@ -45,6 +45,7 @@ function renderMoodyzSkillMd(input) {
     skillName: context.skillName,
     description: `Instruction-only Skill for ${context.url}. Use when Codex needs to search works, open verified work or actress pages, and navigate the approved moodyz URL family.`,
     heading: 'moodyz Skill',
+    compileResultSummary: context.compileResultSummary,
     scopeLines: [
       `- Site: \`${context.url}\``,
       '- Stay inside the verified `moodyz.com` URL family.',

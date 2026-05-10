@@ -39,11 +39,38 @@ export function renderSiteCapabilityGraphStatusLines() {
   ];
 }
 
-export function renderSiteCapabilityCompilerStatusLines() {
+function formatInlineValue(value, fallback = 'unknown') {
+  const text = String(value ?? '').trim();
+  return text ? text.replace(/`/gu, '') : fallback;
+}
+
+function renderCompileResultSummaryLines(compileResultSummary) {
+  if (!compileResultSummary) {
+    return [];
+  }
+  const compileResult = compileResultSummary.compileResult ?? compileResultSummary;
+  const layerResult = compileResultSummary.layerRuntimeConsumerResult ?? null;
+  const siteEvidence = compileResultSummary.siteSpecificEvidenceSummary ?? null;
+  const lines = [
+    `- Compile summary artifact: site \`${formatInlineValue(compileResultSummary.siteKey)}\`, graph validation \`${formatInlineValue(compileResult.graphValidationResult)}\`, plan \`${formatInlineValue(compileResult.planStatus)}\`, Layer consumer ready \`${Boolean(compileResult.layerRuntimeConsumerReady)}\`.`,
+  ];
+  if (layerResult) {
+    lines.push(`- Layer consumer artifact: owner \`${formatInlineValue(layerResult.consumerOwner)}\`, result \`${formatInlineValue(layerResult.resultType)}\`, runtime executed \`${Boolean(layerResult.runtimeTaskExecutedByConsumer)}\`, direct downloader \`${Boolean(layerResult.directDownloaderInvocationAllowed)}\`, direct SiteAdapter \`${Boolean(layerResult.directSiteAdapterInvocationAllowed)}\`.`);
+  }
+  if (siteEvidence) {
+    const capabilityCount = Array.isArray(siteEvidence.capabilityEvidence) ? siteEvidence.capabilityEvidence.length : 0;
+    const apiCount = Array.isArray(siteEvidence.apiEvidence) ? siteEvidence.apiEvidence.length : 0;
+    lines.push(`- Site-specific evidence summary: site \`${formatInlineValue(siteEvidence.siteKey)}\`, API evidence ${apiCount}, capability evidence ${capabilityCount}, observed API auto-promotion \`${Boolean(siteEvidence.observedApiAutoPromotionAllowed)}\`, executable capability auto-promotion \`${Boolean(siteEvidence.executableCapabilityAutoPromotionAllowed)}\`.`);
+  }
+  return lines;
+}
+
+export function renderSiteCapabilityCompilerStatusLines(compileResultSummary) {
   return [
     '- Compiler status: Site Capability Compiler / Executor validation covers sections 1-20 verified for descriptor-only compile, Graph emission, Planner dry-run handoff, governed execution descriptors, redaction, and tests.',
     '- Dry-run entrypoint: use `node src/entrypoints/cli.mjs site capability-compile --site <site> --json` to inspect compile coverage without live capture, session materialization, SiteAdapter runtime execution, downloader invocation, or artifact writes unless explicitly requested.',
     '- Consumer boundary: generated Skills may surface compile coverage summaries and CLI pointers, but they must not convert compile evidence into permission for blocked execution, credential use, downloader calls, or live-site access.',
+    ...renderCompileResultSummaryLines(compileResultSummary),
   ];
 }
 
@@ -54,8 +81,9 @@ export function renderSkillTemplate({
   scopeLines,
   sampleCoverageLines = [],
   executionPolicyLines = [],
+  compileResultSummary,
   siteCapabilityGraphStatusLines = renderSiteCapabilityGraphStatusLines(),
-  siteCapabilityCompilerStatusLines = renderSiteCapabilityCompilerStatusLines(),
+  siteCapabilityCompilerStatusLines = renderSiteCapabilityCompilerStatusLines(compileResultSummary),
   readingOrderLines,
   safetyBoundaryLines,
   doNotDoLines,

@@ -43,6 +43,7 @@ const DEFAULT_OPTIONS = {
   approvalPath: undefined,
   nlIntentsPath: undefined,
   interactionModelPath: undefined,
+  compileSummaryPath: undefined,
 };
 
 function mergeOptions(options) {
@@ -115,6 +116,7 @@ export function parseCliArgs(argv) {
       approvalPath: flags.approval,
       nlIntentsPath: flags['nl-intents'],
       interactionModelPath: flags['interaction-model'],
+      compileSummaryPath: flags['compile-summary'],
       json: flags.json === true,
       quiet: flags.quiet === true,
       progressMode: flags.progress,
@@ -127,7 +129,7 @@ export function parseCliArgs(argv) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/generate-skill.mjs <url> [--kb-dir <dir>] [--out-dir <dir>] [--skill-name <name>] [--wiki-index <path>] [--wiki-schema <path>] [--flows-dir <dir>] [--recovery <path>] [--approval <path>] [--nl-intents <path>] [--interaction-model <path>] [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty]',
+    '  node src/entrypoints/pipeline/generate-skill.mjs <url> [--kb-dir <dir>] [--out-dir <dir>] [--skill-name <name>] [--wiki-index <path>] [--wiki-schema <path>] [--flows-dir <dir>] [--recovery <path>] [--approval <path>] [--nl-intents <path>] [--interaction-model <path>] [--compile-summary <path>] [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty]',
   ].join('\n'));
 }
 

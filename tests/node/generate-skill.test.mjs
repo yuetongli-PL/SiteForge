@@ -5,9 +5,16 @@ import path from 'node:path';
 import process from 'node:process';
 import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { generateSkill } from '../../src/entrypoints/pipeline/generate-skill.mjs';
+import {
+  generateSkill,
+  parseCliArgs as parseSkillCliArgs,
+} from '../../src/entrypoints/pipeline/generate-skill.mjs';
+import {
+  runSiteCapabilityCompile,
+} from '../../src/entrypoints/sites/site-capability-compile.mjs';
 import {
   build22BiquStageSpec,
+  buildBilibiliStageSpec,
   buildJableStageSpec,
   buildMoodyzStageSpec,
   buildXiaohongshuStageSpec,
@@ -18,6 +25,64 @@ import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './help
 function normalizeEol(value) {
   return String(value).replace(/\r\n/g, '\n');
 }
+
+test('generateSkill auto-discovers the latest machine-readable compile result summary artifact', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-generate-skill-compile-summary-'));
+  const previousCwd = process.cwd();
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+
+  try {
+    const spec = buildBilibiliStageSpec();
+    const fixture = await compileFixtureKnowledgeBase(workspace, spec);
+    process.chdir(workspace);
+
+    const compileOutDir = path.join(
+      workspace,
+      'runs',
+      'sites',
+      'site-capability-compile',
+      'bilibili',
+      '20260510T000000Z',
+    );
+    const compileResult = await runSiteCapabilityCompile({
+      site: 'bilibili',
+      intent: 'navigate-to-content',
+      writeArtifacts: true,
+      outDir: compileOutDir,
+    });
+    assert.equal(compileResult.artifactWrite.artifactRefs.includes('site-compile-result-summary.json'), true);
+
+    const result = await generateSkill(spec.inputUrl, {
+      kbDir: fixture.kbDir,
+      outDir: path.join(workspace, 'out', 'bilibili'),
+      skillName: 'bilibili',
+      siteMetadataOptions: fixture.metadataSandbox.siteMetadataOptions,
+    });
+
+    const skillMd = normalizeEol(await readFile(path.join(result.skillDir, 'SKILL.md'), 'utf8'));
+    assert.match(skillMd, /Compile summary artifact: site `bilibili`, graph validation `passed`, plan `ready`, Layer consumer ready `true`\./u);
+    assert.match(skillMd, /Layer consumer artifact: owner `site-capability-layer`, result `LayerOwnedRuntimeConsumerResult`, runtime executed `false`, direct downloader `false`, direct SiteAdapter `false`\./u);
+    assert.match(skillMd, /Site-specific evidence summary: site `bilibili`, API evidence 1, capability evidence 1, observed API auto-promotion `false`, executable capability auto-promotion `false`\./u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
+  } finally {
+    process.chdir(previousCwd);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('generateSkill CLI accepts an explicit compile summary artifact path', () => {
+  const parsed = parseSkillCliArgs([
+    'https://www.bilibili.com/',
+    '--compile-summary',
+    'runs/sites/site-capability-compile/bilibili/site-compile-result-summary.json',
+  ]);
+
+  assert.equal(parsed.command, 'generate');
+  assert.equal(
+    parsed.options.compileSummaryPath,
+    'runs/sites/site-capability-compile/bilibili/site-compile-result-summary.json',
+  );
+});
 
 test('generateSkill produces stable jable skill documents from a self-contained compiled knowledge base', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-generate-skill-'));

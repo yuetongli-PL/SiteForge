@@ -14,6 +14,7 @@ export const DEFAULT_SKILL_OPTIONS = {
   approvalPath: undefined,
   nlIntentsPath: undefined,
   interactionModelPath: undefined,
+  compileSummaryPath: undefined,
 };
 
 export function resolveSkillName(inputUrl, explicitSkillName) {

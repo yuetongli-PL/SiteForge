@@ -250,6 +250,7 @@ function renderXiaohongshuSkillMd(input) {
     skillName: context.skillName,
     description: `Instruction-only Skill for ${context.url}. Use when Codex needs to search Xiaohongshu notes, open verified note pages, download image-first note bundles, open verified user homepages, browse the discover page, query followed users with a reusable authenticated profile, open notification-style utility pages, or open login/register pages without submitting credentials automatically.`,
     heading: 'xiaohongshu Skill',
+    compileResultSummary: context.compileResultSummary,
     scopeLines: [
       `- Site: \`${context.url}\``,
       '- Stay inside the verified `www.xiaohongshu.com` URL family.',

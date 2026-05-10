@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import {
   generateSkill,
@@ -341,6 +341,98 @@ test('generateSkill produces stable 22biqu skill documents from a self-contained
     assert.match(flowsMd, /Main path: check local artifact -> if missing, run `pypy3 src\/sites\/chapter-content\/download\/python\/book\.py`/u);
     assert.match(flowsMd, /## Search book/u);
     assert.match(flowsMd, /Freshness rule: search results are only for discovery/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
+  } finally {
+    process.chdir(previousCwd);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('generateSkill blocks low-coverage repo-local 22biqu promotion before overwrite', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-generate-skill-22biqu-gate-'));
+  const previousCwd = process.cwd();
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+
+  try {
+    const spec = build22BiquStageSpec(workspace);
+    const fixture = await compileFixtureKnowledgeBase(workspace, spec);
+    const repoSkillDir = path.join(workspace, 'skills', '22biqu');
+    const referencesDir = path.join(repoSkillDir, 'references');
+    const baselineSkillMd = [
+      '---',
+      'name: 22biqu',
+      '---',
+      '',
+      '# 22biqu Skill',
+      '',
+      '## Scope',
+      '',
+      '- Safe actions: `download-book`, `navigate`, `search-submit`',
+      '',
+      '## Site Capability Graph status',
+      '',
+      '- Repo Graph status: Site Capability Graph final validation passed.',
+      '',
+      '## Site Capability Compiler status',
+      '',
+      '- Compiler status: Site Capability Compiler / Executor validation covers sections 1-20 verified.',
+    ].join('\n');
+    const baselineFlowsMd = [
+      '# Flows',
+      '',
+      '## Download full book',
+      '',
+      '- Intent Type: `download-book`',
+      '- Action: `download-book`',
+      '- Main path: check local artifact -> run downloader -> write TXT.',
+      '- Success signal: TXT exists.',
+      '',
+      '## Search book',
+      '',
+      '- Intent Type: `search-book`',
+      '- Action: `search-submit`',
+      '- Main path: submit query and open the matching result.',
+      '- Success signal: result page is visible.',
+      '',
+      '## Critical retained flow',
+      '',
+      '- Intent Type: `live-book-metadata`',
+      '- Action: `navigate`',
+      '- Main path: fetch the live directory page.',
+      '- Success signal: update metadata is visible.',
+    ].join('\n');
+    const baselineIndexMd = [
+      '# 22biqu Index',
+      '',
+      '- Latest full-book coverage: 1 book(s), 999 chapter(s)',
+    ].join('\n');
+
+    await mkdir(referencesDir, { recursive: true });
+    await writeFile(path.join(repoSkillDir, 'SKILL.md'), baselineSkillMd, 'utf8');
+    await writeFile(path.join(referencesDir, 'flows.md'), baselineFlowsMd, 'utf8');
+    await writeFile(path.join(referencesDir, 'index.md'), baselineIndexMd, 'utf8');
+
+    process.chdir(workspace);
+
+    await assert.rejects(
+      () => generateSkill(spec.inputUrl, {
+        kbDir: fixture.kbDir,
+        outDir: repoSkillDir,
+        skillName: '22biqu',
+        siteMetadataOptions: fixture.metadataSandbox.siteMetadataOptions,
+      }),
+      (error) => {
+        assert.equal(error.code, 'skill_coverage_regression');
+        assert.equal(error.report.allowed, false);
+        assert.equal(error.report.reasons.some((reason) => reason.type === 'missing_flow'), true);
+        assert.equal(error.report.reasons.some((reason) => reason.type === 'lower_sample_coverage'), true);
+        return true;
+      },
+    );
+
+    assert.equal(await readFile(path.join(repoSkillDir, 'SKILL.md'), 'utf8'), baselineSkillMd);
+    assert.equal(await readFile(path.join(referencesDir, 'flows.md'), 'utf8'), baselineFlowsMd);
+    assert.equal(await readFile(path.join(referencesDir, 'index.md'), 'utf8'), baselineIndexMd);
     await assertRepoMetadataUnchanged(repoMetadataSnapshot);
   } finally {
     process.chdir(previousCwd);

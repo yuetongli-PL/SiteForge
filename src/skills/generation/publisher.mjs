@@ -2,8 +2,25 @@
 
 import path from 'node:path';
 import { buildSkillPublisherModel } from './build-publisher-model.mjs';
+import { enforceSkillCoverageRegressionGate } from './coverage-regression-gate.mjs';
 import { resolveSkillPublisherInput } from './resolve-publisher-input.mjs';
 import { syncPublishedSiteMetadata } from './sync-site-metadata.mjs';
+
+function resolveApprovalActionKinds(context) {
+  const configured = [
+    ...(context.siteCapabilitiesRecord?.approvalActionKinds ?? []),
+    ...(context.siteContext?.capabilitiesRecord?.approvalActionKinds ?? []),
+  ];
+  const inferred = (context.actionsDocument?.actions ?? [])
+    .map((action) => action.actionKind)
+    .filter((actionKind) => ['auth-submit', 'payment-submit', 'search-submit', 'upload-submit'].includes(actionKind));
+  return depsUniqueSorted([...configured, ...inferred]);
+}
+
+function depsUniqueSorted(values) {
+  return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'en'));
+}
 
 export async function publishSkill(inputUrl, options, deps) {
   const publisherInput = await resolveSkillPublisherInput(inputUrl, options, {
@@ -15,18 +32,40 @@ export async function publishSkill(inputUrl, options, deps) {
 
   const skillDir = path.resolve(options.outDir ?? path.join(deps.cwd, 'skills', options.skillName));
   const outputs = deps.buildOutputPaths(skillDir);
+
+  const docsByIntent = deps.collectFlowDocs(context);
+  const documents = {
+    skillMd: deps.renderSkillMd(context, outputs),
+    indexMd: deps.renderIndexReference(context, outputs, docsByIntent),
+    flowsMd: await deps.renderFlowsReference(context, outputs, docsByIntent),
+    recoveryMd: await deps.renderRecoveryReference(context, outputs),
+    approvalMd: await deps.renderApprovalReference(context, outputs),
+    nlIntentsMd: await deps.renderNlIntentsReference(context, outputs),
+    interactionModelMd: await deps.renderInteractionModelReference(context, outputs),
+  };
+  const coverageRegressionGate = await enforceSkillCoverageRegressionGate({
+    cwd: deps.cwd,
+    skillName: options.skillName,
+    targetDir: skillDir,
+    candidateDocuments: documents,
+    candidateCoverage: {
+      safeActionKinds: deps.resolveSafeActions?.(context) ?? [],
+      approvalActionKinds: resolveApprovalActionKinds(context),
+      supportedIntents: deps.resolveSupportedIntents(context),
+      capabilityFamilies: deps.resolveCapabilityFamilies(context),
+    },
+  });
+
   await deps.rm(skillDir, { recursive: true, force: true });
   await deps.ensureDir(outputs.referencesDir);
 
-  const docsByIntent = deps.collectFlowDocs(context);
-
-  await deps.writeTextFile(outputs.skillMd, deps.renderSkillMd(context, outputs));
-  await deps.writeTextFile(outputs.indexMd, deps.renderIndexReference(context, outputs, docsByIntent));
-  await deps.writeTextFile(outputs.flowsMd, await deps.renderFlowsReference(context, outputs, docsByIntent));
-  await deps.writeTextFile(outputs.recoveryMd, await deps.renderRecoveryReference(context, outputs));
-  await deps.writeTextFile(outputs.approvalMd, await deps.renderApprovalReference(context, outputs));
-  await deps.writeTextFile(outputs.nlIntentsMd, await deps.renderNlIntentsReference(context, outputs));
-  await deps.writeTextFile(outputs.interactionModelMd, await deps.renderInteractionModelReference(context, outputs));
+  await deps.writeTextFile(outputs.skillMd, documents.skillMd);
+  await deps.writeTextFile(outputs.indexMd, documents.indexMd);
+  await deps.writeTextFile(outputs.flowsMd, documents.flowsMd);
+  await deps.writeTextFile(outputs.recoveryMd, documents.recoveryMd);
+  await deps.writeTextFile(outputs.approvalMd, documents.approvalMd);
+  await deps.writeTextFile(outputs.nlIntentsMd, documents.nlIntentsMd);
+  await deps.writeTextFile(outputs.interactionModelMd, documents.interactionModelMd);
 
   await syncPublishedSiteMetadata('skill', {
     cwd: deps.cwd,
@@ -61,5 +100,6 @@ export async function publishSkill(inputUrl, options, deps) {
     ],
     sourceLayout: publisherInput.resolution.layout,
     warnings: deps.uniqueSortedStrings(context.warnings),
+    coverageRegressionGate,
   };
 }

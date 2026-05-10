@@ -27,6 +27,7 @@ import {
   remapSupportedIntent,
   resolveCapabilityFamilies,
   resolvePrimaryArchetype,
+  resolveSafeActions,
   resolveSupportedIntents,
 } from '../../skills/generation/site-capabilities.mjs';
 import { buildOutputPaths, mergeSkillOptions } from '../../skills/generation/skill-options.mjs';
@@ -76,6 +77,7 @@ export async function generateSkill(url, options = {}) {
     upsertSiteCapabilities,
     resolvePrimaryArchetype,
     resolveCapabilityFamilies,
+    resolveSafeActions,
     resolveSupportedIntents,
     toPosixPath,
     uniqueSortedStrings,

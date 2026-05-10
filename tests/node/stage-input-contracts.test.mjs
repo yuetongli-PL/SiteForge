@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { capture } from '../../src/pipeline/stages/capture.mjs';
 import { collectBookContent, parseCliArgs as parseCollectCliArgs } from '../../src/pipeline/stages/collect-content.mjs';
@@ -79,9 +79,81 @@ test('collectBookContent returns an empty summary from the canonical stage when 
 });
 
 test('collect-content stage CLI parser remains available from the canonical stage module', () => {
-  const parsed = parseCollectCliArgs(['https://jable.tv/', '--expanded-dir', 'expanded', '--search-query', 'keyword']);
+  const parsed = parseCollectCliArgs([
+    'https://jable.tv/',
+    '--expanded-dir',
+    'expanded',
+    '--search-query',
+    'keyword',
+    '--stage-timeout',
+    '1234',
+  ]);
   assert.equal(parsed.command, 'collect');
   assert.equal(parsed.inputUrl, 'https://jable.tv/');
   assert.equal(parsed.options.expandedStatesDir, 'expanded');
   assert.deepEqual(parsed.options.searchQueries, ['keyword']);
+  assert.equal(parsed.options.stageTimeoutMs, 1234);
+});
+
+test('collectBookContent returns a redacted partial manifest when the stage deadline expires', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-collect-content-timeout-'));
+  const expandedDir = path.join(workspace, 'expanded');
+  const originalFetch = globalThis.fetch;
+
+  try {
+    await mkdir(expandedDir, { recursive: true });
+    await writeFile(path.join(expandedDir, 'states-manifest.json'), JSON.stringify({
+      states: [
+        {
+          finalUrl: 'https://www.22biqu.com/biqu1/',
+          title: 'Fixture Book',
+          pageFacts: {
+            bookTitle: 'Fixture Book',
+          },
+        },
+      ],
+    }));
+
+    globalThis.fetch = async (_url, { signal } = {}) => new Promise((_resolve, reject) => {
+      const abort = () => {
+        const error = new Error('The operation was aborted.');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      if (signal?.aborted) {
+        abort();
+        return;
+      }
+      signal?.addEventListener('abort', abort, { once: true });
+    });
+
+    const result = await collectBookContent('https://www.22biqu.com/', {
+      expandedStatesDir: expandedDir,
+      outDir: path.join(workspace, 'book-content-out'),
+      stageTimeoutMs: 5,
+      requestTimeoutMs: 10_000,
+      maxFallbackBooks: 1,
+    });
+
+    assert.equal(result.status, 'partial');
+    assert.equal(result.reasonCode, 'book-content-collection-timeout');
+    assert.equal(result.retryable, true);
+    assert.equal(result.redactionRequired, true);
+    assert.equal(result.summary.books, 0);
+    assert.equal(result.summary.failedCollections, 1);
+    assert.equal(result.timeoutPolicy.timedOut, true);
+    assert.equal(result.failures[0].scope, 'book');
+    assert.equal(result.gaps[0].stage, 'bookContent');
+
+    const persistedManifest = JSON.parse(await readFile(result.files.manifest, 'utf8'));
+    assert.equal(persistedManifest.status, 'partial');
+    assert.equal(persistedManifest.reasonCode, 'book-content-collection-timeout');
+
+    const audit = JSON.parse(await readFile(`${result.files.manifest}.redaction-audit.json`, 'utf8'));
+    assert.equal(audit.schemaVersion, 1);
+    assert.deepEqual(audit.findings, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(workspace, { recursive: true, force: true });
+  }
 });

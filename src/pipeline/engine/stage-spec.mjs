@@ -42,10 +42,14 @@ function summarizeBookContent(manifest) {
     };
   }
   return {
-    status: 'success',
+    status: manifest?.status === 'partial' ? 'partial' : 'success',
     outDir: manifest.outDir,
     summary: manifest.summary ?? {},
     negativeQueries: manifest.negativeQueries ?? [],
+    reasonCode: manifest.reasonCode ?? null,
+    retryable: manifest.retryable === true,
+    failures: manifest.failures ?? [],
+    gaps: manifest.gaps ?? [],
   };
 }
 
@@ -153,6 +157,7 @@ export const PIPELINE_STAGE_SPECS = [
       expandedStatesDir: stageResults.expanded.outDir,
       outDir: settings.bookContentOutDir,
       searchQueries: settings.searchQueries,
+      stageTimeoutMs: settings.timeoutMs,
     }),
     summarize: summarizeBookContent,
   },

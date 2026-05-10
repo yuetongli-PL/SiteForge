@@ -260,7 +260,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/pipeline/stages/abstract.mjs', 6],
   ['src/pipeline/stages/analyze.mjs', 8],
   ['src/pipeline/stages/capture.mjs', 6],
-  ['src/pipeline/stages/collect-content.mjs', 10],
+  ['src/pipeline/stages/collect-content.mjs', 11],
   ['src/pipeline/stages/docs.mjs', 9],
   ['src/pipeline/stages/expand.mjs', 15],
   ['src/pipeline/stages/governance.mjs', 7],

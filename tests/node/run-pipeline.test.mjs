@@ -317,6 +317,7 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
     assert.equal(calls[1].options.reuseLoginState, true);
     assert.equal(calls[1].options.autoLogin, true);
     assert.equal(calls[2].options.expandedStatesDir, stageDir('expanded'));
+    assert.equal(calls[2].options.stageTimeoutMs, 30_000);
     assert.equal(calls[3].options.bookContentDir, stageDir('book-content'));
     assert.equal(calls[4].options.analysisDir, stageDir('analysis'));
     assert.equal(calls[5].options.abstractionDir, stageDir('abstraction'));
@@ -471,6 +472,71 @@ test('runPipeline skips bookContent when the site profile disables it', async ()
     assert.equal(calls[2].options.bookContentDir, undefined);
     assert.equal(calls[7].options.skipBookContent, true);
     assert.equal(calls[7].options.bookContentDir, undefined);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runPipeline preserves partial bookContent status and continues downstream stages', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-run-pipeline-partial-book-content-'));
+  const calls = [];
+  const stageDir = (name) => buildStageDir(workspace, name);
+
+  try {
+    const stageImpls = createSuccessfulStageImpls(workspace, {
+      async collectBookContent(_url, options) {
+        calls.push({ stage: 'bookContent', options });
+        return {
+          status: 'partial',
+          outDir: stageDir('book-content'),
+          reasonCode: 'book-content-collection-timeout',
+          retryable: true,
+          summary: { books: 1, failedCollections: 1 },
+          negativeQueries: [],
+          failures: [
+            {
+              scope: 'book',
+              reasonCode: 'book-content-collection-timeout',
+              retryable: true,
+            },
+          ],
+          gaps: [
+            {
+              stage: 'bookContent',
+              status: 'partial',
+              reasonCode: 'book-content-collection-timeout',
+            },
+          ],
+        };
+      },
+      async analyzeStates(_url, options) {
+        calls.push({ stage: 'analysis', options });
+        return {
+          outDir: stageDir('analysis'),
+          summary: { states: 2 },
+        };
+      },
+    });
+
+    const result = await runPipeline('https://www.22biqu.com/', {
+      timeoutMs: 12_345,
+    }, stageImpls);
+
+    assert.equal(calls[0].stage, 'bookContent');
+    assert.equal(calls[0].options.stageTimeoutMs, 12_345);
+    assert.equal(calls[1].stage, 'analysis');
+    assert.equal(calls[1].options.bookContentDir, stageDir('book-content'));
+    assert.equal(result.stages.bookContent.status, 'partial');
+    assert.equal(result.stages.bookContent.reasonCode, 'book-content-collection-timeout');
+    assert.equal(result.stages.bookContent.retryable, true);
+    assert.deepEqual(result.stages.bookContent.gaps, [
+      {
+        stage: 'bookContent',
+        status: 'partial',
+        reasonCode: 'book-content-collection-timeout',
+      },
+    ]);
+    assert.equal(result.stages.analysis.status, 'success');
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

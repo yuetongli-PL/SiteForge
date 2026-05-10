@@ -21,6 +21,10 @@ const CURRENT_CAPTURE_CODES = [
   'SCREENSHOT_CAPTURE_FAILED',
   'PAGE_METADATA_FAILED',
   'CAPTURE_FAILED',
+  'expand-navigation-failed',
+  'expand-stage-failed',
+  'book-content-collection-timeout',
+  'book-content-request-timeout',
   'ANTI_CRAWL_CHALLENGE',
 ];
 
@@ -182,6 +186,9 @@ test('graph reasonCodes fail closed and preserve catalog promotion semantics', (
 
 test('reasonCode lookups preserve family and recovery semantics', () => {
   assert.equal(requireReasonCodeDefinition('ANTI_CRAWL_CHALLENGE', { family: 'capture' }).manualRecoveryNeeded, true);
+  assert.equal(requireReasonCodeDefinition('book-content-collection-timeout', { family: 'capture' }).retryable, true);
+  assert.equal(requireReasonCodeDefinition('book-content-request-timeout', { family: 'capture' }).degradable, true);
+  assert.equal(reasonCodeSummary('book-content-collection-timeout').artifactWriteAllowed, true);
   assert.equal(requireReasonCodeDefinition('session-invalid', { family: 'session' }).retryable, true);
   assert.equal(requireReasonCodeDefinition('request-burst', { family: 'risk' }).cooldownNeeded, true);
   assert.equal(requireReasonCodeDefinition('self-profile-captcha', { family: 'risk' }).manualRecoveryNeeded, true);

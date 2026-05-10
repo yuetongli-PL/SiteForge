@@ -10,6 +10,8 @@ import {
 } from '../../infra/cli/progress-cli.mjs';
 import { pipelineStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { ensureDir, firstExistingPath, pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
+import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
+import { prepareRedactedArtifactJsonWithAudit } from '../../sites/capability/security-guard.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,6 +22,7 @@ const DEFAULT_OPTIONS = {
   maxFallbackBooks: 3,
   chapterPageLimit: 20,
   requestTimeoutMs: 30_000,
+  stageTimeoutMs: undefined,
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
   targetBookTitle: undefined,
   targetBookUrl: undefined,
@@ -165,6 +168,9 @@ function mergeOptions(inputUrl, options = {}) {
   merged.maxFallbackBooks = Number(merged.maxFallbackBooks);
   merged.chapterPageLimit = Number(merged.chapterPageLimit);
   merged.requestTimeoutMs = Number(merged.requestTimeoutMs);
+  merged.stageTimeoutMs = merged.stageTimeoutMs === undefined || merged.stageTimeoutMs === null || merged.stageTimeoutMs === ''
+    ? undefined
+    : Number(merged.stageTimeoutMs);
   merged.targetBookTitle = normalizeText(merged.targetBookTitle);
   merged.targetBookUrl = normalizeUrlNoFragment(merged.targetBookUrl);
   merged.skipFallback = Boolean(merged.skipFallback);
@@ -172,9 +178,89 @@ function mergeOptions(inputUrl, options = {}) {
   return merged;
 }
 
+function collectionDeadlineAt(settings, startedAtMs = Date.now()) {
+  return Number.isFinite(settings.stageTimeoutMs) && settings.stageTimeoutMs > 0
+    ? startedAtMs + settings.stageTimeoutMs
+    : null;
+}
+
+function createBookContentTimeoutError(stage, settings) {
+  const reasonCode = 'book-content-collection-timeout';
+  const recovery = reasonCodeSummary(reasonCode);
+  const error = new Error(`Book content collection timed out during ${stage}.`);
+  error.name = 'BookContentCollectionTimeoutError';
+  error.reasonCode = reasonCode;
+  error.retryable = recovery.retryable;
+  error.stage = stage;
+  error.stageTimeoutMs = settings.stageTimeoutMs ?? null;
+  return error;
+}
+
+function createBookContentRequestTimeoutError(url, settings) {
+  const reasonCode = 'book-content-request-timeout';
+  const recovery = reasonCodeSummary(reasonCode);
+  const error = new Error(`Book content request timed out for ${url}.`);
+  error.name = 'BookContentRequestTimeoutError';
+  error.reasonCode = reasonCode;
+  error.retryable = recovery.retryable;
+  error.url = normalizeUrlNoFragment(url);
+  error.requestTimeoutMs = settings.requestTimeoutMs;
+  return error;
+}
+
+function assertWithinCollectionDeadline(settings, stage) {
+  if (!Number.isFinite(settings.collectionDeadlineAtMs)) {
+    return;
+  }
+  if (Date.now() >= settings.collectionDeadlineAtMs) {
+    throw createBookContentTimeoutError(stage, settings);
+  }
+}
+
+function requestTimeoutMs(settings) {
+  const baseTimeoutMs = Number.isFinite(settings.requestTimeoutMs) && settings.requestTimeoutMs > 0
+    ? settings.requestTimeoutMs
+    : DEFAULT_OPTIONS.requestTimeoutMs;
+  if (!Number.isFinite(settings.collectionDeadlineAtMs)) {
+    return baseTimeoutMs;
+  }
+  const remainingMs = settings.collectionDeadlineAtMs - Date.now();
+  if (remainingMs <= 0) {
+    throw createBookContentTimeoutError('fetch', settings);
+  }
+  return Math.max(1, Math.min(baseTimeoutMs, remainingMs));
+}
+
+function isBookContentRecoverableFailure(error) {
+  const reasonCode = error && typeof error === 'object' ? error.reasonCode : null;
+  return reasonCode === 'book-content-collection-timeout' || reasonCode === 'book-content-request-timeout';
+}
+
+function summarizeCollectionFailure(error, scope, extra = {}) {
+  const reasonCode = error && typeof error === 'object'
+    ? (error.reasonCode ?? 'book-content-collection-failed')
+    : 'book-content-collection-failed';
+  return {
+    scope,
+    status: 'partial',
+    reasonCode,
+    retryable: error && typeof error === 'object' ? error.retryable === true : false,
+    message: error?.message ?? String(error),
+    ...extra,
+  };
+}
+
+async function writeRedactedJsonFile(filePath, value) {
+  const prepared = prepareRedactedArtifactJsonWithAudit(value);
+  await writeTextFile(filePath, prepared.json);
+  await writeTextFile(`${filePath}.redaction-audit.json`, prepared.auditJson);
+}
+
 async function fetchHtml(url, settings, { method = 'GET', body = undefined } = {}) {
+  assertWithinCollectionDeadline(settings, 'fetch');
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), settings.requestTimeoutMs);
+  const timeoutMs = requestTimeoutMs(settings);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       method,
@@ -193,6 +279,14 @@ async function fetchHtml(url, settings, { method = 'GET', body = undefined } = {
       finalUrl: response.url,
       html: text,
     };
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      if (Number.isFinite(settings.collectionDeadlineAtMs) && Date.now() >= settings.collectionDeadlineAtMs) {
+        throw createBookContentTimeoutError('fetch', settings);
+      }
+      throw createBookContentRequestTimeoutError(url, settings);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -693,13 +787,25 @@ async function createOutputLayout(baseUrl, rootOutDir) {
 
 export async function collectBookContent(inputUrl, options = {}) {
   const settings = mergeOptions(inputUrl, options);
+  const startedAtMs = Date.now();
+  settings.collectionDeadlineAtMs = collectionDeadlineAt(settings, startedAtMs);
   const baseUrl = settings.baseUrl;
   const siteProfile = await loadSiteProfile(baseUrl);
   const outputs = await createOutputLayout(baseUrl, settings.outDir);
 
   const searchResults = [];
+  const failures = [];
   for (const queryText of settings.searchQueries) {
-    searchResults.push(await searchBooks(queryText, baseUrl, settings, siteProfile));
+    try {
+      assertWithinCollectionDeadline(settings, 'search');
+      searchResults.push(await searchBooks(queryText, baseUrl, settings, siteProfile));
+    } catch (error) {
+      if (!isBookContentRecoverableFailure(error)) {
+        throw error;
+      }
+      failures.push(summarizeCollectionFailure(error, 'search', { queryText }));
+      break;
+    }
   }
 
   const matchedSeeds = searchResults.flatMap((result) => result.results.map((item) => ({
@@ -727,7 +833,21 @@ export async function collectBookContent(inputUrl, options = {}) {
   const books = [];
   const authors = [];
   for (const seed of seedMap.values()) {
-    const book = await collectBookPayload(seed, settings, outputs);
+    let book = null;
+    try {
+      assertWithinCollectionDeadline(settings, 'book');
+      book = await collectBookPayload(seed, settings, outputs);
+    } catch (error) {
+      if (!isBookContentRecoverableFailure(error)) {
+        throw error;
+      }
+      failures.push(summarizeCollectionFailure(error, 'book', {
+        title: seed.title,
+        url: seed.url,
+        source: seed.source,
+      }));
+      break;
+    }
     books.push(book);
     if (book.author) {
       authors.push({
@@ -768,6 +888,7 @@ export async function collectBookContent(inputUrl, options = {}) {
     authorFile: book.authorFile,
   }));
   const authorsDocument = [...authorMap.values()].sort((left, right) => compareNullableStrings(left.authorName, right.authorName));
+  const partial = failures.length > 0;
 
   await writeJsonFile(outputs.booksPath, booksDocument);
   await writeJsonFile(outputs.authorsPath, authorsDocument);
@@ -777,6 +898,10 @@ export async function collectBookContent(inputUrl, options = {}) {
     inputUrl,
     baseUrl,
     generatedAt: outputs.generatedAt,
+    status: partial ? 'partial' : 'success',
+    reasonCode: partial ? failures[0].reasonCode : null,
+    retryable: partial ? failures.some((failure) => failure.retryable) : false,
+    redactionRequired: partial,
     outDir: outputs.outDir,
     summary: {
       queries: settings.searchQueries.length,
@@ -786,6 +911,7 @@ export async function collectBookContent(inputUrl, options = {}) {
       authors: authorsDocument.length,
       chapters: books.reduce((sum, book) => sum + book.chapters.length, 0),
       downloadedBooks: booksDocument.length,
+      failedCollections: failures.length,
     },
     files: {
       books: outputs.booksPath,
@@ -800,9 +926,26 @@ export async function collectBookContent(inputUrl, options = {}) {
       requestedBookUrl: settings.targetBookUrl || null,
       skipFallback: settings.skipFallback,
     },
+    timeoutPolicy: {
+      requestTimeoutMs: settings.requestTimeoutMs,
+      stageTimeoutMs: settings.stageTimeoutMs ?? null,
+      timedOut: failures.some((failure) => failure.reasonCode === 'book-content-collection-timeout'),
+    },
+    failures,
+    gaps: failures.map((failure) => ({
+      stage: 'bookContent',
+      scope: failure.scope,
+      status: 'partial',
+      reasonCode: failure.reasonCode,
+      retryable: failure.retryable,
+      blocked: false,
+      failed: true,
+      unknown: false,
+      skipped: false,
+    })),
   };
 
-  await writeJsonFile(outputs.manifestPath, manifest);
+  await writeRedactedJsonFile(outputs.manifestPath, manifest);
   return manifest;
 }
 
@@ -866,6 +1009,12 @@ export function parseCliArgs(argv) {
         options.skipFallback = true;
         break;
       }
+      case '--stage-timeout': {
+        const { value, nextIndex } = readValue(index);
+        options.stageTimeoutMs = Number(value);
+        index = nextIndex;
+        break;
+      }
       default:
         break;
     }
@@ -880,7 +1029,7 @@ export function parseCliArgs(argv) {
 export function printHelp() {
   console.log([
     'Usage:',
-    '  node src/entrypoints/pipeline/collect-book-content.mjs <url> [--expanded-dir <dir>] [--search-query <text>] [--book-title <title>] [--book-url <url>] [--skip-fallback] [--out-dir <dir>] [--json] [--quiet] [--progress auto|interactive|plain]',
+    '  node src/entrypoints/pipeline/collect-book-content.mjs <url> [--expanded-dir <dir>] [--search-query <text>] [--book-title <title>] [--book-url <url>] [--skip-fallback] [--stage-timeout <ms>] [--out-dir <dir>] [--json] [--quiet] [--progress auto|interactive|plain]',
   ].join('\n'));
 }
 

@@ -12,6 +12,8 @@ import {
   SITE_COMPILE_COVERAGE_COMPLETENESS,
   SITE_COMPILE_COVERAGE_MODES,
   SITE_COMPILE_SOURCE_TYPES,
+  CAPABILITY_INTAKE_MODES,
+  UNCONFIRMED_CAPABILITY_POLICIES,
 } from './schema.mjs';
 
 const FORBIDDEN_COMPILER_FIELD_PATTERNS = Object.freeze([
@@ -72,6 +74,22 @@ const FORBIDDEN_RUNTIME_FIELD_PATTERNS = Object.freeze([
   /^page$/iu,
 ]);
 
+const COMPILER_REF_FIELD_NAMES = Object.freeze(new Set([
+  'ref',
+  'sourceRef',
+  'sourceRefs',
+  'evidenceRef',
+  'evidenceRefs',
+  'testEvidenceRef',
+  'testEvidenceRefs',
+  'changedSourceRefs',
+  'sourceInventories',
+]));
+
+const ALLOWED_CONFIG_REF_PATTERN = /^config\/(?:site-registry|site-capabilities)\.json(?:#[a-z0-9._:-]+)?$/iu;
+const ALLOWED_COMPILER_REF_PATTERN =
+  /^(?:artifact|adapter-metadata|api-discovery|capabilities|capture|compile|compiler|coverage|dom-facts|dry-run-trace|execution|execution-path-dry-run|fixture|graph|inventory|layer|manifest|node|planner|redacted-artifact|registry|requirement|risk-policy|route|schema|site-capabilities|site-registry|synthetic-fixture|test):[a-z0-9._:/-]+$/iu;
+
 function isPlainObject(value) {
   return value !== null
     && typeof value === 'object'
@@ -104,6 +122,35 @@ function assertCompilerDigest(value, name) {
   }
 }
 
+function isUnsafeRefSyntax(value) {
+  const text = String(value ?? '').trim();
+  return text === ''
+    || text.length > 240
+    || text !== value
+    || /[\s"'`<>]/u.test(text)
+    || /[?&=%]/u.test(text)
+    || /^https?:\/\//iu.test(text)
+    || /^[a-z]:[\\/]/iu.test(text)
+    || /^\\\\/u.test(text)
+    || /^\//u.test(text)
+    || /(?:^|\/)\.\.(?:\/|$)/u.test(text)
+    || /\b\d{1,3}(?:\.\d{1,3}){3}\b/u.test(text)
+    || /@/u.test(text)
+    || /\.(?:cmd|bat|ps1|sh|exe|dll|mjs|cjs|js)(?:$|[#:/])/iu.test(text)
+    || /\b(?:cookie|authorization|sessdata|csrf|access[_-]?token|refresh[_-]?token|session[_-]?id|browser[_-]?profile|user[_-]?data[_-]?dir)\b/iu.test(text);
+}
+
+function assertCompilerEvidenceRefAllowed(value, name) {
+  assertNonEmptyString(value, name, 'compiler.raw_sensitive_material_rejected');
+  if (
+    isUnsafeRefSyntax(value)
+    || (!ALLOWED_CONFIG_REF_PATTERN.test(value) && !ALLOWED_COMPILER_REF_PATTERN.test(value))
+  ) {
+    fail(`${name} must be a sanitized compiler evidence ref`, 'compiler.raw_sensitive_material_rejected');
+  }
+  return true;
+}
+
 function assertCompatibleSchemaVersion(value, name) {
   if (value === undefined || value === null || value === '') {
     fail(`${name} schemaVersion is required`, 'compiler.version_incompatible');
@@ -130,6 +177,92 @@ function assertStringArray(value, name, {
     if (allowedValues && !allowedValues.includes(item)) {
       fail(`${name} includes unsupported value`, 'compiler.schema_invalid');
     }
+  }
+}
+
+function assertOptionalStringArray(value, name) {
+  if (value === undefined) {
+    return;
+  }
+  assertStringArray(value, name, { allowEmpty: true });
+  for (const item of value) {
+    if (/https?:\/\//iu.test(item)) {
+      fail(`${name} entries must not contain URLs`, 'compiler.capability_intake_invalid');
+    }
+  }
+}
+
+function assertCapabilityIntake(intake) {
+  if (intake === undefined || intake === null) {
+    return;
+  }
+  assertPlainObject(intake, 'CapabilityIntake');
+  assertCompatibleSchemaVersion(intake.schemaVersion, 'CapabilityIntake');
+  assertNoCompilerSensitiveMaterial(intake);
+  if (!CAPABILITY_INTAKE_MODES.includes(intake.intakeMode)) {
+    fail('CapabilityIntake intakeMode is unsupported', 'compiler.capability_intake_invalid');
+  }
+  if (!UNCONFIRMED_CAPABILITY_POLICIES.includes(intake.unconfirmedCapabilityPolicy)) {
+    fail('CapabilityIntake unconfirmedCapabilityPolicy is unsupported', 'compiler.capability_intake_invalid');
+  }
+  if (typeof intake.inquiryRequired !== 'boolean') {
+    fail('CapabilityIntake inquiryRequired must be boolean', 'compiler.capability_intake_invalid');
+  }
+  assertOptionalStringArray(intake.requestedCapabilities, 'CapabilityIntake requestedCapabilities');
+  assertOptionalStringArray(intake.candidateCapabilities, 'CapabilityIntake candidateCapabilities');
+  assertOptionalStringArray(intake.unconfirmedCapabilities, 'CapabilityIntake unconfirmedCapabilities');
+  assertNonEmptyString(intake.targetedCaptureStrategy, 'CapabilityIntake targetedCaptureStrategy');
+  if (intake.redactionRequired !== true) {
+    fail('CapabilityIntake redactionRequired must be true', 'compiler.redaction_required');
+  }
+}
+
+function assertCapabilityCoverageSummary(summary) {
+  if (summary === undefined || summary === null) {
+    return;
+  }
+  assertPlainObject(summary, 'CapabilityCoverageSummary');
+  assertCompatibleSchemaVersion(summary.schemaVersion, 'CapabilityCoverageSummary');
+  assertNoCompilerSensitiveMaterial(summary);
+  assertOptionalStringArray(summary.requestedCapabilities, 'CapabilityCoverageSummary requestedCapabilities');
+  assertOptionalStringArray(summary.missingRequestedCapabilities, 'CapabilityCoverageSummary missingRequestedCapabilities');
+  assertOptionalStringArray(summary.unconfirmedCapabilities, 'CapabilityCoverageSummary unconfirmedCapabilities');
+  if (
+    summary.missingRequestedCapabilityCount !== undefined
+    && (!Number.isInteger(summary.missingRequestedCapabilityCount) || summary.missingRequestedCapabilityCount < 0)
+  ) {
+    fail('CapabilityCoverageSummary missingRequestedCapabilityCount must be a non-negative integer', 'compiler.coverage_incomplete');
+  }
+  if (
+    Array.isArray(summary.missingRequestedCapabilities)
+    && summary.missingRequestedCapabilityCount !== undefined
+    && summary.missingRequestedCapabilityCount !== summary.missingRequestedCapabilities.length
+  ) {
+    fail('CapabilityCoverageSummary missingRequestedCapabilityCount must match missingRequestedCapabilities length', 'compiler.coverage_incomplete');
+  }
+  if (!Number.isInteger(summary.targetedCapabilityCount) || summary.targetedCapabilityCount < 0) {
+    fail('CapabilityCoverageSummary targetedCapabilityCount must be a non-negative integer', 'compiler.coverage_incomplete');
+  }
+  if (!Number.isInteger(summary.bestEffortUnconfirmedCount) || summary.bestEffortUnconfirmedCount < 0) {
+    fail('CapabilityCoverageSummary bestEffortUnconfirmedCount must be a non-negative integer', 'compiler.coverage_incomplete');
+  }
+  if (
+    summary.capabilityGapStatus !== undefined
+    && !['clear', 'missing_requested_capability'].includes(summary.capabilityGapStatus)
+  ) {
+    fail('CapabilityCoverageSummary capabilityGapStatus is unsupported', 'compiler.coverage_incomplete');
+  }
+  if (
+    summary.missingRequestedCapabilityCount > 0
+    && summary.capabilityGapStatus !== 'missing_requested_capability'
+  ) {
+    fail('CapabilityCoverageSummary missing requested capabilities require missing_requested_capability status', 'compiler.coverage_incomplete');
+  }
+  if (!UNCONFIRMED_CAPABILITY_POLICIES.includes(summary.unconfirmedCapabilityPolicy)) {
+    fail('CapabilityCoverageSummary unconfirmedCapabilityPolicy is unsupported', 'compiler.capability_intake_invalid');
+  }
+  if (summary.redactionRequired !== true) {
+    fail('CapabilityCoverageSummary redactionRequired must be true', 'compiler.redaction_required');
   }
 }
 
@@ -161,11 +294,53 @@ function scanForbiddenCompilerFields(value, findings, path = []) {
   }
 }
 
+function scanCompilerEvidenceRefs(value, findings, path = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      scanCompilerEvidenceRefs(item, findings, [...path, String(index)]);
+    }
+    return;
+  }
+  if (!isPlainObject(value)) {
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = [...path, key];
+    if (COMPILER_REF_FIELD_NAMES.has(key)) {
+      const values = Array.isArray(child) ? child : [child];
+      for (const [index, refValue] of values.entries()) {
+        if (isPlainObject(refValue)) {
+          if ('ref' in refValue) {
+            try {
+              assertCompilerEvidenceRefAllowed(refValue.ref, `${childPath.join('.')}.${index}.ref`);
+            } catch {
+              findings.push({ path: `${childPath.join('.')}.${index}.ref` });
+            }
+          }
+          scanCompilerEvidenceRefs(refValue, findings, [...childPath, String(index)]);
+          continue;
+        }
+        try {
+          assertCompilerEvidenceRefAllowed(refValue, `${childPath.join('.')}.${index}`);
+        } catch {
+          findings.push({ path: `${childPath.join('.')}.${index}` });
+        }
+      }
+      continue;
+    }
+    scanCompilerEvidenceRefs(child, findings, childPath);
+  }
+}
+
 export function assertNoCompilerSensitiveMaterial(value) {
   const findings = [];
   scanForbiddenCompilerFields(value, findings);
   if (findings.length > 0) {
     fail('Compiler data contains forbidden sensitive or runtime fields', 'compiler.raw_sensitive_material_rejected');
+  }
+  scanCompilerEvidenceRefs(value, findings);
+  if (findings.length > 0) {
+    fail('Compiler data contains unsafe evidence refs', 'compiler.raw_sensitive_material_rejected');
   }
   try {
     assertNoForbiddenPatterns(value);
@@ -207,6 +382,7 @@ export function assertSiteCompileRequestCompatible(request) {
     fail('SiteCompileRequest must include siteId, siteKey, or url', 'compiler.request_invalid');
   }
   assertSiteCompileScopeCompatible(request.compileScope);
+  assertCapabilityIntake(request.capabilityIntake);
   assertStringArray(request.sourceTypes, 'SiteCompileRequest sourceTypes', {
     allowedValues: SITE_COMPILE_SOURCE_TYPES,
   });
@@ -227,6 +403,7 @@ function assertSourceRefs(sourceRefs) {
       fail('SiteCompileSourceRef type is unsupported', 'compiler.source_unavailable');
     }
     assertNonEmptyString(sourceRef.ref, 'SiteCompileSourceRef ref');
+    assertCompilerEvidenceRefAllowed(sourceRef.ref, 'SiteCompileSourceRef ref');
     assertCompilerDigest(sourceRef.digest, 'SiteCompileSourceRef digest');
     assertCompilerDigest(sourceRef.sourceDigest, 'SiteCompileSourceRef sourceDigest');
     if (sourceRef.digestAlgorithm !== 'sha256') {
@@ -253,6 +430,9 @@ function assertIncrementalCompileSummary(summary, manifestSourceDigest) {
   }
   if (!Array.isArray(summary.changedSourceRefs)) {
     fail('IncrementalCompileSummary changedSourceRefs must be an array', 'compiler.manifest_invalid');
+  }
+  for (const changedRef of summary.changedSourceRefs) {
+    assertCompilerEvidenceRefAllowed(changedRef, 'IncrementalCompileSummary changedSourceRefs');
   }
 }
 
@@ -283,6 +463,13 @@ function assertCoverageReport(coverageReport) {
   if (!Array.isArray(coverageReport.blockedReasonCodes)) {
     fail('CompileCoverageReport blockedReasonCodes must be an array', 'compiler.coverage_incomplete');
   }
+  if (coverageReport.evidenceRefs !== undefined) {
+    assertStringArray(coverageReport.evidenceRefs, 'CompileCoverageReport evidenceRefs', { allowEmpty: true });
+    for (const evidenceRef of coverageReport.evidenceRefs) {
+      assertCompilerEvidenceRefAllowed(evidenceRef, 'CompileCoverageReport evidenceRefs');
+    }
+  }
+  assertCapabilityCoverageSummary(coverageReport.capabilityCoverageSummary);
 }
 
 export function assertSiteCompileManifestCompatible(manifest) {
@@ -295,6 +482,8 @@ export function assertSiteCompileManifestCompatible(manifest) {
   assertCompilerDigest(manifest.manifestDigest, 'SiteCompileManifest manifestDigest');
   assertIncrementalCompileSummary(manifest.incrementalCompile, manifest.sourceDigest);
   assertSiteCompileScopeCompatible(manifest.compileScope);
+  assertCapabilityIntake(manifest.capabilityIntake);
+  assertCapabilityCoverageSummary(manifest.capabilityCoverageSummary);
   assertSourceRefs(manifest.sourceRefs);
   assertInventories(manifest.inventories);
   assertCoverageReport(manifest.coverageReport);

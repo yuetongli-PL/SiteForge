@@ -25,6 +25,7 @@ test('compiler-executor final docs and contract surfaces exist', () => {
     'src/sites/capability/compiler/schema.mjs',
     'src/sites/capability/compiler/digest.mjs',
     'src/sites/capability/compiler/validator.mjs',
+    'src/sites/capability/compiler/capability-intake.mjs',
     'src/sites/capability/compiler/config-loader.mjs',
     'src/sites/capability/compiler/static-compiler.mjs',
     'src/sites/capability/compiler/inventory.mjs',
@@ -52,6 +53,9 @@ test('compiler and execution schemas list required final contracts', () => {
     'SiteCompileRequest',
     'SiteCompileScope',
     'SiteCompileManifest',
+    'CapabilityIntake',
+    'CapabilityIntakeQuestionnaire',
+    'CapabilityCoverageSummary',
     'CompilerConfigSource',
     'CompilerSourceDigest',
     'IncrementalCompileSummary',
@@ -83,6 +87,7 @@ test('compiler/execution modules do not import runtime downloader session browse
     'src/sites/capability/execution/layer-handoff.mjs',
     'src/sites/capability/execution/policy-gate.mjs',
     'src/sites/capability/execution/coverage-delta-queue.mjs',
+    'src/entrypoints/sites/site-capability-compile.mjs',
   ]) {
     const source = text(path);
     assert.doesNotMatch(source, /from ['"].*(?:sites\/downloads|sites\\downloads|sites\/sessions|sites\\sessions|infra\/browser|infra\\browser|core\/adapters|core\\adapters)/u);

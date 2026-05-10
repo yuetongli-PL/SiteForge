@@ -24,6 +24,7 @@ export function createCompileCoverageReport({
   blockedReasonCodes = [],
   evidenceRefs = [],
   confidence = 0.6,
+  capabilityCoverageSummary,
 } = {}) {
   const report = {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
@@ -32,6 +33,7 @@ export function createCompileCoverageReport({
     blockedReasonCodes: [...blockedReasonCodes],
     evidenceRefs: [...evidenceRefs],
     confidence,
+    ...(capabilityCoverageSummary ? { capabilityCoverageSummary } : {}),
     redactionRequired: true,
   };
   assertNoCompilerSensitiveMaterial(report);

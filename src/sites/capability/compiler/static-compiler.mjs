@@ -16,6 +16,10 @@ import {
   createRequirementInventory,
 } from './inventory.mjs';
 import {
+  createCapabilityCoverageSummary,
+  createCapabilityIntake,
+} from './capability-intake.mjs';
+import {
   assertCompileCoverageReportConsistent,
   createCompileCoverageReport,
   createUnknownNodeReport,
@@ -69,6 +73,45 @@ function defaultSourceRefs() {
   ];
 }
 
+function normalizeCapabilityAlias(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) {
+    return null;
+  }
+  return text
+    .replace(/[^a-z0-9._:-]+/gu, '-')
+    .replace(/^-+|-+$/gu, '') || null;
+}
+
+function capabilityAliases(capability = {}) {
+  return [
+    capability.capabilityKey,
+    capability.normalizedIntent,
+    capability.capabilityFamily,
+    ...(Array.isArray(capability.supportedTaskTypes) ? capability.supportedTaskTypes : []),
+  ].map(normalizeCapabilityAlias).filter(Boolean);
+}
+
+function unresolvedRequestedCapabilityNodes({
+  siteKey,
+  capabilities = [],
+  capabilityIntake = null,
+} = {}) {
+  const requestedCapabilities = capabilityIntake?.requestedCapabilities ?? [];
+  if (!requestedCapabilities.length) {
+    return [];
+  }
+  const knownAliases = new Set(capabilities.flatMap(capabilityAliases));
+  return requestedCapabilities
+    .filter((capability) => !knownAliases.has(capability))
+    .map((capability) => ({
+      id: `unknown:${siteKey}:requested-capability:${capability}`,
+      requestedCapability: capability,
+      reasonCode: 'compiler.capability_inventory_invalid',
+      redactionRequired: true,
+    }));
+}
+
 export function createStaticSiteCompileManifest({
   request,
   registrySite = {},
@@ -89,6 +132,9 @@ export function createStaticSiteCompileManifest({
   const capabilities = Array.isArray(capabilityConfig.capabilities)
     ? capabilityConfig.capabilities
     : [];
+  const capabilityIntake = request.capabilityIntake ?? createCapabilityIntake({
+    candidateCapabilities: capabilityConfig.capabilityFamilies,
+  });
   const unknownNodes = capabilities.length === 0
     ? [{
       id: `unknown:${siteKey}:capability-inventory`,
@@ -96,12 +142,22 @@ export function createStaticSiteCompileManifest({
       redactionRequired: true,
     }]
     : [];
+  unknownNodes.push(...unresolvedRequestedCapabilityNodes({
+    siteKey,
+    capabilities,
+    capabilityIntake,
+  }));
   const blockedReasonCodes = unknownNodes.length ? ['compiler.coverage_incomplete'] : [];
+  const capabilityCoverageSummary = createCapabilityCoverageSummary({
+    capabilityIntake,
+    capabilities,
+  });
   const coverageReport = createCompileCoverageReport({
     coverageCompleteness: request.compileScope.coverageCompleteness,
     unknownNodes,
     blockedReasonCodes,
     evidenceRefs: sourceRefs.map((ref) => ref.ref),
+    capabilityCoverageSummary,
   });
   assertCompileCoverageReportConsistent(request.compileScope, coverageReport);
   const sourceDigest = createCompilerSourceDigest({
@@ -130,6 +186,8 @@ export function createStaticSiteCompileManifest({
     siteKey,
     adapterId: adapterMetadata.adapterId ?? registrySite.adapterId ?? `${siteKey}-adapter`,
     compileScope: request.compileScope,
+    capabilityIntake,
+    capabilityCoverageSummary,
     sourceRefs: normalizedSourceRefs,
     sourceDigest,
     incrementalCompile,
@@ -148,6 +206,7 @@ export function createStaticSiteCompileManifest({
         capabilities,
         capabilityConfig,
         registrySite,
+        capabilityIntake,
       }),
       executionPaths: createExecutionPathInventory({ siteId, siteKey, capabilities }),
       requirements: createRequirementInventory({

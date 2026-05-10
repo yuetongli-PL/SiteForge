@@ -35,3 +35,19 @@ test('compiler artifact guard rejects unredacted sensitive material', () => {
     },
   );
 });
+
+test('compiler artifact guard rejects unsafe evidence refs before writes', () => {
+  const manifest = createSyntheticCompileManifest();
+  manifest.coverageReport.evidenceRefs = ['https://example.test/api/catalog'];
+  assert.throws(
+    () => prepareCompilerDerivedArtifact({
+      artifactType: 'SITE_COMPILE_MANIFEST',
+      value: manifest,
+    }),
+    (error) => {
+      assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      assert.doesNotMatch(error.message, /example\.test/u);
+      return true;
+    },
+  );
+});

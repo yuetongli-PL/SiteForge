@@ -11,6 +11,8 @@ import {
 } from '../../infra/io.mjs';
 import {
   buildSiteCapabilityGraphFromCompileManifest,
+  createCapabilityIntake,
+  createCapabilityIntakeQuestionnaire,
   createStaticSiteCompileManifestFromConfig,
   prepareCompilerDerivedArtifact,
   SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
@@ -29,7 +31,7 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
 const HELP = `Usage:
-  node src/entrypoints/sites/site-capability-compile.mjs --site <siteKey|host> [--url <url>] [--intent <intent>] [--previous-source-digest <digest>] [--write-artifacts --out-dir <dir>] [--json]
+  node src/entrypoints/sites/site-capability-compile.mjs --site <siteKey|host> [--url <url>] [--intent <intent>] [--capability <name> ...] [--capabilities <csv>] [--ask-capabilities] [--previous-source-digest <digest>] [--write-artifacts --out-dir <dir>] [--json]
 
 This entrypoint compiles repo-local registry/config descriptors only. It does not
 open websites, run captures, invoke SiteAdapter runtime, call downloader, or
@@ -47,6 +49,8 @@ export function parseArgs(argv) {
   const options = {
     json: false,
     writeArtifacts: false,
+    requestedCapabilities: [],
+    askCapabilities: false,
     outDir: path.join(REPO_ROOT, 'runs', 'sites', 'site-capability-compile'),
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -74,6 +78,21 @@ export function parseArgs(argv) {
         index = read.nextIndex;
         break;
       }
+      case '--capability': {
+        const read = readValue(argv, index, arg);
+        options.requestedCapabilities.push(read.value);
+        index = read.nextIndex;
+        break;
+      }
+      case '--capabilities': {
+        const read = readValue(argv, index, arg);
+        options.requestedCapabilities.push(...read.value.split(',').map((value) => value.trim()).filter(Boolean));
+        index = read.nextIndex;
+        break;
+      }
+      case '--ask-capabilities':
+        options.askCapabilities = true;
+        break;
       case '--previous-source-digest': {
         const read = readValue(argv, index, arg);
         options.previousSourceDigest = read.value;
@@ -99,11 +118,14 @@ export function parseArgs(argv) {
   return options;
 }
 
-function createCompileRequest({ site, url } = {}) {
+function createCompileRequest({ site, url, requestedCapabilities = [] } = {}) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     siteKey: site,
     url,
+    capabilityIntake: createCapabilityIntake({
+      requestedCapabilities,
+    }),
     compileScope: {
       schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
       coverageMode: 'declared_only',
@@ -175,12 +197,99 @@ async function maybeWriteCompilerArtifacts({ outDir, manifest, graphBuild }) {
   };
 }
 
+function createCompileResultBase({ manifest, graphBuild, artifactWrite } = {}) {
+  const coverageSummary = manifest.capabilityCoverageSummary ?? {};
+  return {
+    schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+    command: 'site-capability-compile',
+    descriptorOnly: true,
+    siteId: manifest.siteId,
+    siteKey: manifest.siteKey,
+    compileId: manifest.compileId,
+    sourceDigest: manifest.sourceDigest,
+    incrementalCompile: manifest.incrementalCompile,
+    coverageCompleteness: manifest.coverageReport?.coverageCompleteness ?? null,
+    unknownNodeCount: manifest.coverageReport?.unknownNodeCount ?? null,
+    capabilityCount: manifest.inventories?.capabilities?.length ?? 0,
+    capabilityIntake: manifest.capabilityIntake,
+    capabilityCoverageSummary: coverageSummary,
+    requestedCapabilities: coverageSummary.requestedCapabilities ?? [],
+    missingRequestedCapabilities: coverageSummary.missingRequestedCapabilities ?? [],
+    missingRequestedCapabilityCount: coverageSummary.missingRequestedCapabilityCount ?? 0,
+    capabilityGapStatus: coverageSummary.capabilityGapStatus ?? 'clear',
+    unconfirmedCapabilities: coverageSummary.unconfirmedCapabilities ?? [],
+    targetedCapabilityCount: coverageSummary.targetedCapabilityCount ?? 0,
+    bestEffortUnconfirmedCount: coverageSummary.bestEffortUnconfirmedCount ?? 0,
+    routeCount: graphBuild.graph?.nodes?.filter((node) => node.type === 'RouteNode').length ?? 0,
+    executionPathCount: manifest.inventories?.executionPaths?.length ?? 0,
+    graphVersion: graphBuild.graph.graphVersion,
+    graphValidationResult: graphBuild.validationReport.result,
+    artifactWrite,
+    executionAttempted: false,
+    liveCaptureAttempted: false,
+    siteAdapterInvocationAllowed: false,
+    downloaderInvocationAllowed: false,
+    sessionMaterializationAllowed: false,
+    redactionRequired: true,
+  };
+}
+
+function normalizeCapabilityDescriptor(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) {
+    return null;
+  }
+  return text
+    .replace(/[^a-z0-9._:-]+/gu, '-')
+    .replace(/^-+|-+$/gu, '') || null;
+}
+
+function shouldBlockPlannerHandoffForMissingRequestedCapability({ manifest, explicitIntent } = {}) {
+  const coverageSummary = manifest.capabilityCoverageSummary ?? {};
+  const requested = coverageSummary.requestedCapabilities ?? [];
+  const missing = coverageSummary.missingRequestedCapabilities ?? [];
+  const normalizedIntent = normalizeCapabilityDescriptor(explicitIntent);
+  return Boolean(
+    requested.length > 0
+      && (
+        (normalizedIntent && missing.includes(normalizedIntent))
+        || (
+          !normalizedIntent
+          && missing.length === requested.length
+          && (coverageSummary.targetedCapabilityCount ?? 0) === 0
+        )
+      ),
+  );
+}
+
 export async function runSiteCapabilityCompile(options = {}) {
   if (!options.site && !options.url) {
     throw new Error('--site or --url is required');
   }
+  if (options.askCapabilities) {
+    return {
+      schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+      command: 'site-capability-compile',
+      descriptorOnly: true,
+      inquiryRequired: true,
+      capabilityIntakeQuestionnaire: createCapabilityIntakeQuestionnaire({
+        siteKey: options.site,
+        url: options.url,
+      }),
+      executionAttempted: false,
+      liveCaptureAttempted: false,
+      siteAdapterInvocationAllowed: false,
+      downloaderInvocationAllowed: false,
+      sessionMaterializationAllowed: false,
+      redactionRequired: true,
+    };
+  }
   const manifest = await createStaticSiteCompileManifestFromConfig({
-    request: createCompileRequest({ site: options.site, url: options.url }),
+    request: createCompileRequest({
+      site: options.site,
+      url: options.url,
+      requestedCapabilities: options.requestedCapabilities,
+    }),
     repoRoot: REPO_ROOT,
     previousSourceDigest: options.previousSourceDigest,
   });
@@ -189,6 +298,31 @@ export async function runSiteCapabilityCompile(options = {}) {
     const error = new Error('Compiler-generated graph did not pass validation');
     error.code = 'compiler.graph_build_failed';
     throw error;
+  }
+  const blockedByMissingRequestedCapability = shouldBlockPlannerHandoffForMissingRequestedCapability({
+    manifest,
+    explicitIntent: options.intent,
+  });
+  if (blockedByMissingRequestedCapability) {
+    const artifactWrite = options.writeArtifacts
+      ? await maybeWriteCompilerArtifacts({
+        outDir: options.outDir,
+        manifest,
+        graphBuild,
+      })
+      : undefined;
+    const missingCapability = manifest.capabilityCoverageSummary?.missingRequestedCapabilities?.[0];
+    return {
+      ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
+      normalizedIntent: missingCapability,
+      planStatus: 'blocked',
+      plannerHandoffReady: false,
+      executionPolicyStatus: 'blocked_by_compile_gap',
+      reasonCode: 'compiler.capability_inventory_invalid',
+      capabilityGapBlocksPlannerHandoff: true,
+      layerHandoffAllowed: false,
+      runtimeMaterializationAllowed: false,
+    };
   }
   const firstCapability = manifest.inventories.capabilities[0];
   const normalizedIntent = options.intent ?? firstCapability?.normalizedIntent;
@@ -220,27 +354,11 @@ export async function runSiteCapabilityCompile(options = {}) {
     })
     : undefined;
   return {
-    schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
-    command: 'site-capability-compile',
-    descriptorOnly: true,
-    siteId: manifest.siteId,
-    siteKey: manifest.siteKey,
-    compileId: manifest.compileId,
-    sourceDigest: manifest.sourceDigest,
-    incrementalCompile: manifest.incrementalCompile,
-    graphVersion: graphBuild.graph.graphVersion,
-    graphValidationResult: graphBuild.validationReport.result,
+    ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
     normalizedIntent,
     planStatus: dryRunResult.planStatus,
     plannerHandoffReady: plannerHandoff.governedHandoffReady,
     executionPolicyStatus: executionPolicyDecision.decisionStatus,
-    artifactWrite,
-    executionAttempted: false,
-    liveCaptureAttempted: false,
-    siteAdapterInvocationAllowed: false,
-    downloaderInvocationAllowed: false,
-    sessionMaterializationAllowed: false,
-    redactionRequired: true,
   };
 }
 
@@ -254,6 +372,10 @@ async function main() {
   const result = await runSiteCapabilityCompile(options);
   if (options.json) {
     writeJsonStdout(result);
+    return;
+  }
+  if (result.capabilityIntakeQuestionnaire) {
+    process.stdout.write(`Capability intake required for ${options.site ?? options.url}; candidates=${result.capabilityIntakeQuestionnaire.candidateCapabilities.join(',')}\n`);
     return;
   }
   process.stdout.write(`Compiled ${result.siteKey} -> ${result.graphValidationResult}; plan=${result.planStatus}\n`);

@@ -6,6 +6,9 @@ import {
 import {
   assertNoCompilerSensitiveMaterial,
 } from './validator.mjs';
+import {
+  capabilityIntakeStatusForCapability,
+} from './capability-intake.mjs';
 
 function cleanSegment(value, fallback = 'unknown') {
   const text = String(value ?? fallback).trim().toLowerCase();
@@ -286,6 +289,7 @@ export function createCapabilityInventory({
   capabilities = [],
   capabilityConfig = {},
   registrySite = {},
+  capabilityIntake = null,
 } = {}) {
   const siteSegment = cleanSegment(siteKey ?? siteId, 'site');
   const inventory = capabilities.map((capability) => {
@@ -322,6 +326,9 @@ export function createCapabilityInventory({
       testEvidenceRefs: ['test:site-capability-compiler-executor'],
       confidence: capability.confidence ?? 0.8,
       freshness: 'repo-local',
+      intakeStatus: capabilityIntakeStatusForCapability(capability, capabilityIntake),
+      targetedByCapabilityIntake: capabilityIntakeStatusForCapability(capability, capabilityIntake) === 'requested',
+      unconfirmedCoveragePolicy: capabilityIntake?.unconfirmedCapabilityPolicy ?? 'best_effort_full_coverage',
       redactionRequired: true,
     };
   });

@@ -3,6 +3,7 @@
 const DEFINITIONS = Object.freeze({
   'compiler.request_invalid': { retryable: false, cooldownRequired: false, manualInterventionRequired: true, degradable: false, artifactWriteAllowed: false, plannerHandoffAllowed: false, layerHandoffAllowed: false },
   'compiler.scope_invalid': { retryable: false, cooldownRequired: false, manualInterventionRequired: true, degradable: false, artifactWriteAllowed: false, plannerHandoffAllowed: false, layerHandoffAllowed: false },
+  'compiler.capability_intake_invalid': { retryable: false, cooldownRequired: false, manualInterventionRequired: true, degradable: false, artifactWriteAllowed: false, plannerHandoffAllowed: false, layerHandoffAllowed: false },
   'compiler.scope_blocked': { retryable: true, cooldownRequired: true, manualInterventionRequired: true, degradable: true, artifactWriteAllowed: true, plannerHandoffAllowed: false, layerHandoffAllowed: false },
   'compiler.source_unavailable': { retryable: true, cooldownRequired: false, manualInterventionRequired: false, degradable: true, artifactWriteAllowed: true, plannerHandoffAllowed: false, layerHandoffAllowed: false },
   'compiler.source_not_redacted': { retryable: false, cooldownRequired: false, manualInterventionRequired: true, degradable: false, artifactWriteAllowed: false, plannerHandoffAllowed: false, layerHandoffAllowed: false },

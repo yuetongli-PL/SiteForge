@@ -9,6 +9,7 @@ import {
 const REQUIRED_CODES = [
   'compiler.request_invalid',
   'compiler.scope_invalid',
+  'compiler.capability_intake_invalid',
   'compiler.raw_sensitive_material_rejected',
   'compiler.manifest_invalid',
   'compiler.coverage_incomplete',

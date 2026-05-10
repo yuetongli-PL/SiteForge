@@ -40,11 +40,25 @@ export const SITE_COMPILE_SOURCE_TYPES = Object.freeze([
   'dry-run-trace',
 ]);
 
+export const CAPABILITY_INTAKE_MODES = Object.freeze([
+  'user_requested',
+  'inquiry_required',
+  'mixed',
+]);
+
+export const UNCONFIRMED_CAPABILITY_POLICIES = Object.freeze([
+  'best_effort_full_coverage',
+  'record_unknown_until_confirmed',
+]);
+
 const COMPILER_SCHEMA_NAMES = Object.freeze([
   'SiteCompileRequest',
   'SiteCompileScope',
   'SiteCompileManifest',
   'SiteCompileSourceRef',
+  'CapabilityIntake',
+  'CapabilityIntakeQuestionnaire',
+  'CapabilityCoverageSummary',
   'CompilerConfigSource',
   'CompilerSourceDigest',
   'IncrementalCompileSummary',

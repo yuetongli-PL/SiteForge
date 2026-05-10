@@ -18,6 +18,9 @@ const REQUIRED_SCHEMA_NAMES = [
   'SiteCompileScope',
   'SiteCompileManifest',
   'SiteCompileSourceRef',
+  'CapabilityIntake',
+  'CapabilityIntakeQuestionnaire',
+  'CapabilityCoverageSummary',
   'NodeInventory',
   'CapabilityInventory',
   'ExecutionPathInventory',
@@ -71,6 +74,21 @@ function createCompileRequest(overrides = {}) {
   };
 }
 
+function createCapabilityIntake(overrides = {}) {
+  return {
+    schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+    intakeMode: 'user_requested',
+    inquiryRequired: false,
+    requestedCapabilities: ['open-page'],
+    candidateCapabilities: ['open-page', 'download-content'],
+    unconfirmedCapabilities: ['download-content'],
+    unconfirmedCapabilityPolicy: 'best_effort_full_coverage',
+    targetedCaptureStrategy: 'requested_first_then_best_effort_unconfirmed',
+    redactionRequired: true,
+    ...overrides,
+  };
+}
+
 function createCompileManifest(overrides = {}) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
@@ -114,6 +132,15 @@ function createCompileManifest(overrides = {}) {
       coverageCompleteness: 'partial',
       unknownNodeCount: 0,
       blockedReasonCodes: [],
+      capabilityCoverageSummary: {
+        schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+        requestedCapabilities: ['open-page'],
+        unconfirmedCapabilities: ['download-content'],
+        targetedCapabilityCount: 1,
+        bestEffortUnconfirmedCount: 1,
+        unconfirmedCapabilityPolicy: 'best_effort_full_coverage',
+        redactionRequired: true,
+      },
     },
     redactionRequired: true,
     ...overrides,
@@ -136,9 +163,48 @@ test('SiteCompileRequest and SiteCompileScope accept minimal descriptor-only inp
   assert.equal(assertSiteCompileScopeCompatible(createCompileScope()), true);
   assert.equal(assertSiteCompileRequestCompatible(createCompileRequest()), true);
   assert.equal(assertSiteCompileRequestCompatible(createCompileRequest({
+    capabilityIntake: createCapabilityIntake(),
+  })), true);
+  assert.equal(assertSiteCompileRequestCompatible(createCompileRequest({
     siteId: undefined,
     siteKey: undefined,
   })), true);
+});
+
+test('CapabilityIntake supports targeted requested capabilities and rejects unsafe inputs', () => {
+  assert.equal(assertSiteCompileRequestCompatible(createCompileRequest({
+    capabilityIntake: createCapabilityIntake({
+      requestedCapabilities: ['open-page', 'download-content'],
+      unconfirmedCapabilities: [],
+    }),
+  })), true);
+
+  assert.throws(
+    () => assertSiteCompileRequestCompatible(createCompileRequest({
+      capabilityIntake: createCapabilityIntake({
+        requestedCapabilities: ['https://example.test/public/path'],
+      }),
+    })),
+    (error) => error.code === 'compiler.capability_intake_invalid',
+  );
+
+  assert.throws(
+    () => assertSiteCompileRequestCompatible(createCompileRequest({
+      capabilityIntake: createCapabilityIntake({
+        browserProfilePath: 'C:/Users/example/profile',
+      }),
+    })),
+    (error) => error.code === 'compiler.raw_sensitive_material_rejected',
+  );
+
+  assert.throws(
+    () => assertSiteCompileRequestCompatible(createCompileRequest({
+      capabilityIntake: createCapabilityIntake({
+        redactionRequired: false,
+      }),
+    })),
+    /CapabilityIntake redactionRequired must be true/u,
+  );
 });
 
 test('SiteCompileRequest and SiteCompileScope reject invalid scope semantics', () => {
@@ -256,6 +322,62 @@ test('Compiler validators reject raw sensitive fields and values without echoing
   }
 });
 
+test('Compiler validators reject unsafe source and evidence refs', () => {
+  const unsafeSourceRefs = [
+    'https://example.test/public/manifest.json',
+    'runs/synthetic/manifest.json',
+    'C:/Users/example/manifest.json',
+    'artifact:layer-summary?access_token=synthetic',
+    'artifact:user@example.test',
+    'artifact:192.0.2.44',
+    'artifact:run-handler.mjs',
+  ];
+
+  for (const unsafeRef of unsafeSourceRefs) {
+    assert.throws(
+      () => assertSiteCompileManifestCompatible(createCompileManifest({
+        sourceRefs: [
+          {
+            type: 'redacted-artifact',
+            ref: unsafeRef,
+            digestAlgorithm: 'sha256',
+            digest: SYNTHETIC_DIGEST_A,
+            sourceDigest: SYNTHETIC_DIGEST_A,
+            redactionRequired: true,
+          },
+        ],
+      })),
+      (error) => {
+        assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+        assert.doesNotMatch(error.message, /access_token|example\.test|192\.0\.2\.44/u);
+        return true;
+      },
+      `${unsafeRef} should be rejected`,
+    );
+  }
+
+  assert.throws(
+    () => assertSiteCompileManifestCompatible(createCompileManifest({
+      coverageReport: {
+        coverageCompleteness: 'partial',
+        unknownNodeCount: 0,
+        blockedReasonCodes: [],
+        evidenceRefs: ['https://example.test/api/catalog'],
+        capabilityCoverageSummary: {
+          schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+          requestedCapabilities: ['open-page'],
+          unconfirmedCapabilities: ['download-content'],
+          targetedCapabilityCount: 1,
+          bestEffortUnconfirmedCount: 1,
+          unconfirmedCapabilityPolicy: 'best_effort_full_coverage',
+          redactionRequired: true,
+        },
+      },
+    })),
+    (error) => error.code === 'compiler.raw_sensitive_material_rejected',
+  );
+});
+
 test('SiteCompileManifest requires versions, source refs, inventories, coverage, and redaction', () => {
   assert.equal(assertSiteCompileManifestCompatible(createCompileManifest()), true);
 
@@ -290,6 +412,46 @@ test('SiteCompileManifest requires versions, source refs, inventories, coverage,
       },
     })),
     /unknownNodeCount must be a non-negative integer/u,
+  );
+  assert.throws(
+    () => assertSiteCompileManifestCompatible(createCompileManifest({
+      coverageReport: {
+        coverageCompleteness: 'partial',
+        unknownNodeCount: 0,
+        blockedReasonCodes: [],
+        capabilityCoverageSummary: {
+          schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+          requestedCapabilities: ['open-page'],
+          unconfirmedCapabilities: ['download-content'],
+          targetedCapabilityCount: -1,
+          bestEffortUnconfirmedCount: 1,
+          unconfirmedCapabilityPolicy: 'best_effort_full_coverage',
+          redactionRequired: true,
+        },
+      },
+    })),
+    /targetedCapabilityCount must be a non-negative integer/u,
+  );
+  assert.throws(
+    () => assertSiteCompileManifestCompatible(createCompileManifest({
+      coverageReport: {
+        coverageCompleteness: 'partial',
+        unknownNodeCount: 1,
+        blockedReasonCodes: ['compiler.coverage_incomplete'],
+        capabilityCoverageSummary: {
+          schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+          requestedCapabilities: ['download-content'],
+          missingRequestedCapabilities: ['download-content'],
+          missingRequestedCapabilityCount: 0,
+          targetedCapabilityCount: 0,
+          bestEffortUnconfirmedCount: 0,
+          capabilityGapStatus: 'clear',
+          unconfirmedCapabilityPolicy: 'best_effort_full_coverage',
+          redactionRequired: true,
+        },
+      },
+    })),
+    /missingRequestedCapabilityCount must match/u,
   );
 });
 

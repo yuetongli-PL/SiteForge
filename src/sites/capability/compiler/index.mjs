@@ -1,6 +1,7 @@
 // @ts-check
 
 export * from './schema.mjs';
+export * from './capability-intake.mjs';
 export * from './digest.mjs';
 export * from './validator.mjs';
 export * from './config-loader.mjs';

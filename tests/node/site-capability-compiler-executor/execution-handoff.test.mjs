@@ -90,3 +90,39 @@ test('coverage delta rejects complete coverage promotion without evidence', () =
     /complete coverage requires evidence/u,
   );
 });
+
+test('execution contracts reject unsafe artifact and evidence refs', () => {
+  assert.throws(
+    () => createLayerExecutionHandoffDescriptor({
+      executionId: 'execution:synthetic',
+      capabilityPlanRef: 'https://example.test/plan.json',
+      graphVersion: 'graph',
+      plannerVersion: 'planner',
+      layerCompatibilityVersion: 'layer',
+    }),
+    (error) => error.code === 'execution.raw_sensitive_material_rejected',
+  );
+
+  assert.throws(
+    () => createExecutionFeedbackFromLayerReceipt({
+      executionId: 'execution:synthetic',
+      executionStatus: 'completed',
+      artifactRefs: ['artifact:user@example.test'],
+    }),
+    (error) => error.code === 'execution.raw_sensitive_material_rejected',
+  );
+
+  const feedback = createExecutionFeedbackFromLayerReceipt({
+    executionId: 'execution:synthetic',
+    executionStatus: 'completed',
+    artifactRefs: ['artifact:synthetic'],
+  });
+  assert.throws(
+    () => createCoverageDeltaFromExecutionFeedback({
+      executionFeedback: feedback,
+      coverageAfter: 'partial',
+      evidenceRefs: ['C:/Users/example/coverage-delta.json'],
+    }),
+    (error) => error.code === 'execution.raw_sensitive_material_rejected',
+  );
+});

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   assertCompileCoverageReportConsistent,
   assertSiteCompileManifestCompatible,
+  createCapabilityIntake,
   createStaticSiteCompileManifest,
 } from '../../../src/sites/capability/compiler/index.mjs';
 import {
@@ -43,6 +44,45 @@ test('static compiler records unknown report instead of overclaiming empty capab
   assert.equal(manifest.unknownNodeReport.unknownNodes.length, 1);
   assert.deepEqual(manifest.coverageReport.blockedReasonCodes, ['compiler.coverage_incomplete']);
   assert.equal(assertCompileCoverageReportConsistent(manifest.compileScope, manifest.coverageReport), true);
+});
+
+test('static compiler prioritizes requested capabilities and records unconfirmed coverage', () => {
+  const manifest = createStaticSiteCompileManifest({
+    request: createCompileRequest({
+      capabilityIntake: createCapabilityIntake({
+        requestedCapabilities: ['open-page', 'download-content'],
+        candidateCapabilities: ['open-page', 'download-content', 'search'],
+      }),
+    }),
+    registrySite: {
+      siteKey: 'synthetic.example',
+      adapterId: 'synthetic-adapter',
+    },
+    capabilityConfig: createSyntheticCapabilityConfig(),
+  });
+
+  assert.equal(assertSiteCompileManifestCompatible(manifest), true);
+  assert.deepEqual(manifest.capabilityIntake.requestedCapabilities, ['open-page', 'download-content']);
+  assert.deepEqual(manifest.capabilityIntake.unconfirmedCapabilities, ['search']);
+  assert.deepEqual(manifest.capabilityCoverageSummary.missingRequestedCapabilities, ['download-content']);
+  assert.equal(manifest.capabilityCoverageSummary.missingRequestedCapabilityCount, 1);
+  assert.equal(manifest.capabilityCoverageSummary.capabilityGapStatus, 'missing_requested_capability');
+  assert.equal(manifest.capabilityCoverageSummary.targetedCapabilityCount, 1);
+  assert.equal(manifest.capabilityCoverageSummary.bestEffortUnconfirmedCount, 1);
+  assert.deepEqual(
+    manifest.coverageReport.capabilityCoverageSummary.missingRequestedCapabilities,
+    ['download-content'],
+  );
+  assert.equal(manifest.coverageReport.capabilityCoverageSummary.targetedCapabilityCount, 1);
+  assert.equal(manifest.inventories.capabilities[0].intakeStatus, 'requested');
+  assert.equal(manifest.inventories.capabilities[0].targetedByCapabilityIntake, true);
+  assert.ok(
+    manifest.unknownNodeReport.unknownNodes.some((node) => (
+      node.requestedCapability === 'download-content'
+        && node.reasonCode === 'compiler.capability_inventory_invalid'
+    )),
+  );
+  assert.deepEqual(manifest.coverageReport.blockedReasonCodes, ['compiler.coverage_incomplete']);
 });
 
 test('static compiler rejects raw sensitive static source material before manifest output', () => {

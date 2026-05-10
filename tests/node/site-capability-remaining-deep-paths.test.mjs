@@ -508,6 +508,7 @@ test('Layer-owned runtime consumer accepts Layer receipt without direct task exe
 
   assert.equal(assertLayerOwnedRuntimeConsumerResultCompatible(result), true);
   assert.equal(result.consumerOwner, 'site-capability-layer');
+  assert.equal(result.runtimeExecuted, false);
   assert.equal(result.runtimeTaskExecutedByConsumer, false);
   assert.equal(result.directDownloaderInvocationAllowed, false);
   assert.equal(result.directSiteAdapterInvocationAllowed, false);

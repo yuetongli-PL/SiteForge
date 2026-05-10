@@ -62,6 +62,11 @@ export function createExecutionFeedbackFromLayerReceipt(options = {}) {
     reasonCodes,
     artifactRefs,
     timingSummary,
+    dryRun: true,
+    runtimeExecuted: false,
+    directDownloaderInvocationAllowed: false,
+    directSiteAdapterInvocationAllowed: false,
+    sessionViewMaterializationAllowed: false,
     redactionRequired: true,
   };
   assertExecutionFeedbackCompatible(feedback);
@@ -93,6 +98,11 @@ export function createCoverageDeltaFromExecutionFeedback(options = {}) {
     affectedRouteRefs,
     evidenceRefs,
     reasonCodes,
+    dryRun: true,
+    runtimeExecuted: false,
+    directDownloaderInvocationAllowed: false,
+    directSiteAdapterInvocationAllowed: false,
+    sessionViewMaterializationAllowed: false,
     redactionRequired: true,
   };
   assertCoverageDeltaCompatible(delta);

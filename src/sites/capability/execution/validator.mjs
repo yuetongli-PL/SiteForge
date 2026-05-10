@@ -192,6 +192,18 @@ function assertDisabledRuntimeFlags(value, name) {
   }
 }
 
+function assertLayerDryRunFeedbackFlags(value, name) {
+  if (
+    value.dryRun !== true
+    || value.runtimeExecuted !== false
+    || value.directDownloaderInvocationAllowed !== false
+    || value.directSiteAdapterInvocationAllowed !== false
+    || value.sessionViewMaterializationAllowed !== false
+  ) {
+    fail(`${name} must describe dry-run Layer feedback without direct runtime execution`, 'execution.layer_handoff_unavailable');
+  }
+}
+
 export function assertExecutionManifestCompatible(manifest) {
   assertPlainObject(manifest, 'ExecutionManifest');
   assertSchemaVersion(manifest.schemaVersion, 'ExecutionManifest');
@@ -239,6 +251,7 @@ export function assertExecutionFeedbackCompatible(feedback) {
   if (feedback.redactionRequired !== true) {
     fail('ExecutionFeedback redactionRequired must be true', 'execution.redaction_required');
   }
+  assertLayerDryRunFeedbackFlags(feedback, 'ExecutionFeedback');
   return true;
 }
 
@@ -258,5 +271,6 @@ export function assertCoverageDeltaCompatible(delta) {
   if (delta.coverageAfter === 'complete_within_scope' && delta.evidenceRefs.length === 0) {
     fail('CoverageDelta complete coverage requires evidence', 'execution.coverage_delta_invalid');
   }
+  assertLayerDryRunFeedbackFlags(delta, 'CoverageDelta');
   return true;
 }

@@ -1,9 +1,16 @@
 // @ts-check
 
+import path from 'node:path';
+
+import { writeTextFile } from '../../../infra/io.mjs';
 import {
   normalizeLifecycleEvent,
   assertLifecycleEventProducerObservability,
+  writeLifecycleEventArtifact,
 } from '../lifecycle-events.mjs';
+import {
+  prepareExecutionArtifactJsonWithAudit,
+} from './artifact-guard.mjs';
 import {
   assertExecutionPolicyDecisionCompatible,
 } from './policy-gate.mjs';
@@ -37,6 +44,31 @@ function normalizeText(value) {
   return text || undefined;
 }
 
+function auditSummaryFromJson(auditJson) {
+  const audit = JSON.parse(auditJson);
+  return {
+    redactedPathCount: Array.isArray(audit.redactedPaths) ? audit.redactedPaths.length : 0,
+    findingCount: Array.isArray(audit.findings) ? audit.findings.length : 0,
+  };
+}
+
+async function writeExecutionArtifactPair({
+  outDir,
+  fileName,
+  value,
+} = {}) {
+  const prepared = prepareExecutionArtifactJsonWithAudit(value);
+  const artifactFile = fileName;
+  const auditFile = fileName.replace(/\.json$/u, '.audit.json');
+  await writeTextFile(path.join(outDir, artifactFile), prepared.artifactJson);
+  await writeTextFile(path.join(outDir, auditFile), prepared.auditJson);
+  return {
+    artifactFile,
+    auditFile,
+    redactionSummary: auditSummaryFromJson(prepared.auditJson),
+  };
+}
+
 export function assertLayerOwnedRuntimeConsumerResultCompatible(result = {}) {
   if (result.schemaVersion !== SITE_CAPABILITY_EXECUTION_SCHEMA_VERSION) {
     fail('LayerOwnedRuntimeConsumerResult schemaVersion is not compatible', 'execution.version_incompatible');
@@ -50,6 +82,7 @@ export function assertLayerOwnedRuntimeConsumerResultCompatible(result = {}) {
   if (
     result.consumerOwner !== 'site-capability-layer'
     || result.layerReceiptConsumed !== true
+    || result.runtimeExecuted !== false
     || result.runtimeTaskExecutedByConsumer !== false
     || result.directDownloaderInvocationAllowed !== false
     || result.directSiteAdapterInvocationAllowed !== false
@@ -148,6 +181,7 @@ export function createLayerOwnedRuntimeConsumerResult({
     layerCompatibilityVersion: handoffDescriptor.layerCompatibilityVersion,
     policyDecisionStatus: policyDecision.decisionStatus,
     layerReceiptConsumed: true,
+    runtimeExecuted: false,
     runtimeTaskExecutedByConsumer: false,
     directDownloaderInvocationAllowed: false,
     directSiteAdapterInvocationAllowed: false,
@@ -162,4 +196,86 @@ export function createLayerOwnedRuntimeConsumerResult({
   };
   assertLayerOwnedRuntimeConsumerResultCompatible(result);
   return result;
+}
+
+export async function writeLayerOwnedRuntimeFeedbackArtifacts({
+  outDir,
+  result,
+} = {}) {
+  if (!outDir) {
+    fail('Layer-owned runtime feedback artifact outDir is required', 'execution.artifact_write_invalid');
+  }
+  assertLayerOwnedRuntimeConsumerResultCompatible(result);
+  const consumerResult = { ...result };
+  delete consumerResult.runtimeFeedbackArtifactWrite;
+
+  const consumer = await writeExecutionArtifactPair({
+    outDir,
+    fileName: 'layer-runtime-consumer-result.json',
+    value: consumerResult,
+  });
+  const feedback = await writeExecutionArtifactPair({
+    outDir,
+    fileName: 'layer-runtime-execution-feedback.json',
+    value: result.executionFeedback,
+  });
+  const coverageDelta = await writeExecutionArtifactPair({
+    outDir,
+    fileName: 'layer-runtime-coverage-delta.json',
+    value: result.coverageDelta,
+  });
+  const coverageDeltaQueue = await writeExecutionArtifactPair({
+    outDir,
+    fileName: 'layer-runtime-coverage-delta-queue.json',
+    value: result.coverageDeltaQueueEntry,
+  });
+  const lifecycleEventFile = 'layer-runtime-lifecycle-event.json';
+  const lifecycleEventAuditFile = 'layer-runtime-lifecycle-event.audit.json';
+  const lifecycleEventWrite = await writeLifecycleEventArtifact(result.lifecycleEvent, {
+    eventPath: path.join(outDir, lifecycleEventFile),
+    auditPath: path.join(outDir, lifecycleEventAuditFile),
+  });
+  const writeSummary = {
+    schemaVersion: SITE_CAPABILITY_EXECUTION_SCHEMA_VERSION,
+    executionVersion: SITE_CAPABILITY_EXECUTION_VERSION,
+    artifactType: 'LAYER_RUNTIME_FEEDBACK_ARTIFACTS',
+    executionId: result.executionId,
+    consumerOwner: 'site-capability-layer',
+    dryRun: true,
+    runtimeExecuted: false,
+    runtimeTaskExecutedByConsumer: false,
+    directDownloaderInvocationAllowed: false,
+    directSiteAdapterInvocationAllowed: false,
+    sessionViewMaterializationAllowed: false,
+    artifactFiles: [
+      consumer.artifactFile,
+      feedback.artifactFile,
+      coverageDelta.artifactFile,
+      coverageDeltaQueue.artifactFile,
+      lifecycleEventFile,
+    ],
+    auditFiles: [
+      consumer.auditFile,
+      feedback.auditFile,
+      coverageDelta.auditFile,
+      coverageDeltaQueue.auditFile,
+      lifecycleEventAuditFile,
+    ],
+    executionFeedbackArtifactFile: feedback.artifactFile,
+    coverageDeltaArtifactFile: coverageDelta.artifactFile,
+    coverageDeltaQueueArtifactFile: coverageDeltaQueue.artifactFile,
+    lifecycleEventArtifactFile: lifecycleEventFile,
+    redactionSummaries: {
+      consumerResult: consumer.redactionSummary,
+      executionFeedback: feedback.redactionSummary,
+      coverageDelta: coverageDelta.redactionSummary,
+      coverageDeltaQueue: coverageDeltaQueue.redactionSummary,
+      lifecycleEvent: lifecycleEventWrite.redactionSummary,
+    },
+    redactionRequired: true,
+    redactionApplied: true,
+    writeAllowed: true,
+  };
+  assertNoExecutionSensitiveMaterial(writeSummary);
+  return writeSummary;
 }

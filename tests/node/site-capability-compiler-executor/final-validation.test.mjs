@@ -40,6 +40,7 @@ test('compiler-executor final docs and contract surfaces exist', () => {
     'src/sites/capability/execution/artifact-guard.mjs',
     'src/sites/capability/execution/policy-gate.mjs',
     'src/sites/capability/execution/coverage-delta-queue.mjs',
+    'src/sites/capability/execution/layer-runtime-consumer.mjs',
     'src/entrypoints/sites/site-capability-compile.mjs',
   ]) {
     assert.equal(existsSync(join(root, path)), true, `${path} should exist`);
@@ -87,6 +88,7 @@ test('compiler/execution modules do not import runtime downloader session browse
     'src/sites/capability/execution/layer-handoff.mjs',
     'src/sites/capability/execution/policy-gate.mjs',
     'src/sites/capability/execution/coverage-delta-queue.mjs',
+    'src/sites/capability/execution/layer-runtime-consumer.mjs',
     'src/entrypoints/sites/site-capability-compile.mjs',
   ]) {
     const source = text(path);

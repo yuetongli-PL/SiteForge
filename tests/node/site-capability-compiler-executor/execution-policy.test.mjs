@@ -70,6 +70,14 @@ test('CoverageDelta artifact queue prepares redacted descriptor writes', () => {
 
   assert.equal(entry.queueMode, 'redacted_descriptor_queue');
   assert.equal(entry.descriptorOnly, true);
+  assert.equal(feedback.dryRun, true);
+  assert.equal(feedback.runtimeExecuted, false);
+  assert.equal(feedback.directDownloaderInvocationAllowed, false);
+  assert.equal(feedback.directSiteAdapterInvocationAllowed, false);
+  assert.equal(delta.dryRun, true);
+  assert.equal(delta.runtimeExecuted, false);
+  assert.equal(delta.directDownloaderInvocationAllowed, false);
+  assert.equal(delta.directSiteAdapterInvocationAllowed, false);
   assert.equal(prepared.redactionApplied, true);
   assert.doesNotMatch(prepared.artifactJson, /SESSDATA|Authorization|browserProfilePath|userDataDir/u);
 });

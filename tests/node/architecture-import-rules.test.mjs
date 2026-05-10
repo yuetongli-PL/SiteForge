@@ -186,6 +186,7 @@ const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/sites/capability/api-candidates.mjs',
   'src/sites/capability/api-discovery.mjs',
   'src/sites/capability/data-flow-evidence.mjs',
+  'src/sites/capability/execution/layer-runtime-consumer.mjs',
   'src/sites/capability/lifecycle-events.mjs',
   'src/sites/capability/planner/plan-artifact.mjs',
   'src/sites/capability/planner-policy-handoff.mjs',
@@ -275,6 +276,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/sites/capability/api-candidates.mjs', 8],
   ['src/sites/capability/api-discovery.mjs', 3],
   ['src/sites/capability/data-flow-evidence.mjs', 2],
+  ['src/sites/capability/execution/layer-runtime-consumer.mjs', 3],
   ['src/sites/capability/lifecycle-events.mjs', 3],
   ['src/sites/capability/planner-policy-handoff.mjs', 2],
   ['src/sites/capability/site-capability-graph-artifacts.mjs', 3],
@@ -441,7 +443,7 @@ function collectHighRiskRuntimeArtifactWriteGuardFailures(fileRelativePath, sour
 
 function hasRedactionGuardedArtifactEvidence(sourceText) {
   ARTIFACT_WRITE_SINK_PATTERN.lastIndex = 0;
-  return /(?:prepareRedactedArtifactJsonWithAudit|prepareCompilerDerivedArtifact)\(/u.test(sourceText)
+  return /(?:prepareRedactedArtifactJsonWithAudit|prepareCompilerDerivedArtifact|prepareExecutionArtifactJsonWithAudit)\(/u.test(sourceText)
     && /\b(?:redactionAudit|RedactionAudit|auditPath|auditJson)\b/u.test(sourceText)
     && ARTIFACT_WRITE_SINK_PATTERN.test(sourceText);
 }

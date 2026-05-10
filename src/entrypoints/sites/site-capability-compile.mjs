@@ -26,6 +26,7 @@ import {
   createExecutionPolicyDecision,
   createLayerExecutionHandoffDescriptor,
   createLayerOwnedRuntimeConsumerResult,
+  writeLayerOwnedRuntimeFeedbackArtifacts,
 } from '../../sites/capability/execution/index.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -268,6 +269,7 @@ function createLayerRuntimeConsumerArtifactSummary(layerRuntimeConsumerResult) {
     layerCompatibilityVersion: layerRuntimeConsumerResult.layerCompatibilityVersion,
     policyDecisionStatus: layerRuntimeConsumerResult.policyDecisionStatus,
     layerReceiptConsumed: layerRuntimeConsumerResult.layerReceiptConsumed,
+    runtimeExecuted: layerRuntimeConsumerResult.runtimeExecuted,
     runtimeTaskExecutedByConsumer: layerRuntimeConsumerResult.runtimeTaskExecutedByConsumer,
     directDownloaderInvocationAllowed: layerRuntimeConsumerResult.directDownloaderInvocationAllowed,
     directSiteAdapterInvocationAllowed: layerRuntimeConsumerResult.directSiteAdapterInvocationAllowed,
@@ -276,6 +278,12 @@ function createLayerRuntimeConsumerArtifactSummary(layerRuntimeConsumerResult) {
     executionFeedback: {
       feedbackSource: layerRuntimeConsumerResult.executionFeedback?.feedbackSource,
       executionStatus: layerRuntimeConsumerResult.executionFeedback?.executionStatus,
+      dryRun: layerRuntimeConsumerResult.executionFeedback?.dryRun,
+      runtimeExecuted: layerRuntimeConsumerResult.executionFeedback?.runtimeExecuted,
+      directDownloaderInvocationAllowed:
+        layerRuntimeConsumerResult.executionFeedback?.directDownloaderInvocationAllowed,
+      directSiteAdapterInvocationAllowed:
+        layerRuntimeConsumerResult.executionFeedback?.directSiteAdapterInvocationAllowed,
       reasonCodes: layerRuntimeConsumerResult.executionFeedback?.reasonCodes ?? [],
       artifactRefCount: layerRuntimeConsumerResult.executionFeedback?.artifactRefs?.length ?? 0,
     },
@@ -287,6 +295,12 @@ function createLayerRuntimeConsumerArtifactSummary(layerRuntimeConsumerResult) {
       affectedCapabilityRefCount: layerRuntimeConsumerResult.coverageDelta?.affectedCapabilityRefs?.length ?? 0,
       affectedRouteRefCount: layerRuntimeConsumerResult.coverageDelta?.affectedRouteRefs?.length ?? 0,
       evidenceRefCount: layerRuntimeConsumerResult.coverageDelta?.evidenceRefs?.length ?? 0,
+      dryRun: layerRuntimeConsumerResult.coverageDelta?.dryRun,
+      runtimeExecuted: layerRuntimeConsumerResult.coverageDelta?.runtimeExecuted,
+      directDownloaderInvocationAllowed:
+        layerRuntimeConsumerResult.coverageDelta?.directDownloaderInvocationAllowed,
+      directSiteAdapterInvocationAllowed:
+        layerRuntimeConsumerResult.coverageDelta?.directSiteAdapterInvocationAllowed,
     },
     coverageDeltaArtifactWrite: {
       artifactType: layerRuntimeConsumerResult.coverageDeltaArtifactWrite?.artifactType,
@@ -302,6 +316,16 @@ function createLayerRuntimeConsumerArtifactSummary(layerRuntimeConsumerResult) {
       traceId: layerRuntimeConsumerResult.lifecycleEvent?.traceId,
       correlationId: layerRuntimeConsumerResult.lifecycleEvent?.correlationId,
     },
+    runtimeFeedbackArtifactWrite: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite
+      ? {
+        artifactType: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite.artifactType,
+        artifactFiles: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite.artifactFiles ?? [],
+        auditFiles: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite.auditFiles ?? [],
+        redactionRequired: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite.redactionRequired,
+        redactionApplied: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite.redactionApplied,
+        writeAllowed: layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite.writeAllowed,
+      }
+      : undefined,
     redactionRequired: true,
   };
 }
@@ -341,6 +365,7 @@ function createCompileResultSummaryArtifactValue({
     siteSpecificEvidenceSummary,
     boundaries: {
       executionAttempted: result.executionAttempted,
+      runtimeExecuted: result.runtimeExecuted ?? false,
       liveCaptureAttempted: result.liveCaptureAttempted,
       siteAdapterInvocationAllowed: result.siteAdapterInvocationAllowed,
       downloaderInvocationAllowed: result.downloaderInvocationAllowed,
@@ -356,6 +381,18 @@ function createCompileResultSummaryArtifactValue({
       auditRefs: result.artifactWrite?.auditRefs ?? [],
     },
     redactionRequired: true,
+  };
+}
+
+function compileArtifactWriteFromLayerRuntimeFeedback(write) {
+  if (!write) {
+    return undefined;
+  }
+  return {
+    artifactRefs: write.artifactFiles ?? [],
+    auditRefs: write.auditFiles ?? [],
+    redactionRequired: true,
+    redactionApplied: true,
   };
 }
 
@@ -416,6 +453,7 @@ function createCompileResultBase({ manifest, graphBuild, artifactWrite } = {}) {
     graphValidationResult: graphBuild.validationReport.result,
     artifactWrite,
     executionAttempted: false,
+    runtimeExecuted: false,
     liveCaptureAttempted: false,
     siteAdapterInvocationAllowed: false,
     downloaderInvocationAllowed: false,
@@ -596,6 +634,15 @@ export async function runSiteCapabilityCompile(options = {}) {
       artifactWrite,
     })
     : undefined;
+  const layerRuntimeFeedbackArtifactWrite = options.writeArtifacts && layerRuntimeConsumerResult
+    ? await writeLayerOwnedRuntimeFeedbackArtifacts({
+      outDir: options.outDir,
+      result: layerRuntimeConsumerResult,
+    })
+    : undefined;
+  if (layerRuntimeConsumerResult && layerRuntimeFeedbackArtifactWrite) {
+    layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite = layerRuntimeFeedbackArtifactWrite;
+  }
   const result = {
     ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
     normalizedIntent,
@@ -606,6 +653,10 @@ export async function runSiteCapabilityCompile(options = {}) {
     ...(layerRuntimeConsumerResult ? { layerRuntimeConsumerResult } : {}),
   };
   if (options.writeArtifacts) {
+    result.artifactWrite = mergeArtifactWrite(
+      result.artifactWrite,
+      compileArtifactWriteFromLayerRuntimeFeedback(layerRuntimeFeedbackArtifactWrite),
+    );
     const siteSpecificEvidenceSummary = await createSiteSpecificEvidenceSummaryForManifest(manifest);
     const summaryWrite = await writeCompileResultSummaryArtifact({
       outDir: options.outDir,

@@ -438,6 +438,7 @@ test('unified CLI facade routes domain command tree', () => {
   const cases = [
     [['site', 'doctor', 'https://example.com'], 'site-doctor.mjs', ['https://example.com']],
     [['site', 'capability-compile', '--site', 'qidian', '--json'], 'site-capability-compile.mjs', ['--site', 'qidian', '--json']],
+    [['site', 'recompile-preview', '--json'], 'site-recompile-preview-summary.mjs', ['--json']],
     [['site', 'login', 'https://example.com', '--json'], 'site-login.mjs', ['https://example.com', '--json']],
     [['site', 'keepalive', 'https://example.com'], 'site-keepalive.mjs', ['https://example.com']],
     [['site', 'scaffold', 'https://example.com', '--archetype', 'navigation-catalog'], 'site-scaffold.mjs', ['https://example.com', '--archetype', 'navigation-catalog']],

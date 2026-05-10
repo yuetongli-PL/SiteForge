@@ -8,6 +8,7 @@ const SCRIPT_TO_UNIFIED_ARGS = new Map([
   ['src/entrypoints/sites/download.mjs', ['download']],
   ['src/entrypoints/sites/site-doctor.mjs', ['site', 'doctor']],
   ['src/entrypoints/sites/site-capability-compile.mjs', ['site', 'capability-compile']],
+  ['src/entrypoints/sites/site-recompile-preview-summary.mjs', ['site', 'recompile-preview']],
   ['src/entrypoints/sites/site-login.mjs', ['site', 'login']],
   ['src/entrypoints/sites/site-keepalive.mjs', ['site', 'keepalive']],
   ['src/entrypoints/sites/site-scaffold.mjs', ['site', 'scaffold']],

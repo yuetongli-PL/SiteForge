@@ -29,6 +29,7 @@ const DOMAIN_ROUTES = Object.freeze({
     commands: {
       doctor: { summary: 'Inspect a site and write onboarding/health artifacts.', script: ['sites', 'site-doctor.mjs'] },
       'capability-compile': { summary: 'Compile descriptor-only Site Capability Graph and Planner dry-run evidence.', script: ['sites', 'site-capability-compile.mjs'] },
+      'recompile-preview': { summary: 'Build descriptor-only recompile preview summary for repo-local skills.', script: ['sites', 'site-recompile-preview-summary.mjs'] },
       login: { summary: 'Run site login flow.', script: ['sites', 'site-login.mjs'] },
       keepalive: { summary: 'Check or refresh a reusable site session.', script: ['sites', 'site-keepalive.mjs'] },
       scaffold: { summary: 'Create a new site scaffold.', script: ['sites', 'site-scaffold.mjs'] },

@@ -28,11 +28,11 @@ import {
 import {
   buildSessionRepairPlan,
   inspectSessionHealth as inspectDownloadSessionHealth,
-} from '../../src/sites/downloads/session-manager.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
-import { requireReasonCodeDefinition } from '../../src/sites/capability/reason-codes.mjs';
-import { RISK_STATE_SCHEMA_VERSION } from '../../src/sites/capability/risk-state.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/session-manager.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
+import { requireReasonCodeDefinition } from '../../src/domain/risks/reason-codes.mjs';
+import { RISK_STATE_SCHEMA_VERSION } from '../../src/domain/risks/risk-state.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
 
 test('resolveAuthSessionPolicy applies keepalive and stable-network defaults', () => {
   const policy = resolveAuthSessionPolicy({

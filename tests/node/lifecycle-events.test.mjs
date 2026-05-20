@@ -21,9 +21,9 @@ import {
   normalizeLifecycleEvent,
   summarizeLifecycleEventProducerInventory,
   writeLifecycleEventArtifact,
-} from '../../src/sites/capability/lifecycle-events.mjs';
-import * as lifecycleEvents from '../../src/sites/capability/lifecycle-events.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import * as lifecycleEvents from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -397,18 +397,15 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   const summary = summarizeLifecycleEventProducerInventory({ inventory });
   assert.deepEqual(summary, {
     schemaVersion: LIFECYCLE_EVENT_PRODUCER_INVENTORY_SCHEMA_VERSION,
-    eventTypeCount: 21,
+    eventTypeCount: 15,
     producerModuleCounts: {
-      'src/sites/capability/api-candidates.mjs': 6,
-      'src/sites/capability/execution/layer-runtime-consumer.mjs': 1,
-      'src/sites/capability/site-health-execution-gate.mjs': 3,
-      'src/sites/capability/site-capability-graph.mjs': 1,
-      'src/pipeline/stages/capture.mjs': 2,
-      'src/sites/downloads/executor.mjs': 3,
-      'src/sites/downloads/legacy-executor.mjs': 2,
-      'src/sites/downloads/runner.mjs': 1,
-      'src/sites/sessions/runner.mjs': 1,
-      'src/sites/social/actions/router.mjs': 1,
+      'src/domain/capabilities/api-candidates.mjs': 6,
+      'src/domain/policies/execution/layer-runtime-consumer.mjs': 1,
+      'src/domain/risks/site-health-execution-gate.mjs': 3,
+      'src/domain/capabilities/site-capability-graph.mjs': 1,
+      'src/app/pipeline/stages/capture.mjs': 2,
+      'src/domain/sessions/runner.mjs': 1,
+      'src/sites/known-sites/social/actions/router.mjs': 1,
     },
     profiledEventTypeCount: Object.keys(LIFECYCLE_EVENT_OBSERVABILITY_PROFILES).length,
     profiledEventTypes: [
@@ -418,12 +415,6 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
       'api.catalog.upgrade_decision.written',
       'capture.api_candidates.written',
       'capture.manifest.written',
-      'download.executor.before_download',
-      'download.executor.completed',
-      'download.executor.dry_run',
-      'download.legacy.completed',
-      'download.legacy.recovery_preflight',
-      'download.run.terminal',
       'execution.layer.consumer.receipt',
       'site.health.recovery.evaluated',
       'site.health.recovery.action.planned',
@@ -448,7 +439,7 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   assert.deepEqual(producersByEventType.get('graph.docs.summary.generated'), {
     eventType: 'graph.docs.summary.generated',
     producerId: 'site-capability-graph.docs-summary-generated',
-    sourceModule: 'src/sites/capability/site-capability-graph.mjs',
+    sourceModule: 'src/domain/capabilities/site-capability-graph.mjs',
     profileStatus: 'inventoried',
   });
 
@@ -468,9 +459,9 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   assert.throws(
     () => createLifecycleEventProducerInventory({
       producers: [{
-        eventType: 'download.executor.completed',
+        eventType: 'capture.manifest.written',
         producerId: 'unsafe-profile-status',
-        sourceModule: 'src/sites/downloads/executor.mjs',
+        sourceModule: 'src/app/pipeline/stages/capture.mjs',
         profileStatus: 'inventoried',
       }],
     }),
@@ -481,7 +472,7 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
       producers: [{
         eventType: 'synthetic.unprofiled',
         producerId: 'unsafe-function',
-        sourceModule: 'src/sites/downloads/executor.mjs',
+        sourceModule: 'src/domain/risks/reason-codes.mjs',
         profileStatus: 'inventoried',
         discover: () => {},
       }],
@@ -528,130 +519,24 @@ test('LifecycleEvent producer observability profiles fail closed for capture pro
   );
 });
 
-test('LifecycleEvent producer observability profiles fail closed for download producers', async () => {
+test('LifecycleEvent producer inventory no longer exposes retired download runtime producers', () => {
+  const inventory = createLifecycleEventProducerInventory();
+  const summary = summarizeLifecycleEventProducerInventory({ inventory });
   for (const eventType of [
     'download.run.terminal',
+    'download.executor.before_download',
     'download.executor.completed',
     'download.executor.dry_run',
     'download.legacy.completed',
     'download.legacy.recovery_preflight',
   ]) {
-    assert.equal(Object.hasOwn(LIFECYCLE_EVENT_OBSERVABILITY_PROFILES, eventType), true);
+    assert.equal(Object.hasOwn(LIFECYCLE_EVENT_OBSERVABILITY_PROFILES, eventType), false);
+    assert.equal(summary.profiledEventTypes.includes(eventType), false);
+    assert.equal(summary.inventoriedOnlyEventTypes.includes(eventType), false);
   }
-
-  const completeTerminalEvent = {
-    schemaVersion: LIFECYCLE_EVENT_SCHEMA_VERSION,
-    eventType: 'download.run.terminal',
-    traceId: 'trace-synthetic-terminal-profile',
-    correlationId: 'correlation-synthetic-terminal-profile',
-    taskId: 'task-synthetic-terminal-profile',
-    siteKey: 'example',
-    taskType: 'download',
-    adapterVersion: 'download-adapter-v1',
-    reasonCode: 'ok',
-    createdAt: '2026-05-03T00:04:00.000Z',
-    details: {
-      status: 'passed',
-      reason: 'ok',
-    },
-  };
-  const completeExecutorEvent = {
-    ...completeTerminalEvent,
-    eventType: 'download.executor.completed',
-    traceId: 'trace-synthetic-download-profile',
-    correlationId: 'correlation-synthetic-download-profile',
-    taskId: 'task-synthetic-download-profile',
-    createdAt: '2026-05-03T00:02:00.000Z',
-    details: {
-      ...completeTerminalEvent.details,
-      counts: {
-        total: 1,
-        passed: 1,
-        failed: 0,
-      },
-    },
-  };
-
-  for (const field of [
-    'traceId',
-    'correlationId',
-    'taskId',
-    'siteKey',
-    'taskType',
-    'adapterVersion',
-    'reasonCode',
-  ]) {
-    assert.throws(
-      () => assertLifecycleEventProducerObservability({ ...completeTerminalEvent, [field]: undefined }),
-      new RegExp(field, 'u'),
-    );
-    assert.throws(
-      () => assertLifecycleEventProducerObservability({ ...completeExecutorEvent, [field]: undefined }),
-      new RegExp(field, 'u'),
-    );
-  }
-
-  for (const field of [
-    'status',
-    'reason',
-  ]) {
-    assert.throws(
-      () => assertLifecycleEventProducerObservability({
-        ...completeTerminalEvent,
-        details: {
-          ...completeTerminalEvent.details,
-          [field]: undefined,
-        },
-      }),
-      new RegExp(field, 'u'),
-    );
-    assert.throws(
-      () => assertLifecycleEventProducerObservability({
-        ...completeExecutorEvent,
-        details: {
-          ...completeExecutorEvent.details,
-          [field]: undefined,
-        },
-      }),
-      new RegExp(field, 'u'),
-    );
-  }
-
-  assert.throws(
-    () => assertLifecycleEventProducerObservability({
-      ...completeExecutorEvent,
-      details: {
-        ...completeExecutorEvent.details,
-        counts: undefined,
-      },
-    }),
-    /counts/u,
-  );
-
-  await assert.rejects(
-    () => dispatchLifecycleEvent({
-      eventType: 'download.executor.dry_run',
-      traceId: 'trace-synthetic-download-profile',
-      correlationId: 'correlation-synthetic-download-profile',
-      taskId: 'task-synthetic-download-profile',
-      siteKey: 'example',
-      taskType: 'download',
-      adapterVersion: 'download-adapter-v1',
-      reasonCode: 'ok',
-      createdAt: '2026-05-03T00:03:00.000Z',
-      details: {
-        status: 'passed',
-        reason: 'ok',
-      },
-    }),
-    /counts/u,
-  );
-
-  assert.equal(assertLifecycleEventProducerObservability(completeTerminalEvent), true);
-  const terminalResult = await dispatchLifecycleEvent(completeTerminalEvent);
-  const executorResult = await dispatchLifecycleEvent(completeExecutorEvent);
-  assert.equal(terminalResult.event.eventType, 'download.run.terminal');
-  assert.equal(executorResult.event.eventType, 'download.executor.completed');
+  assert.equal(Object.keys(summary.producerModuleCounts).some((modulePath) => (
+    modulePath.startsWith('src/sites/downloads/')
+  )), false);
 });
 
 test('LifecycleEvent producer observability profile fails closed for API catalog schema incompatibility', async () => {

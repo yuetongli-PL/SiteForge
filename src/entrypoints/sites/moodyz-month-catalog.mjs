@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import { runSingleStageCliWithProgress } from '../../infra/cli/progress-cli.mjs';
-import { collectMoodyzMonthCatalog } from '../../sites/moodyz/queries/month-catalog.mjs';
+import { collectMoodyzMonthCatalog } from '../../sites/known-sites/moodyz/queries/month-catalog.mjs';
 
 const USER_AGENT = 'Mozilla/5.0 SiteForge moodyz catalog';
 const execFile = promisify(execFileCallback);
@@ -40,7 +40,7 @@ export function parseArgs(argv) {
   const monthText = String(flags.month ?? positionals[0] ?? '').trim();
   const match = monthText.match(/^(?<year>\d{4})-(?<month>\d{1,2})$/u);
   if (!match) {
-    throw new Error('Usage: node src/entrypoints/cli.mjs catalog moodyz-month --month YYYY-MM');
+    throw new Error('Internal script usage: node src/entrypoints/sites/moodyz-month-catalog.mjs --month <YYYY-MM>. Public command: siteforge build <url>');
   }
   return {
     year: Number.parseInt(match.groups.year, 10),

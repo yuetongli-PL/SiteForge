@@ -10,7 +10,7 @@ import {
   createRiskStateTransitionTable,
   normalizeRiskState,
   normalizeRiskTransition,
-} from '../../src/sites/capability/risk-state.mjs';
+} from '../../src/domain/risks/risk-state.mjs';
 
 test('RiskState exposes the design state set and a versioned normal state', () => {
   assert.deepEqual(RISK_STATES, [

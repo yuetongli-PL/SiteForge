@@ -7,41 +7,41 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import {
   SESSION_RUN_MANIFEST_SCHEMA_VERSION,
   normalizeSessionRunManifest,
-} from '../../src/sites/sessions/contracts.mjs';
+} from '../../src/domain/sessions/contracts.mjs';
 import {
   reasonCodeSummary,
   requireReasonCodeDefinition,
-} from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/risks/reason-codes.mjs';
 import {
   LIFECYCLE_EVENT_SCHEMA_VERSION,
   assertLifecycleEventObservabilityFields,
   composeLifecycleSubscribers,
   dispatchLifecycleEvent,
-} from '../../src/sites/capability/lifecycle-events.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 import {
   listSessionSiteDefinitions,
   resolveSessionSiteDefinition,
-} from '../../src/sites/sessions/site-modules.mjs';
+} from '../../src/domain/sessions/site-modules.mjs';
 import {
   assertSessionBoundaryCrossingSafe,
   sessionViewMaterializationAuditFromRunManifest,
   sessionOptionsFromRunManifest,
   sessionViewFromRunManifest,
   summarizeSessionRunManifest,
-} from '../../src/sites/sessions/manifest-bridge.mjs';
-import { evaluateAuthenticatedSessionReleaseGate } from '../../src/sites/sessions/release-gate.mjs';
-import { runSessionTask } from '../../src/sites/sessions/runner.mjs';
-import { inspectSessionHealth } from '../../src/sites/downloads/session-manager.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { createCapabilityHookRegistry } from '../../src/sites/capability/capability-hook.mjs';
+} from '../../src/domain/sessions/manifest-bridge.mjs';
+import { evaluateAuthenticatedSessionReleaseGate } from '../../src/domain/sessions/release-gate.mjs';
+import { runSessionTask } from '../../src/domain/sessions/runner.mjs';
+import { inspectSessionHealth } from '../../src/domain/sessions/session-manager.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { createCapabilityHookRegistry } from '../../src/domain/lifecycle/capability-hook.mjs';
 import {
   createSessionRevocationStore,
   registerSessionRevocationHandle,
   revokeSessionRevocationHandle,
   SESSION_VIEW_MATERIALIZATION_AUDIT_SCHEMA_VERSION,
   SESSION_VIEW_SCHEMA_VERSION,
-} from '../../src/sites/capability/session-view.mjs';
+} from '../../src/domain/sessions/session-view.mjs';
 import {
   main,
   parseArgs,
@@ -569,7 +569,7 @@ test('session runner redacts synthetic forbidden risk signals before persisting 
     phase: 'after_session_materialize',
     subscriber: {
       name: 'session-run-completed-observer',
-      modulePath: 'src/sites/capability/lifecycle-events.mjs',
+      modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
       entrypoint: 'observe',
       order: 1,
     },
@@ -1243,18 +1243,16 @@ test('download release gate documents unified session manifest traceability', as
   assert.match(releaseGate, /legacy-session-provider/u);
   assert.match(releaseGate, /--session-health-plan/u);
   assert.match(releaseGate, /--session-manifest <path>/u);
-  assert.match(releaseGate, /scripts\/download-release-audit\.mjs/u);
+  assert.match(releaseGate, /siteforge build <url>/u);
   assert.match(releaseGate, /Blocked audit rows include a `repairPlan` guidance object/u);
-  assert.match(releaseGate, /Repair Plan/u);
-  assert.match(releaseGate, /Next session repair command/u);
-  assert.match(releaseGate, /src\/entrypoints\/cli\.mjs site repair-plan --site/u);
+  assert.match(releaseGate, /siteforge build <url>/u);
   assert.match(releaseGate, /Offline only; no live\/login\/download side effects/u);
   assert.match(releaseGate, /Current Local Evidence/u);
   assert.match(releaseGate, /clean worktree\s+verified before evidence capture/u);
   assert.match(releaseGate, /Re-check the current ahead count before\s+any publication step/u);
   assert.match(releaseGate, /node --test tests\\node\\\*\.test\.mjs/u);
   assert.match(releaseGate, /python -m unittest discover -s tests\\python -p "test_\*\.py"/u);
-  assert.match(releaseGate, /Hybrid native status is not a live-capability claim/u);
+  assert.match(releaseGate, /Retired-runtime status is not a live-capability claim/u);
   assert.match(releaseGate, /Current closeout verification/u);
 });
 
@@ -1281,42 +1279,33 @@ test('release and versioning policy documents scope compatibility and publicatio
   assert.match(readme, /No tag, package version bump, push, PR, publication, live capability claim, or\s+live authenticated validation is implied by local tests passing/u);
 });
 
-test('download runner docs describe hybrid native migration without live claims', async () => {
+test('download runner docs describe retired runtime boundaries without live claims', async () => {
   const runnerDoc = await readFile(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8');
 
-  assert.match(runnerDoc, /`bilibili` \| `www\.bilibili\.com` \| Hybrid native \+ legacy fallback/u);
-  assert.match(runnerDoc, /`douyin` \| `www\.douyin\.com` \| Hybrid native \+ legacy fallback/u);
-  assert.match(runnerDoc, /`xiaohongshu` \| `www\.xiaohongshu\.com` \| Hybrid native \+ legacy fallback/u);
-  assert.match(runnerDoc, /`x` \| `x\.com` \| Hybrid native \+ legacy fallback/u);
-  assert.match(runnerDoc, /`instagram` \| `www\.instagram\.com` \| Hybrid native \+ legacy fallback/u);
-  assert.match(runnerDoc, /Hybrid native status is not a live-capability claim/u);
-  assert.match(runnerDoc, /live smoke, real login, and real download validation remain/u);
+  assert.match(runnerDoc, /The download runtime layer has been retired and physically removed/u);
+  assert.match(runnerDoc, /Public onboarding and regeneration stay on `siteforge build <url>`/u);
+  assert.match(runnerDoc, /descriptor-only planning, policy, and session repair contracts/u);
+  assert.match(runnerDoc, /Passing this gate proves the executable download runtime remains absent/u);
+  assert.doesNotMatch(runnerDoc, /Hybrid native \+ legacy fallback/u);
 });
 
-test('legacy reduction matrix preserves fallback and live-claim guardrails', async () => {
+test('legacy reduction matrix is retired in favor of descriptor-only guardrails', async () => {
   const matrix = await readFile(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8');
 
-  assert.match(matrix, /Current policy: do not delete or bypass legacy fallback paths/u);
-  assert.match(matrix, /Bilibili .* Native .*native-bilibili-page-seeds/u);
-  assert.match(matrix, /Douyin .* Native .*native-douyin-resource-seeds/u);
-  assert.match(matrix, /Xiaohongshu .* Native .*native-xiaohongshu-resource-seeds/u);
-  assert.match(matrix, /X .* Native .*native-x-social-resource-seeds/u);
-  assert.match(matrix, /Instagram .* Native .*native-instagram-social-resource-seeds/u);
-  assert.match(matrix, /X .* Relation, followed-date, follower\/following, checkpoint, resume, or cursor discovery inputs\. \| Legacy/u);
-  assert.match(matrix, /Instagram .* Relation, follower\/following, followed-users, checkpoint, resume, or authenticated feed discovery inputs\. \| Legacy/u);
-  assert.match(matrix, /does not prove live crawling/u);
-  assert.match(matrix, /authenticated social archive capability/u);
-  assert.match(matrix, /safe fallback removal/u);
+  assert.match(matrix, /Old executable download runtime status tables were retired/u);
+  assert.match(matrix, /The current release gate is absence of executable download runtime paths/u);
+  assert.match(matrix, /not native\/legacy migration progress/u);
+  assert.doesNotMatch(matrix, /Current policy: do not delete or bypass legacy fallback paths/u);
 });
 
-test('download runner next steps keep work on local main without new branches', async () => {
+test('retired download boundary next steps keep work on local main without new branches', async () => {
   const nextSteps = await readFile(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8');
 
   assert.match(nextSteps, /continues\s+on local `main` in the current project directory/u);
   assert.match(nextSteps, /Do not create new branches or\s+extra worktrees unless the operator explicitly asks/u);
   assert.match(nextSteps, /Local Main Workstreams/u);
-  assert.match(nextSteps, /1\. Native resolvers/u);
-  assert.match(nextSteps, /2\. Legacy reduction/u);
+  assert.match(nextSteps, /1\. Architecture import rules/u);
+  assert.match(nextSteps, /2\. Descriptor-only planning and policy contracts/u);
   assert.match(nextSteps, /3\. Session governance/u);
   assert.doesNotMatch(nextSteps, /## Branch Plan/u);
   assert.doesNotMatch(nextSteps, /codex\/download-native-resolvers/u);

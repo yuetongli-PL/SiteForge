@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import {
   REDACTION_PLACEHOLDER,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 import {
   SESSION_VIEW_SCHEMA_VERSION,
   SESSION_VIEW_MATERIALIZATION_AUDIT_SCHEMA_VERSION,
@@ -21,7 +21,7 @@ import {
   normalizeSessionView,
   registerSessionRevocationHandle,
   revokeSessionRevocationHandle,
-} from '../../src/sites/capability/session-view.mjs';
+} from '../../src/domain/sessions/session-view.mjs';
 
 test('SessionView normalizes minimal access fields and redacts sensitive context', () => {
   const view = normalizeSessionView({
@@ -80,6 +80,88 @@ test('SessionView rejects missing site keys and invalid TTL values', () => {
   assert.throws(
     () => normalizeSessionView({ siteKey: 'example.test', ttlSeconds: 0 }),
     /ttlSeconds must be a positive number/u,
+  );
+  assert.throws(
+    () => normalizeSessionView({ siteKey: 'example.test', status: 'authenticated', ttlSeconds: 60 }),
+    /status authenticated is not supported/u,
+  );
+  assert.throws(
+    () => normalizeSessionView({
+      siteKey: 'example.test',
+      status: 'ready',
+      ttlSeconds: 60,
+      expiresAt: 'not-a-date',
+    }),
+    /expiresAt must be an ISO-compatible timestamp/u,
+  );
+});
+
+test('SessionView authorization state fails closed for non-ready and expired views', () => {
+  assert.throws(
+    () => normalizeSessionView({
+      siteKey: 'example.test',
+      purpose: 'download',
+      status: 'manual-required',
+      reasonCode: 'login-required',
+      permission: ['read'],
+      ttlSeconds: 60,
+    }),
+    /manual-required status must not grant permissions/u,
+  );
+
+  const manualRequired = normalizeSessionView({
+    siteKey: 'example.test',
+    purpose: 'download',
+    status: 'manual-required',
+    reasonCode: 'login-required',
+    permission: [],
+    ttlSeconds: 60,
+  });
+  assert.equal(manualRequired.status, 'manual-required');
+  assert.deepEqual(manualRequired.permission, []);
+  assert.equal(manualRequired.reasonCode, 'login-required');
+
+  assert.throws(
+    () => normalizeSessionView({
+      siteKey: 'example.test',
+      purpose: 'download',
+      status: 'ready',
+      permission: ['read'],
+      ttlSeconds: 60,
+      expiresAt: '2026-04-30T00:00:00.000Z',
+    }, {
+      now: new Date('2026-05-01T00:00:00.000Z'),
+    }),
+    /ready status is expired/u,
+  );
+
+  const expired = normalizeSessionView({
+    siteKey: 'example.test',
+    purpose: 'download',
+    status: 'expired',
+    reasonCode: 'session-invalid',
+    permission: [],
+    ttlSeconds: 60,
+    expiresAt: '2026-04-30T00:00:00.000Z',
+  }, {
+    now: new Date('2026-05-01T00:00:00.000Z'),
+  });
+  assert.equal(expired.status, 'expired');
+  assert.deepEqual(expired.permission, []);
+  assert.equal(expired.reasonCode, 'session-invalid');
+
+  assert.throws(
+    () => createSessionViewMaterializationAudit({
+      siteKey: 'example.test',
+      purpose: 'download',
+      status: 'ready',
+      permission: ['read'],
+      ttlSeconds: 60,
+      expiresAt: '2026-04-30T00:00:00.000Z',
+    }, {
+      now: new Date('2026-05-01T00:00:00.000Z'),
+    }),
+    /ready status is expired/u,
   );
 });
 
@@ -579,7 +661,7 @@ test('SessionView materialization audit compatibility guard checks schema and re
     siteKey: 'example.test',
     purpose: 'download',
     scope: ['media'],
-    permission: ['read'],
+    permission: [],
     ttlSeconds: 120,
     status: 'manual-required',
     reasonCode: 'session-invalid',

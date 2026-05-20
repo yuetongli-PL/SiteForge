@@ -3,13 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 import {
-  DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION,
-  normalizeDownloadRunManifest,
-} from '../../src/sites/downloads/contracts.mjs';
-import {
   SESSION_RUN_MANIFEST_SCHEMA_VERSION,
   normalizeSessionRunManifest,
-} from '../../src/sites/sessions/contracts.mjs';
+} from '../../src/domain/sessions/contracts.mjs';
 import {
   API_CANDIDATE_SCHEMA_VERSION,
   API_CATALOG_INDEX_SCHEMA_VERSION,
@@ -18,7 +14,7 @@ import {
   API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION,
   SITE_ADAPTER_CANDIDATE_DECISION_SCHEMA_VERSION,
   SITE_ADAPTER_CATALOG_UPGRADE_POLICY_SCHEMA_VERSION,
-} from '../../src/sites/capability/api-candidates.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   ARTIFACT_REFERENCE_SET_COMPATIBLE_SCHEMA_VERSIONS,
   ARTIFACT_REFERENCE_SET_SCHEMA_COMPATIBILITY,
@@ -33,21 +29,21 @@ import {
   normalizeArtifactReferenceSet,
   normalizeManifestArtifactBundle,
   normalizeManifestArtifactBundleFromManifest,
-} from '../../src/sites/capability/artifact-schema.mjs';
+} from '../../src/domain/artifacts/schema.mjs';
 import {
   CAPABILITY_HOOK_EVENT_TYPE_REGISTRY_SCHEMA_VERSION,
   CAPABILITY_HOOK_PRODUCER_DESCRIPTOR_REGISTRY_SCHEMA_VERSION,
   CAPABILITY_HOOK_REGISTRY_SNAPSHOT_SCHEMA_VERSION,
   CAPABILITY_HOOK_SCHEMA_VERSION,
   createCapabilityHookProducerDescriptorRegistry,
-} from '../../src/sites/capability/capability-hook.mjs';
-import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/sites/capability/download-policy.mjs';
-import { FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION } from '../../src/sites/capability/focused-regression-batches.mjs';
-import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/sites/capability/lifecycle-events.mjs';
-import { REASON_CODE_SCHEMA_VERSION } from '../../src/sites/capability/reason-codes.mjs';
-import { RISK_STATE_SCHEMA_VERSION } from '../../src/sites/capability/risk-state.mjs';
-import { SECURITY_GUARD_SCHEMA_VERSION } from '../../src/sites/capability/security-guard.mjs';
-import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/sites/capability/session-view.mjs';
+} from '../../src/domain/lifecycle/capability-hook.mjs';
+import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/domain/policies/download-policy.mjs';
+import { FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION } from '../../src/domain/capabilities/focused-regression-batches.mjs';
+import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { REASON_CODE_SCHEMA_VERSION } from '../../src/domain/risks/reason-codes.mjs';
+import { RISK_STATE_SCHEMA_VERSION } from '../../src/domain/risks/risk-state.mjs';
+import { SECURITY_GUARD_SCHEMA_VERSION } from '../../src/domain/sessions/security-guard.mjs';
+import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/domain/sessions/session-view.mjs';
 import {
   GRAPH_DOCS_SUMMARY_SCHEMA_VERSION,
   GRAPH_EDGE_SCHEMA_VERSION,
@@ -60,12 +56,12 @@ import {
   createLayerSourceAuthSessionRequirementInventorySummary,
   createLayerSourceRiskPolicyInventorySummary,
   createLayerSourceSignerDependencyInventorySummary,
-} from '../../src/sites/capability/site-capability-graph.mjs';
-import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/sites/capability/standard-task-list.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
+import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/domain/policies/standard-task-list.mjs';
 import {
   assertSchemaCompatible,
   getCompatibilitySchema,
-} from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/domain/schemas/compatibility-registry.mjs';
 import {
   KERNEL_SCHEMA_GOVERNANCE_SECTION,
   SCHEMA_INVENTORY_STATUSES,
@@ -75,10 +71,10 @@ import {
   listMissingSchemas,
   listSchemaInventory,
   listStandardArtifactInventory,
-} from '../../src/sites/capability/schema-inventory.mjs';
+} from '../../src/domain/schemas/schema-inventory.mjs';
 
 const CONTRIBUTING_URL = new URL('../../CONTRIBUTING.md', import.meta.url);
-const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/sites/capability/site-capability-graph.mjs';
+const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/domain/capabilities/site-capability-graph.mjs';
 const LAYER_SOURCE_INVENTORY_SUMMARY_NAMES = [
   'LayerSourceRiskPolicyInventorySummary',
   'LayerSourceAuthSessionRequirementInventorySummary',
@@ -157,7 +153,6 @@ test('schema inventory records current versioned schema evidence', () => {
     ['ApiResponseCaptureSummary', API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION],
     ['SiteAdapterCandidateDecision', SITE_ADAPTER_CANDIDATE_DECISION_SCHEMA_VERSION],
     ['SiteAdapterCatalogUpgradePolicy', SITE_ADAPTER_CATALOG_UPGRADE_POLICY_SCHEMA_VERSION],
-    ['DownloadRunManifest', DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION],
     ['DownloadPolicy', DOWNLOAD_POLICY_SCHEMA_VERSION],
     ['SessionRunManifest', SESSION_RUN_MANIFEST_SCHEMA_VERSION],
     ['SessionView', SESSION_VIEW_SCHEMA_VERSION],
@@ -269,66 +264,64 @@ test('schema inventory records Section 19 standard artifact evidence', () => {
     ['ArtifactReferenceSet', {
       family: 'Artifacts',
       role: 'artifact-reference-set',
-      producerPath: 'src/sites/capability/artifact-schema.mjs',
-      consumerPath: 'src/sites/downloads/contracts.mjs',
+      producerPath: 'src/domain/artifacts/schema.mjs',
+      consumerPath: 'src/domain/sessions/contracts.mjs',
     }],
     ['ManifestArtifactBundle', {
       family: 'ManifestArtifacts',
       role: 'manifest-payload-artifact-bundle',
-      producerPath: 'src/sites/capability/artifact-schema.mjs',
-      consumerPath: 'src/sites/sessions/contracts.mjs',
+      producerPath: 'src/domain/artifacts/schema.mjs',
+      consumerPath: 'src/domain/sessions/contracts.mjs',
       verificationPath: 'tests/node/schema-inventory.test.mjs',
     }],
     ['LifecycleEvent', {
       family: 'LifecycleEvents',
       role: 'standard-event-envelope',
-      producerPath: 'src/sites/capability/lifecycle-events.mjs',
-      consumerPath: 'src/pipeline/stages/capture.mjs',
+      producerPath: 'src/domain/lifecycle/lifecycle-events.mjs',
+      consumerPath: 'src/app/pipeline/stages/capture.mjs',
     }],
     ['ApiCatalogIndex', {
       family: 'api-catalog',
       role: 'catalog-index',
-      producerPath: 'src/sites/capability/api-candidates.mjs',
+      producerPath: 'src/domain/capabilities/api-candidates.mjs',
     }],
     ['StandardTaskList', {
       family: 'DownloaderBoundaries',
       role: 'low-permission-task-list',
-      producerPath: 'src/sites/capability/planner-policy-handoff.mjs',
-      consumerPath: 'src/sites/downloads/runner.mjs',
+      producerPath: 'src/app/planner/policy-handoff.mjs',
       verificationPath: 'tests/node/standard-task-list.test.mjs',
     }],
     ['DownloadPolicy', {
       family: 'DownloaderBoundaries',
       role: 'low-permission-download-policy',
-      producerPath: 'src/sites/capability/planner-policy-handoff.mjs',
-      consumerPath: 'src/sites/downloads/contracts.mjs',
+      producerPath: 'src/app/planner/policy-handoff.mjs',
       verificationPath: 'tests/node/download-policy.test.mjs',
     }],
     ['SessionView', {
       family: 'SessionBoundary',
       role: 'minimal-session-view',
-      producerPath: 'src/sites/sessions/manifest-bridge.mjs',
-      consumerPath: 'src/sites/downloads/contracts.mjs',
+      producerPath: 'src/domain/sessions/manifest-bridge.mjs',
+      consumerPath: 'src/domain/sessions/runner.mjs',
       verificationPath: 'tests/node/session-view.test.mjs',
     }],
     ['RiskState', {
       family: 'RiskSemantics',
       role: 'standard-risk-state',
-      producerPath: 'src/sites/downloads/runner.mjs',
+      producerPath: 'src/infra/auth/site-session-governance.mjs',
       consumerPath: 'src/infra/auth/site-session-governance.mjs',
       verificationPath: 'tests/node/risk-state.test.mjs',
     }],
     ['CapabilityHook', {
       family: 'LifecycleEvents',
       role: 'descriptor-only-hook-output-boundary',
-      producerPath: 'src/sites/capability/capability-hook.mjs',
-      consumerPath: 'src/sites/capability/api-candidates.mjs',
+      producerPath: 'src/domain/lifecycle/capability-hook.mjs',
+      consumerPath: 'src/domain/capabilities/api-candidates.mjs',
     }],
     ['RedactionAudit', {
       family: 'ArtifactAudits',
       role: 'redaction-audit-sidecar',
-      producerPath: 'src/sites/capability/security-guard.mjs',
-      consumerPath: 'src/sites/capability/planner-policy-handoff.mjs',
+      producerPath: 'src/domain/sessions/security-guard.mjs',
+      consumerPath: 'src/app/planner/policy-handoff.mjs',
       verificationPath: 'tests/node/security-guard-redaction.test.mjs',
     }],
   ]);
@@ -373,7 +366,7 @@ test('schema inventory records Kernel-governed lifecycle producer inventory evid
   assert.equal(entry.status, 'implemented');
   assert.equal(entry.owner, 'Kernel');
   assert.equal(entry.version, CAPABILITY_HOOK_PRODUCER_DESCRIPTOR_REGISTRY_SCHEMA_VERSION);
-  assert.equal(entry.sourcePath, 'src/sites/capability/capability-hook.mjs');
+  assert.equal(entry.sourcePath, 'src/domain/lifecycle/capability-hook.mjs');
   assert.equal(registryEntry.version, entry.version);
   assert.equal(registryEntry.sourcePath, entry.sourcePath);
   assert.equal(governanceEntries.some((candidate) => candidate.name === entry.name), true);
@@ -397,7 +390,7 @@ test('focused regression batch definition document is governed by schema invento
   assert.notEqual(registryEntry, null);
   assert.equal(inventoryEntry.owner, 'Kernel');
   assert.equal(inventoryEntry.version, FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION);
-  assert.equal(inventoryEntry.sourcePath, 'src/sites/capability/focused-regression-batches.mjs');
+  assert.equal(inventoryEntry.sourcePath, 'src/domain/capabilities/focused-regression-batches.mjs');
   assert.equal(registryEntry.version, inventoryEntry.version);
   assert.equal(registryEntry.sourcePath, inventoryEntry.sourcePath);
   assert.equal(assertSchemaCompatible('FocusedRegressionBatchDefinition', definition), true);
@@ -435,40 +428,6 @@ test('ArtifactReferenceSet records current compatibility evidence', () => {
 });
 
 test('ManifestArtifactBundle records manifest payload-family compatibility evidence', () => {
-  const downloadManifest = normalizeDownloadRunManifest({
-    runId: 'run-standard-artifacts',
-    planId: 'plan-standard-artifacts',
-    siteKey: 'example',
-    status: 'passed',
-    counts: {
-      expected: 1,
-      attempted: 1,
-      downloaded: 1,
-      skipped: 0,
-      failed: 0,
-    },
-    artifacts: {
-      manifest: 'runs/example/download/manifest.json',
-      queue: 'runs/example/download/queue.json',
-      downloadsJsonl: 'runs/example/download/downloads.jsonl',
-      reportMarkdown: 'runs/example/download/report.md',
-      redactionAudit: 'runs/example/download/redaction-audit.json',
-      lifecycleEvent: 'runs/example/download/lifecycle-event.json',
-      lifecycleEventRedactionAudit: 'runs/example/download/lifecycle-event-redaction-audit.json',
-      plan: 'runs/example/download/plan.json',
-      resolvedTask: 'runs/example/download/resolved-task.json',
-      standardTaskList: 'runs/example/download/standard-task-list.json',
-      runDir: 'runs/example/download',
-      filesDir: 'runs/example/download/files',
-      source: {
-        manifest: 'runs/example/source/manifest.json',
-        mediaManifest: 'runs/example/source/media-manifest.json',
-      },
-    },
-  });
-  const normalized = normalizeManifestArtifactBundleFromManifest(downloadManifest, {
-    manifestName: 'DownloadRunManifest',
-  });
   const sessionManifest = normalizeSessionRunManifest({
     runId: 'session-standard-artifacts',
     plan: {
@@ -510,20 +469,7 @@ test('ManifestArtifactBundle records manifest payload-family compatibility evide
   assert.equal(inventoryEntry.status, 'partial');
   assert.notEqual(inventoryEntry.status, 'missing');
   assert.equal(inventoryEntry.version, MANIFEST_ARTIFACT_BUNDLE_SCHEMA_VERSION);
-  assert.equal(normalized.schemaVersion, MANIFEST_ARTIFACT_BUNDLE_SCHEMA_VERSION);
-  assert.equal(normalized.manifestName, 'DownloadRunManifest');
-  assert.equal(normalized.manifestSchemaVersion, DOWNLOAD_RUN_MANIFEST_SCHEMA_VERSION);
-  assert.equal(normalized.manifestPath, downloadManifest.artifacts.manifest);
-  assert.equal(normalized.artifacts.schemaVersion, ARTIFACT_REFERENCE_SET_SCHEMA_VERSION);
-  assert.equal(normalized.artifacts.manifest, downloadManifest.artifacts.manifest);
-  assert.equal(normalized.artifacts.redactionAudit, downloadManifest.artifacts.redactionAudit);
-  assert.equal(normalized.artifacts.lifecycleEvent, downloadManifest.artifacts.lifecycleEvent);
-  assert.equal(
-    normalized.artifacts.lifecycleEventRedactionAudit,
-    downloadManifest.artifacts.lifecycleEventRedactionAudit,
-  );
-  assert.deepEqual(normalized.artifacts.source, downloadManifest.artifacts.source);
-  assert.equal(assertManifestArtifactBundleCompatible(normalized), true);
+  assert.equal(sessionBundle.schemaVersion, MANIFEST_ARTIFACT_BUNDLE_SCHEMA_VERSION);
   assert.equal(sessionBundle.manifestName, 'SessionRunManifest');
   assert.equal(sessionBundle.manifestSchemaVersion, SESSION_RUN_MANIFEST_SCHEMA_VERSION);
   assert.equal(sessionBundle.manifestPath, sessionManifest.artifacts.manifest);
@@ -543,7 +489,7 @@ test('ManifestArtifactBundle records manifest payload-family compatibility evide
   assert.equal(isManifestArtifactBundleSchemaVersionCompatible(MANIFEST_ARTIFACT_BUNDLE_SCHEMA_VERSION + 1), false);
   assert.throws(
     () => assertManifestArtifactBundleCompatible({
-      ...normalized,
+      ...sessionBundle,
       artifacts: {
         schemaVersion: ARTIFACT_REFERENCE_SET_SCHEMA_VERSION,
         manifest: ['runs/example/manifest.json'],

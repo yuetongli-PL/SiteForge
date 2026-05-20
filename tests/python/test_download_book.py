@@ -22,7 +22,7 @@ def load_internal_module(module_name: str, relative_path: str):
 
 download_book = load_internal_module(
     "test_download_book_module",
-    "src/sites/chapter-content/download/python/book.py",
+    "src/sites/known-sites/chapter-content/download/python/book.py",
 )
 
 

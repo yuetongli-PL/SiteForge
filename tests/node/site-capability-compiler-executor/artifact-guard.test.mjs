@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   prepareCompilerDerivedArtifact,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 import {
   createSyntheticCompileManifest,
 } from './helpers.mjs';

@@ -11,7 +11,7 @@ import {
   assertSiteCompileScopeCompatible,
   createCompilerCompatibilityDeclaration,
   listSiteCapabilityCompilerSchemaDefinitions,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 
 const REQUIRED_SCHEMA_NAMES = [
   'SiteCompileRequest',
@@ -155,7 +155,7 @@ test('Compiler schema definitions are versioned and list required contracts', ()
     const entry = byName.get(name);
     assert.notEqual(entry, undefined, `${name} schema should be listed`);
     assert.equal(entry.version, SITE_CAPABILITY_COMPILER_SCHEMA_VERSION);
-    assert.equal(entry.sourcePath, 'src/sites/capability/compiler/schema.mjs');
+    assert.equal(entry.sourcePath, 'src/app/compiler/schema.mjs');
   }
 });
 

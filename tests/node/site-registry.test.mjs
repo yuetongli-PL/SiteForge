@@ -9,14 +9,14 @@ import {
   buildSiteRuntimeCapabilitiesPath,
   readSiteCapabilities,
   upsertSiteCapabilities,
-} from '../../src/sites/catalog/capabilities.mjs';
+} from '../../src/sites/registry/catalog/capabilities.mjs';
 import {
   buildSiteRegistryPath,
   buildSiteRuntimeRegistryPath,
   readSiteRegistry,
   upsertSiteRegistryRecord,
-} from '../../src/sites/catalog/registry.mjs';
-import { createSiteIndexStore } from '../../src/sites/catalog/index.mjs';
+} from '../../src/sites/registry/catalog/registry.mjs';
+import { createSiteIndexStore } from '../../src/sites/registry/catalog/index.mjs';
 import { createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 test('site registry and capabilities return default empty documents before first write', async () => {

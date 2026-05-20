@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { listSiteAdapters } from '../../src/sites/core/adapters/resolver.mjs';
+import { listSiteAdapters } from '../../src/sites/adapters/resolver.mjs';
 import {
   GENERIC_NAVIGATION_ADAPTER_VERSION,
   SITE_ADAPTER_SEMANTIC_ENTRY_VERSION,
-} from '../../src/sites/core/adapters/generic-navigation.mjs';
+} from '../../src/sites/adapters/generic-navigation.mjs';
 import {
   API_CANDIDATE_SCHEMA_VERSION,
   SITE_ADAPTER_CANDIDATE_DECISION_VERSION,
@@ -19,15 +19,15 @@ import {
   normalizeSiteAdapterCandidateDecision,
   writeApiCatalogEntryArtifact,
   writeVerifiedApiCatalogUpgradeFixtureArtifacts,
-} from '../../src/sites/capability/api-candidates.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
-import { requireReasonCodeDefinition } from '../../src/sites/capability/reason-codes.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { normalizeSiteAdapterHealthSignal } from '../../src/sites/capability/site-health-recovery.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
+import { requireReasonCodeDefinition } from '../../src/domain/risks/reason-codes.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { normalizeSiteAdapterHealthSignal } from '../../src/domain/risks/site-health-recovery.mjs';
 
 const ADAPTERS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../../src/sites/core/adapters',
+  '../../src/sites/adapters',
 );
 
 const FORBIDDEN_PROMOTION_METHODS = [

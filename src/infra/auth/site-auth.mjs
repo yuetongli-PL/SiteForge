@@ -1,13 +1,13 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import { validateProfileFile } from '../../sites/core/profile-validation.mjs';
-import { maybeLoadValidatedProfileForUrl } from '../../sites/core/profiles.mjs';
+import { validateProfileFile } from '../../sites/registry/core/profile-validation.mjs';
+import { maybeLoadValidatedProfileForUrl } from '../../sites/registry/core/profiles.mjs';
 import { inspectPersistentProfileHealth, resolvePersistentUserDataDir } from '../browser/profile-store.mjs';
 import { openBrowserSession } from '../browser/session.mjs';
 import { ensureDir, writeTextFile } from '../io.mjs';
 import { normalizeText } from '../../shared/normalize.mjs';
-import { prepareRedactedArtifactJsonWithAudit } from '../../sites/capability/security-guard.mjs';
+import { prepareRedactedArtifactJsonWithAudit } from '../../domain/sessions/security-guard.mjs';
 import { getWindowsCredential, resolveWindowsCredentialTarget } from './windows-credential-manager.mjs';
 
 export const DEFAULT_LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;

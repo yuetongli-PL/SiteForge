@@ -195,8 +195,8 @@ test('generateSkill produces a generic navigation skill without site-specific re
     assert.match(skillMd, /## Site Capability Graph status/u);
     assert.match(skillMd, /The Site Capability Layer remains the execution and orchestration entrypoint/u);
     assert.match(skillMd, /## Site Capability Compiler status/u);
-    assert.match(skillMd, /site capability-compile --site <site> --json/u);
-    assert.match(skillMd, /without live capture, session materialization, SiteAdapter runtime execution, downloader invocation/u);
+    assert.match(skillMd, /siteforge build <url>/u);
+    assert.match(skillMd, /site evidence, Graph, Planner Layer, and the generated Skill without direct downloader calls, SiteAdapter runtime execution, or session materialization/u);
     assert.match(indexMd, /^# example-skill Index\n/su);
     assert.match(indexMd, /\| Search work \| \[Search work\]/u);
     assert.match(flowsMd, /^# Flows\n/su);

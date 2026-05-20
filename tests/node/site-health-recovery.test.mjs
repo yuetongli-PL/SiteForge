@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { xAdapter } from '../../src/sites/core/adapters/x.mjs';
+import { xAdapter } from '../../src/sites/adapters/x.mjs';
 import {
   HEALTH_RISK_TYPES,
   RECOVERY_ACTIONS,
@@ -14,7 +14,7 @@ import {
   createUserRecoveryInstructions,
   normalizeHealthSignal,
   normalizeSiteAdapterHealthSignal,
-} from '../../src/sites/capability/site-health-recovery.mjs';
+} from '../../src/domain/risks/site-health-recovery.mjs';
 
 test('SiteHealthRecovery exposes the generic risk and action taxonomies', () => {
   assert.equal(SITE_HEALTH_RECOVERY_SCHEMA_VERSION, 1);

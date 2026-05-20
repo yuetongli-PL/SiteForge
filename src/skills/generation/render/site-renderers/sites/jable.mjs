@@ -32,7 +32,7 @@ function renderJableSkillMd(input) {
       '- Stay inside the verified `jable.tv` URL family.',
       `- Safe actions: \`${safeActions.join('`, `')}\``,
       `- Supported tasks: ${supportedTasks.join('、') || '在已观测站点空间内查询和导航'}.`,
-      '- Ranking query entrypoint: `node src/entrypoints/cli.mjs catalog jable-ranking <url> --query "<自然语言请求>"`.',
+      '- Ranking query execution is internal; public onboarding and regeneration use `siteforge build <url>`.',
     ],
     sampleCoverageLines: [
       `- 影片样本: ${samples.videos.join(', ') || 'none'}`,
@@ -133,7 +133,7 @@ function renderJableIndexReference(input) {
     notesLines: [
       '- 当前站点 Skill 以导航为主：覆盖搜索、影片页、演员页、分类/标签页和功能页。',
       '- 新增榜单型查询：可以按任一已抽取 taxonomy 标签或一级分类组，返回站内前 N 条公开结果。',
-      '- 实际执行入口：`node src/entrypoints/cli.mjs catalog jable-ranking https://jable.tv/ --query "<请求>"`。',
+      '- 公共入口：`siteforge build https://jable.tv/`。',
       '- “推荐/最佳/近期最佳”默认解释为站内综合排序，不输出主观推荐话术。',
       '- 当前已观测的 jable 模型里，没有已验证的下载或长文本阅读流程。',
     ],
@@ -278,7 +278,7 @@ function renderJableNlIntentsReference(input) {
         ].filter(Boolean).join(', ') || '`黑丝分类，近期最佳推荐三部`'}`,
         '- Sort defaults: `推荐/最佳/近期最佳 => 综合排序`; `最近/近期 => 最近更新`; `最多观看/最热 => 最多观看`; `最高收藏/收藏最多 => 最高收藏`.',
         '- Scope: supports all extracted taxonomy tags and all first-level category groups.',
-        '- Execution: `node src/entrypoints/cli.mjs catalog jable-ranking https://jable.tv/ --query "<请求>"`.',
+        '- Execution is internal; public regeneration uses `siteforge build https://jable.tv/`.',
       ],
     });
   }

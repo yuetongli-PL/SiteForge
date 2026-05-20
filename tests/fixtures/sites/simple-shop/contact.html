@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Contact Support - Simple Shop</title>
+    <link rel="canonical" href="https://fixture.local/contact.html">
+  </head>
+  <body>
+    <header>
+      <a href="/">Home</a>
+      <a href="/products.html">Products</a>
+    </header>
+    <main>
+      <h1>Contact support</h1>
+      <form id="contact-support" method="POST" action="/contact">
+        <label for="contact-name">Name</label>
+        <input id="contact-name" name="name" type="text">
+        <label for="contact-email">Email</label>
+        <input id="contact-email" name="email" type="email">
+        <label for="contact-message">Message</label>
+        <textarea id="contact-message" name="message"></textarea>
+        <button type="submit">Send message</button>
+      </form>
+    </main>
+  </body>
+</html>

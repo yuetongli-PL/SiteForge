@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { runDouyinMediaResolverCli } from '../../sites/douyin/queries/media-resolver.mjs';
+import { runDouyinMediaResolverCli } from '../../sites/known-sites/douyin/queries/media-resolver.mjs';
 
 export { runDouyinMediaResolverCli };
 

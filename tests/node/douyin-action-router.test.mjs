@@ -16,8 +16,8 @@ import {
   classifyDouyinDownloadInput,
   planDouyinAction,
   runDouyinAction,
-} from '../../src/sites/douyin/actions/router.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/sites/known-sites/douyin/actions/router.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
 
 test('classifyDouyinDownloadInput recognizes video ids, detail urls, and author urls', () => {
   assert.equal(classifyDouyinDownloadInput('7487317288315258152').inputKind, 'video-detail');

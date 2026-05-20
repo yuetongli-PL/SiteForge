@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { runXiaohongshuFollowQueryCli } from '../../sites/xiaohongshu/queries/follow-query.mjs';
+import { runXiaohongshuFollowQueryCli } from '../../sites/known-sites/xiaohongshu/queries/follow-query.mjs';
 
 export { runXiaohongshuFollowQueryCli };
 

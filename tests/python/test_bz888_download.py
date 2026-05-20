@@ -21,7 +21,7 @@ def load_internal_module(module_name: str, relative_path: str):
 
 bz888 = load_internal_module(
     "test_bz888_download_module",
-    "src/sites/bz888/download/python/bz888.py",
+    "src/sites/known-sites/bz888/download/python/bz888.py",
 )
 
 

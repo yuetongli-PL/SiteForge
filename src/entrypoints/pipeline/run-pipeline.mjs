@@ -8,20 +8,29 @@ import {
 } from '../../infra/cli/build-progress.mjs';
 import { writeTextFile } from '../../infra/io.mjs';
 
-import { executePipeline } from '../../pipeline/engine/engine.mjs';
-import { normalizePipelineOptions, toBoolean } from '../../pipeline/engine/options.mjs';
-import { writePartialPreviewArtifacts } from '../../pipeline/engine/partial-preview-artifacts.mjs';
-import { isTransientNavigationError } from '../../pipeline/engine/runners.mjs';
-import { PIPELINE_STAGE_SPECS, summarizePipelineStages } from '../../pipeline/engine/stage-spec.mjs';
-import { DEFAULT_PIPELINE_RUNTIME, resolvePipelineRuntime } from '../../pipeline/runtime/create-default-runtime.mjs';
-import { prepareRedactedArtifactJsonWithAudit, redactValue } from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
-import { normalizeRiskTransition } from '../../sites/capability/risk-state.mjs';
-import { resolveSiteAdapter } from '../../sites/core/adapters/resolver.mjs';
+import { executePipeline } from '../../app/pipeline/engine/engine.mjs';
+import { normalizePipelineOptions, toBoolean } from '../../app/pipeline/engine/options.mjs';
+import { writePartialPreviewArtifacts } from '../../app/pipeline/engine/partial-preview-artifacts.mjs';
+import { isTransientNavigationError } from '../../app/pipeline/engine/runners.mjs';
+import { PIPELINE_STAGE_SPECS, summarizePipelineStages } from '../../app/pipeline/engine/stage-spec.mjs';
+import { DEFAULT_PIPELINE_RUNTIME, resolvePipelineRuntime } from '../../app/pipeline/runtime/create-default-runtime.mjs';
+import { prepareRedactedArtifactJsonWithAudit, redactValue } from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
+import { normalizeRiskTransition } from '../../domain/risks/risk-state.mjs';
+import { resolveSiteAdapter } from '../../sites/adapters/resolver.mjs';
+import {
+  promptForCapabilityInteraction,
+  renderSiteForgeBuildSummary,
+  runSiteForgeBuild,
+  siteForgeBuildCliJson,
+} from '../../app/pipeline/build/index.mjs';
+import { prepareSiteForgeBuildSetup } from '../../app/pipeline/build/setup-assistant.mjs';
 
 const PARTIAL_PREVIEW_SCHEMA_VERSION = 1;
 const PARTIAL_PREVIEW_RESULT_FILE = 'partial-preview-result.json';
 const PARTIAL_PREVIEW_AUDIT_FILE = 'partial-preview-result.redaction-audit.json';
+const SITEFORGE_PRIVACY_MODES = new Set(['limited', 'strict']);
+const SITEFORGE_REPORT_MODES = new Set(['user', 'debug', 'both']);
 
 function summarizeAuthKeepalive(authKeepalive) {
   return {
@@ -561,6 +570,7 @@ export async function runPipeline(inputUrl, options = {}, runtime = DEFAULT_PIPE
     kbDir: stageResults.knowledgeBase.kbDir,
     skillDir: stageResults.skill.skillDir,
     skillName: stageResults.skill.skillName,
+    compileSummaryPath: stageResults.capabilityCompile.compileSummaryPath,
     authKeepalive: summarizedAuthKeepalive,
     riskRecovery,
     pipelineBlockedByRisk: false,
@@ -599,61 +609,194 @@ export function pipelineCliJson(result) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage:
-  node src/entrypoints/pipeline/run-pipeline.mjs <url> [options]
+  process.stdout.write(`用法:
+  node src/entrypoints/pipeline/run-pipeline.mjs <url> [internal options]
 
-Options:
-  --browser-path <path>        Explicit Chromium/Chrome executable path
-  --browser-profile-root <path> Root directory for persistent browser profiles
-  --user-data-dir <path>       Explicit Chromium user-data-dir to reuse
-  --timeout <ms>               Overall timeout for browser steps
+公开命令:
+  siteforge build <url>
+
+选项:
+  --browser-path <path>        指定 Chromium/Chrome 可执行文件路径
+  --browser-profile-root <path> 持久浏览器 profile 根目录
+  --user-data-dir <path>       指定要复用的 Chromium user-data-dir
+  --timeout <ms>               浏览器步骤整体超时时间
   --wait-until <mode>          load | networkidle
-  --idle-ms <ms>               Extra delay after readiness before capture
-  --max-triggers <n>           Maximum discovered triggers to expand
-  --max-captured-states <n>    Maximum newly captured states during expansion
-  --search-query <text>        Repeatable search query seed for site search
-  --book-title <title>         Target book title for book-content collection
-  --book-url <url>             Target book URL for book-content collection
-  --skip-fallback              Do not collect expanded-state fallback books
-  --chapter-fetch-concurrency <n> Concurrent public chapter fetches for book-content
-  --examples <path>            Optional example utterance JSON file
-  --capture-out-dir <dir>      Root output directory for step 1
-  --expanded-out-dir <dir>     Root output directory for step 2
-  --book-content-out-dir <dir> Root output directory for chapter/book content collection
-  --analysis-out-dir <dir>     Root output directory for step 3
-  --abstraction-out-dir <dir>  Root output directory for step 4
-  --nl-entry-out-dir <dir>     Root output directory for step 5
-  --docs-out-dir <dir>         Root output directory for step 6
-  --governance-out-dir <dir>   Root output directory for step 7
-  --kb-dir <dir>               Final knowledge base directory
-  --skill-out-dir <dir>        Final skill directory
-  --skill-name <name>          Override default skill name
-  --metadata-config-dir <dir>  Write generated site metadata to this config sandbox
-  --metadata-runtime-dir <dir> Write runtime site metadata to this sandbox
-  --strict <true|false>        Strict mode for compileKnowledgeBase
-  --reuse-login-state          Reuse a persistent per-site browser profile
-  --no-reuse-login-state       Disable persistent login-state reuse
-  --auto-login                 Best-effort credential login when credentials exist
-  --no-auto-login              Disable credential auto-login
-  --headless                   Run browser headless
-  --no-headless                Run browser with a visible window
-  --full-page                  Force full-page screenshot (default)
-  --no-full-page               Disable full-page screenshot
-  --json                       Keep stdout as JSON and suppress progress
-  --quiet                      Suppress human progress on stderr
-  --verbose                    Show more details and full paths in human output
-  --debug                      Show stack traces and raw diagnostic JSON
-  --no-color                   Disable ANSI colors
-  --ascii                      Disable Unicode glyphs
-  --compact                    Use compact line-oriented output
+  --idle-ms <ms>               页面就绪后额外等待时间
+  --max-triggers <n>           最多展开的触发器数量
+  --max-captured-states <n>    展开期间最多新采集状态数
+  --search-query <text>        可重复的网站搜索种子
+  --book-title <title>         章节/书籍内容采集的目标书名
+  --book-url <url>             章节/书籍内容采集的目标 URL
+  --skip-fallback              不采集展开状态的兜底书籍
+  --chapter-fetch-concurrency <n> 公开章节并发抓取数
+  --examples <path>            可选示例表达 JSON 文件
+  --capture-out-dir <dir>      第 1 步输出根目录
+  --expanded-out-dir <dir>     第 2 步输出根目录
+  --book-content-out-dir <dir> 章节/书籍内容输出根目录
+  --analysis-out-dir <dir>     第 3 步输出根目录
+  --abstraction-out-dir <dir>  第 4 步输出根目录
+  --nl-entry-out-dir <dir>     第 5 步输出根目录
+  --docs-out-dir <dir>         第 6 步输出根目录
+  --governance-out-dir <dir>   第 7 步输出根目录
+  --capability-compile-out-dir <dir> Graph/Planner 编译产物输出目录
+  --capability-intent <intent> Graph/Planner 编译时优先处理的意图
+  --capability <name>          可重复的优先能力
+  --capabilities <csv>         逗号分隔的优先能力
+  --kb-dir <dir>               最终知识库目录
+  --skill-out-dir <dir>        最终 Skill 目录
+  --skill-name <name>          覆盖默认 Skill 名称
+  --metadata-config-dir <dir>  将生成的站点元数据写入该配置沙盒
+  --metadata-runtime-dir <dir> 将运行时站点元数据写入该沙盒
+  --strict <true|false>        compileKnowledgeBase 严格模式
+  --reuse-login-state          复用持久化的站点浏览器 profile
+  --no-reuse-login-state       禁用登录态复用
+  --auto-login                 存在凭据时尝试最佳努力登录
+  --no-auto-login              禁用自动登录
+  --headless                   使用无头浏览器
+  --no-headless                使用可见浏览器窗口
+  --full-page                  强制整页截图（默认）
+  --no-full-page               禁用整页截图
+  --json                       stdout 保持 JSON，并关闭进度输出
+  --quiet                      抑制 stderr 的人类可读进度
+  --verbose                    显示更多细节和完整路径
+  --debug                      显示堆栈和原始诊断 JSON
+  --auto                       Non-interactive build mode (default)
+  --manual                     Enable legacy step-by-step supplemental collection
+  --deep                       Request broader/deeper discovery
+  --network                    Save a sanitized network summary only
+  --privacy <mode>             limited | strict
+  --explain                    Include explanatory user-facing output
+  --report <mode>              user | debug | both
+  --no-color                   禁用 ANSI 颜色
+  --ascii                      禁用 Unicode 符号
+  --compact                    使用紧凑单行输出
   --progress <mode>            auto | interactive | plain
-  --no-tty                     Force plain progress
-  --force-tty                  Force interactive progress
-  --help                       Show this help
+  --no-tty                     强制普通进度输出
+  --force-tty                  强制交互式进度输出
+  --help                       显示帮助
 
-Notes:
-  - Douyin and Xiaohongshu default to a visible browser unless --headless is explicitly set.
+说明:
+  - 除非显式设置 --headless，抖音和小红书默认使用可见浏览器。
 `);
+}
+
+function safeBuildInputUrl(value) {
+  try {
+    const parsed = new URL(String(value));
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    if (!parsed.pathname) {
+      parsed.pathname = '/';
+    }
+    return parsed.toString();
+  } catch {
+    return '<url>';
+  }
+}
+
+function buildSiteForgeCliFailureResult(inputUrl, error) {
+  const report = error?.buildReport && typeof error.buildReport === 'object'
+    ? error.buildReport
+    : {};
+  return {
+    ...report,
+    inputUrl: report.inputUrl ?? safeBuildInputUrl(inputUrl),
+    status: report.status ?? 'failed',
+    result_status: report.result_status ?? 'failed',
+    legacy_status: report.legacy_status ?? report.status ?? 'failed',
+    siteId: report.siteId ?? null,
+    buildId: report.buildId ?? null,
+    skillId: report.skillId ?? null,
+    skillDir: report.skillDir ?? null,
+    artifactDir: report.artifactDir ?? error?.artifactDir ?? null,
+    failedStage: report.failedStage ?? error?.stage ?? null,
+    reasonCode: report.reasonCode ?? error?.reasonCode ?? error?.code ?? 'build-failed',
+    reason: report.reason ?? null,
+    warningCodes: report.warningCodes ?? [],
+    warnings: report.warnings ?? [],
+    summary: report.summary ?? {
+      seeds: 0,
+      nodes: 0,
+      affordances: 0,
+      capabilities: {
+        active: 0,
+        candidate: 0,
+        discarded: 0,
+      },
+      activeCapabilities: 0,
+      intents: 0,
+      verificationStatus: null,
+      registryStatus: null,
+    },
+    collectionOutcomes: report.collectionOutcomes ?? {
+      unsuccessful: [],
+      total: 0,
+      truncated: false,
+      limit: 0,
+    },
+    artifacts: {
+      ...(report.artifacts ?? {}),
+      'build_report.json': report.artifacts?.['build_report.json'] ?? error?.buildReportPath ?? null,
+    },
+    setupAssistant: {
+      ...(report.setupAssistant ?? {}),
+      setupPlan: report.setupAssistant?.setupPlan ?? error?.setupPlanPath ?? null,
+      userChoices: report.setupAssistant?.userChoices ?? error?.userChoicesPath ?? null,
+      capabilityHints: report.setupAssistant?.capabilityHints ?? error?.capabilityHintsPath ?? null,
+      profile: report.setupAssistant?.profile ?? error?.buildProfilePath ?? null,
+      savedProfile: report.setupAssistant?.savedProfile ?? error?.savedBuildProfilePath ?? null,
+    },
+  };
+}
+
+function normalizeChoice(value, allowed, flagName) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!allowed.has(normalized)) {
+    throw new Error(`${flagName} must be one of: ${[...allowed].join(', ')}`);
+  }
+  return normalized;
+}
+
+function applySiteForgeCliDefaults(options) {
+  const next = { ...options };
+  if (next.manual === true) {
+    next.auto = false;
+    next.setupInteractive = true;
+    next.disableManualCapabilityProofPrompt = false;
+    next.manualSupplementalCollection = true;
+  } else {
+    next.auto = true;
+    const canInteract = process.stdin.isTTY === true
+      && process.stdout.isTTY === true
+      && next.noTty !== true
+      && next.json !== true
+      && next.quiet !== true;
+    next.setupInteractive = canInteract;
+    next.interactive = canInteract;
+    next.disableManualCapabilityProofPrompt = true;
+  }
+  next.privacyMode = normalizeChoice(next.privacyMode ?? 'limited', SITEFORGE_PRIVACY_MODES, '--privacy');
+  if (next.deep === true) {
+    next.maxDepth = next.maxDepth ?? 3;
+    next.maxPages = next.maxPages ?? 100;
+    next.maxSeeds = next.maxSeeds ?? 200;
+    next.renderJs = next.renderJs ?? true;
+  }
+  if (next.network === true) {
+    next.captureNetwork = true;
+  }
+  if (!next.reportMode) {
+    next.reportMode = next.debug || next.verbose ? 'debug' : 'user';
+  }
+  next.reportMode = normalizeChoice(next.reportMode, SITEFORGE_REPORT_MODES, '--report');
+  next.webInteraction = false;
+  return next;
+}
+
+async function closeSiteForgeWebInteraction(options = {}) {
+  delete options.webInteractionSession;
 }
 
 export function parseCliArgs(argv) {
@@ -667,7 +810,7 @@ export function parseCliArgs(argv) {
       return { value: current.slice(eqIndex + 1), nextIndex: index };
     }
     if (index + 1 >= args.length) {
-      throw new Error(`Missing value for ${current}`);
+      throw new Error(`缺少 ${current} 的取值`);
     }
     return { value: args[index + 1], nextIndex: index + 1 };
   };
@@ -676,7 +819,7 @@ export function parseCliArgs(argv) {
     const current = args[index];
     if (!current.startsWith('--')) {
       if (url !== null) {
-        throw new Error(`Unexpected argument: ${current}`);
+        throw new Error(`未知参数: ${current}`);
       }
       url = current;
       continue;
@@ -752,6 +895,38 @@ export function parseCliArgs(argv) {
       case '--skip-fallback':
         options.skipFallback = true;
         break;
+      case '--auto':
+        options.auto = true;
+        options.manual = false;
+        options.setupInteractive = false;
+        break;
+      case '--manual':
+        options.manual = true;
+        options.auto = false;
+        options.setupInteractive = true;
+        break;
+      case '--deep':
+        options.deep = true;
+        break;
+      case '--network':
+        options.network = true;
+        options.captureNetwork = true;
+        break;
+      case '--privacy': {
+        const { value, nextIndex } = readValue(current, index);
+        options.privacyMode = normalizeChoice(value, SITEFORGE_PRIVACY_MODES, '--privacy');
+        index = nextIndex;
+        break;
+      }
+      case '--explain':
+        options.explain = true;
+        break;
+      case '--report': {
+        const { value, nextIndex } = readValue(current, index);
+        options.reportMode = normalizeChoice(value, SITEFORGE_REPORT_MODES, '--report');
+        index = nextIndex;
+        break;
+      }
       case '--chapter-fetch-concurrency': {
         const { value, nextIndex } = readValue(current, index);
         options.chapterFetchConcurrency = Number(value);
@@ -809,6 +984,33 @@ export function parseCliArgs(argv) {
       case '--governance-out-dir': {
         const { value, nextIndex } = readValue(current, index);
         options.governanceOutDir = value;
+        index = nextIndex;
+        break;
+      }
+      case '--capability-compile-out-dir': {
+        const { value, nextIndex } = readValue(current, index);
+        options.capabilityCompileOutDir = value;
+        index = nextIndex;
+        break;
+      }
+      case '--capability-intent': {
+        const { value, nextIndex } = readValue(current, index);
+        options.capabilityCompileIntent = value;
+        index = nextIndex;
+        break;
+      }
+      case '--capability': {
+        const { value, nextIndex } = readValue(current, index);
+        options.requestedCapabilities = [...(options.requestedCapabilities ?? []), value];
+        index = nextIndex;
+        break;
+      }
+      case '--capabilities': {
+        const { value, nextIndex } = readValue(current, index);
+        options.requestedCapabilities = [
+          ...(options.requestedCapabilities ?? []),
+          ...value.split(',').map((entry) => entry.trim()).filter(Boolean),
+        ];
         index = nextIndex;
         break;
       }
@@ -917,11 +1119,11 @@ export function parseCliArgs(argv) {
         options.forceTty = true;
         break;
       default:
-        throw new Error(`Unknown argument: ${current}`);
+        throw new Error(`未知参数: ${current}`);
     }
   }
 
-  return { url, options };
+  return { url, options: applySiteForgeCliDefaults(options) };
 }
 
 async function runCli() {
@@ -936,44 +1138,85 @@ async function runCli() {
   }
 
   const startedAt = Date.now();
-  const progress = createBuildProgressController({
-    inputUrl: url,
-    stageSpecs: PIPELINE_STAGE_SPECS,
-    options,
-    stdout: process.stdout,
-    stderr: process.stderr,
-  });
   let result;
+  let setup;
   try {
-    result = await runPipeline(url, { ...options, progress });
-    if (result.pipelineBlockedByRisk) {
-      progress.fail(new Error(result.antiCrawlReasonCode ?? result.riskCauseCode ?? 'verification or access-control page'));
-    } else {
-      await progress.complete(result);
-    }
+    setup = await prepareSiteForgeBuildSetup(url, options);
+    result = await runSiteForgeBuild(url, setup.buildOptions);
+    result.setupAssistant = {
+      status: setup.status,
+      profile: setup.paths.buildProfilePath,
+      savedProfile: setup.paths.savedBuildProfilePath,
+      setupPlan: setup.paths.setupPlanPath,
+      userChoices: setup.paths.userChoicesPath,
+      capabilityHints: setup.paths.capabilityHintsPath,
+    };
   } catch (error) {
-    progress.fail(error);
+    await closeSiteForgeWebInteraction(options);
+    const failureResult = buildSiteForgeCliFailureResult(url, error);
+    const renderOptions = {
+      ...options,
+      durationMs: Date.now() - startedAt,
+      columns: process.stdout.columns,
+      cwd: process.cwd(),
+    };
+    if (options.json) {
+      process.stdout.write(siteForgeBuildCliJson(failureResult, options));
+    } else if (options.quiet) {
+      process.stdout.write('Skill：-\n');
+    } else {
+      process.stdout.write(renderSiteForgeBuildSummary(failureResult, renderOptions));
+      if (options.debug) {
+        process.stdout.write('\n调试报告已写入构建目录；如需机器可读输出，请使用 --json --report debug。\n');
+      }
+    }
     if (options.debug && error?.stack) {
       process.stderr.write(`${error.stack}\n`);
     }
-    throw error;
+    process.exitCode = 1;
+    return;
   }
   if (options.json) {
-    process.stdout.write(pipelineCliJson(result));
+    await closeSiteForgeWebInteraction(options);
+    process.stdout.write(siteForgeBuildCliJson(result, options));
     return;
   }
   if (options.quiet) {
-    process.stdout.write(`Skill: ${result.skillDir}\n`);
+    await closeSiteForgeWebInteraction(options);
+    process.stdout.write(`Skill：${result.skillDir}\n`);
     return;
   }
-  process.stdout.write(renderBuildSummary(result, {
+  const interactionOptions = {
+    ...options,
+    input: process.stdin,
+    output: process.stdout,
+    cwd: process.cwd(),
+    siteDir: result.buildContext?.siteDir,
+  };
+  const handledByInteractiveTree = options.interactive === true
+    && options.debug !== true
+    && options.verbose !== true
+    && options.manual !== true
+    ? await promptForCapabilityInteraction(result, interactionOptions)
+    : null;
+  if (handledByInteractiveTree) {
+    await closeSiteForgeWebInteraction(interactionOptions);
+    return;
+  }
+  process.stdout.write(renderSiteForgeBuildSummary(result, {
     ...options,
     durationMs: Date.now() - startedAt,
     columns: process.stdout.columns,
+    cwd: process.cwd(),
   }));
+  const followupInteractionOptions = {
+    ...interactionOptions,
+    treeUi: false,
+  };
+  await promptForCapabilityInteraction(result, followupInteractionOptions);
+  await closeSiteForgeWebInteraction(followupInteractionOptions);
   if (options.debug) {
-    process.stdout.write('\nDebug JSON\n\n');
-    process.stdout.write(pipelineCliJson(result));
+    process.stdout.write('\n调试报告已写入构建目录；如需机器可读输出，请使用 --json --report debug。\n');
   }
 }
 

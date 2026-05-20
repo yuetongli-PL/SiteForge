@@ -18,8 +18,8 @@ import {
   assertNoForbiddenPatterns,
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
-} from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
+} from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
@@ -46,10 +46,12 @@ const SITE_CONFIG = {
 const DEFAULT_COOKIE_TTL_DAYS = 30;
 
 function usage() {
-  return `Usage:
-  node src/entrypoints/cli.mjs social auth-import --site x --cookie-file <cookies.json|cookies.txt> --execute
-  node src/entrypoints/cli.mjs social auth-import --site x --cookie-header-env X_COOKIE_HEADER --execute
-  node src/entrypoints/cli.mjs social auth-import --site x --cookie-header "auth_token=...; ct0=..." --allow-argv-cookie-header --execute
+  return `Internal script usage:
+  node src/entrypoints/sites/social-auth-import.mjs --site x [options]
+  node src/entrypoints/sites/social-auth-import.mjs --site instagram [options]
+
+Public command:
+  siteforge build <url>
 
 Options:
   --site x|instagram        Target site. Default: x.
@@ -453,6 +455,56 @@ export function summarizeCookies(cookies, requiredCookieNames = []) {
   };
 }
 
+function cookieIdentity(cookie) {
+  return [
+    String(cookie?.name ?? '').trim().toLowerCase(),
+    String(cookie?.domain ?? '').trim().toLowerCase(),
+    String(cookie?.path ?? '/').trim() || '/',
+  ].join('|');
+}
+
+export function validateCookieImportPlan(cookies, cookieSummary = {}, siteConfig = {}) {
+  const errors = [];
+  if (!Array.isArray(cookies) || cookies.length === 0) {
+    errors.push({
+      code: 'empty-cookie-input',
+      message: 'No cookies were parsed from the provided source.',
+    });
+  }
+
+  if (Array.isArray(cookieSummary.missingRequired) && cookieSummary.missingRequired.length > 0) {
+    errors.push({
+      code: 'missing-required-cookies',
+      message: `Missing required ${siteConfig.label ?? 'site'} cookie names: ${cookieSummary.missingRequired.join(', ')}`,
+      cookieNames: [...cookieSummary.missingRequired],
+    });
+  }
+
+  const counts = new Map();
+  for (const cookie of cookies ?? []) {
+    const identity = cookieIdentity(cookie);
+    counts.set(identity, (counts.get(identity) ?? 0) + 1);
+  }
+  const duplicateKeys = [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([identity]) => {
+      const [name, domain, cookiePath] = identity.split('|');
+      return { name, domain, path: cookiePath };
+    });
+  if (duplicateKeys.length > 0) {
+    errors.push({
+      code: 'duplicate-cookie-input',
+      message: 'Duplicate cookie name/domain/path entries would make the import order-dependent.',
+      cookies: duplicateKeys,
+    });
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+  };
+}
+
 export async function loadCookieSource(options, siteConfig = SITE_CONFIG[options.site]) {
   if (options.cookieHeaderEnv) {
     const value = process.env[options.cookieHeaderEnv];
@@ -490,6 +542,14 @@ function toCookieParam(cookie, origin) {
   return payload;
 }
 
+function createCookieApiRejectedError(imported) {
+  const failed = imported.filter((entry) => entry.success !== true);
+  const error = new Error(`Cookie API rejected ${failed.length} of ${imported.length} cookie(s)`);
+  error.code = 'cookie-api-rejected';
+  error.failedCookieNames = [...new Set(failed.map((entry) => entry.name).filter(Boolean))];
+  return error;
+}
+
 async function importCookiesIntoSession(session, cookies, origin) {
   const results = [];
   for (const cookie of cookies) {
@@ -504,17 +564,27 @@ async function importCookiesIntoSession(session, cookies, origin) {
   return results;
 }
 
-export async function runImport(options = {}) {
-  const siteConfig = SITE_CONFIG[options.site ?? 'x'];
+export async function runImport(options = {}, deps = {}) {
+  const siteConfig = deps.siteConfig ?? SITE_CONFIG[options.site ?? 'x'];
+  if (!siteConfig) {
+    throw new Error(`Unsupported site: ${options.site ?? 'x'}`);
+  }
+  const loadCookieSourceImpl = deps.loadCookieSource ?? loadCookieSource;
+  const readJsonFileImpl = deps.readJsonFile ?? readJsonFile;
+  const resolveSiteBrowserSessionOptionsImpl = deps.resolveSiteBrowserSessionOptions ?? resolveSiteBrowserSessionOptions;
+  const openBrowserSessionImpl = deps.openBrowserSession ?? openBrowserSession;
+  const inspectLoginStateImpl = deps.inspectLoginState ?? inspectLoginState;
+  const writeManifestImpl = deps.writeSocialAuthImportManifest ?? writeSocialAuthImportManifest;
   const runId = new Date().toISOString().replace(/[-:.]/gu, '').replace(/Z$/u, 'Z');
   const runDir = path.join(path.resolve(options.runRoot ?? path.join(REPO_ROOT, 'runs', 'social-auth-import')), runId);
   await ensureDir(runDir);
 
-  const cookieSource = await loadCookieSource(options, siteConfig);
+  const cookieSource = await loadCookieSourceImpl(options, siteConfig);
   const cookies = parseCookieInput(cookieSource.text, {
     defaultDomain: options.domain ?? siteConfig.defaultDomain,
   });
   const cookieSummary = summarizeCookies(cookies, siteConfig.requiredCookieNames);
+  const validation = validateCookieImportPlan(cookies, cookieSummary, siteConfig);
   const manifestPath = path.join(runDir, 'manifest.json');
   const manifest = {
     runId,
@@ -529,17 +599,26 @@ export async function runImport(options = {}) {
     auth: null,
     userDataDir: null,
     manifestPath,
+    validation,
   };
 
+  if (!validation.ok) {
+    manifest.status = 'invalid-input';
+    manifest.reason = validation.errors[0]?.code ?? 'invalid-cookie-input';
+    manifest.finishedAt = new Date().toISOString();
+    await writeManifestImpl(manifestPath, manifest);
+    return manifest;
+  }
+
   if (!options.execute) {
-    await writeSocialAuthImportManifest(manifestPath, manifest);
+    await writeManifestImpl(manifestPath, manifest);
     return manifest;
   }
 
   let session = null;
   try {
-    const siteProfile = await readJsonFile(siteConfig.profilePath);
-    const authContext = await resolveSiteBrowserSessionOptions(siteConfig.url, {
+    const siteProfile = await readJsonFileImpl(siteConfig.profilePath);
+    const authContext = await resolveSiteBrowserSessionOptionsImpl(siteConfig.url, {
       profilePath: siteConfig.profilePath,
       browserPath: options.browserPath ?? undefined,
       browserProfileRoot: options.browserProfileRoot ?? undefined,
@@ -550,7 +629,7 @@ export async function runImport(options = {}) {
       profilePath: siteConfig.profilePath,
     });
     manifest.userDataDir = authContext.userDataDir;
-    session = await openBrowserSession({
+    session = await openBrowserSessionImpl({
       browserPath: options.browserPath ?? undefined,
       headless: options.headless,
       timeoutMs: options.timeoutMs,
@@ -566,6 +645,9 @@ export async function runImport(options = {}) {
     });
 
     manifest.imported = await importCookiesIntoSession(session, cookies, siteConfig.origin);
+    if (manifest.imported.some((entry) => entry.success !== true)) {
+      throw createCookieApiRejectedError(manifest.imported);
+    }
     await session.navigateAndWait(siteConfig.url, {
       useLoadEvent: false,
       useNetworkIdle: false,
@@ -574,7 +656,7 @@ export async function runImport(options = {}) {
       domQuietMs: 800,
       idleMs: 1000,
     });
-    const authState = await inspectLoginState(session, authContext.authConfig);
+    const authState = await inspectLoginStateImpl(session, authContext.authConfig);
     manifest.auth = {
       status: authState?.identityConfirmed === true ? 'authenticated' : 'not-authenticated',
       loginStateDetected: authState?.loginStateDetected === true || authState?.loggedIn === true,
@@ -589,16 +671,18 @@ export async function runImport(options = {}) {
     manifest.status = manifest.auth.identityConfirmed ? 'authenticated' : 'imported-not-authenticated';
   } catch (error) {
     manifest.status = 'failed';
+    manifest.reason = error?.code ?? 'social-auth-import-failed';
     manifest.error = {
       message: error?.message ?? String(error),
       code: error?.code ?? null,
+      failedCookieNames: Array.isArray(error?.failedCookieNames) ? error.failedCookieNames : undefined,
     };
   } finally {
     if (session) {
       manifest.shutdown = await session.close();
     }
     manifest.finishedAt = new Date().toISOString();
-    await writeSocialAuthImportManifest(manifestPath, manifest);
+    await writeManifestImpl(manifestPath, manifest);
   }
   return manifest;
 }
@@ -642,6 +726,10 @@ export function socialAuthImportCliSummary(manifest) {
   }
 }
 
+function isFailedImportStatus(status) {
+  return ['failed', 'imported-not-authenticated', 'invalid-input'].includes(status);
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -669,7 +757,7 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     manifest = await runImport(stripProgressCliOptions(options));
     const message = `${manifest.status ?? 'unknown'} ${manifest.mode ?? ''}`.trim();
-    if (manifest.status === 'failed' || manifest.status === 'imported-not-authenticated') {
+    if (isFailedImportStatus(manifest.status)) {
       stage.fail({ message });
       task.fail({ message });
       progress.failure({
@@ -699,7 +787,7 @@ export async function main(argv = process.argv.slice(2)) {
     throw error;
   }
   console.log(JSON.stringify(socialAuthImportCliSummary(manifest), null, 2));
-  return manifest.status === 'failed' || manifest.status === 'imported-not-authenticated' ? 1 : 0;
+  return isFailedImportStatus(manifest.status) ? 1 : 0;
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

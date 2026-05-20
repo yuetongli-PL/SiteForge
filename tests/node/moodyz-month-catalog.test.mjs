@@ -6,7 +6,7 @@ import {
   buildMoodyzMonthDateListUrls,
   collectMoodyzMonthCatalog,
   parseMoodyzDateListHtml,
-} from '../../src/sites/moodyz/queries/month-catalog.mjs';
+} from '../../src/sites/known-sites/moodyz/queries/month-catalog.mjs';
 
 function card({ code, title }) {
   return `

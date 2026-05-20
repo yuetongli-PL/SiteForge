@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import {
   TRANSIENT_CLEANUP_TARGETS,
@@ -12,11 +13,18 @@ import {
   pathExists,
 } from '../../tools/clean-transient-outputs.mjs';
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 test('parseCliArgs accepts dry-run and keep-empty-dirs flags', () => {
   const parsed = parseCliArgs(['--dry-run', '--keep-empty-dirs']);
   assert.equal(parsed.help, false);
   assert.equal(parsed.options.dryRun, true);
   assert.equal(parsed.options.keepEmptyDirs, true);
+});
+
+test('parseCliArgs defaults repoRoot to the repository root', () => {
+  const parsed = parseCliArgs([]);
+  assert.equal(path.resolve(parsed.options.repoRoot), REPO_ROOT);
 });
 
 test('cleanTransientOutputs removes transient contents but leaves non-target data alone', async () => {

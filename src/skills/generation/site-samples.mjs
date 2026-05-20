@@ -1,8 +1,8 @@
 // @ts-check
 
 import { cleanText, firstNonEmpty, toArray, uniqueSortedStrings } from '../../shared/normalize.mjs';
-import { isContentDetailPageType } from '../../sites/core/page-types.mjs';
-import { normalizeDisplayLabel } from '../../sites/core/terminology.mjs';
+import { isContentDetailPageType } from '../../sites/registry/core/page-types.mjs';
+import { normalizeDisplayLabel } from '../../sites/registry/core/terminology.mjs';
 
 const JABLE_MODEL_ID_REGEX = /^[^0-9a-f]*[0-9a-f]{16,}$/iu;
 

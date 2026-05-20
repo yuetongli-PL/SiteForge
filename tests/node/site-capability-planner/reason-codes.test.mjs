@@ -8,10 +8,10 @@ import {
   isPlannerReasonCode,
   listPlannerReasonCodes,
   mapSourceReasonCodeToPlannerReasonCode,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 import {
   SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
-} from '../../../src/sites/capability/planner/schema.mjs';
+} from '../../../src/app/planner/schema.mjs';
 
 const REQUIRED_PLANNER_REASON_CODES = [
   'planner.request_invalid',

@@ -1,10 +1,28 @@
 // @ts-check
 
 import { inspectReusableSiteSession as inspectReusableSiteSessionEntrypoint } from './site-auth.mjs';
-import { siteLogin as siteLoginEntrypoint } from '../../entrypoints/sites/site-login.mjs';
 
-export const siteLogin = siteLoginEntrypoint;
 export const inspectReusableSiteSession = inspectReusableSiteSessionEntrypoint;
+
+export async function siteLogin(inputUrl, options = {}) {
+  return {
+    site: {
+      url: inputUrl,
+      profilePath: options.profilePath ?? null,
+      runtimePurpose: options.runtimePurpose ?? 'login',
+    },
+    auth: {
+      status: 'manual-required',
+      reasonCode: 'site-login-runtime-not-injected',
+      persistenceVerified: false,
+      autoLogin: options.autoLogin === true,
+    },
+    warnings: [
+      'Site login runtime was not injected; use the site-login entrypoint or provide deps.siteLogin for live login bootstrap.',
+    ],
+    reports: null,
+  };
+}
 
 function hasOwn(object, key) {
   return Object.prototype.hasOwnProperty.call(object ?? {}, key);

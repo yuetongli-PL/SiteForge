@@ -6,7 +6,7 @@ import {
   createExecutionFeedbackFromLayerReceipt,
   createLayerExecutionHandoffDescriptor,
   prepareExecutionArtifactJsonWithAudit,
-} from '../../../src/sites/capability/execution/index.mjs';
+} from '../../../src/domain/policies/execution/index.mjs';
 
 test('execution handoff remains descriptor-only and Layer-governed', () => {
   const handoff = createLayerExecutionHandoffDescriptor({

@@ -7,9 +7,9 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import {
   siteLogin,
   writeSiteLoginReportArtifacts,
-} from '../../scripts/site-login.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/entrypoints/sites/site-login.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
 
 function createResolvedProfile(workspace) {
   return {

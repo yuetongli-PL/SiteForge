@@ -166,12 +166,12 @@ function renderBilibiliSkillMd(input) {
     ],
     executionPolicyLines: [
       '- Public bilibili pages MUST use the built-in browser.',
-      '- Authenticated bilibili pages MUST use the local opener: `node .\\scripts\\bilibili-action.mjs open <bilibili-authenticated-url>`.',
-      '- Download requests MUST use the local downloader through the action router: `node .\\scripts\\bilibili-action.mjs download <url-or-bv>...`.',
+      '- Authenticated bilibili pages MUST use the local opener: `node .\\src\\entrypoints\\sites\\bilibili-action.mjs open <bilibili-authenticated-url>`.',
+      '- Download requests MUST use the local downloader through the action router: `node .\\src\\entrypoints\\sites\\bilibili-action.mjs download <url-or-bv>...`.',
       '- The built-in browser NEVER carries bilibili login state.',
       '- Authenticated bilibili surfaces include `space/<mid>/dynamic`, `space/<mid>/fans/follow`, `space/<mid>/fans/fans`, `https://www.bilibili.com/watchlater/#/list`, and `https://space.bilibili.com/<mid>/favlist?...`.',
       '- If an authenticated surface needs a reusable local session, the router MUST trigger the local login helper before continuing.',
-      '- Routing table: public home/search/video/bangumi/UP/category pages -> `builtin-browser`; authenticated read-only pages -> `local-profile-browser`; login bootstrap -> `site-login`; downloads -> `src/sites/bilibili/download/python/bilibili.py` via the action router.',
+      '- Routing table: public home/search/video/bangumi/UP/category pages -> `builtin-browser`; authenticated read-only pages -> `local-profile-browser`; login bootstrap and downloads remain internal governed workflows outside the public CLI command surface.',
     ],
     readingOrderLines: renderReadingOrder(outputs, outputs.skillMd, helpers.markdownLink),
     safetyBoundaryLines: [

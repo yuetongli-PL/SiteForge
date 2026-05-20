@@ -20,7 +20,7 @@ import {
   updateDouyinFollowIndexCache,
   updateDouyinUserVideoCache,
   writeDouyinFollowCache,
-} from '../../src/sites/douyin/queries/follow-query.mjs';
+} from '../../src/sites/known-sites/douyin/queries/follow-query.mjs';
 
 test('normalizeDouyinTimeWindow resolves today and explicit ranges in Asia/Shanghai natural days', () => {
   const now = new Date('2026-04-19T10:30:00.000+08:00');

@@ -20,7 +20,7 @@ def load_internal_module(module_name: str, relative_path: str):
 
 download_bilibili = load_internal_module(
     "test_download_bilibili_module",
-    "src/sites/bilibili/download/python/bilibili.py",
+    "src/sites/known-sites/bilibili/download/python/bilibili.py",
 )
 
 

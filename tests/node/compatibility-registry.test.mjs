@@ -11,29 +11,29 @@ import {
   assertLayerSourceAuthSessionRequirementInventorySummaryCompatibility,
   assertLayerSourceRiskPolicyInventorySummaryCompatibility,
   assertLayerSourceSignerDependencyInventorySummaryCompatibility,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   assertSchemaCompatible,
   getCompatibilitySchema,
   listCompatibilitySchemas,
-} from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/domain/schemas/compatibility-registry.mjs';
 import {
   getSchemaInventoryEntry,
   listMissingSchemas,
-} from '../../src/sites/capability/schema-inventory.mjs';
+} from '../../src/domain/schemas/schema-inventory.mjs';
 import {
   CAPABILITY_HOOK_EVENT_TYPES,
   CAPABILITY_HOOK_PRODUCER_DESCRIPTOR_POLICY,
   createCapabilityHookEventTypeRegistry,
   createCapabilityHookProducerDescriptorRegistry,
   createCapabilityHookRegistrySnapshot,
-} from '../../src/sites/capability/capability-hook.mjs';
-import { createFocusedRegressionBatchDefinitionFixture } from '../../src/sites/capability/focused-regression-batches.mjs';
+} from '../../src/domain/lifecycle/capability-hook.mjs';
+import { createFocusedRegressionBatchDefinitionFixture } from '../../src/domain/capabilities/focused-regression-batches.mjs';
 import {
   normalizeArtifactReferenceSet,
   normalizeManifestArtifactBundle,
-} from '../../src/sites/capability/artifact-schema.mjs';
-import { listReasonCodeDefinitions } from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/artifacts/schema.mjs';
+import { listReasonCodeDefinitions } from '../../src/domain/risks/reason-codes.mjs';
 
 const REGISTERED_SCHEMA_NAMES = [
   'ApiCandidate',
@@ -74,7 +74,7 @@ const LAYER_SOURCE_INVENTORY_SUMMARY_NAMES = [
   'LayerSourceAuthSessionRequirementInventorySummary',
   'LayerSourceSignerDependencyInventorySummary',
 ];
-const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/sites/capability/site-capability-graph.mjs';
+const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/domain/capabilities/site-capability-graph.mjs';
 
 function createSyntheticGraphNodePayload(type) {
   const base = {
@@ -384,7 +384,7 @@ test('compatibility registry exposes current core schema versions', () => {
   assert.deepEqual(schemas.map((entry) => entry.name), REGISTERED_SCHEMA_NAMES);
   for (const schema of schemas) {
     assert.equal(typeof schema.version, 'number');
-    assert.match(schema.sourcePath, /^src\/sites\/capability\//u);
+    assert.match(schema.sourcePath, /^src\/domain\//u);
     assert.equal(Object.hasOwn(schema, 'assertCompatible'), false);
   }
 });
@@ -481,9 +481,9 @@ test('compatibility registry rejects CapabilityHook producer descriptor inventor
   assert.throws(
     () => assertSchemaCompatible('CapabilityHookProducerDescriptorRegistry', {
       ...current,
-      producers: current.producers.filter((producer) => producer.eventType !== 'download.run.terminal'),
+      producers: current.producers.filter((producer) => producer.eventType !== 'session.run.completed'),
     }),
-    /must include high-risk producer descriptor: download\.run\.terminal/u,
+    /must include high-risk producer descriptor: session\.run\.completed/u,
   );
   assert.throws(
     () => assertSchemaCompatible('CapabilityHookProducerDescriptorRegistry', {

@@ -7,7 +7,7 @@ import {
   normalizeDouyinVideoDownloadMetadata,
   selectBestDouyinFormat,
   shouldRetryDouyinUnresolvedResult,
-} from '../../src/sites/douyin/queries/media-resolver.mjs';
+} from '../../src/sites/known-sites/douyin/queries/media-resolver.mjs';
 
 test('normalizeDouyinVideoDownloadMetadata prefers highest resolution and bitrate direct play url', () => {
   const metadata = normalizeDouyinVideoDownloadMetadata({

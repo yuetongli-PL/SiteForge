@@ -13,8 +13,11 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-resume');
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs social resume --state <state-or-manifest.json> [options]
+const HELP = `Internal script usage:
+  node scripts/social-live-resume.mjs --state <file-or-dir> [options]
+
+Public command:
+  siteforge build <url>
 
 Plans X full archive resume attempts from prior state/manifest artifacts. Defaults to dry-run.
 
@@ -217,13 +220,13 @@ function commandForRecord(record) {
 
 function rewriteKnownCommandLine(command) {
   return String(command ?? '')
-    .replace(/^node\s+src[\\/]entrypoints[\\/]sites[\\/]x-action\.mjs\s+/u, 'node src/entrypoints/cli.mjs x action ')
-    .replace(/^node\s+src[\\/]entrypoints[\\/]sites[\\/]instagram-action\.mjs\s+/u, 'node src/entrypoints/cli.mjs instagram action ');
+    .replace(/^node\s+src[\\/]entrypoints[\\/]cli\.mjs\s+x\s+action\s+/u, 'node src/entrypoints/sites/x-action.mjs ')
+    .replace(/^node\s+src[\\/]entrypoints[\\/]cli\.mjs\s+instagram\s+action\s+/u, 'node src/entrypoints/sites/instagram-action.mjs ');
 }
 
 function ensureActionSessionTraceability(command) {
   const text = String(command ?? '');
-  if (!/(?:x|instagram)-action\.mjs(?:\s|$)|src\/entrypoints\/cli\.mjs\s+(?:x|instagram)\s+action(?:\s|$)/u.test(text)) return text;
+  if (!/(?:x|instagram)-action\.mjs(?:\s|$)/u.test(text)) return text;
   if (/(?:^|\s)--session-(?:health-plan|manifest)(?:\s|$)/u.test(text)) return text;
   return `${text} --session-health-plan`;
 }

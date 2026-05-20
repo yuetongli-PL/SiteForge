@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   prepareRedactedArtifactJsonWithAudit,
   REDACTION_PLACEHOLDER,
-} from '../src/sites/capability/security-guard.mjs';
+} from '../src/domain/sessions/security-guard.mjs';
 
 const WINDOWS_ABSOLUTE_PATH_RE = /(?:^|[\s"'=])[A-Za-z]:[\\/]/u;
 const UNC_PATH_RE = /\\\\[^\\/\s]+[\\/][^\\/\s]+/u;

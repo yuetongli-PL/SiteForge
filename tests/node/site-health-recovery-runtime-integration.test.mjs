@@ -4,12 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { runSessionTask } from '../../src/sites/sessions/runner.mjs';
-import { summarizeSessionRunManifest } from '../../src/sites/sessions/manifest-bridge.mjs';
+import { runSessionTask } from '../../src/domain/sessions/runner.mjs';
+import { summarizeSessionRunManifest } from '../../src/domain/sessions/manifest-bridge.mjs';
 import {
   REDACTION_PLACEHOLDER,
   assertNoForbiddenPatterns,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 import {
   prepareSiteDoctorReportArtifacts,
   writeSiteDoctorReportArtifacts,

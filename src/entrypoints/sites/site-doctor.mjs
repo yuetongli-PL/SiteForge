@@ -13,11 +13,11 @@ import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { ensureDir, pathExists, readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost, toArray, uniqueSortedStrings } from '../../shared/normalize.mjs';
 import { detectXiaohongshuRestrictionPage, isXiaohongshuUrl } from '../../shared/xiaohongshu-risk.mjs';
-import { PROFILE_ARCHETYPES } from '../../sites/core/archetypes.mjs';
-import { resolveSite } from '../../sites/core/adapters/resolver.mjs';
-import { resolveProfilePathForUrl } from '../../sites/core/profiles.mjs';
-import { inferPageTypeFromUrl, toSemanticPageType } from '../../sites/core/page-types.mjs';
-import { validateProfileFile } from '../../sites/core/profile-validation.mjs';
+import { PROFILE_ARCHETYPES } from '../../sites/registry/core/archetypes.mjs';
+import { resolveSite } from '../../sites/adapters/resolver.mjs';
+import { resolveProfilePathForUrl } from '../../sites/registry/core/profiles.mjs';
+import { inferPageTypeFromUrl, toSemanticPageType } from '../../sites/registry/core/page-types.mjs';
+import { validateProfileFile } from '../../sites/registry/core/profile-validation.mjs';
 import { maybeRunAuthenticatedKeepalivePreflight } from '../../infra/auth/auth-keepalive-preflight.mjs';
 import {
   ensureAuthenticatedSession,
@@ -28,13 +28,13 @@ import {
   resolveSiteBrowserSessionOptions,
 } from '../../infra/auth/site-auth.mjs';
 import { classifyRiskFromContext } from '../../infra/auth/site-session-governance.mjs';
-import { resolveCanonicalSiteIdentity, resolveCanonicalSiteKey } from '../../sites/core/site-identity.mjs';
-import { resolveSiteDoctorScenarioSuite } from '../../sites/core/site-doctor-scenarios.mjs';
+import { resolveCanonicalSiteIdentity, resolveCanonicalSiteKey } from '../../sites/registry/core/site-identity.mjs';
+import { resolveSiteDoctorScenarioSuite } from '../../sites/registry/core/site-doctor-scenarios.mjs';
 import {
   readSessionRunManifest,
   summarizeSessionRunManifest,
-} from '../../sites/sessions/manifest-bridge.mjs';
-import { runSessionTask } from '../../sites/sessions/runner.mjs';
+} from '../../domain/sessions/manifest-bridge.mjs';
+import { runSessionTask } from '../../domain/sessions/runner.mjs';
 import { ensureCrawlerScript } from '../pipeline/generate-crawler-script.mjs';
 import { capture } from '../pipeline/capture.mjs';
 import { derivePageFacts, expandStates } from '../pipeline/expand-states.mjs';
@@ -47,16 +47,16 @@ import {
   prepareRedactedArtifactJson,
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
-} from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
+} from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
 import {
   createSiteOnboardingDiscoveryArtifacts,
   createSiteOnboardingDiscoveryInputFromCaptureExpand,
-} from '../../sites/capability/site-onboarding-discovery.mjs';
+} from '../../domain/capabilities/site-onboarding-discovery.mjs';
 import {
   SiteHealthRecoveryEngine,
   normalizeSiteAdapterHealthSignal,
-} from '../../sites/capability/site-health-recovery.mjs';
+} from '../../domain/risks/site-health-recovery.mjs';
 import {
   runSiteCapabilityCompile,
 } from './site-capability-compile.mjs';
@@ -74,8 +74,8 @@ const SITE_DOCTOR_REPORT_PROFILE_KEYS = Object.freeze(new Set([
   'sessionLeaseId',
   'fingerprint',
 ]));
-const BILIBILI_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'bilibili', 'download', 'python', 'bilibili.py');
-const BOOK_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'chapter-content', 'download', 'python', 'book.py');
+const BILIBILI_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'known-sites', 'bilibili', 'download', 'python', 'bilibili.py');
+const BOOK_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'known-sites', 'chapter-content', 'download', 'python', 'book.py');
 const XIAOHONGSHU_ACTION_ENTRY = path.join(REPO_ROOT, 'src', 'entrypoints', 'sites', 'xiaohongshu-action.mjs');
 const DEFAULT_OPTIONS = {
   outDir: path.join(REPO_ROOT, 'runs', 'sites', 'site-doctor'),
@@ -97,8 +97,11 @@ const DEFAULT_OPTIONS = {
   pythonCommand: 'pypy3',
 };
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs site doctor <url> [--query "<sample>"] [--profile-path <path>] [--session-manifest <path>] [--session-health-plan|--no-session-health-plan] [--out-dir <dir>] [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--reuse-login-state|--no-reuse-login-state] [--auto-login|--no-auto-login] [--max-triggers <n>] [--max-captured-states <n>] [--check-download] [--capability-compile-dry-run] [--json] [--quiet] [--progress auto|interactive|plain]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/site-doctor.mjs <url> [options]
+
+Public command:
+  siteforge build <url>
 `;
 
 const AUTH_PROBE_WAIT_POLICY = {
@@ -2025,7 +2028,7 @@ function buildNextActions(report, sample) {
     !sample ? 'Add profile.validationSamples.videoSearchQuery, profile.search.knownQueries[0], or pass --query for search validation.' : null,
     xiaohongshuAuthBootstrapNeeded ? 'Run Xiaohongshu site-login in a visible browser and complete one manual login so /notification can be reused.' : null,
     xiaohongshuAuthBootstrapNeeded ? 'After manual login finishes, rerun site-doctor to validate notification-inbox with the persistent Xiaohongshu profile.' : null,
-    genericAuthBootstrapNeeded ? `Run ${authSiteLabel} site-login in a visible browser: node .\\src\\entrypoints\\cli.mjs site login ${report.site.url} --no-headless --reuse-login-state.` : null,
+    genericAuthBootstrapNeeded ? `Manual ${authSiteLabel} login bootstrap is required in a visible browser; after the operator completes it, rerun siteforge build ${report.site.url}.` : null,
     genericAuthBootstrapNeeded ? `Reuse an existing browser session with --user-data-dir or BWS_${authEnvToken}_USER_DATA_DIR, then rerun site-doctor.` : null,
     report.search?.status === 'fail' ? 'Update search selectors or the sample query until a search-results page is reachable.' : null,
     report.detail?.status === 'fail' ? 'Confirm content/detail path prefixes and result link selectors.' : null,

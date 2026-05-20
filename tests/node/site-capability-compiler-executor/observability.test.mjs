@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   createCompilerLifecycleEvent,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 
 test('compiler lifecycle event requires redaction and required trace fields', () => {
   const event = createCompilerLifecycleEvent({

@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { assertNoForbiddenPatterns } from '../../src/sites/capability/security-guard.mjs';
+import { assertNoForbiddenPatterns } from '../../src/domain/sessions/security-guard.mjs';
 
 async function loadExecutionGateModule() {
-  return await import('../../src/sites/capability/site-health-execution-gate.mjs');
+  return await import('../../src/domain/risks/site-health-execution-gate.mjs');
 }
 
 async function loadRecoveryModule() {
-  return await import('../../src/sites/capability/site-health-recovery.mjs');
+  return await import('../../src/domain/risks/site-health-recovery.mjs');
 }
 
 async function evaluateGate(task, context = {}) {

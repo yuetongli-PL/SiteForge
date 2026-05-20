@@ -6,33 +6,36 @@ import path from 'node:path';
 
 import {
   writeVerifiedApiCatalogArtifactsFromObservedProducerEvidence,
-} from '../../src/sites/capability/api-catalog-promotion.mjs';
-import { apiCandidateFromObservedRequest } from '../../src/sites/capability/api-discovery.mjs';
+} from '../../src/domain/capabilities/api-catalog-promotion.mjs';
+import { apiCandidateFromObservedRequest } from '../../src/domain/capabilities/api-discovery.mjs';
 import {
   normalizeSiteAdapterCandidateDecision,
   writeRuntimeVerifiedApiCatalogStoreArtifacts,
-} from '../../src/sites/capability/api-candidates.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   createBilibiliSiteSpecificDiscoveryArtifacts,
   writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProducerEvidence,
-} from '../../src/sites/bilibili/capability-evidence-fixtures.mjs';
+} from '../../src/sites/known-sites/bilibili/capability-evidence-fixtures.mjs';
 import {
   assertExecutableCapabilityEvidenceFixtureCompatible,
   createExecutableCapabilityEvidenceFixture,
-} from '../../src/sites/capability/capability-evidence-chain.mjs';
+} from '../../src/domain/capabilities/capability-evidence-chain.mjs';
+import {
+  createCapabilityHookRegistry,
+} from '../../src/domain/lifecycle/capability-hook.mjs';
 import {
   createSiteOnboardingDiscoveryArtifacts,
   createSiteOnboardingDiscoveryInputFromCaptureExpand,
-} from '../../src/sites/capability/site-onboarding-discovery.mjs';
+} from '../../src/domain/capabilities/site-onboarding-discovery.mjs';
 import {
   assertLayerOwnedRuntimeConsumerResultCompatible,
   createExecutionPolicyDecision,
   createLayerExecutionHandoffDescriptor,
   createLayerOwnedRuntimeConsumerResult,
-} from '../../src/sites/capability/execution/index.mjs';
+} from '../../src/domain/policies/execution/index.mjs';
 import {
   assertNoForbiddenPatterns,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 
 function adapterFromDecisions({
   nodes = {},
@@ -487,6 +490,17 @@ test('Layer-owned runtime consumer accepts Layer receipt without direct task exe
     plannerHandoffRef: 'planner-handoff:layer-consumer',
     approvalSatisfied: true,
   });
+  const capabilityHookRegistry = createCapabilityHookRegistry([{
+    id: 'layer-consumer-receipt-observer',
+    phase: 'after_task',
+    subscriber: {
+      name: 'layer-consumer-receipt-observer',
+    },
+    filters: {
+      eventTypes: ['execution.layer.consumer.receipt'],
+      siteKeys: ['synthetic-navigation'],
+    },
+  }]);
   const result = createLayerOwnedRuntimeConsumerResult({
     handoffDescriptor,
     policyDecision,
@@ -504,6 +518,7 @@ test('Layer-owned runtime consumer accepts Layer receipt without direct task exe
     correlationId: 'correlation-layer-consumer',
     siteKey: 'synthetic-navigation',
     adapterVersion: 'adapter-v1',
+    capabilityHookRegistry,
   });
 
   assert.equal(assertLayerOwnedRuntimeConsumerResultCompatible(result), true);
@@ -518,6 +533,8 @@ test('Layer-owned runtime consumer accepts Layer receipt without direct task exe
   assert.equal(result.coverageDeltaArtifactWrite.redactionApplied, true);
   assert.equal(result.lifecycleEvent.eventType, 'execution.layer.consumer.receipt');
   assert.equal(result.lifecycleEvent.details.artifactRefCount, 1);
+  assert.equal(result.lifecycleEvent.details.capabilityHookMatches.matchCount, 1);
+  assert.equal(result.lifecycleEvent.details.capabilityHookMatches.matches[0].id, 'layer-consumer-receipt-observer');
   assertNoForbiddenPatterns(result);
 
   const blockedDecision = createExecutionPolicyDecision({

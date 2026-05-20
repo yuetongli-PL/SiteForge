@@ -24,7 +24,6 @@ const SECTION_17_TESTING_STRATEGY_CHECKLIST = Object.freeze([
   'layeredValidationPolicy',
   'tests/node/site-capability-regression-batches.test.mjs',
   'tests/node/site-capability-matrix.test.mjs',
-  'tests/node/downloads-runner.test.mjs',
   'tests/node/session-view.test.mjs',
   'tests/node/security-guard-redaction.test.mjs',
   'tests/node/risk-state.test.mjs',

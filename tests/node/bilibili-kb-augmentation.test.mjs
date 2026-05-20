@@ -6,7 +6,7 @@ import {
   buildBilibiliStateAttributeFacts,
   renderBilibiliOverviewSections,
   renderBilibiliStateSections,
-} from '../../src/sites/bilibili/kb/augmentation.mjs';
+} from '../../src/sites/known-sites/bilibili/kb/augmentation.mjs';
 
 test('bilibili KB augmentation builds overview and state attributes from surfaced page facts', () => {
   const state = {

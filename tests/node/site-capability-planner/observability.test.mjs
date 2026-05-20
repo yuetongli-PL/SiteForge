@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import {
   SECURITY_GUARD_SCHEMA_VERSION,
-} from '../../../src/sites/capability/security-guard.mjs';
+} from '../../../src/domain/sessions/security-guard.mjs';
 import {
   SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
   SITE_CAPABILITY_PLANNER_VERSION,
@@ -14,7 +14,7 @@ import {
   assertPlannerLifecycleEventCompatible,
   createPlannerLifecycleEvent,
   writePlannerArtifact,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 
 function createBaseEvent(overrides = {}) {
   return {

@@ -11,10 +11,10 @@ import {
   writeTextFile,
 } from '../io.mjs';
 import { cleanText, toArray, uniqueSortedStrings } from '../../shared/normalize.mjs';
-import { isKnownReasonCode, normalizeReasonCode } from '../../sites/capability/reason-codes.mjs';
-import { normalizeRiskTransition } from '../../sites/capability/risk-state.mjs';
-import { prepareRedactedArtifactJsonWithAudit } from '../../sites/capability/security-guard.mjs';
-import { normalizeHealthSignal } from '../../sites/capability/site-health-recovery.mjs';
+import { isKnownReasonCode, normalizeReasonCode } from '../../domain/risks/reason-codes.mjs';
+import { normalizeRiskTransition } from '../../domain/risks/risk-state.mjs';
+import { prepareRedactedArtifactJsonWithAudit } from '../../domain/sessions/security-guard.mjs';
+import { normalizeHealthSignal } from '../../domain/risks/site-health-recovery.mjs';
 
 const DEFAULT_KEEPALIVE_INTERVAL_MINUTES = 120;
 const DEFAULT_RISK_COOLDOWN_MINUTES = 60;

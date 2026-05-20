@@ -12,11 +12,11 @@ import {
   generateGraphDocsSummary,
   listGraphSites,
   validateSiteCapabilityGraph,
-} from '../../src/sites/capability/site-capability-graph.mjs';
-import * as siteCapabilityGraph from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
+import * as siteCapabilityGraph from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   requireReasonCodeDefinition,
-} from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/risks/reason-codes.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 
@@ -322,7 +322,7 @@ test('non-goal boundary guards reject bypass credentials sessions and unredacted
   const docsSummary = generateGraphDocsSummary(graph);
   const docsArtifact = createGraphDocsMarkdownArtifact(docsSummary);
   const repoOutput = createGraphDocsMarkdownRepoOutputDryRun(docsArtifact, {
-    targetRelativePath: 'docs/site-capability-graph/non-goal-boundary.md',
+    targetRelativePath: 'runs/site-capability-graph/non-goal-boundary.md',
     repoWriteEnabled: false,
     runtimeArtifactWriteEnabled: false,
   });
@@ -404,7 +404,7 @@ test('non-goal boundary guards reject bypass credentials sessions and unredacted
     {
       name: 'repoWriteEnabled',
       fn: () => createGraphDocsMarkdownRepoOutputDryRun(docsArtifact, {
-        targetRelativePath: 'docs/site-capability-graph/non-goal-boundary.md',
+        targetRelativePath: 'runs/site-capability-graph/non-goal-boundary.md',
         repoWriteEnabled: true,
       }),
       pattern: /repoWriteEnabled must remain false/u,
@@ -412,7 +412,7 @@ test('non-goal boundary guards reject bypass credentials sessions and unredacted
     {
       name: 'runtimeArtifactWriteEnabled',
       fn: () => createGraphDocsMarkdownRepoOutputDryRun(docsArtifact, {
-        targetRelativePath: 'docs/site-capability-graph/non-goal-boundary.md',
+        targetRelativePath: 'runs/site-capability-graph/non-goal-boundary.md',
         runtimeArtifactWriteEnabled: true,
       }),
       pattern: /runtimeArtifactWriteEnabled must remain false/u,
@@ -1861,7 +1861,7 @@ test('graph core positioning boundary guard keeps inventory outputs non-executab
   );
   const repoOutputDryRun = siteCapabilityGraph.createGraphInventoryRepoOutputDryRun(graph, {
     inventoryName: 'synthetic-section-1-core-positioning-inventory',
-    targetRelativePath: 'docs/site-capability-graph/generated-inventory.json',
+    targetRelativePath: 'runs/site-capability-graph/generated-inventory.json',
     repoWriteEnabled: false,
     runtimeGenerationEnabled: false,
     runtimeArtifactWriteEnabled: false,

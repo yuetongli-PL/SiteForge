@@ -25,7 +25,7 @@ def load_internal_module(module_name: str, relative_path: str):
 
 download_xiaohongshu = load_internal_module(
     "test_download_xiaohongshu_module",
-    "src/sites/xiaohongshu/download/python/xiaohongshu.py",
+    "src/sites/known-sites/xiaohongshu/download/python/xiaohongshu.py",
 )
 media_bundle = sys.modules["media_bundle"]
 

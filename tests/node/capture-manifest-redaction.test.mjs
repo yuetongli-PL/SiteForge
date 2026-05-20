@@ -4,19 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 
-import { writeCaptureManifest } from '../../src/pipeline/stages/capture.mjs';
-import { API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION } from '../../src/sites/capability/api-candidates.mjs';
+import { writeCaptureManifest } from '../../src/app/pipeline/stages/capture.mjs';
+import { API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION } from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   LIFECYCLE_EVENT_SCHEMA_VERSION,
   assertLifecycleEventObservabilityFields,
   assertLifecycleEventProducerObservability,
-} from '../../src/sites/capability/lifecycle-events.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
-import { createCapabilityHookRegistry } from '../../src/sites/capability/capability-hook.mjs';
+} from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
+import { createCapabilityHookRegistry } from '../../src/domain/lifecycle/capability-hook.mjs';
 import {
   REDACTION_PLACEHOLDER,
   assertNoForbiddenPatterns,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 
 function createManifest(filePath, overrides = {}) {
   return {
@@ -63,7 +63,7 @@ test('writeCaptureManifest redacts synthetic sensitive fields before writing', a
       phase: 'after_capture',
       subscriber: {
         name: 'capture-manifest-written-observer',
-        modulePath: 'src/sites/capability/lifecycle-events.mjs',
+        modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
         entrypoint: 'observe',
         order: 1,
       },
@@ -174,7 +174,7 @@ test('writeCaptureManifest writes redacted api candidates from capture networkRe
       phase: 'after_candidate_write',
       subscriber: {
         name: 'capture-api-candidates-observer',
-        modulePath: 'src/sites/capability/lifecycle-events.mjs',
+        modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
         entrypoint: 'observe',
         order: 1,
       },

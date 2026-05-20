@@ -16,18 +16,18 @@ import {
   createStaticSiteCompileManifestFromConfig,
   prepareCompilerDerivedArtifact,
   SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
-} from '../../sites/capability/compiler/index.mjs';
+} from '../../app/compiler/index.mjs';
 import {
   createDryRunCapabilityPlan,
   createPlannerLayerHandoffDescriptor,
   SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
-} from '../../sites/capability/planner/index.mjs';
+} from '../../app/planner/index.mjs';
 import {
   createExecutionPolicyDecision,
   createLayerExecutionHandoffDescriptor,
   createLayerOwnedRuntimeConsumerResult,
   writeLayerOwnedRuntimeFeedbackArtifacts,
-} from '../../sites/capability/execution/index.mjs';
+} from '../../domain/policies/execution/index.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
@@ -248,7 +248,7 @@ async function createSiteSpecificEvidenceSummaryForManifest(manifest) {
   if (manifest.siteKey === 'bilibili') {
     const {
       createBilibiliSiteSpecificEvidenceSummary,
-    } = await import('../../sites/bilibili/capability-evidence-fixtures.mjs');
+    } = await import('../../sites/known-sites/bilibili/capability-evidence-fixtures.mjs');
     return createBilibiliSiteSpecificEvidenceSummary();
   }
   return createDefaultSiteSpecificEvidenceSummary({ manifest });

@@ -12,11 +12,11 @@ import {
   listLayerBoundaries,
   listLayerCrossings,
   normalizeLayerCrossing,
-} from '../../src/sites/capability/layer-boundaries.mjs';
+} from '../../src/domain/capabilities/layer-boundaries.mjs';
 import {
   LAYER_BOUNDARY_READINESS_SCHEMA_VERSION,
   assertLayerBoundaryReadiness,
-} from '../../src/sites/capability/layer-boundary-readiness.mjs';
+} from '../../src/domain/risks/layer-boundary-readiness.mjs';
 
 test('LayerBoundary registry declares the required Section 3 layers', () => {
   assert.equal(LAYER_BOUNDARY_SCHEMA_VERSION, 1);

@@ -2,9 +2,9 @@
 
 import {
   resolvePageTypesFromSiteContext,
-} from '../../sites/catalog/context.mjs';
-import { resolveConfiguredPageTypes } from '../../sites/core/page-types.mjs';
-import { resolveCanonicalSiteIdentity } from '../../sites/core/site-identity.mjs';
+} from '../../sites/registry/catalog/context.mjs';
+import { resolveConfiguredPageTypes } from '../../sites/registry/core/page-types.mjs';
+import { resolveCanonicalSiteIdentity } from '../../sites/registry/core/site-identity.mjs';
 
 export async function syncPublishedSiteMetadata(kind, payload, deps) {
   if (kind === 'knowledge-base') {

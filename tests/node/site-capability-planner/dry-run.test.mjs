@@ -7,10 +7,10 @@ import {
   assertCapabilityPlanCompatible,
   assertPlannerDryRunResultCompatible,
   createDryRunCapabilityPlan,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 import {
   validateSiteCapabilityGraph,
-} from '../../../src/sites/capability/site-capability-graph.mjs';
+} from '../../../src/domain/capabilities/site-capability-graph.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('../fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 

@@ -11,7 +11,7 @@ import {
   parseJableVideoCardsFromHtml,
   resolveJableRankingTarget,
   resolveJableSortMode,
-} from '../../src/sites/jable/queries/ranking.mjs';
+} from '../../src/sites/known-sites/jable/queries/ranking.mjs';
 
 async function assertMissing(filePath) {
   await assert.rejects(access(filePath), /ENOENT/u);

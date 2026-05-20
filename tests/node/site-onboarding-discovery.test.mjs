@@ -9,8 +9,8 @@ import {
   UNKNOWN_NODE_REPORT_SCHEMA_VERSION,
   assertSiteOnboardingDiscoveryComplete,
   createSiteOnboardingDiscoveryArtifacts,
-} from '../../src/sites/capability/site-onboarding-discovery.mjs';
-import * as SiteOnboardingDiscoveryModule from '../../src/sites/capability/site-onboarding-discovery.mjs';
+} from '../../src/domain/capabilities/site-onboarding-discovery.mjs';
+import * as SiteOnboardingDiscoveryModule from '../../src/domain/capabilities/site-onboarding-discovery.mjs';
 
 function discoveredNode(id, {
   nodeKind = 'dom-node',

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   REDACTION_PLACEHOLDER,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 import {
   NON_GOALS_BOUNDARY_SCHEMA_VERSION,
   assertNonGoalBoundary,
   scanNonGoalBoundary,
-} from '../../src/sites/capability/non-goals-boundary.mjs';
-import * as nonGoalsBoundary from '../../src/sites/capability/non-goals-boundary.mjs';
+} from '../../src/domain/risks/non-goals-boundary.mjs';
+import * as nonGoalsBoundary from '../../src/domain/risks/non-goals-boundary.mjs';
 
 function loadNonGoalRuntimeBoundaryHandoffGuardApi() {
   const create = nonGoalsBoundary.createNonGoalRuntimeBoundaryHandoffGuard;
@@ -75,7 +75,7 @@ test('NonGoalsBoundary allows site-agnostic Kernel descriptors with redacted pay
     },
     imports: [
       {
-        specifier: 'src/sites/capability/reason-codes.mjs',
+        specifier: 'src/domain/risks/reason-codes.mjs',
         imported: ['reasonCodes'],
       },
     ],

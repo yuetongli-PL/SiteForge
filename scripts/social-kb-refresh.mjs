@@ -30,8 +30,11 @@ const BLOCKED_REASON_CODES = new Set([
   'platform-boundary',
 ]);
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs social kb-refresh [--execute] [--fail-fast] [--case <id>] [--site x|instagram|all] [--surface <name>] [options]
+const HELP = `Internal script usage:
+  node scripts/social-kb-refresh.mjs [options]
+
+Public command:
+  siteforge build <url>
 
 Defaults to dry-run plan mode. Dry-run writes a manifest with commands and expected artifacts, but does not touch live sites.
 Use --plan-only or --plan-json for no-write audit planning.

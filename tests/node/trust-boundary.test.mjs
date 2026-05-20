@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   REDACTION_PLACEHOLDER,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 import {
   TRUST_BOUNDARY_CROSSING_SCHEMA_VERSION,
   TRUST_BOUNDARY_IDS,
@@ -13,7 +13,7 @@ import {
   getTrustBoundary,
   listTrustBoundaries,
   normalizeTrustBoundaryCrossing,
-} from '../../src/sites/capability/trust-boundary.mjs';
+} from '../../src/domain/risks/trust-boundary.mjs';
 
 test('TrustBoundary registry declares the required Section 13 boundaries', () => {
   assert.equal(TRUST_BOUNDARY_REGISTRY_SCHEMA_VERSION, 1);

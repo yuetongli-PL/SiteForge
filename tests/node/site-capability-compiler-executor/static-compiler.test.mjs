@@ -6,7 +6,7 @@ import {
   assertSiteCompileManifestCompatible,
   createCapabilityIntake,
   createStaticSiteCompileManifest,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 import {
   createCompileRequest,
   createSyntheticCapabilityConfig,

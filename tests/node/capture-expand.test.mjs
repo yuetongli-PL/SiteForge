@@ -7,9 +7,9 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promise
 import { capture, writeCaptureManifest } from '../../src/entrypoints/pipeline/capture.mjs';
 import { derivePageFacts, expandStates } from '../../src/entrypoints/pipeline/expand-states.mjs';
 import { BrowserSession } from '../../src/infra/browser/session.mjs';
-import { API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION } from '../../src/sites/capability/api-candidates.mjs';
-import { requireReasonCodeDefinition } from '../../src/sites/capability/reason-codes.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
+import { API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION } from '../../src/domain/capabilities/api-candidates.mjs';
+import { requireReasonCodeDefinition } from '../../src/domain/risks/reason-codes.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
 
 async function createInitialManifest(workspace, url) {
   const captureDir = path.join(workspace, 'initial-capture');

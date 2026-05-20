@@ -39,6 +39,10 @@ export const PROGRESS_STAGE_COPY = Object.freeze({
     zh: '\u7f16\u8bd1\u7ad9\u70b9\u77e5\u8bc6\u5e93',
     en: 'Compiling site knowledge base',
   },
+  capabilityCompile: {
+    zh: '\u7f16\u8bd1 Graph \u4e0e Planner Layer',
+    en: 'Compiling Graph and Planner Layer',
+  },
   skill: {
     zh: '\u751f\u6210 Agent Skill',
     en: 'Generating Agent Skill',

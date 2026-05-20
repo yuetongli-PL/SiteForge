@@ -1,7 +1,7 @@
 import {
   SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
   createStaticSiteCompileManifest,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 
 export function createCompileScope(overrides = {}) {
   return {

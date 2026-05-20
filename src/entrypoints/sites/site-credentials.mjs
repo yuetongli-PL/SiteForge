@@ -10,7 +10,7 @@ import {
   runSingleStageCliWithProgress,
 } from '../../infra/cli/progress-cli.mjs';
 import { resolveSiteAuthProfile } from '../../infra/auth/site-auth.mjs';
-import { resolveProfilePathForUrl } from '../../sites/core/profiles.mjs';
+import { resolveProfilePathForUrl } from '../../sites/registry/core/profiles.mjs';
 import {
   deleteWindowsCredential,
   getWindowsCredential,
@@ -22,8 +22,11 @@ import {
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs site credentials <set|show|delete> <url> [--profile-path <path>] [--username <value>] [--password <value>] [--json] [--quiet] [--progress auto|interactive|plain]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/site-credentials.mjs <set|show|delete> <url> [options]
+
+Public command:
+  siteforge build <url>
 
 Notes:
   - Credentials are stored in Windows Credential Manager as Generic Credentials.

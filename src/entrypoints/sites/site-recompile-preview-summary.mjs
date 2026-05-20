@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
-import { prepareRedactedArtifactJsonWithAudit } from '../../sites/capability/security-guard.mjs';
+import { prepareRedactedArtifactJsonWithAudit } from '../../domain/sessions/security-guard.mjs';
 import { runSiteCapabilityCompile } from './site-capability-compile.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));

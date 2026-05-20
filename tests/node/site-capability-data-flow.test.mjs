@@ -8,16 +8,16 @@ import {
   assertSiteCapabilityDataFlowEvidenceCompatible,
   createSiteCapabilityDataFlowEvidence,
   writeSiteCapabilityDataFlowEvidenceArtifacts,
-} from '../../src/sites/capability/data-flow-evidence.mjs';
+} from '../../src/app/planner/data-flow-evidence.mjs';
 import {
   API_CANDIDATE_SCHEMA_VERSION,
   API_CATALOG_ENTRY_SCHEMA_VERSION,
-} from '../../src/sites/capability/api-candidates.mjs';
-import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/sites/capability/download-policy.mjs';
-import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/sites/capability/lifecycle-events.mjs';
-import { REASON_CODE_SCHEMA_VERSION } from '../../src/sites/capability/reason-codes.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/sites/capability/standard-task-list.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
+import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/domain/policies/download-policy.mjs';
+import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { REASON_CODE_SCHEMA_VERSION } from '../../src/domain/risks/reason-codes.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/domain/policies/standard-task-list.mjs';
 
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));

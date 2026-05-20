@@ -12,10 +12,10 @@ import {
   observedRequestsFromNetworkCaptureEvents,
   responseSummariesFromNetworkCaptureEvents,
   responseSummaryFromNetworkCaptureEvent,
-} from '../../src/sites/capability/network-capture.mjs';
-import { writeApiCandidateArtifactsFromObservedRequests } from '../../src/sites/capability/api-discovery.mjs';
-import { API_CANDIDATE_SCHEMA_VERSION } from '../../src/sites/capability/api-candidates.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/domain/artifacts/network-capture.mjs';
+import { writeApiCandidateArtifactsFromObservedRequests } from '../../src/domain/capabilities/api-discovery.mjs';
+import { API_CANDIDATE_SCHEMA_VERSION } from '../../src/domain/capabilities/api-candidates.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 import {
   BrowserSession,
   createNetworkTracker,
@@ -23,7 +23,7 @@ import {
 import {
   REDACTION_PLACEHOLDER,
   assertNoForbiddenPatterns,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 
 function createRequestWillBeSentEvent(overrides = {}) {
   return {

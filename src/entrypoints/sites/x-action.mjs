@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { runSocialActionCli } from '../../sites/social/actions/router.mjs';
+import { runSocialActionCli } from '../../sites/known-sites/social/actions/router.mjs';
 
 export { runSocialActionCli as runXActionCli };
 

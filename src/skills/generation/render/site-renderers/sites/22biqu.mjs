@@ -21,7 +21,7 @@ function render22BiquSkillMd(input) {
       '- Stay inside the verified `www.22biqu.com` URL family.',
       `- Safe actions: \`${safeActions.join('`, `')}\``,
       '- Supported tasks: search books, open book directories, open author pages, open chapter pages, and download full public novels.',
-      '- Download entrypoint: `pypy3 src/sites/chapter-content/download/python/book.py`.',
+      '- Download entrypoint: `pypy3 src/sites/known-sites/chapter-content/download/python/book.py`.',
     ],
     readingOrderLines: renderReadingOrder(outputs, outputs.skillMd, helpers.markdownLink),
     safetyBoundaryLines: [
@@ -110,7 +110,7 @@ function render22BiquFlowsReference(input) {
       bodyLines.push(`- Example user requests: \`下载「${bookExample}」\``);
       bodyLines.push('- Start state: any verified public page, or a known book directory page.');
       bodyLines.push('- Target state: a local full-book TXT exists.');
-      bodyLines.push('- Main path: check local artifact -> if missing, run `pypy3 src/sites/chapter-content/download/python/book.py` -> parse the paginated directory -> fetch chapters concurrently -> output a pretty TXT.');
+      bodyLines.push('- Main path: check local artifact -> if missing, run `pypy3 src/sites/known-sites/chapter-content/download/python/book.py` -> parse the paginated directory -> fetch chapters concurrently -> output a pretty TXT.');
       bodyLines.push('- No-op rule: if a complete local TXT already exists, return it directly.');
       bodyLines.push('- Success signal: `book-content/<run>/downloads/<book-title>.txt` exists.');
     } else if (intent.intentType === 'open-category') {
@@ -249,8 +249,8 @@ function render22BiquInteractionModelReference(input) {
       {
         title: '## Download path',
         lines: [
-          '- Entrypoint: `pypy3 src/sites/chapter-content/download/python/book.py`',
-          '- Metadata path: `pypy3 src/sites/chapter-content/download/python/book.py <url> --book-title "<title>" --metadata-only`',
+          '- Entrypoint: `pypy3 src/sites/known-sites/chapter-content/download/python/book.py`',
+          '- Metadata path: `pypy3 src/sites/known-sites/chapter-content/download/python/book.py <url> --book-title "<title>" --metadata-only`',
           '- Directory strategy: parse paginated directory pages first, then fetch chapters concurrently.',
           '- Concurrency: chapter fetch concurrency is currently `64`; chapter sub-pages are still ordered serially inside each chapter.',
           '- Output strategy: write `.part` files during execution, then finalize TXT and JSON outputs.',

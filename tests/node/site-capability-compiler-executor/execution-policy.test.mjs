@@ -8,7 +8,7 @@ import {
   createExecutionPolicyDecision,
   createLayerExecutionHandoffDescriptor,
   prepareCoverageDeltaArtifactQueueWrite,
-} from '../../../src/sites/capability/execution/index.mjs';
+} from '../../../src/domain/policies/execution/index.mjs';
 
 function createHandoff() {
   return createLayerExecutionHandoffDescriptor({

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDataModel, isBilibiliKnowledgeBase } from '../../src/pipeline/stages/kb/data-model.mjs';
+import { buildDataModel, isBilibiliKnowledgeBase } from '../../src/app/pipeline/stages/kb/data-model.mjs';
 
 function createEmptyArtifacts(baseUrl, pageFacts = null) {
   return {

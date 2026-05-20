@@ -64,16 +64,16 @@ class RepoCleanlinessTest(unittest.TestCase):
                         remove_path_best_effort(child)
                     else:
                         child.unlink(missing_ok=True)
+                remove_path_best_effort(target)
             else:
-                target.mkdir(parents=True, exist_ok=True)
+                self.assertFalse(target.exists())
 
         for pycache_dir in REPO_ROOT.rglob("__pycache__"):
             shutil.rmtree(pycache_dir, ignore_errors=True)
             remove_path_best_effort(pycache_dir)
 
         for target in transient_roots:
-            self.assertTrue(target.exists(), f"transient root should exist: {target}")
-            self.assertEqual(list(target.iterdir()), [])
+            self.assertFalse(target.exists(), f"transient root should be removed: {target}")
 
         remaining_pycache = list(REPO_ROOT.rglob("__pycache__"))
         self.assertEqual(remaining_pycache, [])

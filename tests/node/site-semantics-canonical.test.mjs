@@ -5,7 +5,7 @@ import {
   isBilibiliContext,
   isDouyinContext,
   remapSupportedIntent,
-} from '../../src/sites/core/site-semantics.mjs';
+} from '../../src/sites/registry/core/site-semantics.mjs';
 import { resolveKnownSiteKey } from '../../src/skills/generation/site-render-inputs.mjs';
 
 test('canonical siteKey from siteContext drives douyin skill/docs routing before host matching', () => {

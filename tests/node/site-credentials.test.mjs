@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { siteCredentials } from '../../scripts/site-credentials.mjs';
+import { siteCredentials } from '../../src/entrypoints/sites/site-credentials.mjs';
 
 function createDouyinProfile() {
   return {

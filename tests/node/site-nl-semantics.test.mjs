@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveSiteNlSemantics } from '../../src/sites/core/nl-site-semantics.mjs';
+import { resolveSiteNlSemantics } from '../../src/sites/registry/core/nl-site-semantics.mjs';
 
 function createDeps() {
   return {

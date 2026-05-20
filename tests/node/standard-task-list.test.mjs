@@ -6,7 +6,7 @@ import {
   STANDARD_TASK_LIST_SCHEMA_VERSION,
   assertStandardTaskListCompatible,
   normalizeStandardTaskList,
-} from '../../src/sites/capability/standard-task-list.mjs';
+} from '../../src/domain/policies/standard-task-list.mjs';
 
 test('StandardTaskList normalizes versioned low-permission task items', () => {
   const list = normalizeStandardTaskList({

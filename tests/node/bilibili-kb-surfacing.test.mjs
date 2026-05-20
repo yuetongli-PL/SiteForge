@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 import { analyzeStates } from '../../src/entrypoints/pipeline/analyze-states.mjs';
 import { compileKnowledgeBase } from '../../src/entrypoints/pipeline/compile-wiki.mjs';
-import { enrichBilibiliPageFactsForState, summarizeBilibiliKnowledgeFacts } from '../../src/sites/bilibili/model/surfacing.mjs';
+import { enrichBilibiliPageFactsForState, summarizeBilibiliKnowledgeFacts } from '../../src/sites/known-sites/bilibili/model/surfacing.mjs';
 import { buildBilibiliStageSpec, createStageFixtures } from './kb-test-fixtures.mjs';
 import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
 

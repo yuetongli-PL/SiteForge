@@ -14,18 +14,21 @@ import {
   actionSessionMetadataFromOptions,
   readSessionRunManifest,
   sessionOptionsFromRunManifest,
-} from '../../sites/sessions/manifest-bridge.mjs';
+} from '../../domain/sessions/manifest-bridge.mjs';
 import {
   assertNoForbiddenPatterns,
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
-} from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
-import { runXiaohongshuAction } from '../../sites/xiaohongshu/actions/router.mjs';
+} from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
+import { runXiaohongshuAction } from '../../sites/known-sites/xiaohongshu/actions/router.mjs';
 
-export const XIAOHONGSHU_ACTION_HELP = `Usage:
-  node src/entrypoints/cli.mjs xiaohongshu action download <note-url|author-url|query> [options]
-  node src/entrypoints/cli.mjs xiaohongshu action download --followed-users [options]
+export const XIAOHONGSHU_ACTION_HELP = `Internal script usage:
+  node src/entrypoints/sites/xiaohongshu-action.mjs download <note-url|author-url|query> [options]
+  node src/entrypoints/sites/xiaohongshu-action.mjs download --followed-users [options]
+
+Public command:
+  siteforge build <url>
 
 Defaults to dry-run behavior unless the underlying action is explicitly
 configured to execute downloads.
@@ -312,7 +315,7 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
         title: 'Xiaohongshu action failed',
         stage: `Run ${parsed.action}`,
         reason: message,
-        nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
+        nextStep: 'siteforge build https://www.xiaohongshu.com/',
       });
     }
   } catch (error) {
@@ -324,7 +327,7 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
       title: 'Xiaohongshu action failed',
       stage: `Run ${parsed.action}`,
       reason,
-      nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.xiaohongshu.com/ --no-headless --reuse-login-state',
+      nextStep: 'siteforge build https://www.xiaohongshu.com/',
     });
     throw error;
   }

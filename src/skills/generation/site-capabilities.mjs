@@ -5,12 +5,12 @@ import {
   remapSupportedIntent as remapSiteIntent,
   resolveSemanticSiteKey,
   siteTerminology as resolveSemanticTerminology,
-} from '../../sites/core/site-semantics.mjs';
-import { resolveConfiguredPageTypes } from '../../sites/core/page-types.mjs';
+} from '../../sites/registry/core/site-semantics.mjs';
+import { resolveConfiguredPageTypes } from '../../sites/registry/core/page-types.mjs';
 import {
   resolvePrimaryArchetypeFromSiteContext,
   resolveSafeActionKindsFromSiteContext,
-} from '../../sites/catalog/context.mjs';
+} from '../../sites/registry/catalog/context.mjs';
 
 export function siteTerminology(context) {
   return resolveSemanticTerminology(context);

@@ -11,7 +11,7 @@ import {
   normalizeSiteAdapterCandidateDecision,
   writeRuntimeVerifiedApiCatalogStoreArtifacts,
   writeApiCatalogEntryArtifact,
-} from '../../src/sites/capability/api-candidates.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   apiCandidateFromObservedRequest,
   validateApiCandidateWithAdapter,
@@ -19,11 +19,11 @@ import {
   writeApiCandidateArtifactsFromObservedRequests,
   writeManualApiCandidateVerificationArtifacts,
   writeSiteAdapterCandidateDecisionArtifacts,
-} from '../../src/sites/capability/api-discovery.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
-import { genericNavigationAdapter } from '../../src/sites/core/adapters/generic-navigation.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/domain/capabilities/api-discovery.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
+import { genericNavigationAdapter } from '../../src/sites/adapters/generic-navigation.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 
 async function assertMissingFiles(filePaths) {
   for (const filePath of filePaths) {

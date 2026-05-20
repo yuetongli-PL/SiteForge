@@ -13,8 +13,11 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 const DEFAULT_RUN_ROOT = path.join(REPO_ROOT, 'runs', 'social-live-verify');
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs social live-verify --live --site x|instagram|all --run-root <dir> [--case <id>] [options]
+const HELP = `Internal script usage:
+  node scripts/social-live-verify.mjs --live --site <site> [options]
+
+Public command:
+  siteforge build <url>
 
 Defaults to not-run mode. No live plan is emitted unless --live and every live boundary is explicit.
 No live commands are executed unless both --live and --execute are present.

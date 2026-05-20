@@ -10,15 +10,15 @@ import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import {
   runSingleStageCliWithProgress,
 } from '../../infra/cli/progress-cli.mjs';
-import { upsertSiteCapabilities } from '../../sites/catalog/capabilities.mjs';
-import { upsertSiteRegistryRecord } from '../../sites/catalog/registry.mjs';
+import { upsertSiteCapabilities } from '../../sites/registry/catalog/capabilities.mjs';
+import { upsertSiteRegistryRecord } from '../../sites/registry/catalog/registry.mjs';
 import {
   loadJableTaxonomy,
   normalizeJableLimit,
   parseJableVideoCardsFromHtml,
   resolveJableRankingTarget,
   resolveJableSortMode,
-} from '../../sites/jable/queries/ranking.mjs';
+} from '../../sites/known-sites/jable/queries/ranking.mjs';
 import { normalizeUrlNoFragment } from '../../shared/normalize.mjs';
 
 const DEFAULT_OPTIONS = {
@@ -440,9 +440,11 @@ export async function queryJableRanking(url, options = {}) {
 
 function printHelp() {
   process.stdout.write([
-    'Usage:',
-    '  node src/entrypoints/cli.mjs catalog jable-ranking <url> --query "<natural language>"',
-    '  node src/entrypoints/cli.mjs catalog jable-ranking <url> --target-label "<label>" --sort combined --limit 3',
+    'Internal script usage:',
+    '  node src/entrypoints/sites/jable-ranking.mjs <url> --query <text> [options]',
+    '',
+    'Public command:',
+    '  siteforge build <url>',
     '',
     'Options:',
     '  --query <text>           Natural-language query, e.g. "黑丝分类，近期最佳推荐三部"',

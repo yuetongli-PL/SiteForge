@@ -12,8 +12,73 @@ import {
   socialAuthImportRedactionAuditPath,
   summarizeCookies,
   writeSocialAuthImportManifest,
-} from '../../scripts/social-auth-import.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/entrypoints/sites/social-auth-import.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
+
+function createExecuteDeps({
+  userDataDir,
+  cookieResults = {},
+  authState = {
+    currentUrl: 'https://x.com/home',
+    title: 'X Home',
+    loggedIn: true,
+    loginStateDetected: true,
+    identityConfirmed: true,
+    identitySource: 'test-double',
+  },
+} = {}) {
+  const calls = {
+    opened: false,
+    sent: [],
+    navigatedTo: [],
+    closed: false,
+  };
+  const resolvedUserDataDir = userDataDir ?? path.join(os.tmpdir(), 'siteforge-social-auth-test-profile');
+  return {
+    calls,
+    deps: {
+      async readJsonFile() {
+        return {
+          authSession: {
+            loginUrl: 'https://x.com/',
+            postLoginUrl: 'https://x.com/home',
+          },
+        };
+      },
+      async resolveSiteBrowserSessionOptions() {
+        return {
+          userDataDir: resolvedUserDataDir,
+          authConfig: {
+            verificationUrl: 'https://x.com/home',
+          },
+        };
+      },
+      async openBrowserSession() {
+        calls.opened = true;
+        return {
+          async send(method, params) {
+            calls.sent.push({ method, params });
+            return {
+              success: Object.hasOwn(cookieResults, params.name) ? cookieResults[params.name] : true,
+            };
+          },
+          async navigateAndWait(url) {
+            calls.navigatedTo.push(url);
+          },
+          async close() {
+            calls.closed = true;
+            return {
+              shutdownMode: 'graceful',
+            };
+          },
+        };
+      },
+      async inspectLoginState() {
+        return authState;
+      },
+    },
+  };
+}
 
 test('parseCookieInput accepts a raw X Cookie header without leaking values in summaries', () => {
   const cookies = parseCookieInput('auth_token=SECRET; ct0=CSRF; twid=u%3D123', {
@@ -116,6 +181,135 @@ test('parseArgs blocks raw Cookie header argv unless explicitly acknowledged', (
   ]);
   assert.equal(options.cookieHeader, 'auth_token=synthetic-social-auth-argv-token; ct0=synthetic-social-auth-argv-csrf');
   assert.equal(options.allowArgvCookieHeader, true);
+});
+
+test('social auth import execute path imports valid cookies and persists only redacted manifest state', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-auth-import-execute-valid-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const { calls, deps } = createExecuteDeps({
+    userDataDir: path.join(runRoot, 'persistent-profile'),
+  });
+
+  const manifest = await runImport({
+    site: 'x',
+    runRoot,
+    cookieHeader: 'auth_token=synthetic-social-auth-token; ct0=synthetic-social-auth-csrf',
+    execute: true,
+    headless: true,
+    timeoutMs: 1_000,
+  }, deps);
+
+  assert.equal(manifest.status, 'authenticated');
+  assert.equal(manifest.validation.ok, true);
+  assert.deepEqual(calls.sent.map((call) => call.method), ['Network.setCookie', 'Network.setCookie']);
+  assert.deepEqual(calls.sent.map((call) => call.params.name), ['auth_token', 'ct0']);
+  assert.deepEqual(calls.navigatedTo, ['https://x.com/home']);
+  assert.equal(calls.closed, true);
+
+  const manifestText = await readFile(manifest.manifestPath, 'utf8');
+  const persisted = JSON.parse(manifestText);
+  assert.equal(persisted.userDataDir, '[REDACTED]');
+  assert.equal(persisted.status, 'authenticated');
+  assert.deepEqual(persisted.imported.map((entry) => entry.name), ['auth_token', 'ct0']);
+  assert.doesNotMatch(
+    `${manifestText}\n${await readFile(socialAuthImportRedactionAuditPath(manifest.manifestPath), 'utf8')}`,
+    /synthetic-social-auth-|auth_token=|ct0=|persistent-profile/iu,
+  );
+});
+
+test('social auth import rejects missing required cookies before browser profile mutation', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-auth-import-missing-required-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  let opened = false;
+
+  const manifest = await runImport({
+    site: 'x',
+    runRoot,
+    cookieHeader: 'auth_token=synthetic-social-auth-token',
+    execute: true,
+  }, {
+    async openBrowserSession() {
+      opened = true;
+      throw new Error('browser should not open for invalid cookie input');
+    },
+  });
+
+  assert.equal(opened, false);
+  assert.equal(manifest.status, 'invalid-input');
+  assert.equal(manifest.reason, 'missing-required-cookies');
+  assert.deepEqual(manifest.cookieSummary.missingRequired, ['ct0']);
+  assert.deepEqual(manifest.validation.errors[0].cookieNames, ['ct0']);
+
+  const manifestText = await readFile(manifest.manifestPath, 'utf8');
+  assert.doesNotMatch(manifestText, /synthetic-social-auth-token|auth_token=/iu);
+});
+
+test('social auth import rejects duplicate cookie entries as stale order-dependent input', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-auth-import-duplicate-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  let opened = false;
+
+  const manifest = await runImport({
+    site: 'x',
+    runRoot,
+    cookieHeader: 'auth_token=synthetic-social-auth-old; auth_token=synthetic-social-auth-new; ct0=synthetic-social-auth-csrf',
+    execute: true,
+  }, {
+    async openBrowserSession() {
+      opened = true;
+      throw new Error('browser should not open for duplicate cookie input');
+    },
+  });
+
+  assert.equal(opened, false);
+  assert.equal(manifest.status, 'invalid-input');
+  assert.equal(manifest.reason, 'duplicate-cookie-input');
+  assert.equal(manifest.validation.errors.some((error) => error.code === 'duplicate-cookie-input'), true);
+  assert.deepEqual(
+    manifest.validation.errors.find((error) => error.code === 'duplicate-cookie-input').cookies,
+    [{ name: 'auth_token', domain: '.x.com', path: '/' }],
+  );
+
+  const manifestText = await readFile(manifest.manifestPath, 'utf8');
+  assert.doesNotMatch(manifestText, /synthetic-social-auth-|auth_token=|ct0=/iu);
+});
+
+test('social auth import treats cookie API rejection as failed mutation and skips auth navigation', async (t) => {
+  const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-auth-import-api-fail-'));
+  t.after(() => rm(runRoot, { recursive: true, force: true }));
+  const { calls, deps } = createExecuteDeps({
+    userDataDir: path.join(runRoot, 'persistent-profile'),
+    cookieResults: {
+      ct0: false,
+    },
+  });
+
+  const manifest = await runImport({
+    site: 'x',
+    runRoot,
+    cookieHeader: 'auth_token=synthetic-social-auth-token; ct0=synthetic-social-auth-csrf',
+    execute: true,
+    headless: true,
+    timeoutMs: 1_000,
+  }, deps);
+
+  assert.equal(calls.opened, true);
+  assert.deepEqual(calls.sent.map((call) => call.params.name), ['auth_token', 'ct0']);
+  assert.deepEqual(calls.navigatedTo, []);
+  assert.equal(calls.closed, true);
+  assert.equal(manifest.status, 'failed');
+  assert.equal(manifest.reason, 'cookie-api-rejected');
+  assert.deepEqual(manifest.error.failedCookieNames, ['ct0']);
+  assert.deepEqual(manifest.imported, [
+    { name: 'auth_token', domain: '.x.com', success: true },
+    { name: 'ct0', domain: '.x.com', success: false },
+  ]);
+
+  const manifestText = await readFile(manifest.manifestPath, 'utf8');
+  assert.doesNotMatch(
+    `${manifestText}\n${await readFile(socialAuthImportRedactionAuditPath(manifest.manifestPath), 'utf8')}`,
+    /synthetic-social-auth-|auth_token=|ct0=|persistent-profile/iu,
+  );
 });
 
 test('social auth import dry-run manifest writes redaction audit without cookie values', async (t) => {

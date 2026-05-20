@@ -33,8 +33,11 @@ const SITE_CONFIGS = Object.freeze({
   },
 });
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs social auth-recover [--execute] [--site x|instagram|all] [--manual] [--verify] [options]
+const HELP = `Internal script usage:
+  node scripts/social-auth-recover.mjs [options]
+
+Public command:
+  siteforge build <url>
 
 Defaults to dry-run plan mode. Use --execute to run keepalive/auth checks.
 

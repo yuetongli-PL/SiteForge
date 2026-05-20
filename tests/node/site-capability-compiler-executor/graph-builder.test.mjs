@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import {
   buildSiteCapabilityGraphFromCompileManifest,
   createCapabilityGraphDraftFromCompileManifest,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 import {
   validateSiteCapabilityGraph,
-} from '../../../src/sites/capability/site-capability-graph.mjs';
+} from '../../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   createSyntheticCompileManifest,
 } from './helpers.mjs';

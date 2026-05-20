@@ -67,8 +67,8 @@ test('generateSkill produces bilibili skill documents with stronger execution co
     assert.match(skillMd, /Public bilibili pages MUST use the built-in browser\./u);
     assert.match(skillMd, /Authenticated bilibili pages MUST use the local opener/u);
     assert.match(skillMd, /Download requests MUST use the local downloader through the action router/u);
-    assert.match(skillMd, /node \.\\scripts\\bilibili-action\.mjs open/u);
-    assert.match(skillMd, /node \.\\scripts\\bilibili-action\.mjs download/u);
+    assert.match(skillMd, /node \.\\src\\entrypoints\\sites\\bilibili-action\.mjs open/u);
+    assert.match(skillMd, /node \.\\src\\entrypoints\\sites\\bilibili-action\.mjs download/u);
     assert.doesNotMatch(skillMd, /涓汉绌洪棿/u);
     assert.doesNotMatch(skillMd, /_鍝斿摡鍝斿摡_bilibili/u);
     assert.doesNotMatch(skillMd, /鐧诲綍 B/u);

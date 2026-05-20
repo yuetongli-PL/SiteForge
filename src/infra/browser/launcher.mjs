@@ -176,6 +176,7 @@ export async function launchBrowser(
   const args = [
     `--user-data-dir=${resolvedUserDataDir}`,
     '--remote-debugging-port=0',
+    '--remote-debugging-address=127.0.0.1',
     '--no-first-run',
     '--no-default-browser-check',
     '--hide-scrollbars',

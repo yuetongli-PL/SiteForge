@@ -61,16 +61,16 @@ import {
   writeRuntimeApiCatalogMaintenanceArtifacts,
   writeRuntimeVerifiedApiCatalogStoreArtifacts,
   writeVerifiedApiCatalogUpgradeFixtureArtifacts,
-} from '../../src/sites/capability/api-candidates.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   assertLifecycleEventObservabilityFields,
   writeLifecycleEventArtifact,
-} from '../../src/sites/capability/lifecycle-events.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
-import { createCapabilityHookRegistry } from '../../src/sites/capability/capability-hook.mjs';
-import { writeCatalogStorePlannerPolicyHandoffArtifact } from '../../src/sites/capability/planner-policy-handoff.mjs';
+} from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
+import { createCapabilityHookRegistry } from '../../src/domain/lifecycle/capability-hook.mjs';
+import { writeCatalogStorePlannerPolicyHandoffArtifact } from '../../src/app/planner/policy-handoff.mjs';
 
 function createCandidate(overrides = {}) {
   return {
@@ -5267,7 +5267,7 @@ test('ApiCatalog verification hook descriptor registers without executing hook c
   assert.equal(descriptor.phase, 'after_catalog_verify');
   assert.equal(descriptor.hookType, 'artifact_writer');
   assert.equal(descriptor.subscriber.name, 'api-catalog-verification-event-writer');
-  assert.equal(descriptor.subscriber.modulePath, 'src/sites/capability/api-candidates.mjs');
+  assert.equal(descriptor.subscriber.modulePath, 'src/domain/capabilities/api-candidates.mjs');
   assert.equal(descriptor.subscriber.entrypoint, 'writeApiCatalogVerificationEventArtifact');
   assert.equal(descriptor.subscriber.capability, 'api-catalog');
   assert.equal(descriptor.safety.failClosed, true);

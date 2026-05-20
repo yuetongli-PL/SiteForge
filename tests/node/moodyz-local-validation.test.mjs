@@ -7,9 +7,9 @@ import {
   SITE_ADAPTER_CANDIDATE_DECISION_VERSION,
   SITE_ADAPTER_CATALOG_UPGRADE_POLICY_VERSION,
   writeApiCatalogEntryArtifact,
-} from '../../src/sites/capability/api-candidates.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { moodyzAdapter } from '../../src/sites/core/adapters/moodyz.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { moodyzAdapter } from '../../src/sites/adapters/moodyz.mjs';
 
 function createMoodyzCandidate(overrides = {}) {
   return {

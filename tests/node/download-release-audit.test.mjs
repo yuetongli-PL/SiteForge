@@ -135,10 +135,9 @@ test('download-release-audit audits download and social matrix session gates off
   assert.equal(downloadRow.nativeResolverAdapter, 'bilibili');
   assert.equal(audit.rows.find((row) => row.id === 'social-run').reason, 'session-provider-missing');
   const blockedMatrix = audit.rows.find((row) => row.id === 'x-full-archive');
-  assert.equal(blockedMatrix.repairPlan.command, 'session-repair-plan');
+  assert.equal(blockedMatrix.repairPlan.command, 'siteforge-build');
   assert.equal(blockedMatrix.repairPlan.auditManifest, path.join(outDir, 'download-release-audit.json'));
-  assert.match(blockedMatrix.repairPlan.commandText, /src\/entrypoints\/cli\.mjs site repair-plan/u);
-  assert.match(blockedMatrix.repairPlan.commandText, /--site x/u);
+  assert.match(blockedMatrix.repairPlan.commandText, /siteforge build <url>/u);
   assert.equal(blockedMatrix.nativeFallbackReason, 'x-social-cursor-replay-required');
   assert.equal(blockedMatrix.nativeResolverMethod, 'native-x-social-resource-seeds');
   assert.equal(blockedMatrix.nativeResolverAdapter, 'x');
@@ -153,7 +152,7 @@ test('download-release-audit audits download and social matrix session gates off
   assert.match(markdown, /ready\/complete/u);
   assert.match(markdown, /passed\/ready/u);
   assert.match(markdown, /Repair Plan/u);
-  assert.match(markdown, /src\/entrypoints\/cli\.mjs site repair-plan/u);
+  assert.match(markdown, /siteforge build <url>/u);
 });
 
 test('download-release-audit no-write guidance avoids unwritten audit manifest paths', async (t) => {
@@ -182,7 +181,7 @@ test('download-release-audit no-write guidance avoids unwritten audit manifest p
   const blocked = audit.rows.find((row) => row.id === 'x-full-archive');
 
   assert.equal(blocked.repairPlan.auditManifest, undefined);
-  assert.match(blocked.repairPlan.commandText, /--session-gate-reason session-provider-missing/u);
+  assert.match(blocked.repairPlan.commandText, /siteforge build <url>/u);
   assert.doesNotMatch(blocked.repairPlan.commandText, /--audit-manifest/u);
 });
 

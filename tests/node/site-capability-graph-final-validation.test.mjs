@@ -7,7 +7,7 @@ import {
   assertSiteCapabilityGraphFinalValidationSummaryCompatible,
   createSiteCapabilityGraphFinalValidationSummary,
   extractSiteCapabilityGraphMatrixSections,
-} from '../../src/sites/capability/site-capability-graph-final-validation.mjs';
+} from '../../src/domain/capabilities/site-capability-graph-final-validation.mjs';
 
 function completeSections(overrides = {}) {
   return Array.from({ length: SITE_CAPABILITY_GRAPH_FINAL_SECTION_COUNT }, (_, index) => {
@@ -16,7 +16,7 @@ function completeSections(overrides = {}) {
       number,
       title: `Section ${number}`,
       status: 'verified',
-      codeEvidence: `src/sites/capability/section-${number}.mjs final code evidence`,
+      codeEvidence: `src/domain/capabilities/section-${number}.mjs final code evidence`,
       testEvidence: `tests/node/section-${number}.test.mjs focused test evidence`,
       verificationCommand: `node --test tests/node/section-${number}.test.mjs`,
       verificationResult: `focused validation passed for section ${number}`,

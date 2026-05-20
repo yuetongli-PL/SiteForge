@@ -14,11 +14,11 @@ import {
   readSiteContext,
   resolveCapabilityFamiliesFromSiteContext,
   resolvePrimaryArchetypeFromSiteContext,
-} from '../../sites/core/context.mjs';
-import { PROFILE_ARCHETYPES, resolveProfileArchetype, resolveProfilePrimaryArchetype } from '../../sites/core/archetypes.mjs';
-import { resolveConfiguredPageTypes } from '../../sites/core/page-types.mjs';
-import { loadValidatedProfileForUrl } from '../../sites/core/profiles.mjs';
-import { upsertSiteCapabilities, upsertSiteRegistryRecord } from '../../sites/catalog/repository.mjs';
+} from '../../sites/registry/core/context.mjs';
+import { PROFILE_ARCHETYPES, resolveProfileArchetype, resolveProfilePrimaryArchetype } from '../../sites/registry/core/archetypes.mjs';
+import { resolveConfiguredPageTypes } from '../../sites/registry/core/page-types.mjs';
+import { loadValidatedProfileForUrl } from '../../sites/registry/core/profiles.mjs';
+import { upsertSiteCapabilities, upsertSiteRegistryRecord } from '../../sites/registry/catalog/repository.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
@@ -83,7 +83,7 @@ function renderPythonScript(context) {
     'from pathlib import Path',
     '',
     'REPO_ROOT = Path(__file__).resolve().parents[2]',
-    'BOOK_MODULE_PATH = REPO_ROOT / "src" / "sites" / "chapter-content" / "download" / "python" / "book.py"',
+    'BOOK_MODULE_PATH = REPO_ROOT / "src" / "sites" / "known-sites" / "chapter-content" / "download" / "python" / "book.py"',
     '',
     'spec = importlib.util.spec_from_file_location("bws_chapter_content_book_generated", BOOK_MODULE_PATH)',
     'if spec is None or spec.loader is None:',

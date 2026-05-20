@@ -8,7 +8,7 @@ import {
   parseXiaohongshuFollowQueryArgs,
   queryXiaohongshuFollow,
   renderXiaohongshuFollowResultMarkdown,
-} from '../../src/sites/xiaohongshu/queries/follow-query.mjs';
+} from '../../src/sites/known-sites/xiaohongshu/queries/follow-query.mjs';
 
 const NOTIFICATION_URL = 'https://www.xiaohongshu.com/notification';
 const PROFILE_PATH = 'profiles/www.xiaohongshu.com.json';

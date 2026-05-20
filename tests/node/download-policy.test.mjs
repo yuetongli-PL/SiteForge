@@ -5,7 +5,7 @@ import {
   DOWNLOAD_POLICY_SCHEMA_VERSION,
   assertDownloadPolicyCompatible,
   normalizeDownloadPolicy,
-} from '../../src/sites/capability/download-policy.mjs';
+} from '../../src/domain/policies/download-policy.mjs';
 
 test('DownloadPolicy normalizes a minimal low-permission policy', () => {
   const policy = normalizeDownloadPolicy({

@@ -258,7 +258,7 @@ function renderXiaohongshuSkillMd(input) {
       `- Supported tasks: ${supportedTasks.join('、') || '在已观测的小红书状态空间内做只读查询和导航'}.`,
       '- Verified navigation model: `/explore` -> `/search_result?keyword=...` -> `/explore/<noteId>` -> `/user/profile/<userId>`.',
       intentTypes.has('list-followed-users')
-        ? '- Follow-query entrypoint: `node src/entrypoints/cli.mjs xiaohongshu follow https://www.xiaohongshu.com/notification --intent list-followed-users --format markdown --reuse-login-state --no-headless`.'
+        ? '- Follow-query execution is internal; public onboarding and regeneration use `siteforge build <url>`.'
         : null,
     ].filter(Boolean),
     sampleCoverageLines: [

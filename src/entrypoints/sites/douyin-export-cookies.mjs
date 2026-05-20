@@ -18,14 +18,14 @@ import {
 import {
   createSessionTarget,
   resolveSidecarPath,
-} from '../../sites/douyin/live/export.mjs';
+} from '../../sites/known-sites/douyin/live/export.mjs';
 import { ensureDir, writeTextFile } from '../../infra/io.mjs';
 import {
   resolveSiteBrowserSessionOptions,
 } from '../../infra/auth/site-auth.mjs';
 import {
   prepareRedactedArtifactJsonWithAudit,
-} from '../../sites/capability/security-guard.mjs';
+} from '../../domain/sessions/security-guard.mjs';
 
 const DEFAULT_INPUT_URL = 'https://www.douyin.com/';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -295,7 +295,7 @@ export async function runDouyinExportCookiesCli(argv = process.argv.slice(2)) {
     ].filter(Boolean),
     warningResult: (result) => Boolean(result?.warning),
     failureTitle: 'Douyin cookie export safely stopped',
-    nextStep: 'node src/entrypoints/cli.mjs site login https://www.douyin.com/ --no-headless --reuse-login-state',
+    nextStep: 'siteforge build https://www.douyin.com/',
   });
   writeJsonStdout(report);
 }

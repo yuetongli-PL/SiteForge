@@ -11,8 +11,8 @@ import {
 import {
   observedRequestFromNetworkCaptureEvent,
   responseSummaryFromNetworkCaptureEvent,
-} from '../../sites/capability/network-capture.mjs';
-import { redactPublicIdentifierText, redactValue } from '../../sites/capability/security-guard.mjs';
+} from '../../domain/artifacts/network-capture.mjs';
+import { redactPublicIdentifierText, redactValue } from '../../domain/sessions/security-guard.mjs';
 
 export const SNAPSHOT_STYLES = ['display', 'visibility', 'opacity', 'position', 'z-index'];
 export const NETWORK_IDLE_QUIET_MS = 500;

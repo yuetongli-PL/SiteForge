@@ -11,7 +11,7 @@ import {
   normalizeSiteAdapterCandidateDecision,
   normalizeSiteAdapterCatalogUpgradePolicy,
   writeVerifiedApiCatalogUpgradeFixtureArtifacts,
-} from '../../src/sites/capability/api-candidates.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   assertDisabledGraphPlannerRuntimeConsumerResultCompatibility,
   assertGraphPlannerRiskBlockingRuntimePreflightCompatibility,
@@ -30,21 +30,21 @@ import {
   createPlannerPolicyHandoff,
   writeCatalogStorePlannerPolicyHandoffArtifact,
   writePlannerPolicyHandoffArtifact,
-} from '../../src/sites/capability/planner-policy-handoff.mjs';
-import * as plannerPolicyHandoff from '../../src/sites/capability/planner-policy-handoff.mjs';
+} from '../../src/app/planner/policy-handoff.mjs';
+import * as plannerPolicyHandoff from '../../src/app/planner/policy-handoff.mjs';
 import {
   createGraphDerivedArtifactPlacement,
   prepareGraphDerivedArtifactWrite,
   writeGraphDerivedArtifactPair,
-} from '../../src/sites/capability/site-capability-graph-artifacts.mjs';
+} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 import {
   DOWNLOAD_POLICY_SCHEMA_VERSION,
-} from '../../src/sites/capability/download-policy.mjs';
+} from '../../src/domain/policies/download-policy.mjs';
 import {
   STANDARD_TASK_LIST_SCHEMA_VERSION,
-} from '../../src/sites/capability/standard-task-list.mjs';
-import { assertGovernedSchemaCompatible } from '../../src/sites/capability/schema-governance.mjs';
-import * as siteCapabilityGraph from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/policies/standard-task-list.mjs';
+import { assertGovernedSchemaCompatible } from '../../src/domain/schemas/schema-governance.mjs';
+import * as siteCapabilityGraph from '../../src/domain/capabilities/site-capability-graph.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 const GRAPH_CAPABILITY_ID = 'capability:synthetic.example:open-public-page';
@@ -2210,7 +2210,7 @@ test('planner policy handoff rejects blocked health gates before artifact writes
 
 test('planner policy handoff uses schema governance facade for catalog and standard products', async () => {
   const source = await readFile(
-    new URL('../../src/sites/capability/planner-policy-handoff.mjs', import.meta.url),
+    new URL('../../src/app/planner/policy-handoff.mjs', import.meta.url),
     'utf8',
   );
   assert.match(source, /function assertPlannerPolicyHandoffWriterCompatibility/u);

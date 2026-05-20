@@ -4,7 +4,7 @@ import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 import {
   assertCapabilityNodeCompatible,
   assertDisabledGraphInventoryRuntimeConsumerResultCompatibility,
@@ -27,13 +27,13 @@ import {
   listGraphCapabilities,
   planGraphCapabilityRoute,
   validateSiteCapabilityGraph,
-} from '../../src/sites/capability/site-capability-graph.mjs';
-import * as SiteCapabilityGraph from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
+import * as SiteCapabilityGraph from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   createGraphDerivedArtifactPlacement,
   writeGraphDerivedArtifactPair,
-} from '../../src/sites/capability/site-capability-graph-artifacts.mjs';
-import { assertNoForbiddenPatterns } from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
+import { assertNoForbiddenPatterns } from '../../src/domain/sessions/security-guard.mjs';
 
 const SITE_CAPABILITIES_URL = new URL('../../config/site-capabilities.json', import.meta.url);
 const SITE_REGISTRY_URL = new URL('../../config/site-registry.json', import.meta.url);
@@ -310,7 +310,7 @@ function createGeneratedSyntheticGraphFromLayerDescriptor(descriptor) {
         schemaName: 'GraphDocsSummary',
         governedVersion: 1,
         owner: 'Capability',
-        sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+        sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
       },
       {
         schemaVersion: 1,
@@ -1032,7 +1032,7 @@ test('generated graph inventory command design rejects runtime generation option
   );
   assert.throws(
     () => createGraphInventoryCommandDesign(graph, {
-      outputPath: 'docs/site-capability-graph/generated.json',
+      outputPath: 'runs/site-capability-graph/generated.json',
     }),
     /descriptor-only.*outputPath/u,
   );
@@ -1110,7 +1110,7 @@ test('generated graph inventory runtime integration design rejects runtime write
   );
   assert.throws(
     () => createGraphInventoryRuntimeIntegrationDesign(graph, {
-      outputPath: 'docs/site-capability-graph/generated.json',
+      outputPath: 'runs/site-capability-graph/generated.json',
     }),
     /descriptor-only.*outputPath/u,
   );
@@ -1231,10 +1231,10 @@ test('disabled graph inventory runtime consumer rejects enabled flags and runtim
   }
 
   for (const { fieldName, value } of [
-    { fieldName: 'outputPath', value: 'docs/site-capability-graph/generated.json' },
-    { fieldName: 'inventoryOutputPath', value: 'docs/site-capability-graph/generated.json' },
-    { fieldName: 'repoOutputPath', value: 'docs/site-capability-graph/generated.json' },
-    { fieldName: 'repoPath', value: 'docs/site-capability-graph' },
+    { fieldName: 'outputPath', value: 'runs/site-capability-graph/generated.json' },
+    { fieldName: 'inventoryOutputPath', value: 'runs/site-capability-graph/generated.json' },
+    { fieldName: 'repoOutputPath', value: 'runs/site-capability-graph/generated.json' },
+    { fieldName: 'repoPath', value: 'runs/site-capability-graph' },
     { fieldName: 'writePath', value: 'runs/site-capability-graph/inventory.json' },
     { fieldName: 'artifactPath', value: 'runs/site-capability-graph/inventory.json' },
     { fieldName: 'command', value: 'node tools/generate-graph.mjs' },
@@ -1279,7 +1279,7 @@ test('disabled graph inventory runtime consumer rejects enabled flags and runtim
 test('generated graph inventory repo output dry-run previews contained target without repo writes', async (t) => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const targetRelativePath = 'docs/site-capability-graph/qidian-generated-graph-dry-run.json';
+  const targetRelativePath = 'runs/site-capability-graph/qidian-generated-graph-dry-run.json';
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-inventory-output-dry-run-'));
   t.after(async () => {
     await rm(tempDir, { recursive: true, force: true });
@@ -1327,7 +1327,7 @@ test('generated graph inventory repo output dry-run previews contained target wi
 test('generated graph inventory repo output dry-run previews persisted CapabilityNode records only', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const targetRelativePath = 'docs/site-capability-graph/w2-capability-node-inventory-dry-run.json';
+  const targetRelativePath = 'runs/site-capability-graph/w2-capability-node-inventory-dry-run.json';
   const runtimeRelativePath = 'runs/site-capability-graph/w2-capability-node-inventory.json';
   const targetPath = path.join(process.cwd(), targetRelativePath);
   const runtimePath = path.join(process.cwd(), runtimeRelativePath);
@@ -1433,7 +1433,7 @@ function assertNoRuntimeStorageBoundaryPayload(value) {
 test('graph inventory runtime descriptors enforce no database or runtime state storage', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const targetRelativePath = 'docs/site-capability-graph/w2-no-runtime-storage-dry-run.json';
+  const targetRelativePath = 'runs/site-capability-graph/w2-no-runtime-storage-dry-run.json';
   const targetPath = path.join(process.cwd(), targetRelativePath);
   const design = createGraphInventoryRuntimeIntegrationDesign(graph, {
     inventoryName: 'qidian-generated-graph',
@@ -1506,8 +1506,8 @@ test('generated graph inventory repo output dry-run rejects writes, unsafe targe
       pattern: /must be repo-relative/u,
     },
     {
-      targetRelativePath: 'runs/site-capability-graph/generated.json',
-      pattern: /docs\/site-capability-graph/u,
+      targetRelativePath: 'docs/site-capability-graph/generated.json',
+      pattern: /runs\/site-capability-graph/u,
     },
   ]) {
     assert.throws(
@@ -1518,7 +1518,7 @@ test('generated graph inventory repo output dry-run rejects writes, unsafe targe
 
   assert.throws(
     () => createGraphInventoryRepoOutputDryRun(graph, {
-      outputPath: 'docs/site-capability-graph/generated.json',
+      outputPath: 'runs/site-capability-graph/generated.json',
     }),
     /descriptor-only.*outputPath/u,
   );
@@ -1547,7 +1547,7 @@ test('generated graph inventory repo output dry-run rejects writes, unsafe targe
 test('schema-governed graph inventory output remains dry-run and design-only', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const targetRelativePath = 'docs/site-capability-graph/schema-governed-inventory-output-dry-run.json';
+  const targetRelativePath = 'runs/site-capability-graph/schema-governed-inventory-output-dry-run.json';
   const targetPath = path.join(process.cwd(), targetRelativePath);
   const design = createGraphInventoryRuntimeIntegrationDesign(graph, {
     inventoryName: 'qidian-generated-graph',
@@ -1675,7 +1675,7 @@ test('generated graph inventory repo output approval gate stays design-only', as
   const dryRun = createGraphInventoryRepoOutputDryRun(graph, {
     inventoryName: 'qidian-generated-graph',
     source: 'config-site-capabilities-qidian',
-    targetRelativePath: 'docs/site-capability-graph/qidian-generated-graph-dry-run.json',
+    targetRelativePath: 'runs/site-capability-graph/qidian-generated-graph-dry-run.json',
   });
 
   const gate = createGraphRepoOutputApprovalGateDesign(dryRun, {
@@ -1707,7 +1707,7 @@ test('generated graph inventory repo output approval gate stays design-only', as
   );
   assert.throws(
     () => createGraphRepoOutputApprovalGateDesign(dryRun, {
-      outputPath: 'docs/site-capability-graph/qidian-generated-graph.json',
+      outputPath: 'runs/site-capability-graph/qidian-generated-graph.json',
     }),
     /descriptor-only.*outputPath/u,
   );

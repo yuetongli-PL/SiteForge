@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
-import { buildSessionRepairPlanCommand } from '../src/sites/sessions/repair-command.mjs';
+import { buildSessionRepairPlanCommand } from '../src/domain/sessions/repair-command.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');

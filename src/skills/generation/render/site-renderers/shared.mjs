@@ -68,7 +68,7 @@ function renderCompileResultSummaryLines(compileResultSummary) {
 export function renderSiteCapabilityCompilerStatusLines(compileResultSummary) {
   return [
     '- Compiler status: Site Capability Compiler / Executor validation covers sections 1-20 verified for descriptor-only compile, Graph emission, Planner dry-run handoff, governed execution descriptors, redaction, and tests.',
-    '- Dry-run entrypoint: use `node src/entrypoints/cli.mjs site capability-compile --site <site> --json` to inspect compile coverage without live capture, session materialization, SiteAdapter runtime execution, downloader invocation, or artifact writes unless explicitly requested.',
+    '- Build entrypoint: use `siteforge build <url>` to compile site evidence, Graph, Planner Layer, and the generated Skill without direct downloader calls, SiteAdapter runtime execution, or session materialization.',
     '- Consumer boundary: generated Skills may surface compile coverage summaries and CLI pointers, but they must not convert compile evidence into permission for blocked execution, credential use, downloader calls, or live-site access.',
     ...renderCompileResultSummaryLines(compileResultSummary),
   ];

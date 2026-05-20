@@ -4,8 +4,8 @@ import { access, readFile } from 'node:fs/promises';
 import {
   FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION,
   assertFocusedRegressionBatchDefinitionCompatible,
-} from '../../src/sites/capability/focused-regression-batches.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/domain/capabilities/focused-regression-batches.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 
 const CONTRIBUTING_URL = new URL('../../CONTRIBUTING.md', import.meta.url);
 const EXPECTED_BATCH_IDS = [
@@ -15,6 +15,7 @@ const EXPECTED_BATCH_IDS = [
   'scl-api-knowledge-lifecycle',
   'scl-downloader-boundaries',
   'scl-risk-lifecycle-observability',
+  'scl-siteforge-build-single-command',
   'scl-recent-high-value-focused-regression',
 ];
 const REQUIRED_TEST_FILES_BY_BATCH = {
@@ -32,7 +33,6 @@ const REQUIRED_TEST_FILES_BY_BATCH = {
   'scl-redaction-trust-boundaries': [
     'tests/node/security-guard-redaction.test.mjs',
     'tests/node/session-view.test.mjs',
-    'tests/node/download-media-executor.test.mjs',
   ],
   'scl-api-knowledge-lifecycle': [
     'tests/node/network-capture.test.mjs',
@@ -43,7 +43,6 @@ const REQUIRED_TEST_FILES_BY_BATCH = {
   ],
   'scl-downloader-boundaries': [
     'tests/node/architecture-import-rules.test.mjs',
-    'tests/node/downloads-runner.test.mjs',
     'tests/node/standard-task-list.test.mjs',
     'tests/node/download-policy.test.mjs',
     'tests/node/planner-policy-handoff.test.mjs',
@@ -54,8 +53,18 @@ const REQUIRED_TEST_FILES_BY_BATCH = {
     'tests/node/lifecycle-events.test.mjs',
     'tests/node/capability-hook.test.mjs',
   ],
+  'scl-siteforge-build-single-command': [
+    'tests/node/progress-cli-integration.test.mjs',
+    'tests/node/cli-compat.test.mjs',
+    'tests/node/progress-renderer.test.mjs',
+    'tests/node/run-pipeline.test.mjs',
+    'tests/node/site-capability-compiler-executor/compile-entrypoint.test.mjs',
+    'tests/node/site-capability-compiler-executor/planner-integration.test.mjs',
+    'tests/node/generate-skill.test.mjs',
+    'tests/node/skill-coverage-regression-gate.test.mjs',
+    'tests/node/architecture-import-rules.test.mjs',
+  ],
   'scl-recent-high-value-focused-regression': [
-    'tests/node/downloads-runner.test.mjs',
     'tests/node/architecture-import-rules.test.mjs',
     'tests/node/session-view.test.mjs',
     'tests/node/site-session-runner.test.mjs',
@@ -72,7 +81,6 @@ const REQUIRED_RECENT_HIGH_VALUE_EVIDENCE = [
   'main focused gate 291/291',
   '2026-05-03 bounded rerun 292/292',
   '2026-05-03 resumed bounded rerun 296/296',
-  'downloads-runner included',
   'architecture-import-rules included',
   'session-view included',
   'site-session-runner included',
@@ -111,7 +119,6 @@ const REQUIRED_FOCUSED_TEST_ENTRIES_BY_SECTION = {
   10: {
     batchId: 'scl-downloader-boundaries',
     testFiles: [
-      'tests/node/downloads-runner.test.mjs',
       'tests/node/standard-task-list.test.mjs',
       'tests/node/download-policy.test.mjs',
     ],
@@ -120,14 +127,12 @@ const REQUIRED_FOCUSED_TEST_ENTRIES_BY_SECTION = {
     batchId: 'scl-redaction-trust-boundaries',
     testFiles: [
       'tests/node/session-view.test.mjs',
-      'tests/node/download-media-executor.test.mjs',
     ],
   },
   14: {
     batchId: 'scl-redaction-trust-boundaries',
     testFiles: [
       'tests/node/security-guard-redaction.test.mjs',
-      'tests/node/download-media-executor.test.mjs',
     ],
   },
   15: {
@@ -190,7 +195,7 @@ async function readFocusedRegressionBatchDefinition() {
 }
 
 function testFilesFromCommand(command) {
-  return [...command.matchAll(/\btests\/node\/[A-Za-z0-9_.-]+\.test\.mjs\b/gu)]
+  return [...command.matchAll(/\btests\/node\/[A-Za-z0-9_./-]+\.test\.mjs\b/gu)]
     .map((match) => match[0]);
 }
 

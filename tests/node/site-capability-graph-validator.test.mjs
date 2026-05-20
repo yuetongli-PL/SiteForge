@@ -6,10 +6,10 @@ import {
   assertSiteCapabilityGraphValid,
   generateGraphDocsSummary,
   validateSiteCapabilityGraph,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   requireReasonCodeDefinition,
-} from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/risks/reason-codes.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 const APPROVED_LAYER_SOURCE_REF = 'config/site-capabilities.json';
@@ -85,7 +85,7 @@ function addEndpointSupportNodes(graph, endpointId = 'endpoint:synthetic.example
       schemaName: 'SyntheticPublicRequest',
       governedVersion: 1,
       owner: 'Capability',
-      sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+      sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
     },
     {
       schemaVersion: 1,
@@ -94,7 +94,7 @@ function addEndpointSupportNodes(graph, endpointId = 'endpoint:synthetic.example
       schemaName: 'SyntheticPublicResponse',
       governedVersion: 1,
       owner: 'Capability',
-      sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+      sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
     },
     {
       schemaVersion: 1,
@@ -518,7 +518,7 @@ for (const variant of [
   {
     name: 'unsupported',
     mutate(riskPolicy) {
-      riskPolicy.sourceRefs = ['src/sites/core/adapters/generic-navigation.mjs'];
+      riskPolicy.sourceRefs = ['src/sites/adapters/generic-navigation.mjs'];
     },
     messagePattern: /sourceRefs contains unsupported Layer config source/u,
   },

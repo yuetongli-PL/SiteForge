@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 
 import {
   buildSiteCapabilityGraphFromCompileManifest,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 import {
   SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
   createDryRunCapabilityPlan,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 import {
   createSyntheticCompileManifest,
 } from './helpers.mjs';

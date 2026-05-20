@@ -7,7 +7,7 @@ import path from 'node:path';
 import {
   createGraphDocsMarkdownArtifact,
   generateGraphDocsSummary,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   assertGraphDerivedArtifactRedactionAuditAttachmentCompatible,
   assertGraphDocsMarkdownRuntimeWritePathIntegrationGuardCompatibility,
@@ -15,12 +15,12 @@ import {
   createGraphDocsMarkdownRuntimeWritePathIntegrationGuard,
   prepareGraphDerivedArtifactWrite,
   writeGraphDerivedArtifactPair,
-} from '../../src/sites/capability/site-capability-graph-artifacts.mjs';
-import * as graphArtifacts from '../../src/sites/capability/site-capability-graph-artifacts.mjs';
+} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
+import * as graphArtifacts from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 import {
   assertNoForbiddenPatterns,
   REDACTION_PLACEHOLDER,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 import { pathExists } from '../../src/infra/io.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);

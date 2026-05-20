@@ -31,7 +31,7 @@ import {
   matchCapabilityHooksForLifecycleEvent,
   normalizeCapabilityHook,
   normalizeCapabilityHookSubscriber,
-} from '../../src/sites/capability/capability-hook.mjs';
+} from '../../src/domain/lifecycle/capability-hook.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -69,7 +69,7 @@ test('CapabilityHook normalizes a safe versioned hook descriptor', () => {
     hookType: 'guard',
     subscriber: {
       name: 'download-policy-boundary',
-      modulePath: 'src/sites/capability/download-policy.mjs',
+      modulePath: 'src/domain/policies/download-policy.mjs',
       entrypoint: 'normalizeDownloadPolicy',
       capability: 'download-policy',
       order: 10,
@@ -84,7 +84,7 @@ test('CapabilityHook normalizes a safe versioned hook descriptor', () => {
     hookType: 'guard',
     subscriber: {
       name: 'download-policy-boundary',
-      modulePath: 'src/sites/capability/download-policy.mjs',
+      modulePath: 'src/domain/policies/download-policy.mjs',
       entrypoint: 'normalizeDownloadPolicy',
       capability: 'download-policy',
       order: 10,
@@ -118,8 +118,6 @@ test('CapabilityHook exposes the design lifecycle phases and hook types', () => 
   ]);
   assert.equal(CAPABILITY_HOOK_EVENT_TYPES.includes('capture.manifest.written'), true);
   assert.equal(CAPABILITY_HOOK_EVENT_TYPES.includes('api.catalog.verification.written'), true);
-  assert.equal(CAPABILITY_HOOK_EVENT_TYPES.includes('download.executor.before_download'), true);
-  assert.equal(CAPABILITY_HOOK_EVENT_TYPES.includes('download.executor.completed'), true);
   assert.equal(CAPABILITY_HOOK_EVENT_TYPES.includes('session.run.completed'), true);
   assert.equal(CAPABILITY_HOOK_EVENT_TYPES.includes('social.action.risk_blocked'), true);
 });
@@ -323,10 +321,6 @@ test('CapabilityHook producer descriptor registry fails closed for high-risk pro
     'after_session_materialize',
     'on_completion',
   ]);
-  assert.deepEqual(producersByEventType.get('download.run.terminal').phaseHints, [
-    'after_download',
-    'on_completion',
-  ]);
   assert.deepEqual(producersByEventType.get('social.action.risk_blocked').phaseHints, [
     'on_risk',
     'on_failure',
@@ -351,7 +345,7 @@ test('CapabilityHook producer descriptor registry fails closed for high-risk pro
 
   assert.throws(
     () => assertCapabilityHookProducerDescriptorCompatible({
-      ...producersByEventType.get('download.run.terminal'),
+      ...producersByEventType.get('social.action.risk_blocked'),
       descriptorPolicy: {
         ...CAPABILITY_HOOK_PRODUCER_DESCRIPTOR_POLICY,
         failClosed: false,
@@ -381,7 +375,7 @@ test('CapabilityHook producer descriptor registry fails closed for high-risk pro
   );
   assert.throws(
     () => assertCapabilityHookProducerDescriptorCompatible({
-      ...producersByEventType.get('download.run.terminal'),
+      ...producersByEventType.get('session.run.completed'),
       rawCredentials: 'synthetic-secret',
     }),
     /raw sensitive material field/u,
@@ -395,7 +389,7 @@ test('CapabilityHook registry stores normalized descriptors without executing co
     hookType: 'guard',
     subscriber: {
       name: 'download-policy-boundary',
-      modulePath: 'src/sites/capability/download-policy.mjs',
+      modulePath: 'src/domain/policies/download-policy.mjs',
       entrypoint: 'normalizeDownloadPolicy',
     },
   });
@@ -412,16 +406,16 @@ test('CapabilityHook registry stores normalized descriptors without executing co
 
 test('CapabilityHook registry snapshot is versioned, compatible, and descriptor-only', () => {
   const registry = createCapabilityHookRegistry([{
-    id: 'download-completed-observer',
-    phase: 'after_download',
+    id: 'capture-manifest-observer',
+    phase: 'after_capture',
     subscriber: {
-      name: 'download-completed-observer',
-      modulePath: 'src/sites/capability/lifecycle-events.mjs',
+      name: 'capture-manifest-observer',
+      modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
       entrypoint: 'observe',
       order: 3,
     },
     filters: {
-      eventTypes: ['download.executor.completed'],
+      eventTypes: ['capture.manifest.written'],
     },
   }]);
 
@@ -430,12 +424,12 @@ test('CapabilityHook registry snapshot is versioned, compatible, and descriptor-
     schemaVersion: CAPABILITY_HOOK_REGISTRY_SNAPSHOT_SCHEMA_VERSION,
     hooks: [{
       schemaVersion: CAPABILITY_HOOK_SCHEMA_VERSION,
-      id: 'download-completed-observer',
-      phase: 'after_download',
+      id: 'capture-manifest-observer',
+      phase: 'after_capture',
       hookType: 'observer',
       subscriber: {
-        name: 'download-completed-observer',
-        modulePath: 'src/sites/capability/lifecycle-events.mjs',
+        name: 'capture-manifest-observer',
+        modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
         entrypoint: 'observe',
         order: 3,
       },
@@ -445,7 +439,7 @@ test('CapabilityHook registry snapshot is versioned, compatible, and descriptor-
         artifactWriteAllowed: false,
       },
       filters: {
-        eventTypes: ['download.executor.completed'],
+        eventTypes: ['capture.manifest.written'],
       },
     }],
   });
@@ -453,7 +447,7 @@ test('CapabilityHook registry snapshot is versioned, compatible, and descriptor-
   assert.deepEqual(createCapabilityHookRegistrySnapshot(registry), snapshot);
 
   snapshot.hooks[0].phase = 'on_failure';
-  assert.equal(registry.get('download-completed-observer').phase, 'after_download');
+  assert.equal(registry.get('capture-manifest-observer').phase, 'after_capture');
 });
 
 test('CapabilityHook registry snapshot fails closed for drift, duplicates, and sensitive descriptors', () => {
@@ -586,7 +580,7 @@ test('CapabilityHook lifecycle matching rejects untrusted registry-like objects 
 
   assert.throws(
     () => matchCapabilityHooksForLifecycleEvent(untrustedRegistry, {
-      eventType: 'download.executor.completed',
+      eventType: 'capture.manifest.written',
       siteKey: 'x',
     }),
     /trusted registry or hook descriptor array/u,
@@ -597,18 +591,18 @@ test('CapabilityHook lifecycle matching rejects untrusted registry-like objects 
 test('CapabilityHook lifecycle matching returns redacted descriptor summaries without executing hooks', () => {
   const registry = createCapabilityHookRegistry([
     {
-      id: 'download-completed-observer',
-      phase: 'after_download',
+      id: 'capture-candidate-observer',
+      phase: 'after_candidate_write',
       hookType: 'observer',
       subscriber: {
-        name: 'download-completed-observer',
-        modulePath: 'src/sites/capability/lifecycle-events.mjs',
+        name: 'capture-candidate-observer',
+        modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
         entrypoint: 'observe',
-        capability: 'download-policy',
+        capability: 'capture',
         order: 5,
       },
       filters: {
-        eventTypes: ['download.executor.completed'],
+        eventTypes: ['capture.api_candidates.written'],
         siteKeys: ['x'],
         taskTypes: ['archive'],
       },
@@ -626,7 +620,7 @@ test('CapabilityHook lifecycle matching returns redacted descriptor summaries wi
 
   let called = false;
   const result = registry.matchLifecycleEvent({
-    eventType: 'download.executor.completed',
+    eventType: 'capture.api_candidates.written',
     traceId: 'trace-1',
     correlationId: 'corr-1',
     taskId: 'task-1',
@@ -641,15 +635,15 @@ test('CapabilityHook lifecycle matching returns redacted descriptor summaries wi
   assert.equal(called, false);
   assert.equal(result.schemaVersion, CAPABILITY_HOOK_SCHEMA_VERSION);
   assert.deepEqual(result.executionPolicy, CAPABILITY_HOOK_EXECUTION_POLICY);
-  assert.deepEqual(result.phases, ['after_download', 'on_completion']);
+  assert.deepEqual(result.phases, ['after_capture', 'after_candidate_write']);
   assert.equal(result.matchCount, 1);
-  assert.deepEqual(result.matches.map((match) => match.id), ['download-completed-observer']);
-  assert.equal(result.matches[0].subscriber.name, 'download-completed-observer');
+  assert.deepEqual(result.matches.map((match) => match.id), ['capture-candidate-observer']);
+  assert.equal(result.matches[0].subscriber.name, 'capture-candidate-observer');
   assert.equal(Object.hasOwn(result.matches[0].subscriber, 'modulePath'), false);
   assert.equal(Object.hasOwn(result.matches[0].subscriber, 'entrypoint'), false);
   assert.deepEqual(result.lifecycleEvent, {
     schemaVersion: 1,
-    eventType: 'download.executor.completed',
+    eventType: 'capture.api_candidates.written',
     traceId: 'trace-1',
     correlationId: 'corr-1',
     taskId: 'task-1',
@@ -659,7 +653,7 @@ test('CapabilityHook lifecycle matching returns redacted descriptor summaries wi
 
   assert.throws(
     () => matchCapabilityHooksForLifecycleEvent(registry.list(), {
-      eventType: 'download.executor.completed',
+      eventType: 'capture.api_candidates.written',
       details: {
         unsafe: () => {
           called = true;
@@ -671,7 +665,7 @@ test('CapabilityHook lifecycle matching returns redacted descriptor summaries wi
   assert.equal(called, false);
   assert.throws(
     () => matchCapabilityHooksForLifecycleEvent(registry.list(), {
-      eventType: 'download.executor.completed',
+      eventType: 'capture.api_candidates.written',
       siteKey: 'x',
     }, {
       executionPolicy: {
@@ -738,7 +732,7 @@ test('CapabilityHook lifecycle matching infers manual recovery required without 
     phase: 'on_manual_recovery_required',
     subscriber: {
       name: 'manual-recovery-observer',
-      modulePath: 'src/sites/capability/lifecycle-events.mjs',
+      modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
       entrypoint: 'observe',
       order: 1,
     },
@@ -790,12 +784,12 @@ test('CapabilityHook lifecycle matching infers manual recovery required without 
 test('CapabilityHook lifecycle matching redacts sensitive descriptor text in summaries', () => {
   const result = matchCapabilityHooksForLifecycleEvent([{
     id: 'sensitive-summary',
-    phase: 'after_download',
+    phase: 'after_capture',
     subscriber: {
       name: 'Bearer synthetic-secret',
     },
   }], {
-    eventType: 'download.executor.completed',
+    eventType: 'capture.manifest.written',
     siteKey: 'bilibili',
   });
 
@@ -813,7 +807,7 @@ test('CapabilityHook lifecycle evidence summarizes capture phases and matches wi
       phase: 'after_capture',
       subscriber: {
         name: 'capture-observer',
-        modulePath: 'src/sites/capability/lifecycle-events.mjs',
+        modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
         entrypoint: 'observe',
         capability: 'capture',
         order: 2,
@@ -828,7 +822,7 @@ test('CapabilityHook lifecycle evidence summarizes capture phases and matches wi
       phase: 'after_candidate_write',
       subscriber: {
         name: 'candidate-write-observer',
-        modulePath: 'src/sites/capability/api-candidates.mjs',
+        modulePath: 'src/domain/capabilities/api-candidates.mjs',
         entrypoint: 'observe',
         capability: 'api-candidates',
         order: 1,
@@ -883,36 +877,36 @@ test('CapabilityHook lifecycle evidence summarizes capture phases and matches wi
   assert.equal(json.includes('Bearer'), false);
 });
 
-test('CapabilityHook lifecycle evidence summarizes download producer phases and safe matches', () => {
+test('CapabilityHook lifecycle evidence summarizes session producer phases and safe matches', () => {
   const registry = createCapabilityHookRegistry([
     {
-      id: 'download-terminal-observer',
-      phase: 'after_download',
+      id: 'session-completed-observer',
+      phase: 'after_session_materialize',
       subscriber: {
-        name: 'download-terminal-observer',
-        modulePath: 'src/sites/downloads/runner.mjs',
-        entrypoint: 'observeTerminal',
-        capability: 'download-runner',
+        name: 'session-completed-observer',
+        modulePath: 'src/domain/sessions/runner.mjs',
+        entrypoint: 'observeCompleted',
+        capability: 'session-runner',
         order: 2,
       },
       filters: {
-        eventTypes: ['download.run.terminal'],
+        eventTypes: ['session.run.completed'],
         siteKeys: ['x'],
       },
     },
     {
-      id: 'download-terminal-completion-observer',
+      id: 'session-completion-observer',
       phase: 'on_completion',
       subscriber: {
-        name: 'download-terminal-completion-observer',
-        modulePath: 'src/sites/capability/lifecycle-events.mjs',
+        name: 'session-completion-observer',
+        modulePath: 'src/domain/lifecycle/lifecycle-events.mjs',
         entrypoint: 'observe',
-        capability: 'download-runner',
+        capability: 'session-runner',
         order: 1,
       },
       filters: {
-        eventTypes: ['download.run.terminal'],
-        reasonCodes: ['download-failures'],
+        eventTypes: ['session.run.completed'],
+        reasonCodes: ['session-invalid'],
       },
     },
     {
@@ -929,20 +923,20 @@ test('CapabilityHook lifecycle evidence summarizes download producer phases and 
   ]);
 
   const evidence = createCapabilityHookLifecycleEvidence(registry, {
-    eventType: 'download.run.terminal',
-    traceId: 'trace-download-hook-evidence',
-    correlationId: 'correlation-download-hook-evidence',
-    taskId: 'task-download-hook-evidence',
+    eventType: 'session.run.completed',
+    traceId: 'trace-session-hook-evidence',
+    correlationId: 'correlation-session-hook-evidence',
+    taskId: 'task-session-hook-evidence',
     siteKey: 'x',
-    taskType: 'media-bundle',
+    taskType: 'session-repair',
     adapterVersion: 'x-adapter-v1',
-    reasonCode: 'download-failures',
+    reasonCode: 'session-invalid',
     details: {
       status: 'failed',
-      reason: 'download-failures',
-      authorization: 'Bearer synthetic-download-secret',
+      reason: 'session-invalid',
+      authorization: 'Bearer synthetic-session-secret',
       session: {
-        csrf: 'synthetic-download-csrf',
+        csrf: 'synthetic-session-csrf',
       },
     },
   });
@@ -950,38 +944,38 @@ test('CapabilityHook lifecycle evidence summarizes download producer phases and 
   assert.equal(evidence.schemaVersion, CAPABILITY_HOOK_SCHEMA_VERSION);
   assert.deepEqual(evidence.phaseSummary, {
     source: 'event_type_inference',
-    phases: ['after_download', 'on_completion'],
+    phases: ['after_session_materialize', 'on_completion'],
     phaseCount: 2,
   });
   assert.deepEqual(evidence.producerFamilySummary, {
     source: 'event_type_prefix',
-    family: 'download',
+    family: 'session',
     producer: 'run',
-    eventName: 'terminal',
-    inferredTerminal: true,
+    eventName: 'completed',
+    inferredTerminal: false,
     inferredCompletion: true,
   });
   assert.equal(evidence.matchSummary.matchCount, 2);
   assert.deepEqual(
     evidence.matchSummary.matches.map((match) => match.id),
-    ['download-terminal-completion-observer', 'download-terminal-observer'],
+    ['session-completion-observer', 'session-completed-observer'],
   );
   assert.deepEqual(evidence.lifecycleEvent, {
     schemaVersion: 1,
-    eventType: 'download.run.terminal',
-    traceId: 'trace-download-hook-evidence',
-    correlationId: 'correlation-download-hook-evidence',
-    taskId: 'task-download-hook-evidence',
+    eventType: 'session.run.completed',
+    traceId: 'trace-session-hook-evidence',
+    correlationId: 'correlation-session-hook-evidence',
+    taskId: 'task-session-hook-evidence',
     siteKey: 'x',
-    taskType: 'media-bundle',
+    taskType: 'session-repair',
     adapterVersion: 'x-adapter-v1',
-    reasonCode: 'download-failures',
+    reasonCode: 'session-invalid',
   });
   const json = JSON.stringify(evidence);
   assert.equal(json.includes('modulePath'), false);
   assert.equal(json.includes('entrypoint'), false);
-  assert.equal(json.includes('synthetic-download-secret'), false);
-  assert.equal(json.includes('synthetic-download-csrf'), false);
+  assert.equal(json.includes('synthetic-session-secret'), false);
+  assert.equal(json.includes('synthetic-session-csrf'), false);
   assert.equal(json.includes('Bearer'), false);
 });
 
@@ -992,7 +986,7 @@ test('CapabilityHook lifecycle evidence summarizes API catalog producer phases a
       phase: 'on_failure',
       subscriber: {
         name: 'api-catalog-schema-failure-observer',
-        modulePath: 'src/sites/capability/api-candidates.mjs',
+        modulePath: 'src/domain/capabilities/api-candidates.mjs',
         entrypoint: 'observeSchemaFailure',
         capability: 'api-catalog',
         order: 1,
@@ -1007,7 +1001,7 @@ test('CapabilityHook lifecycle evidence summarizes API catalog producer phases a
       phase: 'after_catalog_verify',
       subscriber: {
         name: 'api-catalog-verify-observer',
-        modulePath: 'src/sites/capability/api-candidates.mjs',
+        modulePath: 'src/domain/capabilities/api-candidates.mjs',
         entrypoint: 'observeCatalogVerify',
         capability: 'api-catalog',
         order: 2,
@@ -1026,7 +1020,7 @@ test('CapabilityHook lifecycle evidence summarizes API catalog producer phases a
       phase: 'after_artifact_write',
       subscriber: {
         name: 'api-catalog-artifact-observer',
-        modulePath: 'src/sites/capability/api-candidates.mjs',
+        modulePath: 'src/domain/capabilities/api-candidates.mjs',
         entrypoint: 'observeCatalogArtifact',
         capability: 'api-catalog',
         order: 1,
@@ -1110,8 +1104,8 @@ test('CapabilityHook lifecycle evidence summarizes API catalog producer phases a
 test('runtime LifecycleEvent producers expose safe CapabilityHook match summaries', () => {
   const srcRoot = path.join(REPO_ROOT, 'src');
   const excludedCoreFiles = new Set([
-    path.join(srcRoot, 'sites', 'capability', 'capability-hook.mjs'),
-    path.join(srcRoot, 'sites', 'capability', 'lifecycle-events.mjs'),
+    path.join(srcRoot, 'domain', 'lifecycle', 'capability-hook.mjs'),
+    path.join(srcRoot, 'domain', 'lifecycle', 'lifecycle-events.mjs'),
   ]);
   const producerFiles = collectFiles(srcRoot, (filePath) => filePath.endsWith('.mjs'))
     .filter((filePath) => !excludedCoreFiles.has(filePath))
@@ -1123,16 +1117,14 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
   assert.deepEqual(
     producerFiles.map((filePath) => path.relative(REPO_ROOT, filePath).replaceAll(path.sep, '/')).sort(),
     [
-      'src/pipeline/stages/capture.mjs',
-      'src/sites/capability/api-candidates.mjs',
-      'src/sites/capability/site-capability-graph.mjs',
-      'src/sites/capability/site-health-execution-gate.mjs',
-      'src/sites/capability/site-health-recovery.mjs',
-      'src/sites/downloads/executor.mjs',
-      'src/sites/downloads/legacy-executor.mjs',
-      'src/sites/downloads/runner.mjs',
-      'src/sites/sessions/runner.mjs',
-      'src/sites/social/actions/router.mjs',
+      'src/app/pipeline/stages/capture.mjs',
+      'src/domain/capabilities/api-candidates.mjs',
+      'src/domain/capabilities/site-capability-graph.mjs',
+      'src/domain/policies/execution/layer-runtime-consumer.mjs',
+      'src/domain/risks/site-health-execution-gate.mjs',
+      'src/domain/risks/site-health-recovery.mjs',
+      'src/domain/sessions/runner.mjs',
+      'src/sites/known-sites/social/actions/router.mjs',
     ],
   );
 
@@ -1151,8 +1143,8 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
     const source = fs.readFileSync(filePath, 'utf8');
     const relativePath = path.relative(REPO_ROOT, filePath);
     const normalizedPath = relativePath.replaceAll(path.sep, '/');
-    const isSiteHealthProducer = normalizedPath.startsWith('src/sites/capability/site-health-');
-    const isDescriptorOnlyGraphDocsProducer = normalizedPath === 'src/sites/capability/site-capability-graph.mjs';
+    const isSiteHealthProducer = normalizedPath.startsWith('src/domain/risks/site-health-');
+    const isDescriptorOnlyGraphDocsProducer = normalizedPath === 'src/domain/capabilities/site-capability-graph.mjs';
     if (!isSiteHealthProducer && !isDescriptorOnlyGraphDocsProducer) {
       assert.match(
         source,
@@ -1181,8 +1173,8 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
 test('runtime LifecycleEvent producer inventory is explicit by event type', () => {
   const srcRoot = path.join(REPO_ROOT, 'src');
   const excludedCoreFiles = new Set([
-    path.join(srcRoot, 'sites', 'capability', 'capability-hook.mjs'),
-    path.join(srcRoot, 'sites', 'capability', 'lifecycle-events.mjs'),
+    path.join(srcRoot, 'domain', 'lifecycle', 'capability-hook.mjs'),
+    path.join(srcRoot, 'domain', 'lifecycle', 'lifecycle-events.mjs'),
   ]);
   const producerFiles = collectFiles(srcRoot, (filePath) => filePath.endsWith('.mjs'))
     .filter((filePath) => !excludedCoreFiles.has(filePath))
@@ -1205,12 +1197,7 @@ test('runtime LifecycleEvent producer inventory is explicit by event type', () =
     'api.catalog.verification.written',
     'capture.api_candidates.written',
     'capture.manifest.written',
-    'download.executor.before_download',
-    'download.executor.completed',
-    'download.executor.dry_run',
-    'download.legacy.completed',
-    'download.legacy.recovery_preflight',
-    'download.run.terminal',
+    'execution.layer.consumer.receipt',
     'session.run.completed',
     'site.health.recovery.action.planned',
     'site.health.recovery.evaluated',
@@ -1219,119 +1206,9 @@ test('runtime LifecycleEvent producer inventory is explicit by event type', () =
   ]);
 });
 
-test('download executor LifecycleEvent producers expose required observability fields per event type', () => {
-  const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'executor.mjs'),
-    'utf8',
-  );
-  const requiredFields = [
-    'eventType',
-    'taskId',
-    'siteKey',
-    'taskType',
-    'adapterVersion',
-    'reasonCode',
-    'capabilityHookMatches',
-  ];
-
-  for (const eventType of [
-    'download.executor.before_download',
-    'download.executor.completed',
-    'download.executor.dry_run',
-  ]) {
-    const block = lifecycleEventProducerBlock(source, eventType);
-    assert.match(
-      block,
-      /\.\.\.downloadExecutorLifecycleContext\(manifest\)/u,
-      `${eventType} producer must attach trace/correlation context`,
-    );
-    for (const field of requiredFields) {
-      assert.match(
-        block,
-        new RegExp(`\\b${field}\\b`, 'u'),
-        `${eventType} producer must expose ${field}`,
-      );
-    }
-  }
-  assert.match(source, /function downloadExecutorLifecycleContext/u);
-  assert.match(source, /\btraceId\b/u);
-  assert.match(source, /\bcorrelationId\b/u);
-});
-
-test('legacy download executor LifecycleEvent producers expose required observability fields per event type', () => {
-  const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'legacy-executor.mjs'),
-    'utf8',
-  );
-  const requiredFields = [
-    'eventType',
-    'taskId',
-    'siteKey',
-    'taskType',
-    'adapterVersion',
-    'reasonCode',
-    'capabilityHookMatches',
-  ];
-  const eventTypes = new Map([
-    ['download.legacy.recovery_preflight', 'legacyRecoveryLifecycleContext'],
-    ['download.legacy.completed', 'legacyCompletedLifecycleContext'],
-  ]);
-
-  for (const [eventType, contextHelper] of eventTypes) {
-    const block = lifecycleEventProducerBlock(source, eventType);
-    assert.match(
-      block,
-      new RegExp(`\\.\\.\\.${contextHelper}\\(manifest\\)`, 'u'),
-      `${eventType} producer must attach trace/correlation context`,
-    );
-    for (const field of requiredFields) {
-      assert.match(
-        block,
-        new RegExp(`\\b${field}\\b`, 'u'),
-        `${eventType} producer must expose ${field}`,
-      );
-    }
-  }
-  assert.match(source, /function legacyRecoveryLifecycleContext/u);
-  assert.match(source, /function legacyCompletedLifecycleContext/u);
-  assert.match(source, /\btraceId\b/u);
-  assert.match(source, /\bcorrelationId\b/u);
-});
-
-test('download runner terminal LifecycleEvent producer exposes required observability fields', () => {
-  const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'runner.mjs'),
-    'utf8',
-  );
-  const block = lifecycleEventProducerBlock(source, 'download.run.terminal');
-  assert.match(
-    block,
-    /\.\.\.downloadLifecycleContext\(manifest\)/u,
-    'download.run.terminal producer must attach trace/correlation context',
-  );
-  for (const field of [
-    'eventType',
-    'taskId',
-    'siteKey',
-    'taskType',
-    'adapterVersion',
-    'reasonCode',
-    'capabilityHookMatches',
-  ]) {
-    assert.match(
-      block,
-      new RegExp(`\\b${field}\\b`, 'u'),
-      `download.run.terminal producer must expose ${field}`,
-    );
-  }
-  assert.match(source, /function downloadLifecycleContext/u);
-  assert.match(source, /\btraceId\b/u);
-  assert.match(source, /\bcorrelationId\b/u);
-});
-
 test('session runner completed LifecycleEvent producer exposes required observability fields', () => {
   const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'sessions', 'runner.mjs'),
+    path.join(REPO_ROOT, 'src', 'domain', 'sessions', 'runner.mjs'),
     'utf8',
   );
   const block = lifecycleEventProducerBlock(source, 'session.run.completed');
@@ -1362,7 +1239,7 @@ test('session runner completed LifecycleEvent producer exposes required observab
 
 test('capture stage direct LifecycleEvent producers expose required observability fields', () => {
   const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'pipeline', 'stages', 'capture.mjs'),
+    path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'capture.mjs'),
     'utf8',
   );
   const commonFields = [
@@ -1403,7 +1280,7 @@ test('capture stage direct LifecycleEvent producers expose required observabilit
 
 test('API candidate lifecycle producers expose required observability fields per event type', () => {
   const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'capability', 'api-candidates.mjs'),
+    path.join(REPO_ROOT, 'src', 'domain', 'capabilities', 'api-candidates.mjs'),
     'utf8',
   );
   const commonFields = [
@@ -1440,7 +1317,7 @@ test('API candidate lifecycle producers expose required observability fields per
 
 test('API catalog lifecycle producers expose required observability fields per event type', () => {
   const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'capability', 'api-candidates.mjs'),
+    path.join(REPO_ROOT, 'src', 'domain', 'capabilities', 'api-candidates.mjs'),
     'utf8',
   );
   const commonFields = [
@@ -1483,7 +1360,7 @@ test('API catalog lifecycle producers expose required observability fields per e
 
 test('API catalog collection and index lifecycle producers expose required observability fields per event type', () => {
   const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'capability', 'api-candidates.mjs'),
+    path.join(REPO_ROOT, 'src', 'domain', 'capabilities', 'api-candidates.mjs'),
     'utf8',
   );
   const commonFields = [
@@ -1526,7 +1403,7 @@ test('API catalog collection and index lifecycle producers expose required obser
 
 test('social action risk-blocked LifecycleEvent producer exposes RiskState observability fields', () => {
   const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'social', 'actions', 'router.mjs'),
+    path.join(REPO_ROOT, 'src', 'sites', 'known-sites', 'social', 'actions', 'router.mjs'),
     'utf8',
   );
   const block = lifecycleEventProducerBlock(source, 'social.action.risk_blocked');

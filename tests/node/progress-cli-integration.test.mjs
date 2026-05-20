@@ -6,19 +6,18 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-import { parseArgs as parseDownloadArgs } from '../../src/entrypoints/sites/download.mjs';
 import { parseCliArgs as parseDoctorArgs } from '../../src/entrypoints/sites/site-doctor.mjs';
-import { resolveCliDispatch } from '../../src/entrypoints/cli.mjs';
+import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
 import { parseCliArgs as parseBuildArgs } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
-import { parseCliArgs as parseCaptureArgs } from '../../src/pipeline/stages/capture.mjs';
-import { parseCliArgs as parseExpandArgs } from '../../src/pipeline/stages/expand.mjs';
-import { parseCliArgs as parseCollectContentArgs } from '../../src/pipeline/stages/collect-content.mjs';
-import { parseCliArgs as parseAnalyzeArgs } from '../../src/pipeline/stages/analyze.mjs';
-import { parseCliArgs as parseAbstractArgs } from '../../src/pipeline/stages/abstract.mjs';
-import { parseCliArgs as parseNlArgs } from '../../src/pipeline/stages/nl.mjs';
-import { parseCliArgs as parseDocsArgs } from '../../src/pipeline/stages/docs.mjs';
-import { parseCliArgs as parseGovernanceArgs } from '../../src/pipeline/stages/governance.mjs';
-import { parseCliArgs as parseKbArgs } from '../../src/pipeline/stages/kb/index.mjs';
+import { parseCliArgs as parseCaptureArgs } from '../../src/app/pipeline/stages/capture.mjs';
+import { parseCliArgs as parseExpandArgs } from '../../src/app/pipeline/stages/expand.mjs';
+import { parseCliArgs as parseCollectContentArgs } from '../../src/app/pipeline/stages/collect-content.mjs';
+import { parseCliArgs as parseAnalyzeArgs } from '../../src/app/pipeline/stages/analyze.mjs';
+import { parseCliArgs as parseAbstractArgs } from '../../src/app/pipeline/stages/abstract.mjs';
+import { parseCliArgs as parseNlArgs } from '../../src/app/pipeline/stages/nl.mjs';
+import { parseCliArgs as parseDocsArgs } from '../../src/app/pipeline/stages/docs.mjs';
+import { parseCliArgs as parseGovernanceArgs } from '../../src/app/pipeline/stages/governance.mjs';
+import { parseCliArgs as parseKbArgs } from '../../src/app/pipeline/stages/kb/index.mjs';
 import { parseCliArgs as parseSiteLoginArgs } from '../../src/entrypoints/sites/site-login.mjs';
 import { parseCliArgs as parseSiteKeepaliveArgs } from '../../src/entrypoints/sites/site-keepalive.mjs';
 import { parseCliArgs as parseNlSiteLoginArgs } from '../../src/entrypoints/sites/nl-site-login.mjs';
@@ -28,7 +27,6 @@ import { parseCliArgs as parseBilibiliActionArgs } from '../../src/entrypoints/s
 import { parseDouyinActionArgs } from '../../src/entrypoints/sites/douyin-action.mjs';
 import { parseXiaohongshuActionArgs } from '../../src/entrypoints/sites/xiaohongshu-action.mjs';
 import { parseArgs as parseJableRankingArgs } from '../../src/entrypoints/sites/jable-ranking.mjs';
-import { parseArgs as parseJpAvCatalogArgs } from '../../src/entrypoints/sites/jp-av-release-catalog.mjs';
 import { parseArgs as parseMoodyzCatalogArgs } from '../../src/entrypoints/sites/moodyz-month-catalog.mjs';
 import { parseCliArgs as parseSiteCredentialsArgs } from '../../src/entrypoints/sites/site-credentials.mjs';
 import { parseCliArgs as parseSiteScaffoldArgs } from '../../src/entrypoints/sites/site-scaffold.mjs';
@@ -37,9 +35,9 @@ import { parseArgs as parseBilibiliExtractLinksArgs } from '../../src/entrypoint
 import { parseArgs as parseSocialAuthImportArgs } from '../../src/entrypoints/sites/social-auth-import.mjs';
 import { parseCliArgs as parseGenerateCrawlerScriptArgs } from '../../src/entrypoints/pipeline/generate-crawler-script.mjs';
 import { parseArgs as parseDouyinExportCookiesArgs } from '../../src/entrypoints/sites/douyin-export-cookies.mjs';
-import { parseSocialActionArgs } from '../../src/sites/social/actions/router.mjs';
-import { parseDouyinFollowQueryArgs } from '../../src/sites/douyin/queries/follow-query.mjs';
-import { parseDouyinMediaResolverArgs } from '../../src/sites/douyin/queries/media-resolver.mjs';
+import { parseSocialActionArgs } from '../../src/sites/known-sites/social/actions/router.mjs';
+import { parseDouyinFollowQueryArgs } from '../../src/sites/known-sites/douyin/queries/follow-query.mjs';
+import { parseDouyinMediaResolverArgs } from '../../src/sites/known-sites/douyin/queries/media-resolver.mjs';
 import { parseArgs as parseSocialLiveVerifyArgs } from '../../scripts/social-live-verify.mjs';
 import { parseArgs as parseSocialKbRefreshArgs } from '../../scripts/social-kb-refresh.mjs';
 import { parseArgs as parseSocialLiveResumeArgs } from '../../scripts/social-live-resume.mjs';
@@ -53,8 +51,9 @@ import {
   stripProgressCliOptions,
 } from '../../src/infra/cli/progress-cli.mjs';
 import {
-  siteCapabilityCompileCommand,
+  buildCliCommand,
   unifiedCliArgsForScript,
+  unifiedCliCommand,
   unifiedCliCommandForScript,
 } from '../../src/infra/cli/command-map.mjs';
 
@@ -74,46 +73,7 @@ function createStream({ isTTY = false, columns = 80 } = {}) {
   };
 }
 
-test('download --json and --plan-json keep stdout machine-readable and suppress progress', async () => {
-  const result = spawnSync(
-    process.execPath,
-    [
-      path.join(process.cwd(), 'src', 'entrypoints', 'sites', 'download.mjs'),
-      '--site',
-      'bilibili',
-      '--input',
-      'BV1progress',
-      '--plan-json',
-      '--progress',
-      'plain',
-    ],
-    { cwd: process.cwd(), encoding: 'utf8' },
-  );
-
-  assert.equal(result.status, 0, result.stderr);
-  const payload = JSON.parse(result.stdout);
-  assert.equal(payload.status, 'planned');
-  assert.equal(result.stderr, '');
-});
-
-test('download parser accepts progress flags without changing execute safety', () => {
-  const args = parseDownloadArgs([
-    '--site',
-    'bilibili',
-    '--input',
-    'BV1progress',
-    '--progress',
-    'plain',
-    '--quiet',
-    '--force-tty',
-  ]);
-  assert.equal(args.dryRun, true);
-  assert.equal(args.progressMode, 'plain');
-  assert.equal(args.quiet, true);
-  assert.equal(args.forceTty, true);
-});
-
-test('build parser accepts upgraded human-output flags', () => {
+test('internal run-pipeline parser keeps operator human-output flags', () => {
   const parsed = parseBuildArgs([
     'https://weread.qq.com/',
     '--verbose',
@@ -266,9 +226,6 @@ test('site login, session, action, and catalog parsers accept shared progress fl
   const jable = parseJableRankingArgs(['https://jable.tv/', '--query', 'test', '--progress', 'plain']);
   assert.equal(jable.progressMode, 'plain');
 
-  const jpAv = parseJpAvCatalogArgs(['--start', '2026-01-01', '--end', '2026-01-31', '--quiet']);
-  assert.equal(jpAv.quiet, true);
-
   const moodyz = parseMoodyzCatalogArgs(['--month', '2026-05', '--no-tty']);
   assert.equal(moodyz.noTty, true);
 });
@@ -413,135 +370,76 @@ test('auxiliary site CLIs accept shared progress flags without exposing sensitiv
   assert.equal(douyinMedia.options.noTty, true);
 });
 
-test('unified CLI facade routes build, skill, doctor, and download commands', () => {
-  const build = resolveCliDispatch(['build', 'https://example.com', '--json']);
+test('unified CLI facade only routes build commands', () => {
+  const build = resolveCliDispatch(['build', 'https://example.com']);
   assert.equal(path.basename(build.script), 'run-pipeline.mjs');
-  assert.deepEqual(build.args, ['https://example.com', '--json']);
+  assert.deepEqual(build.args, ['https://example.com']);
+  for (const flag of ['--auto', '--manual', '--deep', '--network', '--verbose', '--debug']) {
+    const routed = resolveCliDispatch(['build', 'https://example.com', flag]);
+    assert.equal(path.basename(routed.script), 'run-pipeline.mjs');
+    assert.deepEqual(routed.args, ['https://example.com', flag]);
+  }
+  const report = resolveCliDispatch(['build', 'https://example.com', '--report', 'debug']);
+  assert.deepEqual(report.args, ['https://example.com', '--report', 'debug']);
 
-  const skill = resolveCliDispatch(['skill', 'https://example.com', '--quiet']);
-  assert.equal(path.basename(skill.script), 'generate-skill.mjs');
-  assert.deepEqual(skill.args, ['https://example.com', '--quiet']);
-
-  const doctor = resolveCliDispatch(['doctor', 'https://example.com', '--progress', 'plain']);
-  assert.equal(path.basename(doctor.script), 'site-doctor.mjs');
-  assert.deepEqual(doctor.args, ['https://example.com', '--progress', 'plain']);
-
-  const plan = resolveCliDispatch(['download', 'plan', 'BV1abc', '--site', 'bilibili']);
-  assert.equal(path.basename(plan.script), 'download.mjs');
-  assert.deepEqual(plan.args, ['--input', 'BV1abc', '--site', 'bilibili']);
-
-  const execute = resolveCliDispatch(['download', 'execute', 'BV1abc', '--site', 'bilibili']);
-  assert.deepEqual(execute.args, ['--input', 'BV1abc', '--execute', '--site', 'bilibili']);
-});
-
-test('unified CLI facade routes domain command tree', () => {
-  const cases = [
-    [['site', 'doctor', 'https://example.com'], 'site-doctor.mjs', ['https://example.com']],
-    [['site', 'capability-compile', '--site', 'qidian', '--json'], 'site-capability-compile.mjs', ['--site', 'qidian', '--json']],
-    [['site', 'recompile-preview', '--json'], 'site-recompile-preview-summary.mjs', ['--json']],
-    [['site', 'login', 'https://example.com', '--json'], 'site-login.mjs', ['https://example.com', '--json']],
-    [['site', 'keepalive', 'https://example.com'], 'site-keepalive.mjs', ['https://example.com']],
-    [['site', 'scaffold', 'https://example.com', '--archetype', 'navigation-catalog'], 'site-scaffold.mjs', ['https://example.com', '--archetype', 'navigation-catalog']],
-    [['site', 'credentials', 'show', 'https://example.com'], 'site-credentials.mjs', ['show', 'https://example.com']],
-    [['site', 'nl-login', '登录 B 站'], 'nl-site-login.mjs', ['登录 B 站']],
-    [['site', 'repair-plan', '--site', 'x'], 'session-repair-plan.mjs', ['--site', 'x']],
-    [['session', 'health', '--site', 'x'], 'session.mjs', ['health', '--site', 'x']],
-    [['session', 'repair-plan', '--site', 'x'], 'session.mjs', ['plan-repair', '--site', 'x']],
-    [['social', 'live-verify', '--live', '--site', 'x'], 'social-live-verify.mjs', ['--live', '--site', 'x']],
-    [['social', 'kb-refresh', '--site', 'x'], 'social-kb-refresh.mjs', ['--site', 'x']],
-    [['social', 'resume', '--state', 'manifest.json'], 'social-live-resume.mjs', ['--state', 'manifest.json']],
-    [['social', 'report', '--json'], 'social-live-report.mjs', ['--json']],
-    [['social', 'dashboard', '--quiet'], 'social-live-dashboard.mjs', ['--quiet']],
-    [['social', 'auth-recover', '--site', 'x'], 'social-auth-recover.mjs', ['--site', 'x']],
-    [['social', 'health-watch', '--site', 'x'], 'social-health-watch.mjs', ['--site', 'x']],
-    [['social', 'templates', '--site', 'all'], 'social-command-templates.mjs', ['--site', 'all']],
-    [['social', 'auth-import', '--site', 'x'], 'social-auth-import.mjs', ['--site', 'x']],
-    [['catalog', 'jable-ranking', 'https://jable.tv/', '--query', 'test'], 'jable-ranking.mjs', ['https://jable.tv/', '--query', 'test']],
-    [['catalog', 'jp-av-release', '--start', '2026-01-01'], 'jp-av-release-catalog.mjs', ['--start', '2026-01-01']],
-    [['catalog', 'moodyz-month', '--month', '2026-05'], 'moodyz-month-catalog.mjs', ['--month', '2026-05']],
-    [['bilibili', 'action', 'download', 'BV1abc', '--progress', 'plain'], 'bilibili-action.mjs', ['download', 'BV1abc', '--progress', 'plain']],
-    [['bilibili', 'open', 'https://www.bilibili.com/'], 'bilibili-open-page.mjs', ['https://www.bilibili.com/']],
-    [['bilibili', 'extract-links', 'https://www.bilibili.com/'], 'bilibili-extract-links.mjs', ['https://www.bilibili.com/']],
-    [['douyin', 'action', 'download', 'https://www.douyin.com/video/1'], 'douyin-action.mjs', ['download', 'https://www.douyin.com/video/1']],
-    [['douyin', 'follow', 'https://www.douyin.com/?recommend=1'], 'douyin-query-follow.mjs', ['https://www.douyin.com/?recommend=1']],
-    [['douyin', 'resolve-media', 'https://www.douyin.com/video/1'], 'douyin-resolve-media.mjs', ['https://www.douyin.com/video/1']],
-    [['douyin', 'export-cookies', '--json'], 'douyin-export-cookies.mjs', ['--json']],
-    [['xiaohongshu', 'action', 'download', 'https://www.xiaohongshu.com/explore/1'], 'xiaohongshu-action.mjs', ['download', 'https://www.xiaohongshu.com/explore/1']],
-    [['xiaohongshu', 'follow', 'https://www.xiaohongshu.com/notification'], 'xiaohongshu-query-follow.mjs', ['https://www.xiaohongshu.com/notification']],
-    [['x', 'action', 'account-info', 'openai'], 'x-action.mjs', ['account-info', 'openai']],
-    [['instagram', 'action', 'account-info', 'instagram'], 'instagram-action.mjs', ['account-info', 'instagram']],
-  ];
-  for (const [argv, expectedScript, expectedArgs] of cases) {
-    const dispatch = resolveCliDispatch(argv);
-    assert.equal(path.basename(dispatch.script), expectedScript);
-    assert.deepEqual(dispatch.args, expectedArgs);
+  for (const command of ['skill', 'doctor', 'download', 'site', 'session', 'social', 'catalog', 'bilibili', 'douyin', 'xiaohongshu', 'x', 'instagram']) {
+    assert.throws(
+      () => resolveCliDispatch([command, 'anything']),
+      new RegExp(`Unknown command: ${command}`, 'u'),
+    );
   }
 });
 
-test('unified CLI command map exposes descriptor-only site capability compile', () => {
+test('unified CLI facade rejects domain command tree', () => {
+  for (const command of ['site', 'session', 'social', 'catalog', 'bilibili', 'douyin', 'xiaohongshu', 'x', 'instagram']) {
+    assert.throws(
+      () => resolveCliDispatch([command, 'anything']),
+      new RegExp(`Unknown command: ${command}`, 'u'),
+    );
+  }
+});
+
+test('unified CLI command map exposes only build as public command', () => {
   assert.deepEqual(
-    unifiedCliArgsForScript('src/entrypoints/sites/site-capability-compile.mjs'),
-    ['site', 'capability-compile'],
+    unifiedCliArgsForScript('src/entrypoints/pipeline/run-pipeline.mjs'),
+    ['build'],
   );
   assert.equal(
-    siteCapabilityCompileCommand(['--site', 'qidian', '--json']),
-    'node src/entrypoints/cli.mjs site capability-compile --site qidian --json',
+    buildCliCommand('https://example.com'),
+    'siteforge build https://example.com',
+  );
+  assert.equal(
+    unifiedCliCommand(['build', 'https://example.com', '--auto', '--deep', '--network']),
+    'siteforge build https://example.com --auto --deep --network',
+  );
+  assert.equal(
+    unifiedCliCommand(['build', 'https://example.com', '--report', 'debug']),
+    'siteforge build https://example.com --report debug',
+  );
+  assert.equal(
+    unifiedCliCommandForScript('src/entrypoints/sites/site-capability-compile.mjs', ['--site', 'qidian', '--json']),
+    'node src/entrypoints/sites/site-capability-compile.mjs --site qidian --json',
   );
 });
 
-test('unified CLI command map translates legacy session subcommands', () => {
-  assert.equal(
-    unifiedCliCommandForScript('src/entrypoints/sites/session.mjs', ['health', '--site', 'x']),
-    'node src/entrypoints/cli.mjs session health --site x',
-  );
-  assert.equal(
-    unifiedCliCommandForScript('src/entrypoints/sites/session.mjs', ['plan-repair', '--site', 'x']),
-    'node src/entrypoints/cli.mjs session repair-plan --site x',
-  );
-  assert.equal(
-    unifiedCliCommandForScript('src/entrypoints/sites/session.mjs', ['--site', 'x']),
-    'node src/entrypoints/cli.mjs session health --site x',
-  );
-});
-
-test('unified CLI facade exposes top-level, domain, and forwarded help', () => {
-  const top = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), '--help'], {
+test('unified CLI facade help only exposes siteforge build', () => {
+  const top = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli', 'index.mjs'), '--help'], {
     cwd: process.cwd(),
     encoding: 'utf8',
   });
   assert.equal(top.status, 0, top.stderr);
-  assert.match(top.stdout, /Domains:/u);
-  assert.match(top.stdout, /node src\/entrypoints\/cli\.mjs social templates --site all/u);
+  assert.match(top.stdout, /siteforge build <url>/u);
+  assert.match(top.stdout, /--auto/u);
+  assert.match(top.stdout, /--report user\|debug\|both/u);
+  assert.doesNotMatch(top.stdout, /Domains:|download plan|site capability-compile|social templates|node src\/entrypoints\/cli\/index\.mjs/u);
 
-  const site = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'site', '--help'], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
-  assert.equal(site.status, 0, site.stderr);
-  assert.match(site.stdout, /node src\/entrypoints\/cli\.mjs site <command>/u);
-  assert.match(site.stdout, /repair-plan/u);
-
-  const social = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'social', '--help'], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
-  assert.equal(social.status, 0, social.stderr);
-  assert.match(social.stdout, /live-verify/u);
-  assert.match(social.stdout, /auth-recover/u);
-
-  const download = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'download', '--help'], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
-  assert.equal(download.status, 0, download.stderr);
-  assert.match(download.stdout, /Defaults to dry-run/u);
-
-  const unknown = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli.mjs'), 'site', 'unknown'], {
+  const unknown = spawnSync(process.execPath, [path.join(process.cwd(), 'src', 'entrypoints', 'cli', 'index.mjs'), 'site', 'unknown'], {
     cwd: process.cwd(),
     encoding: 'utf8',
   });
   assert.notEqual(unknown.status, 0);
-  assert.match(unknown.stderr, /Unknown site command/u);
+  assert.match(unknown.stderr, /Unknown command: site/u);
+  assert.match(unknown.stderr, /siteforge build <url>/u);
 });
 
 test('social live helper scripts accept shared progress flags', () => {

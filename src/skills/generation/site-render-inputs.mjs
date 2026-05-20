@@ -2,8 +2,8 @@
 
 import { markdownLink, renderTable } from '../../shared/markdown.mjs';
 import { slugifyAscii, toArray, uniqueSortedStrings } from '../../shared/normalize.mjs';
-import { resolveSemanticSiteKey } from '../../sites/core/site-semantics.mjs';
-import { displayIntentName as sharedDisplayIntentName, normalizeDisplayLabel } from '../../sites/core/terminology.mjs';
+import { resolveSemanticSiteKey } from '../../sites/registry/core/site-semantics.mjs';
+import { displayIntentName as sharedDisplayIntentName, normalizeDisplayLabel } from '../../sites/registry/core/terminology.mjs';
 import {
   buildElementsById,
 } from './context-indexes.mjs';

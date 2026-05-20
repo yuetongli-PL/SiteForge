@@ -10,16 +10,19 @@ import {
   parseProgressCliOption,
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
-import { runBilibiliAction } from '../../sites/bilibili/actions/router.mjs';
+import { runBilibiliAction } from '../../sites/known-sites/bilibili/actions/router.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs bilibili action open <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--reuse-login-state|--no-reuse-login-state] [--auto-login-bootstrap|--no-auto-login-bootstrap]
-  node src/entrypoints/cli.mjs bilibili action download <url-or-bv>... [--out-dir <dir>] [--concurrency <n>] [--max-playlist-items <n>] [--reuse-login-state|--no-reuse-login-state] [--auto-login-bootstrap|--no-auto-login-bootstrap] [--skip-existing] [--retry-failed-only] [--resume|--no-resume] [--dry-run]
-  node src/entrypoints/cli.mjs bilibili action login [<url>] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--reuse-login-state|--no-reuse-login-state]
-  node src/entrypoints/cli.mjs bilibili action preflight <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--reuse-login-state|--no-reuse-login-state]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/bilibili-action.mjs open <url> [options]
+  node src/entrypoints/sites/bilibili-action.mjs download <url-or-bv>... [options]
+  node src/entrypoints/sites/bilibili-action.mjs login [<url>] [options]
+  node src/entrypoints/sites/bilibili-action.mjs preflight <url> [options]
+
+Public command:
+  siteforge build <url>
   Add [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty] to any command.
 `;
 
@@ -200,7 +203,7 @@ export async function cli(argv = process.argv.slice(2), deps = {}) {
         title: 'Bilibili action failed',
         stage: `Run ${parsed.action}`,
         reason: message,
-        nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.bilibili.com/ --no-headless --reuse-login-state',
+        nextStep: 'siteforge build https://www.bilibili.com/',
       });
     }
   } catch (error) {
@@ -212,7 +215,7 @@ export async function cli(argv = process.argv.slice(2), deps = {}) {
       title: 'Bilibili action failed',
       stage: `Run ${parsed.action}`,
       reason,
-      nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.bilibili.com/ --no-headless --reuse-login-state',
+      nextStep: 'siteforge build https://www.bilibili.com/',
     });
     throw error;
   }

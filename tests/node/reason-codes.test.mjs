@@ -11,7 +11,7 @@ import {
   normalizeReasonCode,
   reasonCodeSummary,
   requireReasonCodeDefinition,
-} from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/risks/reason-codes.mjs';
 
 const CURRENT_CAPTURE_CODES = [
   'INVALID_INPUT',

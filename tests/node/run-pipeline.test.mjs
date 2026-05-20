@@ -6,8 +6,8 @@ import process from 'node:process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { parseCliArgs, pipelineCliJson, runPipeline } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
-import { PIPELINE_STAGE_SPECS } from '../../src/pipeline/engine/stage-spec.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
+import { PIPELINE_STAGE_SPECS } from '../../src/app/pipeline/engine/stage-spec.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
 
 function buildStageDir(workspace, name) {
   return path.join(workspace, name);
@@ -84,6 +84,20 @@ function createSuccessfulStageImpls(workspace, overrides = {}) {
         gapGroups: [],
       };
     },
+    async compileSiteCapabilityLayer() {
+      return {
+        status: 'success',
+        outDir: stageDir('capability-compile'),
+        compileSummaryPath: path.join(stageDir('capability-compile'), 'site-compile-result-summary.json'),
+        siteKey: 'jable',
+        graphValidationResult: 'passed',
+        planStatus: 'ready',
+        plannerHandoffReady: true,
+        executionPolicyStatus: 'ready_for_layer_governed_dispatch',
+        layerRuntimeConsumerReady: true,
+        redactionRequired: true,
+      };
+    },
     async generateSkill() {
       return {
         skillDir: stageDir('skill'),
@@ -157,6 +171,14 @@ test('pipeline CLI JSON stdout fails closed without raw cause exposure', () => {
       return true;
     },
   );
+});
+
+test('pipeline CLI closes the active web interaction bridge object', async () => {
+  const source = await readFile(path.resolve('src/entrypoints/pipeline/run-pipeline.mjs'), 'utf8');
+
+  assert.match(source, /await closeSiteForgeWebInteraction\(interactionOptions\);/u);
+  assert.match(source, /const followupInteractionOptions = \{\s+\.\.\.interactionOptions,\s+treeUi: false,\s+\};/u);
+  assert.match(source, /await closeSiteForgeWebInteraction\(followupInteractionOptions\);/u);
 });
 
 test('runPipeline CLI accepts metadata sandbox directories', () => {
@@ -275,6 +297,21 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
         gapGroups: [],
       };
     },
+    async compileSiteCapabilityLayer(url, options) {
+      calls.push({ stage: 'capabilityCompile', url, options });
+      return {
+        status: 'success',
+        outDir: stageDir('capability-compile'),
+        compileSummaryPath: path.join(stageDir('capability-compile'), 'site-compile-result-summary.json'),
+        siteKey: 'jable',
+        graphValidationResult: 'passed',
+        planStatus: 'ready',
+        plannerHandoffReady: true,
+        executionPolicyStatus: 'ready_for_layer_governed_dispatch',
+        layerRuntimeConsumerReady: true,
+        redactionRequired: true,
+      };
+    },
     async generateSkill(url, options) {
       calls.push({ stage: 'skill', url, options });
       return {
@@ -346,10 +383,13 @@ test('runPipeline smoke test wires stages in order and passes derived paths', as
     assert.equal(calls[8].options.governanceDir, stageDir('governance'));
     assert.equal(calls[8].options.strict, false);
     assert.deepEqual(calls[8].options.siteMetadataOptions, siteMetadataOptions);
-    assert.equal(calls[9].options.kbDir, stageDir('kb'));
-    assert.equal(calls[9].options.outDir, stageDir('skill-root'));
-    assert.equal(calls[9].options.skillName, 'jable-videos');
-    assert.deepEqual(calls[9].options.siteMetadataOptions, siteMetadataOptions);
+    assert.equal(calls[9].options.outDir, path.join(process.cwd(), 'runs', 'sites', 'site-capability-compile', 'jable.tv'));
+    assert.deepEqual(calls[9].options.requestedCapabilities, []);
+    assert.equal(calls[10].options.kbDir, stageDir('kb'));
+    assert.equal(calls[10].options.outDir, stageDir('skill-root'));
+    assert.equal(calls[10].options.skillName, 'jable-videos');
+    assert.equal(calls[10].options.compileSummaryPath, path.join(stageDir('capability-compile'), 'site-compile-result-summary.json'));
+    assert.deepEqual(calls[10].options.siteMetadataOptions, siteMetadataOptions);
 
     assert.deepEqual(calls[0].options.searchQueries, undefined);
     assert.deepEqual(calls[1].options.searchQueries, ['IPX-001', 'Jable']);
@@ -453,6 +493,21 @@ test('runPipeline skips bookContent when the site profile disables it', async ()
         gapGroups: [],
       };
     },
+    async compileSiteCapabilityLayer(url, options) {
+      calls.push({ stage: 'capabilityCompile', url, options });
+      return {
+        status: 'success',
+        outDir: stageDir('capability-compile'),
+        compileSummaryPath: path.join(stageDir('capability-compile'), 'site-compile-result-summary.json'),
+        siteKey: 'bilibili',
+        graphValidationResult: 'passed',
+        planStatus: 'ready',
+        plannerHandoffReady: true,
+        executionPolicyStatus: 'ready_for_layer_governed_dispatch',
+        layerRuntimeConsumerReady: true,
+        redactionRequired: true,
+      };
+    },
     async generateSkill(url, options) {
       calls.push({ stage: 'skill', url, options });
       return {
@@ -479,12 +534,19 @@ test('runPipeline skips bookContent when the site profile disables it', async ()
         kbDir: stageDir('kb-root'),
         skillOutDir: stageDir('skill-root'),
       },
-      stageImpls,
+      {
+        stageSpecs: PIPELINE_STAGE_SPECS.map((stageSpec) => (
+          stageSpec.name === 'bookContent'
+            ? { ...stageSpec, shouldRun: async () => false }
+            : stageSpec
+        )),
+        stageImpls,
+      },
     );
 
     assert.deepEqual(
       calls.map((entry) => entry.stage),
-      ['capture', 'expanded', 'analysis', 'abstraction', 'nlEntry', 'docs', 'governance', 'knowledgeBase', 'skill'],
+      ['capture', 'expanded', 'analysis', 'abstraction', 'nlEntry', 'docs', 'governance', 'knowledgeBase', 'capabilityCompile', 'skill'],
     );
     assert.equal(result.stages.bookContent.status, 'skipped');
     assert.equal(result.stages.bookContent.reason, 'Skipped by site profile pipeline.skipBookContent.');
@@ -1083,6 +1145,21 @@ test('runPipeline defaults stage output roots to runs-aware directories', async 
         gapGroups: [],
       };
     },
+    async compileSiteCapabilityLayer(_url, options) {
+      calls.push({ stage: 'capabilityCompile', options });
+      return {
+        status: 'success',
+        outDir: buildStageDir(workspace, 'capability-compile'),
+        compileSummaryPath: path.join(buildStageDir(workspace, 'capability-compile'), 'site-compile-result-summary.json'),
+        siteKey: 'douyin',
+        graphValidationResult: 'passed',
+        planStatus: 'ready',
+        plannerHandoffReady: true,
+        executionPolicyStatus: 'ready_for_layer_governed_dispatch',
+        layerRuntimeConsumerReady: true,
+        redactionRequired: true,
+      };
+    },
     async generateSkill(_url, options) {
       calls.push({ stage: 'skill', options });
       return {
@@ -1100,14 +1177,16 @@ test('runPipeline defaults stage output roots to runs-aware directories', async 
     const findCall = (name) => calls.find((entry) => entry.stage === name);
     assert.equal(findCall('capture').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'captures'));
     assert.equal(findCall('expanded').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'expanded-states'));
-    assert.equal(findCall('bookContent'), undefined);
+    assert.equal(findCall('bookContent').options.outDir, path.resolve(process.cwd(), 'book-content'));
     assert.equal(findCall('analysis').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'state-analysis'));
     assert.equal(findCall('abstraction').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'interaction-abstraction'));
     assert.equal(findCall('nlEntry').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'nl-entry'));
     assert.equal(findCall('docs').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'operation-docs'));
     assert.equal(findCall('governance').options.outDir, path.resolve(process.cwd(), 'runs', 'pipeline', 'governance'));
+    assert.equal(findCall('capabilityCompile').options.outDir, path.resolve(process.cwd(), 'runs', 'sites', 'site-capability-compile', 'www.douyin.com'));
     assert.equal(findCall('knowledgeBase').options.outDir, undefined);
     assert.equal(findCall('skill').options.outDir, undefined);
+    assert.equal(findCall('skill').options.compileSummaryPath, path.join(buildStageDir(workspace, 'capability-compile'), 'site-compile-result-summary.json'));
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

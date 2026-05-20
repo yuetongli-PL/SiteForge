@@ -11,12 +11,12 @@ import {
   getManifestArtifactPath,
   getManifestArtifactValue,
   getManifestRunContext,
-} from '../../src/pipeline/engine/run-manifest.mjs';
+} from '../../src/app/pipeline/engine/run-manifest.mjs';
 import {
   resolveLinkedArtifactManifest,
   resolveNamedManifest,
   resolveStageInput,
-} from '../../src/pipeline/artifacts/index.mjs';
+} from '../../src/app/pipeline/artifacts/index.mjs';
 
 test('buildRunManifest preserves legacy source compatibility from upstream artifacts', () => {
   const manifest = buildRunManifest({

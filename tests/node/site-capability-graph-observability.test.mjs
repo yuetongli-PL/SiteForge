@@ -31,19 +31,19 @@ import {
   createGraphLifecycleProducerInventoryObservabilityCoverage,
   generateGraphDocsSummary,
   writeGraphDocsGenerationLifecycleEventArtifact,
-} from '../../src/sites/capability/site-capability-graph.mjs';
-import * as siteCapabilityGraph from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
+import * as siteCapabilityGraph from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   createGraphDerivedArtifactPlacement,
   writeGraphDerivedArtifactPair,
-} from '../../src/sites/capability/site-capability-graph-artifacts.mjs';
+} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 import {
   LIFECYCLE_EVENT_OBSERVABILITY_PROFILES,
   LIFECYCLE_EVENT_SCHEMA_VERSION,
   createLifecycleEventSubscriberRegistry,
   dispatchLifecycleEvent,
   normalizeLifecycleEvent,
-} from '../../src/sites/capability/lifecycle-events.mjs';
+} from '../../src/domain/lifecycle/lifecycle-events.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 
@@ -4622,12 +4622,6 @@ test('producer inventory observability coverage summarizes profiled lifecycle pr
   for (const eventType of [
     'capture.manifest.written',
     'capture.api_candidates.written',
-    'download.run.terminal',
-    'download.executor.before_download',
-    'download.executor.completed',
-    'download.executor.dry_run',
-    'download.legacy.completed',
-    'download.legacy.recovery_preflight',
     'api.catalog.collection.written',
     'api.catalog.index.written',
     'api.catalog.schema_incompatible',
@@ -4641,9 +4635,11 @@ test('producer inventory observability coverage summarizes profiled lifecycle pr
   }
   assert.equal(item.summary.eventTypeCount >= profiledEventTypes.length, true);
   assert.equal(item.summary.profiledEventTypeCount, profiledEventTypes.length);
-  assert.equal(Object.hasOwn(item.summary.producerModuleCounts, 'src/sites/downloads/executor.mjs'), true);
+  assert.equal(Object.keys(item.summary.producerModuleCounts).some((modulePath) => (
+    modulePath.startsWith('src/sites/downloads/')
+  )), false);
   assert.equal(
-    item.summary.producerModuleCounts['src/sites/capability/site-capability-graph.mjs'],
+    item.summary.producerModuleCounts['src/domain/capabilities/site-capability-graph.mjs'],
     1,
   );
   assert.doesNotMatch(

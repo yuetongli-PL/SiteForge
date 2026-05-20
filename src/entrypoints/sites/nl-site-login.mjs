@@ -12,12 +12,15 @@ import {
 import { parseNaturalLanguageSiteLoginRequest } from '../../infra/auth/site-login-natural.mjs';
 import { siteLogin } from './site-login.mjs';
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs site nl-login <natural-language-request> [--out-dir <dir>] [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--manual-timeout <ms>] [--json] [--quiet] [--progress auto|interactive|plain]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/nl-site-login.mjs "<request>" [options]
 
 Examples:
-  node src/entrypoints/cli.mjs site nl-login "登录 B 站，账号 foo@example.com，密码 123456，打开浏览器等我扫码"
-  node src/entrypoints/cli.mjs site nl-login "复用登录态登录哔哩哔哩"
+  node src/entrypoints/sites/nl-site-login.mjs "login bilibili with visible browser"
+  node src/entrypoints/sites/nl-site-login.mjs "keep x.com logged in" --json
+
+Public command:
+  siteforge build <url>
 
 Notes:
   - Free-form text is parsed into the existing site-login flow; it does not write credentials into the generated report.
@@ -153,7 +156,7 @@ async function runCli() {
     isFailureResult: (stageResult) => !['authenticated', 'session-reused', 'manual-login-complete'].includes(stageResult?.report?.auth?.status),
     failureReason: (stageResult) => stageResult?.report?.auth?.riskCauseCode ?? stageResult?.report?.auth?.status ?? 'login failed',
     failureTitle: 'Natural-language site login requires manual recovery',
-    nextStep: 'node src/entrypoints/cli.mjs site login <url> --no-headless --reuse-login-state',
+    nextStep: 'siteforge build <url>',
   });
   writeJsonStdout(result);
   if (!['authenticated', 'session-reused', 'manual-login-complete'].includes(result.report.auth.status)) {

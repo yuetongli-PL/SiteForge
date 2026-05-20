@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bilibiliAdapter } from '../../src/sites/core/adapters/bilibili.mjs';
-import { douyinAdapter } from '../../src/sites/core/adapters/douyin.mjs';
-import { jableAdapter } from '../../src/sites/core/adapters/jable.mjs';
+import { bilibiliAdapter } from '../../src/sites/adapters/bilibili.mjs';
+import { douyinAdapter } from '../../src/sites/adapters/douyin.mjs';
+import { jableAdapter } from '../../src/sites/adapters/jable.mjs';
 
 test('site adapters expose site-specific page-type inference hooks', () => {
   assert.equal(

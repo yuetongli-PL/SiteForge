@@ -15,7 +15,7 @@ import {
   redactUrl,
   redactValue,
   scanForbiddenPatterns,
-} from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/domain/sessions/security-guard.mjs';
 
 test('redaction helper identifies sensitive field and header names', () => {
   assert.equal(SECURITY_GUARD_SCHEMA_VERSION, 1);
@@ -305,14 +305,10 @@ test('artifact JSON helper prepares a redacted audit sidecar', () => {
 
 test('current manifest writers use paired redaction audit serialization', async () => {
   const writerFiles = [
-    ['src/pipeline/stages/capture.mjs', 1],
-    ['src/pipeline/stages/expand.mjs', 3],
-    ['src/sites/sessions/runner.mjs', 2],
-    ['src/sites/downloads/runner.mjs', 1],
-    ['src/sites/downloads/executor.mjs', 2],
-    ['src/sites/downloads/media-executor.mjs', 1],
-    ['src/sites/downloads/legacy-executor.mjs', 2],
-    ['src/sites/social/actions/router.mjs', 1],
+    ['src/app/pipeline/stages/capture.mjs', 1],
+    ['src/app/pipeline/stages/expand.mjs', 3],
+    ['src/domain/sessions/runner.mjs', 2],
+    ['src/sites/known-sites/social/actions/router.mjs', 1],
   ];
   const adHocDoubleSerialization = /prepareRedactedArtifactJson\(\s*manifest\s*\)[\s\S]*prepareRedactedArtifactJson\(\s*audit\s*\)/u;
 
@@ -334,10 +330,10 @@ test('current manifest writers use paired redaction audit serialization', async 
 
 test('current capability artifact writers use paired redaction audit serialization', async () => {
   const writerFiles = [
-    ['src/sites/capability/api-candidates.mjs', 13],
-    ['src/sites/capability/api-discovery.mjs', 1],
-    ['src/sites/capability/lifecycle-events.mjs', 1],
-    ['src/sites/capability/planner-policy-handoff.mjs', 1],
+    ['src/domain/capabilities/api-candidates.mjs', 13],
+    ['src/domain/capabilities/api-discovery.mjs', 1],
+    ['src/domain/lifecycle/lifecycle-events.mjs', 1],
+    ['src/app/planner/policy-handoff.mjs', 1],
   ];
 
   for (const [relativePath, minimumUses] of writerFiles) {
@@ -358,7 +354,7 @@ test('current capability artifact writers use paired redaction audit serializati
 });
 
 test('ApiCatalog catalog writers persist grouped artifact file sets atomically', async () => {
-  const source = await readFile(new URL('../../src/sites/capability/api-candidates.mjs', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../../src/domain/capabilities/api-candidates.mjs', import.meta.url), 'utf8');
 
   for (const fragment of [
     'async function writeArtifactFileSetAtomically',
@@ -447,7 +443,7 @@ test('ApiCatalog catalog writers persist grouped artifact file sets atomically',
 });
 
 test('social report writers use paired redaction audit serialization', async () => {
-  const source = await readFile(new URL('../../src/sites/social/actions/router.mjs', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../../src/sites/known-sites/social/actions/router.mjs', import.meta.url), 'utf8');
   const helperStart = source.indexOf('function prepareRedactedMarkdownArtifact');
   const externalStart = source.indexOf('export async function writeExternalSocialReportArtifacts');
   const internalStart = source.indexOf('export async function writeInternalSocialReportArtifact');
@@ -525,7 +521,7 @@ test('site report writers use paired JSON and Markdown redaction audit serializa
       profileRedactor: 'redactSiteScaffoldProfileRefs',
     },
     {
-      relativePath: 'src/sites/bilibili/navigation/open.mjs',
+      relativePath: 'src/sites/known-sites/bilibili/navigation/open.mjs',
       prepareFunction: 'prepareBilibiliOpenReportArtifacts',
       writeFunction: 'writeBilibiliOpenReport',
       profileRedactor: 'redactBilibiliOpenProfileRefs',

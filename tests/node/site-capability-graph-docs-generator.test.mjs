@@ -45,14 +45,14 @@ import {
   generateGraphMigrationReport,
   listSiteCapabilityGraphSchemaDefinitions,
   renderGraphDocsSummaryMarkdown,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   createGraphDerivedArtifactPlacement,
   writeGraphDerivedArtifactPair,
-} from '../../src/sites/capability/site-capability-graph-artifacts.mjs';
+} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
-const LAYER_DESIGN_URL = new URL('../../docs/site-capability-layer/DESIGN.md', import.meta.url);
+const ARCHITECTURE_DOC_URL = new URL('../../docs/architecture.md', import.meta.url);
 
 async function readMinimalGraphFixture() {
   return JSON.parse(await readFile(MINIMAL_GRAPH_URL, 'utf8'));
@@ -166,7 +166,7 @@ function addEndpointSupportDescriptors(graph, endpointId = 'endpoint:synthetic.e
       schemaName: 'SyntheticPublicRequest',
       governedVersion: 1,
       owner: 'Capability',
-      sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+      sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
     },
     {
       schemaVersion: 1,
@@ -175,7 +175,7 @@ function addEndpointSupportDescriptors(graph, endpointId = 'endpoint:synthetic.e
       schemaName: 'SyntheticPublicResponse',
       governedVersion: 1,
       owner: 'Capability',
-      sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+      sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
     },
     {
       schemaVersion: 1,
@@ -310,7 +310,7 @@ test('GraphDocsSummary schema is versioned in the graph schema inventory', () =>
   assert.deepEqual(schema, {
     name: 'GraphDocsSummary',
     version: 1,
-    sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+    sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
   });
 });
 
@@ -394,42 +394,40 @@ test('docs generator creates descriptor-only redaction-required summaries', asyn
     'route:synthetic.example:public-page',
   ]);
   assert.deepEqual(summary.sections.layerDesignSourceReferences.map((entry) => entry.path), [
-    'docs/site-capability-layer/DESIGN.md',
+    'docs/architecture.md',
     'CONTRIBUTING.md',
     'AGENTS.md',
     'README.md',
   ]);
 });
 
-test('docs generator records Layer design source references without creating Layer docs', async () => {
-  await assert.rejects(() => access(LAYER_DESIGN_URL), /ENOENT/u);
+test('docs generator records current architecture source references without retired docs', async () => {
+  await access(ARCHITECTURE_DOC_URL);
 
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const references = summary.sections.layerDesignSourceReferences;
-  const missingReference = references.find((entry) => entry.path === 'docs/site-capability-layer/DESIGN.md');
+  const architectureReference = references.find((entry) => entry.path === 'docs/architecture.md');
 
   assert.equal(assertGraphDocsSummaryCompatible(summary), true);
   assert.equal(summary.redactionRequired, true);
-  assert.equal(missingReference.status, 'missing');
-  assert.equal(missingReference.verified, false);
-  assert.match(missingReference.note, /must not be treated as present or verified|Do not treat/u);
+  assert.equal(architectureReference.status, 'present-reference');
+  assert.equal(architectureReference.verified, true);
+  assert.match(architectureReference.note, /template tree|dependency-rule/u);
   assert.deepEqual(
     references.filter((entry) => entry.status === 'present-reference').map((entry) => entry.path),
-    ['CONTRIBUTING.md', 'AGENTS.md', 'README.md'],
+    ['docs/architecture.md', 'CONTRIBUTING.md', 'AGENTS.md', 'README.md'],
   );
 
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   assert.match(markdown, /## Layer Design Sources/u);
-  assert.match(markdown, /docs\/site-capability-layer\/DESIGN\.md/u);
-  assert.match(markdown, /status: missing/u);
+  assert.match(markdown, /docs\/architecture\.md/u);
+  assert.match(markdown, /status: present-reference/u);
   assert.match(markdown, /CONTRIBUTING\.md/u);
   assert.match(markdown, /AGENTS\.md/u);
   assert.match(markdown, /README\.md/u);
-  assert.doesNotMatch(markdown, /verified: true/u);
+  assert.match(markdown, /verified: true/u);
   assert.equal(assertGraphDerivedArtifactWriteAllowed(summary), true);
-
-  await assert.rejects(() => access(LAYER_DESIGN_URL), /ENOENT/u);
 });
 
 test('docs summary compatibility rejects missing Layer source reference section', async () => {
@@ -440,7 +438,7 @@ test('docs summary compatibility rejects missing Layer source reference section'
   const message = captureThrownMessage(() => assertGraphDocsSummaryCompatible(summary));
 
   assert.match(message, /GraphDocsSummary sections\.layerDesignSourceReferences must be an array/u);
-  assert.doesNotMatch(message, /docs\/site-capability-layer\/DESIGN\.md/u);
+  assert.doesNotMatch(message, /docs\/architecture\.md/u);
 });
 
 test('docs summary compatibility rejects missing endpoint impact map section', async () => {
@@ -1428,7 +1426,7 @@ test('docs markdown artifact consumer contract rejects runtime docs writes and u
   assert.throws(
     () => assertGraphDocsMarkdownArtifactConsumerCompatibility({
       ...artifact,
-      outputPath: 'docs/site-capability-graph/generated-docs.md',
+      outputPath: 'runs/site-capability-graph/generated-docs.md',
     }),
     /descriptor-only.*outputPath/u,
   );
@@ -1530,7 +1528,7 @@ test('docs markdown repo output dry-run keeps failureModeSummary artifact contai
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
 
   await assert.rejects(() => access(targetUrl), /ENOENT/u);
@@ -1576,8 +1574,8 @@ test('docs markdown repo output dry-run keeps failureModeSummary artifact contai
 
   for (const target of [
     '../generated-failuremode-summary-docs.md',
-    'runs/site-capability-graph/generated-failuremode-summary-docs.md',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.json',
+    'docs/site-capability-graph/generated-failuremode-summary-docs.md',
+    'runs/site-capability-graph/generated-failuremode-summary-docs.json',
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownRepoOutputDryRun(artifact, { targetRelativePath: target })
@@ -1602,7 +1600,7 @@ test('docs markdown failureModeSummary repo output approval gate stays design-on
   const summary = generateGraphDocsSummary(graph);
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
 
   await assert.rejects(() => access(targetUrl), /ENOENT/u);
@@ -1736,8 +1734,8 @@ test('docs markdown failureModeSummary generated-output manifest guard stays des
   const summary = generateGraphDocsSummary(graph);
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
 
@@ -1815,7 +1813,7 @@ test('docs markdown failureModeSummary generated-output manifest guard stays des
 
   for (const [fieldName, value] of [
     ['generatedOutputManifest', { authorization: 'Authorization: Bearer synthetic-secret-value' }],
-    ['generatedOutputPath', 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json'],
+    ['generatedOutputPath', 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json'],
     ['manifestPath', manifestRelativePath],
     ['sessionView', {}],
     ['downloadPolicy', {}],
@@ -1833,9 +1831,9 @@ test('docs markdown failureModeSummary generated-output manifest guard stays des
 
   for (const manifestTarget of [
     '../generated-failuremode-summary-docs.manifest.json',
-    'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.json',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.md',
+    'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json',
+    'runs/site-capability-graph/generated-failuremode-summary-docs.json',
+    'runs/site-capability-graph/generated-failuremode-summary-docs.md',
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownGeneratedOutputManifestGuard(gate, {
@@ -1863,7 +1861,7 @@ test('docs markdown failureModeSummary generated-output manifest guard stays des
   assert.doesNotMatch(sourceMutationMessage, /failure:graph-schema-invalid|Authorization|synthetic-secret-value/u);
 
   const wrongSource = createGraphMigrationReportRepoOutputDryRun(graph, {
-    targetRelativePath: 'docs/site-capability-graph/generated-migration-report-dry-run.md',
+    targetRelativePath: 'runs/site-capability-graph/generated-migration-report-dry-run.md',
   });
   const wrongGate = createGraphRepoOutputApprovalGateDesign(wrongSource);
   const wrongSourceMessage = captureThrownMessage(() => (
@@ -1880,9 +1878,9 @@ test('docs markdown failureModeSummary retained-output index guard stays descrip
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -1964,7 +1962,7 @@ test('docs markdown failureModeSummary retained-output index guard stays descrip
 
   for (const [fieldName, value] of [
     ['retainedOutputIndex', { authorization: 'Authorization: Bearer synthetic-secret-value' }],
-    ['retainedOutputPath', 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json'],
+    ['retainedOutputPath', 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json'],
     ['indexPath', indexRelativePath],
     ['sessionView', {}],
     ['downloadPolicy', {}],
@@ -1982,9 +1980,9 @@ test('docs markdown failureModeSummary retained-output index guard stays descrip
 
   for (const indexTarget of [
     '../generated-failuremode-summary-docs.retained-index.json',
-    'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.json',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json',
+    'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json',
+    'runs/site-capability-graph/generated-failuremode-summary-docs.json',
+    'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json',
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownRetainedOutputIndexGuard(manifestGuard, {
@@ -2029,9 +2027,9 @@ test('docs markdown failureModeSummary cleanup-policy guard stays descriptor-onl
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -2171,9 +2169,9 @@ test('docs markdown failureModeSummary retention-cleanup handoff stays descripto
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -2320,9 +2318,9 @@ test('docs markdown failureModeSummary final docs-output boundary summary stays 
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -2458,9 +2456,9 @@ test('GraphDocsSummary docs-output completion checklist stays descriptor-only', 
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -2625,9 +2623,9 @@ test('GraphDocsSummary docs-output completion final matrix handoff stays descrip
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -2781,9 +2779,9 @@ test('GraphDocsSummary docs-output completion final acceptance descriptor stays 
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -2927,9 +2925,9 @@ test('GraphDocsSummary docs-output final acceptance report descriptor stays desc
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -3037,8 +3035,8 @@ test('GraphDocsSummary docs-output final acceptance report descriptor stays desc
     ['reportResult', {}],
     ['reportPayload', { authorization: 'Authorization: Bearer synthetic-secret-value' }],
     ['publishPayload', { authorization: 'Authorization: Bearer synthetic-secret-value' }],
-    ['publishTarget', 'docs/site-capability-graph/final-acceptance-report.md'],
-    ['docsOutputPath', 'docs/site-capability-graph/final-acceptance-report.md'],
+    ['publishTarget', 'runs/site-capability-graph/final-acceptance-report.md'],
+    ['docsOutputPath', 'runs/site-capability-graph/final-acceptance-report.md'],
     ['repoPath', 'C:/Users/lyt-p/Desktop/Browser-Wiki-Skill'],
     ['statusPromotion', { status: 'verified' }],
     ['verifiedPromotion', { section: 20 }],
@@ -3096,9 +3094,9 @@ test('GraphDocsSummary docs-output final B-review checklist stays descriptor-onl
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const targetRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.md';
-  const manifestRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
-  const indexRelativePath = 'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
+  const targetRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.md';
+  const manifestRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json';
+  const indexRelativePath = 'runs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json';
   const targetUrl = new URL(`../../${targetRelativePath}`, import.meta.url);
   const manifestUrl = new URL(`../../${manifestRelativePath}`, import.meta.url);
   const indexUrl = new URL(`../../${indexRelativePath}`, import.meta.url);
@@ -3340,11 +3338,11 @@ test('disabled docs markdown runtime consumer rejects enabled flag and runtime p
   );
 
   for (const { fieldName, value } of [
-    { fieldName: 'outputPath', value: 'docs/site-capability-graph/generated-docs.md' },
-    { fieldName: 'docsOutputPath', value: 'docs/site-capability-graph/generated-docs.md' },
-    { fieldName: 'docsPath', value: 'docs/site-capability-graph/generated-docs.md' },
-    { fieldName: 'repoPath', value: 'docs/site-capability-graph' },
-    { fieldName: 'repositoryPath', value: 'docs/site-capability-graph' },
+    { fieldName: 'outputPath', value: 'runs/site-capability-graph/generated-docs.md' },
+    { fieldName: 'docsOutputPath', value: 'runs/site-capability-graph/generated-docs.md' },
+    { fieldName: 'docsPath', value: 'runs/site-capability-graph/generated-docs.md' },
+    { fieldName: 'repoPath', value: 'runs/site-capability-graph' },
+    { fieldName: 'repositoryPath', value: 'runs/site-capability-graph' },
     { fieldName: 'writePath', value: 'runs/site-capability-graph/docs.md' },
     { fieldName: 'artifactPath', value: 'runs/site-capability-graph/docs.md' },
     { fieldName: 'docsWriteEnabled', value: true },
@@ -3603,7 +3601,7 @@ test('migration report runtime integration design rejects repo writes and publis
   );
   assert.throws(
     () => createGraphMigrationReportRuntimeIntegrationDesign(graph, {
-      outputPath: 'docs/site-capability-graph/MIGRATION_REPORT.md',
+      outputPath: 'runs/site-capability-graph/MIGRATION_REPORT.md',
     }),
     /descriptor-only.*outputPath/u,
   );
@@ -3718,9 +3716,9 @@ test('disabled migration report runtime consumer rejects enabled flags and publi
   }
 
   for (const { fieldName, value } of [
-    { fieldName: 'outputPath', value: 'docs/site-capability-graph/MIGRATION_REPORT.md' },
-    { fieldName: 'reportPath', value: 'docs/site-capability-graph/MIGRATION_REPORT.md' },
-    { fieldName: 'repoPath', value: 'docs/site-capability-graph' },
+    { fieldName: 'outputPath', value: 'runs/site-capability-graph/MIGRATION_REPORT.md' },
+    { fieldName: 'reportPath', value: 'runs/site-capability-graph/MIGRATION_REPORT.md' },
+    { fieldName: 'repoPath', value: 'runs/site-capability-graph' },
     { fieldName: 'writePath', value: 'runs/site-capability-graph/report.json' },
     { fieldName: 'artifactPath', value: 'runs/site-capability-graph/report.json' },
     { fieldName: 'schedulerPayload', value: {} },
@@ -3755,7 +3753,7 @@ test('disabled migration report runtime consumer rejects enabled flags and publi
 
 test('migration report repo output dry-run previews contained target without repo writes', async () => {
   const graph = await readMinimalGraphFixture();
-  const targetRelativePath = 'docs/site-capability-graph/generated-migration-report-dry-run.md';
+  const targetRelativePath = 'runs/site-capability-graph/generated-migration-report-dry-run.md';
   const repoTargetPath = path.join(process.cwd(), targetRelativePath);
   const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-migration-report-dry-run-'));
 
@@ -3829,9 +3827,9 @@ test('migration report repo output dry-run rejects writes, unsafe targets, and u
   for (const targetRelativePath of [
     '../outside.md',
     'C:/Users/lyt-p/Desktop/outside.md',
-    'runs/site-capability-graph/migration-report.json',
-    'docs/site-capability-graph/MIGRATION_REPORT.md',
-    'docs/site-capability-graph/report.txt',
+    'docs/site-capability-graph/migration-report.json',
+    'runs/site-capability-graph/MIGRATION_REPORT.md',
+    'runs/site-capability-graph/report.txt',
   ]) {
     assert.throws(
       () => createGraphMigrationReportRepoOutputDryRun(graph, { targetRelativePath }),
@@ -3841,7 +3839,7 @@ test('migration report repo output dry-run rejects writes, unsafe targets, and u
 
   assert.throws(
     () => createGraphMigrationReportRepoOutputDryRun(graph, {
-      outputPath: 'docs/site-capability-graph/generated-migration-report.md',
+      outputPath: 'runs/site-capability-graph/generated-migration-report.md',
     }),
     /descriptor-only.*outputPath/u,
   );
@@ -3870,7 +3868,7 @@ test('migration report repo output dry-run rejects writes, unsafe targets, and u
 test('migration report repo output approval gate stays design-only', async () => {
   const graph = await readMinimalGraphFixture();
   const dryRun = createGraphMigrationReportRepoOutputDryRun(graph, {
-    targetRelativePath: 'docs/site-capability-graph/generated-migration-report-dry-run.md',
+    targetRelativePath: 'runs/site-capability-graph/generated-migration-report-dry-run.md',
     statusSummary: {
       verified: 0,
       implemented: 5,

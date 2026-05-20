@@ -11,12 +11,13 @@ test('remaining work status is consolidated into the matrix instead of short-liv
   const matrix = await readRepoFile('CONTRIBUTING.md');
 
   for (const expected of [
-    '14 non-Douyin remaining items',
-    'Xiaohongshu fresh evidence',
-    'Bilibili UP-space',
-    'native-miss-diagnostics-v1',
+    'descriptor-only',
+    'StandardTaskList',
+    'DownloadPolicy',
+    'src/sites/downloads/',
+    'src/entrypoints/sites/download.mjs',
     'profile-health-risk',
-    'repo-local skills',
+    'generated-skill tests',
   ]) {
     assert.equal(matrix.includes(expected), true, `${expected} should remain recorded in the matrix`);
   }
@@ -31,9 +32,9 @@ test('manual profile health recovery boundaries live in contributor guidance', a
     'Do not delete, rebuild, or mutate a browser profile automatically.',
     'Do not bypass CAPTCHA',
     'Do not extract or persist raw cookies',
-    'node .\\src\\entrypoints\\cli.mjs social health-watch --site x',
-    'node .\\src\\entrypoints\\cli.mjs social health-watch --site instagram',
-    'node .\\src\\entrypoints\\cli.mjs bilibili action login',
+    'siteforge build <url>',
+    'Public CLI facade: `siteforge build <url>`',
+    'Pipeline, skill, crawler, site, social, catalog, and downloader entrypoints',
   ]) {
     assert.equal(contributing.includes(expected), true, `${expected} should be present`);
   }
@@ -43,8 +44,7 @@ test('skill sync policy documents project-local source and avoids implicit globa
   const contributing = await readRepoFile('CONTRIBUTING.md');
 
   assert.match(contributing, /Work only inside\s+this project directory/u);
-  for (const skill of ['bilibili', 'xiaohongshu-explore', 'x', 'instagram']) {
-    assert.equal(contributing.includes(`skills/${skill}/SKILL.md`), true);
-  }
-  assert.equal(contributing.includes('Manual sync command, when explicitly allowed'), true);
+  assert.equal(contributing.includes('src/skills/generation/'), true);
+  assert.match(contributing, /Root-level\s+`skills\/`\s+directories are generated site data/u);
+  assert.equal(contributing.includes('Manual install or sync must be explicit'), true);
 });

@@ -134,7 +134,7 @@ test('failure renderer includes stage, reason, safety, next step, and report', (
     taskId: 'build',
     stage: 'capture',
     reason: 'verification or access-control page',
-    nextStep: 'node src/entrypoints/cli.mjs site doctor https://example.com --no-headless',
+    nextStep: 'siteforge build https://example.com',
     report: 'runs/sites/site-doctor/example/report.md',
   });
   assert.match(output, /\[build\] status=failed stage=capture reason="verification or access-control page"/u);
@@ -173,6 +173,7 @@ test('pipeline stage mapping is centralized and defaults to Chinese', () => {
   assert.equal(pipelineStageTitle('docs'), '\u751f\u6210\u8bf4\u660e\u6587\u6863');
   assert.equal(pipelineStageTitle('governance'), '\u751f\u6210\u5b89\u5168\u8fb9\u754c\u4e0e\u6062\u590d\u7b56\u7565');
   assert.equal(pipelineStageTitle('knowledgeBase'), '\u7f16\u8bd1\u7ad9\u70b9\u77e5\u8bc6\u5e93');
+  assert.equal(pipelineStageTitle('capabilityCompile'), '\u7f16\u8bd1 Graph \u4e0e Planner Layer');
   assert.equal(pipelineStageTitle('skill'), '\u751f\u6210 Agent Skill');
 });
 
@@ -210,10 +211,10 @@ test('build progress TTY panel keeps pending stages distinct and uses cursor ref
   const output = stripAnsi(stderr.output());
   assert.match(stderr.output(), /\x1b\[/u);
   assert.match(output, /SiteForge/u);
-  assert.match(output, /1\/3 stages|0\/3 stages/u);
+  assert.match(output, /1\/3 个阶段|0\/3 个阶段/u);
   assert.match(output, /✓\s+1\. 观察网站结构/u);
-  assert.match(output, /2\. 探索页面状态\s+running/u);
-  assert.match(output, /3\. 分析页面类型\s+pending/u);
+  assert.match(output, /2\. 探索页面状态\s+运行中/u);
+  assert.match(output, /3\. 分析页面类型\s+等待中/u);
 });
 
 test('build progress plain mode emits stable stage lines and final compact result', () => {
@@ -246,11 +247,11 @@ test('build progress plain mode emits stable stage lines and final compact resul
   });
   const output = stderr.output();
   assert.equal(hasCursorControl(output), false);
-  assert.match(output, /\[1\/2\] 观察网站结构\.\.\. running/u);
-  assert.match(output, /\[1\/2\] 观察网站结构\.\.\. done/u);
-  assert.match(output, /\[2\/2\] 编译站点知识库\.\.\. warning: 20 warnings/u);
-  assert.match(output, /Site skill generated with warnings\./u);
-  assert.match(output, /Skill: skills\/example/u);
+  assert.match(output, /\[1\/2\] 观察网站结构\.\.\. 运行中/u);
+  assert.match(output, /\[1\/2\] 观察网站结构\.\.\. 完成/u);
+  assert.match(output, /\[2\/2\] 编译站点知识库\.\.\. 警告：20 warnings/u);
+  assert.match(output, /站点 Skill 已生成，但存在警告。/u);
+  assert.match(output, /Skill：skills\/example/u);
 });
 
 test('build summary renders table, artifacts, quality, next commands, and path compaction', () => {
@@ -277,13 +278,14 @@ test('build summary renders table, artifacts, quality, next commands, and path c
     durationMs: 141000,
     columns: 90,
   });
-  assert.match(summary, /Site skill generated with warnings/u);
-  assert.match(summary, /Summary/u);
-  assert.match(summary, /Artifacts/u);
-  assert.match(summary, /Quality/u);
-  assert.match(summary, /Next/u);
-  assert.match(summary, /Warnings\s+20/u);
+  assert.match(summary, /站点 Skill 已生成，但存在警告/u);
+  assert.match(summary, /摘要/u);
+  assert.match(summary, /产物/u);
+  assert.match(summary, /质量/u);
+  assert.match(summary, /下一步/u);
+  assert.match(summary, /警告\s+20/u);
   assert.match(summary, /skills\/weread/u);
+  assert.match(summary, /siteforge build https:\/\/weread\.qq\.com\//u);
   assert.doesNotMatch(summary, /"inputUrl"/u);
 });
 
@@ -293,17 +295,17 @@ test('build summary and failure support ASCII and debug-oriented failure text', 
     skillName: 'example',
     stages: { knowledgeBase: { lintSummary: { errorCount: 0, warningCount: 0 } }, skill: { warnings: [] } },
   }, { ascii: true });
-  assert.match(summary, /^OK Site skill generated/u);
+  assert.match(summary, /^OK 站点 Skill 已生成/u);
   assert.doesNotMatch(summary, /✓|⚠|✗/u);
-
   const failure = renderBuildFailure(new Error('Failed to read captured state file'), {
     inputUrl: 'https://example.com/',
     stages: [{ index: 4, title: '分析页面类型', status: 'failed' }],
     currentStage: { index: 4, title: '分析页面类型' },
   }, { ascii: true });
-  assert.match(failure, /^X Build failed at stage 4\/1: 分析页面类型/u);
-  assert.match(failure, /Reason\s+Failed to read captured state file/su);
-  assert.match(failure, /--debug/u);
+  assert.match(failure, /^X 构建失败，阶段 4\/1：分析页面类型/u);
+  assert.match(failure, /原因\s+Failed to read captured state file/su);
+  assert.match(failure, /siteforge build https:\/\/example\.com\//u);
+  assert.doesNotMatch(failure, /--(?:json|verbose|debug|quiet|progress)\b/u);
 });
 
 test('build progress respects quiet mode and narrow terminal truncation', () => {

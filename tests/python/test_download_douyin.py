@@ -21,7 +21,7 @@ def load_internal_module(module_name: str, relative_path: str):
 
 download_douyin = load_internal_module(
     "test_download_douyin_module",
-    "src/sites/douyin/download/python/douyin.py",
+    "src/sites/known-sites/douyin/download/python/douyin.py",
 )
 
 

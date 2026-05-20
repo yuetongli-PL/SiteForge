@@ -20,7 +20,7 @@ import {
   getGraphRoutes,
   listGraphCapabilities,
   listGraphSites,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 
@@ -102,7 +102,7 @@ function addEndpointDescriptors(graph) {
       schemaName: 'SyntheticPublicRequest',
       governedVersion: 1,
       owner: 'Capability',
-      sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+      sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
     },
     {
       schemaVersion: 1,
@@ -111,7 +111,7 @@ function addEndpointDescriptors(graph) {
       schemaName: 'SyntheticPublicResponse',
       governedVersion: 1,
       owner: 'Capability',
-      sourcePath: 'src/sites/capability/site-capability-graph.mjs',
+      sourcePath: 'src/domain/capabilities/site-capability-graph.mjs',
     },
     {
       schemaVersion: 1,
@@ -214,7 +214,7 @@ function addFallbackRouteDescriptor(graph) {
       version: 'synthetic-adapter-v1',
     },
     riskPolicyRef: 'risk-policy:synthetic.example:normal-readonly',
-    sourceRefs: ['src/sites/core/adapters/generic-navigation.mjs'],
+    sourceRefs: ['src/sites/adapters/generic-navigation.mjs'],
     testEvidenceRefs: ['test:site-capability-graph-schema'],
   });
 }

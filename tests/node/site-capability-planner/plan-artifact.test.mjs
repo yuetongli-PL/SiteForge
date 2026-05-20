@@ -12,7 +12,7 @@ import {
   preparePlannerManifestForWrite,
   writePlannerArtifact,
   writePlannerManifest,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 
 function createArtifact(overrides = {}) {
   return {

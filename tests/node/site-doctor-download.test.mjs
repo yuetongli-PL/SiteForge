@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import {
   siteDoctor,
   writeSiteDoctorReportArtifacts,
-} from '../../scripts/site-doctor.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
+} from '../../src/entrypoints/sites/site-doctor.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
 import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -17,8 +17,8 @@ const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
 
 test('site-doctor download preflight points at canonical internal python entrypoints', async () => {
   const source = await readFile(path.join(REPO_ROOT, 'src', 'entrypoints', 'sites', 'site-doctor.mjs'), 'utf8');
-  assert.match(source, /src', 'sites', 'bilibili', 'download', 'python', 'bilibili\.py'/u);
-  assert.match(source, /src', 'sites', 'chapter-content', 'download', 'python', 'book\.py'/u);
+  assert.match(source, /src', 'sites', 'known-sites', 'bilibili', 'download', 'python', 'bilibili\.py'/u);
+  assert.match(source, /src', 'sites', 'known-sites', 'chapter-content', 'download', 'python', 'book\.py'/u);
   assert.doesNotMatch(source, /download_bilibili\.py|download_book\.py/u);
 });
 

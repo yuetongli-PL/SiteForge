@@ -4,10 +4,10 @@ import { readFile } from 'node:fs/promises';
 
 import {
   planGraphCapabilityRoute,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
   requireReasonCodeDefinition,
-} from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/risks/reason-codes.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 const APPROVED_LAYER_SOURCE_REF = 'config/site-capabilities.json';

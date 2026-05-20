@@ -8,10 +8,7 @@
       "siteKey": "22biqu",
       "adapterId": "chapter-content",
       "repoSkillDir": "skills/22biqu",
-      "downloadEntrypoint": "src/sites/chapter-content/download/python/book.py",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadEntrypoint": "src/sites/known-sites/chapter-content/download/python/book.py",
       "downloadSessionRequirement": "none",
       "downloadTaskTypes": [
         "book"
@@ -47,10 +44,7 @@
       "siteArchetype": "chapter-content",
       "repoSkillDir": "skills/bz888",
       "profilePath": "[REDACTED]",
-      "downloadEntrypoint": "src/sites/chapter-content/download/python/book.py",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
+      "downloadEntrypoint": "src/sites/known-sites/chapter-content/download/python/book.py",
       "downloadSessionRequirement": "none",
       "downloadTaskTypes": [
         "book"
@@ -92,7 +86,9 @@
     "moodyz.com": {
       "canonicalBaseUrl": "https://moodyz.com/works/date",
       "repoSkillDir": "skills/moodyz-works",
-      "host": "moodyz.com"
+      "host": "moodyz.com",
+      "siteKey": "moodyz",
+      "adapterId": "moodyz"
     },
     "jable.tv": {
       "canonicalBaseUrl": "https://jable.tv/",
@@ -101,17 +97,13 @@
       "siteKey": "jable",
       "adapterId": "jable",
       "repoSkillDir": "skills/jable",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
       "downloadSessionRequirement": "none",
       "downloadTaskTypes": [
         "video",
         "media-bundle"
       ],
-      "downloadResolverMethod": "native-jable-resource-seeds",
       "downloadSupport": {
-        "status": "experimental",
+        "status": "blocked",
         "taskTypes": [
           "video",
           "media-bundle"
@@ -121,249 +113,6 @@
       },
       "rankingQueryEntrypoint": "src/entrypoints/sites/jable-ranking.mjs"
     },
-    "rookie-av.jp": {
-      "canonicalBaseUrl": "https://rookie-av.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "rookie-av.jp",
-      "siteKey": "rookie-av",
-      "adapterId": "rookie-av",
-      "repoSkillDir": "skills/rookie-av",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for rookie-av.jp."
-      },
-      "identity": {
-        "displayName": "ROOKIE",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "rookie-av.jp",
-          "www.rookie-av.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/top",
-          "/works/",
-          "/actress",
-          "/search",
-          "/special/",
-          "/sitemap",
-          "/link",
-          "/recruit/"
-        ]
-      },
-      "routingNotes": [
-        "Route as catalog-detail metadata/navigation only.",
-        "Downloader tasks are unsupported until a native resolver and safety-reviewed media boundary exist."
-      ],
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ]
-    },
-    "madonna-av.com": {
-      "canonicalBaseUrl": "https://madonna-av.com/",
-      "siteArchetype": "catalog-detail",
-      "host": "madonna-av.com",
-      "siteKey": "madonna-av",
-      "adapterId": "madonna-av",
-      "repoSkillDir": "skills/madonna-av",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for madonna-av.com."
-      },
-      "identity": {
-        "displayName": "Madonna",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "madonna-av.com",
-          "www.madonna-av.com"
-        ],
-        "allowedPathPrefixes": [
-          "/top",
-          "/works/",
-          "/actress",
-          "/search",
-          "/special/",
-          "/sitemap",
-          "/link"
-        ]
-      },
-      "routingNotes": [
-        "Route as catalog-detail metadata/navigation only.",
-        "Downloader tasks are unsupported until a native resolver and safety-reviewed media boundary exist."
-      ],
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ]
-    },
-    "dahlia-av.jp": {
-      "canonicalBaseUrl": "https://dahlia-av.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "dahlia-av.jp",
-      "siteKey": "dahlia-av",
-      "adapterId": "dahlia-av",
-      "repoSkillDir": "skills/dahlia-av",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for dahlia-av.jp."
-      },
-      "identity": {
-        "displayName": "DAHLIA",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "dahlia-av.jp",
-          "www.dahlia-av.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/work/",
-          "/works/",
-          "/actress/",
-          "/news/",
-          "/search"
-        ]
-      },
-      "routingNotes": [
-        "Route as catalog-detail metadata/navigation only.",
-        "Downloader tasks are unsupported until a native resolver and safety-reviewed media boundary exist."
-      ],
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ]
-    },
-    "www.sod.co.jp": {
-      "canonicalBaseUrl": "https://www.sod.co.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "www.sod.co.jp",
-      "siteKey": "sod",
-      "adapterId": "sod",
-      "repoSkillDir": "skills/sod",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for www.sod.co.jp."
-      },
-      "identity": {
-        "displayName": "SOFT ON DEMAND",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "www.sod.co.jp",
-          "sod.co.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/actress/",
-          "/feature/",
-          "/label/",
-          "/event/",
-          "/sitemap/"
-        ]
-      },
-      "routingNotes": [
-        "Route as catalog-detail metadata/navigation only.",
-        "Downloader tasks are unsupported until a native resolver and safety-reviewed media boundary exist."
-      ],
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ]
-    },
     "www.bilibili.com": {
       "canonicalBaseUrl": "https://www.bilibili.com/",
       "siteArchetype": "catalog-detail",
@@ -371,9 +120,6 @@
       "siteKey": "bilibili",
       "adapterId": "bilibili",
       "downloadEntrypoint": "src/entrypoints/sites/bilibili-action.mjs",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
       "downloadSessionRequirement": "optional",
       "downloadTaskTypes": [
         "video",
@@ -391,9 +137,6 @@
       "siteKey": "douyin",
       "adapterId": "douyin",
       "downloadEntrypoint": "src/entrypoints/sites/douyin-action.mjs",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
       "downloadSessionRequirement": "optional",
       "downloadTaskTypes": [
         "video",
@@ -412,9 +155,6 @@
       "siteArchetype": "catalog-detail",
       "host": "www.xiaohongshu.com",
       "downloadEntrypoint": "src/entrypoints/sites/xiaohongshu-action.mjs",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
       "downloadSessionRequirement": "optional",
       "downloadTaskTypes": [
         "image-note",
@@ -436,10 +176,18 @@
       "host": "x.com",
       "siteKey": "x",
       "adapterId": "x",
+      "siteAccessStatus": "blocked_live_robots_disallowed",
+      "genericLiveBuild": {
+        "status": "blocked",
+        "reasonCode": "robots-disallowed",
+        "reason": "x.com robots.txt disallows the generic SiteForge live crawler from root-level public collection. Do not bypass robots, login walls, risk controls, or platform access controls.",
+        "alternativeAccessPaths": [
+          "Use an official/API or platform-authorized integration with terms-compatible access and documented rate, permission, and data-use boundaries.",
+          "Use a user-authorized bounded X SiteAdapter workflow with explicit consent, minimal redacted SessionView material, and no raw credential, cookie, or browser profile persistence.",
+          "Use deterministic fixture-only validation for CI or documentation, clearly labeled as not live X support."
+        ]
+      },
       "downloadEntrypoint": "src/entrypoints/sites/x-action.mjs",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
       "downloadSessionRequirement": "optional",
       "downloadTaskTypes": [
         "social-archive",
@@ -454,7 +202,21 @@
         "query-account-profile",
         "query-social-content",
         "query-social-relations"
-      ]
+      ],
+      "routingNotes": [
+        "Do not route x.com through generic live URL-to-Skill collection; root-level public collection is blocked by robots for the generic crawler.",
+        "Keep any future X enablement on official/API, platform-authorized, user-authorized bounded SiteAdapter, or fixture-only validation paths."
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "robots.txt Disallow: / for generic crawlers",
+          "logged-out dynamic shell",
+          "login and risk-control surfaces"
+        ],
+        "notes": [
+          "Record x.com as generic live uncollectable; do not bypass robots or platform controls."
+        ]
+      }
     },
     "www.instagram.com": {
       "canonicalBaseUrl": "https://www.instagram.com/",
@@ -463,9 +225,6 @@
       "siteKey": "instagram",
       "adapterId": "instagram",
       "downloadEntrypoint": "src/entrypoints/sites/instagram-action.mjs",
-      "downloadPlanner": "src/sites/downloads/modules.mjs",
-      "downloadResolver": "src/sites/downloads/modules.mjs",
-      "downloadExecutor": "src/sites/downloads/executor.mjs",
       "downloadSessionRequirement": "required",
       "downloadTaskTypes": [
         "social-archive",
@@ -481,619 +240,7 @@
         "query-social-content",
         "query-social-relations"
       ]
-    },
-    "s1s1s1.com": {
-      "canonicalBaseUrl": "https://s1s1s1.com/",
-      "siteArchetype": "catalog-detail",
-      "host": "s1s1s1.com",
-      "siteKey": "s1",
-      "adapterId": "s1",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for s1s1s1.com."
-      },
-      "identity": {
-        "displayName": "S1 NO.1 STYLE",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "s1s1s1.com",
-          "www.s1s1s1.com"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/works/",
-          "/actress/",
-          "/genre/",
-          "/series/",
-          "/search",
-          "/sitemap"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/s1"
-    },
-    "attackers.net": {
-      "canonicalBaseUrl": "https://attackers.net/",
-      "siteArchetype": "catalog-detail",
-      "host": "attackers.net",
-      "siteKey": "attackers",
-      "adapterId": "attackers",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for attackers.net."
-      },
-      "identity": {
-        "displayName": "ATTACKERS",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "attackers.net",
-          "www.attackers.net"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/works/",
-          "/actress/",
-          "/genre/",
-          "/series/",
-          "/search",
-          "/sitemap"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/attackers"
-    },
-    "www.t-powers.co.jp": {
-      "canonicalBaseUrl": "https://www.t-powers.co.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "www.t-powers.co.jp",
-      "siteKey": "t-powers",
-      "adapterId": "t-powers",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for www.t-powers.co.jp."
-      },
-      "identity": {
-        "displayName": "T-POWERS",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-performer-agency-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "www.t-powers.co.jp",
-          "t-powers.co.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/talent/",
-          "/model/",
-          "/actress/",
-          "/works/",
-          "/schedule/",
-          "/news/",
-          "/search"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Talent/profile catalog navigation only; member-only and age-gated surfaces require manual user-controlled access."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Talent/profile catalog navigation only; member-only and age-gated surfaces require manual user-controlled access."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/t-powers"
-    },
-    "www.8man.jp": {
-      "canonicalBaseUrl": "https://www.8man.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "www.8man.jp",
-      "siteKey": "8man",
-      "adapterId": "8man",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for www.8man.jp."
-      },
-      "identity": {
-        "displayName": "8MAN",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-performer-agency-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "www.8man.jp",
-          "8man.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/model/",
-          "/talent/",
-          "/actress/",
-          "/works/",
-          "/news/",
-          "/schedule/",
-          "/search"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Talent/profile catalog navigation only; member-only and age-gated surfaces require manual user-controlled access."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Talent/profile catalog navigation only; member-only and age-gated surfaces require manual user-controlled access."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/8man"
-    },
-    "www.dogma.co.jp": {
-      "canonicalBaseUrl": "http://www.dogma.co.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "www.dogma.co.jp",
-      "siteKey": "dogma",
-      "adapterId": "dogma",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for www.dogma.co.jp."
-      },
-      "identity": {
-        "displayName": "DOGMA",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "www.dogma.co.jp",
-          "dogma.co.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/works/",
-          "/work/",
-          "/actress/",
-          "/series/",
-          "/genre/",
-          "/search",
-          "/sitemap"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/dogma"
-    },
-    "www.km-produce.com": {
-      "canonicalBaseUrl": "https://www.km-produce.com/",
-      "siteArchetype": "catalog-detail",
-      "host": "www.km-produce.com",
-      "siteKey": "km-produce",
-      "adapterId": "km-produce",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for www.km-produce.com."
-      },
-      "identity": {
-        "displayName": "KMP",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "www.km-produce.com",
-          "km-produce.com"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/works/",
-          "/work/",
-          "/actress/",
-          "/series/",
-          "/genre/",
-          "/label/",
-          "/search",
-          "/sitemap"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/km-produce"
-    },
-    "www.maxing.jp": {
-      "canonicalBaseUrl": "https://www.maxing.jp/",
-      "siteArchetype": "catalog-detail",
-      "host": "www.maxing.jp",
-      "siteKey": "maxing",
-      "adapterId": "maxing",
-      "profilePath": "[REDACTED]",
-      "capabilityFamilies": [
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content",
-        "switch-in-page-state"
-      ],
-      "downloadSupport": {
-        "status": "not_supported",
-        "supported": false,
-        "unsupportedReasonCode": "downloader_not_allowed",
-        "unsupportedReason": "No verified low-permission downloader contract is registered for www.maxing.jp."
-      },
-      "identity": {
-        "displayName": "MAXING",
-        "language": "ja-JP",
-        "region": "JP",
-        "category": "adult-video-catalog"
-      },
-      "urlFamily": {
-        "allowedHosts": [
-          "www.maxing.jp",
-          "maxing.jp"
-        ],
-        "allowedPathPrefixes": [
-          "/",
-          "/works/",
-          "/work/",
-          "/actress/",
-          "/series/",
-          "/genre/",
-          "/search",
-          "/sitemap"
-        ]
-      },
-      "routingNotes": [
-        "Route as navigation-catalog public catalog/profile metadata only.",
-        "Supported navigation intents are catalog navigation, search, open-work, and open-performer.",
-        "Downloader tasks are unsupported and must fail with downloader_not_allowed until a native resolver and safety-reviewed media boundary exist.",
-        "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-      ],
-      "accessSignals": {
-        "authPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage"
-        ],
-        "ageGatePathPrefixes": [
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "accessPathPrefixes": [
-          "/login",
-          "/member",
-          "/mypage",
-          "/agecheck",
-          "/adultcheck"
-        ],
-        "notes": [
-          "Public catalog navigation may encounter age-confirmation or member-only surfaces; do not bypass them."
-        ]
-      },
-      "reasonCodes": [
-        "unsupported_url",
-        "unsupported_capability",
-        "parse_failed",
-        "missing_required_field",
-        "pagination_exhausted",
-        "network_failed",
-        "auth_required",
-        "age_gate_or_access_gate",
-        "blocked_by_policy",
-        "downloader_not_allowed",
-        "schema_validation_failed"
-      ],
-      "repoSkillDir": "skills/maxing"
-    },
-    "example.com": {
-      "canonicalBaseUrl": "https://example.com/",
-      "siteArchetype": "catalog-detail",
-      "scriptLanguage": "python",
-      "interpreterRequired": "pypy3",
-      "templateVersion": 3,
-      "host": "example.com",
-      "capabilityFamilies": [],
-      "siteKey": "generic-navigation",
-      "adapterId": "generic-navigation"
-    },
-    "weread.qq.com": {
-      "canonicalBaseUrl": "https://weread.qq.com/",
-      "siteKey": "generic-navigation",
-      "adapterId": "generic-navigation",
-      "siteArchetype": "catalog-detail",
-      "host": "weread.qq.com",
-      "capabilityFamilies": []
     }
-  }
+  },
+  "schemaVersion": 1
 }

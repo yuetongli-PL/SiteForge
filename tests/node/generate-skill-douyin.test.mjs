@@ -48,6 +48,6 @@ test('generate-skill routes douyin through the known-site renderer path', () => 
 
   assert.equal(resolveKnownSiteKey(renderContext), 'douyin');
   const markdown = renderKnownSiteSkillMd(renderContext, outputs);
-  assert.match(markdown, /Follow-query entrypoint/u);
+  assert.match(markdown, /Follow-query execution is internal/u);
   assert.match(markdown, /查询关注用户列表/u);
 });

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   listCompilerExecutorReasonCodeDefinitions,
   requireCompilerExecutorReasonCodeDefinition,
-} from '../../../src/sites/capability/compiler/index.mjs';
+} from '../../../src/app/compiler/index.mjs';
 
 const REQUIRED_CODES = [
   'compiler.request_invalid',

@@ -6,7 +6,7 @@ import {
   artifactUrlMatchesLocator,
   buildHostKeyedDirCandidates,
   resolveArtifactLocatorContext,
-} from '../../src/sites/core/artifact-locator.mjs';
+} from '../../src/sites/registry/core/artifact-locator.mjs';
 
 test('artifact locator resolves host-key candidates from canonical site context without renaming directories', async () => {
   const locator = await resolveArtifactLocatorContext({

@@ -10,11 +10,15 @@ coverage/
 /report/
 /reports/
 /artifacts/
+.siteforge/
 *.log
 .env
 .env.*
 !.env.example
 .playwright-mcp/
+profiles/
+skills/
+crawler-scripts/
 _tmp_*.html
 tmp-*.html
 tmp-*.txt

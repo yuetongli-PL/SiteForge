@@ -6,7 +6,7 @@ import {
   canonicalizeDouyinVideoUrl,
   enumerateDouyinAuthorVideos,
   isLikelyDouyinAuthorShellSurface,
-} from '../../src/sites/douyin/download/enumerator.mjs';
+} from '../../src/sites/known-sites/douyin/download/enumerator.mjs';
 
 test('enumerateDouyinAuthorVideos applies a default viewport before opening the browser session', async () => {
   let capturedViewport = null;

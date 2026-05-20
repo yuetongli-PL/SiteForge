@@ -20,7 +20,7 @@ def load_internal_module(module_name: str, relative_path: str):
 
 site_context = load_internal_module(
     "test_site_context_module",
-    "src/sites/catalog/python/site_context.py",
+    "src/sites/registry/catalog/python/site_context.py",
 )
 build_site_capabilities_path = site_context.build_site_capabilities_path
 build_site_registry_path = site_context.build_site_registry_path

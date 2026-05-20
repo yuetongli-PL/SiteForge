@@ -4,11 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 
-import { syncKnowledgeBaseSiteMetadata } from '../../src/pipeline/stages/kb/site-metadata.mjs';
+import { syncKnowledgeBaseSiteMetadata } from '../../src/app/pipeline/stages/kb/site-metadata.mjs';
 import { readJsonFile } from '../../src/infra/io.mjs';
 import { syncPublishedSiteMetadata } from '../../src/skills/generation/sync-site-metadata.mjs';
-import { buildSiteCapabilitiesPath } from '../../src/sites/catalog/capabilities.mjs';
-import { buildSiteRegistryPath } from '../../src/sites/catalog/registry.mjs';
+import { buildSiteCapabilitiesPath } from '../../src/sites/registry/catalog/capabilities.mjs';
+import { buildSiteRegistryPath } from '../../src/sites/registry/catalog/registry.mjs';
 import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot, createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 function createSiteContext(siteKey, adapterId) {

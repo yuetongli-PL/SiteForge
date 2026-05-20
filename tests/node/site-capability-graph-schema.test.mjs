@@ -21,7 +21,7 @@ import {
   assertGraphValidationReportCompatible,
   assertSiteCapabilityGraphCompatible,
   listSiteCapabilityGraphSchemaDefinitions,
-} from '../../src/sites/capability/site-capability-graph.mjs';
+} from '../../src/domain/capabilities/site-capability-graph.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 const DESIGN_REQUIRED_SCHEMA_NAMES = [
@@ -67,7 +67,7 @@ test('Site Capability Graph schema definitions are versioned and cover required 
     const entry = byName.get(name);
     assert.notEqual(entry, undefined, `${name} schema should be listed`);
     assert.equal(entry.version, 1);
-    assert.equal(entry.sourcePath, 'src/sites/capability/site-capability-graph.mjs');
+    assert.equal(entry.sourcePath, 'src/domain/capabilities/site-capability-graph.mjs');
   }
 });
 

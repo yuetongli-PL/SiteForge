@@ -96,7 +96,7 @@ test('douyin renderer documents follow-user and follow-update extraction without
   const interactionModelMd = renderKnownSiteDocument('douyin', 'interactionModel', input);
 
   assert.match(skillMd, /\u67e5\u8be2\u5173\u6ce8\u7528\u6237\u5217\u8868/u);
-  assert.match(skillMd, /node src\/entrypoints\/cli\.mjs douyin follow/u);
+  assert.match(skillMd, /Follow-query execution is internal; public onboarding and regeneration use `siteforge build <url>`/u);
   assert.match(skillMd, /cache-first authenticated read-only queries/u);
   assert.match(skillMd, /Query outputs: support `summary`, `users`, `groups`, `videos`/u);
   assert.doesNotMatch(skillMd, /open verified book pages/iu);

@@ -15,7 +15,7 @@ import {
   assertPlannerConfigCompatible,
   createPlannerCompatibilityDeclaration,
   listSiteCapabilityPlannerSchemaDefinitions,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 
 const REQUIRED_SCHEMA_NAMES = [
   'PlannerConfig',
@@ -149,7 +149,7 @@ test('Planner schema definitions are versioned and cover required contracts', ()
     const entry = byName.get(name);
     assert.notEqual(entry, undefined, `${name} schema should be listed`);
     assert.equal(entry.version, SITE_CAPABILITY_PLANNER_SCHEMA_VERSION);
-    assert.equal(entry.sourcePath, 'src/sites/capability/planner/schema.mjs');
+    assert.equal(entry.sourcePath, 'src/app/planner/schema.mjs');
   }
 });
 

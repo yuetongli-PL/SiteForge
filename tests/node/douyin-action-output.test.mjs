@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runDouyinAction } from '../../src/sites/douyin/actions/router.mjs';
+import { runDouyinAction } from '../../src/sites/known-sites/douyin/actions/router.mjs';
 
 test('runDouyinAction exposes actionSummary and markdown for clearer download output', async () => {
   const result = await runDouyinAction({

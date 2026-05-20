@@ -7,23 +7,23 @@ import {
   API_CATALOG_INDEX_SCHEMA_VERSION,
   API_CATALOG_SCHEMA_VERSION,
   API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION,
-} from '../../src/sites/capability/api-candidates.mjs';
-import { ARTIFACT_REFERENCE_SET_SCHEMA_VERSION } from '../../src/sites/capability/artifact-schema.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
+import { ARTIFACT_REFERENCE_SET_SCHEMA_VERSION } from '../../src/domain/artifacts/schema.mjs';
 import {
   CAPABILITY_HOOK_EVENT_TYPE_REGISTRY_SCHEMA_VERSION,
   CAPABILITY_HOOK_REGISTRY_SNAPSHOT_SCHEMA_VERSION,
   CAPABILITY_HOOK_SCHEMA_VERSION,
-} from '../../src/sites/capability/capability-hook.mjs';
-import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/sites/capability/download-policy.mjs';
-import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/sites/capability/lifecycle-events.mjs';
-import { NETWORK_CAPTURE_REQUEST_SCHEMA_VERSION } from '../../src/sites/capability/network-capture.mjs';
-import { RISK_STATE_SCHEMA_VERSION } from '../../src/sites/capability/risk-state.mjs';
-import { SECURITY_GUARD_SCHEMA_VERSION } from '../../src/sites/capability/security-guard.mjs';
-import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/sites/capability/session-view.mjs';
-import { SITE_HEALTH_EXECUTION_GATE_SCHEMA_VERSION } from '../../src/sites/capability/site-health-execution-gate.mjs';
-import { SITE_HEALTH_RECOVERY_SCHEMA_VERSION } from '../../src/sites/capability/site-health-recovery.mjs';
-import { SITE_ONBOARDING_DISCOVERY_SCHEMA_VERSION } from '../../src/sites/capability/site-onboarding-discovery.mjs';
-import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/sites/capability/standard-task-list.mjs';
+} from '../../src/domain/lifecycle/capability-hook.mjs';
+import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/domain/policies/download-policy.mjs';
+import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { NETWORK_CAPTURE_REQUEST_SCHEMA_VERSION } from '../../src/domain/artifacts/network-capture.mjs';
+import { RISK_STATE_SCHEMA_VERSION } from '../../src/domain/risks/risk-state.mjs';
+import { SECURITY_GUARD_SCHEMA_VERSION } from '../../src/domain/sessions/security-guard.mjs';
+import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/domain/sessions/session-view.mjs';
+import { SITE_HEALTH_EXECUTION_GATE_SCHEMA_VERSION } from '../../src/domain/risks/site-health-execution-gate.mjs';
+import { SITE_HEALTH_RECOVERY_SCHEMA_VERSION } from '../../src/domain/risks/site-health-recovery.mjs';
+import { SITE_ONBOARDING_DISCOVERY_SCHEMA_VERSION } from '../../src/domain/capabilities/site-onboarding-discovery.mjs';
+import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/domain/policies/standard-task-list.mjs';
 import {
   CAPABILITY_SERVICE_INVENTORY_SCHEMA_VERSION,
   assertCapabilityServiceArchitecture,
@@ -33,7 +33,7 @@ import {
   assertCapabilityServiceInventoryRuntimeCompatible,
   getCapabilityServiceInventoryEntry,
   listCapabilityServiceInventory,
-} from '../../src/sites/capability/service-inventory.mjs';
+} from '../../src/domain/capabilities/service-inventory.mjs';
 
 const EXPECTED_SERVICE_NAMES = [
   'ApiDiscoveryService',
@@ -213,9 +213,9 @@ test('CapabilityService contracts keep site-specific semantics outside services'
   assert.throws(
     () => assertCapabilityServiceArchitecture({
       ...entry,
-      modulePath: 'src/sites/bilibili/navigation/open.mjs',
+      modulePath: 'src/sites/known-sites/bilibili/navigation/open.mjs',
     }),
-    /must stay under src\/sites\/capability\//u,
+    /must stay under src\/domain\//u,
   );
   assert.throws(
     () => assertCapabilityServiceArchitecture({

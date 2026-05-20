@@ -13,8 +13,8 @@ import {
   createRecoveryPolicyRegistry,
   createSiteHealthRecoveryLifecycleEvents,
   evaluateSiteHealthExecutionGate,
-} from '../../src/sites/capability/site-health-execution-gate.mjs';
-import { SiteHealthRecoveryEngine } from '../../src/sites/capability/site-health-recovery.mjs';
+} from '../../src/domain/risks/site-health-execution-gate.mjs';
+import { SiteHealthRecoveryEngine } from '../../src/domain/risks/site-health-recovery.mjs';
 
 function healthRecoveryReport(overrides = {}) {
   return {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { runDouyinFollowQueryCli } from '../../sites/douyin/queries/follow-query.mjs';
+import { runDouyinFollowQueryCli } from '../../sites/known-sites/douyin/queries/follow-query.mjs';
 
 export { runDouyinFollowQueryCli };
 

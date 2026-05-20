@@ -7,8 +7,8 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import {
   knowledgeBaseLintReportArtifactPaths,
   writeKnowledgeBaseLintReports,
-} from '../../src/pipeline/stages/kb/lint-report.mjs';
-import { assertSchemaCompatible } from '../../src/sites/capability/compatibility-registry.mjs';
+} from '../../src/app/pipeline/stages/kb/lint-report.mjs';
+import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 
 const KB_FILES = {
   lintReportJson: 'lint-report.json',

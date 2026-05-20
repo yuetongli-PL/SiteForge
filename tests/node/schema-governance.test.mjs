@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { RISK_STATE_SCHEMA_VERSION } from '../../src/sites/capability/risk-state.mjs';
-import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/sites/capability/session-view.mjs';
-import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/sites/capability/download-policy.mjs';
-import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/sites/capability/lifecycle-events.mjs';
-import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/sites/capability/standard-task-list.mjs';
+import { RISK_STATE_SCHEMA_VERSION } from '../../src/domain/risks/risk-state.mjs';
+import { SESSION_VIEW_SCHEMA_VERSION } from '../../src/domain/sessions/session-view.mjs';
+import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/domain/policies/download-policy.mjs';
+import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/domain/lifecycle/lifecycle-events.mjs';
+import { STANDARD_TASK_LIST_SCHEMA_VERSION } from '../../src/domain/policies/standard-task-list.mjs';
 import {
   API_CANDIDATE_SCHEMA_VERSION,
   API_CATALOG_INDEX_SCHEMA_VERSION,
@@ -17,14 +17,14 @@ import {
   API_RESPONSE_CAPTURE_SUMMARY_SCHEMA_VERSION,
   SITE_ADAPTER_CANDIDATE_DECISION_SCHEMA_VERSION,
   SITE_ADAPTER_CATALOG_UPGRADE_POLICY_SCHEMA_VERSION,
-} from '../../src/sites/capability/api-candidates.mjs';
+} from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   REASON_CODE_SCHEMA_VERSION,
   listReasonCodeDefinitions,
-} from '../../src/sites/capability/reason-codes.mjs';
+} from '../../src/domain/risks/reason-codes.mjs';
 import {
   createCapabilityHookEventTypeRegistry,
-} from '../../src/sites/capability/capability-hook.mjs';
+} from '../../src/domain/lifecycle/capability-hook.mjs';
 import {
   SCHEMA_GOVERNANCE_SCHEMA_VERSION,
   assertCapabilityServicesRuntimeReady,
@@ -37,8 +37,8 @@ import {
   listDesignSchemaFamilies,
   listGovernedSchemas,
   listRuntimeVersionFamilies,
-} from '../../src/sites/capability/schema-governance.mjs';
-import { listSchemaInventory } from '../../src/sites/capability/schema-inventory.mjs';
+} from '../../src/domain/schemas/schema-governance.mjs';
+import { listSchemaInventory } from '../../src/domain/schemas/schema-inventory.mjs';
 import {
   KERNEL_SCHEMA_GOVERNANCE_ENTRYPOINT,
   assertKernelDesignSchemaFamilyGoverned,
@@ -46,7 +46,7 @@ import {
   getKernelGovernedSchema,
   listKernelGovernedSchemas,
   listKernelSchemaFamilies,
-} from '../../src/kernel/site-capability-schema-governance.mjs';
+} from '../../src/domain/schemas/kernel/site-capability-schema-governance.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -83,11 +83,11 @@ test('Kernel-owned schema governance entrypoint covers Section 11 design familie
   assert.deepEqual(KERNEL_SCHEMA_GOVERNANCE_ENTRYPOINT, {
     section: 11,
     owner: 'Kernel',
-    sourcePath: 'src/kernel/site-capability-schema-governance.mjs',
+    sourcePath: 'src/domain/schemas/kernel/site-capability-schema-governance.mjs',
     delegatedModules: [
-      'src/sites/capability/schema-inventory.mjs',
-      'src/sites/capability/compatibility-registry.mjs',
-      'src/sites/capability/schema-governance.mjs',
+      'src/domain/schemas/schema-inventory.mjs',
+      'src/domain/schemas/compatibility-registry.mjs',
+      'src/domain/schemas/schema-governance.mjs',
     ],
   });
 
@@ -114,7 +114,7 @@ test('Kernel-owned schema governance entrypoint covers Section 11 design familie
       assert.notEqual(schema, undefined);
       assert.equal(schema.kernelGovernance.section, 11);
       assert.equal(schema.kernelGovernance.owner, 'Kernel');
-      assert.equal(schema.kernelGovernance.entrypoint, 'src/kernel/site-capability-schema-governance.mjs');
+      assert.equal(schema.kernelGovernance.entrypoint, 'src/domain/schemas/kernel/site-capability-schema-governance.mjs');
       assert.notEqual(schema.compatibility, null);
       assert.equal(schema.compatibility.version, schema.version);
       assert.equal(assertKernelGovernedSchemaCompatible(schemaName, compatibleKernelPayload(schemaName)), true);
@@ -133,7 +133,6 @@ test('Kernel-owned schema governance entrypoint fails closed on unknown schema a
   );
 
   for (const schemaName of [
-    'DownloadRunManifest',
     'SessionRunManifest',
     'StandardTaskList',
     'DownloadPolicy',
@@ -195,7 +194,7 @@ test('schema governance facade governs the current reasonCode catalog compatibil
   assert.notEqual(reasonCodeSchema, null);
   assert.deepEqual(reasonCodeSchema.compatibility, {
     version: REASON_CODE_SCHEMA_VERSION,
-    sourcePath: 'src/sites/capability/reason-codes.mjs',
+    sourcePath: 'src/domain/risks/reason-codes.mjs',
   });
 
   const currentCatalog = {
@@ -376,7 +375,7 @@ test('schema governance facade gates runtime readiness through CapabilityService
       'UnknownNodeReporter',
     ],
   );
-  assert.equal(services.every((entry) => entry.modulePath.startsWith('src/sites/capability/')), true);
+  assert.equal(services.every((entry) => entry.modulePath.startsWith('src/domain/')), true);
   assert.equal(assertRuntimeVersionFamilyReady('RuntimeReadiness'), true);
   assert.equal(await assertCapabilityServicesRuntimeReady(), true);
 
@@ -388,67 +387,45 @@ test('schema governance facade gates runtime readiness through CapabilityService
   );
 });
 
-test('schema governance facade is the generic downloader StandardTaskList boundary gate', () => {
-  const executorSource = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'executor.mjs'),
-    'utf8',
-  );
-  const runnerSource = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'downloads', 'runner.mjs'),
-    'utf8',
-  );
+test('schema governance facade keeps StandardTaskList and DownloadPolicy on descriptor-only handoff boundaries', () => {
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, 'src', 'sites', 'downloads')), false);
 
-  assert.match(
-    executorSource,
-    /from '\.\.\/capability\/schema-governance\.mjs'/u,
-    'generic downloader executor must import the governed schema facade',
-  );
-  assert.match(
-    executorSource,
-    /assertGovernedSchemaCompatible\('StandardTaskList'/u,
-    'generic downloader executor must govern StandardTaskList compatibility through the facade',
-  );
-  assert.match(
-    executorSource,
-    /assertGovernedSchemaCompatible\('LifecycleEvent'/u,
-    'generic downloader executor must govern LifecycleEvent compatibility through the facade',
-  );
-  assert.doesNotMatch(
-    executorSource,
-    /from '\.\.\/capability\/compatibility-registry\.mjs'/u,
-    'generic downloader executor must not bypass governance with a direct compatibility-registry import',
-  );
-  assert.match(
-    executorSource,
-    /assertGovernedSchemaCompatible\('DownloadPolicy'/u,
-    'generic downloader runtime gate must govern DownloadPolicy compatibility through the facade',
-  );
-  assert.match(
-    executorSource,
-    /assertGovernedSchemaCompatible\('SessionView'/u,
-    'generic downloader runtime gate must govern SessionView compatibility through the facade',
-  );
-  assert.match(
-    executorSource,
-    /assertGovernedSchemaCompatible\('ApiCatalogEntry'/u,
-    'generic downloader runtime gate must govern ApiCatalogEntry compatibility through the facade',
-  );
-  assert.match(
-    runnerSource,
-    /assertRuntimeDownloadCompatibility/u,
-    'download runner handoff must use the shared runtime compatibility gate before executor or legacy branches',
-  );
-});
-
-test('schema governance facade is the planner policy handoff writer boundary gate', () => {
   const handoffSource = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'sites', 'capability', 'planner-policy-handoff.mjs'),
+    path.join(REPO_ROOT, 'src', 'app', 'planner', 'policy-handoff.mjs'),
     'utf8',
   );
 
   assert.match(
     handoffSource,
-    /from '\.\/schema-governance\.mjs'/u,
+    /from '\.\.\/\.\.\/domain\/schemas\/schema-governance\.mjs'/u,
+    'planner policy handoff must import the governed schema facade',
+  );
+  assert.match(
+    handoffSource,
+    /assertGovernedSchemaCompatible\('StandardTaskList'/u,
+    'descriptor-only handoff must govern StandardTaskList compatibility through the facade',
+  );
+  assert.match(
+    handoffSource,
+    /assertGovernedSchemaCompatible\('DownloadPolicy'/u,
+    'descriptor-only handoff must govern DownloadPolicy compatibility through the facade',
+  );
+  assert.doesNotMatch(
+    handoffSource,
+    /from '\.\.\/\.\.\/domain\/schemas\/compatibility-registry\.mjs'/u,
+    'descriptor-only handoff must not bypass governance with a direct compatibility-registry import',
+  );
+});
+
+test('schema governance facade is the planner policy handoff writer boundary gate', () => {
+  const handoffSource = fs.readFileSync(
+    path.join(REPO_ROOT, 'src', 'app', 'planner', 'policy-handoff.mjs'),
+    'utf8',
+  );
+
+  assert.match(
+    handoffSource,
+    /from '\.\.\/\.\.\/domain\/schemas\/schema-governance\.mjs'/u,
     'planner policy handoff must import the governed schema facade',
   );
   assert.match(
@@ -478,7 +455,7 @@ test('schema governance facade is the planner policy handoff writer boundary gat
   );
   assert.doesNotMatch(
     handoffSource,
-    /from '\.\/compatibility-registry\.mjs'/u,
+    /from '\.\.\/\.\.\/domain\/schemas\/compatibility-registry\.mjs'/u,
     'planner policy handoff must not bypass governance with a direct compatibility-registry import',
   );
 });
@@ -494,10 +471,6 @@ test('schema governance facade delegates compatible payload checks and fails clo
   assert.throws(
     () => assertGovernedSchemaCompatible('UnknownSchema', { schemaVersion: 1 }),
     /Unknown governed schema/u,
-  );
-  assert.throws(
-    () => assertGovernedSchemaCompatible('DownloadRunManifest', { schemaVersion: 1 }),
-    /does not have a compatibility guard/u,
   );
   assert.throws(
     () => assertGovernedSchemaCompatible('SessionView', {

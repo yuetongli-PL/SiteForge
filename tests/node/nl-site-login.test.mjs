@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseNaturalLanguageSiteLoginRequest } from '../../src/infra/auth/site-login-natural.mjs';
-import { runNaturalLanguageSiteLogin } from '../../scripts/nl-site-login.mjs';
+import { runNaturalLanguageSiteLogin } from '../../src/entrypoints/sites/nl-site-login.mjs';
 
 test('parseNaturalLanguageSiteLoginRequest resolves bilibili aliases and inline credentials', () => {
   const parsed = parseNaturalLanguageSiteLoginRequest('登录 B站，账号 "foo@example.com"，密码 "s3cret"，打开浏览器等我扫码');

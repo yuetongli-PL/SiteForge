@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { displayIntentName, resolveSiteTerminology } from '../../src/sites/core/terminology.mjs';
+import { displayIntentName, resolveSiteTerminology } from '../../src/sites/registry/core/terminology.mjs';
 
 test('terminology resolves through canonical adapter identity when host is unreliable', () => {
   const canonicalContext = {

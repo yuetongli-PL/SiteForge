@@ -4,7 +4,7 @@ import {
   PROFILE_ARCHETYPES,
   resolveLegacyProfileArchetype,
   resolveProfileArchetype,
-} from '../src/sites/core/archetypes.mjs';
+} from '../src/sites/registry/core/archetypes.mjs';
 
 function nonEmptyString(extra = {}) {
   return {

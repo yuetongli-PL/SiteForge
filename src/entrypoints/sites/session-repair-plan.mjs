@@ -9,22 +9,25 @@ import {
   parseProgressCliOption,
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
-import { formatCommand, unifiedCliArgv } from '../../infra/cli/command-map.mjs';
+import { formatCommand } from '../../infra/cli/command-map.mjs';
 import { readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import {
   REDACTION_PLACEHOLDER,
   SECURITY_GUARD_SCHEMA_VERSION,
   prepareRedactedArtifactJson,
   prepareRedactedArtifactJsonWithAudit,
-} from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
+} from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
 import {
   buildSessionRepairPlan,
   inspectSessionHealth,
-} from '../../sites/downloads/session-manager.mjs';
+} from '../../domain/sessions/session-manager.mjs';
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs site repair-plan --site <site> [options]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/session-repair-plan.mjs --site <site> [options]
+
+Public command:
+  siteforge build <url>
 
 Dry-run by default. This command prints session repair guidance only; it does
 not execute login, keepalive, profile rebuild, or live smoke work.
@@ -128,19 +131,19 @@ function repairCommandForPlan(repairPlan = {}, options = {}, health = {}) {
   if (command === 'site-keepalive') {
     return {
       command,
-      argv: unifiedCliArgv(['site', 'keepalive', url]),
+      argv: ['node', 'src/entrypoints/sites/site-keepalive.mjs', url],
     };
   }
   if (command === 'site-login') {
     return {
       command,
-      argv: unifiedCliArgv(['site', 'login', url]),
+      argv: ['node', 'src/entrypoints/sites/site-login.mjs', url],
     };
   }
   if (command === 'site-doctor') {
     return {
       command,
-      argv: unifiedCliArgv(['site', 'doctor', url]),
+      argv: ['node', 'src/entrypoints/sites/site-doctor.mjs', url],
     };
   }
   return null;
@@ -502,7 +505,9 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
       stage: 'Plan session repair',
       reason,
       nextStep: options.site ? formatCommand([
-        ...unifiedCliArgv(['site', 'login', `https://${options.host ?? options.site}/`]),
+        'node',
+        'src/entrypoints/sites/site-login.mjs',
+        `https://${options.host ?? options.site}/`,
         '--no-headless',
         '--reuse-login-state',
       ]) : undefined,

@@ -11,8 +11,8 @@ import {
 } from '../../infra/cli/progress-cli.mjs';
 import { pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost, uniqueSortedStrings } from '../../shared/normalize.mjs';
-import { PROFILE_ARCHETYPES, resolveProfilePrimaryArchetype } from '../../sites/core/archetypes.mjs';
-import { validateProfileObject } from '../../sites/core/profile-validation.mjs';
+import { PROFILE_ARCHETYPES, resolveProfilePrimaryArchetype } from '../../sites/registry/core/archetypes.mjs';
+import { validateProfileObject } from '../../sites/registry/core/profile-validation.mjs';
 import {
   REDACTION_PLACEHOLDER,
   SECURITY_GUARD_SCHEMA_VERSION,
@@ -20,8 +20,8 @@ import {
   prepareRedactedArtifactJson,
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
-} from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
+} from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
@@ -39,14 +39,125 @@ const DEFAULT_OPTIONS = {
   timeoutMs: 15_000,
 };
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs site scaffold <url> --archetype <navigation-catalog|chapter-content> [--profiles-dir <dir>] [--profile-path <path>] [--out-dir <dir>] [--timeout <ms>] [--json] [--quiet] [--progress auto|interactive|plain]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/site-scaffold.mjs <url> --archetype <type> [options]
+
+Public command:
+  siteforge build <url>
 `;
 
 const TEMPLATE_BY_ARCHETYPE = Object.freeze({
   [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: path.join(REPO_ROOT, 'profiles', 'template.navigation-catalog.json'),
   [PROFILE_ARCHETYPES.CHAPTER_CONTENT]: path.join(REPO_ROOT, 'profiles', 'template.chapter-content.json'),
 });
+
+const DEFAULT_TEMPLATE_BY_ARCHETYPE = Object.freeze({
+  [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: Object.freeze({
+    host: 'example.com',
+    archetype: PROFILE_ARCHETYPES.NAVIGATION_CATALOG,
+    schemaVersion: 1,
+    primaryArchetype: 'catalog-detail',
+    version: 1,
+    pageTypes: {
+      homeExact: ['/'],
+      homePrefixes: [],
+      searchResultsPrefixes: ['/search'],
+      contentDetailPrefixes: ['/detail/'],
+      authorPrefixes: ['/author/'],
+      authorListExact: [],
+      authorListPrefixes: ['/authors'],
+      authorDetailPrefixes: ['/author/'],
+      chapterPrefixes: [],
+      historyPrefixes: [],
+      authPrefixes: ['/login'],
+      categoryPrefixes: ['/category'],
+    },
+    search: {
+      formSelectors: ['form[role="search"]'],
+      inputSelectors: ['input[type="search"]'],
+      submitSelectors: ['button[type="submit"]'],
+      queryParamNames: ['q'],
+      resultTitleSelectors: ['title'],
+      resultBookSelectors: ['a[href]'],
+      knownQueries: [],
+    },
+    sampling: {
+      searchResultContentLimit: 4,
+      authorContentLimit: 10,
+      categoryContentLimit: 10,
+      fallbackContentLimitWithSearch: 8,
+    },
+    navigation: {
+      allowedHosts: ['example.com'],
+      contentPathPrefixes: ['/detail/'],
+      authorPathPrefixes: ['/author/'],
+      authorListPathPrefixes: ['/authors'],
+      authorDetailPathPrefixes: ['/author/'],
+      categoryPathPrefixes: ['/category'],
+      utilityPathPrefixes: ['/help'],
+      authPathPrefixes: ['/login'],
+      categoryLabelKeywords: ['CATEGORY'],
+    },
+    contentDetail: {
+      titleSelectors: ['h1'],
+      authorNameSelectors: ['a[href*="/author/"]'],
+      authorLinkSelectors: ['a[href*="/author/"]'],
+    },
+    author: {
+      titleSelectors: ['h1'],
+      workLinkSelectors: ['a[href]'],
+    },
+  }),
+  [PROFILE_ARCHETYPES.CHAPTER_CONTENT]: Object.freeze({
+    host: 'books.example.com',
+    archetype: PROFILE_ARCHETYPES.CHAPTER_CONTENT,
+    schemaVersion: 1,
+    primaryArchetype: 'chapter-content',
+    version: 1,
+    search: {
+      formSelectors: ['form[role="search"]'],
+      inputSelectors: ['input[name="q"]'],
+      submitSelectors: ['button[type="submit"]'],
+      queryParamNames: ['q'],
+      resultTitleSelectors: ['title'],
+      resultBookSelectors: ['a[href*="/book/"]'],
+      knownQueries: [],
+    },
+    bookDetail: {
+      authorMetaNames: ['author'],
+      authorLinkMetaNames: ['author_link'],
+      latestChapterNameMetaNames: ['latest_chapter_name'],
+      latestChapterMetaNames: ['latest_chapter_url'],
+      updateTimeMetaNames: ['update_time'],
+      chapterLinkSelectors: ['a[href*="/chapter/"]'],
+      directoryLinkSelectors: ['a[href*="/book/"]'],
+      directoryPageUrlTemplate: '{detail_url}{page}/',
+      directoryPageStart: 1,
+      directoryPageMax: 8,
+      directoryMinimumExpected: 1,
+    },
+    chapter: {
+      contentSelectors: ['#content'],
+      titleSelectors: ['h1'],
+      prevSelector: '#prev_url',
+      nextSelector: '#next_url',
+      cleanupPatterns: ['previous', 'next'],
+    },
+  }),
+});
+
+async function readProfileTemplate(archetype) {
+  const templatePath = TEMPLATE_BY_ARCHETYPE[archetype];
+  if (templatePath && await pathExists(templatePath)) {
+    return await readJsonFile(templatePath);
+  }
+
+  const fallback = DEFAULT_TEMPLATE_BY_ARCHETYPE[archetype];
+  if (!fallback) {
+    throw new Error(`Unsupported profile archetype template: ${archetype}`);
+  }
+  return structuredClone(fallback);
+}
 
 function formatTimestampForDir(date = new Date()) {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
@@ -582,8 +693,7 @@ export async function scaffoldSite(inputUrl, options = {}, deps = {}) {
     throw new Error(`Profile already exists: ${settings.profilePath}`);
   }
 
-  const templatePath = TEMPLATE_BY_ARCHETYPE[settings.archetype];
-  const template = await readJsonFile(templatePath);
+  const template = await readProfileTemplate(settings.archetype);
   const fetch = await fetchHomepageHtml(inputUrl, settings, deps);
   const inference = buildInferenceSummary(fetch.html, settings.baseUrl, fetch.finalUrl);
   const warnings = [...inference.search.warnings];

@@ -112,7 +112,7 @@ test('xiaohongshu renderer documents note download, follow queries, notification
   assert.match(skillMd, /notification-style utility pages/u);
   assert.match(skillMd, /query followed users with a reusable authenticated profile/u);
   assert.match(skillMd, /查询关注用户列表/u);
-  assert.match(skillMd, /node src\/entrypoints\/cli\.mjs xiaohongshu follow/u);
+  assert.match(skillMd, /Follow-query execution is internal; public onboarding and regeneration use `siteforge build <url>`/u);
   assert.doesNotMatch(skillMd, /open verified book pages/iu);
 
   assert.match(indexMd, /open-auth-page/u);

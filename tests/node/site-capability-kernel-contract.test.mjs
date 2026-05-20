@@ -7,12 +7,12 @@ import {
   assertKernelContract,
   listKernelAllowedResponsibilities,
   normalizeKernelResponsibility,
-} from '../../src/kernel/site-capability-kernel-contract.mjs';
+} from '../../src/domain/schemas/kernel/site-capability-kernel-contract.mjs';
 import {
   KERNEL_RUNTIME_READINESS_SCHEMA_VERSION,
   assertSiteCapabilityKernelRuntimeReadiness,
   getSiteCapabilityKernelRuntimeReadinessEvidence,
-} from '../../src/kernel/site-capability-runtime-readiness.mjs';
+} from '../../src/domain/schemas/kernel/site-capability-runtime-readiness.mjs';
 
 test('Kernel contract allows only lightweight orchestration and governance responsibilities', () => {
   assert.equal(KERNEL_CONTRACT_SCHEMA_VERSION, 1);

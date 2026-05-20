@@ -7,9 +7,9 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import {
   resolveBilibiliOpenDecision,
   writeBilibiliOpenReport,
-} from '../../src/sites/bilibili/navigation/open.mjs';
-import { assertNoForbiddenPatterns } from '../../src/sites/capability/security-guard.mjs';
-import { openBilibiliPage } from '../../scripts/open-bilibili-page.mjs';
+} from '../../src/sites/known-sites/bilibili/navigation/open.mjs';
+import { assertNoForbiddenPatterns } from '../../src/domain/sessions/security-guard.mjs';
+import { openBilibiliPage } from '../../src/entrypoints/sites/bilibili-open-page.mjs';
 
 function createAuthProfile() {
   return {

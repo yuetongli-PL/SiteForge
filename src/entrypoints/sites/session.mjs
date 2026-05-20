@@ -10,11 +10,14 @@ import {
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
 import { sessionRepairPlanCommand } from '../../infra/cli/command-map.mjs';
-import { runSessionTask } from '../../sites/sessions/runner.mjs';
+import { runSessionTask } from '../../domain/sessions/runner.mjs';
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs session health --site <site> [options]
-  node src/entrypoints/cli.mjs session repair-plan --site <site> [options]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/session.mjs health [options]
+  node src/entrypoints/sites/session.mjs plan-repair [options]
+
+Public command:
+  siteforge build <url>
 
 Health+Plan only. This command writes a sanitized session manifest and never
 executes login, keepalive, profile rebuild, live smoke, or downloads.

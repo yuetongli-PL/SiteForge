@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import {
   buildSessionRepairPlanCommand,
   quoteCommandArg,
-} from '../../src/sites/sessions/repair-command.mjs';
-import { buildSessionRepairPlanCommand as buildSessionRepairPlanCommandFromIndex } from '../../src/sites/sessions/index.mjs';
+} from '../../src/domain/sessions/repair-command.mjs';
+import { buildSessionRepairPlanCommand as buildSessionRepairPlanCommandFromIndex } from '../../src/domain/sessions/index.mjs';
 
 test('session repair command builds session gate reason guidance', () => {
   const command = buildSessionRepairPlanCommand({
@@ -13,20 +13,17 @@ test('session repair command builds session gate reason guidance', () => {
     reason: 'session-health-manifest-missing',
   });
 
-  assert.equal(command.command, 'session-repair-plan');
+  assert.equal(command.command, 'siteforge-build');
   assert.deepEqual(command.argv, [
-    'node',
-    'src/entrypoints/cli.mjs',
-    'site',
-    'repair-plan',
-    '--site',
-    'x',
-    '--session-gate-reason',
-    'session-health-manifest-missing',
+    'siteforge',
+    'build',
+    '<url>',
   ]);
+  assert.equal(command.site, 'x');
+  assert.equal(command.reason, 'session-health-manifest-missing');
   assert.equal(
     command.commandText,
-    'node src/entrypoints/cli.mjs site repair-plan --site x --session-gate-reason session-health-manifest-missing',
+    'siteforge build <url>',
   );
 });
 
@@ -38,18 +35,13 @@ test('session repair command builds audit manifest guidance with quoting', () =>
 
   assert.equal(command.auditManifest, 'runs/download release audit/download-release-audit.json');
   assert.deepEqual(command.argv, [
-    'node',
-    'src/entrypoints/cli.mjs',
-    'site',
-    'repair-plan',
-    '--site',
-    'instagram',
-    '--audit-manifest',
-    'runs/download release audit/download-release-audit.json',
+    'siteforge',
+    'build',
+    '<url>',
   ]);
   assert.equal(
     command.commandText,
-    'node src/entrypoints/cli.mjs site repair-plan --site instagram --audit-manifest "runs/download release audit/download-release-audit.json"',
+    'siteforge build <url>',
   );
 });
 

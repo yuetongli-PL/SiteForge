@@ -5,7 +5,7 @@ import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { buildError, buildWarning } from '../../src/shared/wiki.mjs';
 import { firstExistingPath, kbAbsolute, relativeToKb, resolveMaybeRelative } from '../../src/shared/wiki.mjs';
-import { buildDataModel, buildPageDescriptors, finalizeDataModel } from '../../src/pipeline/stages/kb/data-model.mjs';
+import { buildDataModel, buildPageDescriptors, finalizeDataModel } from '../../src/app/pipeline/stages/kb/data-model.mjs';
 
 test('wiki-report builders normalize string details', () => {
   assert.deepEqual(buildWarning('missing-summary', 'Summary missing', '/tmp/page.md'), {

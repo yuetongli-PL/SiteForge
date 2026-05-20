@@ -13,18 +13,21 @@ import {
   actionSessionMetadataFromOptions,
   readSessionRunManifest,
   sessionOptionsFromRunManifest,
-} from '../../sites/sessions/manifest-bridge.mjs';
+} from '../../domain/sessions/manifest-bridge.mjs';
 import {
   assertNoForbiddenPatterns,
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
-} from '../../sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../sites/capability/reason-codes.mjs';
-import { runDouyinAction } from '../../sites/douyin/actions/router.mjs';
+} from '../../domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
+import { runDouyinAction } from '../../sites/known-sites/douyin/actions/router.mjs';
 
-export const DOUYIN_ACTION_HELP = `Usage:
-  node src/entrypoints/cli.mjs douyin action download <video-url|author-url|video-id> [options]
-  node src/entrypoints/cli.mjs douyin action login [options]
+export const DOUYIN_ACTION_HELP = `Internal script usage:
+  node src/entrypoints/sites/douyin-action.mjs download <video-url|author-url|video-id> [options]
+  node src/entrypoints/sites/douyin-action.mjs login [options]
+
+Public command:
+  siteforge build <url>
 
 Defaults to planning/dry-run behavior unless the underlying action requires an
 explicitly approved execution path.
@@ -268,7 +271,7 @@ export async function runDouyinActionCli(argv = process.argv.slice(2)) {
         title: 'Douyin action failed',
         stage: `Run ${parsed.action}`,
         reason: message,
-        nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.douyin.com/ --no-headless --reuse-login-state',
+        nextStep: 'siteforge build https://www.douyin.com/',
       });
     }
   } catch (error) {
@@ -280,7 +283,7 @@ export async function runDouyinActionCli(argv = process.argv.slice(2)) {
       title: 'Douyin action failed',
       stage: `Run ${parsed.action}`,
       reason,
-      nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.douyin.com/ --no-headless --reuse-login-state',
+      nextStep: 'siteforge build https://www.douyin.com/',
     });
     throw error;
   }

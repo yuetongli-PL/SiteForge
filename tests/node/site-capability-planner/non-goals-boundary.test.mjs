@@ -7,18 +7,17 @@ import { fileURLToPath } from 'node:url';
 import {
   SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
   assertNoPlannerSensitiveMaterial,
-} from '../../../src/sites/capability/planner/index.mjs';
+} from '../../../src/app/planner/index.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const PLANNER_DIR = path.join(REPO_ROOT, 'src', 'sites', 'capability', 'planner');
+const PLANNER_DIR = path.join(REPO_ROOT, 'src', 'app', 'planner');
 
 const FORBIDDEN_IMPORT_PATTERNS = [
   /(?:^|\/|\.\.\/)downloads?\//u,
-  /(?:^|\/|\.\.\/)sessions?\//u,
+  /(?:^|\/|\.\.\/)sessions?\/(?:runner|runtime|manager)/u,
   /site-adapter|siteAdapter|adapters\//iu,
   /downloader|download-runner|download-native/iu,
   /browser|playwright|selenium|puppeteer/iu,
-  /lifecycle-events\.mjs$/u,
   /artifact-service|artifactService/iu,
   /site-capability-graph-artifact|site-capability-graph-final-validation/iu,
   /entrypoints\//u,
@@ -33,7 +32,7 @@ const FORBIDDEN_IMPORT_FIXTURES = [
   '../core/adapters/generic-navigation.mjs',
   '../../downloads/executor.mjs',
   '../../sessions/runner.mjs',
-  '../../entrypoints/sites/download.mjs',
+  '../../entrypoints/cli/index.mjs',
 ];
 
 async function readPlannerSources() {
@@ -58,6 +57,7 @@ function importSpecifiers(source) {
 
 function isAllowedPlannerImportSpecifier(specifier) {
   return specifier.startsWith('./')
+    || specifier.startsWith('../../domain/')
     || specifier === '../security-guard.mjs'
     || specifier.startsWith('node:');
 }

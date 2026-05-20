@@ -12,8 +12,8 @@ import {
   sessionRepairPlanRedactionAuditPath,
   writeSessionRepairPlanResult,
 } from '../../src/entrypoints/sites/session-repair-plan.mjs';
-import { REDACTION_PLACEHOLDER } from '../../src/sites/capability/security-guard.mjs';
-import { reasonCodeSummary } from '../../src/sites/capability/reason-codes.mjs';
+import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
+import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
 
 test('session repair plan parser defaults to dry-run guidance', () => {
   const parsed = parseArgs([
@@ -73,9 +73,7 @@ test('session repair plan execute mode blocks without matching approval', async 
   assert.equal(result.execution.command.command, 'site-login');
   assert.deepEqual(result.execution.command.argv, [
     'node',
-    'src/entrypoints/cli.mjs',
-    'site',
-    'login',
+    'src/entrypoints/sites/site-login.mjs',
     'https://www.douyin.com/',
   ]);
 });
@@ -287,9 +285,7 @@ test('session repair plan execute mode records approved command without spawning
   assert.equal(result.execution.reason, 'command-construction-only');
   assert.deepEqual(result.execution.command.argv, [
     'node',
-    'src/entrypoints/cli.mjs',
-    'site',
-    'keepalive',
+    'src/entrypoints/sites/site-keepalive.mjs',
     'https://www.instagram.com/',
   ]);
   const persisted = JSON.parse(await readFile(outFile, 'utf8'));

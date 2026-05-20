@@ -9,8 +9,8 @@ import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
 } from '../../infra/cli/progress-cli.mjs';
-import { projectDouyinFollowResult, queryDouyinFollow } from '../../sites/douyin/queries/follow-query.mjs';
-import { resolveProfilePathForUrl } from '../../sites/core/profiles.mjs';
+import { projectDouyinFollowResult, queryDouyinFollow } from '../../sites/known-sites/douyin/queries/follow-query.mjs';
+import { resolveProfilePathForUrl } from '../../sites/registry/core/profiles.mjs';
 import { siteLogin } from './site-login.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -33,8 +33,11 @@ const DEFAULT_OPTIONS = {
   recentActiveUsersLimit: 48,
 };
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs site keepalive <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--timeout <ms>] [--headless|--no-headless] [--auto-login|--no-auto-login] [--reuse-login-state|--no-reuse-login-state] [--refresh-follow-cache] [--recent-active-days <n>] [--recent-active-users-limit <n>] [--json] [--quiet] [--progress auto|interactive|plain]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/site-keepalive.mjs <url> [options]
+
+Public command:
+  siteforge build <url>
 
 Notes:
   - This command opens the site's verification page, reuses the persistent browser profile, and refreshes login state when possible.
@@ -318,7 +321,7 @@ async function runCli() {
     isFailureResult: (result) => result?.keepalive?.status !== 'kept-alive',
     failureReason: (result) => result?.keepalive?.riskCauseCode ?? result?.keepalive?.status ?? 'keepalive failed',
     failureTitle: 'Site keepalive requires manual recovery',
-    nextStep: `node src/entrypoints/cli.mjs site login ${parsed.inputUrl} --no-headless --reuse-login-state`,
+    nextStep: `siteforge build ${parsed.inputUrl}`,
   });
   writeJsonStdout(report);
   if (report.keepalive.status !== 'kept-alive') {

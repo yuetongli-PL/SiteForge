@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runSiteCapabilityCompile } from '../src/entrypoints/sites/site-capability-compile.mjs';
-import { evaluateAuthenticatedSessionReleaseGate } from '../src/sites/sessions/release-gate.mjs';
-import { buildSessionRepairPlanCommand } from '../src/sites/sessions/repair-command.mjs';
+import { evaluateAuthenticatedSessionReleaseGate } from '../src/domain/sessions/release-gate.mjs';
+import { buildSessionRepairPlanCommand } from '../src/domain/sessions/repair-command.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');

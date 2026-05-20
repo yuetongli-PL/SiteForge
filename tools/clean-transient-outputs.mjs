@@ -6,20 +6,25 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..');
+const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 
 export const TRANSIENT_CLEANUP_TARGETS = Object.freeze([
+  '.siteforge',
   'archive',
+  'book-content',
   'captures',
+  'crawler-scripts',
   'expanded-states',
-  'state-analysis',
-  'interaction-abstraction',
-  'nl-entry',
-  'operation-docs',
   'governance',
-  path.join('runs', 'sites'),
-  path.join('runs', 'scratch', 'tmp'),
-  path.join('runs', 'scratch'),
+  'interaction-abstraction',
+  'knowledge-base',
+  'nl-entry',
+  'note-downloads',
+  'operation-docs',
+  'runs',
+  'skills',
+  'state-analysis',
+  'video-downloads',
 ]);
 
 async function collectPycacheDirectories(rootPath, relativePath = '') {
@@ -187,7 +192,7 @@ export function buildSummary(result) {
 
 function printHelp() {
   process.stdout.write(`Usage:
-  node tools/cleanup/clean-transient-outputs.mjs [--dry-run] [--keep-empty-dirs]
+  node tools/clean-transient-outputs.mjs [--dry-run] [--keep-empty-dirs]
 
 Options:
   --dry-run          Show what would be removed without mutating the repo
@@ -196,7 +201,7 @@ Options:
 
 Notes:
   - This command only targets transient runtime outputs and scratch directories.
-  - It never touches truth/config directories, src/, tests/, or compatibility shims.
+  - It never touches truth/config directories, profiles/, src/, tests/, or compatibility shims.
 `);
 }
 

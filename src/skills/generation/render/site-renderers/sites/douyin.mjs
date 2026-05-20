@@ -1,4 +1,4 @@
-﻿import {
+import {
   buildIntentCoverageRows,
   dedupeSampleList,
   renderFlowsTemplate,
@@ -153,7 +153,7 @@ function renderDouyinSkillMd(input) {
       `- Safe actions: \`${safeActions.join('`, `')}\``,
       `- Supported tasks: ${supportedTasks.join('、') || '在已观测 Douyin 状态空间内查询和导航'}.`,
       '- Public navigation model: home, search, video detail, user homepage, and approved category pages remain public read-only surfaces.',
-      '- Follow-query entrypoint: `node src/entrypoints/cli.mjs douyin follow https://www.douyin.com/?recommend=1 --intent list-followed-updates --window 今天`.',
+      '- Follow-query execution is internal; public onboarding and regeneration use `siteforge build <url>`.',
     ],
     sampleCoverageLines: [
       `- 视频样本: ${samples.videos.join(', ') || 'none'}`,
@@ -166,14 +166,14 @@ function renderDouyinSkillMd(input) {
     executionPolicyLines: [
       '- Public Douyin pages MUST use the built-in browser.',
       '- Authenticated Douyin pages MUST use the local-profile browser with a reusable persisted session.',
-      '- Login bootstrap MUST run through `node .\\src\\entrypoints\\cli.mjs site login https://www.douyin.com/ --profile-path profiles/www.douyin.com.json --no-headless --reuse-login-state --no-auto-login`.',
+      '- Login bootstrap is manual, visible-browser only, and outside the public CLI command surface.',
       '- The first Douyin login is always manual in a visible browser; do not save or submit account credentials automatically.',
       '- Authenticated read-only subpages include `/user/self?showTab=post|like|collect|history` and `/follow?tab=feed|user`.',
       '- `list-followed-users` and `list-followed-updates` are cache-first authenticated read-only queries backed by the local persisted profile.',
       '- Query filters: support followed-user filtering, title keywords, global limits, and updated-only output over the authenticated follow cache.',
       '- Query outputs: support `summary`, `users`, `groups`, `videos`, plus Markdown summaries for operator-friendly reads.',
-      '- Optional prewarm: `site-keepalive --refresh-follow-cache` refreshes recent active followed-user caches after a healthy keepalive.',
-      '- Routing table: public pages -> `builtin-browser`; authenticated read-only pages -> `local-profile-browser`; login bootstrap -> `site-login`.',
+      '- Optional follow-cache prewarm is internal and must stay behind explicit operator approval.',
+      '- Routing table: public pages -> `builtin-browser`; authenticated read-only pages -> `local-profile-browser`; login bootstrap remains manual and internal.',
     ],
     readingOrderLines: renderReadingOrder(outputs, outputs.skillMd, helpers.markdownLink),
     safetyBoundaryLines: [
@@ -250,7 +250,7 @@ function renderDouyinIndexReference(input) {
       '- `list-followed-users` and `list-followed-updates` are authenticated read-only query surfaces layered on top of `/follow?tab=user` and `user/<id>?showTab=post`.',
       '- Query responses can be projected as `summary`, `users`, `groups`, or `videos`, and Markdown output is available for operator-facing reviews.',
       '- Video rows expose provenance and confidence fields such as `source`, `timeSource`, and `timeConfidence`.',
-      '- The reusable local profile is bootstrapped through `site-login` in a visible browser and reused by later local-profile runs.',
+      '- The reusable local profile is bootstrapped through a manual visible-browser workflow and reused by later local-profile runs.',
     ],
   });
 }

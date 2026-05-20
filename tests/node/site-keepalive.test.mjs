@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { siteKeepalive } from '../../scripts/site-keepalive.mjs';
+import { siteKeepalive } from '../../src/entrypoints/sites/site-keepalive.mjs';
 
 test('siteKeepalive delegates to siteLogin with non-interactive defaults and surfaces keepalive status', async () => {
   const calls = [];

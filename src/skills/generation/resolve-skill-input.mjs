@@ -11,9 +11,9 @@ import {
   findLatestHostKeyedRunDir,
   resolveArtifactLocatorContext,
   resolveHostKeyedDir,
-} from '../../sites/core/artifact-locator.mjs';
-import { resolveProfilePathForUrl } from '../../sites/core/profiles.mjs';
-import { assertNoForbiddenPatterns } from '../../sites/capability/security-guard.mjs';
+} from '../../sites/registry/core/artifact-locator.mjs';
+import { resolveProfilePathForUrl } from '../../sites/registry/core/profiles.mjs';
+import { assertNoForbiddenPatterns } from '../../domain/sessions/security-guard.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');

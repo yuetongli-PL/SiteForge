@@ -112,9 +112,16 @@ If verification is skipped or deferred, record why and what remains risky. Never
 
 ## Documentation Retention
 
-Keep long-lived documentation in `README.md`, `CONTRIBUTING.md`, and `AGENTS.md`. The repository-level `docs/` directory is retired; the Site Capability matrix and focused regression batch definition now live in `CONTRIBUTING.md`. Fold short-lived
-handoffs, dated validation snapshots, and duplicate status tables into those
-sources or remove them during cleanup batches.
+Keep primary project guidance in `README.md`, `CONTRIBUTING.md`, and
+`AGENTS.md`. The Site Capability matrix and focused regression batch definition
+live in `CONTRIBUTING.md`.
+
+The repository-level `docs/` directory is allowed only for explicitly requested,
+durable release or architecture maps such as `docs/architecture.md` and
+`docs/release-hardening-plan.md`, plus task-specific validation notes that an
+operator asks to retain. Fold short-lived handoffs, dated validation snapshots,
+and duplicate status tables into the root sources or remove them during cleanup
+batches.
 
 ## Reporting
 

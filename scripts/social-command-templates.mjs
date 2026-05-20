@@ -10,8 +10,11 @@ import { unifiedCliCommandForScript } from '../src/infra/cli/command-map.mjs';
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs social templates [--site x|instagram|all] [options]
+const HELP = `Internal script usage:
+  node scripts/social-command-templates.mjs [--site x|instagram|all] [options]
+
+Public command:
+  siteforge build <url>
 
 Prints reusable X/Instagram production, resume, cooldown, health, and KB refresh command templates.
 

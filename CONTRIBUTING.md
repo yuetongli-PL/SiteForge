@@ -12,16 +12,28 @@ Review scope before staging:
 - Confirm deleted files are intentional.
 - Keep local runtime outputs out of Git.
 
-Run the focused checks that match the touched area. For broad Site Capability
-Layer or downloader/session changes, use:
+Run the focused checks that match the touched area. The normalized local and CI
+quality gate is:
 
 ```powershell
-node --test tests\node\site-capability-matrix.test.mjs
+npm run verify
+```
+
+`npm run verify` runs syntax checks for the public/build entrypoints, the
+focused Node CI suite, Python unittest discovery, the prepublish secret scan,
+and whitespace validation with `git diff --check`.
+`npm run test:node:all` is the broader Node sweep for release-sized changes and
+uses a per-test timeout so a slow contract test fails explicitly instead of
+hanging the shell.
+
+For broad Site Capability Layer or governed-execution/session changes, add the focused
+checks that match the touched area, for example:
+
+```powershell
+npm run test:unit
 node --test tests\node\site-adapter-contract.test.mjs tests\node\site-onboarding-discovery.test.mjs
 node --test tests\node\site-health-recovery.test.mjs tests\node\site-health-execution-gate.test.mjs
-node --test tests\node\downloads-runner.test.mjs tests\node\planner-policy-handoff.test.mjs
-node tools\prepublish-secret-scan.mjs
-git diff --check
+node --test tests\node\architecture-import-rules.test.mjs tests\node\planner-policy-handoff.test.mjs
 ```
 
 ## Release And Versioning Policy
@@ -43,9 +55,9 @@ status or release claim is promoted.
 Passing local validation does not imply a tag, package version bump, push, PR,
 publication, live capability claim, or live authenticated validation. Those
 actions require an explicit operator request. Release-sized changes must rerun
-the broad Node/Python checks, `node tools\prepublish-secret-scan.mjs`, and
-`git diff --check`; live claims additionally require explicit approval,
+`npm run verify` plus the broad Node checks with `npm run test:node:all`; live claims additionally require explicit approval,
 bounded scope, stop conditions, and sanitized artifacts.
+Release publication checks include `node tools\prepublish-secret-scan.mjs`.
 
 ## Safety Boundaries
 
@@ -56,27 +68,39 @@ bounded scope, stop conditions, and sanitized artifacts.
   access-control bypass, credential extraction, or silent privilege expansion.
 - Keep site-specific interpretation in SiteAdapter code.
 - Keep reusable mechanisms in capability services.
-- Keep downloader code as a low-permission consumer of governed tasks,
-  policies, minimal session views, and resolved resources.
+- Keep download-like execution code as an internal governed consumer path, not
+  a top-level architecture layer; it only receives governed tasks, policies,
+  minimal session views, and resolved resources.
 
 ## Runtime Artifacts
 
-`runs/`, `book-content/`, `.playwright-mcp/`, caches, logs, and downloaded media
-are local runtime artifacts. They should not be committed.
+`runs/`, `book-content/`, `knowledge-base/`, `profiles/`, `skills/`,
+`crawler-scripts/`, `.playwright-mcp/`, caches, logs, downloaded media, and
+generated site data are local artifacts. They should not be committed or kept
+as project root directories.
 
-`profiles/*.json` files in this repo are site capability/profile configuration
-sources. They must stay free of browser profile paths and session material.
+Site profile samples, generated skill output, knowledge-base snapshots, and
+crawler metadata belong in explicit test fixtures or a local runtime workspace,
+not in root-level site data folders.
 
 ## Documentation Source Of Truth
 
-The repository-level `docs/` directory is retired except for explicit,
-goal-scoped acceptance artifacts requested by an operator, such as
-`docs/site-capability-compiler-executor/`. Keep durable project guidance in
-these root documents:
+The root files remain the primary source of truth. Historical design and matrix
+snapshots were folded into this file or deleted; do not recreate retired docs
+or retired fixture archives. Generated preview artifacts should target local
+ignored workspaces, not tracked source. Keep durable project guidance in these
+root documents:
 
 - `README.md`: public overview, supported workflows, source layout, and common commands.
 - `AGENTS.md`: repo-local execution rules for Codex and A/B loop work.
 - `CONTRIBUTING.md`: contributor checks, safety gates, operational runbooks, Site Capability Layer matrix, and focused regression batch definition.
+
+The repository-level `docs/` directory is allowed only for explicitly requested,
+durable architecture or release maps such as `docs/architecture.md` and
+`docs/release-hardening-plan.md`, plus task-specific validation notes an
+operator asks to retain. These docs must not duplicate or supersede the matrix;
+update the matrix only when implementation status or verification evidence
+changes.
 
 Short-lived handoff reports, one-off release notes, dated validation snapshots,
 and status tables should be folded into one of those sources or deleted.
@@ -98,7 +122,7 @@ Runtime code retains Browser-Wiki-Skill fallback candidates only to preserve
 existing local profiles without moving, reading, or rewriting browser profile
 material. Existing `BrowserWikiSkill:*` Windows Credential Manager targets
 remain compatibility identifiers until an operator explicitly approves a
-credential-target migration. Do not rewrite `runs/`, `profiles/`, downloaded
+credential-target migration. Do not rewrite local runtime outputs, downloaded
 media, generated crawler metadata, or test fixtures whose purpose is to prove
 legacy-path redaction or compatibility.
 
@@ -120,8 +144,8 @@ Current allowed legacy-hit reasons:
 
 The current Site Capability Compiler / Executor implementation lives in:
 
-- `src/sites/capability/compiler/`
-- `src/sites/capability/execution/`
+- `src/app/compiler/`
+- `src/domain/policies/execution/`
 - `src/entrypoints/sites/site-capability-compile.mjs`
 - `tests/node/site-capability-compiler-executor/`
 
@@ -136,9 +160,10 @@ compiler artifact writes guarded by SecurityGuard / Redaction. Compile artifact
 writes now also include redacted Layer feedback files plus a redacted
 `site-compile-result-summary.json` machine-readable summary that joins compile
 result status, Layer-owned consumer receipt status, and site-specific evidence
-summary for downstream Skill generation; Skill generation auto-discovers the
-latest matching summary for the current URL and still accepts explicit
-`--compile-summary` overrides. The deep remaining paths now have focused evidence: real producer
+summary for downstream Skill generation. `siteforge build <url>` is now the only
+public command and runs knowledge-base generation, Graph + Planner Layer compile,
+and Skill generation in one build; Skill generation consumes the compile summary
+from that same build. The deep remaining paths now have focused evidence: real producer
 DOM/a11y/governed-trigger/transport API intake, verified API catalog promotion
 behind SiteAdapter/policy/schema/test gates, exact-quorum executable capability
 evidence fixtures, and an artifact-backed Layer-owned runtime receipt consumer.
@@ -148,10 +173,11 @@ Focused validation:
 ```powershell
 node --test tests\node\site-capability-compiler-executor\*.test.mjs
 node --test tests\node\site-capability-remaining-deep-paths.test.mjs
-node --test tests\node\generate-skill.test.mjs tests\node\repo-local-skills.test.mjs
-node --test tests\node\progress-cli-integration.test.mjs
+node --test tests\node\progress-cli-integration.test.mjs tests\node\cli-compat.test.mjs tests\node\progress-renderer.test.mjs
+node --test tests\node\run-pipeline.test.mjs
+node --test tests\node\generate-skill.test.mjs tests\node\skill-coverage-regression-gate.test.mjs
 node tools\prepublish-secret-scan.mjs
-git diff --check -- docs\site-capability-compiler-executor src\sites\capability\compiler src\sites\capability\execution src\entrypoints\sites\site-capability-compile.mjs tests\node\site-capability-compiler-executor CONTRIBUTING.md
+git diff --check
 ```
 
 Safety boundaries remain unchanged: the compiler only consumes repo-local
@@ -163,19 +189,47 @@ browser runtime, external telemetry, or live site access.
 
 Do not recreate retired root shims. Use canonical locations:
 
-- Pipeline CLI: `src/entrypoints/pipeline/run-pipeline.mjs`,
-  `src/entrypoints/pipeline/generate-skill.mjs`, and
-  `src/entrypoints/pipeline/generate-crawler-script.mjs`.
-- Public CLI facade: `src/entrypoints/cli.mjs`.
-- Compatibility site entrypoints remain under `src/entrypoints/sites/` and
-  `scripts/`, but new documentation and generated commands should route
-  through `node .\src\entrypoints\cli.mjs ...`.
+- Public CLI facade: `siteforge build <url>` through
+  `src/entrypoints/cli/index.mjs`.
+- Pipeline, skill, crawler, site, social, catalog, and downloader entrypoints
+  under `src/entrypoints/` remain implementation details and test fixtures, not
+  public commands.
+- Compatibility site entrypoints remain under `src/entrypoints/sites/`.
+  `scripts/` is only for retained operator wrappers with runtime value; new
+  documentation and generated commands should route through `siteforge build
+  <url>`.
 - Python entrypoints: `src/sites/**/python/*.py`.
 - Metadata: `config/site-registry.json` and `config/site-capabilities.json`.
 
 If a caller still depends on old root paths such as `run-pipeline.mjs`,
 `download_book.py`, `site-registry.json`, or `site-capabilities.json`, migrate
 that caller instead of adding compatibility back.
+
+## Public CLI Boundary
+
+The public SiteForge CLI is intentionally a single-command facade:
+
+```powershell
+siteforge build <url>
+```
+
+Do not add public `siteforge` subcommands or public `siteforge build` flags by
+default. New capabilities should normally enter the build pipeline, the Site
+Capability Layer, or a direct internal Node entrypoint. Adding a public
+subcommand or flag requires an explicit product decision, matching docs, and
+focused tests.
+
+Keep the boundary visible in user-facing copy:
+
+- Public docs, help, failure text, and next-step guidance may show
+  `siteforge build <url>`.
+- They must not recommend non-build `siteforge` commands.
+- They must not recommend adding flags after the build URL.
+- Internal maintenance commands must be labeled as internal, operator-only, or
+  direct Node entrypoints.
+
+`tests/node/cli-compat.test.mjs` enforces this boundary with runtime checks and
+static copy scans. Update that test intentionally if the public surface changes.
 
 ## CLI Progress Feedback
 
@@ -185,24 +239,23 @@ supports task, stage, subtask, current item, artifacts, warnings, failures,
 download bytes, speed, ETA, retries, skipped-existing counts, and verified
 counts.
 
-Rules for new CLI tasks:
+Rules for internal CLI tasks and maintenance entrypoints:
 
 - Keep stdout machine-readable when the entrypoint returns JSON. Human progress
   goes to stderr.
-- `--json` suppresses human progress and must not mix text into stdout.
-- `--quiet` suppresses human progress.
-- `--progress auto|interactive|plain`, `--force-tty`, and `--no-tty` are the
-  supported control flags.
+- Internal entrypoints may keep `--json`, `--quiet`, `--progress`,
+  `--force-tty`, and `--no-tty` for focused tests and operator maintenance.
+  These flags are not public `siteforge build` flags.
 - Interactive mode may use ANSI refresh, Unicode icons, spinner frames,
   progress bars, percent, ETA, and speed.
 - Plain mode must be stable line-by-line text with no cursor control, no
   animation frames, and no color by default.
-- `build` defaults to a human-readable package-manager-style progress panel and
-  summary. It must not dump raw JSON unless `--json` or `--debug` explicitly
-  requests diagnostics.
-- Build-specific modes are `--verbose`, `--debug`, `--no-color`, `--ascii`, and
-  `--compact`. Keep these flags local to build unless another CLI has a matching
-  UX need and tests.
+- Public `siteforge build <url>` defaults to a human-readable
+  package-manager-style progress panel and summary. It must reject arguments
+  after the URL.
+- Internal build-only modes such as `--verbose`, `--debug`, `--no-color`,
+  `--ascii`, and `--compact` stay behind the direct Node pipeline entrypoint
+  and must not be documented as public SiteForge CLI flags.
 - Non-TTY confirmation and selection APIs must not block; they return defaults
   or throw a clear non-TTY error.
 - Failure output must include task, stage, reason, safe-stop text, next action,
@@ -214,57 +267,13 @@ Rules for new CLI tasks:
   access-control pages are manual safety boundaries. Progress messages must
   report a safe stop, not bypass behavior.
 
-Current progress-enabled entrypoints:
+Current public progress-enabled command:
 
 ```powershell
-node .\src\entrypoints\pipeline\run-pipeline.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\generate-skill.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\capture.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\expand-states.mjs <url> --initial-manifest <path> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\collect-book-content.mjs <url> [--stage-timeout <ms>] [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\analyze-states.mjs <url> --expanded-dir <dir> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\abstract-interactions.mjs <url> --analysis-dir <dir> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\nl-entry.mjs <url> --abstraction-dir <dir> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\generate-docs.mjs <url> --nl-entry-dir <dir> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\govern-interactions.mjs <url> --docs-dir <dir> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\compile-wiki.mjs compile <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\compile-wiki.mjs lint --kb-dir <dir> [--json|--quiet|--progress plain]
-node .\src\entrypoints\pipeline\generate-crawler-script.mjs <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs download plan <target> --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs download execute <target> --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site doctor <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site login <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site keepalive <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site nl-login "<request>" [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs session health --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site repair-plan --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs bilibili action <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs douyin action <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs xiaohongshu action <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs catalog jable-ranking <url> --query <text> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs catalog jp-av-release --start <date> --end <date> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs catalog moodyz-month --month <YYYY-MM> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site credentials <set|show|delete> <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs site scaffold <url> --archetype <type> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs bilibili open <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs bilibili extract-links <url> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social auth-import --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs douyin export-cookies [url] [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs x action <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs instagram action <action> ... [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs douyin follow [url] [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs douyin resolve-media <url...> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social live-verify --live --site <site> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social kb-refresh [--execute] [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social resume --state <path> [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social report [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social dashboard [--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social auth-recover [--execute] [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social health-watch [--execute] [--json|--quiet|--progress plain]
-node .\src\entrypoints\cli.mjs social templates [--json|--quiet|--progress plain]
+siteforge build <url>
 ```
 
-Jable download routing is experimental placeholder coverage only. `download plan|execute --site jable --task-type video` must stop with `jable-native-resolver-required` until a safety-reviewed native resolver exists; do not parse Jable player pages, raw media URLs, CDN URLs, manifests, sessions, or browser profiles.
+Jable download-like planning is blocked boundary coverage only. Internal Jable video planning must stop with `jable-native-resolver-required` until a safety-reviewed native resolver exists; do not parse Jable player pages, raw media URLs, CDN URLs, manifests, sessions, or browser profiles.
 
 Focused tests:
 
@@ -323,307 +332,333 @@ manual safety boundaries for X, Instagram, and authenticated Bilibili surfaces.
 - Keep `profile-health-risk` blocked until a human repairs and verifies the
   profile in a visible browser.
 
-Useful manual verification commands:
+Useful manual verification command:
 
 ```powershell
-node .\src\entrypoints\cli.mjs social health-watch --site x
-node .\src\entrypoints\cli.mjs social health-watch --site instagram
-node .\src\entrypoints\cli.mjs bilibili action login https://www.bilibili.com/
+siteforge build <url>
 ```
 
-## Skill Source And Install Sync
+## Skill Generation And Install Sync
 
-Repo-local `skills/*/SKILL.md` files are the source of truth. Work only inside
-this project directory unless the user explicitly asks to install or sync
-skills into Codex.
+Skill rendering code lives under `src/skills/generation/`. Root-level
+`skills/` directories are generated site data and are not project source.
+Work only inside this project directory unless the user explicitly asks to
+install or sync a generated skill into Codex.
 
-Tracked core skill sources include:
-
-- `skills/bilibili/SKILL.md`
-- `skills/xiaohongshu-explore/SKILL.md`
-- `skills/x/SKILL.md`
-- `skills/instagram/SKILL.md`
-
-Manual sync command, when explicitly allowed:
-
-```powershell
-Remove-Item C:\Users\lyt-p\.codex\skills\<skill-name> -Recurse -Force
-Copy-Item .\skills\<skill-name> C:\Users\lyt-p\.codex\skills\<skill-name> -Recurse -Force
-```
+Manual install or sync must be explicit and should copy from a reviewed
+generated artifact path, not from a persistent root-level `skills/` folder.
 ## Site Capability Layer Design Contract
 
-The Site Capability Layer is a multi-site capability architecture, not a site-specific runtime. Kernel/orchestrator owns lifecycle, context, artifact routing, common safety, schema governance, lifecycle events, and reason semantics. Capability Services own reusable mechanisms such as DOM discovery, accessibility/interaction discovery, network capture, node inventory, API discovery, coverage analysis, unknown-node reporting, security/redaction, session views, risk state, policy handoff, artifact schema, and capability hooks. SiteAdapter owns site identity, URL classification, node/API interpretation, pagination rules, login-state rules, health-signal mapping, field normalization, and capability mapping. The downloader remains a low-permission consumer of StandardTaskList, DownloadPolicy, minimal SessionView, and resolved resources.
+The Site Capability Layer is a multi-site capability architecture, not a site-specific runtime. Kernel/orchestrator owns lifecycle, context, artifact routing, common safety, schema governance, lifecycle events, and reason semantics. Capability Services own reusable mechanisms such as DOM discovery, accessibility/interaction discovery, network capture, node inventory, API discovery, coverage analysis, unknown-node reporting, security/redaction, session views, risk state, policy handoff, artifact schema, and capability hooks. SiteAdapter owns site identity, URL classification, node/API interpretation, pagination rules, login-state rules, health-signal mapping, field normalization, and capability mapping. Web UI and download are not top-level architecture layers: human interaction is represented by CLI/build records and local confirmation handoff, while download-like execution is an internal governed descriptor path behind StandardTaskList, DownloadPolicy, minimal SessionView, and artifact guards.
 
 Non-goals remain explicit: no CAPTCHA bypass, MFA bypass, anti-bot bypass, access-control bypass, credential extraction, platform-risk evasion, silent privilege expansion, raw cookie persistence, raw CSRF persistence, authorization header persistence, SESSDATA/token/session id persistence, or browser profile persistence.
 
 ## Site Capability Layer Implementation Matrix
 
-This compact matrix is the durable Site Capability Layer progress ledger. Short-lived handoffs, status tables, runbooks, and dated validation reports have been folded into `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, or this CONTRIBUTING.md section.
+This compact matrix is the durable Site Capability Layer progress ledger. Keep the numbered sections, field names, status values, and focused regression JSON anchor stable; compress old validation history into the latest useful evidence.
 
 ### 1. Kernel orchestration
 - Section name: Kernel orchestration
-- Requirement summary: Keep orchestration site-agnostic while routing common lifecycle, schema, safety, and reason semantics.
+- Requirement summary: Keep orchestration site-agnostic and route work through capability services, registries, and governed stages.
 - Current status: `verified`
-- Existing code evidence: `src/kernel/`, `src/pipeline/engine/engine.mjs`, `src/pipeline/runtime/create-default-runtime.mjs`, and `src/sites/capability/*` keep Kernel coordination separate from SiteAdapter interpretation.
-- Existing test evidence: `tests/node/site-capability-kernel-contract.test.mjs`, `tests/node/layer-boundaries.test.mjs`, and `tests/node/architecture-import-rules.test.mjs`.
-- Verification command: `node --test tests\node\site-capability-kernel-contract.test.mjs tests\node\layer-boundaries.test.mjs tests\node\architecture-import-rules.test.mjs`
-- Verification result: Focused Kernel gate passed in the current validation set.
-- Current gaps: No current blocker for the documented Kernel boundary.
+- Existing code evidence: `src/entrypoints/cli/index.mjs`, `src/entrypoints/pipeline/run-pipeline.mjs`, `src/app/pipeline/runtime/create-default-runtime.mjs`, `src/app/pipeline/engine/stage-spec.mjs`, `src/app/pipeline/stages/capability-compile.mjs`, and `src/app/pipeline/build/` keep the public build facade, setup assistant, and URL-to-Skill DAG path site-agnostic.
+- Existing test evidence: `tests/node/site-capability-kernel-contract.test.mjs`, `tests/node/layer-boundaries.test.mjs`, `tests/node/siteforge-build.test.mjs`, and architecture import rules cover the boundary, including non-interactive first-run setup handling and saved-profile reuse.
+- Verification command: `node --test tests/node/progress-cli-integration.test.mjs tests/node/cli-compat.test.mjs tests/node/progress-renderer.test.mjs tests/node/run-pipeline.test.mjs tests/node/architecture-import-rules.test.mjs`; 2026-05-17 terminal UX smoke: `node --input-type=module -` against `renderSiteForgeBuildSummary`.
+- Verification result: Focused CLI, build orchestration, and architecture import gates passed for the current site-agnostic Kernel boundary. 2026-05-17 terminal UX smoke confirmed the default build summary keeps debug reason codes and URL secrets out of user output while preserving the layered summary.
+- Current gaps: None for the documented Kernel boundary.
 - Next smallest task: Keep future site-specific routing out of Kernel modules.
-- Risk notes: Treat any direct concrete-site import into Kernel as a release blocker.
-- Last updated: 2026-05-04T13:45:00+08:00
+- Risk notes: Treat direct concrete-site imports into Kernel as release blockers.
+- Last updated: 2026-05-17
 
 ### 2. Capability service inventory
 - Section name: Capability service inventory
-- Requirement summary: Keep reusable cross-site discovery, inventory, API, health, policy, redaction, and coverage mechanisms in Capability Services.
+- Requirement summary: Keep reusable cross-site mechanisms discoverable as capability services without site-specific behavior.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/site-onboarding-discovery.mjs`, `api-discovery.mjs`, `api-candidates.mjs`, `service-inventory.mjs`, `security-guard.mjs`, `site-health-recovery.mjs`, and `site-health-execution-gate.mjs`. 2026-05-10 discovery hardening adds 90-point target taxonomy plus `FullDiscoveryMode` / `ExhaustiveDiscoveryMode` artifacts for controlled-scope node/API/capability discovery, blocked surfaces, unknowns, and capability gaps while keeping evidence scores separate from architecture readiness; concrete Bilibili evidence lives under `src/sites/bilibili/capability-evidence-fixtures.mjs` so Capability Services stay generic.
-- Existing test evidence: `tests/node/service-inventory.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/api-discovery.test.mjs`, and health recovery focused tests.
-- Verification command: `node --test tests\node\service-inventory.test.mjs tests\node\site-onboarding-discovery.test.mjs tests\node\api-discovery.test.mjs tests\node\site-health-recovery.test.mjs`
-- Verification result: Focused Capability Service gate passed in the current validation set; 2026-05-10 FullDiscovery focused gates passed for `site-onboarding-discovery` 19/19, `site-onboarding` 28/28, `api-discovery` 20/20, and `security-guard-redaction` 14/14.
-- Current gaps: No current blocker for the shared service inventory.
-- Next smallest task: Add new reusable services only when a runtime path or contract test consumes them.
-- Risk notes: Do not move SiteAdapter interpretation or downloader execution into Capability Services.
-- Last updated: 2026-05-10T00:00:00+08:00
+- Existing code evidence: `src/domain/capabilities/service-inventory.mjs`, trust-boundary modules, SecurityGuard, SessionView, policy, and lifecycle services define the inventory.
+- Existing test evidence: `tests/node/service-inventory.test.mjs`, `tests/node/layer-boundaries.test.mjs`, and architecture import rules validate exported symbols and dependency direction.
+- Verification command: `node --test tests/node/service-inventory.test.mjs tests/node/layer-boundaries.test.mjs tests/node/architecture-import-rules.test.mjs`
+- Verification result: Capability service inventory and dependency boundary checks passed.
+- Current gaps: None for the current service inventory.
+- Next smallest task: Add inventory descriptors with tests when introducing a new reusable service.
+- Risk notes: Capability services must not encode concrete site semantics or browser profile material.
+- Last updated: 2026-05-16
 
 ### 3. SiteAdapter registry and contracts
 - Section name: SiteAdapter registry and contracts
-- Requirement summary: Keep site identity, URL family checks, routing, semantic interpretation, health signal mapping, and capability declarations in SiteAdapter implementations.
+- Requirement summary: Keep site-specific interpretation behind SiteAdapter contracts and registry lookups.
 - Current status: `verified`
-- Existing code evidence: `src/sites/core/adapters/factory.mjs`, `resolver.mjs`, `generic-navigation.mjs`, `jp-av-catalog.mjs`, `src/sites/jp-av-catalog/queries/release-catalog.mjs`, and concrete adapters for 22biqu, Bilibili, Douyin, X, Instagram, Xiaohongshu, Jable, Moodyz, Qidian, and AV catalog sites.
-- Existing test evidence: `tests/node/site-adapter-contract.test.mjs`, `tests/node/qidian-site.test.mjs`, `tests/node/batch1-av-sites.test.mjs` through `tests/node/batch3-av-sites.test.mjs`, and `tests/node/jp-av-release-catalog.test.mjs`.
-- Verification command: `node --test tests\node\site-adapter-contract.test.mjs tests\node\qidian-site.test.mjs tests\node\batch1-av-sites.test.mjs tests\node\batch2-av-sites.test.mjs tests\node\batch3-av-sites.test.mjs tests\node\jp-av-release-catalog.test.mjs`
-- Verification result: Focused SiteAdapter/release-catalog gate passed in the current validation set. JP AV release aggregation now covers same-structure `/works/date` sites plus DAHLIA `/work/`, T-Powers `/release/`, KM Produce `/works?archive=...`, and MAXING EUC-JP public shop/top lists while keeping 8MAN/SOD/DOGMA as explicit skipped/blocked coverage.
-- Current gaps: Bilibili now has a concrete governed producer evidence fixture that routes SiteAdapter-owned API semantics through guarded catalog and capability evidence paths; additional concrete-site fixtures remain incremental hardening.
-- Next smallest task: Add site-specific producer recognition only through adapters when a new mature site has safe fixture evidence.
-- Risk notes: Do not put concrete site semantics in Kernel or downloader.
-- Last updated: 2026-05-10T18:10:00+08:00
+- Existing code evidence: SiteAdapter registry, capability evidence fixtures, site modules, and `src/app/pipeline/build/pipeline.mjs` keep site interpretation out of Kernel and internal execution paths. `siteforge build <url>` writes per-site generated adapter profile and contract artifacts under the build workspace and `.siteforge/sites/<site_id>/adapter/`. The retired local Web interaction layer has been physically removed; build artifacts remain file/CLI driven.
+- Existing test evidence: `tests/node/site-adapter-contract.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, architecture import rules, and `tests/node/siteforge-build.test.mjs` cover contracts, ownership, generated per-site adapter artifacts, generated contract self-tests, current promotion, and crawl checkpoint linkage.
+- Verification command: `node --test tests/node/siteforge-build.test.mjs --test-name-pattern "full-coverage catalog|route-family representatives|compiles the deterministic simple-shop"`
+- Verification result: 2026-05-17 per-site adapter contract batch passed SiteForge build fixture coverage, route-family representative coverage, and deterministic fixture build checks. 2026-05-20 cleanup retired the local Web interaction layer and removed its stale test evidence from the matrix.
+- Current gaps: None for current adapters.
+- 2026-05-20 interaction-surface evidence update: Section 3 records the adapter-review contract as file/CLI driven build evidence, not a separate Web UI architecture layer. The old Web review panels and `web-interaction-*` source files must not be restored. Later 2026-05-20 A/B hardening kept Jable `download-content` blocked with `jable-native-resolver-required` when known-policy execution metadata is present and treats `download_high` replay as guarded/blocked.
+- Next smallest task: Require contract fixtures before adding or promoting a new adapter capability.
+- Risk notes: Do not move SiteAdapter semantics into internal execution paths or Kernel. Do not restore the deleted legacy panels as part of adapter evidence; the reference capability-map workspace is the retained review contract.
+- Last updated: 2026-05-20
 
 ### 4. Reason semantics
 - Section name: Reason semantics
-- Requirement summary: Use unified reasonCode semantics for unsupported URLs, parse failures, missing fields, auth, access gates, rate limits, policy blocks, downloader boundaries, and schema failures.
+- Requirement summary: Use stable reasonCode and safe-stop semantics across capture, session, health, downloader, planner, and Layer outputs.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/reason-codes.mjs` defines the governed catalog and health/download/API/onboarding reason families, including `blocked-by-cloudflare-challenge` for public request challenge stop boundaries, `jable-native-resolver-required` for the Jable experimental download placeholder, `expand-navigation-failed` / `expand-stage-failed` for capture-preserving partial preview recovery after expand-stage failure, and `book-content-collection-timeout` / `book-content-request-timeout` for bounded book-content partial continuation.
-- Existing test evidence: `tests/node/reason-codes.test.mjs`, `tests/node/run-pipeline.test.mjs`, adapter failure-path tests, and download/session runner tests.
-- Verification command: `node --test tests\node\reason-codes.test.mjs tests\node\site-adapter-contract.test.mjs tests\node\downloads-runner.test.mjs`; `node --test tests\node\run-pipeline.test.mjs tests\node\reason-codes.test.mjs`
-- Verification result: Reason semantics focused gate passed in the current validation set; `blocked-by-cloudflare-challenge` now carries cooldown, isolation, manual recovery, degradable, and artifact-write semantics. Jable placeholder routing records `jable-native-resolver-required` as a degradable download reason without claiming resource resolution. Current Jable/download/audit focused gate passed 157/157, and reason/download-policy focused gate passed 14/14. 2026-05-10 pipeline preview recovery focused gate passed with `run-pipeline.test.mjs` 15/15 and `reason-codes.test.mjs` 10/10, covering transient expanded-stage navigation retry, final expanded-stage partial result, retry metadata, and sensitive diagnostic redaction. 2026-05-11 book-content timeout focused gate passed in the current validation set, proving bounded collection/request timeout reason codes are cataloged, retryable, degradable, artifact-write-allowed, and surfaced in partial book-content stage summaries.
-- Current gaps: Keep adding reason codes with tests when new failure modes become runtime-visible.
-- Next smallest task: Reject ad hoc string-only failure semantics in new modules.
-- Risk notes: Unknown or unsafe failure states must fail closed and remain auditable.
-- Last updated: 2026-05-11T00:10:43+08:00
+- Existing code evidence: `src/domain/risks/reason-codes.mjs`, risk/health modules, downloader manifests, and social/session reporters share reason semantics.
+- Existing test evidence: `tests/node/reason-codes.test.mjs`, risk-state tests, downloader tests, and site health tests cover mappings.
+- Verification command: `node --test tests/node/reason-codes.test.mjs tests/node/risk-state.test.mjs tests/node/site-health-recovery.test.mjs`
+- Verification result: Reason semantics focused gates passed with safe-stop mappings preserved.
+- Current gaps: None for current reasonCode coverage.
+- Next smallest task: Add reasonCode tests before introducing new failure or blocked states.
+- Risk notes: Never report challenge, login wall, risk control, or access-control stops as success.
+- Last updated: 2026-05-16
 
 ### 5. Risk and health recovery
 - Section name: Risk and health recovery
-- Requirement summary: Normalize site-specific health signals into generic SiteHealthRisk and CapabilityHealthRisk outcomes, then recover, degrade, quarantine, or stop through the generic engine.
+- Requirement summary: Detect health/risk states, quarantine unsafe profiles, and require manual action instead of bypassing controls.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/site-health-recovery.mjs`, `site-health-execution-gate.mjs`, `risk-state.mjs`, adapter health signal maps, and profile lifecycle classification.
-- Existing test evidence: `tests/node/site-health-recovery.test.mjs`, `tests/node/site-health-execution-gate.test.mjs`, `tests/node/site-health-recovery-execution-gate.test.mjs`, and `tests/node/site-health-recovery-runtime-integration.test.mjs`.
-- Verification command: `node --test tests\node\site-health-recovery.test.mjs tests\node\site-health-execution-gate.test.mjs tests\node\site-health-recovery-execution-gate.test.mjs tests\node\site-health-recovery-runtime-integration.test.mjs`
-- Verification result: Health recovery focused gate passed; `profile-health-risk` remains a generic `platform-risk-detected` style manual boundary rather than an X-only branch.
-- Current gaps: Full live social account recovery still requires explicit operator approval and visible browser validation.
-- Next smallest task: Keep capability-level degradation local to affected capabilities.
-- Risk notes: Do not bypass CAPTCHA, MFA, platform risk, account restriction, rate limits, permission checks, or access-control boundaries.
-- Last updated: 2026-05-04T13:45:00+08:00
+- Existing code evidence: Site health recovery, risk-state handling, session repair planning, and manual health guidance enforce visible recovery boundaries.
+- Existing test evidence: `tests/node/site-health-recovery.test.mjs`, `tests/node/site-health-execution-gate.test.mjs`, and session repair tests cover profile-health-risk handling.
+- Verification command: `node --test tests/node/site-health-recovery.test.mjs tests/node/site-health-execution-gate.test.mjs tests/node/session-repair-plan.test.mjs tests/node/session-repair-command.test.mjs`
+- Verification result: Health recovery and execution-gate tests passed for manual recovery boundaries.
+- Current gaps: None for current profile-health-risk policy.
+- Next smallest task: Keep recovery additions dry-run or approval-gated before any live profile mutation.
+- Risk notes: Do not delete, rebuild, or mutate browser profiles automatically.
+- Last updated: 2026-05-16
 
 ### 6. Node discovery and inventory
 - Section name: Node discovery and inventory
-- Requirement summary: Discover DOM, accessibility, interaction, login-state, permission/risk, restriction, recovery, and manual-risk nodes and classify every item as recognized, unknown, or ignored.
+- Requirement summary: Produce bounded node inventories, unknown/blocked reports, and descriptor-only route evidence without executing risky actions.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/site-onboarding-discovery.mjs` creates `NODE_INVENTORY`, `UNKNOWN_NODE_REPORT`, `BLOCKED_NODE_REPORT`, `SITE_CAPABILITY_REPORT`, and `DISCOVERY_AUDIT`; it emits `FullDiscoveryMode` / `ExhaustiveDiscoveryMode`, status counts for `discovered`, `verified`, `observed_only`, `unknown`, `blocked`, `skipped_by_budget`, `skipped_by_policy`, `unattempted`, `failed_trigger`, `duplicate_trigger`, `requires_login`, `requires_manual_review`, `requires_adapter_evidence`, `requires_schema_evidence`, and `requires_test_evidence`, plus runtimeEvidence/authSession/sessionHealth/riskRecovery/budget/warning node seeds. `src/sites/capability/site-onboarding-discovery.mjs` now directly ingests capture/expand/site-doctor DOM node summaries and accessibility/a11y node summaries, including `unknownDomNodes`, `blockedDomNodes`, `unknownAccessibilityNodes`, `blockedAccessibilityNodes`, skipped node summaries, and nested a11y children, as bounded redacted node evidence without auto-promoting producer evidence to verified. It also ingests bounded descriptor-only JS route, script route, lazy route, and dynamic import summaries from capture/expand/site-doctor inputs, records unknown/blocked/skipped/unattempted/failed/duplicate JS route surfaces, rejects raw JS source/header/session/profile/sourceMap fields, redacts route/import/chunk query secrets, and keeps all producer route evidence non-executable and unverified. `BrowserSession.getObservedPageDomRouteHints()` now collects href/data-route/link prefetch/script src descriptors plus descriptor-only runtime route hints from `window.location.pathname`, `window.location.hash`, `window.__NEXT_DATA__.page`, Remix location metadata, and allowlisted `window.history.state` route descriptor keys without reading JS source, storage, cookies, headers, form values, raw state objects, or browser profile state; capture persists those hints as redacted observed-only `jsRoutes` / `scriptRoutes`. `src/pipeline/stages/expand.mjs` persists redacted DOM/a11y trigger outcome inventories for candidate, budget-skipped, unattempted, failed, and duplicate triggers before `site-doctor` writes onboarding JSON+Markdown artifacts. Trigger gap node entries now include descriptor-only `followUpStrategy` and `attemptResult` metadata for policy-skipped, budget-skipped, unattempted, failed, and duplicate trigger surfaces so follow-up handling and attempt state are machine-readable without executing retries. Blocked node entries now include descriptor-only `blockedSurfaceClassification` plus `surfaceCategoryCounts` in `BLOCKED_NODE_REPORT`, distinguishing login, paywall/VIP/CAPTCHA/MFA/risk/permission/rate-limit, policy/budget, unattempted, failed, duplicate, and manual-review surfaces with bypass prohibited.
-- Existing test evidence: `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/browser-runtime-session.test.mjs`, `tests/node/capture-expand.test.mjs`, `tests/node/site-onboarding.test.mjs`, and site-specific onboarding fixtures.
-- Verification command: `node --test tests\node\browser-runtime-session.test.mjs`; `node --test tests\node\capture-expand.test.mjs`; `node --test tests\node\site-onboarding-discovery.test.mjs`; `node --test tests\node\site-capability-matrix.test.mjs`; scoped `git diff --check`; `node tools\prepublish-secret-scan.mjs`
-- Verification result: Node discovery focused gate passed with tri-state classification, unknown reporting, blocked report generation, ignore reasons, blocked/skipped/login/manual-review required-item failures, coverage gate enforcement, full-discovery artifact readiness, runtime evidence node seeding, direct DOM/a11y node-summary ingestion, nested a11y child retention, attribute-name filtering, bounded node text, email/IP/account display-name redaction in node reports, generic raw DOM/a11y producer evidence downshifted away from self-verified status, producer-observed evidence staying unverified, descriptor-only JS route/lazy route/dynamic import ingestion, raw JS source/header/session/profile/sourceMap rejection, redacted route/import/chunk query secrets, distinct trigger/route outcome statuses, trigger gap follow-up strategies, trigger attempt results, and blocked surface classifications; 2026-05-10 `browser-runtime-session.test.mjs` passed 13/13 with DOM, runtime, and history-state route hint helper coverage, `capture-expand.test.mjs` passed 28/28 with manifest persistence/redaction for route hints, `site-onboarding-discovery.test.mjs` passed 49/49 with descriptor-only trigger follow-up strategy, attempt-result, blocked surface classification, category counts, bypass-prohibited flags, and unsafe blocked-surface material redaction, `site-capability-matrix.test.mjs` passed 6/6, scoped `git diff --check` passed, and `prepublish-secret-scan` passed across 660 candidate files.
-- Current gaps: Actual evidence score still depends on live/governed capture breadth; FullDiscoveryMode records unknown/blocked/skipped/unattempted/failed/duplicate gaps rather than claiming unobserved surfaces do not exist. The controlled-scope artifact closure loop reached 100/100/100/100 with six-agent acceptance, and the Bilibili governed producer fixture now covers DOM, a11y, JS-route, governed retry, OPTIONS, WebSocket, and observed video-view API surfaces without live/full-web claims.
-- Next smallest task: Add more concrete-site governed producer fixtures without bypassing policy or saving raw payloads.
-- Risk notes: No discovered node may be silently dropped.
-- Last updated: 2026-05-10T18:10:00+08:00
+- Existing code evidence: `src/domain/capabilities/site-onboarding-discovery.mjs`, capture expansion, route descriptor producers, `src/app/pipeline/build/auto-discovery.mjs`, `src/app/pipeline/build/pipeline.mjs`, and `src/app/pipeline/build/output-validation.mjs` generate bounded node evidence, preserve closure summaries, model X SPA route/tab/state structure without raw content, and fail closed for live robots-unavailable or robots-disallowed generic seed discovery before crawl or skill generation.
+- Existing test evidence: `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/capture-expand.test.mjs`, browser runtime session tests, `tests/node/siteforge-build.test.mjs`, and `tests/node/siteforge-output-validation.test.mjs` cover DOM, route, blocked-node descriptors, fixture robots determinism, live robots unavailable blocking, live `Disallow: /` early stop, and pre-promotion validation rejection for missing live robots evidence.
+- Verification command: `node --test tests/node/siteforge-build.test.mjs tests/node/siteforge-output-validation.test.mjs`; `node --test tests/node/site-onboarding-discovery.test.mjs tests/node/capture-expand.test.mjs tests/node/browser-runtime-session.test.mjs`; 2026-05-17 focused auto-discovery smoke: `node --input-type=module -` with injected X user-authorized summaries.
+- Verification result: SiteForge robots fail-closed focused gates passed with live robots-unavailable and live `Disallow: /` stopping before generic crawl or skill generation; prior node discovery and inventory focused gates passed with unknown, blocked, and descriptor-only route evidence retained. 2026-05-17 auto-discovery smoke passed with X default model `nodes_total=109`, `actionable_elements=238`, and deep/network pipeline graph types `page`, `content`, `operation`, `modal`, and `route_template`.
+- Current gaps: None for bounded discovery artifacts.
+- Next smallest task: Refresh X output regression expectations for the default auto-discovery path, then add descriptor fields and redaction tests when new node sources are captured.
+- Risk notes: Discovery artifacts must not claim live full-web coverage or execute follow-up actions.
+- Last updated: 2026-05-17
 
 ### 7. API discovery and catalog lifecycle
 - Section name: API discovery and catalog lifecycle
-- Requirement summary: Capture observed network/API requests as candidates, verify them explicitly, and keep observed APIs out of the verified catalog until policy and adapter validation pass.
+- Requirement summary: Record observed API candidates safely and promote only verified candidates through policy, schema, test, and adapter evidence.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/api-discovery.mjs`, `api-candidates.mjs`, `network-capture.mjs`, `src/infra/browser/session.mjs`, verified evidence producers, catalog writers, and planner handoff. `apiCandidateFromObservedRequest()` now records a redaction-safe `canonicalEndpointKey`, `observedApiAutoPromotionAllowed: false`, transport-aware `endpointKind` / `riskClass`, and target taxonomy fields while redacting endpoint URLs, headers, bodies, and bounded redirect evidence before candidate persistence. Network capture now preserves redacted WebSocket, SSE/EventSource, OPTIONS/preflight, and redirect surfaces as observed-only transport evidence. `BrowserSession.getObservedPageResourceApiHints()` and capture manifest writing add bounded page resource/performance API hints plus descriptor-only DOM hidden API hints from `form[action]` and safe `data-*` endpoint attributes to observed request candidates without submitting forms, replaying requests, reading values/storage/cookies/headers/profiles, or promoting to catalog. API discovery now correlates OPTIONS/preflight candidates with same-path follow-up observed requests via redacted canonical endpoint path keys, and onboarding preserves that correlation in `API_INVENTORY` as observed-only evidence. `API_INVENTORY` now records `requestShapeStatus`, `responseShapeStatus`, redacted `shapeGaps`, streaming `messageShapeStatus`, bounded `messageShape`, redacted `messageShapeGaps`, and descriptor-only `multiStepCorrelation` flow metadata when observed APIs expose safe flow/trigger/sequence/request relationship evidence, so missing or partial API relationship coverage is explicit without replaying requests or promoting to catalog. `SITE_CAPABILITY_REPORT.fullDiscoveryClosure.apiControlledScopeClosure` now machine-checks API artifact presence, observed/unknown/blocked/duplicate/status coverage, shape/message/preflight/multi-step surface accounting, and no Graph/Planner/Layer/downloader promotion for observed APIs. Batch 7 adds an independent verified API catalog promotion evidence gate in `api-catalog-promotion.mjs` requiring verified candidate status, accepted SiteAdapter decision, policy allow, schema evidence, policy evidence, test evidence, and actual redaction audit sidecars before returning a promotion result.
-- Existing test evidence: `tests/node/network-capture.test.mjs`, `tests/node/api-discovery.test.mjs`, `tests/node/api-candidates.test.mjs`, `tests/node/site-capability-remaining-deep-paths.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/browser-runtime-session.test.mjs`, `tests/node/capture-expand.test.mjs`, and `tests/node/planner-policy-handoff.test.mjs`.
-- Verification command: `node --test tests\node\network-capture.test.mjs tests\node\api-discovery.test.mjs`; `node --test tests\node\site-onboarding-discovery.test.mjs`; `node --test tests\node\api-candidates.test.mjs`; `node --test tests\node\site-capability-remaining-deep-paths.test.mjs`; `node --test tests\node\site-capability-matrix.test.mjs`
-- Verification result: API focused gate passed; observed API candidates are not automatically promoted. 2026-05-10 transport/resource-focused gates passed for `network-capture.test.mjs` 11/11, `browser-runtime-session.test.mjs` 12/12, `capture-expand.test.mjs` 28/28, and `site-onboarding-discovery.test.mjs` 31/31, covering WebSocket/SSE/preflight/redirect observed evidence, SSE capture without blocking network idle, page resource/performance API hints appended to capture `networkRequests`, generated API candidates from those hints, redacted redirect status/url/mimeType only, API inventory `transport` / `resourceType` / `endpointKind` / `riskClass`, bounded request shape summaries, duplicate API endpoint retention, `networkResponseSummaries` status/contentType/headerNames/bodyShape/responseSchemaHash joins without raw samples, UNKNOWN_API_REPORT entries, and no verified catalog promotion. Round 13 preflight-correlation gates passed with `api-discovery.test.mjs` 23/23, `api-candidates.test.mjs` 86/86, and `site-onboarding-discovery.test.mjs` 31/31; correlated preflight/follow-up evidence remains observed-only, unsafe/missing request ids are replaced with safe candidate ids, and catalog promotion stays disabled. Round 16 DOM hidden API hint gates passed with `browser-runtime-session.test.mjs` 13/13, `capture-expand.test.mjs` 28/28, `api-discovery.test.mjs` + `api-candidates.test.mjs` 109/109, and `site-onboarding-discovery.test.mjs` 32/32; form/action and data-* endpoint descriptors are redacted, persisted as observed candidates, and remain catalog-promotion-disabled. Round 19 API shape-gap gates passed with `site-onboarding-discovery.test.mjs` 35/35, covering request/response shape status, reason-coded missing-shape gap rows, descriptor-only shape gap whitelisting, and no raw request/response/header/sample persistence. Round 22 streaming message-shape gates passed with `site-onboarding-discovery.test.mjs` 39/39, covering WebSocket/SSE message shape status, missing stream-message gap rows, bounded message shape summaries, and raw payload/header/sample dropping. Round 26 multi-step API correlation gates passed with `site-onboarding-discovery.test.mjs` 47/47, covering safe flow/trigger/initiator/sequence/previous/next/phase descriptors, observed-only reason codes, `catalogPromotionAllowed:false`, `verifiedCatalogAllowed:false`, `executionPlanAllowed:false`, and raw URL/query/header/body/payload/response/session/profile/IP/executable-ref dropping. Round 29 API controlled-scope closure gate passed with `site-onboarding-discovery.test.mjs` 48/48, covering API closure accounting for observed, unknown, duplicate, shape-gap, stream-message-gap, preflight-correlation, multi-step-correlation, and blocked report surfaces without live-network coverage claims or Graph/Planner/Layer/downloader promotion. Deep-path API promotion validation passed with `site-capability-remaining-deep-paths.test.mjs` 5/5 and `api-candidates.test.mjs` 86/86, proving observed producer APIs can enter catalog only after accepted SiteAdapter decision, policy allow, and schema/auth/pagination/risk verification, while policy-blocked promotion leaves no partial artifacts. 2026-05-11 Batch 7 focused gate passed with `site-capability-remaining-deep-paths.test.mjs` 5/5 and `api-candidates.test.mjs` 86/86, proving the independent promotion path now requires schema evidence, policy evidence, test evidence, accepted SiteAdapter decision, verified candidate status, redaction audit sidecars, rejects observed-only candidates before artifact writes, and keeps observed API auto-promotion disabled. Bilibili now has a site-specific verified API evidence fixture for `/x/web-interface/view` through `bilibiliAdapter.validateApiCandidate()` and `getApiCatalogUpgradePolicy()`.
-- Current gaps: Verified live API evidence remains site-specific and must be explicitly recorded. The controlled-scope API closure accounts for current artifact families without treating observed APIs as verified catalog entries; Bilibili has a concrete verified fixture path, and verified catalog promotion remains an explicit gated path, not an automatic upgrade.
-- Next smallest task: Add additional site-specific verified API evidence fixtures as mature adapters become available.
-- Risk notes: Do not persist raw cookies, authorization headers, CSRF values, tokens, session ids, or browser profile material.
-- Last updated: 2026-05-11T02:20:00+08:00
+- Existing code evidence: API discovery, candidate normalization, preflight correlation, shape/message gaps, multi-step correlation, and API catalog promotion gates are implemented.
+- Existing test evidence: `tests/node/api-discovery.test.mjs`, `tests/node/api-candidates.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, and catalog promotion tests cover lifecycle transitions.
+- Verification command: `node --test tests/node/api-discovery.test.mjs tests/node/api-candidates.test.mjs tests/node/site-onboarding-discovery.test.mjs`
+- Verification result: API discovery and catalog lifecycle tests passed with observed-only candidates kept out of executable catalogs until verified.
+- Current gaps: None for current observed and verified API lifecycle gates.
+- Next smallest task: Add schema/test/policy evidence before enabling any new API catalog promotion.
+- Risk notes: Do not replay observed requests, persist raw headers or bodies, or auto-promote observed APIs.
+- Last updated: 2026-05-16
 
 ### 8. Artifact redaction and safety
 - Section name: Artifact redaction and safety
-- Requirement summary: Guard persistent artifact writes with redaction, compatibility checks, and fail-closed behavior.
+- Requirement summary: Guard persistent artifact writes with SecurityGuard redaction, audit sidecars, and fail-closed behavior.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/security-guard.mjs`, redaction audit writers, downloader/session/capture/API artifact guards, `src/sites/chapter-content/download/python/book.py` OCR access-control image guard plus Cloudflare challenge response classification, and `tools/prepublish-secret-scan.mjs`. The guard now redacts generic `token`, `auth` query params, `x-auth-token`, `x-api-key`, body `auth`, body `token`, and raw body/header fields without treating safe `authRequirement` metadata as credentials.
-- Existing test evidence: `tests/node/security-guard-redaction.test.mjs`, `tests/node/capture-manifest-redaction.test.mjs`, `tests/node/trust-boundary.test.mjs`, `tests/python/test_download_book.py`, and prepublish scan.
-- Verification command: `node --test tests\node\security-guard-redaction.test.mjs tests\node\capture-manifest-redaction.test.mjs tests\node\trust-boundary.test.mjs`; `python -m unittest .\tests\python\test_download_book.py`
-- Verification result: Security/redaction focused gate passed; 2026-05-10 `security-guard-redaction.test.mjs` passed 14/14 with generic token/auth/api-key, IP host, and public identifier text redaction coverage. `test_download_book.py` passed 11/11 including BZ888 OCR access-control-image rejection, public chapter body image attribute OCR allowance, redacted registry profile fallback, and stable Cloudflare challenge reporting.
-- Current gaps: Continue scanning before staging.
-- Next smallest task: Add golden redaction tests for new artifact families.
-- Risk notes: Raw credentials, cookies, CSRF, Authorization, SESSDATA, tokens, session ids, browser profiles, and equivalent material must not be persisted.
-- Last updated: 2026-05-04T14:29:17+08:00
+- Existing code evidence: SecurityGuard, artifact writer guards, redaction audits, partial preview writers, planner artifacts, download/session reports, auto-discovery summaries, `src/app/pipeline/build/risk-policy.mjs`, `src/app/pipeline/build/capability-interaction.mjs`, `src/app/pipeline/build/confirmation-flow.mjs`, normalized capability evidence in `src/app/pipeline/build/models.mjs`, setup evidence sanitization in `src/app/pipeline/build/setup-assistant.mjs`, and output validation privacy gates enforce guarded writes and keep X SPA/network observations to redacted structure fields only.
+- Existing test evidence: `tests/node/security-guard-redaction.test.mjs`, `tests/node/test-coverage-regression.test.mjs`, `tests/node/siteforge-output-validation.test.mjs`, artifact guard tests, planner artifact tests, and download/session report tests cover sensitive write protection.
+- Verification command: `node --test tests/node/siteforge-output-validation.test.mjs`; `node --test tests/node/siteforge-auto-capabilities.test.mjs`; `node --test tests/node/siteforge-x-generic-live-uncollectable.test.mjs`; `node --test tests/node/siteforge-build-x-output-regression.test.mjs`; syntax checks for touched `src/app/pipeline/build/*.mjs`; `git diff --check`
+- Verification result: 2026-05-17 risk-policy calibration batch passed output validation, X auto-capability risk coverage, X user-authorized/generic gates, X user-output golden regression, syntax, and whitespace checks. 2026-05-17 capability selection model batch passed focused interaction, confirmation-flow, output-validation, and X output-regression tests; confirmation records now include usable safe-path metadata, disabled selections write `capability_remediation_plan.json`, and remediation plans distinguish immediate limited-use entries from explicit SiteAdapter-verification entries without enabling high-risk final actions. Recommended/following timelines are personal reads, followers/bookmarks/notifications require confirmation, private message and private body surfaces stay disabled, and high-risk writes remain discoverable but non-callable. 2026-05-17 route-state replay hardening added static crawl redaction coverage for page text, form values, and sensitive URLs, and passed `tests/node/siteforge-build-hardening.test.mjs` with the route-state focused tests.
+- Current gaps: None for current artifact write surfaces.
+- Next smallest task: Require fail-closed redaction tests for every new persisted artifact family.
+- Risk notes: Raw cookies, authorization headers, tokens, sessions, profile paths, raw DOM/HTML, page bodies, DM bodies, notification bodies, and sensitive diagnostics must never be written.
+- Last updated: 2026-05-17
 
 ### 9. SessionView and trust boundaries
 - Section name: SessionView and trust boundaries
-- Requirement summary: Give consumers only minimized session views and governed trust-boundary crossings.
+- Requirement summary: Materialize only minimal session views for approved purposes and prevent broad credential/profile access.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/session-view.mjs`, `trust-boundary.mjs`, session manifest bridge, and downloader session manager.
-- Existing test evidence: `tests/node/session-view.test.mjs`, `tests/node/trust-boundary.test.mjs`, and session runner focused tests.
-- Verification command: `node --test tests\node\session-view.test.mjs tests\node\trust-boundary.test.mjs tests\node\site-session-runner.test.mjs`
-- Verification result: SessionView and trust-boundary focused gate passed; 2026-05-04T13:48:09+08:00 live X auth recovery evidence passed through `scripts/social-auth-recover.mjs --execute --site x --verify`, with `x-session-health` artifact `passed` and `x-auth-doctor` artifact `passed` after scoped auth-doctor dependency and unified session-health handoff fixes.
-- Current gaps: Live session evidence remains bounded by explicit operator approval; the non-auth X primary chain `home-search-post-detail-author` still reports an author-link expansion gap and is tracked separately from login-state reuse.
-- Next smallest task: Keep new consumers off raw lease/session/profile structures.
-- Risk notes: Downloader must remain a low-permission consumer.
-- Last updated: 2026-05-04T13:48:09+08:00
+- Existing code evidence: SessionView, trust-boundary registry, unified session health planning, social auth import validation, and social/session health handoffs isolate sensitive state.
+- Existing test evidence: `tests/node/session-view.test.mjs`, `tests/node/social-auth-import.test.mjs`, trust-boundary tests, social auth recovery tests, and architecture import rules cover purpose isolation.
+- Verification command: `node --test tests/node/session-view.test.mjs tests/node/social-auth-import.test.mjs tests/node/social-auth-recover.test.mjs tests/node/architecture-import-rules.test.mjs`
+- Verification result: SessionView and trust-boundary gates passed with raw session/profile material excluded from consumers, non-ready views prevented from granting permissions, expired ready views rejected when evaluated with `now`, and invalid cookie import inputs rejected before browser-profile mutation.
+- Current gaps: No known gap for current session consumers; bridge-level expired-manifest coverage should be added before new consumers depend on time-bound leases.
+- Next smallest task: Add a bridge-level regression for expired ready manifests flowing through `sessionOptionsFromRunManifest(..., { now })`.
+- Risk notes: Downloader and Layer consumers must not receive raw credentials, browser profiles, or unredacted session material.
+- Last updated: 2026-05-16
 
 ### 10. Downloader boundary
 - Section name: Downloader boundary
-- Requirement summary: Keep downloader behind planned tasks, policies, minimized session views, and resolved resources.
+- Requirement summary: Keep downloader as a low-permission consumer of planned tasks, policies, minimal session views, and resolved resources.
 - Current status: `verified`
-- Existing code evidence: `src/sites/downloads/contracts.mjs`, `modules.mjs`, `runner.mjs`, `session-manager.mjs`, native resource seed modules, legacy fallback boundaries, `src/sites/downloads/site-modules/jable.mjs` recording experimental no-resource download placeholders, `src/sites/downloads/site-modules/bz888.mjs` routing BZ888 public book downloads to the chapter-content Python downloader without raw session material, and `src/sites/downloads/legacy-executor.mjs` classifying Cloudflare challenge stderr before generic legacy reasons.
-- Existing test evidence: `tests/node/downloads-runner.test.mjs`, `tests/node/download-policy.test.mjs`, `tests/node/download-site-modules.test.mjs`, and native resolver tests.
-- Verification command: `node --test tests\node\downloads-runner.test.mjs tests\node\download-policy.test.mjs tests\node\download-site-modules.test.mjs`
-- Verification result: Download focused gate passed for low-permission planning and dry-run boundaries; focused Node batch passed 172/172; current Jable/download/audit focused gate passed 157/157, and reason/download-policy focused gate passed 14/14; live BZ888 execute for the target catalog produced blocked manifest `runs/downloads/bz888/20260504T062914706Z-bz888-generic-resource/manifest.json` with reason `blocked-by-cloudflare-challenge`, no downloaded files, and no raw session material. After separate human challenge completion in a visible browser, read-only page health showed the target chapter page rendered and the three catalog pages exposed 58 chapter links; this is manual browser evidence only and does not grant downloader raw-cookie or challenge-bypass access.
-- Current gaps: Some live native resolver paths remain dependent on current public/session evidence; Jable remains an experimental placeholder that returns `jable-native-resolver-required` with no resources until a safety-reviewed native resolver exists; BZ888 direct downloader/public automation remains blocked by Cloudflare challenge and must stay a governed stop boundary unless a future approved path provides safe, non-sensitive evidence.
-- Next smallest task: Remove legacy fallback only after fixture, injected, runner, and live evidence all exist.
-- Risk notes: Downloader must not receive raw credentials, raw browser profiles, unredacted session material, or site-specific Kernel logic.
-- Last updated: 2026-05-04T15:22:01+08:00
+- Existing code evidence: The executable shared download runtime is physically removed. The retained boundary is descriptor-only: `src/domain/policies/standard-task-list.mjs`, `src/domain/policies/download-policy.mjs`, `src/app/planner/policy-handoff.mjs`, SessionView/trust-boundary contracts, and stable config gates prevent low-permission consumers from receiving raw credentials, raw profiles, or retired runtime paths.
+- Existing test evidence: architecture import rules, `tests/node/standard-task-list.test.mjs`, `tests/node/download-policy.test.mjs`, and `tests/node/planner-policy-handoff.test.mjs` cover the remaining descriptor-only planning/policy contracts after the download runtime layer was removed.
+- Verification command: `node --test tests/node/architecture-import-rules.test.mjs tests/node/standard-task-list.test.mjs tests/node/download-policy.test.mjs tests/node/planner-policy-handoff.test.mjs`
+- Verification result: Descriptor-only downloader boundary gates passed after removing `src/sites/downloads/`, `src/entrypoints/sites/download.mjs`, and stable config references to retired download planner/resolver/executor paths.
+- Current gaps: None for the current descriptor-only boundary.
+- Next smallest task: Add a policy/SessionView/StandardTaskList regression before any new low-permission consumer is introduced.
+- Risk notes: Do not parse raw player pages, raw media URLs, CDN manifests, sessions, or browser profiles through a shared download runtime.
+- Last updated: 2026-05-20
 
 ### 11. Planner policy handoff
 - Section name: Planner policy handoff
-- Requirement summary: Convert verified catalog and policy data into downloader-safe standard task lists without executing downloader/session runtime.
+- Requirement summary: Pass validated graph and policy descriptors to Planner/Layer without executing downloader, SiteAdapter runtime, SessionView, or live tasks.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/planner-policy-handoff.mjs`, `standard-task-list.mjs`, `download-policy.mjs`, and `site-health-execution-gate.mjs`.
-- Existing test evidence: `tests/node/planner-policy-handoff.test.mjs`, `tests/node/standard-task-list.test.mjs`, and architecture import rules.
-- Verification command: `node --test tests\node\planner-policy-handoff.test.mjs tests\node\standard-task-list.test.mjs tests\node\architecture-import-rules.test.mjs`
-- Verification result: Planner handoff focused gate passed with no downloader execution or session runtime dependency.
-- Current gaps: New task shapes need explicit policy evidence.
+- Existing code evidence: Planner policy handoff, standard task lists, capability compile stage, and Layer-owned disabled consumers keep execution descriptor-only.
+- Existing test evidence: `tests/node/planner-policy-handoff.test.mjs`, `tests/node/standard-task-list.test.mjs`, compiler executor tests, and run-pipeline tests cover handoff order.
+- Verification command: `node --test tests/node/planner-policy-handoff.test.mjs tests/node/standard-task-list.test.mjs tests/node/site-capability-compiler-executor/compile-entrypoint.test.mjs tests/node/run-pipeline.test.mjs`
+- Verification result: Planner policy handoff and capability compile integration tests passed with descriptor-only execution retained. 2026-05-17 safe-path descriptor batch passed web interaction model/server tests and SiteAdapter contract tests; sensitive reads now require a capability-level safe execution path before test success.
+- Current gaps: None for current handoff shape.
 - Next smallest task: Add policy fixtures before enabling new executor paths.
-- Risk notes: Policy handoff cannot promote observed API candidates or execute recovery.
-- Last updated: 2026-05-04T13:45:00+08:00
+- Risk notes: Planner handoff cannot promote observed APIs, execute recovery, or materialize SessionView.
+- Last updated: 2026-05-17
 
 ### 12. Schema governance and versioning
 - Section name: Schema governance and versioning
-- Requirement summary: Keep Kernel, SiteAdapter, CapabilityService, downloader, and API catalog contracts versioned and compatibility-checked.
+- Requirement summary: Keep Kernel, SiteAdapter, CapabilityService, downloader, API catalog, artifact, and focused-regression contracts versioned and compatibility-checked.
 - Current status: `verified`
-- Existing code evidence: Kernel versioning evidence in lifecycle/schema governance, SiteAdapter version evidence in adapter candidate decisions, CapabilityService version evidence across reasonCode/LifecycleEvent/SessionView/StandardTaskList, downloader version evidence in DownloadRunManifest and DownloadPolicy, and API catalog version evidence in ApiCandidate/ApiCatalog/ApiCatalogIndex.
-- Existing test evidence: `tests/node/schema-governance.test.mjs`, `tests/node/schema-inventory.test.mjs`, `tests/node/compatibility-registry.test.mjs`, and version compatibility unit tests.
-- Verification command: `node --test tests\node\schema-governance.test.mjs tests\node\schema-inventory.test.mjs tests\node\compatibility-registry.test.mjs`
-- Verification result: Schema/version focused gate passed for Kernel version evidence, SiteAdapter version evidence, CapabilityService version evidence, downloader version evidence, and API catalog version evidence.
-- Current gaps: New governed schemas must be added to inventory before verified status is claimed.
-- Next smallest task: Keep schema inventory synchronized with new public contracts.
+- Existing code evidence: Schema inventory and compatibility registry record Kernel versioning, SiteAdapter versioning, CapabilityService versioning, downloader versioning, API catalog versioning, artifact versions, and FocusedRegressionBatchDefinition compatibility.
+- Existing test evidence: `tests/node/schema-governance.test.mjs`, `tests/node/schema-inventory.test.mjs`, `tests/node/compatibility-registry.test.mjs`, and version compatibility tests cover governed contracts.
+- Verification command: `node --test tests/node/schema-governance.test.mjs tests/node/schema-inventory.test.mjs tests/node/compatibility-registry.test.mjs`
+- Verification result: Schema governance and compatibility tests passed for Kernel, SiteAdapter, CapabilityService, downloader, API catalog, artifacts, and regression batch definitions.
+- Current gaps: None for current contract versions.
+- Next smallest task: Add schema inventory and compatibility assertions before incompatible field changes.
 - Risk notes: Incompatible or future schema versions must fail closed.
-- Last updated: 2026-05-04T13:45:00+08:00
+- Last updated: 2026-05-16
 
 ### 13. Lifecycle events and capability hooks
 - Section name: Lifecycle events and capability hooks
-- Requirement summary: Record safe descriptor-only lifecycle events and capability hook matches without executing hook code.
+- Requirement summary: Record descriptor-only lifecycle events and hook matches without executing hook code or registering live subscribers.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/lifecycle-events.mjs`, `capability-hook.mjs`, and runtime producers in capture, API, downloader, session, social, and site health modules.
-- Existing test evidence: `tests/node/lifecycle-events.test.mjs`, `tests/node/capability-hook.test.mjs`, and architecture import rules.
-- Verification command: `node --test tests\node\lifecycle-events.test.mjs tests\node\capability-hook.test.mjs tests\node\architecture-import-rules.test.mjs`
-- Verification result: Lifecycle/hook focused gate passed with site health recovery producer inventory aligned to runtime events.
-- Current gaps: No current blocker for descriptor-only hook inventory.
+- Existing code evidence: Lifecycle events, capability-hook inventory, Layer-owned receipt events, and runtime producer descriptors are implemented as descriptor-only evidence.
+- Existing test evidence: `tests/node/lifecycle-events.test.mjs`, `tests/node/capability-hook.test.mjs`, and remaining deep-path tests cover producer and hook metadata.
+- Verification command: `node --test tests/node/lifecycle-events.test.mjs tests/node/capability-hook.test.mjs tests/node/site-capability-remaining-deep-paths.test.mjs`
+- Verification result: Lifecycle and capability hook tests passed with descriptor-only hook matches and producer inventory aligned.
+- Current gaps: None for current lifecycle event types.
 - Next smallest task: Add producer descriptors when new lifecycle event types are introduced.
 - Risk notes: Hook discovery is descriptor-only; executable dispatch remains disabled.
-- Last updated: 2026-05-04T13:45:00+08:00
+- Last updated: 2026-05-16
 
 ### 14. Data-flow evidence
 - Section name: Data-flow evidence
-- Requirement summary: Keep evidence from capture, discovery, API, planner, downloader, and skill generation auditable without leaking sensitive data.
+- Requirement summary: Preserve auditable data-flow evidence from capture through discovery, compiler, planner, Layer receipt, and Skill generation.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/data-flow-evidence.mjs`, capture/expand producer integration, API candidate artifacts, and site-doctor onboarding artifacts, including FullDiscoveryMode UNKNOWN/BLOCKED/GAP artifact families. Capability target and gap artifacts now include per-required-evidence gap details and descriptor-only `evidenceCompletionStrategy` metadata for adapter/schema/test/policy/risk/approval quorum so unverified capability surfaces remain machine-auditable without being promoted to executable capabilities. Static SiteAdapter capability evidence arrays and fixture-backed `capabilityEvidenceFixtures` can feed CAPABILITY_TARGETS and DISCOVERY_SCORECARD as redacted adapter/schema/test/policy/risk/approval evidence without invoking adapter methods or executing site behavior. `capability-evidence-chain.mjs` creates exact-quorum executable evidence fixtures that can include verified API catalog refs while still requiring adapter/schema/test/policy/risk/approval evidence. Observed API response shape evidence now maps into capability targets as non-quorum `api-response-evidence` descriptors with bounded field hints, source API ids, and non-executable mapping metadata. `SITE_CAPABILITY_REPORT` and `DISCOVERY_AUDIT` now include controlled-scope full-discovery closure evidence plus API/capability sub-closures that account for artifact families, unknowns, blocked surfaces, capability gaps, adapter/schema/test/policy/risk/approval quorum state, and no-promotion/no-bypass invariants without claiming live full-web crawl coverage.
-- Existing test evidence: `tests/node/site-capability-data-flow.test.mjs`, `tests/node/capture-expand.test.mjs`, `tests/node/site-onboarding.test.mjs`, and `tests/node/site-onboarding-discovery.test.mjs`.
-- Verification command: `node --test tests\node\site-onboarding-discovery.test.mjs`; `node --test tests\node\site-onboarding.test.mjs`; `node --test tests\node\site-capability-remaining-deep-paths.test.mjs`; `node --test tests\node\site-capability-matrix.test.mjs`; scoped `git diff --check`; `node tools\prepublish-secret-scan.mjs`
-- Verification result: Data-flow focused gate passed in the current validation set; 2026-05-10 Round 15 capability gap evidence gates passed with `site-onboarding-discovery.test.mjs` 32/32 and `site-onboarding.test.mjs` 28/28, covering per-evidence adapter/schema/test/policy gap rows, requested-capability `required` state, redacted unsafe requested capability targets, and no observed-to-executable promotion. Round 18 static adapter capability evidence gates passed with `site-onboarding-discovery.test.mjs` 34/34 and `site-onboarding.test.mjs` 28/28, covering adapter/schema/test/policy evidence quorum from static adapter metadata, partial-evidence quorum gaps, and redacted evidence refs. Round 21 capability completion-strategy gates passed with `site-onboarding-discovery.test.mjs` 37/37, covering missing-evidence next-action metadata, missing verified-claim gaps, unsafe target redaction, and no auto-promotion. Round 24 fixture-backed capability evidence gates passed with `site-onboarding-discovery.test.mjs` 45/45, covering explicit verified adapter/schema/test/policy fixture quorum, verified-only exact-kind executable quorum, non-executable mixed or unverified fixture claims, compound-kind rejection, and unsafe fixture ref redaction. Round 27 capability-to-API response evidence gates passed with `site-onboarding-discovery.test.mjs` 47/47, covering non-quorum `api-response-evidence`, bounded response field hints, missing adapter/schema/test/policy gaps preserved, and raw response/header/body/payload/session/profile/executable-ref dropping. Round 28 controlled-scope closure gates passed with `site-onboarding-discovery.test.mjs` 47/47, covering artifact-accounting closure, no live/execution/full-web claim, no promotion, no bypass, artifact refs as names only, and visible unresolved/blocked/gap counts. Round 30 capability closure gates passed with `site-onboarding-discovery.test.mjs` 49/49, covering target/gap accounting, observed capability non-execution, verified adapter/schema/test/policy quorum requirements, descriptor-only mappings/gaps, and no Graph/Planner/Layer/downloader promotion. Deep-path capability validation passed with `site-capability-remaining-deep-paths.test.mjs` 5/5, covering exact adapter/schema/test/policy quorum, Bilibili `navigate-to-content` verified API catalog evidence mapping, missing-policy rejection, and no observed capability auto-promotion. 2026-05-11 Batch 8 direct validation passed with `site-capability-remaining-deep-paths.test.mjs` 5/5 and `site-onboarding-discovery.test.mjs` 49/49, proving executable capability evidence now requires adapter, schema, test, policy, risk, and approval evidence, observed capability evidence remains non-executable, missing quorum evidence creates machine-readable gaps, and Bilibili's site-specific fixture carries the expanded exact quorum.
-- Current gaps: More live producer evidence can be added incrementally; capability verification still requires explicit SiteAdapter/schema/test/policy/risk/approval quorum and remains blocked when evidence is missing, unverified, or only observed. Controlled-scope capability closure now accounts for current targets and gaps without treating observed evidence as executable; Bilibili has a site-specific exact-quorum executable capability fixture, and six-agent final review accepted node/API/capability/composite closure scoring at 100/100/100/100 for controlled-scope artifacts only.
-- Next smallest task: Add additional site-specific verified SiteAdapter/schema/test/policy/risk/approval evidence for executable capability readiness.
-- Risk notes: Evidence must stay redacted and provenance-preserving.
-- Last updated: 2026-05-11T02:45:00+08:00
+- Existing code evidence: Capture outputs, onboarding reports, compiler summaries, Layer feedback artifacts, Skill compile-summary consumption, capability evidence normalization, risk-policy summaries, and validation gates preserve a linked evidence chain.
+- Existing test evidence: `tests/node/site-capability-data-flow.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/run-pipeline.test.mjs`, `tests/node/siteforge-output-validation.test.mjs`, `tests/node/siteforge-auto-capabilities.test.mjs`, and compiler executor tests cover the chain.
+- Verification command: `node --test tests/node/siteforge-output-validation.test.mjs`; `node --test tests/node/siteforge-auto-capabilities.test.mjs`; `node --test tests/node/siteforge-x-generic-live-uncollectable.test.mjs`
+- Verification result: 2026-05-17 risk-policy calibration batch passed. Each generated capability evidence object records `source`/`evidence_source`, `evidence_status`, `saved_material=sanitized_summary_only`, `raw_content_saved=false`, and `private_content_saved=false`; personal/private X capability records now carry conservative default policies without routing private bodies or high-risk writes into callable intents.
+- Current gaps: None for current data-flow evidence.
+- Next smallest task: Keep new producers connected to redacted artifact refs, sanitized evidence objects, risk-policy summaries, and matrix evidence.
+- Risk notes: Evidence flow must not include raw browser profiles, sessions, credentials, or live runtime payloads.
+- Last updated: 2026-05-16
 
 ### 15. Site health execution gate
 - Section name: Site health execution gate
-- Requirement summary: Gate each capability independently so one risky capability does not shut down the whole site unnecessarily.
+- Requirement summary: Keep health checks bounded, report risk states honestly, and require explicit operator approval for live recovery.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/site-health-execution-gate.mjs` and planner task-list integration.
-- Existing test evidence: `tests/node/site-health-execution-gate.test.mjs`, `tests/node/site-health-recovery-execution-gate.test.mjs`, and runtime integration tests.
-- Verification command: `node --test tests\node\site-health-execution-gate.test.mjs tests\node\site-health-recovery-execution-gate.test.mjs tests\node\site-health-recovery-runtime-integration.test.mjs`
-- Verification result: Capability health execution gate passed; X live auth recovery now keeps the scoped `x-auth-doctor` check behind a generated `x-session-health` manifest and treats ready unified session health as reusable auth evidence only for authenticated scenario validation.
-- Current gaps: Full live recovery remains an explicit operator workflow; public navigation primary-chain failures must not be confused with authenticated session reuse failures.
-- Next smallest task: Keep write capabilities disabled when readonly fallback is active.
-- Risk notes: Account restriction, platform risk, CAPTCHA, MFA, and verification surfaces require user action or quarantine.
-- Last updated: 2026-05-04T13:48:09+08:00
+- Existing code evidence: Site health execution gate, social auth recovery, session repair planning, and manual health boundaries enforce approval-gated recovery.
+- Existing test evidence: `tests/node/site-health-execution-gate.test.mjs`, `tests/node/site-health-recovery.test.mjs`, and social auth recovery tests cover health gates.
+- Verification command: `node --test tests/node/site-health-execution-gate.test.mjs tests/node/site-health-recovery.test.mjs tests/node/social-auth-recover.test.mjs`
+- Verification result: Site health execution and social auth recovery gates passed with profile-health-risk treated as manual recovery.
+- Current gaps: None for current health execution gates.
+- Next smallest task: Add explicit stop conditions before any live health workflow expansion.
+- Risk notes: Do not bypass CAPTCHA, platform risk controls, permissions, account restrictions, or login walls.
+- Last updated: 2026-05-16
 
 ### 16. Site onboarding producer integration
 - Section name: Site onboarding producer integration
-- Requirement summary: Feed real or safely simulated capture/expand/site-doctor outputs into the discovery artifacts.
+- Requirement summary: Produce the onboarding artifact set for new sites, including inventory, blocked/unknown reports, capability targets, gaps, audit, and closure summaries.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/site-onboarding-discovery.mjs` and `src/entrypoints/sites/site-doctor.mjs` write ten onboarding artifacts: `NODE_INVENTORY`, `API_INVENTORY`, `UNKNOWN_NODE_REPORT`, `BLOCKED_NODE_REPORT`, `UNKNOWN_API_REPORT`, `BLOCKED_API_REPORT`, `CAPABILITY_TARGETS`, `CAPABILITY_GAP_REPORT`, `SITE_CAPABILITY_REPORT`, and `DISCOVERY_AUDIT`. `site-doctor` writes both Markdown and redacted JSON forms so coverage, blocked surfaces, unknowns, and capability gaps are machine-verifiable. `CAPABILITY_TARGETS` now records descriptor-only `evidenceMappings` / `mappingSummary`, `evidenceRequirementGaps`, and `evidenceCompletionStrategy` metadata from DOM/API/JS-route/API-response descriptor fields, and can also consume static SiteAdapter capability evidence arrays or fixture-backed `capabilityEvidenceFixtures` as adapter/schema/test/policy evidence when the full quorum is explicitly declared; `capability-evidence-chain.mjs` adds exact-quorum verified evidence fixtures with optional verified API catalog refs. `CAPABILITY_GAP_REPORT` records `mappingGaps`, per-evidence adapter/schema/test/policy requirement gaps, completion strategies, missing verified-claim guidance, and all required execution evidence statuses, including policy, without changing the adapter/schema/test/policy quorum. API inventory now retains repeated observed method+endpoint evidence as `duplicate_trigger` records with normalized no-query `duplicateGroupKey` / safe `duplicateOf`, OPTIONS/preflight follow-up correlation evidence, page resource/performance hints, descriptor-only DOM hidden API hints, request/response shape gaps, WebSocket/SSE message shape gaps, descriptor-only multi-step API flow correlation, and an API controlled-scope closure subreport instead of silently dropping or promoting them. Capability targets now also feed a capability controlled-scope closure subreport that accounts for canonical targets, observed/unknown/verified states, required gaps, descriptor-only mappings/gaps, and explicit adapter/schema/test/policy executable quorum. Trigger gap node artifacts retain descriptor-only `followUpStrategy` and `attemptResult` evidence, including governed retry attempt results. Blocked node artifacts retain descriptor-only `blockedSurfaceClassification` and `surfaceCategoryCounts` for access boundaries, policy/budget skips, unattempted/failed/duplicate triggers, and manual-review surfaces. `SITE_CAPABILITY_REPORT` and `DISCOVERY_AUDIT` now carry controlled-scope closure evidence that proves artifact accounting and unresolved/blocked/gap visibility without claiming live full-web discovery. Capture now appends page resource/performance API hints and DOM hidden API hints to redacted `networkRequests` before API candidate artifact generation, keeping them observed-only, and persists DOM/script/runtime/history-state route descriptors as redacted `jsRoutes` / `scriptRoutes` for node discovery. `api-catalog-promotion.mjs` adds explicit gated catalog promotion, `src/sites/bilibili/capability-evidence-fixtures.mjs` adds concrete Bilibili governed producer/API/executable-capability fixtures through the public guarded paths, and `execution/layer-runtime-consumer.mjs` adds a Layer-owned receipt consumer that creates and writes redacted feedback, coverage delta, coverage queue, consumer-result, and lifecycle-event artifacts without executing tasks.
-- Existing test evidence: `tests/node/site-onboarding.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, and site-specific Qidian/AV onboarding tests.
-- Verification command: `node --test tests\node\site-onboarding.test.mjs tests\node\site-onboarding-discovery.test.mjs tests\node\qidian-site.test.mjs`
-- Verification result: Onboarding producer integration focused gate passed with all ten onboarding artifacts; 2026-05-10 `site-onboarding-discovery.test.mjs` passed 31/31 and `site-onboarding-discovery.test.mjs` + `site-onboarding.test.mjs` + `capture-expand.test.mjs` passed 87/87 with Markdown+JSON artifact checks, FullDiscoveryMode mode semantics, UNKNOWN/BLOCKED/GAP reports, 90-point architecture/evidence score separation, requested-capability evidence separation, DOM/API/JS-route descriptor field mapping into CAPABILITY_TARGETS / CAPABILITY_GAP_REPORT without executable promotion, redacted capability target source refs, evidenceMappings/mappingGaps auditability, explicit adapter/schema/test/policy evidence quorum before verified executable capability status, no `recognizedCapabilities` verified-summary bypass, bounded API shape summaries, and duplicate API endpoint observations retained as `duplicate_trigger` evidence with query/token/executable-looking refs stripped from duplicate metadata. Round 10 capture/resource gates passed with `browser-runtime-session.test.mjs` 12/12 and `capture-expand.test.mjs` 28/28; resource hints are written as redacted observed API candidates without catalog promotion. Round 11 route-hint gates passed with `browser-runtime-session.test.mjs` 13/13, `capture-expand.test.mjs` 28/28, `site-onboarding-discovery.test.mjs` 31/31, `site-capability-matrix.test.mjs` 6/6, scoped `git diff --check`, and `prepublish-secret-scan` 656 files; DOM href/data-route/link/script-src descriptors are persisted as redacted route evidence without JS source. Round 12 compiler capability-gap gates passed with `compile-entrypoint.test.mjs` 9/9, `static-compiler.test.mjs` 4/4, and `schema-validator.test.mjs` 10/10; missing requested capabilities now block unrelated Planner/Layer handoff readiness and remain descriptor-only gap evidence. Round 13 API preflight-correlation gates passed with `api-discovery.test.mjs` 23/23, `api-candidates.test.mjs` 86/86, and `site-onboarding-discovery.test.mjs` 31/31. Round 14 runtime route gates passed with `browser-runtime-session.test.mjs` 13/13, `capture-expand.test.mjs` 28/28, and `site-onboarding-discovery.test.mjs` 31/31; runtime route descriptors from safe page route metadata remain observed-only, redacted, and non-executable. Round 15 capability quorum-gap gates passed with `site-onboarding-discovery.test.mjs` 32/32 and `site-onboarding.test.mjs` 28/28; CAPABILITY_TARGETS and CAPABILITY_GAP_REPORT now expose per-required-evidence adapter/schema/test/policy gaps, requested capability targets are marked required, unsafe requested target strings are redacted, and observed capability evidence still cannot promote to executable. Round 16 DOM hidden API gates passed with `browser-runtime-session.test.mjs` 13/13, `capture-expand.test.mjs` 28/28, `api-discovery.test.mjs` + `api-candidates.test.mjs` 109/109, and `site-onboarding-discovery.test.mjs` 32/32. Round 17 history-state route gates passed with `browser-runtime-session.test.mjs` 13/13, `capture-expand.test.mjs` 28/28, and `site-onboarding-discovery.test.mjs` 32/32; allowlisted history/router state route descriptors remain observed-only and redacted, and raw state objects are not persisted. Round 18 static SiteAdapter capability evidence gates passed with `site-onboarding-discovery.test.mjs` 34/34 and `site-onboarding.test.mjs` 28/28; declared adapter/schema/test/policy evidence can satisfy the existing quorum without invoking adapter methods, partial evidence leaves explicit missing schema/test/policy gaps, and unsafe evidence refs are redacted. Round 19 API shape-gap gates passed with `site-onboarding-discovery.test.mjs` 35/35; APIs lacking request/response shape summaries now carry explicit redacted descriptor-only gap rows with reason codes, and raw request/response/header/sample material is dropped. Round 20 trigger follow-up strategy gates passed with `site-onboarding-discovery.test.mjs` 36/36; trigger gaps now carry descriptor-only retry/policy/manual-review guidance in node and blocked-node artifacts without executing retries, and unsafe runtime refs are dropped. Round 21 capability completion strategy gates passed with `site-onboarding-discovery.test.mjs` 37/37; CAPABILITY_TARGETS and CAPABILITY_GAP_REPORT expose missing-evidence next actions, missing verified-claim gaps, and no auto-promotion. Round 22 streaming message-shape gates passed with `site-onboarding-discovery.test.mjs` 39/39; WebSocket/SSE endpoints expose missing message-shape gaps or bounded message shape summaries without raw payload persistence. Round 23 trigger attempt-result gates passed with `site-onboarding-discovery.test.mjs` 40/40; trigger gaps now expose descriptor-only attempt status/count/governance metadata and drop unsafe runtime refs. Round 24 fixture-backed capability evidence gates passed with `site-onboarding-discovery.test.mjs` 45/45; fixture-backed SiteAdapter metadata can satisfy explicit verified adapter/schema/test/policy quorum only when every required exact evidence kind has a verified entry, mixed/unverified fixtures remain non-executable with `requires_verified_evidence_claim`, compound kinds are rejected from executable quorum, and unsafe fixture refs are reduced to redacted descriptors. Round 25 blocked node classification gates passed with `site-onboarding-discovery.test.mjs` 46/46; blocked/unreachable node surfaces now carry descriptor-only categories, reason codes, follow-up actions, bypass-prohibited flags, non-executable flags, category counts, and unsafe URL/path/IP/executable/session material redaction. Round 26 multi-step API correlation gates passed with `site-onboarding-discovery.test.mjs` 47/47; observed API flow correlation is descriptor-only, non-catalog, non-executable, and drops unsafe URL/query/header/body/payload/response/session/profile/IP/executable refs. Round 27 capability-to-API response evidence gates passed with `site-onboarding-discovery.test.mjs` 47/47; `api-response-evidence` mappings are non-quorum, descriptor-only, non-executable, preserve missing adapter/schema/test/policy gaps, and drop raw response/header/body/payload/session/profile/executable refs. Round 28 controlled-scope closure gates passed with `site-onboarding-discovery.test.mjs` 47/47; closure evidence appears in JSON+Markdown report/audit outputs, keeps unknown/blocked/gap counts visible, forbids promotion/bypass/execution, and explicitly does not claim live full-web crawl coverage. Round 29 API closure gates passed with `site-onboarding-discovery.test.mjs` 48/48; API closure appears under `fullDiscoveryClosure.apiControlledScopeClosure` in report/audit outputs and accounts for API observed/unknown/blocked/duplicate/shape/message/preflight/multi-step surfaces without live coverage or promotion claims. Round 30 capability closure gates passed with `site-onboarding-discovery.test.mjs` 49/49; capability closure appears under `fullDiscoveryClosure.capabilityControlledScopeClosure` and accounts for canonical targets, observed/unknown/verified states, required gaps, descriptor-only mappings/gaps, and verified adapter/schema/test/policy quorum before execution. The compiler/executor unsafe ref focused gate also passed 21/21 and the full compiler-executor suite passed 53/53 with raw URL/path/account/IP/query/executable-looking source/evidence/artifact refs rejected before derived artifact writes. Deep-path closeout validation passed with `site-capability-remaining-deep-paths.test.mjs` 4/4, `lifecycle-events.test.mjs` 15/15, `site-onboarding-discovery.test.mjs` 49/49, `api-candidates.test.mjs` 86/86, execution handoff/policy tests 8/8, `git diff --check`, and `prepublish-secret-scan` 660 files.
-- Current gaps: More sites can add direct capture fixtures; FullDiscoveryMode records gaps and blocked surfaces inside controlled scope but does not claim inaccessible or unobserved surfaces were absent. Capability targets now retain observed DOM/API/JS-route/runtime-route/history-state/API-response descriptor evidence, machine-readable mapping gaps, per-evidence quorum gaps, completion strategies, static adapter capability evidence, fixture-backed capability evidence, exact-quorum capability evidence chain fixtures, and controlled-scope closure; explicit verified SiteAdapter/schema/test/policy/risk/approval evidence is still required before verified/executable capability status. Bilibili now has a concrete site-specific producer/API/capability fixture bundle, and `site-capability-compile` now returns and writes redacted Layer-owned dry-run feedback artifacts without executing downloader, SiteAdapter runtime, SessionView, browser, or live site tasks. Six-agent final review accepted the controlled-scope closure as 100/100/100/100 without claiming live full-web completion.
-- Next smallest task: Keep upper runtime feedback consumers artifact-backed and Layer-governed; add more site-specific live/governed producer fixtures only through the established guarded paths.
-- Risk notes: Do not claim completion when discovery is blocked by login, paywall, VIP access, CAPTCHA, risk-control, or permission checks.
-- Last updated: 2026-05-11T02:15:00+08:00
+- Existing code evidence: Site onboarding discovery and site-doctor write NODE/API inventories, UNKNOWN/BLOCKED reports, CAPABILITY_TARGETS, CAPABILITY_GAP_REPORT, SITE_CAPABILITY_REPORT, and DISCOVERY_AUDIT.
+- Existing test evidence: `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/site-onboarding.test.mjs`, and capture-expand tests cover producer artifacts and redacted reports.
+- Verification command: `node --test tests/node/site-onboarding-discovery.test.mjs tests/node/site-onboarding.test.mjs tests/node/capture-expand.test.mjs`
+- Verification result: Onboarding producer integration gates passed with artifact accounting and closure evidence present.
+- Current gaps: None for the current producer set.
+- Next smallest task: Keep new site intake full-scope or explicitly blocked before reporting onboarding complete.
+- Risk notes: Login, paywall, VIP, CAPTCHA, risk-control, permission, and rate-limit surfaces must be recorded as blocked, not bypassed.
+- Last updated: 2026-05-16
 
 ### 17. Focused regression strategy
 - Section name: Focused regression strategy
-- Requirement summary: Prefer directly related tests for each batch, record focused regression batch definitions, and defer wildcard Node/Python full suites to broad validation checkpoints.
+- Requirement summary: Prefer directly related tests and 3-5 same-type batches, rerun matrix checks after matrix updates, and defer wildcard Node/Python full suites unless release scope requires them.
 - Current status: `verified`
-- Existing code evidence: `CONTRIBUTING.md#focused-regression-batch-definition`, `src/sites/capability/focused-regression-batches.mjs`, and layeredValidationPolicy evidence in regression batch definitions.
-- Existing test evidence: `tests/node/site-capability-regression-batches.test.mjs`, `tests/node/site-capability-matrix.test.mjs`, `tests/node/downloads-runner.test.mjs`, `tests/node/session-view.test.mjs`, `tests/node/security-guard-redaction.test.mjs`, `tests/node/risk-state.test.mjs`, `tests/node/reason-codes.test.mjs`, LifecycleEvent coverage in `tests/node/capability-hook.test.mjs`, `tests/node/standard-task-list.test.mjs`, `tests/node/download-policy.test.mjs`, `tests/node/site-capability-graph-matrix.test.mjs`, and `tests/node/site-capability-graph-final-validation.test.mjs`.
-- Verification command: `node --test tests\node\site-capability-regression-batches.test.mjs tests\node\site-capability-matrix.test.mjs tests\node\downloads-runner.test.mjs tests\node\session-view.test.mjs tests\node\security-guard-redaction.test.mjs tests\node\risk-state.test.mjs tests\node\reason-codes.test.mjs tests\node\capability-hook.test.mjs tests\node\standard-task-list.test.mjs tests\node\download-policy.test.mjs`; `node --test tests\node\site-capability-graph-matrix.test.mjs tests\node\site-capability-graph-final-validation.test.mjs`
-- Verification result: Focused regression batch strategy passed; directly related tests remain the required batch-level gate while broad wildcard suites are reserved for release checkpoints. Current Site Capability Graph closure validation passed on 2026-05-08 with matrix 108/108 and final-validation 8/8 after adding a verified-section blocker guard, moving legacy no-op partial wording behind the final validation gate, compressing the Section 20 legacy descriptor pipeline regression tail, and compressing source-alias fail-closed regressions into strict data-driven tables. 2026-05-10 architecture import/regression gate passed 44/44 after synchronizing the current `site-doctor.mjs` guarded artifact-write sink baseline.
-- Current gaps: Keep `Focused Regression Batch Definition` synchronized with new high-risk modules. Site Capability Graph delivery/no-op history is retained as regression coverage only and must not become new completion evidence.
-- Next smallest task: Add new focused batches when API, health, downloader, or Graph final-validation contracts expand.
-- Risk notes: Do not report unrun broad suites as passed.
-- Last updated: 2026-05-10T18:10:00+08:00
+- Existing code evidence: `CONTRIBUTING.md#focused-regression-batch-definition`, `src/domain/capabilities/focused-regression-batches.mjs`, `layeredValidationPolicy`, LifecycleEvent coverage, and focused batch definitions encode the strategy.
+- Existing test evidence: `tests/node/site-capability-regression-batches.test.mjs`, `tests/node/site-capability-matrix.test.mjs`, `tests/node/siteforge-build.test.mjs`, `tests/node/session-view.test.mjs`, `tests/node/security-guard-redaction.test.mjs`, `tests/node/risk-state.test.mjs`, `tests/node/reason-codes.test.mjs`, `tests/node/capability-hook.test.mjs`, `tests/node/standard-task-list.test.mjs`, and `tests/node/download-policy.test.mjs` are priority coverage.
+- Verification command: `node --test tests/node/site-capability-regression-batches.test.mjs tests/node/site-capability-matrix.test.mjs tests/node/schema-inventory.test.mjs`
+- Verification result: Focused regression batch and matrix tests passed; directly related tests remain the default and broad wildcard suites stay release-scope only. 2026-05-20 cleanup retired the local Web interaction and download runtime layers, removed their stale focused tests from active regression commands, and kept descriptor-only planning/session/schema guards as the active coverage surface.
+- Current gaps: None for the current focused regression strategy.
+- Next smallest task: Update the batch JSON and this section together when a new validation tier is added.
+- Risk notes: Do not promote status from documentation-only edits or unrun suites.
+- Last updated: 2026-05-20
 
 ### 18. New site onboarding completion
 - Section name: New site onboarding completion
-- Requirement summary: Treat a new URL as full onboarding: profile, registry, capabilities, SiteAdapter, skill, discovery artifacts, coverage gate, matrix update, and review acceptance.
+- Requirement summary: Treat a bare new-site URL as full onboarding unless a surface is explicitly blocked and recorded.
 - Current status: `verified`
-- Existing code evidence: Qidian, BZ888, and the 11 AV catalog sites have profiles, registry/capability records, repo-local skills, SiteAdapter semantics, onboarding coverage fixtures or focused runtime gates. `src/sites/jp-av-catalog/queries/release-catalog.mjs` adds durable cross-site AV release aggregation and records 8MAN/SOD/DOGMA as explicit skipped/blocked release-table coverage. BZ888 records `blocked_live_cloudflare_challenge`, keeps OCR limited to public chapter body images, and does not permit Cloudflare/CAPTCHA/risk-control bypass.
-- Current round code evidence: Qidian skill references now distinguish safe public-scope onboarding from login/risk/permission/manual-review blockers, and the focused Qidian fixtures assert those blocked surfaces remain in BLOCKED reports instead of being treated as absent or as completion evidence.
-- Existing test evidence: `tests/node/qidian-site.test.mjs`, `tests/node/batch1-av-sites.test.mjs`, `tests/node/batch2-av-sites.test.mjs`, `tests/node/batch3-av-sites.test.mjs`, `tests/node/jp-av-release-catalog.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/site-registry.test.mjs`, `tests/node/profile-validation.test.mjs`, `tests/node/generate-skill.test.mjs`, and BZ888 downloader/OCR focused tests.
-- Verification command: `node --test tests\node\qidian-site.test.mjs tests\node\batch1-av-sites.test.mjs tests\node\batch2-av-sites.test.mjs tests\node\batch3-av-sites.test.mjs tests\node\site-onboarding-discovery.test.mjs`
-- Verification result: New-site focused gate passed for URL-only full-onboarding contract and ten-artifact FullDiscoveryMode generation paths; JP AV release-catalog focused test passed for site-specific list/detail adapters and skipped/blocked release coverage; BZ888 focused onboarding/downloader safety gate passed with current `download-site-modules`/`site-registry`/reason/runner batch 172/172 and Python download-book boundary tests 11/11. Separate visible-browser manual recovery confirmed catalog/chapter readability after human challenge, while keeping downloader access blocked from raw cookies and challenge-derived credentials.
-- Current round verification evidence: 2026-05-11 Batch 10 Qidian focused gate passed 6/6 with required login/manual-review surfaces recorded in BLOCKED_NODE_REPORT and the completion gate failing with `login-required-discovery-item` and `manual-review-required-discovery-item`; the safe public synthetic fixture still passes when blocked surfaces are not part of the required scope.
-- Current gaps: Verified API catalog promotion is separate from onboarding discovery evidence; BZ888 direct automated access remains a Cloudflare challenge stop boundary and is recorded as blocked/not bypassed even when a human-verified browser tab can read pages.
-- Next smallest task: For any future bare URL, run the same full onboarding gate.
-- Risk notes: Skill-only or profile-only additions are not complete onboarding.
-- Last updated: 2026-05-11T02:26:00+08:00
+- Existing code evidence: Profile/registry/capability records, SiteAdapter mapping, repo-local skill generation, discovery artifacts, coverage gates, and contract tests define full intake.
+- Existing test evidence: `tests/node/site-onboarding.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, site adapter contract tests, generated-skill tests, and the controlled `https://news.qq.com/` fixture/public-CLI pilot in `tests/node/siteforge-build.test.mjs` cover completion.
+- Verification command: `node --test tests/node/site-onboarding.test.mjs tests/node/site-onboarding-discovery.test.mjs tests/node/site-adapter-contract.test.mjs tests/node/siteforge-build.test.mjs`
+- Verification result: New-site onboarding completion gates passed for the current verified scope. The active tests no longer depend on checked-in legacy `profiles/*.json` or repo-local skill snapshots; they validate generated profiles, discovery artifacts, adapter contracts, and the public `siteforge build <url>` fixture path.
+- Current gaps: None for current completed sites.
+- Next smallest task: For each new URL, complete or explicitly block profile, registry, capability record, SiteAdapter mapping, skill, discovery artifacts, coverage gate, contract tests, matrix update, and review acceptance.
+- Risk notes: Do not report a site as onboarded after only adding a profile, registry row, or skill.
+- Last updated: 2026-05-20
 
 ### 19. Standard artifacts and inventories
 - Section name: Standard artifacts and inventories
-- Requirement summary: Keep standard artifact families, schema inventory, and onboarding inventories discoverable and versioned.
+- Requirement summary: Keep artifact schemas, inventories, manifests, compile summaries, and regression batches governed and redacted.
 - Current status: `verified`
-- Existing code evidence: `src/sites/capability/artifact-schema.mjs`, `schema-inventory.mjs`, onboarding artifact names, API catalog artifacts, and manifest bundle compatibility. Onboarding discovery now standardizes ten machine-readable artifact families, including UNKNOWN/BLOCKED node/API reports and CAPABILITY_TARGETS/CAPABILITY_GAP_REPORT. `src/entrypoints/pipeline/run-pipeline.mjs` writes `partial-preview-result.json` plus redaction audit after capture succeeds but expanded-state generation fails finally, preserving capture refs and machine-readable failed/skipped gaps without updating repo-local skills or config. `src/pipeline/stages/collect-content.mjs` now writes `book-content-manifest.json` through SecurityGuard with a redaction audit and returns `status: partial`, `reasonCode`, `retryable`, `failures`, and `gaps` when bounded book-content collection/request timeouts occur; `src/pipeline/engine/stage-spec.mjs` passes pipeline `timeoutMs` into book-content as `stageTimeoutMs` and preserves the partial status while downstream stages continue from the retained `bookContentDir`. `src/pipeline/engine/partial-preview-artifacts.mjs` writes guarded partial KB and partial skill preview artifacts with source capture refs, failed stage, reasonCode, skipped/failed gaps, `redactionRequired`, and promotion-disabled flags; partial KB and skill output are redirected away from repo-local `skills/`, `config/`, or other non-runtime repo paths. `src/skills/generation/coverage-regression-gate.mjs` compares generated repo-local skill promotion candidates against the existing skill/config coverage fingerprint for safe actions, approval actions, supported intents, capability families, key flows, status blocks, compile/evidence summary markers, and sample coverage before `publishSkill()` deletes or writes `skills/<name>`. `src/entrypoints/sites/site-capability-compile.mjs` now writes redacted Layer-owned runtime feedback artifacts (`layer-runtime-consumer-result.json`, `layer-runtime-execution-feedback.json`, `layer-runtime-coverage-delta.json`, `layer-runtime-coverage-delta-queue.json`, and `layer-runtime-lifecycle-event.json`) plus `site-compile-result-summary.json` audit sidecars, combining compile result status, Layer-owned consumer result summary, and site-specific evidence summary without persisting raw credentials or runtime state. `src/sites/bilibili/capability-evidence-fixtures.mjs` provides a descriptor-only Bilibili evidence summary, and `src/pipeline/stages/skill.mjs` / `src/skills/generation/resolve-skill-input.mjs` let the Skill generator consume explicit `--compile-summary` files or auto-discover the newest matching `site-compile-result-summary.json` under `runs/sites/site-capability-compile/`.
-- Current round code evidence: 2026-05-11 skill preview evidence resolution now prefers the KB active `step-book-content` source before any latest local `book-content` fallback, preventing stale runtime outputs from hiding captured sample coverage. Skill capability publishing now merges sandbox/site safe actions with observed analysis profile safe actions, uses observed `pageTypes` / `semanticPageTypes` when preserving `download-content` and `navigate-to-chapter`, and writes the resolved safe/approval action kinds plus observed page types into sandbox metadata. Book-content collection now loads repo-local site profiles from the project `profiles/` directory, consumes 22biqu `directoryPageUrlTemplate` pagination for full directory coverage, fetches public chapter pages with bounded concurrency, and lets `run-pipeline` pass targeted `--book-title` / `--book-url` / `--skip-fallback` / `--chapter-fetch-concurrency` controls into the governed book-content stage. Targeted book URLs now fail fast unless they share the pipeline input origin and, for 22biqu, match the adapter's book-detail URL scope. Analysis now reads bounded full-book TXT excerpts when synthesizing chapter facts, preventing high-coverage previews from repeatedly loading full download artifacts while preserving chapter evidence summaries. Batch 5 promoted the gate-passed 22biqu repo-local Skill evidence by adding the compiler status block while preserving existing runner/resume safety notes, updated the repo-local coverage count to 1 book / 1538 chapters, and promoted only the `www.22biqu.com` record in `config/site-capabilities.json`; `config/site-registry.json` was left unchanged because the existing stable downloader paths and repo skill mapping were already more complete than the single-site sandbox registry export. Batch 6 adds `site recompile-preview`, a descriptor-only summary path that scans repo-local skills, runs guarded compile artifacts under ignored `runs/preview/site-recompile-summary/`, records per-site ready/blocked/partial/failed status and reasonCode, and records safety boundaries showing no live capture, browser/session state, downloader, SiteAdapter runtime, repo skill overwrite, or config update.
-- Existing test evidence: `tests/node/schema-inventory.test.mjs`, `tests/node/schema-governance.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/api-candidates.test.mjs`, `tests/node/site-capability-compiler-executor/compile-entrypoint.test.mjs`, `tests/node/generate-skill.test.mjs`, `tests/node/skill-coverage-regression-gate.test.mjs`, `tests/node/repo-local-skills.test.mjs`, `tests/node/run-pipeline.test.mjs`, and `tests/node/site-capability-graph-matrix.test.mjs`. Current Site Capability Graph review-gate regression coverage is `Site Capability Graph Section 19 recent live integration review gates regression batch stays promotion-blocking`, covering aggregate execution boundary handoff, non-goal live consumer compatibility, and docs-output live consumer dispatch compatibility review gates without live wiring or promotion. Current Graph Section 18 external dispatch acceptance preflight coverage records `createGraphDocsOutputLiveConsumerExternalDispatchAcceptancePreflight()` as descriptor-only / blocked / redactionRequired evidence before any docs-output external dispatch can be considered.
-- Verification command: `node --test tests\node\schema-inventory.test.mjs tests\node\schema-governance.test.mjs tests\node\site-onboarding-discovery.test.mjs tests\node\api-candidates.test.mjs`; `node --test tests\node\site-capability-compiler-executor\compile-entrypoint.test.mjs`; `node --test tests\node\generate-skill.test.mjs tests\node\repo-local-skills.test.mjs`; `node --test tests\node\site-capability-graph-matrix.test.mjs --test-name-pattern "recent live integration review gates regression batch"`; `node --test tests\node\site-capability-graph-artifact-writer.test.mjs --test-name-pattern "external dispatch acceptance preflight"`; `node --test tests\node\site-capability-graph-matrix.test.mjs --test-name-pattern "external dispatch acceptance preflight"`
-- Verification result: Standard artifact focused gate passed for ArtifactReferenceSet, ManifestArtifactBundle, LifecycleEvent, ApiCatalogIndex, StandardTaskList, onboarding inventories, redaction audits, compile result summary artifact writes, and Skill consumption of compile summaries. 2026-05-10 `compile-entrypoint.test.mjs` passed 9/9, proving `site-compile-result-summary.json` includes redacted compile result, Layer consumer result, and Bilibili site-specific evidence summary. 2026-05-10 `generate-skill.test.mjs` + `repo-local-skills.test.mjs` passed 12/12, proving Skill generation auto-discovers the latest matching summary, `--compile-summary` remains accepted, and default repo-local skill compiler status blocks stay unchanged. 2026-05-10 `run-pipeline.test.mjs` passed 19/19, proving partial preview, partial KB, and partial skill artifacts are written through SecurityGuard after final expand transient failure, redact sensitive diagnostics, and avoid repo-local `skills/`, `config/`, or other non-runtime repo-path overwrite. 2026-05-11 book-content partial continuation focused gate passed in the current validation set: `run-pipeline.test.mjs`, `stage-input-contracts.test.mjs`, `architecture-import-rules.test.mjs`, `security-guard-redaction.test.mjs`, and `site-capability-matrix.test.mjs` passed 90/90 with `git diff --check` and `prepublish-secret-scan`, covering pipeline timeout handoff to book-content, redacted partial manifest/audit writes, downstream continuation with `bookContentDir`, and no repo-local skill/config promotion. 2026-05-11 `generate-skill.test.mjs` passed 9/9, proving 22biqu skill preview uses active KB book-content evidence over stale local run outputs and preserves observed `search-submit`, `download-content`, `navigate-to-chapter`, and `chapter-page` metadata in the sandbox output. 2026-05-11 `stage-input-contracts.test.mjs`, `run-pipeline.test.mjs`, and `architecture-import-rules.test.mjs` passed 71/71, and a targeted live 22biqu book-content probe for `https://www.22biqu.com/biqu5735/` completed with 1 book / 1538 chapters under the sandbox `runs/preview/22biqu/book-content-probe` output, proving the governed stage can exceed the existing 1515-chapter baseline without login reuse, CAPTCHA bypass, or repo-local promotion. 2026-05-11 high-coverage 22biqu sandbox preview completed end-to-end with 1596 pages, 34 states, 8 actions, 13 documents, 0 errors, 13 warnings, 0 evidence gaps, and latest full-book coverage of 1 book / 1538 chapters; the guarded coverage regression promotion simulation wrote `runs/preview/22biqu/coverage-regression-gate-result.json`, passed with no reasons, and did not update repo-local skill/config. 2026-05-11 current focused validation passed 91/91 across `stage-input-contracts.test.mjs`, `run-pipeline.test.mjs`, `architecture-import-rules.test.mjs`, `generate-skill.test.mjs`, `skill-coverage-regression-gate.test.mjs`, and `site-capability-matrix.test.mjs`, including same-origin/same-adapter rejection for out-of-scope `--book-url` before any fetch, bounded analysis excerpt reads, and full paginated directory collection; `git diff --check` and `prepublish-secret-scan` passed. 2026-05-11 Batch 5 promotion gate re-ran against a `HEAD` baseline workspace and wrote guarded `runs/preview/22biqu/promotion-coverage-regression-gate-result.json` with status `passed`, no reasons, and redaction audit findings `[]`; focused promotion validation passed with `generate-skill.test.mjs` + `repo-local-skills.test.mjs` 13/13 and 22biqu/registry/adapter/gate/matrix tests 102/102. 2026-05-11 Batch 6 descriptor-only recompile summary wrote `runs/preview/site-recompile-summary/site-recompile-preview-summary.json` with 21 total repo-local skill sites, 19 ready, 2 blocked (`bz888`, `instagram`), 0 partial, 0 failure-status entries, per-site reasonCode values, and redaction audit findings `[]`; `git check-ignore` confirmed the summary and compile outputs remain ignored runtime artifacts. 2026-05-10 `skill-coverage-regression-gate.test.mjs` passed 3/3 and `generate-skill.test.mjs` passed 9/9, proving equal candidates can pass, missing capability/flow/status/sample coverage reports are machine-readable, low-coverage 22biqu repo-local promotion is rejected before skill overwrite or metadata sync, and preview/non-repo targets stay unblocked. Current Site Capability Graph review-gate regression focused matrix validation passed 1/1 and full matrix validation passed 79/79 on 2026-05-07; this is durable ledger evidence only and does not enable live consumer wiring, repo/docs/runtime writes, external telemetry/dispatch, SiteAdapter, downloader, SessionView, or status promotion. Current Graph Section 18 external dispatch acceptance preflight focused artifact-writer validation passed 4/4 and focused matrix validation passed 1/1 on 2026-05-07; this keeps external dispatch, external telemetry, docs/repo/runtime writes, SiteAdapter, downloader, SessionView, task runner, and status promotion disabled.
-- Current round verification evidence: 2026-05-11 Batch 9 focused gate passed 137/137 across `site-capability-remaining-deep-paths.test.mjs`, `site-capability-compiler-executor\*.test.mjs`, `lifecycle-events.test.mjs`, `architecture-import-rules.test.mjs`, `security-guard-redaction.test.mjs`, and `site-capability-matrix.test.mjs`, proving dry-run execution feedback, CoverageDelta, CoverageDelta queue, Layer consumer result, and LifecycleEvent artifacts are redacted, audited, and still show `runtimeExecuted: false`, direct downloader false, and direct SiteAdapter false.
-- Current gaps: Keep generated inventories compact and avoid duplicate docs.
-- Next smallest task: Run per-site KB/skill preview batches from the ready set without overwriting repo-local skills or bypassing blocked login/risk/permission surfaces.
-- Risk notes: Artifact schemas must remain compatible before writes proceed.
-- Last updated: 2026-05-11T02:15:00+08:00
+- Existing code evidence: Artifact schema, schema inventory, onboarding inventories, API catalog artifacts, manifest bundles, partial preview artifacts, compile summaries, setup assistant artifacts (`setup_plan.json`, `user_choices.json`, `capability_hints.json`, `build_profile.json`), output validation gates in `src/app/pipeline/build/output-validation.mjs`, risk defaults in `src/app/pipeline/build/risk-policy.mjs`, visible disabled high-risk capability records, candidate capability blocks for execution plans and registry lookup, candidate-debug-only global intent filtering, per-site URL-to-Skill DAG workspaces under `.siteforge/sites/<site_id>/builds/<build_id>/`, generated per-site adapter contracts under `.siteforge/sites/<site_id>/adapter/`, `generated_adapter.json`, `adapter_contract_tests.json`, crawl checkpoints in `crawl_checkpoint.json`, verified active skill promotion under `.siteforge/sites/<site_id>/current/`, verified-only per-site runtime lookup through `.siteforge/sites/<site_id>/registry.json`, stable `last_successful_build.json`, normalized build report URLs, `confirmation_paths`, sanitized `capability_confirmations.json` decision records, `capability_remediation_plan.json` safe-path records, user-authorized collection review summaries in user/debug reports, redacted setup hint details, auto-discovery summary artifacts, safe build failure reason codes, and FocusedRegressionBatchDefinition are implemented. Retired Web UI and shared download runtime artifact families remain physically absent.
+- Existing test evidence: `tests/node/schema-inventory.test.mjs`, `tests/node/schema-governance.test.mjs`, `tests/node/siteforge-output-validation.test.mjs`, `tests/node/siteforge-auto-capabilities.test.mjs`, `tests/node/siteforge-build.test.mjs`, `tests/node/siteforge-build-hardening.test.mjs`, `tests/node/siteforge-runtime-registry.test.mjs`, `tests/node/test-coverage-regression.test.mjs`, `tests/node/siteforge-confirmation-flow.test.mjs`, `tests/node/siteforge-build-x-output-regression.test.mjs`, `tests/node/cli-compat.test.mjs`, `tests/node/site-onboarding-discovery.test.mjs`, `tests/node/api-candidates.test.mjs`, compiler executor tests, generate-skill tests, and graph matrix tests cover artifact compatibility, including confirmation-required command paths, manual/default separation, validation error non-promotion, profile snapshots, ArtifactStore workspace containment, cross-site context rejection, current promotion, runtime domain/utterance registry lookup, candidate plan/lookup rejection, disabled high-risk non-callable intents, failed-record lookup rejection, and unsuccessful-build isolation.
+- Verification command: `node --test tests/node/siteforge-output-validation.test.mjs`; `node --test tests/node/siteforge-auto-capabilities.test.mjs`; `node --test tests/node/siteforge-x-generic-live-uncollectable.test.mjs`; `node --test tests/node/siteforge-confirmation-flow.test.mjs tests/node/cli-compat.test.mjs`; `node --test tests/node/siteforge-build-x-output-regression.test.mjs`
+- Verification result: 2026-05-21 broad artifact and inventory validation passed through `npm run test:node:all` with 1680 passed, 1 optional live smoke omitted by design, and zero failures. Focused SiteForge build, output validation, confirmation, runtime registry, compiler/planner, schema, documentation generation, cleanup boundary, and architecture import tests remain green with retired Web UI and shared download runtime paths absent.
+- Current gaps: None for current standard artifact and inventory surfaces.
+- Next smallest task: Add schema inventory and compatibility evidence before adding new artifact families.
+- Risk notes: Artifact schemas must remain compatible before writes proceed. Do not reintroduce retired Web UI or shared download runtime artifact families as standard inventory surfaces.
+- Last updated: 2026-05-21
 
 ### 20. Final goal
 - Section name: Final goal
-- Requirement summary: Keep Sections 1-19 verified, preserve safety boundaries, keep docs compact, and maintain final validation evidence.
+- Requirement summary: Complete the Site Capability Layer only when Sections 1-20 are verified and Agent B accepts the final state.
 - Current status: `verified`
-- Existing code evidence: Sections 1-19 record code-backed evidence across Kernel, SiteAdapter, Capability Services, downloader boundary, schema governance, health recovery, discovery, and artifacts. Current Site Capability Graph final validation evidence lives in `src/sites/capability/site-capability-graph-final-validation.mjs`, with planner/Layer relationship evidence in `planner-policy-handoff.mjs` and lifecycle producer inventory evidence in `lifecycle-events.mjs`.
-- Existing test evidence: The current focused validation set covers matrix/regression, download, API, security, lifecycle, health, onboarding, architecture gates, BZ888 OCR challenge boundary, redacted registry profile fallback, Cloudflare challenge reason recovery, Site Capability Graph matrix closure, final validation, planner/policy handoff, redaction persistence, lifecycle producer inventory, and observability boundaries.
-- Verification command: `node --test tests\node\site-capability-matrix.test.mjs tests\node\download-site-modules.test.mjs tests\node\site-registry.test.mjs tests\node\profile-validation.test.mjs tests\node\generate-skill.test.mjs tests\node\site-onboarding-discovery.test.mjs`; `python -m unittest .\tests\python\test_download_book.py`; `node --test tests\node\site-capability-graph-matrix.test.mjs tests\node\site-capability-graph-final-validation.test.mjs tests\node\planner-policy-handoff.test.mjs tests\node\lifecycle-events.test.mjs tests\node\site-capability-graph-observability.test.mjs`
-- Verification result: 2026-05-04 final validation evidence: matrix focused gate passed; regression focused gate passed; download focused gate passed; API focused gate passed; security focused gate passed; BZ888 onboarding/downloader/OCR/profile-fallback/Cloudflare-reason focused gates passed; live BZ888 execute produced governed challenge-stop manifest `20260504T062914706Z-bz888-generic-resource`; separate human-visible browser validation confirmed the target BZ888 catalog/chapter pages were readable after manual challenge completion without exposing raw cookies to the repo or downloader; live X auth recovery passed at 2026-05-04T13:48:09+08:00. 2026-05-08 Site Capability Graph final validation passed with `verified=20`, `partial=0`, `gaps=[]`, matrix 108/108 after Section 20 legacy descriptor pipeline and source-alias fail-closed regression compression, final-validation 8/8, planner-policy handoff 40/40, lifecycle-events 15/15, observability 53/53, and Agent B `Accepted`. 2026-05-08 release-scope broad validation passed with explicit Node test-file list 1971/1971, Python unittest discovery 58/58, prepublish secret scan 589 candidate files, and `git diff --check`. 2026-05-10 site-specific deep-path validation passed with `site-capability-remaining-deep-paths.test.mjs` 5/5, compiler/executor suite 53/53, matrix/final compiler-executor gate 11/11, architecture-import gate 44/44, `git diff --check`, and `prepublish-secret-scan`. 2026-05-10 external SiteForge rename closure passed Skill/repo-local skill 12/12, progress CLI 16/16, matrix 6/6, architecture-import 44/44, full site-auth 32/32, and Bilibili/Douyin Python downloader profile fallback tests 35/35, including SiteForge preferred profile root plus per-site Browser-Wiki-Skill legacy fallback selection; the legacy repository URL, active checkout path, generated crawler metadata, historical fixtures, explicit legacy task names, and credential/profile compatibility identifiers remain intentionally classified rather than bulk rewritten.
-- Current gaps: Future release-time broad wildcard validation should be rerun after additional changes; BZ888 direct downloader access remains blocked by Cloudflare challenge and must stay a recorded boundary rather than a bypass target; X public primary author-chain expansion remains a non-auth navigation gap. Site Capability Graph has no open partial section after the final validation gate.
-- Next smallest task: Before staging, rerun the compact prepublish checklist in `CONTRIBUTING.md` and keep Graph delivery/no-op history as regression-only context.
-- Risk notes: The 14 non-Douyin remaining items are consolidated here; Xiaohongshu fresh evidence, Bilibili UP-space diagnostics, native-miss-diagnostics-v1, profile-health-risk manual boundaries, and repo-local skills remain recorded without raw cookies, authorization headers, or CAPTCHA bypass. Graph completion is invalid if future changes reintroduce partial-state blockers, runtime execution, repo/docs/runtime writes, external telemetry, SiteAdapter/downloader invocation, SessionView materialization, or sensitive-material persistence.
-- Last updated: 2026-05-10T18:10:00+08:00
+- Existing code evidence: The implementation matrix, compiler/executor, planner, downloader boundary, API lifecycle, SecurityGuard, SessionView, standard artifact paths, and deterministic URL-to-Skill build DAG are integrated for the verified scope.
+- Existing test evidence: Matrix, regression, URL-to-Skill fixture build, download boundary, API, security, compiler/executor, architecture import, full Node, Python, secret scan, and whitespace gates cover the final state.
+- Verification command: `npm run check:syntax`; `npm run test:node:focused`; `npm run test:node:all`; `npm run test:python`; `npm run scan:secrets`; `git diff --check`
+- Verification result: 2026-05-21 final validation evidence: matrix gate passed; regression focused gate passed; download boundary gate passed; API focused gate passed; security focused gate passed; syntax gate passed; broad Node gate passed with 1680 pass and one optional live smoke omitted by design; focused Node gate passed with 296 pass and one optional live smoke omitted by design; Python gate passed with 60 tests; documentation generation gate passed; secret scan passed with 512 candidate files; whitespace gate passed with CRLF warnings only; Agent B final review will run on the staged commit set before GitHub merge.
+- Current gaps: None for the verified Site Capability Layer scope.
+- Next smallest task: Keep future changes in small focused batches with matrix updates when status evidence changes.
+- Risk notes: No known serious safety or architecture violation remains for the current verified scope; future live claims still require explicit operator approval.
+- Last updated: 2026-05-21
 
+## SiteForge Tencent News Validation
+
+`siteforge build https://news.qq.com/` has a controlled validation path for a
+large public news portal. This section is the durable source-of-truth summary;
+short-lived task notes were folded back into root documentation and removed from
+`docs/`.
+
+- Scope: shallow public content analysis only; no login, comment submit,
+  account, upload, payment, checkout, mutation, CAPTCHA, or access-control
+  bypass flow.
+- Robots: `robots.txt` is parsed before seed and crawl expansion. `Disallow`
+  rules are enforced for seeds and static crawl queue entries. The deterministic
+  Tencent fixture asserts `/qqfile/`, `/sv1/`, and `/answer/` are excluded.
+- Sitemap: sitemap indexes are expanded with a bounded `maxSitemaps` cap and
+  sitemap XML files are not treated as page nodes.
+- Limits: live smoke uses low depth/page/seed limits and fetch timeout/delay
+  controls. The default CLI path also has bounded `maxPages`, `maxSeeds`, and
+  `maxSitemaps` policies.
+- Deterministic fixture: `tests/fixtures/sites/news-qq-com/` uses the real root
+  URL `https://news.qq.com/` and validates homepage, channel, article, sitemap,
+  and robots-disallowed links.
+- CI fixture routing: `src/app/pipeline/build/source.mjs` maps
+  `news.qq.com` to the deterministic fixture by default, so the public command
+  remains `siteforge build https://news.qq.com/` with no fixture flag.
+- Expected active fixture capabilities: `view news homepage`, `browse news
+  channels`, and `view news article details`, all read-only and evidence-backed.
+- Registry validation: the deterministic test proves `news.qq.com` plus
+  `帮我看腾讯新闻首页` resolves to the generated Tencent News skill and homepage
+  capability; channel lookup is covered when channel evidence exists.
+- Latest deterministic CLI evidence: `node --test
+  tests\node\siteforge-build.test.mjs` passed on 2026-05-16, including the
+  public no-extra-param `siteforge build https://news.qq.com/` saved-profile
+  path with fixture evidence, `verification_report.json: passed`, and zero
+  crawled `/qqfile/`, `/sv1/`, or `/answer/` seed/page URLs.
+- Latest live smoke evidence: the opt-in live test passed on 2026-05-16 with
+  internal fixture routing disabled and shallow limits. This is smoke evidence,
+  not a broad live capability claim.
+- Optional live smoke: set `SITEFORGE_LIVE_NEWS_QQ=1` or
+  `SITEFORGE_LIVE_TESTS=1` before running `node --test
+  tests\node\siteforge-build.test.mjs`. Live failures may skip while preserving
+  artifacts; deterministic fixture coverage remains the CI path.
 
 ## Focused Regression Batch Definition
 
@@ -650,14 +685,14 @@ The focused regression batch definition is embedded here because standalone docs
     {
       "id": "scl-priority-focused-guards",
       "sectionFocus": [1, 2, 3, 4, 13, 17, 20],
-      "command": "node --test --test-name-pattern \"kernel and pipeline boundary imports stay behind registries or capability services|non-goal boundary classifier catches raw session reads and SecurityGuard bypasses|ordinary download runtime and pipeline paths do not cross non-goal session boundaries|capability services do not depend on concrete sites or runtime orchestration layers|download execution consumers do not import site semantics or session orchestration|NetworkCapture observed requests do not classify site semantics|SessionView purpose isolation blocks non-download purposes from download access and broad scopes|Section 20 final goal cannot be verified before prerequisite sections and final validation evidence\" tests/node/architecture-import-rules.test.mjs tests/node/network-capture.test.mjs tests/node/session-view.test.mjs tests/node/site-capability-matrix.test.mjs",
+      "command": "node --test --test-name-pattern \"kernel and pipeline boundary imports stay behind registries or capability services|non-goal boundary classifier catches raw session reads and SecurityGuard bypasses|capability services do not depend on concrete sites or runtime orchestration layers|NetworkCapture observed requests do not classify site semantics|SessionView purpose isolation blocks non-download purposes from download access and broad scopes|Section 20 final goal cannot be verified before prerequisite sections and final validation evidence\" tests/node/architecture-import-rules.test.mjs tests/node/network-capture.test.mjs tests/node/session-view.test.mjs tests/node/site-capability-matrix.test.mjs",
       "purpose": "Accelerated verification for recently added focused guards: architecture boundary checks, NetworkCapture no-site-semantics, SessionView purpose isolation, and the Section 20 final-goal readiness gate."
     },
     {
       "id": "scl-redaction-trust-boundaries",
       "sectionFocus": [13, 14],
-      "command": "node --test tests/node/security-guard-redaction.test.mjs tests/node/session-view.test.mjs tests/node/download-media-executor.test.mjs",
-      "purpose": "Validate redaction guards, SessionView trust-boundary behavior, and media queue artifact redaction."
+      "command": "node --test tests/node/security-guard-redaction.test.mjs tests/node/session-view.test.mjs",
+      "purpose": "Validate redaction guards and SessionView trust-boundary behavior."
     },
     {
       "id": "scl-api-knowledge-lifecycle",
@@ -668,7 +703,7 @@ The focused regression batch definition is embedded here because standalone docs
     {
       "id": "scl-downloader-boundaries",
       "sectionFocus": [8, 10, 19],
-      "command": "node --test tests/node/architecture-import-rules.test.mjs tests/node/downloads-runner.test.mjs tests/node/standard-task-list.test.mjs tests/node/download-policy.test.mjs tests/node/planner-policy-handoff.test.mjs",
+      "command": "node --test tests/node/architecture-import-rules.test.mjs tests/node/standard-task-list.test.mjs tests/node/download-policy.test.mjs tests/node/planner-policy-handoff.test.mjs",
       "purpose": "Validate downloader boundaries, StandardTaskList, DownloadPolicy, and planner-policy handoff contracts."
     },
     {
@@ -678,15 +713,20 @@ The focused regression batch definition is embedded here because standalone docs
       "purpose": "Validate RiskState, reasonCode, LifecycleEvent, and CapabilityHook contracts."
     },
     {
+      "id": "scl-siteforge-build-single-command",
+      "sectionFocus": [1, 11, 14, 17, 18, 19, 20],
+      "command": "node --test tests/node/progress-cli-integration.test.mjs tests/node/cli-compat.test.mjs tests/node/progress-renderer.test.mjs tests/node/run-pipeline.test.mjs tests/node/site-capability-compiler-executor/compile-entrypoint.test.mjs tests/node/site-capability-compiler-executor/planner-integration.test.mjs tests/node/generate-skill.test.mjs tests/node/skill-coverage-regression-gate.test.mjs tests/node/architecture-import-rules.test.mjs",
+      "purpose": "Validate that the public SiteForge CLI exposes only siteforge build <url>, that build includes Graph and Planner Layer compile before Skill generation, and that architecture boundaries remain intact."
+    },
+    {
       "id": "scl-recent-high-value-focused-regression",
       "sectionFocus": [1, 2, 3, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-      "command": "node --test tests/node/downloads-runner.test.mjs tests/node/architecture-import-rules.test.mjs tests/node/session-view.test.mjs tests/node/site-session-runner.test.mjs tests/node/site-session-governance.test.mjs tests/node/security-guard-redaction.test.mjs tests/node/schema-governance.test.mjs tests/node/compatibility-registry.test.mjs tests/node/capability-hook.test.mjs tests/node/site-capability-matrix.test.mjs",
-      "purpose": "Bounded regression batch for the recently passing 291/291 main focused gate across downloader boundary, architecture import rules, SessionView, session runner/governance, SecurityGuard redaction, schema governance, compatibility registry, CapabilityHook, and matrix policy coverage; the same bounded file set reran as 292/292 on 2026-05-03 and then 296/296 on 2026-05-03 after test inventory drift. Prefer this precise batch over wildcard/full-suite reruns when the touched work matches these surfaces.",
+      "command": "node --test tests/node/architecture-import-rules.test.mjs tests/node/session-view.test.mjs tests/node/site-session-runner.test.mjs tests/node/site-session-governance.test.mjs tests/node/security-guard-redaction.test.mjs tests/node/schema-governance.test.mjs tests/node/compatibility-registry.test.mjs tests/node/capability-hook.test.mjs tests/node/site-capability-matrix.test.mjs",
+      "purpose": "Bounded regression batch for the recently passing 291/291 main focused gate across architecture import rules, SessionView, session runner/governance, SecurityGuard redaction, schema governance, compatibility registry, CapabilityHook, and matrix policy coverage; the same bounded file set reran as 292/292 on 2026-05-03 and then 296/296 on 2026-05-03 after test inventory drift. Prefer this precise batch over wildcard/full-suite reruns when the touched work matches these surfaces.",
       "recentPassingEvidence": [
         "main focused gate 291/291",
         "2026-05-03 bounded rerun 292/292",
         "2026-05-03 resumed bounded rerun 296/296",
-        "downloads-runner included",
         "architecture-import-rules included",
         "session-view included",
         "site-session-runner included",
@@ -710,207 +750,105 @@ The focused regression batch definition is embedded here because standalone docs
 
 ## Download Runner Operations
 
-The unified download runner keeps site-specific planning and resource resolution outside the generic executor. It is dry-run by default, writes stable `plan.json`, `resolved-task.json`, `manifest.json`, `queue.json`, `downloads.jsonl`, and `report.md` artifacts, and supports `--execute`, `--resume`, and `--retry-failed`.
-
-Hybrid native status is not a live-capability claim; live smoke, real login, and real download validation remain separate release gates. The generic executor consumes concrete resources only. Site modules own planner, resolver, and legacy command construction. The session manager returns sanitized lease and health metadata; it does not download resources. Legacy Python and action routers remain valid adapters until matching native resource resolvers are proven.
-
-| Site key | Host | Current path | Notes |
-| --- | --- | --- | --- |
-| `22biqu` | `www.22biqu.com` | Hybrid native + legacy fallback | Native can use direct chapter resources, local book-content fixtures, KB roots, or directory HTML; unmatched live book requests fall back to `src/sites/chapter-content/download/python/book.py`. |
-| `bilibili` | `www.bilibili.com` | Hybrid native + legacy fallback | Native can use fixture/injected/gated API evidence for playurl `dash`/`durl`, BV multi-P, collection/series, and UP archive shapes. |
-| `douyin` | `www.douyin.com` | Hybrid native + legacy fallback | Native can consume fixture/injected media detail, direct media, author enumeration, and followed-update seeds without refreshing live state. |
-| `xiaohongshu` | `www.xiaohongshu.com` | Hybrid native + legacy fallback | Native can consume fixture/injected note, search, author, followed, page facts, and side-effect-free fetch evidence. |
-| `x` | `x.com` | Hybrid native + legacy fallback | Native can consume gated captured archive/media candidates and local social archive artifacts. |
-| `instagram` | `www.instagram.com` | Hybrid native + legacy fallback | Native can consume gated captured feed-user/archive payloads, media candidates, and local social archive artifacts. |
+The download runtime layer has been retired and physically removed. Public onboarding and regeneration stay on `siteforge build <url>`. Remaining descriptor-only planning surfaces such as StandardTaskList and DownloadPolicy are compatibility contracts, not executable download support.
 
 ### Download Commands
-```powershell
-node src\entrypoints\cli.mjs download plan BV1example --site bilibili --json
-node src\entrypoints\cli.mjs download execute BV1example --site bilibili --json
-node src\entrypoints\cli.mjs download execute https://example.com/file --site example --run-dir runs\downloads\example\run --resume
-node src\entrypoints\cli.mjs download execute https://example.com/file --site example --run-dir runs\downloads\example\run --retry-failed
-```
+There is no public download command. Download planning remains an internal consumer path; the public command surface remains `siteforge build <url>`.
 
 ### Download Native / Legacy Ownership
 
-Current policy: do not delete or bypass legacy fallback paths.
-Live traffic status: not claimed.
-
-Phase 3 records which download task shapes can run through native resource
-resolution and which shapes must keep the legacy adapters. This document is an
-evidence matrix, not a removal plan. Unsupported shapes must continue to fall
-back to legacy until a matching native resolver has fixture-backed tests and
-runner coverage.
+Do not reintroduce executable download fallback paths without an explicit design review, sanitized artifacts, and focused architecture checks. Live traffic status: not claimed.
 
 ## Scope
 
-- Branch: local `main`
-- Base assumption: Phase 2 runner contracts and native resolver follow-up work
-  are already available locally.
-- Current policy: do not delete or bypass legacy fallback paths.
-- Live traffic status: not claimed. Native coverage here is fixture-backed,
-  request-injected, injected-fetch backed, or injected-resolver backed only.
+- Branch/workspace: work continues on local `main` in the current project directory.
+- Current policy: the old executable download runtime remains deleted.
+- Live traffic status: not claimed.
 
 ## Migration Matrix
 
-| Site | Task shape | Native status | Resolver method | Completion reason | Evidence | Legacy fallback |
-| --- | --- | --- | --- | --- | --- | --- |
-| 22biqu | Request provides direct chapter entries through `chapters`, `chapterUrls`, or equivalent chapter seed fields. | Native | `native-22biqu-chapters` | `22biqu-chapters-provided` | `tests/node/download-site-modules.test.mjs`; `tests/node/downloads-runner.test.mjs` | Keep Python book downloader for inputs without chapter seeds. |
-| 22biqu | Ordinary book URL or title resolved from local book-content artifacts via `bookContentDir`. | Native | `native-22biqu-book-content` | `22biqu-book-content-provided` | `tests/node/download-22biqu-native-resolver.test.mjs` | Keep Python book downloader when no matching artifact exists. |
-| 22biqu | Ordinary book title resolved from a compiled KB root through `fixtureDir` and `index/sources.json`. | Native | `native-22biqu-book-content` | `22biqu-book-content-provided` | `tests/node/download-22biqu-native-resolver.test.mjs` | Keep Python book downloader when the KB root does not point to matching book-content artifacts. |
-| 22biqu | Directory HTML supplied directly as `fixtureHtml`. | Native | `native-22biqu-directory` | `22biqu-directory-provided` | `tests/node/download-22biqu-native-resolver.test.mjs` | Keep Python book downloader when the HTML has no chapter links. |
-| 22biqu | Directory HTML supplied from a local fixture file or book-content `directoryHtmlFile`. | Native | `native-22biqu-directory` | `22biqu-directory-provided` | `tests/node/download-22biqu-native-resolver.test.mjs` | Keep Python book downloader when the file is missing, unmatched, or has no chapter links. |
-| 22biqu | Directory HTML supplied by an injected mock fetch function (`fetchImpl` / `mockFetchImpl`). | Native | `native-22biqu-directory` | `22biqu-directory-provided` | `tests/node/download-22biqu-native-resolver.test.mjs` | Keep Python book downloader when no injected fetch is supplied or it returns no parseable chapter links. |
-| Bilibili | Request provides concrete resource seeds (`resources`, `resourceSeeds`, resolved media fields, etc.). | Native | `native-bilibili-resource-seeds` | `bilibili-resource-seeds-provided` | `tests/node/download-site-modules.test.mjs`; `tests/node/download-native-seed-schema.test.mjs` | Keep Bilibili legacy action for ordinary page or BV inputs without resource seeds. |
-| Bilibili | Request provides offline `dash` or `durl` playurl payloads. | Native | `native-bilibili-page-seeds` | `bilibili-page-seeds-provided` | `tests/node/download-bilibili-page-seed-resolver.test.mjs` | Keep Bilibili legacy action when playurl evidence is missing or unsupported. |
-| Bilibili | BV view payload plus matching multi-P `playUrlPayloads`. | Native | `native-bilibili-page-seeds` | `bilibili-page-seeds-provided` | `tests/node/download-bilibili-page-seed-resolver.test.mjs` | Keep Bilibili legacy action when any requested page lacks matching playurl evidence. |
-| Bilibili | Collection, series, or UP-space archive payload plus matching `playUrlPayloads`. | Native | `native-bilibili-page-seeds` | `bilibili-page-seeds-provided` | `tests/node/download-bilibili-page-seed-resolver.test.mjs` | Keep Bilibili legacy action when list evidence or per-entry playurl evidence is incomplete. |
-| Bilibili | Ordinary BV, collection, series, or UP-space input resolved by request-injected `bilibiliApiEvidence` or injected `resolveBilibiliApiEvidence`. | Native | `native-bilibili-page-seeds` | `bilibili-page-seeds-provided` | `tests/node/download-bilibili-page-seed-resolver.test.mjs` | Keep Bilibili legacy action when the evidence provider is missing, returns partial evidence, or any playurl evidence is incomplete. |
-| Bilibili | Ordinary BV, collection, series, or UP-space input resolved by the built-in API evidence fetcher through injected/mock fetch, or through `globalThis.fetch` only when `allowNetworkResolve` is true. | Native | `native-bilibili-page-seeds` | `bilibili-page-seeds-provided`; live native miss records `bilibili-api-evidence-unavailable` | `tests/node/download-bilibili-page-seed-resolver.test.mjs` | Keep Bilibili legacy action when the network gate is closed. With the network gate open, incomplete live API evidence is reported as a native miss rather than `legacy-downloader-required`. |
-| Douyin | Request provides concrete direct media seeds. | Native | `native-douyin-resource-seeds` | `douyin-resource-seeds-provided` | `tests/node/download-site-modules.test.mjs`; `tests/node/download-native-seed-schema.test.mjs` | Keep Douyin legacy action for ordinary video, user, search, or feed inputs without media evidence. |
-| Douyin | Ordinary video input resolved by fixture/API detail payload, fixture HTML JSON, injected fetch JSON, direct injected media results, or `resolveDouyinMediaBatch` using `douyin-native-resolver-deps-v1` plus sanitized `douyin-native-evidence-v1`. `download.mjs --resolve-network` now wires the browser-backed resolver. | Native | `native-douyin-resource-seeds` | `douyin-native-complete`, `douyin-native-payload-incomplete`, or live `douyin-native-media-unresolved` | `tests/node/download-douyin-native-resolver.test.mjs` | Keep Douyin legacy action when the network gate is closed. With the network gate open, resolver/auth misses are reported as native misses rather than `legacy-downloader-required`. |
-| Douyin | Author input enumerated by injected author video results, with only unresolved entries passed through the injected media resolver. Deps use `douyin-native-resolver-deps-v1`. | Native | `native-douyin-resource-seeds` | `douyin-resource-seeds-provided` | `tests/node/download-douyin-native-resolver.test.mjs` | Keep Douyin legacy action when author enumeration is missing, empty, or unresolved. |
-| Douyin | Followed-updates input resolved from injected followed update query results using `douyin-native-resolver-deps-v1`; cache refresh is allowed only when both `refreshCache` and the network gate are set. | Native | `native-douyin-resource-seeds` | `douyin-native-complete` | `tests/node/download-douyin-native-resolver.test.mjs` | Keep Douyin legacy action when signing, cache refresh side effects, profile side effects, or live followed queries are required. |
-| Xiaohongshu | Request provides concrete download bundle assets or resource seeds. | Native | `native-xiaohongshu-resource-seeds` | `xiaohongshu-resource-seeds-provided` | `tests/node/download-site-modules.test.mjs`; `tests/node/download-native-seed-schema.test.mjs` | Keep Xiaohongshu legacy action for ordinary note, search, or followed-user inputs without resource seeds. |
-| Xiaohongshu | Note payload, `pageFacts`, or fixture HTML provides note image/video media. | Native | `native-xiaohongshu-resource-seeds` | `xiaohongshu-resource-seeds-provided` | `tests/node/download-xiaohongshu-page-seed-resolver.test.mjs` | Keep Xiaohongshu legacy action when note evidence has no parseable media. |
-| Xiaohongshu | Ordinary note/profile/search HTML fetched through injected/mock fetch, or through `globalThis.fetch` only when `allowNetworkResolve` is true, and parsed into media seeds. Resolution includes sanitized `xiaohongshu-header-freshness-v1` metadata. | Native | `native-xiaohongshu-resource-seeds` | `xiaohongshu-resource-seeds-provided`; live native miss records `xiaohongshu-session-or-header-evidence-required` | `tests/node/download-xiaohongshu-page-seed-resolver.test.mjs` | Keep Xiaohongshu legacy action when the network gate is closed. With the network gate open, anonymous/freshness misses are reported as native misses rather than `legacy-downloader-required`. |
-| Xiaohongshu | Search, author, or followed mock notes provide note media or injected followed query results. Follow deps use `xiaohongshu-native-resolver-deps-v1`. | Native | `native-xiaohongshu-resource-seeds` | `xiaohongshu-resource-seeds-provided` | `tests/node/download-xiaohongshu-page-seed-resolver.test.mjs` | Keep Xiaohongshu legacy action when mock note lists or injected query results are absent. |
-| Jable | Experimental video download request without a safety-reviewed native resolver. | Native miss | `native-jable-resource-seeds` | `jable-native-resolver-required` | `tests/node/download-site-modules.test.mjs`; `tests/node/downloads-runner.test.mjs` | Produce no resources and do not parse player pages, raw media URLs, CDN URLs, manifests, sessions, or browser profiles. |
-| X | Gated `profile-content`, `full-archive`, or `search` input provides media candidates, including nested timeline archive payloads. | Native | `native-x-social-resource-seeds` | `x-social-resource-seeds-provided` | `tests/node/download-social-native-resolver.test.mjs`; `tests/node/downloads-runner.test.mjs` | Keep social legacy action when the native gate is off or media candidates are absent. |
-| X | Gated native input provides captured social API/replay payloads or local archive artifacts (`items.jsonl`, `state.json`, `manifest.json`) with media candidates and sanitized archive schema v1/v2 metadata. | Native | `native-x-social-resource-seeds` | `x-social-resource-seeds-provided` | `tests/node/download-social-native-resolver.test.mjs` | Keep social legacy action for seed capture, live cursor replay, checkpoint continuation, and auth recovery. |
-| X | Relation, followed-date, follower/following, checkpoint, resume, or cursor discovery inputs. | Legacy | `native-x-social-resource-seeds` records unsupported metadata when gated | `legacy-downloader-required` | `tests/node/download-social-native-resolver.test.mjs`; `tests/node/downloads-runner.test.mjs` | Required. These flows remain in the social legacy action. |
-| Instagram | Gated `profile-content` or `full-archive` input provides feed-user/archive media candidates, including GraphQL sidecar archive payloads. | Native | `native-instagram-social-resource-seeds` | `instagram-social-resource-seeds-provided` | `tests/node/download-social-native-resolver.test.mjs`; `tests/node/downloads-runner.test.mjs` | Keep social legacy action when the native gate is off or media candidates are absent. |
-| Instagram | Gated native input provides captured feed-user/API/replay payloads or local archive artifacts with media candidates and sanitized archive schema v1/v2 metadata. | Native | `native-instagram-social-resource-seeds` | `instagram-social-resource-seeds-provided` | `tests/node/download-social-native-resolver.test.mjs` | Keep social legacy action for authenticated feed discovery, live cursor replay, checkpoint continuation, and auth recovery. |
-| Instagram | Relation, follower/following, followed-users, checkpoint, resume, or authenticated feed discovery inputs. | Legacy | `native-instagram-social-resource-seeds` records unsupported metadata when gated | `legacy-downloader-required` | `tests/node/download-social-native-resolver.test.mjs`; `tests/node/downloads-runner.test.mjs` | Required. These flows remain in the social legacy action. |
+The executable native/legacy migration matrix was removed with the runtime layer. Site capability intake now records capability, intent, session, risk, and artifact evidence through the build pipeline rather than through download resolver tests.
+Old executable download runtime status tables were retired. The current release gate is absence of executable download runtime paths, not native/legacy migration progress.
 
 ## Remaining Fallback Reasons
 
-The following task shapes intentionally remain on legacy fallback:
-
-| Site | Shape | Stable reason | Why fallback remains |
-| --- | --- | --- | --- |
-| 22biqu | Live ordinary book URL or title with no local fixture, no KB root match, and no injected fetch/mock. | `legacy-downloader-required` | The native resolver does not perform real network crawling. Live book crawl remains in the Python downloader. |
-| 22biqu | Local fixture or directory HTML exists but yields no chapter links. | `legacy-downloader-required` | Empty or unparseable local evidence is not enough to build a complete native resource queue. |
-| Bilibili | Ordinary BV, video page, creator page, collection, or series input without request-injected/API evidence, injected/mock fetch, explicit network-gated fetch, and matching playurl evidence. | `legacy-downloader-required` when not network-gated; `bilibili-api-evidence-unavailable` when network-gated native API evidence is unavailable | Unsupported API shapes, incomplete payloads, WBI/signature requirements, DASH mux, and live media verification still require fallback or explicit native miss evidence. |
-| Douyin | Ordinary video, author, search, or feed input without fixture/API detail payloads, fixture HTML JSON, injected fetch JSON, direct media entries, mock media results, injected resolver output, author enumeration, or followed query results. | `legacy-downloader-required` when not network-gated; `douyin-native-resolver-unavailable` or `douyin-native-media-unresolved` when network-gated native resolver work cannot produce media | Auth/session-aware discovery, signing, cache refresh, and direct media freshness require a healthy approved resolver/profile path. |
-| Xiaohongshu | Ordinary note, search, profile, or followed-user input without fixture/API payload, page facts, fixture HTML, injected/mock fetched HTML, mock note list, or injected query result. | `legacy-downloader-required` when not network-gated; `xiaohongshu-session-or-header-evidence-required` when network-gated anonymous/freshness evidence is insufficient | Browser/API discovery, header freshness, session side effects, and bundle construction require reliable fresh session/header evidence. |
-| X | Native gate off, no media candidates, relation/followed-date/follower/following/followed-users, checkpoint, resume, or cursor discovery input. | `legacy-downloader-required` plus native unsupported metadata when gated | Social cursor discovery, archive state, relation handling, auth recovery, and media queue creation still live in the social legacy action. |
-| Instagram | Native gate off, no feed-user/archive media candidates, relation/follower/following/followed-users, checkpoint, resume, or authenticated feed discovery input. | `legacy-downloader-required` plus native unsupported metadata when gated | Social cursor discovery, relation pagination, auth recovery, and media queue creation still live in the social legacy action. |
+Retired download-specific reason codes may remain as historical compatibility values, but they are no longer backed by executable download modules.
 
 ## Test Gate
 
-Focused gate for this branch:
+Focused retired-layer gate:
 
 ```powershell
-node --test tests\node\download-22biqu-native-resolver.test.mjs tests\node\download-bilibili-page-seed-resolver.test.mjs tests\node\download-xiaohongshu-page-seed-resolver.test.mjs tests\node\download-douyin-native-resolver.test.mjs tests\node\download-social-native-resolver.test.mjs tests\node\download-site-modules.test.mjs tests\node\download-native-seed-schema.test.mjs tests\node\downloads-runner.test.mjs tests\node\download-media-executor.test.mjs tests\node\site-session-governance.test.mjs tests\node\session-repair-plan.test.mjs
+node --test tests\node\architecture-import-rules.test.mjs tests\node\standard-task-list.test.mjs tests\node\download-policy.test.mjs tests\node\planner-policy-handoff.test.mjs tests\node\site-session-governance.test.mjs tests\node\session-repair-plan.test.mjs
 ```
 
-Passing this gate proves only fixture-backed, request-injected, or
-injected-resolver native resolution, native seed execution, legacy fallback
-routing, and generic media executor behavior. It does not prove live crawling,
-authenticated social archive capability, or safe fallback removal.
-
-Legacy fallback runs must keep native miss evidence auditable. When a native
-resolver returns no resources and the runner delegates to legacy, manifests
-record sanitized `legacy.nativeFallback` metadata and the release audit surfaces
-that reason in its `Native Fallback` / `Native Resolver` columns. This evidence
-is for review only; fallback can be removed only after fixture, injected,
-runner, and approved live validation all cover the same task shape.
+Passing this gate proves the executable download runtime remains absent while descriptor-only planning, policy, and session repair contracts still validate.
 
 ## Derived Artifacts And Session Repair
 
-- Bilibili DASH audio/video streams can be muxed as an explicit opt-in derived
-  artifact after both stream resources complete. CLI aliases are
-  `--enable-derived-mux`, `--mux-derived-media`, and `--dash-mux`. The queue
-  still tracks the original resources; the mux output is appended to manifest
-  files and downloads JSONL as `derived: true`. Missing audio/video streams and
-  mux failures are reported as derived failures in the manifest and report.
-- Session governance health can attach a sanitized `repairPlan` to blocked
-  download manifests. This is operator guidance only; download runner does not
-  perform login, keepalive, profile rebuild, or live recovery by itself. The
-  `session-repair-plan` entrypoint is dry-run by default; `--execute` only
-  constructs an approved audit command for allowlisted actions and never spawns
-  child commands.
-
+- Derived media such as Bilibili DASH mux output is opt-in and must keep original resource manifests plus derived-output metadata.
+- Download manifests may include sanitized repairPlan guidance. The runner does not login, keepalive, rebuild profiles, import cookies, or run live recovery by itself.
+- `session-repair-plan` is dry-run by default; execution is allowlisted and operator-approved.
 
 ### Download Release Gate
 
-Hard stops for download publication: stale branch/base uncertainty, unrelated dirty work, generated runtime artifacts, profile material, release notes claiming unverified behavior, live authenticated claims without approved artifacts, or any gate step requiring push/PR/live download/login/cookie import/profile recovery without explicit approval.
+Hard stops: branch/base uncertainty, unrelated dirty work, generated runtime artifacts, profile material, release notes claiming unverified behavior, live authenticated claims without approved artifacts, or any step requiring push/PR/live download/login/cookie import/profile recovery without explicit approval.
 
-Minimum publication checks:
+Minimum publication checks are broad Node/Python tests, the focused download gate above, `node tools\prepublish-secret-scan.mjs`, and `git diff --check`. Before any live-capability claim, run the offline release audit; it has no live/login/download side effects.
 
-```powershell
-node --test tests\node\*.test.mjs
-python -m unittest discover -s tests\python -p "test_*.py"
-node --test tests\node\downloads-runner.test.mjs tests\node\download-site-modules.test.mjs tests\node\download-native-seed-schema.test.mjs tests\node\download-22biqu-native-resolver.test.mjs tests\node\download-bilibili-page-seed-resolver.test.mjs tests\node\download-xiaohongshu-page-seed-resolver.test.mjs tests\node\download-douyin-native-resolver.test.mjs tests\node\download-social-native-resolver.test.mjs tests\node\download-media-executor.test.mjs tests\node\douyin-media-resolver.test.mjs
-```
+### Session Manifest Gate
 
-#### Session Manifest Gate
+Session traceability for authenticated or session-aware paths must name the
+`unified-session-runner` source and the `legacy-session-provider` compatibility
+boundary. The release gate records `--session-health-plan` and
+`--session-manifest <path>` inputs while keeping the public workflow centered on
+`siteforge build <url>`.
 
-Accepted session providers are `unified-session-runner` and `legacy-session-provider`. Required-session download and site-doctor CLI runs default to a read-only unified health plan via `--session-health-plan`; `--session-manifest <path>` consumes an existing unified health manifest without triggering login, keepalive, profile rebuild, cookie import, or live downloads. `--no-session-health-plan` is the explicit escape hatch for legacy-provider runs.
+Blocked audit rows include a `repairPlan` guidance object. Offline only; no live/login/download side effects.
 
-Before any live-capability claim, run the offline audit: `node scripts/download-release-audit.mjs --runs-root runs --out-dir runs/download-release-audit`. Blocked audit rows include a `repairPlan` guidance object, and Markdown reports include `Repair Plan` plus `Next session repair command`, for example `node src/entrypoints/cli.mjs site repair-plan --site x --audit-manifest runs/download-release-audit/download-release-audit.json`. Offline only; no live/login/download side effects.
+Current Local Evidence:
+
+- clean worktree verified before evidence capture.
+- Re-check the current ahead count before any publication step.
+- Current closeout verification includes `node --test tests\node\*.test.mjs`
+  and `python -m unittest discover -s tests\python -p "test_*.py"` when a
+  release-sized download/session claim is being made.
+- Retired-runtime status is not a live-capability claim.
 
 #### Resolver Evidence Gate
 
-Network-capable native resolvers require `--resolve-network` or injected/mock fetch dependencies, ready required-session health before resolver deps run, complete resolver evidence for the task shape, and sanitized manifest metadata. Current native evidence contracts include `bilibili-native-api-evidence-v1`, `douyin-native-evidence-v1`, `xiaohongshu-header-freshness-v1`, and `social-archive-v2`.
-
-#### Current Local Evidence
-
-Latest local evidence must be rechecked before publication. `git status --short --branch --untracked-files=all` should show only release-owned work; clean worktree verified before evidence capture is historical evidence only. Re-check the current ahead count before any publication step. Current closeout verification for this docs-retirement batch is recorded in the final task report, not as a permanent live-capability claim.
+Network-capable native resolvers require explicit network gating or injected/mock dependencies, ready session health when required, complete resolver evidence for the task shape, and sanitized manifest metadata. Current contracts include `bilibili-native-api-evidence-v1`, `douyin-native-evidence-v1`, `xiaohongshu-header-freshness-v1`, and `social-archive-v2`.
 
 ### Download Live Validation Gate
 
-A planned `--live-validation <scenario>` flag writes manifest metadata only. It is not approval to run live smoke by itself. A case can move to `approved` or `running` only after a separate bounded approval names site, account/profile, case, item limits, output directory, timeout, allowed actions, and stop conditions.
+A planned live-validation flag records manifest metadata only. It is not approval to run live smoke. Approval must name site, account/profile, case, item limits, output directory, timeout, allowed actions, and stop conditions. Stop on login wall, challenge, rate limit, missing session, schema drift, cookies, auth headers, raw cursors, profile roots, browser profile paths, or downloaded private data.
 
-Live validation status values are `not-run`, `planned`, `approved`, `running`, `passed`, `failed`, `blocked`, `skipped`, and `unknown`. Stop immediately on login wall, challenge, rate limit, missing required session, unexpected schema drift, cookies, auth headers, raw cursors, profile roots, browser profile paths, or downloaded private data.
+## Download Boundary Workstreams
 
-## Download Runner Workstreams
-
-Future download work continues on local `main` in the current project directory. Do not create new branches or
-extra worktrees unless the operator explicitly asks.
+Future download-boundary work continues on local `main` in the current project directory unless the operator explicitly asks for branches or worktrees. Workstreams: architecture import rules, descriptor-only planning and policy contracts, session governance, live smoke boundaries, and release gates.
+Do not create new branches or extra worktrees unless the operator explicitly asks.
 
 ### Local Main Workstreams
 
-1. Native resolvers
-2. Legacy reduction
+1. Architecture import rules
+2. Descriptor-only planning and policy contracts
 3. Session governance
-4. Live smoke boundaries
-5. Release gates
-
-Do not remove a legacy fallback in the same change that introduces an unproven native resolver. Do not treat a reusable profile path as healthy unless health tooling reports it as usable. Do not run live traffic from tests or release scripts without explicit operator approval.
 
 ## Social Live Verification
 
-`node src/entrypoints/cli.mjs social live-verify` is the repeatable live acceptance runner for X and Instagram. `node src/entrypoints/cli.mjs social kb-refresh` refreshes scenario-level KB state. `social resume`, `social report`, `social health-watch`, and `social templates` cover archive resume planning, report aggregation, account health checks, and reusable command templates. These commands are plan-first.
-
-Default mode is `not-run`. `social-live-verify` requires explicit `--live`, `--site`, account, item limit, timeout, case timeout, and `--run-root` before it emits even a dry-run live plan. `--execute` is rejected unless `--live` is present and runs selected commands sequentially.
+Social live verification is an internal plan-first maintenance workflow for X and Instagram. It is not part of the public SiteForge CLI surface; public site onboarding still goes through `siteforge build <url>`. `social-live-verify` requires explicit live scope, site, account, item limits, timeouts, run root, and `--execute` approval before sequential execution.
 
 ### Natural Language Trigger Guide
 
-| User wording | Intent | Command shape |
+| User wording | Intent | Internal workflow shape |
 | --- | --- | --- |
-| `resume full archive` | `resume-full-archive` | `node src/entrypoints/cli.mjs x action profile-content <handle> --content-type posts --full-archive --run-dir <previous-or-new-run> --session-health-plan` or `node src/entrypoints/cli.mjs instagram action ...` |
-| `continue after rate limit cooldown` | `resume-after-cooldown` | `node src/entrypoints/cli.mjs x action profile-content <handle> --content-type posts --full-archive --risk-backoff-ms <ms> --risk-retries <n> --session-health-plan` |
-| `fast media download` | `media-fast-download` | `node src/entrypoints/cli.mjs x action profile-content <handle> --content-type media --download-media --max-media-downloads <n> --session-health-plan` |
-| `session health check` | `health-check` | `node src/entrypoints/cli.mjs social auth-recover --execute --site x|instagram --verify` |
-| `live acceptance report` | `live-acceptance-report` | `node src/entrypoints/cli.mjs social live-verify --live --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` plus explicit limits, timeouts, and `--run-root` |
-| `scenario KB refresh` | `kb-refresh` | `node src/entrypoints/cli.mjs social kb-refresh --execute --site x|instagram --x-account <handle>` or `--ig-account <handle>` |
+| `resume full archive` | `resume-full-archive` | Internal X/Instagram profile-content resume with session-health planning. |
+| `continue after rate limit cooldown` | `resume-after-cooldown` | Internal profile-content resume with explicit risk backoff and retry budget. |
+| `fast media download` | `media-fast-download` | Internal media-focused profile-content plan with governed media limits. |
+| `session health check` | `health-check` | Internal auth-recovery verification with explicit operator approval. |
+| `live acceptance report` | `live-acceptance-report` | Internal live verification with explicit site, account, limits, timeouts, and run root. |
+| `scenario KB refresh` | `kb-refresh` | Internal scenario KB refresh with explicit site/account scope. |
 
 Social matrix status values are `passed`, `failed`, `blocked`, `skipped`, and `unknown`. Artifact classification wins over raw process exit code when an artifact reports blocked or skipped. Login wall, challenge, expired session, platform throttle, rate limit, anti-crawl signal, and missing reusable login state must not be reported as live success.
 
-Useful commands:
-
-```powershell
-node .\src\entrypoints\cli.mjs social live-verify
-node .\src\entrypoints\cli.mjs social live-verify --live --site instagram --case instagram-followed-date --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
-node .\src\entrypoints\cli.mjs social kb-refresh --site all
-node .\src\entrypoints\cli.mjs social auth-recover --site x --verify
-node .\src\entrypoints\cli.mjs social resume --state .\runs\social-live-verify\<timestamp>\manifest.json --cooldown-minutes 30 --max-attempts 3
-node .\src\entrypoints\cli.mjs social report
-node .\src\entrypoints\cli.mjs social health-watch --site all
-node .\src\entrypoints\cli.mjs social templates --site all
-node .\src\entrypoints\cli.mjs social live-verify --live --execute --site all --x-account opensource --ig-account instagram --date 2026-04-26 --max-items 10 --max-users 10 --max-media-downloads 5 --timeout 120000 --case-timeout 600000 --run-root .\runs\social-live-verify
-```
-
-Auth recovery remains bounded: use `social-auth-recover` for reusable-profile health checks and visible manual login guidance; cookie import manifests record cookie names/domains and missing required cookie names but never cookie values. Do not automate password/challenge bypass.
+Auth recovery remains bounded: reusable-profile health checks and visible manual login guidance are allowed; cookie import manifests may record cookie names/domains and missing required names but never cookie values. Do not automate password, challenge, CAPTCHA, risk-control, or permission bypass.

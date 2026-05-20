@@ -119,6 +119,16 @@ function statusTone(status) {
   return 'cyan';
 }
 
+function statusLabel(status) {
+  if (status === 'completed') return '已完成';
+  if (status === 'warning') return '有警告';
+  if (status === 'failed') return '失败';
+  if (status === 'skipped') return '已跳过';
+  if (status === 'pending') return '等待中';
+  if (status === 'running') return '运行中';
+  return String(status ?? '-');
+}
+
 function collectQuality(result) {
   const kb = result?.stages?.knowledgeBase ?? {};
   const lint = kb.lintSummary ?? {};
@@ -156,10 +166,7 @@ function summarizeNumbers(result) {
 
 function nextCommands(inputUrl, skillName) {
   return [
-    ['Inspect generated skill', `node ./src/entrypoints/cli.mjs inspect ${skillName}`],
-    ['Validate knowledge base', `node ./src/entrypoints/cli.mjs lint ${skillName}`],
-    ['Rebuild with verbose logs', `node ./src/entrypoints/cli.mjs build ${inputUrl} --verbose`],
-    ['Show raw JSON', `node ./src/entrypoints/cli.mjs build ${inputUrl} --json`],
+    ['重新运行构建', `siteforge build ${inputUrl}`],
   ];
 }
 
@@ -172,8 +179,8 @@ export function renderBuildSummary(result, options = {}) {
   const warning = hasWarnings(result);
   const statusIcon = warning ? useGlyphs.warning : useGlyphs.completed;
   const statusText = partial
-    ? 'Partial preview generated'
-    : warning ? 'Site skill generated with warnings' : 'Site skill generated';
+    ? '已生成部分预览'
+    : warning ? '站点 Skill 已生成，但存在警告' : '站点 Skill 已生成';
   const skillName = result?.skillName ?? basenameSkillFromUrl(result?.inputUrl);
   const quality = collectQuality(result);
   const numbers = summarizeNumbers(result);
@@ -182,19 +189,19 @@ export function renderBuildSummary(result, options = {}) {
 
   lines.push(`${statusIcon} ${statusText}`);
   lines.push('');
-  lines.push('Summary');
+  lines.push('摘要');
   lines.push('');
   lines.push(row('Skill', skillName));
-  lines.push(row('Site', result?.inputUrl));
-  lines.push(row('Pages', numbers.pages));
-  lines.push(row('States', numbers.states));
-  lines.push(row('Actions', numbers.actions));
-  lines.push(row('Documents', numbers.documents));
-  lines.push(row('Warnings', quality.warnings));
-  lines.push(row('Duration', formatDuration(durationMs)));
-  lines.push(row('Status', partial ? 'Partial' : warning ? 'Generated with warnings' : 'Generated'));
+  lines.push(row('站点', result?.inputUrl));
+  lines.push(row('页面', numbers.pages));
+  lines.push(row('状态数', numbers.states));
+  lines.push(row('动作', numbers.actions));
+  lines.push(row('文档', numbers.documents));
+  lines.push(row('警告', quality.warnings));
+  lines.push(row('耗时', formatDuration(durationMs)));
+  lines.push(row('状态', partial ? '部分预览' : warning ? '已生成但有警告' : '已生成'));
   lines.push('');
-  lines.push('Artifacts');
+  lines.push('产物');
   lines.push('');
   if (result?.skillDir) {
     lines.push('  Skill');
@@ -202,32 +209,32 @@ export function renderBuildSummary(result, options = {}) {
     lines.push('');
   }
   if (result?.kbDir) {
-    lines.push('  Knowledge Base');
+    lines.push('  知识库');
     lines.push(`    ${relativeOrCompactPath(result.kbDir, { verbose, maxWidth: pathWidth })}`);
     lines.push('');
   }
   if (result?.partialPreview?.artifactPath) {
-    lines.push('  Partial Preview');
+    lines.push('  部分预览');
     lines.push(`    ${relativeOrCompactPath(result.partialPreview.artifactPath, { verbose, maxWidth: pathWidth })}`);
     lines.push('');
   }
   const refs = result?.stages?.skill?.references ?? [];
   if (refs.length) {
-    lines.push('  References');
+    lines.push('  参考文件');
     for (const ref of refs) {
       lines.push(`    ${ref}`);
     }
     lines.push('');
   }
-  lines.push('Quality');
+  lines.push('质量');
   lines.push('');
-  lines.push(`  ${quality.errors > 0 ? useGlyphs.failed : useGlyphs.completed} ${quality.errors} errors`);
-  lines.push(`  ${quality.warnings > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.warnings} warnings`);
-  lines.push(`  ${quality.orphanPages > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.orphanPages} orphan pages`);
-  lines.push(`  ${quality.pendingRiskConfirmations > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.pendingRiskConfirmations} pending risk confirmations`);
-  lines.push(`  ${quality.evidenceGaps > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.evidenceGaps} evidence gaps`);
+  lines.push(`  ${quality.errors > 0 ? useGlyphs.failed : useGlyphs.completed} ${quality.errors} 个错误`);
+  lines.push(`  ${quality.warnings > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.warnings} 个警告`);
+  lines.push(`  ${quality.orphanPages > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.orphanPages} 个孤立页面`);
+  lines.push(`  ${quality.pendingRiskConfirmations > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.pendingRiskConfirmations} 个待确认风险`);
+  lines.push(`  ${quality.evidenceGaps > 0 ? useGlyphs.warning : useGlyphs.completed} ${quality.evidenceGaps} 个证据缺口`);
   lines.push('');
-  lines.push('Next');
+  lines.push('下一步');
   lines.push('');
   for (const [label, command] of nextCommands(result?.inputUrl, skillName)) {
     lines.push(`  ${label}`);
@@ -235,14 +242,14 @@ export function renderBuildSummary(result, options = {}) {
     lines.push('');
   }
   if (options.verbose) {
-    lines.push('Stage Details');
+    lines.push('阶段详情');
     lines.push('');
     for (const [stageId, stage] of Object.entries(result?.stages ?? {})) {
       lines.push(`  ${pipelineStageTitle(stageId)} (${stageId})`);
-      if (stage?.outDir) lines.push(`    output: ${relativeOrCompactPath(stage.outDir, { verbose: true })}`);
-      if (stage?.kbDir) lines.push(`    output: ${relativeOrCompactPath(stage.kbDir, { verbose: true })}`);
-      if (stage?.skillDir) lines.push(`    output: ${relativeOrCompactPath(stage.skillDir, { verbose: true })}`);
-      if (stage?.summary) lines.push(`    summary: ${JSON.stringify(stage.summary)}`);
+      if (stage?.outDir) lines.push(`    输出：${relativeOrCompactPath(stage.outDir, { verbose: true })}`);
+      if (stage?.kbDir) lines.push(`    输出：${relativeOrCompactPath(stage.kbDir, { verbose: true })}`);
+      if (stage?.skillDir) lines.push(`    输出：${relativeOrCompactPath(stage.skillDir, { verbose: true })}`);
+      if (stage?.summary) lines.push(`    摘要：${JSON.stringify(stage.summary)}`);
     }
   }
   return `${lines.join('\n').trimEnd()}\n`;
@@ -253,23 +260,19 @@ export function renderBuildFailure(error, state, options = {}) {
   const stage = state.currentStage ?? state.stages.find((entry) => entry.status === 'failed');
   const reason = error?.message ?? String(error);
   const lines = [
-    `${useGlyphs.failed} Build failed${stage ? ` at stage ${stage.index}/${state.stages.length}: ${stage.title}` : ''}`,
+    `${useGlyphs.failed} 构建失败${stage ? `，阶段 ${stage.index}/${state.stages.length}：${stage.title}` : ''}`,
     '',
-    'Reason',
+    '原因',
     `  ${reason}`,
     '',
-    'Safety',
+    '安全边界',
     `  ${progressText(SAFETY_STOP_COPY, 'zh')}`,
     '',
-    'Try',
-    `  node ./src/entrypoints/cli.mjs build ${state.inputUrl} --verbose`,
-    `  node ./src/entrypoints/cli.mjs site doctor ${state.inputUrl}`,
-    '',
-    'Debug',
-    '  Run with --debug to show stack trace and raw diagnostic JSON.',
+    '可重试',
+    `  siteforge build ${state.inputUrl}`,
   ];
   if (options.debug && error?.stack) {
-    lines.push('', 'Stack', String(error.stack));
+    lines.push('', '堆栈', String(error.stack));
   }
   return `${lines.join('\n')}\n`;
 }
@@ -338,7 +341,7 @@ export class BuildProgressController {
     stage.status = 'running';
     stage.startedAt = Date.now();
     stage.currentItem = input.item ?? this.inputUrl;
-    stage.message = input.message ?? 'running';
+    stage.message = input.message ?? '运行中';
     this.currentStage = stage;
     this.#emitPlainStage(stage, 'start');
     this.#render();
@@ -361,14 +364,14 @@ export class BuildProgressController {
     const warning = hasWarnings(result);
     if (this.mode === 'plain') {
       const statusText = result?.pipelinePartial === true
-        ? 'Partial preview generated.'
-        : warning ? 'Site skill generated with warnings.' : 'Site skill generated.';
+        ? '已生成部分预览。'
+        : warning ? '站点 Skill 已生成，但存在警告。' : '站点 Skill 已生成。';
       this.stream.write(`${statusText}\n`);
-      if (result?.skillDir) this.stream.write(`Skill: ${relativeOrCompactPath(result.skillDir, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
-      if (result?.kbDir) this.stream.write(`Knowledge base: ${relativeOrCompactPath(result.kbDir, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
-      if (result?.partialPreview?.artifactPath) this.stream.write(`Partial preview: ${relativeOrCompactPath(result.partialPreview.artifactPath, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
+      if (result?.skillDir) this.stream.write(`Skill：${relativeOrCompactPath(result.skillDir, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
+      if (result?.kbDir) this.stream.write(`知识库：${relativeOrCompactPath(result.kbDir, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
+      if (result?.partialPreview?.artifactPath) this.stream.write(`部分预览：${relativeOrCompactPath(result.partialPreview.artifactPath, { cwd: this.cwd, verbose: this.options.verbose })}\n`);
       const quality = collectQuality(result);
-      this.stream.write(`Warnings: ${quality.warnings}\n`);
+      this.stream.write(`警告：${quality.warnings}\n`);
     }
   }
 
@@ -412,7 +415,7 @@ export class BuildProgressController {
     stage.message = update.message ?? stage.message;
     stage.currentItem = update.item ?? stage.currentItem;
     stage.outputDir = update.outputDir ?? update.outDir ?? update.message ?? stage.outputDir;
-    if (status === 'failed') stage.error = update.message ?? update.error ?? 'failed';
+    if (status === 'failed') stage.error = update.message ?? update.error ?? '失败';
     if (Array.isArray(update.warnings)) stage.warnings.push(...update.warnings);
     this.#emitPlainStage(stage, status);
     this.#render();
@@ -458,27 +461,27 @@ export class BuildProgressController {
     const lines = [
       color(this.color, 'bold', 'SiteForge'),
       '',
-      `Generating site skill for ${site}`,
+      `正在为 ${site} 生成站点 Skill`,
       '',
-      `Overall   ${renderProgressBar(overallCurrent, this.stages.length, { width: overallWidth, unicode: this.unicode })}  ${formatPercent(overallCurrent, this.stages.length)}  ${Math.floor(overallCurrent)}/${this.stages.length} stages`,
+      `总进度   ${renderProgressBar(overallCurrent, this.stages.length, { width: overallWidth, unicode: this.unicode })}  ${formatPercent(overallCurrent, this.stages.length)}  ${Math.floor(overallCurrent)}/${this.stages.length} 个阶段`,
     ];
     if (currentProgress) {
-      lines.push(`Current   ${renderProgressBar(currentProgress.current, currentProgress.total, { width: overallWidth, unicode: this.unicode })}  ${formatPercent(currentProgress.current, currentProgress.total)}  ${current?.title}`);
+      lines.push(`当前     ${renderProgressBar(currentProgress.current, currentProgress.total, { width: overallWidth, unicode: this.unicode })}  ${formatPercent(currentProgress.current, currentProgress.total)}  ${current?.title}`);
     } else {
       const icon = current ? this.#stageIcon(current) : this.glyphs.pending;
-      lines.push(`Current   ${icon} ${current?.message ?? current?.title ?? 'pending'}  ${elapsed}`);
+      lines.push(`当前     ${icon} ${current?.message ?? current?.title ?? '等待中'}  ${elapsed}`);
     }
-    lines.push(`Elapsed   ${elapsed}`);
+    lines.push(`已用时   ${elapsed}`);
     if (current) {
-      lines.push(`Stage     ${current.index}/${this.stages.length} · ${current.title}`);
+      lines.push(`阶段     ${current.index}/${this.stages.length} - ${current.title}`);
       if (current.currentItem) {
-        lines.push(`Item      ${truncateText(relativeOrCompactPath(current.currentItem, { cwd: this.cwd, maxWidth: Math.max(24, this.columns - 12) }) ?? current.currentItem, Math.max(24, this.columns - 12))}`);
+        lines.push(`项目     ${truncateText(relativeOrCompactPath(current.currentItem, { cwd: this.cwd, maxWidth: Math.max(24, this.columns - 12) }) ?? current.currentItem, Math.max(24, this.columns - 12))}`);
       }
     }
-    lines.push('', 'Pipeline', '');
+    lines.push('', '流水线', '');
     for (const stage of this.stages) {
       const icon = this.#stageIcon(stage);
-      const duration = stage.durationMs !== null ? `${(stage.durationMs / 1000).toFixed(1)}s` : stage.status;
+      const duration = stage.durationMs !== null ? `${(stage.durationMs / 1000).toFixed(1)}s` : statusLabel(stage.status);
       const line = `  ${color(this.color, statusTone(stage.status), icon)} ${String(stage.index).padStart(2, ' ')}. ${padRight(stage.title, compact ? 18 : 28)} ${duration}`;
       lines.push(truncateText(line, Math.max(30, this.columns - 1)));
     }
@@ -513,17 +516,17 @@ export class BuildProgressController {
   #emitPlainStage(stage, event) {
     if (this.mode !== 'plain') return;
     if (event === 'start') {
-      this.stream.write(`[${stage.index}/${this.stages.length}] ${stage.title}... running\n`);
+      this.stream.write(`[${stage.index}/${this.stages.length}] ${stage.title}... 运行中\n`);
       return;
     }
-    const duration = stage.durationMs !== null ? ` in ${(stage.durationMs / 1000).toFixed(1)}s` : '';
+    const duration = stage.durationMs !== null ? `，耗时 ${(stage.durationMs / 1000).toFixed(1)}s` : '';
     const message = stage.status === 'warning'
-      ? `warning: ${stage.message ?? 'completed with warnings'}`
+      ? `警告：${stage.message ?? '完成但存在警告'}`
       : stage.status === 'failed'
-        ? `failed: ${stage.error ?? stage.message ?? 'failed'}`
+        ? `失败：${stage.error ?? stage.message ?? '失败'}`
         : stage.status === 'skipped'
-          ? `skipped: ${stage.message ?? 'skipped'}`
-          : `done${duration}`;
+          ? `已跳过：${stage.message ?? '已跳过'}`
+          : `完成${duration}`;
     this.stream.write(`[${stage.index}/${this.stages.length}] ${stage.title}... ${message}\n`);
   }
 }

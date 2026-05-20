@@ -13,7 +13,7 @@ import {
   openBilibiliPageInLocalBrowser,
   resolveBilibiliOpenDecision,
   writeBilibiliOpenReport,
-} from '../../sites/bilibili/navigation/open.mjs';
+} from '../../sites/known-sites/bilibili/navigation/open.mjs';
 import { siteLogin } from './site-login.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -32,8 +32,11 @@ const DEFAULT_OPTIONS = {
   localFallbackForBuiltinBrowser: true,
 };
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs bilibili open <url> [--profile-path <path>] [--browser-path <path>] [--browser-profile-root <dir>] [--user-data-dir <dir>] [--out-dir <dir>] [--timeout <ms>] [--reuse-login-state|--no-reuse-login-state] [--auto-login-bootstrap|--no-auto-login-bootstrap] [--json] [--quiet] [--progress auto|interactive|plain]
+const HELP = `Internal script usage:
+  node src/entrypoints/sites/bilibili-open-page.mjs <url> [options]
+
+Public command:
+  siteforge build <url>
 
 Notes:
   - Public bilibili pages are still classified as builtin-browser targets; when this local helper is invoked directly, it opens them locally as a fallback because the built-in browser cannot be controlled from this CLI.
@@ -382,7 +385,7 @@ export async function runBilibiliOpenCli() {
     isFailureResult: (stageResult) => stageResult?.result?.opened !== true,
     failureReason: (stageResult) => stageResult?.result?.reason ?? 'open page failed',
     failureTitle: 'Bilibili open page failed',
-    nextStep: 'node src/entrypoints/cli.mjs site doctor https://www.bilibili.com/ --no-headless --reuse-login-state',
+    nextStep: 'siteforge build https://www.bilibili.com/',
   });
   writeJsonStdout(report);
   if (report.result.opened !== true) {

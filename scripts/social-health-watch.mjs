@@ -28,8 +28,11 @@ const SITES = Object.freeze({
   },
 });
 
-const HELP = `Usage:
-  node src/entrypoints/cli.mjs social health-watch [--execute] [--site x|instagram|all] [options]
+const HELP = `Internal script usage:
+  node scripts/social-health-watch.mjs [options]
+
+Public command:
+  siteforge build <url>
 
 Dry-run by default. In execute mode, runs keepalive and auth doctor sequentially.
 

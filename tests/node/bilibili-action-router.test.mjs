@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planBilibiliAction, runBilibiliAction } from '../../src/sites/bilibili/actions/router.mjs';
+import { planBilibiliAction, runBilibiliAction } from '../../src/sites/known-sites/bilibili/actions/router.mjs';
 
 test('planBilibiliAction routes public bilibili pages to the built-in browser', async () => {
   const plan = await planBilibiliAction({

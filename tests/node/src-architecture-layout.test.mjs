@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, readdir, stat } from 'node:fs/promises';
+import { execFile as execFileCallback } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
+const execFile = promisify(execFileCallback);
 
 async function expectPathExists(relativePath) {
   const targetPath = path.join(REPO_ROOT, relativePath);
@@ -18,10 +21,20 @@ async function expectPathMissing(relativePath) {
   await assert.rejects(() => stat(targetPath), { code: 'ENOENT' });
 }
 
+async function trackedPathsUnder(relativePath) {
+  const { stdout } = await execFile('git', ['ls-files', relativePath], { cwd: REPO_ROOT });
+  return stdout.split(/\r?\n/u).filter(Boolean);
+}
+
 test('src-first code layout exists', async () => {
   await Promise.all([
     expectPathExists('src/entrypoints'),
-    expectPathExists('src/pipeline'),
+    expectPathExists('src/entrypoints/cli'),
+    expectPathExists('src/app'),
+    expectPathExists('src/app/pipeline'),
+    expectPathExists('src/app/compiler'),
+    expectPathExists('src/app/planner'),
+    expectPathExists('src/domain'),
     expectPathExists('src/sites'),
     expectPathExists('src/infra'),
     expectPathExists('src/infra/cli'),
@@ -32,9 +45,10 @@ test('src-first code layout exists', async () => {
 
 test('site and auth modules are organized under src', async () => {
   await Promise.all([
-    expectPathExists('src/sites/core'),
-    expectPathExists('src/sites/douyin'),
-    expectPathExists('src/sites/bilibili'),
+    expectPathExists('src/sites/adapters'),
+    expectPathExists('src/sites/registry'),
+    expectPathExists('src/sites/known-sites/douyin'),
+    expectPathExists('src/sites/known-sites/bilibili'),
     expectPathExists('src/infra/auth/site-auth.mjs'),
     expectPathExists('src/infra/auth/site-session-governance.mjs'),
     expectPathExists('src/infra/auth/auth-keepalive-preflight.mjs'),
@@ -44,14 +58,11 @@ test('site and auth modules are organized under src', async () => {
 
 test('root truth and output boundaries stay outside src', async () => {
   await Promise.all([
-    expectPathExists('profiles'),
     expectPathExists('schema'),
     expectPathExists('config'),
     expectPathExists('tools'),
     expectPathExists('config/site-registry.json'),
     expectPathExists('config/site-capabilities.json'),
-    expectPathExists('crawler-scripts'),
-    expectPathExists('skills'),
     expectPathMissing('site-registry.json'),
     expectPathMissing('site-capabilities.json'),
     expectPathMissing('src/profiles'),
@@ -62,6 +73,24 @@ test('root truth and output boundaries stay outside src', async () => {
     expectPathMissing('src/knowledge-base'),
     expectPathMissing('src/book-content'),
   ]);
+});
+
+test('root-level site data directories stay out of the tracked pure code tree', async () => {
+  for (const relativePath of [
+    '.playwright-mcp',
+    'book-content',
+    'knowledge-base',
+    'profiles',
+    'runs',
+    'skills',
+    'crawler-scripts',
+  ]) {
+    assert.deepEqual(
+      await trackedPathsUnder(relativePath),
+      [],
+      `${relativePath} should remain local generated data, not tracked project source`,
+    );
+  }
 });
 
 test('root only keeps approved project metadata regular files', async () => {
@@ -77,6 +106,7 @@ test('root only keeps approved project metadata regular files', async () => {
     expectPathExists('README.md'),
     expectPathExists('CONTRIBUTING.md'),
     expectPathExists('AGENTS.md'),
+    expectPathExists('package.json'),
   ]);
 
   assert.deepEqual(regularFiles, [
@@ -86,6 +116,7 @@ test('root only keeps approved project metadata regular files', async () => {
     'CONTRIBUTING.md',
     'README.md',
     'SECURITY.md',
+    'package.json',
     ...rootDesignDocs,
   ].sort());
 });
@@ -94,14 +125,19 @@ test('retired compatibility directories stay removed', async () => {
   await Promise.all([
     expectPathMissing('downloaders'),
     expectPathMissing('lib'),
+    expectPathMissing('src/pipeline'),
+    expectPathMissing('src/kernel'),
+    expectPathMissing('src/sites/core'),
+    expectPathMissing('src/sites/catalog'),
+    expectPathMissing('src/sites/capability'),
   ]);
 });
 
 test('site modules and pipeline runtime do not depend directly on entrypoint modules', async () => {
   const sourceChecks = [
-    ['src/sites/bilibili/actions/router.mjs', 'entrypoints/sites'],
-    ['src/sites/douyin/actions/router.mjs', 'entrypoints/sites'],
-    ['src/pipeline/runtime/create-default-runtime.mjs', 'entrypoints/sites/site-keepalive.mjs'],
+    ['src/sites/known-sites/bilibili/actions/router.mjs', 'entrypoints/sites'],
+    ['src/sites/known-sites/douyin/actions/router.mjs', 'entrypoints/sites'],
+    ['src/app/pipeline/runtime/create-default-runtime.mjs', 'entrypoints/sites/site-keepalive.mjs'],
   ];
 
   for (const [relativePath, forbiddenText] of sourceChecks) {
@@ -116,16 +152,16 @@ test('site modules and pipeline runtime do not depend directly on entrypoint mod
 
 test('canonical src modules own pipeline options and profile validation implementations', async () => {
   const sourceChecks = [
-    ['src/pipeline/engine/options.mjs', 'lib/pipeline/options.mjs'],
-    ['src/sites/core/profile-validation.mjs', 'lib/profile-validation.mjs'],
+    ['src/app/pipeline/engine/options.mjs', 'lib/pipeline/options.mjs'],
+    ['src/sites/registry/core/profile-validation.mjs', 'lib/profile-validation.mjs'],
     ['src/infra/browser/benchmark-report.mjs', 'lib/browser-runtime/benchmark-report.mjs'],
     ['src/infra/browser/cdp-client.mjs', 'lib/browser-runtime/cdp-client.mjs'],
     ['src/infra/browser/launcher.mjs', 'lib/browser-runtime/launcher.mjs'],
     ['src/infra/browser/profile-store.mjs', 'lib/browser-runtime/profile-store.mjs'],
     ['src/infra/browser/session.mjs', 'lib/browser-runtime/session.mjs'],
-    ['src/sites/bilibili/model/diagnosis.mjs', 'lib/sites/bilibili/diagnosis.mjs'],
-    ['src/sites/bilibili/model/surfacing.mjs', 'lib/sites/bilibili/surfacing.mjs'],
-    ['src/sites/douyin/model/diagnosis.mjs', 'lib/sites/douyin/site.mjs'],
+    ['src/sites/known-sites/bilibili/model/diagnosis.mjs', 'lib/sites/bilibili/diagnosis.mjs'],
+    ['src/sites/known-sites/bilibili/model/surfacing.mjs', 'lib/sites/bilibili/surfacing.mjs'],
+    ['src/sites/known-sites/douyin/model/diagnosis.mjs', 'lib/sites/douyin/site.mjs'],
     ['src/infra/cli.mjs', 'lib/cli.mjs'],
     ['src/infra/io.mjs', 'lib/io.mjs'],
     ['src/shared/normalize.mjs', 'lib/normalize.mjs'],
@@ -155,9 +191,38 @@ test('retired root compatibility entrypoints stay removed', async () => {
     expectPathMissing('download_bilibili.py'),
     expectPathMissing('download_douyin.py'),
     expectPathMissing('site_context.py'),
-    expectPathExists('scripts/site-login.mjs'),
-    expectPathExists('scripts/site-keepalive.mjs'),
-    expectPathExists('scripts/site-doctor.mjs'),
+    expectPathMissing('scripts/bilibili-action.mjs'),
+    expectPathMissing('scripts/douyin-action.mjs'),
+    expectPathMissing('scripts/export-douyin-cookies.mjs'),
+    expectPathMissing('scripts/extract-bilibili-links.mjs'),
+    expectPathMissing('scripts/nl-site-login.mjs'),
+    expectPathMissing('scripts/download.mjs'),
+    expectPathMissing('scripts/open-bilibili-page.mjs'),
+    expectPathMissing('scripts/resolve-douyin-media.mjs'),
+    expectPathMissing('scripts/session-repair-plan.mjs'),
+    expectPathMissing('scripts/site-credentials.mjs'),
+    expectPathMissing('scripts/site-doctor.mjs'),
+    expectPathMissing('scripts/site-keepalive.mjs'),
+    expectPathMissing('scripts/site-login.mjs'),
+    expectPathMissing('scripts/site-scaffold.mjs'),
+    expectPathMissing('scripts/social-auth-import.mjs'),
+    expectPathMissing('scripts/xiaohongshu-action.mjs'),
+    expectPathExists('src/entrypoints/sites/bilibili-action.mjs'),
+    expectPathExists('src/entrypoints/sites/douyin-action.mjs'),
+    expectPathExists('src/entrypoints/sites/douyin-export-cookies.mjs'),
+    expectPathExists('src/entrypoints/sites/bilibili-extract-links.mjs'),
+    expectPathExists('src/entrypoints/sites/nl-site-login.mjs'),
+    expectPathMissing('src/entrypoints/sites/download.mjs'),
+    expectPathExists('src/entrypoints/sites/bilibili-open-page.mjs'),
+    expectPathExists('src/entrypoints/sites/douyin-resolve-media.mjs'),
+    expectPathExists('src/entrypoints/sites/session-repair-plan.mjs'),
+    expectPathExists('src/entrypoints/sites/site-credentials.mjs'),
+    expectPathExists('src/entrypoints/sites/site-doctor.mjs'),
+    expectPathExists('src/entrypoints/sites/site-keepalive.mjs'),
+    expectPathExists('src/entrypoints/sites/site-login.mjs'),
+    expectPathExists('src/entrypoints/sites/site-scaffold.mjs'),
+    expectPathExists('src/entrypoints/sites/social-auth-import.mjs'),
+    expectPathExists('src/entrypoints/sites/xiaohongshu-action.mjs'),
   ]);
 });
 

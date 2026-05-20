@@ -8,6 +8,25 @@ siteforge build https://example.com/
 
 The build command crawls within bounded site rules, compiles evidence into capability contracts, plans descriptor-only actions, writes sanitized artifacts, and promotes verified site outputs under `.siteforge/sites/<site_id>/`.
 
+For non-developers, SiteForge is a site capability translator. It records what a real site exposes, where risk or login boundaries appear, which actions are safe to plan, and how later AI workflows should explain blocked or partial outcomes.
+
+## What SiteForge Solves
+
+- Site structure changes should become explainable capability drift, not silent script failure.
+- Login, permission, CAPTCHA, rate-limit, and platform-risk pages should be recorded as blocked states instead of bypassed.
+- Site-specific interpretation should live in SiteAdapters, while Pipeline, Compiler, Planner, and Domain services stay site-agnostic.
+- Raw cookies, tokens, browser profiles, session ids, and authorization headers must not become ordinary build artifacts.
+- Generated site data belongs outside tracked source so the checkout stays a clean code repository.
+
+## Outputs
+
+| Output | Purpose |
+| --- | --- |
+| Site workspace | Sanitized evidence, diagnostics, and generated artifacts under `.siteforge/sites/<site_id>/`. |
+| Capability contracts | Structured facts about pages, capabilities, risks, sessions, schemas, and policies. |
+| Descriptor-only plans | Planner outputs that describe allowed, blocked, or remediation paths without executing privileged actions. |
+| Repo-local Skill material | Generated guidance for later AI use, backed by capability evidence and safety boundaries. |
+
 ## Current Contract
 
 - Deployment shape: one repository, one package, one CLI.

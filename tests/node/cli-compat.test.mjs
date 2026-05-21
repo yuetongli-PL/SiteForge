@@ -11,7 +11,23 @@ import { buildExampleStageSpec, compileFixtureKnowledgeBase } from './kb-test-fi
 import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
 
 const repoRoot = process.cwd();
-const PUBLIC_BUILD_FLAGS = ['--auto', '--deep', '--network', '--manual', '--explain', '--verbose', '--debug'];
+const PUBLIC_BOOLEAN_BUILD_FLAGS = ['--auto', '--manual', '--deep', '--network', '--explain', '--verbose', '--debug'];
+const PUBLIC_HELP_FLAGS = [
+  ...PUBLIC_BOOLEAN_BUILD_FLAGS,
+  '--privacy limited|strict',
+  '--report user|debug|both',
+];
+const INTERNAL_BUILD_FLAGS = [
+  '--browser-path',
+  '--user-data-dir',
+  '--capture-out-dir',
+  '--metadata-runtime-dir',
+  '--capability-compile-out-dir',
+  '--json',
+  '--quiet',
+  '--progress',
+  '--capability',
+];
 const LEGACY_PUBLIC_ROUTES = [
   ['site', 'doctor', 'https://example.com/'],
   ['download', 'plan', 'https://example.com/'],
@@ -32,6 +48,21 @@ function runNodeCli(scriptName, args, options = {}) {
 function parseJsonStdout(result) {
   const stdout = String(result.stdout ?? '').trim();
   return stdout ? JSON.parse(stdout) : null;
+}
+
+function assertBuildDispatch(args) {
+  const dispatch = resolveCliDispatch(args);
+  assert.equal(dispatch.script, path.resolve(repoRoot, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'));
+  assert.deepEqual(dispatch.args, args.slice(1));
+  return dispatch;
+}
+
+function assertResolveError(args, pattern) {
+  assert.throws(
+    () => resolveCliDispatch(args),
+    pattern,
+    `${args.join(' ')} should fail with ${pattern}`,
+  );
 }
 
 test('internal run-pipeline CLI keeps help and missing-url behavior compatible', async () => {
@@ -114,6 +145,12 @@ test('public SiteForge CLI exposes only build help', () => {
   const help = runNodeCli(path.join('src', 'entrypoints', 'cli', 'index.mjs'), ['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /siteforge build <url>/u);
+  for (const flag of PUBLIC_HELP_FLAGS) {
+    assert.match(help.stdout, new RegExp(flag.replace(/[|]/gu, '\\$&'), 'u'));
+  }
+  for (const flag of INTERNAL_BUILD_FLAGS) {
+    assert.doesNotMatch(help.stdout, new RegExp(flag, 'u'));
+  }
   assert.doesNotMatch(help.stdout, /siteforge capabilities/u);
   assert.doesNotMatch(help.stdout, /site doctor|site scaffold|download plan|generate-skill/u);
 });
@@ -150,17 +187,75 @@ test('public SiteForge CLI runs when invoked through an npm link path', async (t
   }
 });
 
-test('public SiteForge CLI accepts build flags and rejects legacy public routes at runtime', () => {
-  for (const flag of PUBLIC_BUILD_FLAGS) {
-    const dispatch = resolveCliDispatch(['build', 'https://example.com/', flag]);
-    assert.equal(path.basename(dispatch.script), 'run-pipeline.mjs');
-    assert.deepEqual(dispatch.args, ['https://example.com/', flag]);
+test('public SiteForge CLI help routes stay available', () => {
+  for (const args of [
+    [],
+    ['--help'],
+    ['build'],
+    ['build', '--help'],
+  ]) {
+    const dispatch = resolveCliDispatch(args);
+    assert.match(dispatch.help, /siteforge build <url>/u);
+  }
+});
+
+test('public SiteForge CLI accepts only documented build flags', () => {
+  assertBuildDispatch(['build', 'https://example.com/']);
+
+  for (const flag of PUBLIC_BOOLEAN_BUILD_FLAGS) {
+    assertBuildDispatch(['build', 'https://example.com/', flag]);
   }
 
-  assert.deepEqual(
-    resolveCliDispatch(['build', 'https://example.com/', '--privacy', 'limited', '--report', 'both']).args,
-    ['https://example.com/', '--privacy', 'limited', '--report', 'both'],
-  );
+  for (const args of [
+    ['build', 'https://example.com/', '--privacy', 'limited'],
+    ['build', 'https://example.com/', '--privacy=limited'],
+    ['build', 'https://example.com/', '--privacy', 'strict'],
+    ['build', 'https://example.com/', '--report', 'user'],
+    ['build', 'https://example.com/', '--report=user'],
+    ['build', 'https://example.com/', '--report', 'debug'],
+    ['build', 'https://example.com/', '--report', 'both'],
+    ['build', 'https://example.com/', '--privacy', 'limited', '--report', 'both'],
+  ]) {
+    assertBuildDispatch(args);
+  }
+});
+
+test('public SiteForge CLI rejects unsupported build arguments before dispatch', () => {
+  for (const args of [
+    ['build', 'https://example.com/', '--unknown'],
+    ['build', 'https://example.com/', '--unknown=value'],
+    ['build', 'https://example.com/', '--browser-path'],
+    ['build', 'https://example.com/', '--user-data-dir'],
+    ['build', 'https://example.com/', '--capture-out-dir'],
+  ]) {
+    assertResolveError(args, /Unknown flag: --/u);
+  }
+
+  for (const args of [
+    ['build', 'https://example.com/', '--privacy'],
+    ['build', 'https://example.com/', '--privacy='],
+    ['build', 'https://example.com/', '--privacy', '--debug'],
+  ]) {
+    assertResolveError(args, /Missing value for --privacy/u);
+  }
+
+  assertResolveError(['build', 'https://example.com/', '--privacy', 'invalid'], /--privacy must be one of: limited, strict/u);
+  assertResolveError(['build', 'https://example.com/', '--report', 'invalid'], /--report must be one of: user, debug, both/u);
+  assertResolveError(['build', 'https://example.com/', '--auto=false'], /Flag does not take a value: --auto/u);
+  assertResolveError(['build', 'https://example.com/', '--manual=true'], /Flag does not take a value: --manual/u);
+  assertResolveError(['build', 'https://example.com/', '--deep=1'], /Flag does not take a value: --deep/u);
+  assertResolveError(['build', 'https://example.com/', '-x'], /Unknown flag: -x/u);
+  assertResolveError(['build', 'https://example.com/', '-bad'], /Unknown flag: -bad/u);
+  assertResolveError(['build', 'https://example.com/', 'extra'], /Unsupported argument: extra/u);
+});
+
+test('public SiteForge CLI validates build URL shape before dispatch', () => {
+  assertResolveError(['build', 'not-a-url'], /Invalid URL: not-a-url/u);
+  assertResolveError(['build', 'ftp:\/\/example.com/'], /Unsupported URL protocol: ftp:/u);
+  assertResolveError(['build', 'https://user:pass@example.com/'], /URL must not include credentials/u);
+});
+
+test('public SiteForge CLI rejects legacy public routes at runtime', () => {
   assert.throws(
     () => resolveCliDispatch([
       'capabilities',
@@ -171,10 +266,6 @@ test('public SiteForge CLI accepts build flags and rejects legacy public routes 
       '--limited',
     ]),
     /Unknown command: capabilities/u,
-  );
-  assert.throws(
-    () => resolveCliDispatch(['build', 'https://example.com/', 'extra']),
-    /Unsupported argument: extra/u,
   );
 
   for (const route of LEGACY_PUBLIC_ROUTES) {

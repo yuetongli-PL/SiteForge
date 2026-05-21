@@ -349,6 +349,16 @@ function displayReportPath(value, options = {}) {
   if (!reportPath) {
     return '-';
   }
+  if (path.win32.isAbsolute(reportPath)) {
+    const cwd = String(options.cwd ?? process.cwd());
+    if (path.win32.isAbsolute(cwd)) {
+      const relative = path.win32.relative(cwd, reportPath);
+      if (relative && !relative.startsWith('..') && !path.win32.isAbsolute(relative)) {
+        return relative.replace(/\\/gu, '/');
+      }
+    }
+    return path.win32.basename(reportPath);
+  }
   if (!path.isAbsolute(reportPath)) {
     return reportPath.replace(/\\/gu, '/');
   }

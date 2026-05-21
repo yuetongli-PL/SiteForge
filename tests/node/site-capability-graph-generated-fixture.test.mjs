@@ -1506,7 +1506,7 @@ test('generated graph inventory repo output dry-run rejects writes, unsafe targe
       pattern: /must be repo-relative/u,
     },
     {
-      targetRelativePath: 'docs/site-capability-graph/generated.json',
+      targetRelativePath: 'site-capability-graph/generated.json',
       pattern: /runs\/site-capability-graph/u,
     },
   ]) {

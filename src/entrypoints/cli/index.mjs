@@ -29,43 +29,19 @@ Flags:
   --debug
 `;
 
-const BUILD_FLAGS_WITH_VALUE = new Set([
-  '--privacy',
-  '--report',
-  '--progress',
-  '--capability',
-  '--capabilities',
-  '--browser-path',
-  '--browser-profile-root',
-  '--user-data-dir',
-  '--timeout',
-  '--wait-until',
-  '--idle-ms',
-  '--max-triggers',
-  '--max-captured-states',
-  '--search-query',
-  '--book-title',
-  '--book-url',
-  '--chapter-fetch-concurrency',
-  '--examples',
-  '--capture-out-dir',
-  '--expanded-out-dir',
-  '--book-content-out-dir',
-  '--analysis-out-dir',
-  '--abstraction-out-dir',
-  '--nl-entry-out-dir',
-  '--docs-out-dir',
-  '--governance-out-dir',
-  '--capability-compile-out-dir',
-  '--capability-intent',
-  '--kb-dir',
-  '--skill-out-dir',
-  '--skill-name',
-  '--metadata-config-dir',
-  '--site-metadata-config-dir',
-  '--metadata-runtime-dir',
-  '--site-metadata-runtime-dir',
-  '--strict',
+const PUBLIC_BOOLEAN_BUILD_FLAGS = new Set([
+  '--auto',
+  '--manual',
+  '--deep',
+  '--network',
+  '--explain',
+  '--verbose',
+  '--debug',
+]);
+
+const PUBLIC_VALUE_BUILD_FLAGS = new Map([
+  ['--privacy', ['limited', 'strict']],
+  ['--report', ['user', 'debug', 'both']],
 ]);
 
 function scriptPath(...segments) {
@@ -126,6 +102,35 @@ function splitFlagName(token) {
   return String(token ?? '').split('=')[0];
 }
 
+function errorWithHelp(message) {
+  throw new Error(`${message}\n\n${HELP}`);
+}
+
+function validatePublicBuildUrl(input) {
+  let parsed;
+  try {
+    parsed = new URL(input);
+  } catch {
+    errorWithHelp(`Invalid URL: ${input}`);
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    errorWithHelp(`Unsupported URL protocol: ${parsed.protocol}`);
+  }
+  if (parsed.username || parsed.password) {
+    errorWithHelp('URL must not include credentials');
+  }
+}
+
+function validateBuildFlagValue(flagName, value) {
+  if (!value || value.startsWith('-')) {
+    errorWithHelp(`Missing value for ${flagName}`);
+  }
+  const allowedValues = PUBLIC_VALUE_BUILD_FLAGS.get(flagName);
+  if (!allowedValues.includes(value)) {
+    errorWithHelp(`${flagName} must be one of: ${allowedValues.join(', ')}`);
+  }
+}
+
 function validateBuildArgs(args) {
   let url = null;
   for (let index = 0; index < args.length; index += 1) {
@@ -135,22 +140,38 @@ function validateBuildArgs(args) {
     }
     if (String(token).startsWith('--')) {
       const flagName = splitFlagName(token);
-      if (BUILD_FLAGS_WITH_VALUE.has(flagName) && !String(token).includes('=')) {
+      if (PUBLIC_BOOLEAN_BUILD_FLAGS.has(flagName)) {
+        if (String(token).includes('=')) {
+          errorWithHelp(`Flag does not take a value: ${flagName}`);
+        }
+        continue;
+      }
+      if (PUBLIC_VALUE_BUILD_FLAGS.has(flagName)) {
+        if (String(token).includes('=')) {
+          validateBuildFlagValue(flagName, String(token).slice(flagName.length + 1));
+          continue;
+        }
         index += 1;
         if (index >= args.length) {
-          throw new Error(`Missing value for ${flagName}\n\n${HELP}`);
+          errorWithHelp(`Missing value for ${flagName}`);
         }
+        validateBuildFlagValue(flagName, String(args[index]));
+        continue;
       }
-      continue;
+      errorWithHelp(`Unknown flag: ${flagName}`);
+    }
+    if (String(token).startsWith('-')) {
+      errorWithHelp(`Unknown flag: ${token}`);
     }
     if (url !== null) {
-      throw new Error(`Unsupported argument: ${token}\n\n${HELP}`);
+      errorWithHelp(`Unsupported argument: ${token}`);
     }
     url = token;
   }
-  if (!url) {
+  if (url === null) {
     return { help: true };
   }
+  validatePublicBuildUrl(url);
   return { help: false, url };
 }
 

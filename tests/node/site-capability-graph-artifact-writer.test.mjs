@@ -3337,7 +3337,7 @@ test('docs markdown artifact registry consumer registry rejects unsafe descripto
     {
       name: 'writesDocs',
       descriptorPatch: { writesDocs: true },
-      pattern: /writesDocs.*false|docs/i,
+      pattern: new RegExp('writesDocs.*false|docs', 'i'),
     },
     {
       name: 'writesRepo',
@@ -31336,7 +31336,7 @@ test('docs markdown redaction integration acceptance guard consumes reviewed pre
     },
     {
       name: 'docsOutputPath',
-      options: { docsOutputPath: 'docs/synthetic-secret-value.md' },
+      options: { docsOutputPath: 'runs/synthetic-secret-value.md' },
       pattern: /docsOutputPath|runtime .*products?|forbidden|disabled/i,
     },
     {
@@ -32669,7 +32669,7 @@ test('graph artifact placement rejects unsafe run, family, or artifact name segm
     { runId: 'synthetic\\run' },
     { runId: 'Synthetic-Run' },
     { artifactFamily: 'download-artifacts' },
-    { artifactFamily: 'site-capability-graph-docs/unsafe' },
+    { artifactFamily: 'site-capability-graph_docs-unsafe' },
     { artifactName: '..\\graph-docs-summary' },
     { artifactName: 'graph_docs_summary' },
   ];

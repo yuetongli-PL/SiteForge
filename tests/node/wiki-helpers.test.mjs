@@ -170,11 +170,11 @@ test('kb data-model builders keep intent docs, page indexes, and raw source refs
       },
     },
     docs: {
-      manifestPath: rawPath('step-6-docs', 'run-1', 'docs-manifest.json'),
+      manifestPath: rawPath('step-6-intent-pages', 'run-1', 'intent-pages-manifest.json'),
       manifest: {
         documents: [{
           intentId: 'search',
-          path: rawPath('step-6-docs', 'run-1', 'docs', 'search.md'),
+          path: rawPath('step-6-intent-pages', 'run-1', 'intent-pages', 'search.md'),
         }],
       },
     },
@@ -224,7 +224,7 @@ test('kb data-model builders keep intent docs, page indexes, and raw source refs
   });
 
   assert.deepEqual(model.pageTitleTokens, ['Home']);
-  assert.equal(model.docsByIntentId.get('search')?.path, rawPath('step-6-docs', 'run-1', 'docs', 'search.md'));
+  assert.equal(model.docsByIntentId.get('search')?.path, rawPath('step-6-intent-pages', 'run-1', 'intent-pages', 'search.md'));
   assert.equal(model.edgeIdsByIntentId.get('search')?.has('edge-1'), true);
   assert.equal(pages.length, 11);
 
@@ -237,7 +237,7 @@ test('kb data-model builders keep intent docs, page indexes, and raw source refs
   assert.ok(riskPage);
   assert.match(statePage.path, /^wiki\/states\//u);
   assert.deepEqual(statePage.relatedIds, ['page_element_el-1']);
-  assert.equal(intentPage.sourceRefs.at(-1)?.path, 'raw/step-6-docs/run-1/docs/search.md');
+  assert.equal(intentPage.sourceRefs.at(-1)?.path, 'raw/step-6-intent-pages/run-1/intent-pages/search.md');
   assert.equal(riskPage.attributes.observedStateCount, 1);
   assert.equal(riskPage.attributes.observedEdgeCount, 1);
 });

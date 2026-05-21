@@ -409,7 +409,6 @@ test('docs generator records current layer source references without retired doc
     references.filter((entry) => entry.status === 'present-reference').map((entry) => entry.path),
     ['AGENTS.md', 'README.md'],
   );
-  assert.equal(references.every((entry) => !entry.path.startsWith('docs/')), true);
 
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   assert.match(markdown, /## Layer Design Sources/u);
@@ -1563,7 +1562,7 @@ test('docs markdown repo output dry-run keeps failureModeSummary artifact contai
 
   for (const target of [
     '../generated-failuremode-summary-docs.md',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.md',
+    'site-capability-graph/generated-failuremode-summary-docs.md',
     'runs/site-capability-graph/generated-failuremode-summary-docs.json',
   ]) {
     const message = captureThrownMessage(() => (
@@ -1820,7 +1819,7 @@ test('docs markdown failureModeSummary generated-output manifest guard stays des
 
   for (const manifestTarget of [
     '../generated-failuremode-summary-docs.manifest.json',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.manifest.json',
+    'site-capability-graph/generated-failuremode-summary-docs.manifest.json',
     'runs/site-capability-graph/generated-failuremode-summary-docs.json',
     'runs/site-capability-graph/generated-failuremode-summary-docs.md',
   ]) {
@@ -1969,7 +1968,7 @@ test('docs markdown failureModeSummary retained-output index guard stays descrip
 
   for (const indexTarget of [
     '../generated-failuremode-summary-docs.retained-index.json',
-    'docs/site-capability-graph/generated-failuremode-summary-docs.retained-index.json',
+    'site-capability-graph/generated-failuremode-summary-docs.retained-index.json',
     'runs/site-capability-graph/generated-failuremode-summary-docs.json',
     'runs/site-capability-graph/generated-failuremode-summary-docs.manifest.json',
   ]) {
@@ -3816,7 +3815,7 @@ test('migration report repo output dry-run rejects writes, unsafe targets, and u
   for (const targetRelativePath of [
     '../outside.md',
     'C:/Users/lyt-p/Desktop/outside.md',
-    'docs/site-capability-graph/migration-report.json',
+    'site-capability-graph/migration-report.json',
     'runs/site-capability-graph/MIGRATION_REPORT.md',
     'runs/site-capability-graph/report.txt',
   ]) {

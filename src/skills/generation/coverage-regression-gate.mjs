@@ -2,7 +2,7 @@
 
 import path from 'node:path';
 import { access, readFile } from 'node:fs/promises';
-import { constants as fsConstants } from 'node:fs';
+import { constants as fsConstants, realpathSync } from 'node:fs';
 
 const SKILL_MD = 'SKILL.md';
 const FLOWS_MD = 'references/flows.md';
@@ -39,8 +39,19 @@ function normalizeRepoPath(value) {
   return String(value ?? '').replaceAll('\\', '/').replace(/^\.?\//u, '');
 }
 
+function comparablePaths(value) {
+  const resolved = path.resolve(value);
+  try {
+    const real = realpathSync.native(resolved);
+    return real === resolved ? [resolved] : [resolved, real];
+  } catch {
+    return [resolved];
+  }
+}
+
 function samePath(left, right) {
-  return path.resolve(left) === path.resolve(right);
+  const rightPaths = new Set(comparablePaths(right));
+  return comparablePaths(left).some((leftPath) => rightPaths.has(leftPath));
 }
 
 async function pathExists(filePath) {

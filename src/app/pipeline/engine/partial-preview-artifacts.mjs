@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import process from 'node:process';
+import { realpathSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { ensureDir, writeTextFile } from '../../../infra/io.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../../domain/sessions/security-guard.mjs';
@@ -9,9 +10,21 @@ import { prepareRedactedArtifactJsonWithAudit } from '../../../domain/sessions/s
 const PARTIAL_ARTIFACT_SCHEMA_VERSION = 1;
 const REPO_RUNTIME_OUTPUT_DIRS = ['runs', 'knowledge-base'];
 
+function comparablePaths(value) {
+  const resolved = path.resolve(value);
+  try {
+    const real = realpathSync.native(resolved);
+    return real === resolved ? [resolved] : [resolved, real];
+  } catch {
+    return [resolved];
+  }
+}
+
 function isSameOrInsideDir(targetPath, parentDir) {
-  const relative = path.relative(path.resolve(parentDir), path.resolve(targetPath));
-  return !relative || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  return comparablePaths(targetPath).some((target) => comparablePaths(parentDir).some((parent) => {
+    const relative = path.relative(parent, target);
+    return !relative || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  }));
 }
 
 function blockedRepoPathKind(targetPath, cwd = process.cwd()) {

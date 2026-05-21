@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -33,43 +33,37 @@ async function main() {
   if (scope.schemaVersion !== 1) {
     throw new Error('tools/typecheck-scope.json schemaVersion must be 1.');
   }
-  if (scope.mode !== 'staged-js-checkjs') {
-    throw new Error('typecheck scope mode must be staged-js-checkjs.');
+  if (scope.mode !== 'full-js-checkjs') {
+    throw new Error('typecheck scope mode must be full-js-checkjs.');
   }
-  const checkedFiles = scope.checkedFiles ?? [];
-  if (!Array.isArray(checkedFiles) || checkedFiles.length === 0) {
-    throw new Error('typecheck scope must list checkedFiles.');
+  const includedGlobs = scope.includedGlobs ?? [];
+  if (!Array.isArray(includedGlobs) || includedGlobs.length === 0) {
+    throw new Error('typecheck scope must list includedGlobs.');
   }
-  assertSortedUnique(checkedFiles, 'checkedFiles');
-  assertSortedUnique(tsconfig.files ?? [], 'tsconfig.typecheck.json files');
-  if (JSON.stringify(checkedFiles) !== JSON.stringify(tsconfig.files ?? [])) {
-    throw new Error('tsconfig.typecheck.json files must match tools/typecheck-scope.json checkedFiles.');
+  assertSortedUnique(includedGlobs, 'includedGlobs');
+  assertSortedUnique(tsconfig.include ?? [], 'tsconfig.typecheck.json include');
+  if (JSON.stringify(includedGlobs) !== JSON.stringify(tsconfig.include ?? [])) {
+    throw new Error('tsconfig.typecheck.json include must match tools/typecheck-scope.json includedGlobs.');
+  }
+  if ('files' in tsconfig) {
+    throw new Error('tsconfig.typecheck.json must not use a staged files list.');
   }
   const options = tsconfig.compilerOptions ?? {};
   for (const [key, expected] of Object.entries({
     allowJs: true,
     checkJs: true,
     noEmit: true,
-    noResolve: true,
   })) {
     if (options[key] !== expected) {
       throw new Error(`tsconfig.typecheck.json compilerOptions.${key} must be ${expected}.`);
     }
   }
-  for (const relativePath of checkedFiles) {
-    await access(path.join(REPO_ROOT, relativePath));
+  if (!Array.isArray(options.types) || !options.types.includes('node')) {
+    throw new Error('tsconfig.typecheck.json must include Node types.');
   }
   const deferredScopes = scope.deferredScopes ?? [];
-  if (!Array.isArray(deferredScopes) || deferredScopes.length === 0) {
-    throw new Error('typecheck scope must record deferredScopes with reasons.');
-  }
-  for (const [index, entry] of deferredScopes.entries()) {
-    if (!String(entry?.pattern ?? '').trim()) {
-      throw new Error(`deferredScopes[${index}] is missing pattern.`);
-    }
-    if (String(entry?.reason ?? '').trim().length < 30) {
-      throw new Error(`deferredScopes[${index}] must include a concrete migration reason.`);
-    }
+  if (Array.isArray(deferredScopes) && deferredScopes.length > 0) {
+    throw new Error('full typecheck scope must not defer repository source globs.');
   }
 }
 

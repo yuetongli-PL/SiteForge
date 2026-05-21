@@ -30,7 +30,7 @@ async function pathExists(rootRelativePath) {
 
 async function listSourceFiles(rootRelativePath) {
   const rootPath = path.join(REPO_ROOT, rootRelativePath);
-  const results = [];
+  const results = /** @type {any[]} */ ([]);
   async function walk(currentPath) {
     const entries = await readdir(currentPath, { withFileTypes: true });
     for (const entry of entries) {
@@ -49,7 +49,7 @@ async function listSourceFiles(rootRelativePath) {
 }
 
 function collectImportSpecifiers(sourceText) {
-  const specifiers = [];
+  const specifiers = /** @type {any[]} */ ([]);
   for (const pattern of IMPORT_PATTERNS) {
     for (const match of sourceText.matchAll(pattern)) {
       specifiers.push(match[1]);
@@ -73,7 +73,7 @@ function resolveImportPath(fromFile, specifier) {
 
 async function collectResolvedImports(rootRelativePath) {
   const files = await listSourceFiles(rootRelativePath);
-  const imports = [];
+  const imports = /** @type {any[]} */ ([]);
   for (const filePath of files) {
     const sourceText = await readFile(filePath, 'utf8');
     for (const specifier of collectImportSpecifiers(sourceText)) {
@@ -101,7 +101,7 @@ async function collectResolvedImportsFromFile(fileRelativePath) {
 
 async function collectSourcePatternMatches(rootRelativePath, pattern) {
   const files = await listSourceFiles(rootRelativePath);
-  const matches = [];
+  const matches = /** @type {any[]} */ ([]);
   for (const filePath of files) {
     const sourceText = await readFile(filePath, 'utf8');
     for (const match of sourceText.matchAll(pattern)) {
@@ -115,7 +115,7 @@ async function collectSourcePatternMatches(rootRelativePath, pattern) {
 async function collectFileSourcePatternMatches(fileRelativePath, pattern) {
   const filePath = path.join(REPO_ROOT, fileRelativePath);
   const sourceText = await readFile(filePath, 'utf8');
-  const matches = [];
+  const matches = /** @type {any[]} */ ([]);
   for (const match of sourceText.matchAll(pattern)) {
     const lineNumber = sourceText.slice(0, match.index).split('\n').length;
     matches.push(`${fileRelativePath}:${lineNumber}: ${match[0]}`);
@@ -125,7 +125,7 @@ async function collectFileSourcePatternMatches(fileRelativePath, pattern) {
 
 async function listTextFiles(rootRelativePath) {
   const rootPath = path.join(REPO_ROOT, rootRelativePath);
-  const results = [];
+  const results = /** @type {any[]} */ ([]);
   async function walk(currentPath) {
     const entries = await readdir(currentPath, { withFileTypes: true });
     for (const entry of entries) {
@@ -151,7 +151,7 @@ async function collectRepositoryTextPatternMatches(pattern, skip = new Set()) {
     path.join(REPO_ROOT, 'package.json'),
     path.join(REPO_ROOT, 'README.md'),
   ];
-  const matches = [];
+  const matches = /** @type {any[]} */ ([]);
   for (const filePath of files) {
     const fileRelativePath = toRepoRelativePath(filePath);
     if (skip.has(fileRelativePath)) {
@@ -299,7 +299,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
 ]);
 
 function collectArtifactWriteSinkMatches(sourceText, fileRelativePath) {
-  const matches = [];
+  const matches = /** @type {any[]} */ ([]);
   ARTIFACT_WRITE_SINK_PATTERN.lastIndex = 0;
   for (const match of sourceText.matchAll(ARTIFACT_WRITE_SINK_PATTERN)) {
     const lineNumber = sourceText.slice(0, match.index).split('\n').length;
@@ -316,7 +316,7 @@ function collectArtifactWriteSinkMatches(sourceText, fileRelativePath) {
 }
 
 function collectCallExpressions(sourceText, calleePattern) {
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
   const pattern = new RegExp(`\\b(${calleePattern})\\s*\\(`, 'gu');
   for (const match of sourceText.matchAll(pattern)) {
     const openParenIndex = match.index + match[0].lastIndexOf('(');
@@ -500,7 +500,7 @@ function collectNonGoalBoundaryMatches(fileRelativePath, sourceText) {
       pattern: NON_GOAL_RAW_BOUNDARY_DESTRUCTURE_PATTERN,
     },
   ];
-  const matches = [];
+  const matches = /** @type {any[]} */ ([]);
   for (const { kind, pattern } of checks) {
     pattern.lastIndex = 0;
     for (const match of sourceText.matchAll(pattern)) {
@@ -621,7 +621,7 @@ test('non-goal boundary classifier catches raw session reads and SecurityGuard b
 });
 
 test('runtime artifact writes are explicitly classified and redaction guarded', async () => {
-  const failures = [];
+  const failures = /** @type {any[]} */ ([]);
   for (const filePath of await listSourceFiles('src')) {
     const sourceText = await readFile(filePath, 'utf8');
     const fileRelativePath = toRepoRelativePath(filePath);
@@ -644,7 +644,7 @@ test('stable config does not point at retired web or public download facade laye
     'config/site-capabilities.json',
   ];
   const retiredRuntimePattern = /src\/(?:sites\/downloads|entrypoints\/sites\/download\.mjs|sites\/capability\/build\/web-interaction-)/u;
-  const hits = [];
+  const hits = /** @type {any[]} */ ([]);
   for (const fileRelativePath of configFiles) {
     const sourceText = await readFile(path.join(REPO_ROOT, fileRelativePath), 'utf8');
     if (retiredRuntimePattern.test(sourceText.replace(/\\/gu, '/'))) {

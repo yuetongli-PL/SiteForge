@@ -94,7 +94,9 @@ test('static compiler rejects raw sensitive static source material before manife
       capabilityConfig: createSyntheticCapabilityConfig(),
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },

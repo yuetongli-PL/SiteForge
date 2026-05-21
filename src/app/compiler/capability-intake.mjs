@@ -23,6 +23,7 @@ function normalizeCapabilityName(value) {
     return null;
   }
   if (/https?:\/\//iu.test(text)) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Capability names must not contain URLs or raw capture targets');
     error.code = 'compiler.capability_intake_invalid';
     throw error;
@@ -46,6 +47,7 @@ function uniqueCapabilities(values = []) {
   return result;
 }
 
+/** @param {Record<string, any>} [capability] */
 function capabilityAliases(capability = {}) {
   return uniqueCapabilities([
     capability.capabilityKey,
@@ -55,6 +57,7 @@ function capabilityAliases(capability = {}) {
   ]);
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityIntake({
   requestedCapabilities = [],
   candidateCapabilities = [],
@@ -80,6 +83,7 @@ export function createCapabilityIntake({
   return intake;
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityIntakeQuestionnaire({
   siteKey,
   url,
@@ -99,6 +103,7 @@ export function createCapabilityIntakeQuestionnaire({
   return questionnaire;
 }
 
+/** @param {Record<string, any>} [capability] */
 export function capabilityIntakeStatusForCapability(capability = {}, capabilityIntake = null) {
   if (!capabilityIntake || !Array.isArray(capabilityIntake.requestedCapabilities)) {
     return 'unconfirmed_best_effort';
@@ -110,6 +115,7 @@ export function capabilityIntakeStatusForCapability(capability = {}, capabilityI
     : 'unconfirmed_best_effort';
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityCoverageSummary({
   capabilityIntake = null,
   capabilities = [],

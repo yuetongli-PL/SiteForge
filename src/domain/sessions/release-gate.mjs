@@ -12,6 +12,7 @@ function pickFirstText(...values) {
   return null;
 }
 
+/** @param {Record<string, any>} [manifest] */
 function inferAuthRequirement(manifest = {}, options = {}) {
   if (typeof options.requiresAuth === 'boolean') {
     return options.requiresAuth;
@@ -26,6 +27,7 @@ function inferAuthRequirement(manifest = {}, options = {}) {
     || normalizeText(manifest.session?.requirement) === 'required';
 }
 
+/** @param {Record<string, any>} [manifest] */
 function pickSessionHealth(manifest = {}, options = {}) {
   return options.sessionHealth
     ?? manifest.sessionHealth
@@ -33,6 +35,7 @@ function pickSessionHealth(manifest = {}, options = {}) {
     ?? {};
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function evaluateAuthenticatedSessionReleaseGate(manifest = {}, options = {}) {
   const requiresAuth = inferAuthRequirement(manifest, options);
   const sessionHealth = pickSessionHealth(manifest, options);

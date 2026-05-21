@@ -4,15 +4,15 @@ import assert from 'node:assert/strict';
 import { BrowserSession, openBrowserSession } from '../../src/infra/browser/session.mjs';
 
 class FakeCdpClient {
-  constructor(_wsUrl, _options = {}) {
-    this.calls = [];
-    this.targetInfos = [];
+  constructor(_wsUrl, _options = /** @type {any} */ ({})) {
+    this.calls = /** @type {any[]} */ ([]);
+    this.targetInfos = /** @type {any[]} */ ([]);
     this.closed = false;
   }
 
   async connect() {}
 
-  async send(method, params = {}, sessionId) {
+  async send(method, params = /** @type {any} */ ({}), sessionId) {
     this.calls.push({ method, params, sessionId });
     switch (method) {
       case 'Target.getTargets':
@@ -106,6 +106,7 @@ test('openBrowserSession attaches to the existing startup page target before cre
     assert.equal(session.targetId, 'existing-target-1');
     assert.equal(session.browserAttachedVia, 'existing-target');
     assert.equal(session.browserStartUrl, 'https://www.bilibili.com/');
+    // @ts-ignore
     assert.equal(clientInstance.calls.some((call) => call.method === 'Target.createTarget'), false);
   } finally {
     await session.close();
@@ -146,6 +147,7 @@ test('openBrowserSession falls back to createTarget when no initial page target 
   try {
     assert.equal(session.targetId, 'created-target-1');
     assert.equal(session.browserAttachedVia, 'created-target');
+    // @ts-ignore
     const createTargetCall = clientInstance.calls.find((call) => call.method === 'Target.createTarget');
     assert.deepEqual(createTargetCall?.params, {
       url: 'https://space.bilibili.com/1202350411/dynamic',
@@ -196,12 +198,15 @@ test('openBrowserSession reuses an existing browser instance for the same persis
     assert.equal(session.targetId, 'existing-target-2');
     assert.equal(session.browserAttachedVia, 'existing-target');
     assert.equal(session.reusedBrowserInstance, true);
+    // @ts-ignore
     assert.equal(clientInstance.calls.some((call) => call.method === 'Target.createTarget'), false);
   } finally {
     await session.close();
   }
 
+  // @ts-ignore
   assert.equal(clientInstance.calls.some((call) => call.method === 'Target.closeTarget'), false);
+  // @ts-ignore
   assert.equal(clientInstance.closed, true);
 });
 
@@ -349,7 +354,7 @@ test('openBrowserSession retries a transient CDP socket failure during target at
         this.targetInfos = [{ targetId: 'retry-target-2', type: 'page', url: 'https://www.douyin.com/' }];
       }
 
-      async send(method, params = {}, sessionId) {
+      async send(method, params = /** @type {any} */ ({}), sessionId) {
         if (clientConstructions === 1 && method === 'Target.attachToTarget') {
           throw new Error('CDP socket closed: 1006');
         }
@@ -401,6 +406,7 @@ test('openBrowserSession does not attach to an unrelated existing page when star
   try {
     assert.equal(session.targetId, 'created-target-1');
     assert.equal(session.browserAttachedVia, 'created-target');
+    // @ts-ignore
     const createTargetCall = clientInstance.calls.find((call) => call.method === 'Target.createTarget');
     assert.deepEqual(createTargetCall?.params, {
       url: 'https://www.douyin.com/?recommend=1',

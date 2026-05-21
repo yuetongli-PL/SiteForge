@@ -87,6 +87,7 @@ export function listSiteCapabilityCompilerSchemaDefinitions() {
   }));
 }
 
+/** @param {Record<string, any>} options */
 export function createCompilerCompatibilityDeclaration({
   compilerVersion = SITE_CAPABILITY_COMPILER_VERSION,
   graphSchemaVersion,

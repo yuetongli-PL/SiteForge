@@ -49,6 +49,7 @@ export const GRAPH_DOCS_GENERATION_OBSERVABILITY_PROFILE = Object.freeze({
 });
 
 function createGraphRuntimeConsumerDisabledReason(message) {
+  // @ts-ignore
   const definition = requireReasonCodeDefinition(GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE, {
     family: 'graph',
   });
@@ -475,6 +476,7 @@ function assertGraphRef(value, fieldName, label, { required = false } = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 function publicFinding({
   reasonCode,
   message,
@@ -536,6 +538,7 @@ export function listSiteCapabilityGraphSchemaDefinitions() {
   }));
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function assertGraphManifestCompatible(manifest = {}) {
   assertPlainObject(manifest, 'GraphManifest');
   assertCurrentSchemaVersion(manifest.schemaVersion, GRAPH_MANIFEST_SCHEMA_VERSION, 'GraphManifest');
@@ -551,6 +554,7 @@ export function assertGraphManifestCompatible(manifest = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertSiteNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'SiteNode');
   assertEnumValue(node.type, ['SiteNode'], 'type', 'SiteNode');
@@ -560,6 +564,7 @@ export function assertSiteNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertCapabilityNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'CapabilityNode');
   assertEnumValue(node.type, ['CapabilityNode'], 'type', 'CapabilityNode');
@@ -581,6 +586,7 @@ export function assertCapabilityNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertRouteNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'RouteNode');
   assertEnumValue(node.type, ['RouteNode'], 'type', 'RouteNode');
@@ -599,6 +605,7 @@ export function assertRouteNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertEndpointNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'EndpointNode');
   assertEnumValue(node.type, ['EndpointNode'], 'type', 'EndpointNode');
@@ -625,6 +632,7 @@ export function assertEndpointNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertAuthRequirementNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'AuthRequirementNode');
   assertEnumValue(node.type, ['AuthRequirementNode'], 'type', 'AuthRequirementNode');
@@ -637,6 +645,7 @@ export function assertAuthRequirementNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertSessionRequirementNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'SessionRequirementNode');
   assertEnumValue(node.type, ['SessionRequirementNode'], 'type', 'SessionRequirementNode');
@@ -651,6 +660,7 @@ export function assertSessionRequirementNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertSignerNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'SignerNode');
   assertEnumValue(node.type, ['SignerNode'], 'type', 'SignerNode');
@@ -664,6 +674,7 @@ export function assertSignerNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertRiskPolicyNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'RiskPolicyNode');
   assertEnumValue(node.type, ['RiskPolicyNode'], 'type', 'RiskPolicyNode');
@@ -681,6 +692,7 @@ export function assertRiskPolicyNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertSchemaNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'SchemaNode');
   assertEnumValue(node.type, ['SchemaNode'], 'type', 'SchemaNode');
@@ -691,6 +703,7 @@ export function assertSchemaNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertArtifactNodeCompatible(node = {}) {
   const label = node?.type === 'ArtifactContractNode' ? 'ArtifactContractNode' : 'ArtifactNode';
   assertCommonNodeFields(node, label);
@@ -705,6 +718,7 @@ export function assertArtifactNodeCompatible(node = {}) {
 
 export const assertArtifactContractNodeCompatible = assertArtifactNodeCompatible;
 
+/** @param {Record<string, any>} [node] */
 export function assertTestNodeCompatible(node = {}) {
   const label = node?.type === 'TestEvidenceNode' ? 'TestEvidenceNode' : 'TestNode';
   assertCommonNodeFields(node, label);
@@ -718,6 +732,7 @@ export function assertTestNodeCompatible(node = {}) {
 
 export const assertTestEvidenceNodeCompatible = assertTestNodeCompatible;
 
+/** @param {Record<string, any>} [node] */
 export function assertVersionNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'VersionNode');
   assertEnumValue(node.type, ['VersionNode'], 'type', 'VersionNode');
@@ -726,6 +741,7 @@ export function assertVersionNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertFailureModeNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'FailureModeNode');
   assertEnumValue(node.type, ['FailureModeNode'], 'type', 'FailureModeNode');
@@ -745,6 +761,7 @@ export function assertFailureModeNodeCompatible(node = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [node] */
 export function assertObservabilityNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'ObservabilityNode');
   assertEnumValue(node.type, ['ObservabilityNode'], 'type', 'ObservabilityNode');
@@ -773,12 +790,14 @@ const NODE_ASSERTIONS = Object.freeze({
   ObservabilityNode: assertObservabilityNodeCompatible,
 });
 
+/** @param {Record<string, any>} [node] */
 export function assertGraphNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'GraphNode');
   NODE_ASSERTIONS[node.type](node);
   return true;
 }
 
+/** @param {Record<string, any>} [edge] */
 export function assertGraphEdgeCompatible(edge = {}) {
   assertPlainObject(edge, 'GraphEdge');
   assertCurrentSchemaVersion(edge.schemaVersion, GRAPH_EDGE_SCHEMA_VERSION, 'GraphEdge');
@@ -792,6 +811,7 @@ export function assertGraphEdgeCompatible(edge = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function assertSiteCapabilityGraphCompatible(graph = {}) {
   assertPlainObject(graph, 'SiteCapabilityGraph');
   assertCurrentSchemaVersion(graph.schemaVersion, SITE_CAPABILITY_GRAPH_SCHEMA_VERSION, 'SiteCapabilityGraph');
@@ -809,6 +829,7 @@ export function assertSiteCapabilityGraphCompatible(graph = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [report] */
 export function assertGraphValidationReportCompatible(report = {}) {
   assertPlainObject(report, 'GraphValidationReport');
   assertCurrentSchemaVersion(
@@ -825,6 +846,7 @@ export function assertGraphValidationReportCompatible(report = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphQueryResultCompatible(result = {}) {
   assertPlainObject(result, 'GraphQueryResult');
   assertCurrentSchemaVersion(result.schemaVersion, GRAPH_QUERY_RESULT_SCHEMA_VERSION, 'GraphQueryResult');
@@ -837,6 +859,7 @@ export function assertGraphQueryResultCompatible(result = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertGraphDocsSummaryCompatible(summary = {}) {
   assertPlainObject(summary, 'GraphDocsSummary');
   assertCurrentSchemaVersion(summary.schemaVersion, GRAPH_DOCS_SUMMARY_SCHEMA_VERSION, 'GraphDocsSummary');
@@ -870,6 +893,7 @@ export function assertGraphDocsSummaryCompatible(summary = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [artifact] */
 function detectGraphDerivedArtifactKind(artifact = {}) {
   if (artifact.type === 'ArtifactNode' || artifact.type === 'ArtifactContractNode') {
     return artifact.type;
@@ -1107,6 +1131,7 @@ export function assertGraphLifecycleProducerInventoryObservabilityCoverageCompat
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphLifecycleProducerInventoryObservabilityCoverage(options = {}) {
   assertPlainObject(options, 'GraphLifecycleProducerInventoryObservabilityCoverageOptions');
   assertNoGraphLifecycleProducerInventoryObservabilityCoverageRuntimeProducts(
@@ -1335,6 +1360,7 @@ function assertNoGraphDocsLifecycleObservabilityRuntimeImplementationPreflightRu
   return true;
 }
 
+/** @param {Record<string, any>} [event] */
 export function assertGraphDocsGenerationObservabilityEvent(event = {}) {
   const normalized = normalizeLifecycleEvent(event, {
     eventType: GRAPH_DOCS_GENERATION_EVENT_TYPE,
@@ -1347,6 +1373,7 @@ export function assertGraphDocsGenerationObservabilityEvent(event = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [event] */
 export function assertGraphDocsGenerationLifecycleEventConsumerCompatibility(event = {}) {
   assertNoGraphDocsGenerationLifecycleRuntimeProducts(event);
   assertNoForbiddenGraphFields(event, 'GraphDocsGenerationLifecycleEventConsumer');
@@ -1376,6 +1403,7 @@ export function assertGraphDocsGenerationLifecycleEventConsumerCompatibility(eve
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDocsGenerationLifecycleEvent({
   summary,
   traceId,
@@ -1427,6 +1455,7 @@ export function createGraphDocsGenerationLifecycleEvent({
   return event;
 }
 
+/** @param {Record<string, any>} [preflight] */
 export function assertGraphDocsLifecycleDispatchPreflightCompatibility(preflight = {}) {
   assertPlainObject(preflight, 'GraphDocsLifecycleDispatchPreflight');
   assertNoGraphDocsLifecycleDispatchPreflightRuntimeProducts(preflight);
@@ -1488,6 +1517,7 @@ export function assertGraphDocsLifecycleDispatchPreflightCompatibility(preflight
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDocsLifecycleDispatchPreflightContract(options = {}) {
   assertPlainObject(options, 'GraphDocsLifecycleDispatchPreflightOptions');
   assertNoGraphDocsLifecycleDispatchPreflightRuntimeProducts(
@@ -1546,6 +1576,7 @@ export function createGraphDocsLifecycleDispatchPreflightContract(options = {}) 
   return cloneDescriptor(preflight);
 }
 
+/** @param {Record<string, any>} [design] */
 export function assertGraphDocsLifecycleDispatchDesignCompatibility(design = {}) {
   assertPlainObject(design, 'GraphDocsLifecycleDispatchDesign');
   assertNoGraphDocsLifecycleDispatchDesignRuntimeProducts(design);
@@ -1609,6 +1640,7 @@ export function assertGraphDocsLifecycleDispatchDesignCompatibility(design = {})
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDocsLifecycleDispatchDesign(options = {}) {
   assertPlainObject(options, 'GraphDocsLifecycleDispatchDesignOptions');
   assertNoGraphDocsLifecycleDispatchDesignRuntimeProducts(
@@ -1699,6 +1731,7 @@ export function createGraphDocsLifecycleDispatchDesign(options = {}) {
   return cloneDescriptor(design);
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertDisabledGraphDocsLifecycleDispatchConsumerResultCompatibility(result = {}) {
   assertPlainObject(result, 'DisabledGraphDocsLifecycleDispatchConsumerResult');
   assertNoGraphDocsLifecycleDispatchDesignRuntimeProducts(
@@ -1802,6 +1835,7 @@ export function assertDisabledGraphDocsLifecycleDispatchConsumerResultCompatibil
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function createDisabledGraphDocsLifecycleDispatchConsumerResult(design = {}, options = {}) {
   assertGraphDocsLifecycleDispatchDesignCompatibility(design);
   assertPlainObject(options, 'DisabledGraphDocsLifecycleDispatchConsumerOptions');
@@ -3087,6 +3121,7 @@ export function assertGraphDocsLifecycleObservabilityRuntimeImplementationPrefli
   return true;
 }
 
+/** @param {Record<string, any>} [preflight] */
 export function assertGraphDocsLifecycleObservabilityRegistrationOwnerPreflightCompatibility(preflight = {}) {
   assertPlainObject(preflight, 'GraphDocsLifecycleObservabilityRegistrationOwnerPreflight');
   assertNoGraphDocsLifecycleObservabilityRuntimeImplementationPreflightRuntimeProducts(
@@ -4338,6 +4373,7 @@ export function createGraphDocsLifecycleObservabilityRuntimeRegistrationConsumer
   return cloneDescriptor(guard);
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDocsGenerationLifecycleEventRegistrySubscriber(options = {}) {
   assertPlainObject(options, 'GraphDocsGenerationLifecycleEventRegistrySubscriberOptions');
   assertNoGraphDocsGenerationLifecycleRuntimeProducts(
@@ -4455,6 +4491,7 @@ function assertGraphDocsGenerationLifecycleEventRegistrySubscriberDescriptor(
   return true;
 }
 
+/** @param {Record<string, any>} [descriptor] */
 function createGraphDocsGenerationLifecycleEventRegistrySubscriberSummary(descriptor = {}) {
   assertGraphDocsGenerationLifecycleEventRegistrySubscriberDescriptor(descriptor);
   return {
@@ -4467,6 +4504,7 @@ function createGraphDocsGenerationLifecycleEventRegistrySubscriberSummary(descri
   };
 }
 
+/** @param {Record<string, any>} options */
 function assertGraphDocsLifecycleObservabilityRegistrationOwnerIntegrationOptions(options = {}) {
   assertPlainObject(options, 'GraphDocsLifecycleObservabilityRegistrationOwnerIntegrationOptions');
   const {
@@ -5403,6 +5441,7 @@ function summarizeGraphDocsLifecycleDispatchDryRunEvent(event) {
   };
 }
 
+/** @param {Record<string, any>} [result] */
 function summarizeGraphDocsLifecycleDispatchDryRunSubscriberResult(result = {}) {
   assertPlainObject(
     result,
@@ -7219,6 +7258,8 @@ const GRAPH_OBSERVABILITY_EXTERNAL_TELEMETRY_DISPATCH_BOUNDARY_RUNTIME_PRODUCT_K
     .map((key) => normalizeKey(key)),
 );
 
+/** @param {Record<string, any>} [source] */
+// @ts-ignore
 function summarizeGraphObservabilityExternalTelemetrySourceEvidence(source = {}, label) {
   if (source === undefined || source === null) {
     return undefined;
@@ -7280,6 +7321,7 @@ function assertNoGraphObservabilityExternalTelemetryDispatchBoundaryRuntimeProdu
   return true;
 }
 
+/** @param {Record<string, any>} options */
 function assertGraphObservabilityExternalTelemetryDispatchBoundaryOptions(options = {}) {
   assertPlainObject(options, 'GraphObservabilityExternalTelemetryDispatchBoundaryOptions');
   const {
@@ -7487,6 +7529,7 @@ export function createGraphObservabilityExternalTelemetryDispatchBoundary(
   return cloneDescriptor(result);
 }
 
+/** @param {Record<string, any>} options */
 export async function writeGraphDocsGenerationLifecycleEventArtifact({
   eventPath,
   auditPath,
@@ -7502,6 +7545,7 @@ export async function writeGraphDocsGenerationLifecycleEventArtifact({
   return result;
 }
 
+/** @param {Record<string, any>} [artifact] */
 export function assertGraphDerivedArtifactWriteAllowed(artifact = {}) {
   assertPlainObject(artifact, 'GraphDerivedArtifact');
   if (artifact.redactionRequired !== true) {
@@ -7534,6 +7578,7 @@ export function assertGraphDerivedArtifactWriteAllowed(artifact = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function validateSiteCapabilityGraph(graph = {}) {
   const findings = [];
   try {
@@ -7944,6 +7989,7 @@ export function validateSiteCapabilityGraph(graph = {}) {
   return report;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function assertSiteCapabilityGraphValid(graph = {}) {
   const report = validateSiteCapabilityGraph(graph);
   if (report.result !== 'passed') {
@@ -7980,6 +8026,7 @@ function assertQueryableGraph(graph) {
   return graph;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function listGraphSites(graph = {}) {
   const validGraph = assertQueryableGraph(graph);
   return graphQueryResult(
@@ -7989,6 +8036,8 @@ export function listGraphSites(graph = {}) {
   );
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function listGraphCapabilities(graph = {}, siteId) {
   const validGraph = assertQueryableGraph(graph);
   return graphQueryResult(
@@ -7998,6 +8047,8 @@ export function listGraphCapabilities(graph = {}, siteId) {
   );
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphCapability(graph = {}, capabilityId) {
   const validGraph = assertQueryableGraph(graph);
   return graphQueryResult(
@@ -8007,6 +8058,8 @@ export function getGraphCapability(graph = {}, capabilityId) {
   );
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphRoutes(graph = {}, capabilityId) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8017,6 +8070,8 @@ export function getGraphRoutes(graph = {}, capabilityId) {
   return graphQueryResult(validGraph, 'getRoutes', routes);
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphRequirements(graph = {}, capabilityId) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8038,6 +8093,8 @@ export function getGraphRequirements(graph = {}, capabilityId) {
   return graphQueryResult(validGraph, 'getRequirements', requirements);
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphEndpointsByLifecycleState(graph = {}, siteId, lifecycleState) {
   const validGraph = assertQueryableGraph(graph);
   assertEnumValue(
@@ -8057,6 +8114,8 @@ export function getGraphEndpointsByLifecycleState(graph = {}, siteId, lifecycleS
   );
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphFailureModesByReasonCode(graph = {}, reasonCode) {
   const validGraph = assertQueryableGraph(graph);
   const normalizedReasonCode = assertRequiredText(
@@ -8069,6 +8128,8 @@ export function getGraphFailureModesByReasonCode(graph = {}, reasonCode) {
   ));
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphFailureModesByArtifactWriteAllowed(graph = {}, artifactWriteAllowed) {
   const validGraph = assertQueryableGraph(graph);
   assertBoolean(
@@ -8081,6 +8142,8 @@ export function getGraphFailureModesByArtifactWriteAllowed(graph = {}, artifactW
   ));
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphFailureModesByManualRecoveryRequired(graph = {}, manualRecoveryRequired) {
   const validGraph = assertQueryableGraph(graph);
   assertBoolean(
@@ -8093,6 +8156,8 @@ export function getGraphFailureModesByManualRecoveryRequired(graph = {}, manualR
   ));
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphFailureModesByCooldownRequired(graph = {}, cooldownRequired) {
   const validGraph = assertQueryableGraph(graph);
   assertBoolean(
@@ -8105,6 +8170,8 @@ export function getGraphFailureModesByCooldownRequired(graph = {}, cooldownRequi
   ));
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphFailureModesByDegradable(graph = {}, degradable) {
   const validGraph = assertQueryableGraph(graph);
   assertBoolean(
@@ -8117,6 +8184,8 @@ export function getGraphFailureModesByDegradable(graph = {}, degradable) {
   ));
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphFailureModesByCatalogAction(graph = {}, catalogAction) {
   const validGraph = assertQueryableGraph(graph);
   const normalizedCatalogAction = assertRequiredText(
@@ -8159,6 +8228,8 @@ function addCapabilityById(target, nodesById, capabilityId) {
   }
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getAffectedGraphCapabilities(graph = {}, nodeId) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8204,6 +8275,8 @@ export function getAffectedGraphCapabilities(graph = {}, nodeId) {
   return graphQueryResult(validGraph, 'getAffectedCapabilities', [...affected.values()]);
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphCapabilitiesRequiringAuth(graph = {}, siteId) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8228,6 +8301,8 @@ export function getGraphCapabilitiesRequiringAuth(graph = {}, siteId) {
   return graphQueryResult(validGraph, 'getCapabilitiesRequiringAuth', [...affected.values()]);
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphCapabilitiesUsingWbi(graph = {}, siteId) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8245,6 +8320,8 @@ export function getGraphCapabilitiesUsingWbi(graph = {}, siteId) {
   return graphQueryResult(validGraph, 'getCapabilitiesUsingWbi', [...affected.values()]);
 }
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function getGraphCapabilitiesByRiskLevel(graph = {}, siteId, riskLevel) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8292,6 +8369,8 @@ const GRAPH_LAYER_DESIGN_SOURCE_REFERENCES = Object.freeze([
   }),
 ]);
 
+/** @param {Record<string, any>} [graph] */
+// @ts-ignore
 export function planGraphCapabilityRoute(graph = {}, capabilityId, context = {}) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8358,6 +8437,7 @@ export function planGraphCapabilityRoute(graph = {}, capabilityId, context = {})
   });
 }
 
+/** @param {Record<string, any>} [graph] */
 export function generateGraphDocsSummary(graph = {}) {
   const validGraph = assertQueryableGraph(graph);
   const nodesById = graphNodesById(validGraph);
@@ -8536,6 +8616,10 @@ function normalizeStringList(value, label) {
   return value.map((entry) => assertRequiredText(entry, label, 'GraphMigrationReport'));
 }
 
+/**
+ * @param {Record<string, any>} [graph]
+ * @param {Record<string, any>} options
+ */
 export function generateGraphMigrationReport(graph = {}, {
   statusSummary = {},
   knownGaps = [],
@@ -8948,7 +9032,9 @@ function createLayerSourceRiskPolicyInventoryItem(hostKey, capabilitySite, regis
     allowedActions,
     blockedActions,
     requiresApproval: blockedActions.length > 0,
+    // @ts-ignore
     cooldownRequired: state === 'cooldown' || state === 'rate_limited' || /\bcooldown\b/u.test(statusText),
+    // @ts-ignore
     isolationRequired: state === 'isolated' || /\bisolat/u.test(statusText),
     manualRecoveryRequired: state === 'manual_recovery_required' || state === 'captcha_required',
     degradable: state !== 'blocked',
@@ -9116,6 +9202,7 @@ function collectLayerSignerRequirementSignalsFromValue(value, path = 'site') {
   return signals;
 }
 
+// @ts-ignore
 function collectLayerSignerRequirementSignals(capabilitySite, registrySite, { host, siteKey } = {}) {
   const adapterSignals = [];
   if (host === 'www.bilibili.com' || siteKey === 'bilibili') {
@@ -9172,6 +9259,7 @@ function createLayerSourceSignerDependencyInventoryItem(hostKey, capabilitySite,
   };
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertLayerSourceSignerDependencyInventorySummaryCompatibility(summary = {}) {
   assertPlainObject(summary, 'LayerSourceSignerDependencyInventorySummary');
   assertNoLayerSourceSignerDependencyInventoryRuntimeMaterialFields(summary);
@@ -9207,6 +9295,7 @@ export function assertLayerSourceSignerDependencyInventorySummaryCompatibility(s
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createLayerSourceSignerDependencyInventorySummary({
   siteCapabilities,
   siteRegistry,
@@ -9235,6 +9324,7 @@ export function createLayerSourceSignerDependencyInventorySummary({
   return cloneDescriptor(summary);
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertLayerSourceAuthSessionRequirementInventorySummaryCompatibility(summary = {}) {
   assertPlainObject(summary, 'LayerSourceAuthSessionRequirementInventorySummary');
   assertNoLayerSourceAuthSessionRequirementInventoryRuntimeMaterialFields(summary);
@@ -9265,6 +9355,7 @@ export function assertLayerSourceAuthSessionRequirementInventorySummaryCompatibi
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createLayerSourceAuthSessionRequirementInventorySummary({
   siteCapabilities,
   siteRegistry,
@@ -9293,6 +9384,7 @@ export function createLayerSourceAuthSessionRequirementInventorySummary({
   return cloneDescriptor(summary);
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertLayerSourceRiskPolicyInventorySummaryCompatibility(summary = {}) {
   assertPlainObject(summary, 'LayerSourceRiskPolicyInventorySummary');
   assertNoLayerSourceRiskPolicyInventoryRuntimeWriteFields(summary);
@@ -9323,6 +9415,7 @@ export function assertLayerSourceRiskPolicyInventorySummaryCompatibility(summary
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createLayerSourceRiskPolicyInventorySummary({
   siteCapabilities,
   siteRegistry,
@@ -9397,6 +9490,7 @@ function assertNoGraphMigrationReportRuntimeIntegrationProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function assertGraphMigrationReportRuntimeIntegrationDesignCompatibility(design = {}) {
   assertPlainObject(design, 'GraphMigrationReportRuntimeIntegrationDesign');
   assertNoGraphMigrationReportRuntimeIntegrationProducts(design);
@@ -9447,6 +9541,7 @@ export function assertGraphMigrationReportRuntimeIntegrationDesignCompatibility(
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function createGraphMigrationReportRuntimeIntegrationDesign(graph = {}, options = {}) {
   assertPlainObject(options, 'GraphMigrationReportRuntimeIntegrationDesignOptions');
   assertNoGraphMigrationReportRuntimeIntegrationProducts(
@@ -9535,6 +9630,7 @@ export function createGraphMigrationReportRuntimeIntegrationDesign(graph = {}, o
   return cloneDescriptor(design);
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertDisabledGraphMigrationReportRuntimeConsumerResultCompatibility(result = {}) {
   assertPlainObject(result, 'DisabledGraphMigrationReportRuntimeConsumerResult');
   assertNoGraphMigrationReportRuntimeIntegrationProducts(
@@ -9608,6 +9704,7 @@ export function assertDisabledGraphMigrationReportRuntimeConsumerResultCompatibi
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function createDisabledGraphMigrationReportRuntimeConsumerResult(design = {}, options = {}) {
   assertGraphMigrationReportRuntimeIntegrationDesignCompatibility(design);
   assertPlainObject(options, 'DisabledGraphMigrationReportRuntimeConsumerOptions');
@@ -9701,6 +9798,7 @@ function normalizeGraphMigrationReportRepoOutputTarget(value) {
   return text;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphMigrationReportRepoOutputDryRunCompatibility(result = {}) {
   assertPlainObject(result, 'GraphMigrationReportRepoOutputDryRun');
   assertNoGraphMigrationReportRuntimeIntegrationProducts(result, 'GraphMigrationReportRepoOutputDryRun');
@@ -9758,6 +9856,7 @@ export function assertGraphMigrationReportRepoOutputDryRunCompatibility(result =
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function createGraphMigrationReportRepoOutputDryRun(graph = {}, options = {}) {
   assertPlainObject(options, 'GraphMigrationReportRepoOutputDryRunOptions');
   assertNoGraphMigrationReportRuntimeIntegrationProducts(
@@ -9824,6 +9923,10 @@ export function createGraphMigrationReportRepoOutputDryRun(graph = {}, options =
   return cloneDescriptor(result);
 }
 
+/**
+ * @param {Record<string, any>} [graph]
+ * @param {Record<string, any>} options
+ */
 export function createGraphInventoryArtifact(graph = {}, {
   inventoryName = 'generated-site-capability-graph',
   source = 'synthetic-generated-fixture',
@@ -9894,6 +9997,7 @@ function assertNoGraphInventoryCommandRuntimeProducts(value, path = 'GraphInvent
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function assertGraphInventoryCommandDesignCompatibility(design = {}) {
   assertPlainObject(design, 'GraphInventoryCommandDesign');
   assertNoGraphInventoryCommandRuntimeProducts(design, 'GraphInventoryCommandDesign');
@@ -9942,6 +10046,7 @@ export function assertGraphInventoryCommandDesignCompatibility(design = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function createGraphInventoryCommandDesign(graph = {}, options = {}) {
   assertPlainObject(options, 'GraphInventoryCommandDesignOptions');
   assertNoGraphInventoryCommandRuntimeProducts(options);
@@ -10140,6 +10245,7 @@ function assertNoGraphInventoryRuntimeIntegrationStorageOptions(
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function assertGraphInventoryRuntimeIntegrationDesignCompatibility(design = {}) {
   assertPlainObject(design, 'GraphInventoryRuntimeIntegrationDesign');
   assertNoGraphInventoryRuntimeIntegrationProducts(design);
@@ -10198,6 +10304,7 @@ export function assertGraphInventoryRuntimeIntegrationDesignCompatibility(design
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function createGraphInventoryRuntimeIntegrationDesign(graph = {}, options = {}) {
   assertPlainObject(options, 'GraphInventoryRuntimeIntegrationDesignOptions');
   assertNoGraphInventoryRuntimeIntegrationStorageOptions(
@@ -10316,6 +10423,7 @@ export function createGraphInventoryRuntimeIntegrationDesign(graph = {}, options
   return cloneDescriptor(design);
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertDisabledGraphInventoryRuntimeConsumerResultCompatibility(result = {}) {
   assertPlainObject(result, 'DisabledGraphInventoryRuntimeConsumerResult');
   assertNoGraphInventoryRuntimeIntegrationProducts(
@@ -10397,6 +10505,7 @@ export function assertDisabledGraphInventoryRuntimeConsumerResultCompatibility(r
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function createDisabledGraphInventoryRuntimeConsumerResult(design = {}, options = {}) {
   assertGraphInventoryRuntimeIntegrationDesignCompatibility(design);
   assertPlainObject(options, 'DisabledGraphInventoryRuntimeConsumerOptions');
@@ -10724,6 +10833,7 @@ function assertGraphInventoryRuntimeConsumerHandoffDisabledConsumer(
   return true;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphInventoryRuntimeConsumerHandoffGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphInventoryRuntimeConsumerHandoffGuard');
   assertNoForbiddenGraphFields(guard, 'GraphInventoryRuntimeConsumerHandoffGuard');
@@ -11478,6 +11588,7 @@ function assertGraphAggregateExecutionBoundarySourceCoreGuard(sourceGuard, label
   return true;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphAggregateExecutionBoundaryGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphAggregateExecutionBoundaryGuard');
   assertNoGraphAggregateExecutionBoundaryGuardRuntimeProducts(
@@ -12082,6 +12193,7 @@ function normalizeGraphInventoryRepoOutputTarget(value) {
   return text;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphInventoryRepoOutputDryRunCompatibility(result = {}) {
   assertPlainObject(result, 'GraphInventoryRepoOutputDryRun');
   assertNoGraphInventoryRuntimeIntegrationProducts(result, 'GraphInventoryRepoOutputDryRun');
@@ -12141,6 +12253,7 @@ export function assertGraphInventoryRepoOutputDryRunCompatibility(result = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [graph] */
 export function createGraphInventoryRepoOutputDryRun(graph = {}, options = {}) {
   assertPlainObject(options, 'GraphInventoryRepoOutputDryRunOptions');
   assertNoGraphInventoryRuntimeIntegrationStorageOptions(
@@ -12259,6 +12372,7 @@ function assertNoGraphRepoOutputApprovalGateRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function assertGraphRepoOutputApprovalGateSourceCompatible(source = {}) {
   assertPlainObject(source, 'GraphRepoOutputApprovalGateDesign.sourceRepoOutput');
   assertGraphQueryResultCompatible(source);
@@ -12286,6 +12400,7 @@ function assertGraphRepoOutputApprovalGateSourceCompatible(source = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function assertGraphRepoOutputApprovalGateDesignCompatibility(design = {}) {
   assertPlainObject(design, 'GraphRepoOutputApprovalGateDesign');
   assertNoGraphRepoOutputApprovalGateRuntimeProducts(design);
@@ -12353,6 +12468,7 @@ export function assertGraphRepoOutputApprovalGateDesignCompatibility(design = {}
   return true;
 }
 
+/** @param {Record<string, any>} [sourceRepoOutput] */
 export function createGraphRepoOutputApprovalGateDesign(sourceRepoOutput = {}, options = {}) {
   assertGraphRepoOutputApprovalGateSourceCompatible(sourceRepoOutput);
   assertPlainObject(options, 'GraphRepoOutputApprovalGateDesignOptions');
@@ -12524,6 +12640,7 @@ function defaultGraphDocsMarkdownGeneratedOutputManifestTarget(sourceTargetRelat
   );
 }
 
+/** @param {Record<string, any>} [sourceApprovalGate] */
 function assertGraphDocsMarkdownGeneratedOutputManifestSourceCompatible(sourceApprovalGate = {}) {
   assertPlainObject(
     sourceApprovalGate,
@@ -12539,6 +12656,7 @@ function assertGraphDocsMarkdownGeneratedOutputManifestSourceCompatible(sourceAp
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsMarkdownGeneratedOutputManifestGuardCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsMarkdownGeneratedOutputManifestGuard');
   assertNoGraphDocsMarkdownGeneratedOutputManifestRuntimeProducts(result);
@@ -12596,6 +12714,7 @@ export function assertGraphDocsMarkdownGeneratedOutputManifestGuardCompatibility
   return true;
 }
 
+/** @param {Record<string, any>} [sourceApprovalGate] */
 export function createGraphDocsMarkdownGeneratedOutputManifestGuard(sourceApprovalGate = {}, options = {}) {
   assertGraphDocsMarkdownGeneratedOutputManifestSourceCompatible(sourceApprovalGate);
   assertPlainObject(options, 'GraphDocsMarkdownGeneratedOutputManifestGuardOptions');
@@ -12750,6 +12869,7 @@ function defaultGraphDocsMarkdownRetainedOutputIndexTarget(sourceTargetRelativeP
   );
 }
 
+/** @param {Record<string, any>} [sourceManifestGuard] */
 function assertGraphDocsMarkdownRetainedOutputIndexSourceCompatible(sourceManifestGuard = {}) {
   assertPlainObject(
     sourceManifestGuard,
@@ -12762,6 +12882,7 @@ function assertGraphDocsMarkdownRetainedOutputIndexSourceCompatible(sourceManife
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsMarkdownRetainedOutputIndexGuardCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsMarkdownRetainedOutputIndexGuard');
   assertNoGraphDocsMarkdownRetainedOutputIndexRuntimeProducts(result);
@@ -12820,6 +12941,7 @@ export function assertGraphDocsMarkdownRetainedOutputIndexGuardCompatibility(res
   return true;
 }
 
+/** @param {Record<string, any>} [sourceManifestGuard] */
 export function createGraphDocsMarkdownRetainedOutputIndexGuard(sourceManifestGuard = {}, options = {}) {
   assertGraphDocsMarkdownRetainedOutputIndexSourceCompatible(sourceManifestGuard);
   assertPlainObject(options, 'GraphDocsMarkdownRetainedOutputIndexGuardOptions');
@@ -12954,6 +13076,7 @@ function assertNoGraphDocsMarkdownCleanupPolicyRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [sourceIndexGuard] */
 function assertGraphDocsMarkdownCleanupPolicySourceCompatible(sourceIndexGuard = {}) {
   assertPlainObject(
     sourceIndexGuard,
@@ -12966,6 +13089,7 @@ function assertGraphDocsMarkdownCleanupPolicySourceCompatible(sourceIndexGuard =
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsMarkdownCleanupPolicyGuardCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsMarkdownCleanupPolicyGuard');
   assertNoGraphDocsMarkdownCleanupPolicyRuntimeProducts(result);
@@ -13029,6 +13153,7 @@ export function assertGraphDocsMarkdownCleanupPolicyGuardCompatibility(result = 
   return true;
 }
 
+/** @param {Record<string, any>} [sourceIndexGuard] */
 export function createGraphDocsMarkdownCleanupPolicyGuard(sourceIndexGuard = {}, options = {}) {
   assertGraphDocsMarkdownCleanupPolicySourceCompatible(sourceIndexGuard);
   assertPlainObject(options, 'GraphDocsMarkdownCleanupPolicyGuardOptions');
@@ -13172,6 +13297,7 @@ function assertNoGraphDocsMarkdownRetentionCleanupHandoffRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [sourceCleanupPolicyGuard] */
 function assertGraphDocsMarkdownRetentionCleanupHandoffSourceCompatible(sourceCleanupPolicyGuard = {}) {
   assertPlainObject(
     sourceCleanupPolicyGuard,
@@ -13184,6 +13310,7 @@ function assertGraphDocsMarkdownRetentionCleanupHandoffSourceCompatible(sourceCl
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsMarkdownRetentionCleanupCompatibilityHandoff(result = {}) {
   assertPlainObject(result, 'GraphDocsMarkdownRetentionCleanupCompatibilityHandoff');
   assertNoGraphDocsMarkdownRetentionCleanupHandoffRuntimeProducts(result);
@@ -13405,6 +13532,7 @@ function assertNoGraphDocsMarkdownFinalOutputBoundaryRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [sourceHandoff] */
 function assertGraphDocsMarkdownFinalOutputBoundarySourceCompatible(sourceHandoff = {}) {
   assertPlainObject(
     sourceHandoff,
@@ -13417,6 +13545,7 @@ function assertGraphDocsMarkdownFinalOutputBoundarySourceCompatible(sourceHandof
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsMarkdownFinalOutputBoundarySummaryCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsMarkdownFinalOutputBoundarySummary');
   assertNoGraphDocsMarkdownFinalOutputBoundaryRuntimeProducts(result);
@@ -13477,6 +13606,7 @@ export function assertGraphDocsMarkdownFinalOutputBoundarySummaryCompatibility(r
   return true;
 }
 
+/** @param {Record<string, any>} [sourceHandoff] */
 export function createGraphDocsMarkdownFinalOutputBoundarySummary(sourceHandoff = {}, options = {}) {
   assertGraphDocsMarkdownFinalOutputBoundarySourceCompatible(sourceHandoff);
   assertPlainObject(options, 'GraphDocsMarkdownFinalOutputBoundarySummaryOptions');
@@ -13637,6 +13767,7 @@ function assertNoGraphDocsOutputCompletionChecklistRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [sourceBoundarySummary] */
 function assertGraphDocsOutputCompletionChecklistSourceCompatible(sourceBoundarySummary = {}) {
   assertPlainObject(
     sourceBoundarySummary,
@@ -13670,6 +13801,7 @@ function assertGraphDocsOutputCompletionChecklistRequiredEvidence(requiredEviden
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsOutputCompletionChecklistCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputCompletionChecklist');
   assertNoGraphDocsOutputCompletionChecklistRuntimeProducts(result);
@@ -13731,6 +13863,7 @@ export function assertGraphDocsOutputCompletionChecklistCompatibility(result = {
   return true;
 }
 
+/** @param {Record<string, any>} [sourceBoundarySummary] */
 export function createGraphDocsOutputCompletionChecklist(sourceBoundarySummary = {}, options = {}) {
   assertGraphDocsOutputCompletionChecklistSourceCompatible(sourceBoundarySummary);
   assertPlainObject(options, 'GraphDocsOutputCompletionChecklistOptions');
@@ -13811,6 +13944,7 @@ export function createGraphDocsOutputCompletionChecklist(sourceBoundarySummary =
   return cloneDescriptor(result);
 }
 
+/** @param {Record<string, any>} [sourceChecklist] */
 function assertGraphDocsOutputFinalMatrixHandoffSourceCompatible(sourceChecklist = {}) {
   assertPlainObject(
     sourceChecklist,
@@ -13823,6 +13957,7 @@ function assertGraphDocsOutputFinalMatrixHandoffSourceCompatible(sourceChecklist
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsOutputFinalMatrixHandoffCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputFinalMatrixHandoff');
   assertNoGraphDocsOutputCompletionChecklistRuntimeProducts(
@@ -13890,6 +14025,7 @@ export function assertGraphDocsOutputFinalMatrixHandoffCompatibility(result = {}
   return true;
 }
 
+/** @param {Record<string, any>} [sourceChecklist] */
 export function createGraphDocsOutputFinalMatrixHandoff(sourceChecklist = {}, options = {}) {
   assertGraphDocsOutputFinalMatrixHandoffSourceCompatible(sourceChecklist);
   assertPlainObject(options, 'GraphDocsOutputFinalMatrixHandoffOptions');
@@ -13975,6 +14111,7 @@ export function createGraphDocsOutputFinalMatrixHandoff(sourceChecklist = {}, op
   return cloneDescriptor(result);
 }
 
+/** @param {Record<string, any>} [sourceMatrixHandoff] */
 function assertGraphDocsOutputFinalAcceptanceDescriptorSourceCompatible(sourceMatrixHandoff = {}) {
   assertPlainObject(
     sourceMatrixHandoff,
@@ -13987,6 +14124,7 @@ function assertGraphDocsOutputFinalAcceptanceDescriptorSourceCompatible(sourceMa
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsOutputFinalAcceptanceDescriptorCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputFinalAcceptanceDescriptor');
   assertNoGraphDocsOutputCompletionChecklistRuntimeProducts(
@@ -14057,6 +14195,7 @@ export function assertGraphDocsOutputFinalAcceptanceDescriptorCompatibility(resu
   return true;
 }
 
+/** @param {Record<string, any>} [sourceMatrixHandoff] */
 export function createGraphDocsOutputFinalAcceptanceDescriptor(sourceMatrixHandoff = {}, options = {}) {
   assertGraphDocsOutputFinalAcceptanceDescriptorSourceCompatible(sourceMatrixHandoff);
   assertPlainObject(options, 'GraphDocsOutputFinalAcceptanceDescriptorOptions');
@@ -14158,6 +14297,7 @@ function assertGraphDocsOutputFinalAcceptanceReportDescriptorSourceCompatible(
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsOutputFinalAcceptanceReportDescriptorCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputFinalAcceptanceReportDescriptor');
   assertNoGraphDocsOutputCompletionChecklistRuntimeProducts(
@@ -14357,6 +14497,7 @@ function normalizeFinalBReviewChecklistSections(remainingNonVerifiedSections = [
   return normalized;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsOutputFinalBReviewChecklistCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputFinalBReviewChecklist');
   assertNoGraphDocsOutputCompletionChecklistRuntimeProducts(
@@ -14626,6 +14767,7 @@ function assertGraphDocsMarkdownLayerSourceReferences(markdown = '') {
   return true;
 }
 
+/** @param {Record<string, any>} [summary] */
 export function renderGraphDocsSummaryMarkdown(summary = {}) {
   assertGraphDocsSummaryCompatible(summary);
   assertNoForbiddenPatterns(summary);
@@ -14748,6 +14890,7 @@ export function renderGraphDocsSummaryMarkdown(summary = {}) {
   return markdown;
 }
 
+/** @param {Record<string, any>} [artifact] */
 export function assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact = {}) {
   assertNoGraphDocsMarkdownConsumerRuntimeProducts(artifact);
   assertNoForbiddenGraphFields(artifact, 'GraphDocsMarkdownArtifactConsumer');
@@ -14774,6 +14917,7 @@ export function assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact = 
   return true;
 }
 
+/** @param {Record<string, any>} [summary] */
 export function createGraphDocsMarkdownArtifact(summary = {}) {
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   const artifact = {
@@ -14812,6 +14956,7 @@ function normalizeGraphDocsMarkdownRepoOutputTarget(value) {
   return text;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsMarkdownRepoOutputDryRunCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsMarkdownRepoOutputDryRun');
   assertNoGraphDocsMarkdownConsumerRuntimeProducts(result, 'GraphDocsMarkdownRepoOutputDryRun');
@@ -14863,6 +15008,7 @@ export function assertGraphDocsMarkdownRepoOutputDryRunCompatibility(result = {}
   return true;
 }
 
+/** @param {Record<string, any>} [artifact] */
 export function createGraphDocsMarkdownRepoOutputDryRun(artifact = {}, options = {}) {
   assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact);
   assertPlainObject(options, 'GraphDocsMarkdownRepoOutputDryRunOptions');
@@ -14914,6 +15060,7 @@ export function createGraphDocsMarkdownRepoOutputDryRun(artifact = {}, options =
   return cloneDescriptor(result);
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertDisabledGraphDocsMarkdownRuntimeConsumerResultCompatibility(result = {}) {
   assertPlainObject(result, 'DisabledGraphDocsMarkdownRuntimeConsumerResult');
   assertNoGraphDocsMarkdownConsumerRuntimeProducts(
@@ -14969,6 +15116,7 @@ export function assertDisabledGraphDocsMarkdownRuntimeConsumerResultCompatibilit
   return true;
 }
 
+/** @param {Record<string, any>} [artifact] */
 export function createDisabledGraphDocsMarkdownRuntimeConsumerResult(artifact = {}, options = {}) {
   assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact);
   assertPlainObject(options, 'DisabledGraphDocsMarkdownRuntimeConsumerOptions');
@@ -15229,6 +15377,7 @@ function assertGraphDocsMarkdownRuntimeConsumerHandoffDisabledConsumer(
   return true;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphDocsMarkdownRuntimeConsumerHandoffGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphDocsMarkdownRuntimeConsumerHandoffGuard');
   assertNoForbiddenGraphFields(guard, 'GraphDocsMarkdownRuntimeConsumerHandoffGuard');
@@ -15584,6 +15733,7 @@ function assertNoFutureGraphLayerConsumerPreflightRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [preflight] */
 export function assertFutureGraphLayerConsumerPreflightCompatibility(preflight = {}) {
   assertPlainObject(preflight, 'FutureGraphLayerConsumerPreflight');
   assertNoFutureGraphLayerConsumerPreflightRuntimeProducts(preflight);
@@ -15631,6 +15781,8 @@ export function assertFutureGraphLayerConsumerPreflightCompatibility(preflight =
   return true;
 }
 
+/** @param {Record<string, any>} [sourceArtifactOrOptions] */
+// @ts-ignore
 export function createFutureGraphLayerConsumerPreflightContract(sourceArtifactOrOptions = {}, maybeOptions) {
   const sourceArtifact = maybeOptions === undefined ? undefined : sourceArtifactOrOptions;
   const options = maybeOptions === undefined ? sourceArtifactOrOptions : maybeOptions;
@@ -15794,6 +15946,7 @@ function assertNoGraphCorePositioningBoundaryGuardRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphCorePositioningBoundaryGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphCorePositioningBoundaryGuard');
   assertNoGraphCorePositioningBoundaryGuardRuntimeProducts(guard);

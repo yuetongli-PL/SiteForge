@@ -3,7 +3,7 @@ import {
   createStaticSiteCompileManifest,
 } from '../../../src/app/compiler/index.mjs';
 
-export function createCompileScope(overrides = {}) {
+export function createCompileScope(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     coverageMode: 'declared_only',
@@ -15,7 +15,7 @@ export function createCompileScope(overrides = {}) {
   };
 }
 
-export function createCompileRequest(overrides = {}) {
+export function createCompileRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     siteId: 'site:synthetic.example',
@@ -28,7 +28,7 @@ export function createCompileRequest(overrides = {}) {
   };
 }
 
-export function createSyntheticCapabilityConfig(overrides = {}) {
+export function createSyntheticCapabilityConfig(overrides = /** @type {any} */ ({})) {
   return {
     siteKey: 'synthetic.example',
     capabilities: [
@@ -51,7 +51,7 @@ export function createSyntheticCapabilityConfig(overrides = {}) {
   };
 }
 
-export function createSyntheticCompileManifest(overrides = {}) {
+export function createSyntheticCompileManifest(overrides = /** @type {any} */ ({})) {
   return createStaticSiteCompileManifest({
     request: createCompileRequest(),
     registrySite: {

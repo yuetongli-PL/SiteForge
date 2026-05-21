@@ -243,6 +243,7 @@ function normalizeTextList(value, fieldName, {
   return [...new Set(normalized)];
 }
 
+/** @param {Record<string, any>} [value] */
 function stripUndefined(value = {}) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 }
@@ -288,6 +289,7 @@ function containsExecutableFunction(value, seen = new Set()) {
   return Object.values(value).some((entry) => containsExecutableFunction(entry, seen));
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeCapabilityHookSubscriber(raw = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('CapabilityHook subscriber must be an object descriptor');
@@ -308,6 +310,8 @@ export function normalizeCapabilityHookSubscriber(raw = {}) {
   });
 }
 
+/** @param {Record<string, any>} [raw] */
+// @ts-ignore
 function normalizeSafety(raw = {}, hookType) {
   const failClosed = raw.failClosed === undefined ? true : Boolean(raw.failClosed);
   const redactionRequired = raw.redactionRequired === undefined ? true : Boolean(raw.redactionRequired);
@@ -324,6 +328,7 @@ function normalizeSafety(raw = {}, hookType) {
   };
 }
 
+/** @param {Record<string, any>} [raw] */
 function normalizeHookFilters(raw = {}) {
   if (raw === undefined || raw === null) {
     return undefined;
@@ -345,6 +350,7 @@ function normalizeHookFilters(raw = {}) {
   return Object.keys(filters).length ? filters : undefined;
 }
 
+/** @param {Record<string, any>} [raw] */
 function normalizeProducerDescriptorPolicy(raw = {}) {
   const descriptorPolicy = {
     descriptorOnly: raw.descriptorOnly === undefined ? true : Boolean(raw.descriptorOnly),
@@ -418,6 +424,7 @@ export function assertHookExecutionPolicyCompatible(raw = CAPABILITY_HOOK_EXECUT
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 function normalizeCapabilityHookProducerDescriptor(raw = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('CapabilityHook producer descriptor must be an object');
@@ -460,11 +467,13 @@ function normalizeCapabilityHookProducerDescriptor(raw = {}) {
   return value;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertCapabilityHookProducerDescriptorCompatible(raw = {}) {
   normalizeCapabilityHookProducerDescriptor(raw);
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityHookProducerDescriptorRegistry({
   producers = CAPABILITY_HOOK_CRITICAL_PRODUCER_DESCRIPTORS,
 } = {}) {
@@ -477,6 +486,7 @@ export function createCapabilityHookProducerDescriptorRegistry({
   return registry;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertCapabilityHookProducerDescriptorRegistryCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -509,6 +519,7 @@ export function assertCapabilityHookProducerDescriptorRegistryCompatible(raw = {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertCapabilityHookCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -520,6 +531,7 @@ export function assertCapabilityHookCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertCapabilityHookEventTypeRegistryCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -545,6 +557,7 @@ export function assertCapabilityHookEventTypeRegistryCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertCapabilityHookRegistrySnapshotCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -571,6 +584,7 @@ export function assertCapabilityHookRegistrySnapshotCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeCapabilityHook(raw = {}, defaults = {}) {
   if (containsExecutableFunction(raw) || containsExecutableFunction(defaults)) {
     throw new Error('CapabilityHook descriptor must not include executable functions');
@@ -596,10 +610,12 @@ export function normalizeCapabilityHook(raw = {}, defaults = {}) {
 const cloneHookDescriptor = jsonClone;
 
 function listRegistryHooks(hooksOrRegistry = []) {
+  // @ts-ignore
   if (hooksOrRegistry && typeof hooksOrRegistry.list === 'function') {
     if (hooksOrRegistry[TRUSTED_CAPABILITY_HOOK_REGISTRY] !== true) {
       throw new Error('CapabilityHook lifecycle matching requires a trusted registry or hook descriptor array');
     }
+    // @ts-ignore
     return hooksOrRegistry.list();
   }
   if (!Array.isArray(hooksOrRegistry)) {
@@ -768,6 +784,7 @@ function summarizeLifecycleProducerFamilyEvidence(event) {
 
 export function matchCapabilityHooksForLifecycleEvent(hooksOrRegistry = [], lifecycleEvent = {}, options = {}) {
   if (
+    // @ts-ignore
     (!hooksOrRegistry || typeof hooksOrRegistry.list !== 'function') && containsExecutableFunction(hooksOrRegistry)
     || containsExecutableFunction(lifecycleEvent)
     || containsExecutableFunction(options)

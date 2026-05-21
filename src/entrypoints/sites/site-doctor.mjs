@@ -129,7 +129,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = { ...DEFAULT_OPTIONS, ...options };
   const parsed = new URL(inputUrl);
   merged.host = parsed.hostname;
@@ -262,7 +262,7 @@ function isDouyinProfile(profile = null, inputUrl = '') {
   }) === 'douyin';
 }
 
-function buildScenarioResult(id, startUrl, status, details = {}) {
+function buildScenarioResult(id, startUrl, status, details = /** @type {any} */ ({})) {
   return {
     id,
     status,
@@ -292,7 +292,7 @@ function extractAntiCrawlSignals(state = null) {
   return uniqueSortedStrings(toArray(state?.pageFacts?.antiCrawlSignals).filter(Boolean));
 }
 
-function resolveScenarioSampleUrl(definition, samples, authSamples, context = {}) {
+function resolveScenarioSampleUrl(definition, samples, authSamples, context = /** @type {any} */ ({})) {
   if (typeof definition.resolveStartUrl === 'function') {
     const resolved = definition.resolveStartUrl({
       samples,
@@ -462,8 +462,8 @@ function deriveNoDedicatedIpRiskAssessment({
   authRequired = false,
   networkIdentityFingerprint = null,
   profileQuarantined = false,
-  antiCrawlSignals = [],
-} = {}) {
+  antiCrawlSignals = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   const normalizedSignals = uniqueSortedStrings([
     ...toArray(antiCrawlSignals).filter(Boolean),
     ...(reasonCode === 'anti-crawl-rate-limit' ? ['rate-limit'] : []),
@@ -490,7 +490,7 @@ function deriveNoDedicatedIpRiskAssessment({
   };
 }
 
-function mergeRiskAssessment(base = {}, override = {}) {
+function mergeRiskAssessment(base = /** @type {any} */ ({}), override = /** @type {any} */ ({})) {
   return {
     riskCauseCode: override.riskCauseCode ?? base.riskCauseCode ?? null,
     riskAction: override.riskAction ?? base.riskAction ?? null,
@@ -563,7 +563,7 @@ function createHealthSignalFromReason({
   siteId,
   rawSignal,
   affectedCapability,
-  metadata = {},
+  metadata = /** @type {any} */ ({}),
 }) {
   if (!rawSignal) {
     return null;
@@ -576,7 +576,7 @@ function createHealthSignalFromReason({
   };
 }
 
-function collectSiteDoctorHealthSignals(report = {}) {
+function collectSiteDoctorHealthSignals(report = /** @type {any} */ ({})) {
   const siteId = report.site?.siteKey ?? report.site?.host ?? 'unknown-site';
   const signals = [
     createHealthSignalFromReason({
@@ -656,7 +656,7 @@ export async function createSiteDoctorHealthRecovery({
   report,
   adapter = null,
   engine = new SiteHealthRecoveryEngine(),
-} = {}) {
+} = /** @type {any} */ ({})) {
   const siteId = report?.site?.siteKey ?? report?.site?.host ?? 'unknown-site';
   const rawSignals = collectSiteDoctorHealthSignals(report);
   if (!rawSignals.length) {
@@ -886,7 +886,7 @@ function auditPath(pathParts) {
   return pathParts.join('.');
 }
 
-function redactSiteDoctorProfileRefs(value, pathParts = [], audit = {
+function redactSiteDoctorProfileRefs(value, pathParts = /** @type {any[]} */ ([]), audit = {
   schemaVersion: SECURITY_GUARD_SCHEMA_VERSION,
   redactedPaths: [],
   findings: [],
@@ -900,7 +900,7 @@ function redactSiteDoctorProfileRefs(value, pathParts = [], audit = {
   if (!isPlainObject(value)) {
     return { value, audit };
   }
-  const output = {};
+  const output = /** @type {any} */ ({});
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...pathParts, key];
     if (SITE_DOCTOR_REPORT_PROFILE_KEYS.has(key)) {
@@ -914,8 +914,8 @@ function redactSiteDoctorProfileRefs(value, pathParts = [], audit = {
 }
 
 function mergeRedactionAudits(...audits) {
-  const redactedPaths = [];
-  const findings = [];
+  const redactedPaths = /** @type {any[]} */ ([]);
+  const findings = /** @type {any[]} */ ([]);
   for (const audit of audits) {
     if (!audit || typeof audit !== 'object') {
       continue;
@@ -936,7 +936,7 @@ function createSiteDoctorReportRedactionFailure(error) {
     name: error instanceof Error ? error.name : undefined,
     code: error && typeof error === 'object' ? error.code : undefined,
   }).value;
-  const failure = new Error('Redaction failed for site-doctor report; persistent report write blocked');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Redaction failed for site-doctor report; persistent report write blocked'));
   failure.name = 'SiteDoctorReportRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -1034,7 +1034,7 @@ async function writeSiteOnboardingDiscoveryArtifacts({
   siteKey,
   captureManifest,
   expandManifest = null,
-  states = [],
+  states = /** @type {any[]} */ ([]),
   adapter = null,
 }) {
   if (!captureManifest || typeof captureManifest !== 'object') {
@@ -1130,7 +1130,7 @@ async function maybeReadStateManifest(entry, deps) {
 }
 
 async function collectExpandedStates(expandManifest, siteProfile, deps) {
-  const states = [];
+  const states = /** @type {any[]} */ ([]);
   for (const entry of expandManifest?.states ?? []) {
     const persisted = await maybeReadStateManifest(entry, deps);
     const finalUrl = persisted?.finalUrl ?? entry.finalUrl ?? null;
@@ -1232,7 +1232,7 @@ function summarizeScenarioDiagnosis(diagnosis) {
   };
 }
 
-async function runCaptureExpandScenario(startUrl, scenarioId, settings, runtime, validatedProfile, searchQueries = []) {
+async function runCaptureExpandScenario(startUrl, scenarioId, settings, runtime, validatedProfile, searchQueries = /** @type {any[]} */ ([])) {
   const scenarioBudget = resolveScenarioDoctorBudget(settings, validatedProfile?.profile, scenarioId);
   const scenarioDir = path.join(settings.reportDir, 'scenarios', scenarioId);
   const maxAttempts = isDouyinProfile(validatedProfile?.profile) ? 3 : 2;
@@ -1256,7 +1256,7 @@ async function runCaptureExpandScenario(startUrl, scenarioId, settings, runtime,
       throw new Error(`Scenario ${scenarioId} did not produce an initial capture manifest.`);
     }
     if (captureManifest?.status === 'failed') {
-      const error = new Error(captureManifest?.error?.message ?? `Scenario ${scenarioId} capture failed.`);
+      const error = /** @type {Error & Record<string, any>} */ (new Error(captureManifest?.error?.message ?? `Scenario ${scenarioId} capture failed.`));
       error.code = captureManifest?.error?.code ?? 'SCENARIO_CAPTURE_FAILED';
       error.runtimeGovernance = captureManifest?.runtimeGovernance ?? null;
       throw error;
@@ -1654,8 +1654,8 @@ async function validateScenarioMatrix(inputUrl, settings, runtime, validatedProf
     ...primaryScenario,
     ...primaryRisk,
   })];
-  const scenarioWarnings = [];
-  const missingScenarioFields = [];
+  const scenarioWarnings = /** @type {any[]} */ ([]);
+  const missingScenarioFields = /** @type {any[]} */ ([]);
 
   for (const definition of suite.scenarioDefinitions) {
     const sampleResolution = resolveScenarioSampleUrl(definition, samples, authSamples, {
@@ -1837,7 +1837,7 @@ function resolveAuthFlowHeadless(settings, siteProfile = null) {
 
 function buildRestrictionPageError(restriction) {
   const message = `Scenario capture stayed on Xiaohongshu restriction page${restriction?.riskPageCode ? ` ${restriction.riskPageCode}` : ''}.`;
-  const error = new Error(message);
+  const error = /** @type {Error & Record<string, any>} */ (new Error(message));
   error.code = 'XIAOHONGSHU_RESTRICTION_PAGE';
   error.restriction = restriction ?? null;
   return error;
@@ -2040,7 +2040,7 @@ function healthRecoveryNextActions(healthRecovery = null) {
   ].filter(Boolean));
 }
 
-async function runProcess(command, args, deps, options = {}) {
+async function runProcess(command, args, deps, options = /** @type {any} */ ({})) {
   const resolvedEnv = {
     ...process.env,
     PYTHONIOENCODING: 'utf-8',
@@ -2095,7 +2095,7 @@ async function runProcess(command, args, deps, options = {}) {
   });
 }
 
-function classifyProcessFailureReasonCode(command, result = {}) {
+function classifyProcessFailureReasonCode(command, result = /** @type {any} */ ({})) {
   if (Number(result?.code ?? 1) === 0) {
     return null;
   }
@@ -2119,7 +2119,7 @@ function classifyProcessFailureReasonCode(command, result = {}) {
 
 function parseBilibiliDownloadCheckOutput(stdout = '') {
   let details = null;
-  let warnings = [];
+  let warnings = /** @type {any[]} */ ([]);
   try {
     const parsed = JSON.parse(stdout || '{}');
     const diagnostics = Array.isArray(parsed.resolvedItems)
@@ -2158,7 +2158,7 @@ function parseBilibiliDownloadCheckOutput(stdout = '') {
 
 function parseXiaohongshuDownloadCheckOutput(stdout = '') {
   let details = null;
-  let warnings = [];
+  let warnings = /** @type {any[]} */ ([]);
   try {
     const parsed = JSON.parse(stdout || '{}');
     const resolution = parsed?.resolution && typeof parsed.resolution === 'object' ? parsed.resolution : null;
@@ -2191,7 +2191,7 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
   const siteKey = resolveCanonicalSiteKey({ inputUrl, profile: siteProfile });
   if (siteProfile?.downloader) {
     if (siteKey === 'xiaohongshu') {
-      const downloaderInputs = [];
+      const downloaderInputs = /** @type {any[]} */ ([]);
       if (sample?.url) {
         downloaderInputs.push(sample.url);
       }
@@ -2253,7 +2253,7 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
       };
     }
 
-    const downloaderInputs = [];
+    const downloaderInputs = /** @type {any[]} */ ([]);
     if (sample?.url) {
       downloaderInputs.push(sample.url);
     }
@@ -2317,7 +2317,7 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
   };
 }
 
-function summarizeCapabilityCompileDryRun(result = {}) {
+function summarizeCapabilityCompileDryRun(result = /** @type {any} */ ({})) {
   return {
     command: result.command ?? 'site-capability-compile',
     descriptorOnly: result.descriptorOnly === true,
@@ -2342,7 +2342,7 @@ function summarizeCapabilityCompileDryRun(result = {}) {
   };
 }
 
-export async function siteDoctor(inputUrl, options = {}, deps = {}) {
+export async function siteDoctor(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   const reportDir = path.join(settings.outDir, `${formatTimestampForDir()}_${sanitizeHost(settings.host)}`);
   settings.reportDir = reportDir;
@@ -3138,7 +3138,7 @@ export function parseCliArgs(argv) {
   }
 
   const [inputUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {

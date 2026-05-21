@@ -98,6 +98,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -141,6 +142,7 @@ function isUnsafeRefSyntax(value) {
 }
 
 function assertCompilerEvidenceRefAllowed(value, name) {
+  // @ts-ignore
   assertNonEmptyString(value, name, 'compiler.raw_sensitive_material_rejected');
   if (
     isUnsafeRefSyntax(value)
@@ -161,6 +163,7 @@ function assertCompatibleSchemaVersion(value, name) {
 }
 
 function assertStringArray(value, name, {
+  // @ts-ignore
   allowedValues,
   allowEmpty = false,
 } = {}) {
@@ -361,10 +364,12 @@ export function assertSiteCompileScopeCompatible(scope) {
     fail('SiteCompileScope coverageCompleteness is unsupported', 'compiler.scope_invalid');
   }
   assertStringArray(scope.allowedCaptureModes, 'SiteCompileScope allowedCaptureModes', {
+    // @ts-ignore
     allowedValues: SITE_COMPILE_CAPTURE_MODES,
   });
   if (scope.sourceTypes !== undefined) {
     assertStringArray(scope.sourceTypes, 'SiteCompileScope sourceTypes', {
+      // @ts-ignore
       allowedValues: SITE_COMPILE_SOURCE_TYPES,
     });
   }
@@ -384,6 +389,7 @@ export function assertSiteCompileRequestCompatible(request) {
   assertSiteCompileScopeCompatible(request.compileScope);
   assertCapabilityIntake(request.capabilityIntake);
   assertStringArray(request.sourceTypes, 'SiteCompileRequest sourceTypes', {
+    // @ts-ignore
     allowedValues: SITE_COMPILE_SOURCE_TYPES,
   });
   if (request.redactionRequired !== true) {

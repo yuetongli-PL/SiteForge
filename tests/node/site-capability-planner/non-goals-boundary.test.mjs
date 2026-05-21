@@ -114,6 +114,7 @@ test('Planner sensitive guard rejects explicit non-goal bypass fields', () => {
         [field]: value,
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'planner.sensitive_material_forbidden');
         return true;
       },
@@ -170,7 +171,9 @@ test('Planner non-goal guard still rejects raw runtime payloads without secret e
         ...value,
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'planner.sensitive_material_forbidden');
+        // @ts-ignore
         assert.doesNotMatch(error.message, /synthetic-secret-value/u, name);
         return true;
       },

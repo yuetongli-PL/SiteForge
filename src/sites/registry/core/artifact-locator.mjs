@@ -33,7 +33,7 @@ export async function resolveArtifactLocatorContext({
   siteMetadataOptions = null,
   profile = null,
   canonicalBaseUrl = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const resolvedInputUrl = firstNonEmpty([inputUrl, url, baseUrl]) ?? '';
   const requestedHostKey = normalizeHostKey(host ?? resolvedInputUrl);
   const resolvedSiteContext = siteContext
@@ -55,7 +55,7 @@ export async function resolveArtifactLocatorContext({
     profile,
   });
 
-  const candidateHostKeys = [];
+  const candidateHostKeys = /** @type {any[]} */ ([]);
   for (const candidate of [
     requestedHostKey,
     resolvedSiteContext?.host,
@@ -84,9 +84,9 @@ export async function resolveArtifactLocatorContext({
   };
 }
 
-export function buildHostKeyedDirCandidates(locator, rootDir, { includeRoot = false } = {}) {
+export function buildHostKeyedDirCandidates(locator, rootDir, { includeRoot = false } = /** @type {any} */ ({})) {
   const workspaceRoot = path.resolve(locator?.workspaceRoot ?? process.cwd());
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   const seen = new Set();
 
   for (const hostKey of locator?.candidateHostKeys ?? []) {
@@ -120,7 +120,7 @@ export async function resolveHostKeyedDir(locator, rootDir, {
   explicitDir = null,
   includeRoot = false,
   requireExisting = false,
-} = {}) {
+} = /** @type {any} */ ({})) {
   if (explicitDir) {
     return {
       kind: 'explicit',
@@ -146,7 +146,7 @@ export async function resolveHostKeyedDir(locator, rootDir, {
   };
 }
 
-export async function findLatestHostKeyedRunDir(locator, rootDir, { includeRoot = false } = {}) {
+export async function findLatestHostKeyedRunDir(locator, rootDir, { includeRoot = false } = /** @type {any} */ ({})) {
   const candidates = buildHostKeyedDirCandidates(locator, rootDir, { includeRoot });
   for (const candidate of candidates) {
     const latestDir = await findLatestRunDir(candidate.dirPath);

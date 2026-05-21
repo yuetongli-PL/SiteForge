@@ -2,22 +2,30 @@
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noEmit": true,
-    "noResolve": true,
     "skipLibCheck": true,
     "strict": false,
-    "target": "ES2022"
+    "target": "ES2022",
+    "types": ["node"]
   },
-  "files": [
-    "src/app/pipeline/build/artifact-contract.mjs",
-    "src/domain/status/status-vocabulary.mjs",
-    "src/infra/cli/parse-values.mjs",
-    "src/infra/cli/public-build-contract.mjs",
-    "src/shared/concurrency.mjs",
-    "src/sites/availability.mjs",
-    "src/sites/known-sites/social/actions/download-boundary.mjs"
+  "include": [
+    "schema/**/*.mjs",
+    "scripts/**/*.mjs",
+    "src/**/*.mjs",
+    "tests/node/**/*.mjs",
+    "tools/**/*.mjs",
+    "types/**/*.d.ts"
+  ],
+  "exclude": [
+    ".siteforge",
+    "book-content",
+    "knowledge-base",
+    "node_modules",
+    "profiles",
+    "runs",
+    "skills"
   ]
 }

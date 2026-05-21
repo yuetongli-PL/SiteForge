@@ -75,6 +75,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code = 'planner.plan_generation_failed') {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -133,6 +134,7 @@ function boolRequirement(value) {
   return value === true || value === 'required';
 }
 
+/** @param {Record<string, any>} options */
 function deriveRequirementSummary({ capability, route, riskPolicy } = {}) {
   const nonReadOnly = capability?.mode !== undefined && capability.mode !== 'readOnly';
   const approvalRequired = boolRequirement(capability?.requiresApproval)
@@ -195,6 +197,7 @@ function firstFailure(contextCheck) {
     : undefined;
 }
 
+/** @param {Record<string, any>} options */
 function createCapabilityPlan({
   request,
   normalizedIntent,
@@ -263,6 +266,7 @@ function createCapabilityPlan({
   return capabilityPlan;
 }
 
+/** @param {Record<string, any>} options */
 function createLifecycleEvent({
   request,
   normalizedIntent,
@@ -358,6 +362,7 @@ export function assertPlannerDryRunResultCompatible(result) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createDryRunCapabilityPlan({
   request,
   context,

@@ -82,7 +82,7 @@ function buildDouyinSamples(samples) {
 }
 
 function buildDouyinSyntheticIntents(intentTypes) {
-  const intents = [];
+  const intents = /** @type {any[]} */ ([]);
   if (intentTypes.has('list-followed-users')) {
     intents.push({
       intentId: 'douyin-followed-users',
@@ -266,7 +266,7 @@ function renderDouyinFlowsReference(input) {
     .sort((left, right) => String(left.intentType).localeCompare(String(right.intentType), 'en'))
     .map((intent) => {
       const normalizedIntentType = normalizeDouyinIntentType(intent.intentType);
-      const bodyLines = [];
+      const bodyLines = /** @type {any[]} */ ([]);
       if (normalizedIntentType === 'search-video') {
         bodyLines.push(`- Example user requests: ${samples.searchQueries.map((item) => `\`搜索视频 ${item}\``).join(', ') || '`搜索视频 抖音`'}`);
         bodyLines.push('- Start state: any verified public Douyin page.');
@@ -332,7 +332,7 @@ function renderDouyinNlIntentsReference(input) {
   const { context, helpers } = input;
   const samples = buildDouyinSamples(helpers.collectDouyinSamples(context));
   const intentTypes = helpers.getIntentTypes(context);
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   if (intentTypes.has('search-video') || intentTypes.has('search-book') || intentTypes.has('search-work')) {
     entries.push({
       title: 'Search videos',

@@ -54,7 +54,7 @@ function splitFlag(token) {
   return { name: text.slice(0, eqIndex), value: text.slice(eqIndex + 1) };
 }
 
-export function parseCapabilitiesArgs(argv = []) {
+export function parseCapabilitiesArgs(argv = /** @type {any[]} */ ([])) {
   const [command, ...rest] = argv;
   if (!command || isHelpToken(command)) {
     return { help: true };
@@ -180,7 +180,7 @@ async function findReportForSkill(cwd, skillId) {
     return null;
   }
   const siteEntries = await readdir(sitesDir, { withFileTypes: true });
-  const candidates = [];
+  const candidates = /** @type {any[]} */ ([]);
   for (const entry of siteEntries) {
     if (!entry.isDirectory()) {
       continue;

@@ -197,7 +197,7 @@ function resolveSupportedIntentTypes(context, helpers) {
 
 function buildXiaohongshuSyntheticIntents(context, helpers) {
   const supportedIntentTypes = resolveSupportedIntentTypes(context, helpers);
-  const intents = [];
+  const intents = /** @type {any[]} */ ([]);
   if (supportedIntentTypes.has('list-followed-users')) {
     intents.push({
       intentId: 'xiaohongshu-followed-users',
@@ -382,7 +382,7 @@ function renderXiaohongshuFlowsReference(input) {
     .sort((left, right) => String(left.intentType).localeCompare(String(right.intentType), 'en'))
     .map((intent) => {
       const normalizedIntentType = normalizeXiaohongshuIntentType(intent.intentType);
-      const bodyLines = [];
+      const bodyLines = /** @type {any[]} */ ([]);
       if (normalizedIntentType === 'search-note') {
         bodyLines.push(`- Example user requests: ${samples.searchQueries.map((item) => `\`搜索笔记 ${item}\``).join(', ') || '`搜索笔记 穿搭`'}`);
         bodyLines.push('- Start state: any verified public Xiaohongshu page.');
@@ -460,7 +460,7 @@ function renderXiaohongshuNlIntentsReference(input) {
   const { context, helpers } = input;
   const samples = buildXiaohongshuSamples(helpers.collectXiaohongshuSamples(context));
   const intentTypes = resolveSupportedIntentTypes(context, helpers);
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   if (intentTypes.has('search-video') || intentTypes.has('search-book') || intentTypes.has('search-work')) {
     entries.push({
       title: 'Search notes',

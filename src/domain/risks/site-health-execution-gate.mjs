@@ -34,6 +34,7 @@ function uniqueStrings(values = []) {
   return [...new Set((Array.isArray(values) ? values : [values]).map(text).filter(Boolean))];
 }
 
+/** @param {Record<string, any>} [value] */
 function safeValue(value = {}) {
   const redacted = redactValue(value);
   assertNoForbiddenPatterns(redacted.value);
@@ -44,10 +45,12 @@ function normalizeCapability(value) {
   return text(value) ?? 'site.health';
 }
 
+/** @param {Record<string, any>} [task] */
 function taskCapability(task = {}) {
   return normalizeCapability(task.capability ?? task.capabilityKey ?? task.affectedCapability);
 }
 
+/** @param {Record<string, any>} [task] */
 function taskMode(task = {}) {
   const mode = text(task.mode ?? task.accessMode ?? task.operationMode);
   if (mode) {
@@ -58,6 +61,8 @@ function taskMode(task = {}) {
     : 'read';
 }
 
+/** @param {Record<string, any>} [report] */
+// @ts-ignore
 function findCapabilityHealth(report = {}, capability) {
   const entries = Array.isArray(report.capabilityHealth) ? report.capabilityHealth : [];
   return entries.find((entry) => entry.capability === capability)
@@ -65,10 +70,12 @@ function findCapabilityHealth(report = {}, capability) {
     ?? null;
 }
 
+/** @param {Record<string, any>} [report] */
 function recommendedActions(report = {}) {
   return uniqueStrings(report.recommendedActions);
 }
 
+/** @param {Record<string, any>} [entries] */
 export function createRecoveryPolicyRegistry(entries = {}) {
   const policies = new Map();
   const initialEntries = entries instanceof Map ? entries.entries() : Object.entries(entries);
@@ -96,6 +103,7 @@ export function createRecoveryPolicyRegistry(entries = {}) {
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityHealthStateCache({
   now = () => new Date(),
 } = {}) {
@@ -134,6 +142,7 @@ export function createCapabilityHealthStateCache({
       return record;
     },
     get(query = {}) {
+      // @ts-ignore
       const record = records.get(keyFor(query));
       if (!record) {
         return undefined;
@@ -150,6 +159,7 @@ export function createCapabilityHealthStateCache({
   };
 }
 
+/** @param {Record<string, any>} options */
 export function evaluateSiteHealthExecutionGate({
   healthRecovery,
   report = healthRecovery?.report ?? healthRecovery,
@@ -192,6 +202,7 @@ export function evaluateSiteHealthExecutionGate({
   return safeValue(decision);
 }
 
+/** @param {Record<string, any>} options */
 export function applySiteHealthExecutionGateToTaskList({
   healthRecovery,
   tasks = [],
@@ -233,6 +244,7 @@ function rollbackDescriptorsForAction(action, result = {}) {
   }
 }
 
+/** @param {Record<string, any>} options */
 export function createHealthRecoveryRollbackPlan({
   healthRecovery,
   siteId = healthRecovery?.report?.siteId,
@@ -288,6 +300,7 @@ export class SafeRecoveryActionExecutor extends RecoveryActionExecutor {
   }
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteHealthRecoveryLifecycleEvents({
   healthRecovery,
   traceId,

@@ -11,7 +11,7 @@ import {
 import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
 import { moodyzAdapter } from '../../src/sites/adapters/moodyz.mjs';
 
-function createMoodyzCandidate(overrides = {}) {
+function createMoodyzCandidate(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: API_CANDIDATE_SCHEMA_VERSION,
     id: 'moodyz-local-validation-candidate',
@@ -32,6 +32,7 @@ function createMoodyzCandidate(overrides = {}) {
 
 test('moodyz local validation accepts only moodyz API candidates without writing catalog metadata', async () => {
   const candidate = createMoodyzCandidate();
+  // @ts-ignore
   const decision = moodyzAdapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-03T00:00:00.000Z',
@@ -80,6 +81,7 @@ test('moodyz local validation rejects wrong host, path, and site key with API re
   ];
 
   for (const candidate of cases) {
+    // @ts-ignore
     const decision = moodyzAdapter.validateApiCandidate({
       candidate,
       evidence: {
@@ -101,7 +103,9 @@ test('moodyz local catalog upgrade policy is pure and explicitly gated', () => {
     id: 'moodyz-local-verified-candidate',
     status: 'verified',
   });
+  // @ts-ignore
   const decision = moodyzAdapter.validateApiCandidate({ candidate });
+  // @ts-ignore
   const policy = moodyzAdapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -129,7 +133,9 @@ test('moodyz local catalog upgrade policy is pure and explicitly gated', () => {
       url: 'https://moodyz.com/works/date?access_token=synthetic-moodyz-local-token',
     },
   });
+  // @ts-ignore
   const blockedDecision = moodyzAdapter.validateApiCandidate({ candidate: blockedCandidate });
+  // @ts-ignore
   const blockedPolicy = moodyzAdapter.getApiCatalogUpgradePolicy({
     candidate: blockedCandidate,
     siteAdapterDecision: blockedDecision,

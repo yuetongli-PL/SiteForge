@@ -16,7 +16,7 @@ import {
 } from '../../src/domain/risks/site-health-execution-gate.mjs';
 import { SiteHealthRecoveryEngine } from '../../src/domain/risks/site-health-recovery.mjs';
 
-function healthRecoveryReport(overrides = {}) {
+function healthRecoveryReport(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: 1,
     report: {
@@ -172,6 +172,7 @@ test('safe recovery action executor plans only safe generic actions', async () =
 test('lifecycle events are descriptor-only and redacted', async () => {
   const engine = new SiteHealthRecoveryEngine();
   const healthRecovery = await engine.recover({
+    // @ts-ignore
     siteId: 'x',
     rawSignals: [{
       rawSignal: 'profile-health-risk',

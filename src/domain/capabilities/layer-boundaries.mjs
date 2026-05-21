@@ -43,6 +43,7 @@ function freezeBoundary(boundary) {
   });
 }
 
+/** @param {Record<string, any>} options */
 function crossing({ from, to, requiredControls, allowedMaterial, purpose }) {
   return Object.freeze({
     schemaVersion: LAYER_CROSSING_SCHEMA_VERSION,
@@ -340,6 +341,7 @@ function assertForbiddenPatterns(layer, responsibility) {
   const text = String(responsibility ?? '');
   for (const pattern of layer.forbiddenPatterns) {
     if (pattern.test(text)) {
+      /** @type {Error & Record<string, any>} */
       const error = new Error(`LayerBoundary ${layer.id} responsibility crosses a forbidden boundary: ${text}`);
       error.code = 'layer-boundary-forbidden-responsibility';
       error.layerId = layer.id;
@@ -360,6 +362,7 @@ export function listLayerCrossings() {
   return [...LAYER_CROSSING_REGISTRY.values()].map(cloneCrossing);
 }
 
+/** @param {Record<string, any>} [boundary] */
 export function assertLayerBoundary(boundary = {}) {
   if (!isPlainObject(boundary)) {
     throw new Error('LayerBoundary definition must be an object');
@@ -400,6 +403,7 @@ export function assertLayerBoundaryRegistryComplete(requiredLayers = LAYER_IDS) 
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function assertLayerResponsibility({ layerId, responsibility } = {}) {
   const layer = LAYER_BOUNDARY_REGISTRY[normalizeLayerId(layerId)];
   assertNonEmptyString(responsibility, `${layer.id}.responsibility`);
@@ -409,6 +413,7 @@ export function assertLayerResponsibility({ layerId, responsibility } = {}) {
     (entry) => normalizedResponsibility.includes(entry.toLowerCase()),
   );
   if (forbidden) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error(`LayerBoundary ${layer.id} forbids responsibility: ${forbidden}`);
     error.code = 'layer-boundary-forbidden-responsibility';
     error.layerId = layer.id;
@@ -421,6 +426,7 @@ export function assertLayerResponsibility({ layerId, responsibility } = {}) {
   };
 }
 
+/** @param {Record<string, any>} [crossingRecord] */
 export function normalizeLayerCrossing(crossingRecord = {}) {
   if (!isPlainObject(crossingRecord)) {
     throw new Error('LayerBoundary crossing must be an object');
@@ -443,12 +449,14 @@ export function normalizeLayerCrossing(crossingRecord = {}) {
   };
 }
 
+/** @param {Record<string, any>} [crossingRecord] */
 export function assertLayerCrossing(crossingRecord = {}) {
   const normalized = normalizeLayerCrossing(crossingRecord);
   const missingControls = normalized.requiredControls.filter(
     (control) => !normalized.controls.includes(control),
   );
   if (missingControls.length) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error(
       `LayerBoundary crossing ${normalized.from}->${normalized.to} is missing required controls: ${missingControls.join(', ')}`,
     );

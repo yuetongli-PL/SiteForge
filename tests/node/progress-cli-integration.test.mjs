@@ -48,7 +48,7 @@ import {
   unifiedCliCommandForScript,
 } from '../../src/infra/cli/command-map.mjs';
 
-function createStream({ isTTY = false, columns = 80 } = {}) {
+function createStream({ isTTY = false, columns = 80 } = /** @type {any} */ ({})) {
   let output = '';
   return {
     isTTY,

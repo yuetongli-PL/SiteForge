@@ -51,7 +51,7 @@ async function readMinimalGraphFixture() {
   return JSON.parse(await readFile(MINIMAL_GRAPH_URL, 'utf8'));
 }
 
-function createGraphDocsEvent(overrides = {}) {
+function createGraphDocsEvent(overrides = /** @type {any} */ ({})) {
   return normalizeLifecycleEvent({
     eventType: GRAPH_DOCS_GENERATION_EVENT_TYPE,
     traceId: 'trace-synthetic-graph-docs',
@@ -234,7 +234,7 @@ function loadGraphDocsLifecycleObservabilityRuntimeDispatchLiveAdapterWriteBound
   return { create, assertCompatibility };
 }
 
-function createRegistrationOwnerIntegration(create, registry, options = {}) {
+function createRegistrationOwnerIntegration(create, registry, options = /** @type {any} */ ({})) {
   try {
     return create(registry, options);
   } catch (error) {
@@ -252,7 +252,7 @@ async function createRuntimeDispatchDryRunAdapterResult(create, {
   registry,
   event,
   ...options
-} = {}) {
+} = /** @type {any} */ ({})) {
   return await create({
     registry,
     subscriberRegistry: registry,
@@ -371,7 +371,7 @@ function loadGraphObservabilityExternalTelemetryDispatchBoundaryApi() {
   return { create, assertCompatibility };
 }
 
-function createExternalTelemetryDispatchBoundary(create, sourceGuard, options = {}) {
+function createExternalTelemetryDispatchBoundary(create, sourceGuard, options = /** @type {any} */ ({})) {
   try {
     return create(sourceGuard, options);
   } catch (error) {
@@ -2439,7 +2439,7 @@ test('graph docs lifecycle dispatch design rejects runtime dispatch and telemetr
   );
 
   const unsafeDesign = createGraphDocsLifecycleDispatchDesign(baseOptions);
-  unsafeDesign.items[0].lifecycleEvent.details.taskList = [];
+  unsafeDesign.items[0].lifecycleEvent.details.taskList = /** @type {any[]} */ ([]);
   assert.throws(
     () => assertGraphDocsLifecycleDispatchDesignCompatibility(unsafeDesign),
     /descriptor-only.*taskList/u,
@@ -4457,7 +4457,7 @@ test('disabled graph docs lifecycle dispatch consumer rejects enabled flags and 
   );
 
   const runtimePayloadResult = createDisabledGraphDocsLifecycleDispatchConsumerResult(design);
-  runtimePayloadResult.items[0].telemetrySink = {};
+  runtimePayloadResult.items[0].telemetrySink = /** @type {any} */ ({});
   assert.throws(
     () => assertDisabledGraphDocsLifecycleDispatchConsumerResultCompatibility(runtimePayloadResult),
     /descriptor-only.*telemetrySink/u,

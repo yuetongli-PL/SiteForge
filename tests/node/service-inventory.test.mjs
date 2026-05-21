@@ -53,6 +53,7 @@ const EXPECTED_SERVICE_NAMES = [
   'UnknownNodeReporter',
 ];
 
+// @ts-ignore
 const EXPECTED_SCHEMA_VERSIONS = new Map([
   ['ApiCandidate', API_CANDIDATE_SCHEMA_VERSION],
   ['ApiCatalogEntry', API_CATALOG_ENTRY_SCHEMA_VERSION],
@@ -76,6 +77,7 @@ const EXPECTED_SCHEMA_VERSIONS = new Map([
 ]);
 
 async function importInventoryModule(modulePath) {
+  // @ts-ignore
   return import(new URL(`../../${modulePath}`, import.meta.url));
 }
 

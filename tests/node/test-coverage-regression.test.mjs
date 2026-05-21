@@ -26,7 +26,7 @@ async function readJson(filePath) {
 }
 
 async function collectTextFiles(rootDir) {
-  const rows = [];
+  const rows = /** @type {any[]} */ ([]);
   async function visit(currentDir) {
     const entries = await readdir(currentDir, { withFileTypes: true });
     for (const entry of entries) {

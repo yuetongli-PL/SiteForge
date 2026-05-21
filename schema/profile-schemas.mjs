@@ -6,6 +6,14 @@ import {
   resolveProfileArchetype,
 } from '../src/sites/registry/core/archetypes.mjs';
 
+/**
+ * @typedef {{ [key: string]: any, validate?: (value: any) => any }} ProfileSchemaNode
+ */
+
+/**
+ * @param {Record<string, any>} [extra]
+ * @returns {ProfileSchemaNode}
+ */
 function nonEmptyString(extra = {}) {
   return {
     type: 'string',
@@ -14,6 +22,11 @@ function nonEmptyString(extra = {}) {
   };
 }
 
+/**
+ * @param {number} [min]
+ * @param {Record<string, any>} [extra]
+ * @returns {ProfileSchemaNode}
+ */
 function integer(min = 0, extra = {}) {
   return {
     type: 'integer',
@@ -22,6 +35,10 @@ function integer(min = 0, extra = {}) {
   };
 }
 
+/**
+ * @param {number} value
+ * @returns {ProfileSchemaNode}
+ */
 function integerConst(value) {
   return integer(value, {
     validate(input) {
@@ -30,6 +47,10 @@ function integerConst(value) {
   });
 }
 
+/**
+ * @param {{ minItems?: number }} [options]
+ * @returns {ProfileSchemaNode}
+ */
 function stringArray(options = {}) {
   const { minItems = 0 } = options;
   return {

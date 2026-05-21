@@ -515,6 +515,7 @@ export function buildMatrix(options, runId = timestampForDir()) {
       expectedArtifacts: expectedArtifacts(artifactRoot, config.host),
       command: process.execPath,
       args: [],
+      commandLine: '',
     };
     entry.args = [SITE_DOCTOR, ...siteDoctorArgs(entry, options)];
     entry.commandLine = formatCommand(entry);
@@ -958,6 +959,8 @@ export async function main(argv) {
       },
       successMessage: (result) => `lastManifest=${result?.manifestPath ?? 'none'}`,
       artifacts: (result) => result?.manifestPath ? [{ label: 'Manifest', path: result.manifestPath }] : [],
+      isFailureResult: undefined,
+      failureReason: undefined,
       warningResult: (result) => result?.status === 'warning',
       failureTitle: 'Social KB refresh safely stopped',
       nextStep: 'Inspect the generated manifest and retry blocked cases after manual recovery.',
@@ -982,6 +985,8 @@ export async function main(argv) {
     },
     successMessage: (result) => `manifest=${result?.manifestPath ?? 'none'}`,
     artifacts: (result) => result?.manifestPath ? [{ label: 'Manifest', path: result.manifestPath }] : [],
+    isFailureResult: undefined,
+    failureReason: undefined,
     warningResult: (result) => result?.status === 'warning',
     failureTitle: 'Social KB refresh safely stopped',
     nextStep: 'Inspect the generated manifest and retry blocked cases after manual recovery.',

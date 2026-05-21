@@ -181,9 +181,13 @@ test('writeBilibiliOpenReport redaction failure is reason-coded and fails closed
       }, workspace),
       (error) => {
         const serialized = JSON.stringify(error);
+        // @ts-ignore
         assert.equal(error.name, 'BilibiliOpenReportRedactionFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'redaction-failed');
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, false);
+        // @ts-ignore
         assert.equal(error.message.includes('synthetic-bilibili-open-token'), false);
         assert.equal(serialized.includes('synthetic-bilibili-open-token'), false);
         return true;
@@ -197,8 +201,8 @@ test('writeBilibiliOpenReport redaction failure is reason-coded and fails closed
 
 test('openBilibiliPage triggers interactive login bootstrap when reusable auth is missing', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-bilibili-open-'));
-  const siteLoginCalls = [];
-  const openCalls = [];
+  const siteLoginCalls = /** @type {any[]} */ ([]);
+  const openCalls = /** @type {any[]} */ ([]);
 
   try {
     const report = await openBilibiliPage('https://space.bilibili.com/1202350411/dynamic', {

@@ -63,6 +63,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code = 'planner.schema_missing') {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -250,6 +251,7 @@ export function assertPlannerLifecycleEventCompatible(event) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function createPlannerLifecycleEvent(raw = {}, defaults = {}) {
   const event = {
     schemaVersion: raw.schemaVersion ?? defaults.schemaVersion ?? SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,

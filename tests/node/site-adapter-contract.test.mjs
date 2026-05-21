@@ -87,7 +87,7 @@ function resolveAdapterSiteKey(adapter) {
     : adapter.siteKey;
 }
 
-function createSyntheticCandidate(overrides = {}) {
+function createSyntheticCandidate(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: API_CANDIDATE_SCHEMA_VERSION,
     id: 'candidate-1',
@@ -180,8 +180,11 @@ test('registered SiteAdapters expose pure onboarding node and API classification
       [`${adapter.id}.classifyApi`, apiDecision],
     ]) {
       assert.equal(decision && typeof decision === 'object' && !Array.isArray(decision), true);
+      // @ts-ignore
       assert.equal(['recognized', 'unknown', 'ignored'].includes(decision.classification), true);
+      // @ts-ignore
       assert.equal(typeof decision.required, 'boolean');
+      // @ts-ignore
       assertNoForbiddenSemanticKeys(decision, label);
       const serialized = JSON.stringify(decision);
       assert.equal(serialized.includes('synthetic-node-token'), false);
@@ -354,8 +357,10 @@ test('SiteAdapter sources do not bypass API knowledge artifact boundaries', asyn
 test('Xiaohongshu restriction hook returns a safe SiteAdapter risk contract', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'xiaohongshu');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.detectRestrictionPage, 'function');
 
+  // @ts-ignore
   const restriction = adapter.detectRestrictionPage({
     inputUrl: 'https://www.xiaohongshu.com/explore?access_token=synthetic-xhs-token',
     finalUrl: 'https://www.xiaohongshu.com/website-login/error?error_code=300012&redirectPath=%2Fexplore&access_token=synthetic-xhs-token',
@@ -479,12 +484,14 @@ test('SiteAdapter candidate validation decisions do not bypass verified-only cat
 test('generic-navigation adapter exposes a pure candidate validation decision method', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'generic-navigation');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
     id: 'generic-candidate-1',
     siteKey: 'generic-navigation',
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T01:00:00.000Z',
@@ -514,6 +521,7 @@ test('generic-navigation adapter exposes a pure candidate validation decision me
 test('generic-navigation adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'generic-navigation');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -521,10 +529,12 @@ test('generic-navigation adapter exposes a pure catalog upgrade policy hook with
     siteKey: 'generic-navigation',
     status: 'verified',
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T15:10:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -555,6 +565,7 @@ test('generic-navigation adapter exposes a pure catalog upgrade policy hook with
   assert.equal(upgradeDecision.decision, 'allowed');
   assert.equal(assertApiCatalogUpgradeDecisionAllowsCatalog(upgradeDecision), upgradeDecision);
 
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: {
       ...candidate,
@@ -562,6 +573,7 @@ test('generic-navigation adapter exposes a pure catalog upgrade policy hook with
       siteKey: 'other-site',
     },
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: {
       ...candidate,
@@ -588,10 +600,12 @@ test('generic-navigation adapter blocks accepted but unverified candidates from 
     siteKey: 'generic-navigation',
     status: 'candidate',
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T15:20:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -612,6 +626,7 @@ test('generic-navigation adapter rejects candidates outside its site key with an
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'generic-navigation');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'other-candidate-1',
@@ -637,7 +652,9 @@ test('generic-navigation adapter rejects candidates outside its site key with an
 test('chapter-content adapter validates observed public page requests without catalog auto-promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'chapter-content');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const observedCandidate = createSyntheticCandidate({
@@ -649,6 +666,7 @@ test('chapter-content adapter validates observed public page requests without ca
       url: 'https://www.22biqu.com/',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate: observedCandidate,
     validatedAt: '2026-05-10T00:00:00.000Z',
@@ -662,6 +680,7 @@ test('chapter-content adapter validates observed public page requests without ca
   assert.equal(Object.hasOwn(decision, 'artifactPath'), false);
   assert.equal(Object.hasOwn(decision, 'catalogPath'), false);
 
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate: observedCandidate,
     siteAdapterDecision: decision,
@@ -673,6 +692,7 @@ test('chapter-content adapter validates observed public page requests without ca
   assert.equal(policy.allowCatalogUpgrade, false);
   assert.equal(policy.reasonCode, 'api-catalog-entry-blocked');
 
+  // @ts-ignore
   const staticDecision = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: '22biqu-static-candidate',
@@ -756,6 +776,7 @@ test('jable adapter exposes concrete redacted API candidate semantics evidence',
 test('jable adapter validates synthetic site API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'jable');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -766,6 +787,7 @@ test('jable adapter validates synthetic site API candidates without catalog prom
       url: 'https://jable.tv/api/v1/videos?access_token=synthetic-jable-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T11:20:00.000Z',
@@ -796,6 +818,7 @@ test('jable adapter validates synthetic site API candidates without catalog prom
 test('jable adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'jable');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -807,10 +830,12 @@ test('jable adapter exposes a pure catalog upgrade policy hook without promotion
       url: 'https://jable.tv/api/v1/videos?access_token=synthetic-jable-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T16:10:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -851,9 +876,11 @@ test('jable adapter exposes a pure catalog upgrade policy hook without promotion
       url: 'https://jable.tv/videos/abc-123/?access_token=synthetic-jable-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: wrongPathCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: wrongPathCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -903,6 +930,7 @@ test('jable synthetic verified endpoint fixture catalogs only through explicit a
         authorization: 'Bearer synthetic-jable-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T18:50:00.000Z',
@@ -911,6 +939,7 @@ test('jable synthetic verified endpoint fixture catalogs only through explicit a
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -973,7 +1002,9 @@ test('jable synthetic verified endpoint fixture catalogs only through explicit a
       id: 'jable-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -1002,7 +1033,9 @@ test('jable synthetic verified endpoint fixture catalogs only through explicit a
         url: 'https://jable.tv/videos/abc-123/?access_token=synthetic-jable-fixture-token',
       },
     };
+    // @ts-ignore
     const blockedDecision = adapter.validateApiCandidate({ candidate: blockedCandidate });
+    // @ts-ignore
     const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: blockedCandidate,
       siteAdapterDecision: blockedDecision,
@@ -1048,6 +1081,7 @@ test('jable adapter rejects candidates outside its API scope with an API reasonC
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'jable');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'jable-wrong-host',
@@ -1061,6 +1095,7 @@ test('jable adapter rejects candidates outside its API scope with an API reasonC
       authorization: 'Bearer synthetic-jable-token',
     },
   });
+  // @ts-ignore
   const wrongPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'jable-wrong-path',
@@ -1071,6 +1106,7 @@ test('jable adapter rejects candidates outside its API scope with an API reasonC
       },
     }),
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'jable-wrong-site',
@@ -1100,6 +1136,7 @@ test('jable adapter rejects candidates outside its API scope with an API reasonC
 test('moodyz adapter validates synthetic site API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'moodyz');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1110,6 +1147,7 @@ test('moodyz adapter validates synthetic site API candidates without catalog pro
       url: 'https://moodyz.com/api/v1/works?access_token=synthetic-moodyz-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T11:25:00.000Z',
@@ -1140,6 +1178,7 @@ test('moodyz adapter validates synthetic site API candidates without catalog pro
 test('moodyz adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'moodyz');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1151,10 +1190,12 @@ test('moodyz adapter exposes a pure catalog upgrade policy hook without promotio
       url: 'https://moodyz.com/api/v1/works?access_token=synthetic-moodyz-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T16:25:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -1195,9 +1236,11 @@ test('moodyz adapter exposes a pure catalog upgrade policy hook without promotio
       url: 'https://moodyz.com/works/date?access_token=synthetic-moodyz-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: rejectedCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: rejectedCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -1253,6 +1296,7 @@ test('moodyz synthetic verified endpoint fixture catalogs only through explicit 
         authorization: 'Bearer synthetic-moodyz-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T19:10:00.000Z',
@@ -1261,6 +1305,7 @@ test('moodyz synthetic verified endpoint fixture catalogs only through explicit 
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -1309,7 +1354,9 @@ test('moodyz synthetic verified endpoint fixture catalogs only through explicit 
       id: 'moodyz-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -1331,7 +1378,9 @@ test('moodyz synthetic verified endpoint fixture catalogs only through explicit 
         url: 'https://moodyz.com/works/date?access_token=synthetic-moodyz-fixture-token',
       },
     };
+    // @ts-ignore
     const blockedDecision = adapter.validateApiCandidate({ candidate: blockedCandidate });
+    // @ts-ignore
     const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: blockedCandidate,
       siteAdapterDecision: blockedDecision,
@@ -1360,6 +1409,7 @@ test('moodyz adapter rejects candidates outside its API scope with an API reason
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'moodyz');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'moodyz-wrong-host',
@@ -1373,6 +1423,7 @@ test('moodyz adapter rejects candidates outside its API scope with an API reason
       authorization: 'Bearer synthetic-moodyz-token',
     },
   });
+  // @ts-ignore
   const wrongPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'moodyz-wrong-path',
@@ -1383,6 +1434,7 @@ test('moodyz adapter rejects candidates outside its API scope with an API reason
       },
     }),
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'moodyz-wrong-site',
@@ -1412,6 +1464,7 @@ test('moodyz adapter rejects candidates outside its API scope with an API reason
 test('x adapter validates synthetic site API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'x');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1422,6 +1475,7 @@ test('x adapter validates synthetic site API candidates without catalog promotio
       url: 'https://x.com/i/api/graphql/syntheticTimeline?access_token=synthetic-x-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T11:30:00.000Z',
@@ -1452,6 +1506,7 @@ test('x adapter validates synthetic site API candidates without catalog promotio
 test('x adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'x');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1463,10 +1518,12 @@ test('x adapter exposes a pure catalog upgrade policy hook without promotion', (
       url: 'https://x.com/i/api/graphql/syntheticTimeline?access_token=synthetic-x-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T16:40:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -1507,9 +1564,11 @@ test('x adapter exposes a pure catalog upgrade policy hook without promotion', (
       url: 'https://x.com/home?access_token=synthetic-x-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: rejectedCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: rejectedCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -1557,6 +1616,7 @@ test('x synthetic verified endpoint fixture catalogs only through explicit allow
         authorization: 'Bearer synthetic-x-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T19:45:00.000Z',
@@ -1565,6 +1625,7 @@ test('x synthetic verified endpoint fixture catalogs only through explicit allow
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -1615,7 +1676,9 @@ test('x synthetic verified endpoint fixture catalogs only through explicit allow
       id: 'x-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -1640,6 +1703,7 @@ test('x adapter rejects candidates outside its API scope with an API reasonCode'
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'x');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'x-wrong-host',
@@ -1653,6 +1717,7 @@ test('x adapter rejects candidates outside its API scope with an API reasonCode'
       authorization: 'Bearer synthetic-x-token',
     },
   });
+  // @ts-ignore
   const wrongPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'x-wrong-path',
@@ -1663,6 +1728,7 @@ test('x adapter rejects candidates outside its API scope with an API reasonCode'
       },
     }),
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'x-wrong-site',
@@ -1692,6 +1758,7 @@ test('x adapter rejects candidates outside its API scope with an API reasonCode'
 test('instagram adapter validates synthetic site API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'instagram');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1702,6 +1769,7 @@ test('instagram adapter validates synthetic site API candidates without catalog 
       url: 'https://www.instagram.com/api/v1/feed/user/synthetic/?access_token=synthetic-instagram-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T11:35:00.000Z',
@@ -1732,6 +1800,7 @@ test('instagram adapter validates synthetic site API candidates without catalog 
 test('instagram adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'instagram');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1743,10 +1812,12 @@ test('instagram adapter exposes a pure catalog upgrade policy hook without promo
       url: 'https://www.instagram.com/api/v1/feed/user/synthetic/?access_token=synthetic-instagram-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T16:55:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -1787,9 +1858,11 @@ test('instagram adapter exposes a pure catalog upgrade policy hook without promo
       url: 'https://www.instagram.com/explore/?access_token=synthetic-instagram-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: rejectedCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: rejectedCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -1837,6 +1910,7 @@ test('instagram synthetic verified endpoint fixture catalogs only through explic
         authorization: 'Bearer synthetic-instagram-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T19:54:00.000Z',
@@ -1845,6 +1919,7 @@ test('instagram synthetic verified endpoint fixture catalogs only through explic
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -1895,7 +1970,9 @@ test('instagram synthetic verified endpoint fixture catalogs only through explic
       id: 'instagram-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -1920,6 +1997,7 @@ test('instagram adapter rejects candidates outside its API scope with an API rea
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'instagram');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'instagram-wrong-host',
@@ -1933,6 +2011,7 @@ test('instagram adapter rejects candidates outside its API scope with an API rea
       authorization: 'Bearer synthetic-instagram-token',
     },
   });
+  // @ts-ignore
   const wrongPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'instagram-wrong-path',
@@ -1943,6 +2022,7 @@ test('instagram adapter rejects candidates outside its API scope with an API rea
       },
     }),
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'instagram-wrong-site',
@@ -1972,6 +2052,7 @@ test('instagram adapter rejects candidates outside its API scope with an API rea
 test('douyin adapter validates synthetic site API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'douyin');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -1982,6 +2063,7 @@ test('douyin adapter validates synthetic site API candidates without catalog pro
       url: 'https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=synthetic&access_token=synthetic-douyin-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T13:10:00.000Z',
@@ -2012,6 +2094,7 @@ test('douyin adapter validates synthetic site API candidates without catalog pro
 test('douyin adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'douyin');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -2023,10 +2106,12 @@ test('douyin adapter exposes a pure catalog upgrade policy hook without promotio
       url: 'https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=synthetic&access_token=synthetic-douyin-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T17:10:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -2067,9 +2152,11 @@ test('douyin adapter exposes a pure catalog upgrade policy hook without promotio
       url: 'https://www.douyin.com/user/synthetic?access_token=synthetic-douyin-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: rejectedCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: rejectedCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -2117,6 +2204,7 @@ test('douyin synthetic verified endpoint fixture catalogs only through explicit 
         authorization: 'Bearer synthetic-douyin-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T20:00:00.000Z',
@@ -2125,6 +2213,7 @@ test('douyin synthetic verified endpoint fixture catalogs only through explicit 
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -2175,7 +2264,9 @@ test('douyin synthetic verified endpoint fixture catalogs only through explicit 
       id: 'douyin-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -2200,6 +2291,7 @@ test('douyin adapter rejects candidates outside its API scope with an API reason
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'douyin');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'douyin-wrong-host',
@@ -2213,6 +2305,7 @@ test('douyin adapter rejects candidates outside its API scope with an API reason
       authorization: 'Bearer synthetic-douyin-token',
     },
   });
+  // @ts-ignore
   const wrongPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'douyin-wrong-path',
@@ -2223,6 +2316,7 @@ test('douyin adapter rejects candidates outside its API scope with an API reason
       },
     }),
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'douyin-wrong-site',
@@ -2252,6 +2346,7 @@ test('douyin adapter rejects candidates outside its API scope with an API reason
 test('xiaohongshu adapter validates synthetic site API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'xiaohongshu');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -2262,6 +2357,7 @@ test('xiaohongshu adapter validates synthetic site API candidates without catalo
       url: 'https://www.xiaohongshu.com/api/sns/web/v1/feed?note_id=synthetic&access_token=synthetic-xiaohongshu-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T13:30:00.000Z',
@@ -2292,6 +2388,7 @@ test('xiaohongshu adapter validates synthetic site API candidates without catalo
 test('xiaohongshu adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'xiaohongshu');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -2303,10 +2400,12 @@ test('xiaohongshu adapter exposes a pure catalog upgrade policy hook without pro
       url: 'https://www.xiaohongshu.com/api/sns/web/v1/feed?note_id=synthetic&access_token=synthetic-xiaohongshu-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T17:25:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -2347,9 +2446,11 @@ test('xiaohongshu adapter exposes a pure catalog upgrade policy hook without pro
       url: 'https://www.xiaohongshu.com/explore/synthetic?access_token=synthetic-xiaohongshu-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: rejectedCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: rejectedCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -2397,6 +2498,7 @@ test('xiaohongshu synthetic verified endpoint fixture catalogs only through expl
         authorization: 'Bearer synthetic-xiaohongshu-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T20:05:00.000Z',
@@ -2405,6 +2507,7 @@ test('xiaohongshu synthetic verified endpoint fixture catalogs only through expl
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -2455,7 +2558,9 @@ test('xiaohongshu synthetic verified endpoint fixture catalogs only through expl
       id: 'xiaohongshu-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -2480,6 +2585,7 @@ test('xiaohongshu adapter rejects candidates outside its API scope with an API r
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'xiaohongshu');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'xiaohongshu-wrong-host',
@@ -2493,6 +2599,7 @@ test('xiaohongshu adapter rejects candidates outside its API scope with an API r
       authorization: 'Bearer synthetic-xiaohongshu-token',
     },
   });
+  // @ts-ignore
   const wrongPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'xiaohongshu-wrong-path',
@@ -2503,6 +2610,7 @@ test('xiaohongshu adapter rejects candidates outside its API scope with an API r
       },
     }),
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'xiaohongshu-wrong-site',
@@ -2532,6 +2640,7 @@ test('xiaohongshu adapter rejects candidates outside its API scope with an API r
 test('bilibili adapter validates synthetic public API candidates without catalog promotion', async () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'bilibili');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -2542,6 +2651,7 @@ test('bilibili adapter validates synthetic public API candidates without catalog
       url: 'https://api.bilibili.com/x/web-interface/view?bvid=BV1xx411c7mD&access_key=synthetic-bilibili-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T08:40:00.000Z',
@@ -2621,6 +2731,7 @@ test('bilibili adapter exposes concrete API semantics for UP-space resolver evid
 test('bilibili adapter exposes a pure catalog upgrade policy hook without promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'bilibili');
   assert.notEqual(adapter, undefined);
+  // @ts-ignore
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const candidate = createSyntheticCandidate({
@@ -2632,10 +2743,12 @@ test('bilibili adapter exposes a pure catalog upgrade policy hook without promot
       url: 'https://api.bilibili.com/x/web-interface/view?bvid=BV1xx411c7mD&access_key=synthetic-bilibili-policy-token',
     },
   });
+  // @ts-ignore
   const decision = adapter.validateApiCandidate({
     candidate,
     validatedAt: '2026-05-01T15:50:00.000Z',
   });
+  // @ts-ignore
   const policy = adapter.getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision: decision,
@@ -2676,9 +2789,11 @@ test('bilibili adapter exposes a pure catalog upgrade policy hook without promot
       url: 'https://example.invalid/x/web-interface/view?access_key=synthetic-bilibili-policy-token',
     },
   });
+  // @ts-ignore
   const rejectedDecision = adapter.validateApiCandidate({
     candidate: wrongHostCandidate,
   });
+  // @ts-ignore
   const blockedPolicy = adapter.getApiCatalogUpgradePolicy({
     candidate: wrongHostCandidate,
     siteAdapterDecision: rejectedDecision,
@@ -2726,6 +2841,7 @@ test('bilibili synthetic verified endpoint fixture catalogs only through explici
         authorization: 'Bearer synthetic-bilibili-fixture-token',
       },
     });
+    // @ts-ignore
     const decision = adapter.validateApiCandidate({
       candidate,
       validatedAt: '2026-05-01T19:35:00.000Z',
@@ -2734,6 +2850,7 @@ test('bilibili synthetic verified endpoint fixture catalogs only through explici
         sampleCount: 1,
       },
     });
+    // @ts-ignore
     const policy = adapter.getApiCatalogUpgradePolicy({
       candidate,
       siteAdapterDecision: decision,
@@ -2784,7 +2901,9 @@ test('bilibili synthetic verified endpoint fixture catalogs only through explici
       id: 'bilibili-observed-fixture-candidate',
       status: 'observed',
     };
+    // @ts-ignore
     const observedDecision = adapter.validateApiCandidate({ candidate: observedCandidate });
+    // @ts-ignore
     const observedPolicy = adapter.getApiCatalogUpgradePolicy({
       candidate: observedCandidate,
       siteAdapterDecision: observedDecision,
@@ -2809,6 +2928,7 @@ test('bilibili adapter rejects candidates outside its API scope with an API reas
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'bilibili');
   assert.notEqual(adapter, undefined);
 
+  // @ts-ignore
   const wrongHost = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'bilibili-wrong-host',
@@ -2822,6 +2942,7 @@ test('bilibili adapter rejects candidates outside its API scope with an API reas
       authorization: 'Bearer synthetic-bilibili-token',
     },
   });
+  // @ts-ignore
   const wrongSiteKey = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'bilibili-wrong-site',
@@ -2843,6 +2964,7 @@ test('bilibili adapter rejects candidates outside its API scope with an API reas
   assert.equal(wrongSiteKey.adapterId, 'bilibili');
   assert.equal(Object.hasOwn(wrongSiteKey, 'catalogPath'), false);
 
+  // @ts-ignore
   const unsupportedPath = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
       id: 'bilibili-unsupported-api',

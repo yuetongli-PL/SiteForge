@@ -83,7 +83,7 @@ export function isCallableEnablementStatus(value) {
   return CALLABLE_ENABLEMENT_STATUS_SET.has(String(value ?? ''));
 }
 
-export function normalizeCapabilityEnablementStatus(capability = {}, policy = capability.riskPolicy ?? createCapabilityRiskPolicy(capability)) {
+export function normalizeCapabilityEnablementStatus(capability = /** @type {any} */ ({}), policy = capability.riskPolicy ?? createCapabilityRiskPolicy(capability)) {
   const explicit = normalizeEnablementToken(capability.enabled_status);
   const lifecycleStatus = String(capability.status ?? '').trim().toLowerCase();
   if (lifecycleStatus === 'candidate') {
@@ -127,7 +127,7 @@ export function normalizeCapabilityEnablementStatus(capability = {}, policy = ca
   return 'enabled';
 }
 
-export function normalizeCapabilityEvidenceStatus(capability = {}, enablementStatus = normalizeCapabilityEnablementStatus(capability)) {
+export function normalizeCapabilityEvidenceStatus(capability = /** @type {any} */ ({}), enablementStatus = normalizeCapabilityEnablementStatus(capability)) {
   if (enablementStatus === 'debug_only' || enablementStatus === 'candidate_debug_only') {
     return 'debug_only';
   }
@@ -149,7 +149,7 @@ export function normalizeCapabilityEvidenceStatus(capability = {}, enablementSta
   return 'verified';
 }
 
-export function capabilityEvidenceStatusSummary(capabilities = []) {
+export function capabilityEvidenceStatusSummary(capabilities = /** @type {any[]} */ ([])) {
   const summary = {
     verified: 0,
     inferred: 0,
@@ -167,7 +167,7 @@ export function capabilityEvidenceStatusSummary(capabilities = []) {
   return summary;
 }
 
-export function capabilityEnablementStatusCounts(capabilities = []) {
+export function capabilityEnablementStatusCounts(capabilities = /** @type {any[]} */ ([])) {
   const counts = Object.fromEntries(CAPABILITY_ENABLEMENT_STATUSES.map((status) => [status, 0]));
   for (const capability of Array.isArray(capabilities) ? capabilities : []) {
     const status = normalizeCapabilityEnablementStatus(capability);
@@ -261,7 +261,7 @@ export function normalizeRiskToken(value) {
     .replace(/^_+|_+$/gu, '');
 }
 
-function joinedCapabilityText(capability = {}) {
+function joinedCapabilityText(capability = /** @type {any} */ ({})) {
   return [
     capability.action,
     capability.object,
@@ -275,7 +275,7 @@ function joinedCapabilityText(capability = {}) {
   ].filter(Boolean).join(' ');
 }
 
-function joinedCapabilityActionText(capability = {}) {
+function joinedCapabilityActionText(capability = /** @type {any} */ ({})) {
   return [
     capability.action,
     capability.object,
@@ -293,7 +293,7 @@ export function findForcedDisabledActions(value) {
     normalizeRiskToken(text),
     ...text.split(/[^a-z0-9]+/u).map(normalizeRiskToken),
   ].filter(Boolean));
-  const hits = [];
+  const hits = /** @type {any[]} */ ([]);
   for (const action of FORCED_DISABLED_ACTIONS) {
     const normalized = normalizeRiskToken(action);
     const phrase = action.replace(/_/gu, ' ');
@@ -432,7 +432,7 @@ function collectExecutablePlanActions(value, hits = new Set()) {
   return hits;
 }
 
-export function findForcedExecutablePlanActions(plan = {}) {
+export function findForcedExecutablePlanActions(plan = /** @type {any} */ ({})) {
   return [...collectExecutablePlanActions(plan)]
     .filter((action) => FORCED_DISABLED_ACTION_SET.has(action))
     .sort((left, right) => left.localeCompare(right, 'en'));
@@ -468,7 +468,7 @@ function collectUnsafeExecutionPlanMaterialFlags(value, hits = new Set()) {
   return hits;
 }
 
-export function findUnsafeExecutionPlanMaterialFlags(plan = {}) {
+export function findUnsafeExecutionPlanMaterialFlags(plan = /** @type {any} */ ({})) {
   return [...collectUnsafeExecutionPlanMaterialFlags(plan)]
     .sort((left, right) => left.localeCompare(right, 'en'));
 }
@@ -535,7 +535,7 @@ function lowerText(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
-function capabilityEvidenceValues(capability = {}) {
+function capabilityEvidenceValues(capability = /** @type {any} */ ({})) {
   return [
     capability.evidence,
     capability.evidence_sources,
@@ -550,14 +550,14 @@ function capabilityEvidenceValues(capability = {}) {
   ];
 }
 
-function hasAnyCapabilityEvidence(capability = {}) {
+function hasAnyCapabilityEvidence(capability = /** @type {any} */ ({})) {
   return capabilityEvidenceValues(capability).some((value) => {
     if (Array.isArray(value)) return value.length > 0;
     return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0);
   });
 }
 
-function capabilityRemediationReasonCode(capability = {}, riskPolicy = createCapabilityRiskPolicy(capability)) {
+function capabilityRemediationReasonCode(capability = /** @type {any} */ ({}), riskPolicy = createCapabilityRiskPolicy(capability)) {
   return String(
     capability.activationBlockedReason
     ?? capability.disabledReason
@@ -570,7 +570,7 @@ function capabilityRemediationReasonCode(capability = {}, riskPolicy = createCap
   ).trim();
 }
 
-function capabilityRemediationReasonText(capability = {}, reasonCode = null) {
+function capabilityRemediationReasonText(capability = /** @type {any} */ ({}), reasonCode = null) {
   return String(
     capability.interaction_blocked_reason
     ?? capability.confirmation_blocked_reason
@@ -581,22 +581,22 @@ function capabilityRemediationReasonText(capability = {}, reasonCode = null) {
   ).trim();
 }
 
-function capabilityRequiresSiteSpecificAdapter(capability = {}, reasonText = '') {
+function capabilityRequiresSiteSpecificAdapter(capability = /** @type {any} */ ({}), reasonText = '') {
   const text = `${reasonText} ${joinedCapabilityText(capability)}`.toLowerCase();
   return /capability-specific-evidence|required.*adapter|site-specific|known-site|adapter|dynamic-unsupported|rendered.*unavailable|user-intent-unresolved|selected_not_active|unsupported.*intent/u.test(text);
 }
 
-function capabilityRequiresManualReview(capability = {}, reasonText = '') {
+function capabilityRequiresManualReview(capability = /** @type {any} */ ({}), reasonText = '') {
   const text = `${reasonText} ${joinedCapabilityText(capability)}`.toLowerCase();
   return /manual|review|validation-failed|policy-evidence-required|missing.*evidence|lacks.*evidence|privacy|private.*detail|body/u.test(text);
 }
 
-function capabilityHasPrivateBodyRisk(capability = {}) {
+function capabilityHasPrivateBodyRisk(capability = /** @type {any} */ ({})) {
   return /direct[-_\s]?message.*(?:detail|body|conversation)|private[-_\s]?message.*(?:detail|body|conversation)|private inbox|notification body|body text|raw body|private body/iu
     .test(joinedCapabilityText(capability));
 }
 
-function capabilityUnsafeMaterialRequested(capability = {}) {
+function capabilityUnsafeMaterialRequested(capability = /** @type {any} */ ({})) {
   const directFlags = [
     capability.raw_content_saved,
     capability.rawContentSaved,
@@ -664,7 +664,7 @@ function remediationNextStep(path, canAutoPrepare) {
   return 'Add a reviewed safe alternative path before use; the requested final action stays outside the automatic boundary.';
 }
 
-function remediationProhibitedActions(path, forcedActions = []) {
+function remediationProhibitedActions(path, forcedActions = /** @type {any[]} */ ([])) {
   const pathSpecific = path === 'limited_read_summary'
     ? ['body_text_persistence', 'private_message_body_read', 'account_mutation']
     : path === 'draft_only_preview'
@@ -707,7 +707,7 @@ function publicRemediationAction(action) {
   return PUBLIC_REMEDIATION_ACTIONS.get(text) ?? text;
 }
 
-function publicRemediationReason(remediation = {}) {
+function publicRemediationReason(remediation = /** @type {any} */ ({})) {
   const reasonCode = String(remediation.reasonCode ?? '').trim();
   const reasonText = String(remediation.reason ?? '').trim();
   const mappedByCode = PUBLIC_REMEDIATION_REASONS.get(reasonCode);
@@ -721,7 +721,7 @@ function publicRemediationReason(remediation = {}) {
   return reasonText || 'The current policy keeps this capability disabled.';
 }
 
-export function publicSafeRemediation(remediation = {}) {
+export function publicSafeRemediation(remediation = /** @type {any} */ ({})) {
   return {
     ...remediation,
     reasonCode: undefined,
@@ -770,7 +770,7 @@ function selectSafeRemediationPath({
   return 'requires_manual_review';
 }
 
-export function buildCapabilitySafeRemediationPath(capability = {}) {
+export function buildCapabilitySafeRemediationPath(capability = /** @type {any} */ ({})) {
   const riskPolicy = capability.riskPolicy ?? createCapabilityRiskPolicy(capability);
   const reasonCode = capabilityRemediationReasonCode(capability, riskPolicy);
   const reasonText = capabilityRemediationReasonText(capability, reasonCode);
@@ -815,7 +815,7 @@ export function buildCapabilitySafeRemediationPath(capability = {}) {
   };
 }
 
-export function decorateCapabilitySafeRemediation(capability = {}) {
+export function decorateCapabilitySafeRemediation(capability = /** @type {any} */ ({})) {
   const remediation = buildCapabilitySafeRemediationPath(capability);
   const publicRemediation = publicSafeRemediation(remediation);
   return {
@@ -825,8 +825,8 @@ export function decorateCapabilitySafeRemediation(capability = {}) {
   };
 }
 
-export function validateCapabilitySafeRemediationPath(capability = {}, remediation = buildCapabilitySafeRemediationPath(capability)) {
-  const errors = [];
+export function validateCapabilitySafeRemediationPath(capability = /** @type {any} */ ({}), remediation = buildCapabilitySafeRemediationPath(capability)) {
+  const errors = /** @type {any[]} */ ([]);
   const path = remediation?.path ?? remediation?.type ?? remediation?.safe_remediation_path;
   const riskPolicy = capability.riskPolicy ?? createCapabilityRiskPolicy(capability);
   const forcedActions = [
@@ -876,7 +876,7 @@ export function validateCapabilitySafeRemediationPath(capability = {}, remediati
   return errors;
 }
 
-export function safeRemediationPathSummary(capabilities = []) {
+export function safeRemediationPathSummary(capabilities = /** @type {any[]} */ ([])) {
   const summary = {
     total: 0,
     canAutoPrepare: 0,
@@ -897,7 +897,7 @@ export function safeRemediationPathSummary(capabilities = []) {
   return summary;
 }
 
-function capabilitySafetyPlans(capability = {}) {
+function capabilitySafetyPlans(capability = /** @type {any} */ ({})) {
   return [
     ['executionPlan', capability.executionPlan ?? capability.execution_plan],
     ['remediationPlan', capability.remediationPlan ?? capability.remediation_plan ?? capability.remediation?.plan],
@@ -906,7 +906,7 @@ function capabilitySafetyPlans(capability = {}) {
     .map(([label, plan]) => ({ label, plan }));
 }
 
-export function classifyEvidenceSourceKind(evidence = {}) {
+export function classifyEvidenceSourceKind(evidence = /** @type {any} */ ({})) {
   const type = String(evidence.type ?? '').toLowerCase();
   const source = String(evidence.source ?? evidence.source_ref ?? '').toLowerCase();
   if (type === 'network' || source.includes('network')) {
@@ -960,7 +960,7 @@ export function sanitizeEvidenceRef(value) {
   if (routeTemplate) {
     return redactUrl(routeTemplate).url;
   }
-  const redacted = redactPublicIdentifierText(text, { maxLength: 120 }).value;
+  const redacted = redactPublicIdentifierText(/** @type {any} */ (text), { maxLength: 120 }).value;
   if (/[\\/]/u.test(redacted) || /\.(?:html?|json|xml|mjs|js|css)$/iu.test(redacted)) {
     return `structure-ref:${sha256Short(redacted)}`;
   }
@@ -972,7 +972,7 @@ function sanitizeMethod(value) {
   return /^(?:GET|HEAD|OPTIONS|POST|PUT|PATCH|DELETE)$/u.test(method) ? method : null;
 }
 
-export function normalizeEvidenceObject(evidence = {}) {
+export function normalizeEvidenceObject(evidence = /** @type {any} */ ({})) {
   const sourceKind = EVIDENCE_SOURCE_KIND_SET.has(evidence.evidence_source)
     ? evidence.evidence_source
     : classifyEvidenceSourceKind(evidence);
@@ -1012,12 +1012,12 @@ export function normalizeEvidenceObject(evidence = {}) {
   return normalized;
 }
 
-export function normalizeCapabilityEvidenceList(evidence = []) {
+export function normalizeCapabilityEvidenceList(evidence = /** @type {any[]} */ ([])) {
   return Array.isArray(evidence) ? evidence.map((item) => normalizeEvidenceObject(item)) : [];
 }
 
-export function validateCapabilityEvidenceObject(evidence = {}) {
-  const errors = [];
+export function validateCapabilityEvidenceObject(evidence = /** @type {any} */ ({})) {
+  const errors = /** @type {any[]} */ ([]);
   if (!EVIDENCE_SOURCE_KIND_SET.has(evidence.evidence_source)) {
     errors.push('missing_or_invalid_evidence_source');
   }
@@ -1041,8 +1041,8 @@ export function validateCapabilityEvidenceObject(evidence = {}) {
   return errors;
 }
 
-export function validateCapabilityEvidenceList(evidence = []) {
-  const errors = [];
+export function validateCapabilityEvidenceList(evidence = /** @type {any[]} */ ([])) {
+  const errors = /** @type {any[]} */ ([]);
   for (const [index, item] of (Array.isArray(evidence) ? evidence : []).entries()) {
     for (const code of validateCapabilityEvidenceObject(item)) {
       errors.push({ index, code });
@@ -1051,7 +1051,7 @@ export function validateCapabilityEvidenceList(evidence = []) {
   return errors;
 }
 
-export function inferCapabilityRiskLevel(capability = {}) {
+export function inferCapabilityRiskLevel(capability = /** @type {any} */ ({})) {
   const text = joinedCapabilityText(capability);
   const actionText = joinedCapabilityActionText(capability);
   const forced = findForcedDisabledActions(actionText);
@@ -1094,7 +1094,7 @@ function normalizePrivacyMode(value) {
   return String(value ?? 'limited').toLowerCase() === 'strict' ? 'strict' : 'limited';
 }
 
-function riskPolicyRuntimeDefaults(policy, options = {}) {
+function riskPolicyRuntimeDefaults(policy, options = /** @type {any} */ ({})) {
   const overrideStatus = normalizeEnabledStatus(options.enabledStatus);
   const overridePolicy = normalizeDefaultPolicy(options.defaultPolicy);
   if (overrideStatus || overridePolicy) {
@@ -1150,7 +1150,7 @@ function riskPolicyRuntimeDefaults(policy, options = {}) {
   };
 }
 
-export function createCapabilityRiskPolicy(capability = {}) {
+export function createCapabilityRiskPolicy(capability = /** @type {any} */ ({})) {
   const riskLevel = inferCapabilityRiskLevel(capability);
   const defaults = RISK_LEVEL_DEFAULTS[riskLevel] ?? RISK_LEVEL_DEFAULTS.read_public_low;
   const forcedActions = findForcedDisabledActions(joinedCapabilityActionText(capability));
@@ -1177,7 +1177,7 @@ export function createCapabilityRiskPolicy(capability = {}) {
   };
 }
 
-function enforceDraftOnlyPlan(plan = {}) {
+function enforceDraftOnlyPlan(plan = /** @type {any} */ ({})) {
   return {
     ...plan,
     mode: 'dry_run',
@@ -1195,7 +1195,7 @@ function enforceDraftOnlyPlan(plan = {}) {
   };
 }
 
-function enforceLimitedReadPlan(plan = {}) {
+function enforceLimitedReadPlan(plan = /** @type {any} */ ({})) {
   return {
     ...plan,
     mode: plan.mode === 'dry_run' ? plan.mode : 'limited_read',
@@ -1212,7 +1212,7 @@ function enforceLimitedReadPlan(plan = {}) {
   };
 }
 
-export function applyCapabilityRiskPolicy(capability = {}) {
+export function applyCapabilityRiskPolicy(capability = /** @type {any} */ ({})) {
   const riskPolicy = createCapabilityRiskPolicy(capability);
   const isCandidate = capability.status === 'candidate';
   const enabledStatus = normalizeCapabilityEnablementStatus(capability, riskPolicy);
@@ -1262,7 +1262,7 @@ export function applyCapabilityRiskPolicy(capability = {}) {
   return next;
 }
 
-export function applyRiskDefaults(capability = {}, options = {}) {
+export function applyRiskDefaults(capability = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const riskLevel = options.riskLevel ?? capability.risk_level ?? inferCapabilityRiskLevel(capability);
   const policy = riskPolicyForLevel(riskLevel);
   const forceDisabled = options.forceDisabled === true;
@@ -1321,8 +1321,8 @@ export function applyRiskDefaults(capability = {}, options = {}) {
   };
 }
 
-export function validateExecutionPlanAgainstRiskPolicy(capability = {}) {
-  const errors = [];
+export function validateExecutionPlanAgainstRiskPolicy(capability = /** @type {any} */ ({})) {
+  const errors = /** @type {any[]} */ ([]);
   const riskPolicy = capability.riskPolicy ?? createCapabilityRiskPolicy(capability);
   const plan = capability.executionPlan;
   if (riskPolicy.disabled && capability.status === 'active') {
@@ -1372,7 +1372,7 @@ export function validateExecutionPlanAgainstRiskPolicy(capability = {}) {
   return errors;
 }
 
-export function riskPolicySummary(capabilities = []) {
+export function riskPolicySummary(capabilities = /** @type {any[]} */ ([])) {
   const summary = {
     read_public_low: 0,
     read_personal_medium: 0,

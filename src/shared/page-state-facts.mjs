@@ -80,7 +80,7 @@ export function createPageStateFactsRuntime(core) {
     return 'low';
   }
 
-  function normalizeDouyinPublishFields(card = {}) {
+  function normalizeDouyinPublishFields(card = /** @type {any} */ ({})) {
     const timeText = cleanText(card.timeText ?? card.publishTimeText ?? card.publishText ?? '');
     const publishedAt = toDate(card.publishedAt ?? null) ?? toDate(card.createTime ?? card.create_time ?? card.publishTimestamp ?? null);
     const timeSource = publishedAt
@@ -102,7 +102,7 @@ export function createPageStateFactsRuntime(core) {
     return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   }
 
-  function parseDouyinCreateTimeMapFromHtml(html, videoIds = []) {
+  function parseDouyinCreateTimeMapFromHtml(html, videoIds = /** @type {any[]} */ ([])) {
     const source = String(html ?? '');
     if (!source) {
       return new Map();
@@ -175,12 +175,12 @@ export function createPageStateFactsRuntime(core) {
     return normalized;
   }
 
-  function detectDouyinAntiCrawlSignals({ title = '', documentText = '' } = {}) {
+  function detectDouyinAntiCrawlSignals({ title = '', documentText = '' } = /** @type {any} */ ({})) {
     const source = cleanText([title, documentText].filter(Boolean).join(' ')).toLowerCase();
     if (!source) {
       return [];
     }
-    const signals = [];
+    const signals = /** @type {any[]} */ ([]);
     if (
       /captcha|verify|challenge/u.test(source)
       || /\u9a8c\u8bc1\u7801/u.test(source)
@@ -204,7 +204,7 @@ export function createPageStateFactsRuntime(core) {
     return uniqueSortedStrings(signals);
   }
 
-  function deriveDouyinAntiCrawlReasonCode(signals = []) {
+  function deriveDouyinAntiCrawlReasonCode(signals = /** @type {any[]} */ ([])) {
     const normalized = uniqueSortedStrings(toArray(signals).map((value) => cleanText(value).toLowerCase()).filter(Boolean));
     if (normalized.some((value) => /verify|captcha|middle|middle-page-loading/u.test(value))) {
       return 'anti-crawl-verify';
@@ -215,7 +215,7 @@ export function createPageStateFactsRuntime(core) {
     return normalized.length > 0 ? 'anti-crawl-challenge' : null;
   }
 
-  function deriveBilibiliAntiCrawlReasonCode(signals = []) {
+  function deriveBilibiliAntiCrawlReasonCode(signals = /** @type {any[]} */ ([])) {
     const normalized = uniqueSortedStrings(toArray(signals).map(normalizeSignal).filter(Boolean));
     if (normalized.some((signal) => /verify|challenge|captcha|\u767b\u5f55\u6821\u9a8c|\u5b89\u5168\u9a8c\u8bc1/u.test(signal))) {
       return 'anti-crawl-verify';
@@ -429,7 +429,7 @@ export function createPageStateFactsRuntime(core) {
     return cleanText(value?.match(/\/user\/profile\/([^/?#]+)/u)?.[1] || '') || null;
   }
 
-  function extractBalancedObjectLiteral(source, markers = []) {
+  function extractBalancedObjectLiteral(source, markers = /** @type {any[]} */ ([])) {
     const input = String(source ?? '');
     if (!input) {
       return null;
@@ -534,7 +534,7 @@ export function createPageStateFactsRuntime(core) {
     return objectLiteral ? parseJsonLikeObjectLiteral(objectLiteral) : null;
   }
 
-  function mergeSparseObjects(primary = {}, secondary = {}) {
+  function mergeSparseObjects(primary = /** @type {any} */ ({}), secondary = /** @type {any} */ ({})) {
     const result = { ...(primary ?? {}) };
     for (const [key, value] of Object.entries(secondary ?? {})) {
       if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) {
@@ -559,7 +559,7 @@ export function createPageStateFactsRuntime(core) {
     hrefsFromSelectors = () => [],
     metaContent = () => null,
     extractStructuredBilibiliAuthorCards = null,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const normalizedFinalUrl = normalizeUrlNoFragment(finalUrl) || cleanText(finalUrl);
     const rawHtmlSource = typeof rawHtml === 'function' ? String(rawHtml() ?? '') : String(rawHtml ?? '');
     const readDocumentText = (() => {
@@ -573,16 +573,16 @@ export function createPageStateFactsRuntime(core) {
       };
     })();
     const normalizeUrl = (value) => normalizeUrlNoFragment(value, normalizedFinalUrl);
-    const readText = (selectors = []) => cleanText(textFromSelectors(selectors)) || null;
-    const readHref = (selectors = []) => {
+    const readText = (selectors = /** @type {any[]} */ ([])) => cleanText(textFromSelectors(selectors)) || null;
+    const readHref = (selectors = /** @type {any[]} */ ([])) => {
       const value = hrefFromSelectors(selectors);
       return value ? normalizeUrl(value) : null;
     };
-    const readTexts = (selectors = [], limit = 20) => uniqueValues(textsFromSelectors(selectors)).slice(0, limit);
-    const readHrefs = (selectors = [], limit = 20) => uniqueValues(
+    const readTexts = (selectors = /** @type {any[]} */ ([]), limit = 20) => uniqueValues(textsFromSelectors(selectors)).slice(0, limit);
+    const readHrefs = (selectors = /** @type {any[]} */ ([]), limit = 20) => uniqueValues(
       hrefsFromSelectors(selectors).map((value) => normalizeUrl(value)),
     ).slice(0, limit);
-    const readPattern = (patterns = []) => {
+    const readPattern = (patterns = /** @type {any[]} */ ([])) => {
       const source = readDocumentText();
       for (const pattern of patterns) {
         const matched = source.match(pattern);
@@ -623,7 +623,7 @@ export function createPageStateFactsRuntime(core) {
     metaContent = () => null,
     documentText = '',
     extractStructuredBilibiliAuthorCards = null,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const readers = buildStateReaders({
       finalUrl,
       rawHtml,
@@ -651,7 +651,7 @@ export function createPageStateFactsRuntime(core) {
       || ['www.bilibili.com', 'search.bilibili.com', 'space.bilibili.com'].includes(currentHostname);
     const isDouyinProfile = profileHost === 'www.douyin.com' || currentHostname === 'www.douyin.com';
     const isXiaohongshuProfile = profileHost === 'www.xiaohongshu.com' || currentHostname === 'www.xiaohongshu.com';
-    const finalizeFacts = (facts, options = {}) => mergePageStateEvidence(facts, null, options).pageFacts;
+    const finalizeFacts = (facts, options = /** @type {any} */ ({})) => mergePageStateEvidence(facts, null, options).pageFacts;
     const readXiaohongshuInitialState = (() => {
       let cached = null;
       let attempted = false;
@@ -672,7 +672,7 @@ export function createPageStateFactsRuntime(core) {
       const normalizedUserId = normalizeXiaohongshuLooseText(userId);
       return normalizedUserId ? `https://www.xiaohongshu.com/user/profile/${normalizedUserId}` : null;
     };
-    const normalizeXiaohongshuAuthorFields = (user = {}, fallback = {}) => {
+    const normalizeXiaohongshuAuthorFields = (user = /** @type {any} */ ({}), fallback = /** @type {any} */ ({})) => {
       const normalizedUser = user && typeof user === 'object' ? user : {};
       const authorUserId = normalizeXiaohongshuLooseText(
         normalizedUser.userId
@@ -712,7 +712,7 @@ export function createPageStateFactsRuntime(core) {
       };
     };
     const normalizeXiaohongshuTagNames = (value) => {
-      const tags = [];
+      const tags = /** @type {any[]} */ ([]);
       for (const entry of toArray(value)) {
         if (!entry) {
           continue;
@@ -751,7 +751,7 @@ export function createPageStateFactsRuntime(core) {
       return normalizedUrl ? normalizedUrl.replace(/^http:\/\//iu, 'https://') : null;
     };
     const buildXiaohongshuContentImages = (value) => {
-      const images = [];
+      const images = /** @type {any[]} */ ([]);
       for (const [index, entry] of toArray(value).entries()) {
         const image = entry && typeof entry === 'object' ? entry : {};
         const infoEntries = toArray(image.infoList)
@@ -800,7 +800,7 @@ export function createPageStateFactsRuntime(core) {
       }
       return images;
     };
-    const normalizeXiaohongshuContentCard = (inputCard = {}, fallbackAuthor = {}) => {
+    const normalizeXiaohongshuContentCard = (inputCard = /** @type {any} */ ({}), fallbackAuthor = /** @type {any} */ ({})) => {
       const wrapper = inputCard && typeof inputCard === 'object' ? inputCard : {};
       const noteCard = wrapper.noteCard && typeof wrapper.noteCard === 'object' ? wrapper.noteCard : wrapper;
       const noteId = normalizeXiaohongshuLooseText(
@@ -887,7 +887,7 @@ export function createPageStateFactsRuntime(core) {
       ) ? normalizedCard : null;
     };
     const mergeXiaohongshuContentCards = (...lists) => {
-      const mergedCards = [];
+      const mergedCards = /** @type {any[]} */ ([]);
       const keyToIndex = new Map();
       const registerKeys = (card, index) => {
         const keys = uniqueValues([
@@ -926,13 +926,13 @@ export function createPageStateFactsRuntime(core) {
       return mergedCards;
     };
     const buildXiaohongshuDomContentCards = ({
-      urlSelectors = [],
-      titleSelectors = [],
-      authorNameSelectors = [],
-      authorUrlSelectors = [],
+      urlSelectors = /** @type {any[]} */ ([]),
+      titleSelectors = /** @type {any[]} */ ([]),
+      authorNameSelectors = /** @type {any[]} */ ([]),
+      authorUrlSelectors = /** @type {any[]} */ ([]),
       limit = 20,
-      fallbackAuthor = {},
-    } = {}) => {
+      fallbackAuthor = /** @type {any} */ ({}),
+    } = /** @type {any} */ ({})) => {
       const normalizedUrls = readers.readHrefs(urlSelectors, limit)
         .map((value) => canonicalizeXiaohongshuNoteUrl(value, normalizedFinalUrl))
         .filter(Boolean);
@@ -942,7 +942,7 @@ export function createPageStateFactsRuntime(core) {
         .map((value) => canonicalizeXiaohongshuAuthorUrl(value, normalizedFinalUrl))
         .filter(Boolean);
       const cardCount = Math.max(normalizedUrls.length, titles.length, authorNames.length, authorUrls.length);
-      const cards = [];
+      const cards = /** @type {any[]} */ ([]);
       for (let index = 0; index < cardCount; index += 1) {
         const authorUrl = authorUrls[index] ?? fallbackAuthor.authorUrl ?? null;
         const authorFields = normalizeXiaohongshuAuthorFields({}, {
@@ -963,9 +963,9 @@ export function createPageStateFactsRuntime(core) {
       }
       return cards;
     };
-    const collectXiaohongshuStateContentCards = ({ fallbackAuthor = {} } = {}) => {
+    const collectXiaohongshuStateContentCards = ({ fallbackAuthor = /** @type {any} */ ({}) } = /** @type {any} */ ({})) => {
       const state = readXiaohongshuInitialState();
-      const cards = [];
+      const cards = /** @type {any[]} */ ([]);
       if (Array.isArray(state?.search?.feeds)) {
         cards.push(
           ...state.search.feeds
@@ -985,7 +985,7 @@ export function createPageStateFactsRuntime(core) {
     };
     const selectXiaohongshuDetailCard = (expectedNoteId = null) => {
       const state = readXiaohongshuInitialState();
-      const candidates = [];
+      const candidates = /** @type {any[]} */ ([]);
       const noteDetailMap = state?.note?.noteDetailMap;
       if (noteDetailMap && typeof noteDetailMap === 'object') {
         for (const [entryKey, entryValue] of Object.entries(noteDetailMap)) {
@@ -1045,7 +1045,7 @@ export function createPageStateFactsRuntime(core) {
       };
     };
 
-    const buildDouyinContentCards = (urls = [], titles = [], currentAuthor = {}) => {
+    const buildDouyinContentCards = (urls = /** @type {any[]} */ ([]), titles = /** @type {any[]} */ ([]), currentAuthor = /** @type {any} */ ({})) => {
       const canonicalUrls = uniqueValues(urls.map((value) => canonicalizeDouyinVideoUrl(value)).filter(Boolean));
       const createTimeMap = parseDouyinCreateTimeMapFromHtml(
         readers.rawHtmlSource,
@@ -1068,7 +1068,7 @@ export function createPageStateFactsRuntime(core) {
       }).filter((card) => card.url || card.videoId || card.title);
     };
 
-    const buildDouyinAuthorCards = (urls = [], names = []) => {
+    const buildDouyinAuthorCards = (urls = /** @type {any[]} */ ([]), names = /** @type {any[]} */ ([])) => {
       const canonicalUrls = uniqueValues(urls.map((value) => canonicalizeDouyinAuthorUrl(value)).filter(Boolean));
       return canonicalUrls.map((url, index) => {
         const userId = cleanText(url.match(/\/user\/([^/?#]+)/u)?.[1] || '') || null;
@@ -1095,7 +1095,7 @@ export function createPageStateFactsRuntime(core) {
       return normalized;
     };
 
-    const normalizeBilibiliAuthorCard = (card = {}, authorSubpage = null) => {
+    const normalizeBilibiliAuthorCard = (card = /** @type {any} */ ({}), authorSubpage = null) => {
       const name = cleanText(card.name);
       const url = card.url ? readers.normalizeUrl(card.url) : null;
       const mid = cleanText(card.mid) || bilibiliMidFromUrl(url);
@@ -1111,7 +1111,7 @@ export function createPageStateFactsRuntime(core) {
       };
     };
 
-    const normalizeBilibiliContentCard = (card = {}, fallbackAuthorMid = null) => {
+    const normalizeBilibiliContentCard = (card = /** @type {any} */ ({}), fallbackAuthorMid = null) => {
       const url = card.url ? readers.normalizeUrl(card.url) : null;
       const titleValue = cleanText(card.title);
       const bvid = cleanText(card.bvid) || bilibiliBvidFromUrl(url);
@@ -1133,9 +1133,9 @@ export function createPageStateFactsRuntime(core) {
       };
     };
 
-    const dedupeBilibiliAuthorCards = (cards = [], authorSubpage = null) => {
+    const dedupeBilibiliAuthorCards = (cards = /** @type {any[]} */ ([]), authorSubpage = null) => {
       const seen = new Set();
-      const result = [];
+      const result = /** @type {any[]} */ ([]);
       for (const rawCard of cards) {
         const card = normalizeBilibiliAuthorCard(rawCard, authorSubpage);
         if (!card) {
@@ -1155,9 +1155,9 @@ export function createPageStateFactsRuntime(core) {
       return result.slice(0, 16);
     };
 
-    const dedupeBilibiliContentCards = (cards = [], fallbackAuthorMid = null) => {
+    const dedupeBilibiliContentCards = (cards = /** @type {any[]} */ ([]), fallbackAuthorMid = null) => {
       const seen = new Set();
-      const result = [];
+      const result = /** @type {any[]} */ ([]);
       for (const rawCard of cards) {
         const card = normalizeBilibiliContentCard(rawCard, fallbackAuthorMid);
         if (!card) {
@@ -1182,15 +1182,15 @@ export function createPageStateFactsRuntime(core) {
       if (!source) {
         return [];
       }
-      const signals = [];
-      const patterns = [
+      const signals = /** @type {any[]} */ ([]);
+      const patterns = /** @type {[string, RegExp][]} */ ([
         ['rate-limit', /\u8bbf\u95ee\u9891\u7e41/u],
         ['verify', /\u5b89\u5168\u9a8c\u8bc1/u],
         ['slide-verify', /\u6ed1\u52a8\u9a8c\u8bc1/u],
         ['captcha', /captcha/iu],
         ['risk-control', /\u98ce\u63a7/u],
         ['retry-later', /\u8bf7\u7a0d\u540e\u518d\u8bd5/u],
-      ];
+      ]);
       for (const [label, pattern] of patterns) {
         if (pattern.test(source)) {
           signals.push(label);

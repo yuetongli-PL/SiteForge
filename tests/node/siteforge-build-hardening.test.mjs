@@ -185,7 +185,7 @@ test('SiteForge build keeps two sites isolated by site id and build id', async (
 });
 
 test('SiteForge live source fetch honors HTTP_PROXY for HTTP targets', async () => {
-  const seenRequests = [];
+  const seenRequests = /** @type {any[]} */ ([]);
   const proxy = createServer((request, response) => {
     seenRequests.push({
       method: request.method,
@@ -255,8 +255,11 @@ test('SiteForge live source fetch fails closed when HTTP proxy leaves request pe
     await assert.rejects(
       () => source.read('http://upstream.test/sitemap.xml'),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'static-fetch-proxy-timeout');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'static-fetch-proxy-timeout');
+        // @ts-ignore
         assert.match(error.message, /timed out/u);
         return true;
       },
@@ -281,10 +284,15 @@ test('SiteForge live source fetch fails early for unsupported proxy protocols wi
   await assert.rejects(
     () => source.read('https://upstream.test/'),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'static-fetch-proxy-unsupported');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'static-fetch-proxy-unsupported');
+      // @ts-ignore
       assert.match(error.message, /Unsupported proxy protocol/u);
+      // @ts-ignore
       assert.doesNotMatch(error.message, /proxy-secret/u);
+      // @ts-ignore
       assert.doesNotMatch(error.message, /proxy-user/u);
       return true;
     },
@@ -365,16 +373,24 @@ test('failed SiteForge build preserves failed artifacts and does not replace cur
       /Static crawl produced no pages with evidence/u,
     );
 
+    // @ts-ignore
     assert.ok(failure?.artifactDir);
+    // @ts-ignore
     assert.equal(failure.artifactDir, path.join(siteRoot, 'builds', 'failed-build'));
+    // @ts-ignore
     const failedReport = await readJson(path.join(failure.artifactDir, 'build_report.json'));
     assert.equal(failedReport.status, 'blocked');
     assert.equal(failedReport.failedStage, 'crawlStatic');
     assert.equal(failedReport.reasonCode, 'empty-crawl');
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'site.json')), true);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'seeds.json')), true);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'crawl_static.json')), true);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'verification_report.json')), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'skill', 'skill.yaml')), false);
 
     assert.deepEqual(await readJson(path.join(currentDir, 'verification_report.json')), currentVerificationBefore);
@@ -496,16 +512,21 @@ test('generated skill lookup resolves domain and utterance to skill intent capab
     });
     assert.equal(lookup.status, 'found');
     assert.equal(lookup.skillId, 'simple-shop');
+    // @ts-ignore
     assert.equal(lookup.intentName, 'search products');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'search products');
+    // @ts-ignore
     assert.ok(lookup.executionPlanId);
 
     const registry = await readJson(registryPath);
     const skillRecord = registry.skills.find((skill) => skill.skillId === lookup.skillId);
     const intentRecord = skillRecord.intents.find((intent) => intent.intentId === lookup.intentId);
     assert.equal(intentRecord.capabilityId, lookup.capabilityId);
+    // @ts-ignore
     assert.equal(intentRecord.executionPlanId, lookup.executionPlanId);
 
+    // @ts-ignore
     const skillDir = path.join(workspace, lookup.skillDir);
     const capabilities = await readJson(path.join(skillDir, 'capabilities.json'));
     const capability = capabilities.capabilities.find((candidate) => candidate.id === lookup.capabilityId);
@@ -513,6 +534,7 @@ test('generated skill lookup resolves domain and utterance to skill intent capab
     assert.equal(capability.evidence.length > 0, true);
 
     const plans = await readJson(path.join(skillDir, 'execution_plans.json'));
+    // @ts-ignore
     const plan = plans.executionPlans.find((candidate) => candidate.id === lookup.executionPlanId);
     assert.equal(plan.capabilityId, lookup.capabilityId);
     assert.equal(plan.steps.length > 0, true);
@@ -758,7 +780,7 @@ test('Setup Assistant regenerates legacy saved profiles without reusing missing 
 
 test('Setup Assistant treats robots-disallowed setup evidence as not buildable', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-robots-disallowed-'));
-  const requests = [];
+  const requests = /** @type {any[]} */ ([]);
   const server = createServer((request, response) => {
     requests.push(request.url);
     if (request.url === '/robots.txt') {
@@ -807,9 +829,12 @@ test('Setup Assistant treats robots-disallowed setup evidence as not buildable',
     );
 
     assert.equal(prompted, false);
+    // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'setup-robots-disallowed');
     assert.deepEqual(requests.sort(), ['/robots.txt', '/sitemap.xml']);
+    // @ts-ignore
     const setupPlan = await readJson(failure.setupPlanPath);
     assert.equal(setupPlan.summary.buildable, false);
     assert.equal(setupPlan.buildReadiness.reasonCode, 'setup-robots-disallowed');
@@ -821,7 +846,9 @@ test('Setup Assistant treats robots-disallowed setup evidence as not buildable',
     assert.equal(setupPlan.recommendedCapabilities.every((capability) => capability.recommended === false), true);
     assert.match(output.value(), /当前不可构建/u);
     assertRobotsSetupGuidance(output.value());
+    // @ts-ignore
     assertRobotsSetupGuidance(failure.message);
+    // @ts-ignore
     assert.deepEqual(failure.guidance, setupPlan.buildReadiness.guidance);
   } finally {
     await closeServer(server).catch(() => {});
@@ -867,13 +894,18 @@ test('Setup Assistant x.com robots-disallowed guidance is explicit in non-intera
       /setup-evidence-not-buildable/u,
     );
 
+    // @ts-ignore
     assert.equal(nonInteractiveFailure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(nonInteractiveFailure.reasonCode, 'setup-known-policy-robots-disallowed');
+    // @ts-ignore
     assertRobotsSetupGuidance(nonInteractiveFailure.message);
+    // @ts-ignore
     const nonInteractivePlan = await readJson(nonInteractiveFailure.setupPlanPath);
     assert.equal(nonInteractivePlan.site.rootUrl, 'https://x.com/');
     assert.equal(nonInteractivePlan.buildReadiness.reasonCode, 'setup-known-policy-robots-disallowed');
     assertRobotsSetupGuidance(nonInteractivePlan.buildReadiness.guidance.join(' '));
+    // @ts-ignore
     await assertNoSetupSkillRegistration(nonInteractiveFailure.setupPlanPath);
 
     const output = createWritableBuffer();
@@ -905,10 +937,14 @@ test('Setup Assistant x.com robots-disallowed guidance is explicit in non-intera
     );
 
     assert.equal(prompted, false);
+    // @ts-ignore
     assert.equal(interactiveFailure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(interactiveFailure.reasonCode, 'setup-known-policy-robots-disallowed');
     assertRobotsSetupGuidance(output.value());
+    // @ts-ignore
     assertRobotsSetupGuidance(interactiveFailure.message);
+    // @ts-ignore
     await assertNoSetupSkillRegistration(interactiveFailure.setupPlanPath);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -917,7 +953,7 @@ test('Setup Assistant x.com robots-disallowed guidance is explicit in non-intera
 
 test('Setup Assistant blocks known policy capabilities when live robots disallow evidence', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-known-policy-robots-'));
-  const requests = [];
+  const requests = /** @type {any[]} */ ([]);
   const server = createServer((request, response) => {
     requests.push(request.url);
     if (request.url === '/robots.txt') {
@@ -997,9 +1033,12 @@ test('Setup Assistant blocks known policy capabilities when live robots disallow
     );
 
     assert.equal(prompted, false);
+    // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'setup-known-policy-robots-disallowed');
     assert.deepEqual(requests.sort(), ['/robots.txt', '/sitemap.xml']);
+    // @ts-ignore
     const setupPlan = await readJson(failure.setupPlanPath);
     assert.equal(setupPlan.knownSitePolicy.siteKey, 'blocked-social');
     assert.equal(setupPlan.knownSitePolicy.adapterId, 'blocked-social-adapter');
@@ -1022,6 +1061,7 @@ test('Setup Assistant blocks known policy capabilities when live robots disallow
     assert.equal(setupPlan.buildReadiness.knownPolicy.siteKey, 'blocked-social');
     assert.equal(setupPlan.recommendedCapabilities.every((capability) => capability.recommended === false), true);
 
+    // @ts-ignore
     const buildProfile = await readJson(failure.buildProfilePath);
     assert.equal(buildProfile.profileUsability.buildable, false);
     assert.equal(buildProfile.profileUsability.reasonCode, 'setup-known-policy-robots-disallowed');
@@ -1048,19 +1088,30 @@ test('Setup Assistant blocks known policy capabilities when live robots disallow
       /Setup profile is not buildable/u,
     );
 
+    // @ts-ignore
     assert.equal(buildFailure.code, 'robots-disallowed');
+    // @ts-ignore
     assert.equal(buildFailure.reasonCode, 'robots-disallowed');
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.status, 'blocked');
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.summary.capabilities.active, 0);
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.summary.activeCapabilities, 0);
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.setupProfile.knownSitePolicy.siteKey, 'blocked-social');
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.setupProfile.knownSitePolicy.adapterId, 'blocked-social-adapter');
+    // @ts-ignore
     assert.deepEqual(buildFailure.buildReport.setupProfile.knownSitePolicy.sources, [
       'config/site-registry.json',
       'config/site-capabilities.json',
     ]);
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.setupProfile.buildReadiness.reasonCode, 'setup-known-policy-robots-disallowed');
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.stages.registerSite.status, 'blocked');
+    // @ts-ignore
     assert.equal(buildFailure.buildReport.stages.discoverCapabilities.status, 'skipped');
   } finally {
     await closeServer(server).catch(() => {});
@@ -1125,10 +1176,13 @@ test('Setup Assistant marks fallback-only setup profiles unusable and not builda
     );
 
     assert.equal(prompted, false);
+    // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'setup-primary-sources-unavailable');
     assert.match(output.value(), /当前不可构建/u);
 
+    // @ts-ignore
     const setupPlan = await readJson(failure.setupPlanPath);
     assert.equal(setupPlan.evidenceQuality.sourceAvailability.robots, false);
     assert.equal(setupPlan.evidenceQuality.sourceAvailability.homepage, false);
@@ -1142,7 +1196,9 @@ test('Setup Assistant marks fallback-only setup profiles unusable and not builda
     assert.equal(setupPlan.summary.buildable, false);
     assert.equal(setupPlan.recommendedCapabilities.every((capability) => capability.recommended === false), true);
 
+    // @ts-ignore
     const buildProfile = await readJson(failure.buildProfilePath);
+    // @ts-ignore
     const savedProfile = await readJson(failure.savedBuildProfilePath);
     for (const profile of [buildProfile, savedProfile]) {
       assert.equal(profile.artifactFamily, 'siteforge-build-profile');
@@ -1176,7 +1232,9 @@ test('Setup Assistant marks fallback-only setup profiles unusable and not builda
       },
       /setup-evidence-not-buildable/u,
     );
+    // @ts-ignore
     assert.equal(reuseFailure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.notEqual(reuseFailure.artifactDir, failure.artifactDir);
   } finally {
     await rm(workspace, { recursive: true, force: true });

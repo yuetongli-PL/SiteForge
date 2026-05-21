@@ -43,7 +43,7 @@ function createBaseDeps(tempDirFactory) {
   };
 }
 
-function createAuthenticatedSnapshot(overrides = {}) {
+function createAuthenticatedSnapshot(overrides = /** @type {any} */ ({})) {
   return {
     currentUrl: NOTIFICATION_URL,
     title: AUTH_TITLE,
@@ -146,7 +146,7 @@ test('queryXiaohongshuFollow reports guest sessions as unauthenticated', async (
 test('queryXiaohongshuFollow returns followed users directly from authenticated page state', async () => {
   let tempDir = null;
   /** @type {string[]} */
-  const navigatedUrls = [];
+  const navigatedUrls = /** @type {any[]} */ ([]);
   const deps = createBaseDeps(async () => (tempDir ??= await mkdtemp(path.join(os.tmpdir(), 'xhs-follow-query-state-'))));
   const report = await queryXiaohongshuFollow(NOTIFICATION_URL, {
     profilePath: PROFILE_PATH,
@@ -201,7 +201,7 @@ test('queryXiaohongshuFollow returns followed users directly from authenticated 
 test('queryXiaohongshuFollow prefers the official webpack follow api before self-profile fallback', async () => {
   let tempDir = null;
   /** @type {string[]} */
-  const navigatedUrls = [];
+  const navigatedUrls = /** @type {any[]} */ ([]);
   const deps = createBaseDeps(async () => (tempDir ??= await mkdtemp(path.join(os.tmpdir(), 'xhs-follow-query-official-api-'))));
   const report = await queryXiaohongshuFollow(NOTIFICATION_URL, {
     profilePath: PROFILE_PATH,

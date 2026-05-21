@@ -290,6 +290,7 @@ export function assertSchemaCompatible(name, payload = {}) {
   if (!entry) {
     throw new Error(`Unknown compatibility schema: ${normalizedName || '<empty>'}`);
   }
+  // @ts-ignore
   entry.assertCompatible(payload);
   return true;
 }

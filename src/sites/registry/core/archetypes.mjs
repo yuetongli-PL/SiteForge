@@ -48,7 +48,7 @@ export function resolveLegacyProfileArchetype(hostOrUrl) {
   return host ? (LEGACY_PROFILE_ARCHETYPE_BY_HOST[host] ?? null) : null;
 }
 
-export function resolveProfileArchetype(profileOrValue, options = {}) {
+export function resolveProfileArchetype(profileOrValue, options = /** @type {any} */ ({})) {
   if (profileOrValue && typeof profileOrValue === 'object' && !Array.isArray(profileOrValue)) {
     const direct = normalizeProfileArchetype(profileOrValue.archetype);
     if (direct) {
@@ -60,7 +60,7 @@ export function resolveProfileArchetype(profileOrValue, options = {}) {
   return normalizeProfileArchetype(profileOrValue) ?? resolveLegacyProfileArchetype(options.host ?? profileOrValue);
 }
 
-export function resolveProfilePrimaryArchetype(profileOrValue, options = {}) {
+export function resolveProfilePrimaryArchetype(profileOrValue, options = /** @type {any} */ ({})) {
   if (profileOrValue && typeof profileOrValue === 'object' && !Array.isArray(profileOrValue)) {
     const explicit = typeof profileOrValue.primaryArchetype === 'string'
       ? profileOrValue.primaryArchetype.trim()

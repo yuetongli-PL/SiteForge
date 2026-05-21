@@ -54,6 +54,7 @@ function normalizeEvidenceKinds(evidenceKinds = REQUIRED_EXECUTABLE_CAPABILITY_E
   const missing = REQUIRED_EXECUTABLE_CAPABILITY_EVIDENCE_KINDS
     .filter((kind) => !kinds.includes(kind));
   if (missing.length > 0) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error(`Executable capability evidence chain is missing required evidence: ${missing.join(', ')}`);
     error.code = 'capability.executable_quorum_missing';
     throw error;
@@ -61,6 +62,7 @@ function normalizeEvidenceKinds(evidenceKinds = REQUIRED_EXECUTABLE_CAPABILITY_E
   return kinds;
 }
 
+/** @param {Record<string, any>} options */
 export function createExecutableCapabilityEvidenceFixture({
   capability,
   id,
@@ -106,6 +108,7 @@ export function createExecutableCapabilityEvidenceFixture({
   return Object.freeze(fixture);
 }
 
+/** @param {Record<string, any>} [fixture] */
 export function assertExecutableCapabilityEvidenceFixtureCompatible(fixture = {}) {
   if (fixture.schemaVersion !== EXECUTABLE_CAPABILITY_EVIDENCE_CHAIN_SCHEMA_VERSION) {
     throw new Error('Executable capability evidence fixture schemaVersion is not compatible');

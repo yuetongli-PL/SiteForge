@@ -24,7 +24,7 @@ export function resolveKnowledgeBaseAugmentation({
   baseUrl = null,
   host = null,
   profile = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const siteKey = resolveCanonicalSiteKey({
     host,
     baseUrl,

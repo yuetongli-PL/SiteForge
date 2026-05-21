@@ -36,8 +36,8 @@ function normalizeText(value) {
 
 export function parseArgs(argv) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   const appendFlag = (key, value) => {
     if (!(key in flags)) {
       flags[key] = value;
@@ -110,12 +110,12 @@ export function prepareDouyinCookieExportArtifacts({
   inputUrl,
   outFile,
   sidecarFile,
-  cookies = [],
+  cookies = /** @type {any[]} */ ([]),
   liveContext = null,
   liveContextWarning = null,
-  authContext = {},
+  authContext = /** @type {any} */ ({}),
   generatedAt = new Date().toISOString(),
-} = {}) {
+} = /** @type {any} */ ({})) {
   const summary = cookieSummary(Array.isArray(cookies) ? cookies : []);
   const sidecarPayload = {
     ok: true,
@@ -157,7 +157,7 @@ export function prepareDouyinCookieExportArtifacts({
   };
 }
 
-async function exportDouyinCookies(inputUrl, options = {}) {
+async function exportDouyinCookies(inputUrl, options = /** @type {any} */ ({})) {
   const authContext = await resolveSiteBrowserSessionOptions(inputUrl, options, {
     profilePath: options.profilePath,
   });

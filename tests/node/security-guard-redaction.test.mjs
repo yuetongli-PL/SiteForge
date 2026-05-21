@@ -159,6 +159,7 @@ test('redaction helpers remove IP hosts and public identifier text', () => {
   assert.ok(urlResult.audit.redactedPaths.includes('url.query.access_token'));
 
   const textResult = redactPublicIdentifierText(
+    // @ts-ignore
     'Profile Alice alice@example.invalid 203.0.113.7 BrowserProfile run-handler.mjs',
   );
   assert.equal(textResult.value.includes('Alice'), false);
@@ -314,6 +315,7 @@ test('current manifest writers use paired redaction audit serialization', async 
     const source = await readFile(new URL(`../../${relativePath}`, import.meta.url), 'utf8');
     const pairedUses = source.match(/prepareRedactedArtifactJsonWithAudit\(/gu) ?? [];
     assert.equal(
+      // @ts-ignore
       pairedUses.length >= minimumUses,
       true,
       `${relativePath} should use paired redaction/audit serialization`,
@@ -339,6 +341,7 @@ test('current capability artifact writers use paired redaction audit serializati
     const pairedUses = source.match(/prepareRedactedArtifactJsonWithAudit\(/gu) ?? [];
     const pairedAuditWrites = source.match(/write\w*\([^)]*auditJson/gsu) ?? [];
     assert.equal(
+      // @ts-ignore
       pairedUses.length >= minimumUses,
       true,
       `${relativePath} should prepare persistent artifacts through paired redaction/audit serialization`,

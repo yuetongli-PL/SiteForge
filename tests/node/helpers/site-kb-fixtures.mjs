@@ -34,7 +34,7 @@ export async function createCaptureFixture(rootDir, {
   finalUrl = inputUrl,
   title = 'Fixture Capture',
   capturedAt = FIXTURE_TIMESTAMP,
-} = {}) {
+} = /** @type {any} */ ({})) {
   await mkdir(rootDir, { recursive: true });
   await writeText(path.join(rootDir, 'page.html'), '<!doctype html><html><body>fixture</body></html>');
   await writeJson(path.join(rootDir, 'dom-snapshot.json'), createMinimalSnapshot());
@@ -58,12 +58,12 @@ export async function createExpandedStatesFixture(rootDir, {
   inputUrl,
   baseUrl = inputUrl,
   generatedAt = FIXTURE_TIMESTAMP,
-  states = [],
-} = {}) {
+  states = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   const statesDir = path.join(rootDir, 'states');
   await mkdir(statesDir, { recursive: true });
 
-  const manifestStates = [];
+  const manifestStates = /** @type {any[]} */ ([]);
   for (const [index, state] of states.entries()) {
     const stateId = state.stateId ?? `s${String(index + 1).padStart(4, '0')}`;
     const slug = state.slug ?? stateId;
@@ -120,18 +120,18 @@ export async function createSiteKnowledgeBaseFixture(rootDir, {
   inputUrl,
   baseUrl = inputUrl,
   generatedAt = FIXTURE_TIMESTAMP,
-  pageIndex = [],
-  siteProfile = {},
-  elements = [],
-  states = [],
+  pageIndex = /** @type {any[]} */ ([]),
+  siteProfile = /** @type {any} */ ({}),
+  elements = /** @type {any[]} */ ([]),
+  states = /** @type {any[]} */ ([]),
   transitions = { nodes: [], edges: [] },
-  intents = [],
-  actions = [],
-  decisionRules = [],
-  capabilityFamilies = [],
-  slotSchemaIntents = [],
-  utterancePatterns = [],
-  docs = [],
+  intents = /** @type {any[]} */ ([]),
+  actions = /** @type {any[]} */ ([]),
+  decisionRules = /** @type {any[]} */ ([]),
+  capabilityFamilies = /** @type {any[]} */ ([]),
+  slotSchemaIntents = /** @type {any[]} */ ([]),
+  utterancePatterns = /** @type {any[]} */ ([]),
+  docs = /** @type {any[]} */ ([]),
   wikiReadme = '# Fixture Wiki',
   interactionModelMd = '# Interaction Model',
   nlEntryMd = '# NL Entry',
@@ -140,9 +140,9 @@ export async function createSiteKnowledgeBaseFixture(rootDir, {
   capture = null,
   expandedStates = null,
   bookContent = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const kbDir = path.join(rootDir, 'knowledge-base', host);
-  const sources = [];
+  const sources = /** @type {any[]} */ ([]);
 
   const rawDirFor = (...parts) => path.join(kbDir, 'raw', ...parts, 'run');
   const step3Dir = rawDirFor('step-3-analysis');

@@ -103,7 +103,7 @@ function normalizeHost(inputUrl) {
   return new URL(String(inputUrl)).hostname;
 }
 
-function normalizeNodeUser(user = {}) {
+function normalizeNodeUser(user = /** @type {any} */ ({})) {
   const rawUser = user && typeof user === 'object' ? user : {};
   const compositeUserId = normalizeText(rawUser.userid || rawUser.userid_str || '');
   const userId = normalizeText(rawUser.userId || rawUser.user_id || rawUser.rid || rawUser.id || (compositeUserId ? compositeUserId.split('_')[0] : ''));
@@ -140,7 +140,7 @@ function extractXiaohongshuNoteId(value) {
   }
 }
 
-function normalizeNodeNote(note = {}, fallbackAuthor = {}) {
+function normalizeNodeNote(note = /** @type {any} */ ({}), fallbackAuthor = /** @type {any} */ ({})) {
   const rawNote = note && typeof note === 'object' ? note : {};
   const rawAuthor = fallbackAuthor && typeof fallbackAuthor === 'object' ? fallbackAuthor : {};
   const noteId = normalizeText(
@@ -186,9 +186,9 @@ function normalizeNodeNote(note = {}, fallbackAuthor = {}) {
   };
 }
 
-function dedupeNotes(notes = []) {
+function dedupeNotes(notes = /** @type {any[]} */ ([])) {
   const seen = new Set();
-  const ordered = [];
+  const ordered = /** @type {any[]} */ ([]);
   for (const rawNote of Array.isArray(notes) ? notes : []) {
     if (!rawNote || typeof rawNote !== 'object') {
       continue;
@@ -208,9 +208,9 @@ function dedupeNotes(notes = []) {
   ));
 }
 
-function dedupeUsers(users = []) {
+function dedupeUsers(users = /** @type {any[]} */ ([])) {
   const seen = new Set();
-  const ordered = [];
+  const ordered = /** @type {any[]} */ ([]);
   for (const rawUser of Array.isArray(users) ? users : []) {
     if (!rawUser || typeof rawUser !== 'object') {
       continue;
@@ -226,7 +226,7 @@ function dedupeUsers(users = []) {
   return ordered.sort((left, right) => (left.name || '').localeCompare(right.name || '', 'zh-Hans-CN'));
 }
 
-export function mergeOptions(inputUrl, options = {}) {
+export function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = {
     intent: 'list-followed-users',
     format: 'json',
@@ -272,14 +272,14 @@ export function mergeOptions(inputUrl, options = {}) {
   return merged;
 }
 
-export function parseXiaohongshuFollowQueryArgs(argv = []) {
+export function parseXiaohongshuFollowQueryArgs(argv = /** @type {any[]} */ ([])) {
   const args = [...argv];
   if (!args.length || args[0] === '--help' || args[0] === '-h') {
     return { help: true, inputUrl: DEFAULT_INPUT_URL, options: {} };
   }
 
-  const positionals = [];
-  const options = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const options = /** @type {any} */ ({});
   const readValue = (index) => {
     if (index + 1 >= args.length) {
       throw new Error(`Missing value for ${args[index]}`);
@@ -378,7 +378,7 @@ export function parseXiaohongshuFollowQueryArgs(argv = []) {
   };
 }
 
-function renderUserListMarkdown(users = []) {
+function renderUserListMarkdown(users = /** @type {any[]} */ ([])) {
   if (!Array.isArray(users) || users.length === 0) {
     return ['- none'];
   }
@@ -393,11 +393,11 @@ function renderUserListMarkdown(users = []) {
   });
 }
 
-function renderFollowUpdateGroupsMarkdown(groups = []) {
+function renderFollowUpdateGroupsMarkdown(groups = /** @type {any[]} */ ([])) {
   if (!Array.isArray(groups) || groups.length === 0) {
     return ['- none'];
   }
-  const lines = [];
+  const lines = /** @type {any[]} */ ([]);
   for (const group of groups) {
     lines.push(`### ${group?.authorName || group?.authorUrl || 'unknown user'}`);
     const notes = Array.isArray(group?.notes) ? group.notes : [];
@@ -418,7 +418,7 @@ function renderFollowUpdateGroupsMarkdown(groups = []) {
   return lines;
 }
 
-export function renderXiaohongshuFollowResultMarkdown(report = {}) {
+export function renderXiaohongshuFollowResultMarkdown(report = /** @type {any} */ ({})) {
   const lines = [
     '# Xiaohongshu Follow Query',
     '',
@@ -512,7 +512,7 @@ export async function pageFetchXiaohongshuAuthSnapshot() {
   const notificationCount = unwrap(state?.notification?.notificationCount);
 
   /** @type {Array<any>} */
-  const followedUsers = [];
+  const followedUsers = /** @type {any[]} */ ([]);
   if (Array.isArray(fromState)) {
     for (const item of fromState) {
       const user = normalizeUser(item, 'state-user-follow');
@@ -609,7 +609,7 @@ export async function pageFetchXiaohongshuOfficialFollowList() {
 
   let apiModule = null;
   try {
-    apiModule = webpackRequire(40122);
+    apiModule = /** @type {any} */ (webpackRequire)(40122);
   } catch (error) {
     return {
       status: 'error',
@@ -631,7 +631,7 @@ export async function pageFetchXiaohongshuOfficialFollowList() {
   try {
     const response = await apiModule.tF();
     const items = Array.isArray(response?.items) ? response.items : [];
-    const users = [];
+    const users = /** @type {any[]} */ ([]);
     for (const item of items) {
       const user = normalizeUser(item, 'official-follow-api');
       if (user) {
@@ -653,7 +653,7 @@ export async function pageFetchXiaohongshuOfficialFollowList() {
   }
 }
 
-export async function pageExtractXiaohongshuAuthorPageNotes(options = {}) {
+export async function pageExtractXiaohongshuAuthorPageNotes(options = /** @type {any} */ ({})) {
   const normalizeLocalText = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
   const toArray = (value) => Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
   const normalizeLocalUserUrl = (rawUrl) => {
@@ -736,7 +736,7 @@ export async function pageExtractXiaohongshuAuthorPageNotes(options = {}) {
   const uniqueStrings = (values) => [...new Set(toArray(values).map((value) => normalizeLocalText(value)).filter(Boolean))];
   const dedupeNotes = (notes) => {
     const seen = new Set();
-    const ordered = [];
+    const ordered = /** @type {any[]} */ ([]);
     for (const note of toArray(notes)) {
       if (!note || typeof note !== 'object') {
         continue;
@@ -750,7 +750,7 @@ export async function pageExtractXiaohongshuAuthorPageNotes(options = {}) {
     }
     return ordered;
   };
-  const normalizeNote = (rawNote = {}, fallback = {}) => {
+  const normalizeNote = (rawNote = /** @type {any} */ ({}), fallback = /** @type {any} */ ({})) => {
     const noteId = normalizeLocalText(
       rawNote.noteId
       || rawNote.id
@@ -934,7 +934,7 @@ export async function pageExtractXiaohongshuAuthorPageNotes(options = {}) {
       });
     })
     .filter(Boolean);
-  const mergedNotes = [];
+  const mergedNotes = /** @type {any[]} */ ([]);
   const mergedCount = Math.max(stateNotes.length, domNotes.length);
   for (let index = 0; index < mergedCount; index += 1) {
     const merged = normalizeNote({
@@ -1024,7 +1024,7 @@ export async function pageExtractXiaohongshuSelfProfileFollowState(selfUserId = 
   };
   const collectUsersFromState = () => {
     const state = window.__INITIAL_STATE__ || {};
-    const users = [];
+    const users = /** @type {any[]} */ ([]);
     const fromFollowState = unwrap(state?.user?.follow);
     if (Array.isArray(fromFollowState)) {
       for (const item of fromFollowState) {
@@ -1055,7 +1055,7 @@ export async function pageExtractXiaohongshuSelfProfileFollowState(selfUserId = 
     return users;
   };
   const collectUsersFromDom = () => {
-    const users = [];
+    const users = /** @type {any[]} */ ([]);
     for (const anchor of document.querySelectorAll('a[href*="/user/profile/"]')) {
       if (!isVisible(anchor)) {
         continue;
@@ -1144,9 +1144,9 @@ async function collectXiaohongshuFollowedUserUpdates(session, users, settings) {
   const limitedUsers = Array.isArray(users)
     ? users.slice(0, settings.limit ?? users.length)
     : [];
-  const groups = [];
-  const notes = [];
-  const errors = [];
+  const groups = /** @type {any[]} */ ([]);
+  const notes = /** @type {any[]} */ ([]);
+  const errors = /** @type {any[]} */ ([]);
   let scannedUsers = 0;
   for (const user of limitedUsers) {
     scannedUsers += 1;
@@ -1213,7 +1213,7 @@ async function collectXiaohongshuFollowedUserUpdates(session, users, settings) {
   };
 }
 
-export async function queryXiaohongshuFollow(inputUrl = DEFAULT_INPUT_URL, options = {}, deps = {}) {
+export async function queryXiaohongshuFollow(inputUrl = DEFAULT_INPUT_URL, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   const runtime = {
     openBrowserSession,

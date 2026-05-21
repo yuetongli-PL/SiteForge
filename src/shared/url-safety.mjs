@@ -3,7 +3,7 @@
 export function sanitizePublicUrl(value, {
   fallback = '<url>',
   keepPath = true,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const input = value === undefined || value === null ? fallback : value;
   try {
     const parsed = new URL(String(input));

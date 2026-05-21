@@ -135,6 +135,7 @@ const SOURCE_TO_PLANNER_REASON = new Map(
 );
 
 function fail(message) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = 'planner.reason_code_invalid';
   throw error;
@@ -159,6 +160,10 @@ export function isPlannerReasonCode(code) {
   return CATALOG_BY_CODE.has(code);
 }
 
+/**
+ * @param {Record<string, any>} sourceReasonCode
+ * @param {Record<string, any>} options
+ */
 export function mapSourceReasonCodeToPlannerReasonCode(sourceReasonCode, {
   fallback = 'planner.plan_generation_failed',
 } = {}) {

@@ -22,7 +22,7 @@ import { slugifyAscii } from '../../../shared/normalize.mjs';
 
 function uniqueBy(values, keyFn) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const value of values) {
     const key = keyFn(value);
     if (seen.has(key)) {
@@ -124,7 +124,7 @@ const BLOCKED_ACTION_LABELS_ZH = Object.freeze(new Map([
   ['repost', '转发操作'],
 ]));
 
-function localizedUserFacingName(capability = {}) {
+function localizedUserFacingName(capability = /** @type {any} */ ({})) {
   for (const value of [capability.user_facing_name, capability.userFacingName, capability.userValue]) {
     if (hasCjkText(value)) {
       return String(value).trim();
@@ -170,11 +170,11 @@ function executionPlanId(capabilityId) {
 
 function buildGeneratedExecutionPlan(capabilityId, {
   mode = 'read_only',
-  steps = [],
+  steps = /** @type {any[]} */ ([]),
   dryRunOnly = false,
   requiresConfirmation = false,
   autoExecute = false,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     id: executionPlanId(capabilityId),
@@ -194,9 +194,9 @@ function makeGeneratedCapability(context, {
   object,
   userValue,
   entryNodeIds,
-  requiredNodeIds = [],
-  inputs = [],
-  outputs = [],
+  requiredNodeIds = /** @type {any[]} */ ([]),
+  inputs = /** @type {any[]} */ ([]),
+  outputs = /** @type {any[]} */ ([]),
   safetyLevel = 'read_only',
   executionPlan,
   evidence,
@@ -330,7 +330,7 @@ function normalizedIntentSeeds(capability) {
       invocationScore: 0.72,
     };
   });
-  const unique = [];
+  const unique = /** @type {any[]} */ ([]);
   const seen = new Set();
   for (const seed of normalized) {
     const key = normalizeLabelKey(seed.canonicalUtterance);
@@ -365,7 +365,7 @@ function intentIdFor(capability, seed, index) {
   return `${stableIntentId(capability.id)}:${suffix}`;
 }
 
-function nodeMatches(node, hints = []) {
+function nodeMatches(node, hints = /** @type {any[]} */ ([])) {
   const haystack = [
     node?.id,
     node?.classification,
@@ -378,27 +378,27 @@ function nodeMatches(node, hints = []) {
   return hints.some((hint) => haystack.includes(String(hint).toLowerCase()));
 }
 
-function nodeRouteTemplate(node = {}) {
+function nodeRouteTemplate(node = /** @type {any} */ ({})) {
   return node.routeTemplate
     ?? node.routePattern
     ?? node.routeState?.routeTemplate
     ?? null;
 }
 
-function nodeTabState(node = {}) {
+function nodeTabState(node = /** @type {any} */ ({})) {
   return node.tabState
     ?? node.routeState?.tabState
     ?? null;
 }
 
-function nodePageKind(node = {}) {
+function nodePageKind(node = /** @type {any} */ ({})) {
   return node.pageType
     ?? node.routeState?.pageKind
     ?? node.classification
     ?? null;
 }
 
-function routeStateDescriptorFromNode(node = {}) {
+function routeStateDescriptorFromNode(node = /** @type {any} */ ({})) {
   if (!node || typeof node !== 'object') return null;
   const routeTemplate = nodeRouteTemplate(node);
   const routePath = node.routePath ?? node.routeState?.routePath ?? null;
@@ -417,7 +417,7 @@ function routeStateDescriptorFromNode(node = {}) {
   };
 }
 
-function routePreferenceForDefinition(definition = {}) {
+function routePreferenceForDefinition(definition = /** @type {any} */ ({})) {
   const text = [
     definition.name,
     definition.category,
@@ -551,7 +551,7 @@ function routePreferenceForDefinition(definition = {}) {
   return pref;
 }
 
-function routePreferenceScore(node = {}, preference = {}) {
+function routePreferenceScore(node = /** @type {any} */ ({}), preference = /** @type {any} */ ({})) {
   const routeTemplate = nodeRouteTemplate(node);
   const tabState = nodeTabState(node);
   const pageKind = nodePageKind(node);
@@ -568,7 +568,7 @@ function routePreferenceScore(node = {}, preference = {}) {
   return score;
 }
 
-function findRoutePreferredNodes(graph, preference = {}, fallbackCount = 1) {
+function findRoutePreferredNodes(graph, preference = /** @type {any} */ ({}), fallbackCount = 1) {
   const nodes = graph?.nodes ?? [];
   const hasPreference = [
     preference.routeTemplates,
@@ -584,7 +584,7 @@ function findRoutePreferredNodes(graph, preference = {}, fallbackCount = 1) {
     .map((entry) => entry.node);
 }
 
-function findEntryNodes(graph, hints = [], fallbackCount = 1) {
+function findEntryNodes(graph, hints = /** @type {any[]} */ ([]), fallbackCount = 1) {
   const nodes = graph?.nodes ?? [];
   const matches = nodes.filter((node) => nodeMatches(node, hints));
   if (matches.length) {
@@ -595,11 +595,11 @@ function findEntryNodes(graph, hints = [], fallbackCount = 1) {
     .slice(0, fallbackCount);
 }
 
-function graphHasStatefulRouteTemplateEvidence(graph = {}) {
+function graphHasStatefulRouteTemplateEvidence(graph = /** @type {any} */ ({})) {
   return (graph?.nodes ?? []).some((node) => nodeRouteTemplate(node) && nodeTabState(node));
 }
 
-function findEntryNodesForDefinition(graph, definition = {}, fallbackCount = 1) {
+function findEntryNodesForDefinition(graph, definition = /** @type {any} */ ({}), fallbackCount = 1) {
   const preference = routePreferenceForDefinition(definition);
   const preferred = findRoutePreferredNodes(graph, preference, fallbackCount);
   if (preferred.length) return preferred;
@@ -613,7 +613,7 @@ function evidenceForNodes(nodes) {
   return nodes.flatMap((node) => node.evidence ?? []).slice(0, 6);
 }
 
-function routeStateNodeScore(node = {}) {
+function routeStateNodeScore(node = /** @type {any} */ ({})) {
   const routeState = routeStateDescriptorFromNode(node);
   if (!routeState) return -1;
   let score = 0;
@@ -626,7 +626,7 @@ function routeStateNodeScore(node = {}) {
   return score;
 }
 
-function selectRouteStateNode(nodes = []) {
+function selectRouteStateNode(nodes = /** @type {any[]} */ ([])) {
   return [...nodes]
     .map((node, index) => ({ node, index, score: routeStateNodeScore(node) }))
     .filter((entry) => entry.score >= 0)
@@ -1296,7 +1296,7 @@ export function buildAutoDiscoveredCapabilities({
   if (!graph?.nodes?.some((node) => node.routeState?.source === 'known-social-route-state-model' || node.routeState?.stateId)) {
     return [];
   }
-  const capabilities = [];
+  const capabilities = /** @type {any[]} */ ([]);
   for (const definition of CAPABILITY_DEFINITIONS) {
     const entryNodes = findEntryNodesForDefinition(graph, definition, 1);
     if (!entryNodes.length) {
@@ -1364,8 +1364,8 @@ export function buildAutoDiscoveredCapabilities({
 
 export function generateAutoCapabilities(context, {
   graph,
-  existingCapabilities = [],
-} = {}) {
+  existingCapabilities = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   const generated = buildAutoDiscoveredCapabilities({
     context,
     graph,
@@ -1385,7 +1385,7 @@ export function generateAutoCapabilities(context, {
   return [...generated, ...compatGenerated].filter((capability) => !existingIds.has(capability.id));
 }
 
-export function enrichAutoCapability(context, capability = {}) {
+export function enrichAutoCapability(context, capability = /** @type {any} */ ({})) {
   const riskLevel = capability.risk_level ?? capability.riskPolicy?.riskLevel ?? 'read_public_low';
   const policy = riskPolicyForLevel(riskLevel);
   const isCandidate = capability.status === 'candidate';
@@ -1427,12 +1427,12 @@ export function enrichAutoCapability(context, capability = {}) {
   return enriched;
 }
 
-export function capabilityEnabledStatusCounts(capabilities = []) {
+export function capabilityEnabledStatusCounts(capabilities = /** @type {any[]} */ ([])) {
   return capabilityEnablementStatusCounts(capabilities);
 }
 
-export function generateAutoIntentRecords(context, capabilities = [], options = {}) {
-  const intents = [];
+export function generateAutoIntentRecords(context, capabilities = /** @type {any[]} */ ([]), options = /** @type {any} */ ({})) {
+  const intents = /** @type {any[]} */ ([]);
   const seen = new Set();
   const includeCandidateDebug = options.includeCandidateDebug !== false;
   for (const capability of Array.isArray(capabilities) ? capabilities : []) {
@@ -1828,7 +1828,7 @@ function compatSemanticNameKey(value) {
   return COMPAT_SEMANTIC_NAME_ALIASES.get(key) ?? key;
 }
 
-function compatCanSuppressGeneratedCapability(capability = {}) {
+function compatCanSuppressGeneratedCapability(capability = /** @type {any} */ ({})) {
   const status = normalizeLabelKey(capability.status ?? capability.enabled_status ?? capability.enabledStatus);
   return status === 'active'
     || status === 'enabled'
@@ -1839,8 +1839,8 @@ function compatCanSuppressGeneratedCapability(capability = {}) {
 
 function compatGenerateAutoCapabilities(context, {
   graph,
-  existingCapabilities = [],
-} = {}) {
+  existingCapabilities = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   if (!compatIsXSite(context)) {
     return [];
   }
@@ -1851,7 +1851,7 @@ function compatGenerateAutoCapabilities(context, {
   const suppressingCapabilities = existingCapabilities.filter(compatCanSuppressGeneratedCapability);
   const existingNames = new Set(suppressingCapabilities.map((capability) => capability.name));
   const existingSemanticNames = new Set(suppressingCapabilities.map((capability) => compatSemanticNameKey(capability.name)));
-  const generated = [];
+  const generated = /** @type {any[]} */ ([]);
   for (const [name, category, riskLevel, action, object, routePath, enabledStatus] of COMPAT_X_SPECS) {
     if (existingNames.has(name) || existingSemanticNames.has(compatSemanticNameKey(name))) {
       continue;
@@ -1900,12 +1900,12 @@ function compatGenerateAutoCapabilities(context, {
   return generated;
 }
 
-function compatCapabilityEnabledStatusCounts(capabilities = []) {
+function compatCapabilityEnabledStatusCounts(capabilities = /** @type {any[]} */ ([])) {
   return capabilityEnablementStatusCounts(capabilities);
 }
 
-function compatGenerateAutoIntentRecords(context, capabilities = []) {
-  const intents = [];
+function compatGenerateAutoIntentRecords(context, capabilities = /** @type {any[]} */ ([])) {
+  const intents = /** @type {any[]} */ ([]);
   for (const capability of capabilities) {
     const enriched = capability.intents?.[0]?.canonical_utterance
       ? capability

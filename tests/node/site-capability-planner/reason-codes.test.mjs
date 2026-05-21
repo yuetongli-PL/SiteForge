@@ -66,7 +66,7 @@ function createRouteResolution() {
   };
 }
 
-function createPlanContext(overrides = {}) {
+function createPlanContext(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     graphCompatibility: { validated: true },
@@ -114,26 +114,32 @@ test('Planner reasonCode catalog exposes retry cooldown manual and degradation s
 
 test('Planner reasonCode mapping preserves Graph source reason boundaries', () => {
   assert.equal(
+    // @ts-ignore
     mapSourceReasonCodeToPlannerReasonCode('graph-route-forbidden-by-risk'),
     'planner.route_forbidden_by_risk',
   );
   assert.equal(
+    // @ts-ignore
     mapSourceReasonCodeToPlannerReasonCode('graph-endpoint-missing-auth-requirement'),
     'planner.auth_required',
   );
   assert.equal(
+    // @ts-ignore
     mapSourceReasonCodeToPlannerReasonCode('graph-endpoint-missing-session-requirement'),
     'planner.session_required',
   );
   assert.equal(
+    // @ts-ignore
     mapSourceReasonCodeToPlannerReasonCode('graph-endpoint-missing-signer'),
     'planner.signer_required',
   );
   assert.equal(
+    // @ts-ignore
     mapSourceReasonCodeToPlannerReasonCode('graph-artifact-redaction-required'),
     'planner.artifact_redaction_required',
   );
   assert.equal(
+    // @ts-ignore
     mapSourceReasonCodeToPlannerReasonCode('unknown-source-reason'),
     'planner.plan_generation_failed',
   );

@@ -60,7 +60,7 @@ function normalizeRecord(previous, patch, hostKey, arrayFieldModes) {
   return next;
 }
 
-function normalizeAuditPath(pathOptions = {}) {
+function normalizeAuditPath(pathOptions = /** @type {any} */ ({})) {
   const text = String(pathOptions.redactionAuditPath ?? '').trim();
   return text ? path.resolve(text) : null;
 }
@@ -69,7 +69,7 @@ function artifactTargetKey(filePath) {
   return path.resolve(filePath).toLowerCase();
 }
 
-function assertDistinctArtifactTargets(filePaths = [], label = 'Site index writer') {
+function assertDistinctArtifactTargets(filePaths = /** @type {any[]} */ ([]), label = 'Site index writer') {
   const seen = new Map();
   for (const filePath of filePaths) {
     const key = artifactTargetKey(filePath);
@@ -108,7 +108,7 @@ async function restoreBackups(committedEntries, backedUpEntries) {
   }
 }
 
-async function writeSiteIndexFileSet(entries = [], label = 'Site index writer') {
+async function writeSiteIndexFileSet(entries = /** @type {any[]} */ ([]), label = 'Site index writer') {
   assertDistinctArtifactTargets(entries.map((entry) => entry.filePath), label);
   for (const entry of entries) {
     await assertTargetIsNotDirectory(entry.filePath, label);
@@ -121,8 +121,8 @@ async function writeSiteIndexFileSet(entries = [], label = 'Site index writer') 
     tempPath: createTempPath(entry.filePath, index),
     backupPath: path.join(path.dirname(entry.filePath), `.${path.basename(entry.filePath)}.${stamp}.${index}.bak`),
   }));
-  const backedUpEntries = [];
-  const committedEntries = [];
+  const backedUpEntries = /** @type {any[]} */ ([]);
+  const committedEntries = /** @type {any[]} */ ([]);
 
   try {
     for (const entry of preparedEntries) {
@@ -149,14 +149,14 @@ async function writeSiteIndexFileSet(entries = [], label = 'Site index writer') 
 export function createSiteIndexStore({
   fileName,
   directoryName = null,
-  arrayFieldModes = {},
+  arrayFieldModes = /** @type {any} */ ({}),
   resultPathKey = 'documentPath',
   trackTimestamps = true,
   requireRedactionAudit = false,
 }) {
   const relativePath = directoryName ? path.join(directoryName, fileName) : fileName;
 
-  function buildPath(workspaceRoot = process.cwd(), pathOptions = {}) {
+  function buildPath(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
     const explicitPath = typeof pathOptions?.documentPath === 'string' && pathOptions.documentPath.trim()
       ? pathOptions.documentPath
       : null;
@@ -172,7 +172,7 @@ export function createSiteIndexStore({
     return path.resolve(workspaceRoot, relativePath);
   }
 
-  async function read(workspaceRoot = process.cwd(), pathOptions = {}) {
+  async function read(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
     const documentPath = buildPath(workspaceRoot, pathOptions);
     if (!await pathExists(documentPath)) {
       return cloneDefaultDocument();
@@ -181,7 +181,7 @@ export function createSiteIndexStore({
     return normalizeDocument(document);
   }
 
-  async function upsert(workspaceRoot, host, patch, pathOptions = {}) {
+  async function upsert(workspaceRoot, host, patch, pathOptions = /** @type {any} */ ({})) {
     const documentPath = buildPath(workspaceRoot, pathOptions);
     const document = await read(workspaceRoot, pathOptions);
     const hostKey = sanitizeHost(host);

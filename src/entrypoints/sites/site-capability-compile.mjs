@@ -114,7 +114,7 @@ export function parseArgs(argv) {
   return options;
 }
 
-function createCompileRequest({ site, url, requestedCapabilities = [] } = {}) {
+function createCompileRequest({ site, url, requestedCapabilities = /** @type {any[]} */ ([]) } = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     siteKey: site,
@@ -135,7 +135,7 @@ function createCompileRequest({ site, url, requestedCapabilities = [] } = {}) {
   };
 }
 
-function createPlanRequest({ manifest, normalizedIntent } = {}) {
+function createPlanRequest({ manifest, normalizedIntent } = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     taskId: `task:${manifest.compileId}`,
@@ -215,7 +215,7 @@ function mergeArtifactWrite(baseWrite, summaryWrite) {
   };
 }
 
-function createDefaultSiteSpecificEvidenceSummary({ manifest } = {}) {
+function createDefaultSiteSpecificEvidenceSummary({ manifest } = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     summaryVersion: '1.0.0',
@@ -327,7 +327,7 @@ function createLayerRuntimeConsumerArtifactSummary(layerRuntimeConsumerResult) {
 function createCompileResultSummaryArtifactValue({
   result,
   siteSpecificEvidenceSummary,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     summaryVersion: '1.0.0',
@@ -394,7 +394,7 @@ async function writeCompileResultSummaryArtifact({
   outDir,
   result,
   siteSpecificEvidenceSummary,
-} = {}) {
+} = /** @type {any} */ ({})) {
   await ensureDir(outDir);
   const summary = createCompileResultSummaryArtifactValue({
     result,
@@ -418,7 +418,7 @@ async function writeCompileResultSummaryArtifact({
   };
 }
 
-function createCompileResultBase({ manifest, graphBuild, artifactWrite } = {}) {
+function createCompileResultBase({ manifest, graphBuild, artifactWrite } = /** @type {any} */ ({})) {
   const coverageSummary = manifest.capabilityCoverageSummary ?? {};
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
@@ -462,7 +462,7 @@ function createDryRunLayerRuntimeConsumerResult({
   handoffDescriptor,
   policyDecision,
   artifactWrite,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const safeIntent = normalizeCapabilityDescriptor(normalizedIntent) ?? 'default';
   const artifactRefs = artifactWrite?.artifactRefs?.length
     ? artifactWrite.artifactRefs.map((_, index) => `artifact:site-capability-compile:${manifest.siteKey}:${index + 1}`)
@@ -499,7 +499,7 @@ function normalizeCapabilityDescriptor(value) {
     .replace(/^-+|-+$/gu, '') || null;
 }
 
-function shouldBlockPlannerHandoffForMissingRequestedCapability({ manifest, explicitIntent } = {}) {
+function shouldBlockPlannerHandoffForMissingRequestedCapability({ manifest, explicitIntent } = /** @type {any} */ ({})) {
   const coverageSummary = manifest.capabilityCoverageSummary ?? {};
   const requested = coverageSummary.requestedCapabilities ?? [];
   const missing = coverageSummary.missingRequestedCapabilities ?? [];
@@ -517,7 +517,7 @@ function shouldBlockPlannerHandoffForMissingRequestedCapability({ manifest, expl
   );
 }
 
-export async function runSiteCapabilityCompile(options = {}) {
+export async function runSiteCapabilityCompile(options = /** @type {any} */ ({})) {
   if (!options.site && !options.url) {
     throw new Error('--site or --url is required');
   }
@@ -550,7 +550,7 @@ export async function runSiteCapabilityCompile(options = {}) {
   });
   const graphBuild = buildSiteCapabilityGraphFromCompileManifest(manifest);
   if (graphBuild.validationReport.result !== 'passed') {
-    const error = new Error('Compiler-generated graph did not pass validation');
+    const error = /** @type {Error & Record<string, any>} */ (new Error('Compiler-generated graph did not pass validation'));
     error.code = 'compiler.graph_build_failed';
     throw error;
   }
@@ -567,7 +567,7 @@ export async function runSiteCapabilityCompile(options = {}) {
       })
       : undefined;
     const missingCapability = manifest.capabilityCoverageSummary?.missingRequestedCapabilities?.[0];
-    const result = {
+    const result = /** @type {any} */ ({
       ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
       normalizedIntent: missingCapability,
       planStatus: 'blocked',
@@ -577,7 +577,7 @@ export async function runSiteCapabilityCompile(options = {}) {
       capabilityGapBlocksPlannerHandoff: true,
       layerHandoffAllowed: false,
       runtimeMaterializationAllowed: false,
-    };
+    });
     if (options.writeArtifacts) {
       const siteSpecificEvidenceSummary = await createSiteSpecificEvidenceSummaryForManifest(manifest);
       const summaryWrite = await writeCompileResultSummaryArtifact({
@@ -637,7 +637,7 @@ export async function runSiteCapabilityCompile(options = {}) {
   if (layerRuntimeConsumerResult && layerRuntimeFeedbackArtifactWrite) {
     layerRuntimeConsumerResult.runtimeFeedbackArtifactWrite = layerRuntimeFeedbackArtifactWrite;
   }
-  const result = {
+  const result = /** @type {any} */ ({
     ...createCompileResultBase({ manifest, graphBuild, artifactWrite }),
     normalizedIntent,
     planStatus: dryRunResult.planStatus,
@@ -645,7 +645,7 @@ export async function runSiteCapabilityCompile(options = {}) {
     executionPolicyStatus: executionPolicyDecision.decisionStatus,
     layerRuntimeConsumerReady: Boolean(layerRuntimeConsumerResult),
     ...(layerRuntimeConsumerResult ? { layerRuntimeConsumerResult } : {}),
-  };
+  });
   if (options.writeArtifacts) {
     result.artifactWrite = mergeArtifactWrite(
       result.artifactWrite,
@@ -670,7 +670,7 @@ async function main() {
     process.stdout.write(HELP);
     return;
   }
-  const result = await runSiteCapabilityCompile(options);
+  const result = /** @type {any} */ (await runSiteCapabilityCompile(options));
   if (options.json) {
     writeJsonStdout(result);
     return;

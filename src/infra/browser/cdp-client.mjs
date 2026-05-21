@@ -1,5 +1,5 @@
 export class CdpClient {
-  constructor(wsUrl, { timeoutMs = 30_000, WebSocketImpl = globalThis.WebSocket } = {}) {
+  constructor(wsUrl, { timeoutMs = 30_000, WebSocketImpl = globalThis.WebSocket } = /** @type {any} */ ({})) {
     this.wsUrl = wsUrl;
     this.defaultTimeoutMs = timeoutMs;
     this.WebSocketImpl = WebSocketImpl;
@@ -92,7 +92,7 @@ export class CdpClient {
     throw lastError ?? new Error('Failed to connect to CDP websocket');
   }
 
-  async send(method, params = {}, sessionId, timeoutMs = this.defaultTimeoutMs) {
+  async send(method, params = /** @type {any} */ ({}), sessionId, timeoutMs = this.defaultTimeoutMs) {
     if (!this.ws || this.closed) {
       throw new Error('CDP socket is not connected');
     }
@@ -132,7 +132,7 @@ export class CdpClient {
     });
   }
 
-  on(method, handler, { sessionId } = {}) {
+  on(method, handler, { sessionId } = /** @type {any} */ ({})) {
     const listener = { method, handler, sessionId: sessionId ?? null };
     this.listeners.add(listener);
     return () => {
@@ -140,7 +140,7 @@ export class CdpClient {
     };
   }
 
-  waitForEvent(method, { sessionId, predicate, timeoutMs = this.defaultTimeoutMs } = {}) {
+  waitForEvent(method, { sessionId, predicate, timeoutMs = this.defaultTimeoutMs } = /** @type {any} */ ({})) {
     return new Promise((resolve, reject) => {
       let timer = null;
       const off = this.on(

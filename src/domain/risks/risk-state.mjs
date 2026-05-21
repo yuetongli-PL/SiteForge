@@ -221,6 +221,8 @@ export function createRiskStateTransitionTable() {
   };
 }
 
+/** @param {Record<string, any>} [rawRecovery] */
+// @ts-ignore
 function assertRecoverySemanticsCompatible(rawRecovery = {}, expectedRecovery = {}, state) {
   if (!rawRecovery || typeof rawRecovery !== 'object' || Array.isArray(rawRecovery)) {
     throw new Error(`RiskState transition table ${state} recovery must be an object`);
@@ -255,6 +257,7 @@ function assertReasonTransitionCompatible(entry, rule, index) {
   assertRecoverySemanticsCompatible(entry.recovery, expected.recovery, expected.reasonCode);
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertRiskStateTransitionTableCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -298,6 +301,8 @@ export function assertRiskStateTransitionTableCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
+// @ts-ignore
 function normalizeRecovery(raw = {}, stateDefaults, reasonSummary = undefined) {
   const reasonDefaults = reasonSummary ?? {};
   const stateBlocksExecution = stateDefaults.artifactWriteAllowed === false;
@@ -338,10 +343,12 @@ function normalizeRecovery(raw = {}, stateDefaults, reasonSummary = undefined) {
   };
 }
 
+/** @param {Record<string, any>} [value] */
 function stripUndefined(value = {}) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertRiskStateCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -353,6 +360,7 @@ export function assertRiskStateCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeRiskState(raw = {}) {
   if (raw.schemaVersion !== undefined) {
     assertRiskStateCompatible(raw);
@@ -387,6 +395,7 @@ export function normalizeRiskState(raw = {}) {
   });
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeRiskTransition(raw = {}) {
   return normalizeRiskState({
     ...raw,

@@ -26,6 +26,7 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
+/** @param {Record<string, any>} [value] */
 function normalizeArtifactReferenceMap(value = {}) {
   const result = {};
   if (!isPlainObject(value)) {
@@ -50,6 +51,7 @@ function normalizeArtifactReferenceMap(value = {}) {
   return result;
 }
 
+/** @param {Record<string, any>} [value] */
 function assertArtifactReferenceMapCompatible(value = {}, path = 'artifacts') {
   if (!isPlainObject(value)) {
     throw new Error(`${path} must be an object`);
@@ -78,6 +80,7 @@ function normalizePositiveInteger(value) {
   return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
+/** @param {Record<string, any>} [value] */
 export function normalizeArtifactReferenceSet(value = {}) {
   return {
     schemaVersion: ARTIFACT_REFERENCE_SET_SCHEMA_VERSION,
@@ -91,6 +94,7 @@ export function isArtifactReferenceSetSchemaVersionCompatible(value) {
     && ARTIFACT_REFERENCE_SET_COMPATIBLE_SCHEMA_VERSIONS.includes(version);
 }
 
+/** @param {Record<string, any>} [value] */
 export function assertArtifactReferenceSetCompatible(value = {}) {
   if (!isPlainObject(value)) {
     throw new Error('ArtifactReferenceSet must be an object');
@@ -107,6 +111,7 @@ export function assertArtifactReferenceSetCompatible(value = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [value] */
 export function normalizeManifestArtifactBundle(value = {}) {
   const source = isPlainObject(value) ? value : {};
   const manifestName = normalizeText(source.manifestName ?? source.name);
@@ -125,6 +130,7 @@ export function normalizeManifestArtifactBundle(value = {}) {
   );
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function normalizeManifestArtifactBundleFromManifest(manifest = {}, options = {}) {
   const source = isPlainObject(manifest) ? manifest : {};
   const overrides = isPlainObject(options) ? options : {};
@@ -142,6 +148,7 @@ export function isManifestArtifactBundleSchemaVersionCompatible(value) {
     && MANIFEST_ARTIFACT_BUNDLE_COMPATIBLE_SCHEMA_VERSIONS.includes(version);
 }
 
+/** @param {Record<string, any>} [value] */
 export function assertManifestArtifactBundleCompatible(value = {}) {
   if (!isPlainObject(value)) {
     throw new Error('ManifestArtifactBundle must be an object');

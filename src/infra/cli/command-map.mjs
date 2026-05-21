@@ -22,15 +22,15 @@ export function quoteCommandArg(value) {
   return `"${text.replace(/"/gu, '\\"')}"`;
 }
 
-export function formatCommand(argv = []) {
+export function formatCommand(argv = /** @type {any[]} */ ([])) {
   return argv.map(quoteCommandArg).join(' ');
 }
 
-export function unifiedCliArgv(args = []) {
+export function unifiedCliArgv(args = /** @type {any[]} */ ([])) {
   return [UNIFIED_CLI_ENTRYPOINT, ...args.map((arg) => String(arg))];
 }
 
-export function unifiedCliCommand(args = []) {
+export function unifiedCliCommand(args = /** @type {any[]} */ ([])) {
   const normalizedArgs = args.map((arg) => String(arg));
   if (normalizedArgs[0] === 'build' && normalizedArgs.length >= 2 && !normalizedArgs[1].startsWith('-')) {
     return formatCommand(unifiedCliArgv(normalizedArgs));
@@ -38,19 +38,19 @@ export function unifiedCliCommand(args = []) {
   throw new Error('Public SiteForge CLI only supports: siteforge build <url> [flags]');
 }
 
-export function capabilitiesCliCommand(args = []) {
+export function capabilitiesCliCommand(args = /** @type {any[]} */ ([])) {
   return formatCommand(['node', 'src/entrypoints/operator/capabilities.mjs', ...args.map((arg) => String(arg))]);
 }
 
-export function capabilityConfirmCommand(skillId, args = []) {
+export function capabilityConfirmCommand(skillId, args = /** @type {any[]} */ ([])) {
   return capabilitiesCliCommand(['confirm', skillId, ...args]);
 }
 
-export function capabilityListCommand(skillId, args = []) {
+export function capabilityListCommand(skillId, args = /** @type {any[]} */ ([])) {
   return capabilitiesCliCommand(['list', skillId, ...args]);
 }
 
-export function capabilityDisableCommand(skillId, args = []) {
+export function capabilityDisableCommand(skillId, args = /** @type {any[]} */ ([])) {
   return capabilitiesCliCommand(['disable', skillId, ...args]);
 }
 
@@ -58,7 +58,7 @@ export function buildCliCommand(inputUrl) {
   return unifiedCliCommand(['build', inputUrl]);
 }
 
-function validatePublicBuildCommandArgs(args = []) {
+function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
   for (let index = 0; index < args.length; index += 1) {
     const token = String(args[index]);
     if (!token.startsWith('--')) {
@@ -98,7 +98,7 @@ export function unifiedCliArgsForScript(scriptPath) {
   return null;
 }
 
-export function unifiedCliCommandForScript(scriptPath, args = []) {
+export function unifiedCliCommandForScript(scriptPath, args = /** @type {any[]} */ ([])) {
   const normalizedScript = normalizeScriptPath(scriptPath);
   const prefix = unifiedCliArgsForScript(normalizedScript);
   if (prefix) {
@@ -107,7 +107,7 @@ export function unifiedCliCommandForScript(scriptPath, args = []) {
   return formatCommand(['node', normalizedScript, ...args]);
 }
 
-export function displayCommandForExecutable(command, args = []) {
+export function displayCommandForExecutable(command, args = /** @type {any[]} */ ([])) {
   const executable = String(command ?? '');
   const normalizedArgs = args.map((arg) => String(arg));
   const scriptArg = normalizedArgs[0];
@@ -117,19 +117,19 @@ export function displayCommandForExecutable(command, args = []) {
   return unifiedCliCommandForScript(scriptArg, normalizedArgs.slice(1));
 }
 
-export function siteDoctorCommand(inputUrl, args = []) {
+export function siteDoctorCommand(inputUrl, args = /** @type {any[]} */ ([])) {
   return formatCommand(['node', 'src/entrypoints/sites/site-doctor.mjs', inputUrl, ...args]);
 }
 
-export function siteLoginCommand(inputUrl, args = []) {
+export function siteLoginCommand(inputUrl, args = /** @type {any[]} */ ([])) {
   return formatCommand(['node', 'src/entrypoints/sites/site-login.mjs', inputUrl, ...args]);
 }
 
-export function sessionRepairPlanCommand(args = []) {
+export function sessionRepairPlanCommand(args = /** @type {any[]} */ ([])) {
   return formatCommand(['node', 'src/entrypoints/sites/session-repair-plan.mjs', ...args]);
 }
 
-export function siteCapabilityCompileCommand(args = []) {
+export function siteCapabilityCompileCommand(args = /** @type {any[]} */ ([])) {
   return formatCommand(['node', 'src/entrypoints/sites/site-capability-compile.mjs', ...args]);
 }
 
@@ -137,8 +137,8 @@ export function downloadCliCommand({
   mode = 'plan',
   input = null,
   site = null,
-  args = [],
-} = {}) {
+  args = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   const normalizedArgs = args.map((arg) => String(arg));
   if (site !== null && site !== undefined && String(site) !== '') {
     return actionCliCommand(site, [
@@ -159,7 +159,7 @@ export function downloadCliCommand({
   return unifiedCliCommand(commandArgs);
 }
 
-export function actionCliCommand(site, args = []) {
+export function actionCliCommand(site, args = /** @type {any[]} */ ([])) {
   const siteKey = String(site ?? '').toLowerCase();
   const script = siteKey === 'instagram'
     ? 'src/entrypoints/sites/instagram-action.mjs'

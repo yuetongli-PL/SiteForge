@@ -279,6 +279,7 @@ function scanRawSensitiveMaterial(value, path = [], findings = []) {
 function assertNoRawSensitiveMaterial(payload) {
   const findings = scanRawSensitiveMaterial(payload);
   if (findings.length) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('TrustBoundary crossing contains raw sensitive material');
     error.code = 'trust-boundary-raw-sensitive-material';
     error.findings = findings;
@@ -317,6 +318,7 @@ export function assertTrustBoundaryRegistryComplete(requiredIds = TRUST_BOUNDARY
   return true;
 }
 
+/** @param {Record<string, any>} [crossing] */
 export function normalizeTrustBoundaryCrossing(crossing = {}) {
   if (!isPlainObject(crossing)) {
     throw new Error('TrustBoundary crossing must be an object');
@@ -335,12 +337,14 @@ export function normalizeTrustBoundaryCrossing(crossing = {}) {
   };
 }
 
+/** @param {Record<string, any>} [crossing] */
 export function assertTrustBoundaryCrossing(crossing = {}) {
   const normalized = normalizeTrustBoundaryCrossing(crossing);
   const missingControls = normalized.requiredControls.filter(
     (control) => !normalized.controls.includes(control),
   );
   if (missingControls.length) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error(
       `TrustBoundary crossing ${normalized.from}->${normalized.to} is missing required controls: ${missingControls.join(', ')}`,
     );
@@ -352,6 +356,7 @@ export function assertTrustBoundaryCrossing(crossing = {}) {
   return normalized;
 }
 
+/** @param {Record<string, any>} [crossing] */
 export function createTrustBoundaryCrossingRecord(crossing = {}) {
   return assertTrustBoundaryCrossing(crossing);
 }

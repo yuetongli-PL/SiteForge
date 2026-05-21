@@ -105,7 +105,7 @@ test('generic normalizer maps common site signals without site-specific branches
 });
 
 test('SiteHealthRecoveryEngine refreshes stale sessions without whole-site shutdown', async () => {
-  const executed = [];
+  const executed = /** @type {any[]} */ ([]);
   const engine = new SiteHealthRecoveryEngine({
     actionExecutor: new RecoveryActionExecutor({
       handlers: {
@@ -119,6 +119,7 @@ test('SiteHealthRecoveryEngine refreshes stale sessions without whole-site shutd
   });
 
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'douyin',
     rawSignals: [{
       rawSignal: 'session-invalid',
@@ -137,6 +138,7 @@ test('SiteHealthRecoveryEngine refreshes stale sessions without whole-site shutd
 test('csrf-invalid triggers token refresh and a health probe', async () => {
   const engine = new SiteHealthRecoveryEngine();
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'x',
     rawSignals: [{
       rawSignal: 'csrf_failed',
@@ -153,6 +155,7 @@ test('csrf-invalid triggers token refresh and a health probe', async () => {
 test('rate-limited applies backoff, reduces concurrency, and switches to readonly mode', async () => {
   const engine = new SiteHealthRecoveryEngine();
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'instagram',
     rawSignals: [{
       rawSignal: 'rate-limit',
@@ -175,6 +178,7 @@ test('captcha and MFA never trigger bypass-like automatic recovery', async () =>
   for (const rawSignal of ['captcha', 'mfa']) {
     const engine = new SiteHealthRecoveryEngine();
     const result = await engine.recover({
+      // @ts-ignore
       siteId: 'x',
       rawSignals: [{
         rawSignal,
@@ -193,6 +197,7 @@ test('captcha and MFA never trigger bypass-like automatic recovery', async () =>
 test('account-restricted quarantines site profile and requires user action', async () => {
   const engine = new SiteHealthRecoveryEngine();
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'x',
     rawSignals: [{
       rawSignal: 'account_locked',
@@ -214,6 +219,7 @@ test('account-restricted quarantines site profile and requires user action', asy
 test('adapter-drift disables only the affected capability', async () => {
   const engine = new SiteHealthRecoveryEngine();
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'xiaohongshu',
     rawSignals: [{
       rawSignal: 'adapter_drift',
@@ -246,6 +252,7 @@ test('single capability degradation does not shut down the whole site', () => {
 test('unknown health risks safe-stop and block artifact writes in recovery planning', async () => {
   const engine = new SiteHealthRecoveryEngine();
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'unknown.test',
     rawSignals: [{
       rawSignal: 'unmapped-platform-signal',

@@ -15,6 +15,7 @@ function queueIdFor(delta) {
   return `coverage-delta:${delta.executionId}`;
 }
 
+/** @param {Record<string, any>} options */
 export function createCoverageDeltaArtifactQueueEntry({
   coverageDelta,
   artifactRef,
@@ -37,6 +38,7 @@ export function createCoverageDeltaArtifactQueueEntry({
   return entry;
 }
 
+/** @param {Record<string, any>} options */
 export function prepareCoverageDeltaArtifactQueueWrite(options = {}) {
   const entry = createCoverageDeltaArtifactQueueEntry(options);
   const prepared = prepareExecutionArtifactJsonWithAudit(entry);

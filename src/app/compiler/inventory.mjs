@@ -22,11 +22,13 @@ function list(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
+/** @param {Record<string, any>} [capability] */
 function sourceRefsFor(capability = {}) {
   const refs = list(capability.sourceRefs);
   return refs.length ? refs : ['config/site-capabilities.json', 'config/site-registry.json'];
 }
 
+/** @param {Record<string, any>} [capability] */
 function capabilityMode(capability = {}) {
   if (capability.mode) {
     return capability.mode;
@@ -37,25 +39,30 @@ function capabilityMode(capability = {}) {
   return 'readOnly';
 }
 
+/** @param {Record<string, any>} [capability] */
 function requiresAuth(capability = {}, capabilityConfig = {}, registrySite = {}) {
   return capability.requiresAuth === true
     || capabilityConfig.downloader?.requiresLogin === true
     || registrySite.downloadSessionRequirement === 'required';
 }
 
+/** @param {Record<string, any>} [capability] */
 function requiresSession(capability = {}, capabilityConfig = {}, registrySite = {}) {
   return capability.requiresSession === true || requiresAuth(capability, capabilityConfig, registrySite);
 }
 
+/** @param {Record<string, any>} [capability] */
 function requiresSigner(capability = {}) {
   return capability.requiresSigner === true;
 }
 
+/** @param {Record<string, any>} [capability] */
 function requiresApproval(capability = {}) {
   const mode = capabilityMode(capability);
   return capability.requiresApproval === true || mode !== 'readOnly';
 }
 
+/** @param {Record<string, any>} [capability] */
 function riskPolicyKey(capability = {}) {
   const state = capability.riskState ?? (capability.riskReasonCode ? 'blocked' : 'normal');
   const reason = capability.riskReasonCode ?? state;
@@ -74,6 +81,7 @@ function sessionRequirementRef(siteSegment, capability = {}) {
   return `session-requirement:${siteSegment}:${cleanSegment(capability.capabilityKey ?? capability.normalizedIntent, 'capability')}`;
 }
 
+/** @param {Record<string, any>} options */
 function createRiskPolicyNode({ siteSegment, capability = {} } = {}) {
   const state = capability.riskState ?? (capability.riskReasonCode ? 'blocked' : 'normal');
   const reasonCodeRefs = capability.riskReasonCode ? [capability.riskReasonCode] : [];
@@ -97,6 +105,7 @@ function createRiskPolicyNode({ siteSegment, capability = {} } = {}) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function createRequirementGraphNodes({ siteSegment, siteKey, capability, capabilityConfig, registrySite } = {}) {
   const capabilityKey = cleanSegment(capability.capabilityKey ?? capability.normalizedIntent, 'capability');
   const capabilityId = `capability:${siteSegment}:${capabilityKey}`;
@@ -136,6 +145,7 @@ function createRequirementGraphNodes({ siteSegment, siteKey, capability, capabil
   return nodes;
 }
 
+/** @param {Record<string, any>} options */
 export function createNodeInventory({
   siteId,
   siteKey,
@@ -283,6 +293,7 @@ export function createNodeInventory({
   return nodes;
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityInventory({
   siteId,
   siteKey,
@@ -336,6 +347,7 @@ export function createCapabilityInventory({
   return inventory;
 }
 
+/** @param {Record<string, any>} options */
 export function createExecutionPathInventory({ siteId, siteKey, capabilities = [] } = {}) {
   const siteSegment = cleanSegment(siteKey ?? siteId, 'site');
   const paths = capabilities.map((capability) => {
@@ -363,6 +375,7 @@ export function createExecutionPathInventory({ siteId, siteKey, capabilities = [
   return paths;
 }
 
+/** @param {Record<string, any>} options */
 export function createRequirementInventory({
   siteId,
   siteKey,

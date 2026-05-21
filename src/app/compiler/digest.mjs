@@ -18,6 +18,10 @@ function stableJson(value) {
   return JSON.stringify(value);
 }
 
+/**
+ * @param {Record<string, any>} value
+ * @param {Record<string, any>} options
+ */
 export function createCompilerDigest(value, {
   algorithm = 'sha256',
   prefix = 'sha256',
@@ -27,6 +31,7 @@ export function createCompilerDigest(value, {
   return `${prefix}:${digest}`;
 }
 
+/** @param {Record<string, any>} options */
 export function createCompilerSourceDigest({
   sourceRefs = [],
   registrySite = {},
@@ -41,6 +46,7 @@ export function createCompilerSourceDigest({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createIncrementalCompileSummary({
   previousSourceDigest,
   sourceDigest,

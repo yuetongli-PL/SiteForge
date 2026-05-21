@@ -69,7 +69,9 @@ test('execution contracts reject direct downloader, session, and sensitive mater
       cookie: 'SESSDATA=synthetic-secret-value',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'execution.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -100,6 +102,7 @@ test('execution contracts reject unsafe artifact and evidence refs', () => {
       plannerVersion: 'planner',
       layerCompatibilityVersion: 'layer',
     }),
+    // @ts-ignore
     (error) => error.code === 'execution.raw_sensitive_material_rejected',
   );
 
@@ -109,6 +112,7 @@ test('execution contracts reject unsafe artifact and evidence refs', () => {
       executionStatus: 'completed',
       artifactRefs: ['artifact:user@example.test'],
     }),
+    // @ts-ignore
     (error) => error.code === 'execution.raw_sensitive_material_rejected',
   );
 
@@ -123,6 +127,7 @@ test('execution contracts reject unsafe artifact and evidence refs', () => {
       coverageAfter: 'partial',
       evidenceRefs: ['C:/Users/example/coverage-delta.json'],
     }),
+    // @ts-ignore
     (error) => error.code === 'execution.raw_sensitive_material_rejected',
   );
 });

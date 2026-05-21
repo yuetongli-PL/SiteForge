@@ -32,7 +32,9 @@ test('compiler lifecycle event rejects sensitive values without echoing them', (
       reasonCode: 'https://synthetic.example/?access_token=synthetic-secret-value',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },

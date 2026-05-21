@@ -88,7 +88,7 @@ async function createWorkspace(t) {
   return workspace;
 }
 
-function runSiteforgeBuild(cwd, args, env = {}) {
+function runSiteforgeBuild(cwd, args, env = /** @type {any} */ ({})) {
   return spawnSync(process.execPath, [CLI_PATH, 'build', ...args], {
     cwd,
     encoding: 'utf8',
@@ -161,7 +161,7 @@ function allUserReportCapabilities(report) {
   ];
 }
 
-function isDebugOnlyCapabilityRecord(capability = {}) {
+function isDebugOnlyCapabilityRecord(capability = /** @type {any} */ ({})) {
   const values = [
     capability.enabled_status,
     capability.default_policy,
@@ -188,7 +188,7 @@ function countOccurrences(text, pattern) {
   return [...text.matchAll(pattern)].length;
 }
 
-function makeReportCapability(name, overrides = {}) {
+function makeReportCapability(name, overrides = /** @type {any} */ ({})) {
   return {
     id: `capability:test:${name.toLowerCase().replace(/[^a-z0-9]+/gu, '-')}`,
     name,

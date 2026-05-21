@@ -16,7 +16,7 @@ function inferAdapterPageTypeFromUrl({
   pathname = '/',
   hostname = '',
   siteProfile = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const adapter = resolveSiteAdapter({
     host: hostname || parsedUrl?.hostname,
     inputUrl: inputUrl || parsedUrl?.toString?.() || '',
@@ -48,7 +48,7 @@ export function inferProfilePageTypeFromPathname(pathname, siteProfile = null) {
 
 export function inferPageTypeFromUrl(input, siteProfile = null) {
   return inferPageTypeFromUrlCore(input, siteProfile, {
-    inferSiteSpecificPageType(context = {}) {
+    inferSiteSpecificPageType(context = /** @type {any} */ ({})) {
       return inferAdapterPageTypeFromUrl({
         ...context,
         siteProfile,

@@ -18,6 +18,7 @@ function nonEmptyArray(value) {
   return Array.isArray(value) && value.length > 0;
 }
 
+/** @param {Record<string, any>} options */
 export function createCompileCoverageReport({
   coverageCompleteness = 'partial',
   unknownNodes = [],
@@ -40,6 +41,7 @@ export function createCompileCoverageReport({
   return report;
 }
 
+/** @param {Record<string, any>} options */
 export function createUnknownNodeReport({
   siteId,
   unknownNodes = [],
@@ -56,8 +58,10 @@ export function createUnknownNodeReport({
   return report;
 }
 
+/** @param {Record<string, any>} [scope] */
 export function assertCompileCoverageReportConsistent(scope = {}, report = {}) {
   if (!isPlainObject(scope) || !isPlainObject(report)) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Compile coverage scope and report must be objects');
     error.code = 'compiler.coverage_incomplete';
     throw error;
@@ -66,6 +70,7 @@ export function assertCompileCoverageReportConsistent(scope = {}, report = {}) {
     scope.coverageCompleteness === 'complete_within_scope'
     && (!nonEmptyArray(report.evidenceRefs) || report.unknownNodeCount !== 0 || nonEmptyArray(report.blockedReasonCodes))
   ) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('complete_within_scope requires evidence, no unknown nodes, and no blockers');
     error.code = 'compiler.coverage_incomplete';
     throw error;

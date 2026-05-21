@@ -123,7 +123,7 @@ function applySiteForgeCliDefaults(options) {
   return next;
 }
 
-async function closeSiteForgeWebInteraction(options = {}) {
+async function closeSiteForgeWebInteraction(options = /** @type {any} */ ({})) {
   const session = options.webInteractionSession;
   delete options.webInteractionSession;
   if (typeof session?.close === 'function') {
@@ -131,11 +131,11 @@ async function closeSiteForgeWebInteraction(options = {}) {
   }
 }
 
-function readValue(args, current, index, options = {}) {
+function readValue(args, current, index, options = /** @type {any} */ ({})) {
   return readCliValue(args, current, index, options);
 }
 
-function rejectRetiredNumericFlag(args, current, index, parseOptions = {}) {
+function rejectRetiredNumericFlag(args, current, index, parseOptions = /** @type {any} */ ({})) {
   const { value, nextIndex } = readValue(args, current, index);
   const flagName = current.split('=')[0];
   parseIntegerOption(value, flagName, parseOptions);
@@ -144,7 +144,7 @@ function rejectRetiredNumericFlag(args, current, index, parseOptions = {}) {
 
 export function parseCliArgs(argv) {
   const args = [...argv];
-  const options = {};
+  const options = /** @type {any} */ ({});
   let url = null;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -189,23 +189,19 @@ export function parseCliArgs(argv) {
         break;
       }
       case '--idle-ms': {
-        const nextIndex = rejectRetiredNumericFlag(args, current, index, { min: 0 });
-        index = nextIndex;
+        rejectRetiredNumericFlag(args, current, index, { min: 0 });
         break;
       }
       case '--max-triggers': {
-        const nextIndex = rejectRetiredNumericFlag(args, current, index, { min: 0 });
-        index = nextIndex;
+        rejectRetiredNumericFlag(args, current, index, { min: 0 });
         break;
       }
       case '--max-captured-states': {
-        const nextIndex = rejectRetiredNumericFlag(args, current, index, { min: 1 });
-        index = nextIndex;
+        rejectRetiredNumericFlag(args, current, index, { min: 1 });
         break;
       }
       case '--chapter-fetch-concurrency': {
-        const nextIndex = rejectRetiredNumericFlag(args, current, index, { min: 1 });
-        index = nextIndex;
+        rejectRetiredNumericFlag(args, current, index, { min: 1 });
         break;
       }
       case '--auto':

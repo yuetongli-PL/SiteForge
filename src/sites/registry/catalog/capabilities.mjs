@@ -28,14 +28,14 @@ const siteRuntimeCapabilitiesStore = createSiteIndexStore({
   resultPathKey: 'runtimeCapabilitiesPath',
 });
 
-function normalizeCapabilitiesPathOptions(pathOptions = {}) {
+function normalizeCapabilitiesPathOptions(pathOptions = /** @type {any} */ ({})) {
   return {
     configDir: pathOptions?.configDir ?? pathOptions?.siteMetadataConfigDir ?? null,
     documentPath: pathOptions?.capabilitiesPath ?? pathOptions?.siteCapabilitiesPath ?? null,
   };
 }
 
-function normalizeRuntimeCapabilitiesPathOptions(pathOptions = {}) {
+function normalizeRuntimeCapabilitiesPathOptions(pathOptions = /** @type {any} */ ({})) {
   return {
     configDir: pathOptions?.runtimeDir ?? pathOptions?.siteMetadataRuntimeDir ?? null,
     documentPath: pathOptions?.runtimeCapabilitiesPath ?? pathOptions?.siteRuntimeCapabilitiesPath ?? null,
@@ -43,7 +43,7 @@ function normalizeRuntimeCapabilitiesPathOptions(pathOptions = {}) {
 }
 
 function mergeSiteDocuments(stableDocument, runtimeDocument) {
-  const mergedSites = {};
+  const mergedSites = /** @type {any} */ ({});
   const siteKeys = new Set([
     ...Object.keys(stableDocument?.sites ?? {}),
     ...Object.keys(runtimeDocument?.sites ?? {}),
@@ -62,7 +62,7 @@ function mergeSiteDocuments(stableDocument, runtimeDocument) {
   };
 }
 
-function splitCapabilitiesPatch(patch = {}) {
+function splitCapabilitiesPatch(patch = /** @type {any} */ ({})) {
   const stableKeys = new Set([
     'baseUrl',
     'siteKey',
@@ -77,8 +77,8 @@ function splitCapabilitiesPatch(patch = {}) {
     'rankingModes',
     'categoryTaxonomySupported',
   ]);
-  const stablePatch = {};
-  const runtimePatch = {};
+  const stablePatch = /** @type {any} */ ({});
+  const runtimePatch = /** @type {any} */ ({});
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (stableKeys.has(key)) {
       stablePatch[key] = value;
@@ -89,15 +89,15 @@ function splitCapabilitiesPatch(patch = {}) {
   return { stablePatch, runtimePatch };
 }
 
-export function buildSiteCapabilitiesPath(workspaceRoot = process.cwd(), pathOptions = {}) {
+export function buildSiteCapabilitiesPath(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
   return siteCapabilitiesStore.buildPath(workspaceRoot, normalizeCapabilitiesPathOptions(pathOptions));
 }
 
-export function buildSiteRuntimeCapabilitiesPath(workspaceRoot = process.cwd(), pathOptions = {}) {
+export function buildSiteRuntimeCapabilitiesPath(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
   return siteRuntimeCapabilitiesStore.buildPath(workspaceRoot, normalizeRuntimeCapabilitiesPathOptions(pathOptions));
 }
 
-export async function readSiteCapabilities(workspaceRoot = process.cwd(), pathOptions = {}) {
+export async function readSiteCapabilities(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
   const [stableDocument, runtimeDocument] = await Promise.all([
     siteCapabilitiesStore.read(workspaceRoot, normalizeCapabilitiesPathOptions(pathOptions)),
     siteRuntimeCapabilitiesStore.read(workspaceRoot, normalizeRuntimeCapabilitiesPathOptions(pathOptions)),
@@ -105,7 +105,7 @@ export async function readSiteCapabilities(workspaceRoot = process.cwd(), pathOp
   return mergeSiteDocuments(stableDocument, runtimeDocument);
 }
 
-export async function upsertSiteCapabilities(workspaceRoot, host, patch, pathOptions = {}) {
+export async function upsertSiteCapabilities(workspaceRoot, host, patch, pathOptions = /** @type {any} */ ({})) {
   const { stablePatch, runtimePatch } = splitCapabilitiesPatch(patch);
   const stableResult = Object.keys(stablePatch).length > 0
     ? await siteCapabilitiesStore.upsert(

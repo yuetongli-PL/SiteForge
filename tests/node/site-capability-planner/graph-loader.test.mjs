@@ -59,6 +59,7 @@ test('Planner graph loader rejects missing or unvalidated Graph input', async ()
       validationReport,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.graph_missing');
       return true;
     },
@@ -69,6 +70,7 @@ test('Planner graph loader rejects missing or unvalidated Graph input', async ()
       validationReport: undefined,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.graph_not_validated');
       return true;
     },
@@ -82,6 +84,7 @@ test('Planner graph loader rejects missing or unvalidated Graph input', async ()
       },
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.graph_not_validated');
       return true;
     },
@@ -99,6 +102,7 @@ test('Planner graph loader rejects missing or unvalidated Graph input', async ()
       },
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.graph_not_validated');
       return true;
     },
@@ -118,6 +122,7 @@ test('Planner graph loader fail-closes incompatible Graph versions', async () =>
       },
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.version_incompatible');
       return true;
     },
@@ -129,6 +134,7 @@ test('Planner graph loader fail-closes incompatible Graph versions', async () =>
       expectedGraphVersion: 'synthetic-other-graph-v1',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.version_incompatible');
       return true;
     },
@@ -140,6 +146,7 @@ test('Planner graph loader fail-closes incompatible Graph versions', async () =>
       expectedGraphSchemaVersion: 999,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.version_incompatible');
       return true;
     },
@@ -161,7 +168,9 @@ test('Planner graph loader rejects Graph descriptors carrying sensitive or runti
       validationReport,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -184,6 +193,7 @@ test('Planner graph loader rejects Graph descriptors carrying sensitive or runti
       validationReport,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
       return true;
     },

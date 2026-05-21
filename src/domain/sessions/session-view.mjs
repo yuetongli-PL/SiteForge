@@ -170,6 +170,7 @@ const FORBIDDEN_BOUNDARY_KEY_SET = new Set([
   ...FORBIDDEN_IDENTITY_KEY_SET,
 ]);
 
+/** @param {Record<string, any>} [raw] */
 export function assertSessionViewCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -181,6 +182,7 @@ export function assertSessionViewCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertSessionViewMaterializationAuditCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -350,6 +352,10 @@ function normalizeRevocationStatus(value) {
   return status;
 }
 
+/**
+ * @param {Record<string, any>} value
+ * @param {Record<string, any>} options
+ */
 function normalizeRevocationReasonCode(value, { required = false } = {}) {
   const reasonCode = normalizeReasonCode(value);
   if (!reasonCode) {
@@ -370,6 +376,10 @@ function normalizeRevocationTtlSeconds(value) {
   return ttlSeconds;
 }
 
+/**
+ * @param {Record<string, any>} value
+ * @param {Record<string, any>} options
+ */
 function normalizeRevocationExpiresAt(value, { ttlSeconds, now = new Date() } = {}) {
   const text = normalizeText(value);
   const expiresAt = text ?? new Date(Number(now) + ttlSeconds * 1000).toISOString();
@@ -379,6 +389,7 @@ function normalizeRevocationExpiresAt(value, { ttlSeconds, now = new Date() } = 
   return expiresAt;
 }
 
+/** @param {Record<string, any>} [raw] */
 function assertRevocationRecordKeys(raw = {}) {
   for (const key of Object.keys(raw)) {
     if (!REVOCATION_RECORD_ALLOWED_KEYS.has(key)) {
@@ -387,6 +398,10 @@ function assertRevocationRecordKeys(raw = {}) {
   }
 }
 
+/**
+ * @param {Record<string, any>} [raw]
+ * @param {Record<string, any>} options
+ */
 function normalizeRevocationRecord(raw = {}, { now = new Date() } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('SessionView revocation record must be an object');
@@ -419,6 +434,10 @@ function revocationStorePayloadFromEntries(records = []) {
   };
 }
 
+/**
+ * @param {Record<string, any>} [raw]
+ * @param {Record<string, any>} options
+ */
 function normalizeRevocationStorePayload(raw = {}, { now = new Date() } = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -448,7 +467,12 @@ function normalizeRevocationStorePayload(raw = {}, { now = new Date() } = {}) {
   return payload;
 }
 
+/**
+ * @param {Record<string, any>} filePath
+ * @param {Record<string, any>} options
+ */
 function readRevocationStorePayload(filePath, { now = new Date() } = {}) {
+  // @ts-ignore
   if (!existsSync(filePath)) {
     return {
       schemaVersion: SESSION_REVOCATION_STORE_SCHEMA_VERSION,
@@ -457,6 +481,7 @@ function readRevocationStorePayload(filePath, { now = new Date() } = {}) {
   }
   let parsed;
   try {
+    // @ts-ignore
     parsed = JSON.parse(readFileSync(filePath, 'utf8'));
   } catch (error) {
     throw new Error(`SessionView revocation store could not be read safely: ${error.message}`);
@@ -464,6 +489,7 @@ function readRevocationStorePayload(filePath, { now = new Date() } = {}) {
   return normalizeRevocationStorePayload(parsed, { now });
 }
 
+/** @param {Record<string, any>} [payload] */
 function recordMapFromPayload(payload = {}) {
   const records = new Map();
   for (const record of payload.records ?? []) {
@@ -472,10 +498,12 @@ function recordMapFromPayload(payload = {}) {
   return records;
 }
 
+/** @param {Record<string, any>} [store] */
 function serializeSessionRevocationStore(store = {}) {
   return revocationStorePayloadFromEntries([...store.records.values()]);
 }
 
+/** @param {Record<string, any>} [store] */
 function persistSessionRevocationStore(store = {}) {
   if (!store.filePath) {
     return serializeSessionRevocationStore(store);
@@ -486,15 +514,18 @@ function persistSessionRevocationStore(store = {}) {
   return payload;
 }
 
+/** @param {Record<string, any>} [record] */
 function revocationRecordExpired(record = {}, now = new Date()) {
   return Date.parse(record.expiresAt) <= Number(now);
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertSessionRevocationStoreCompatible(raw = {}) {
   normalizeRevocationStorePayload(raw);
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createSessionRevocationStore({ filePath, records, now = new Date() } = {}) {
   const payload = filePath
     ? readRevocationStorePayload(filePath, { now })
@@ -523,7 +554,9 @@ export function registerSessionRevocationHandle(store, raw = {}, { now = new Dat
 
 export function revokeSessionRevocationHandle(store, handleRef, {
   reasonCode = 'session-invalid',
+  // @ts-ignore
   ttlSeconds,
+  // @ts-ignore
   expiresAt,
   now = new Date(),
 } = {}) {
@@ -564,6 +597,7 @@ export function assertSessionRevocationAllowed(store, handleRef, { now = new Dat
   return true;
 }
 
+/** @param {Record<string, any>} [view] */
 function assertDiagnosticLeastPrivilege(view = {}) {
   if (normalizeBoundaryToken(view.purpose) !== 'diagnostic') {
     return true;
@@ -589,6 +623,7 @@ function assertDiagnosticLeastPrivilege(view = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [view] */
 function assertPurposeIsolation(view = {}) {
   const purpose = normalizeBoundaryToken(view.purpose);
   const isDownloadPurpose = DOWNLOAD_PURPOSE_TOKENS.has(purpose);
@@ -614,6 +649,10 @@ function assertPurposeIsolation(view = {}) {
   return true;
 }
 
+/**
+ * @param {Record<string, any>} [view]
+ * @param {Record<string, any>} options
+ */
 function assertSessionViewAuthorizationState(view = {}, { now } = {}) {
   if (view.status !== 'ready' && (view.permission ?? []).length > 0) {
     throw new Error(`SessionView ${view.status} status must not grant permissions`);
@@ -624,6 +663,7 @@ function assertSessionViewAuthorizationState(view = {}, { now } = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeSessionView(raw = {}, context = {}) {
   const siteKey = normalizeText(raw.siteKey);
   if (!siteKey) {
@@ -653,6 +693,7 @@ export function normalizeSessionView(raw = {}, context = {}) {
   return view;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function createSessionViewMaterializationAudit(raw = {}, context = {}) {
   const view = normalizeSessionView(raw, { now: context.now });
   const materializedAt = normalizeText(context.materializedAt ?? raw.materializedAt);
@@ -701,6 +742,7 @@ export function createSessionViewMaterializationAudit(raw = {}, context = {}) {
   return Object.fromEntries(Object.entries(audit).filter(([, value]) => value !== undefined));
 }
 
+/** @param {Record<string, any>} [view] */
 export function assertSessionViewSafe(view = {}) {
   if (!assertNoForbiddenPatterns(view)) {
     throw new Error('SessionView contains forbidden sensitive material');

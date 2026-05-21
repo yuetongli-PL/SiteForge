@@ -10,6 +10,7 @@ import {
 
 export function prepareExecutionArtifactJsonWithAudit(value) {
   if (value?.redactionRequired !== true) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Execution artifact redactionRequired must be true');
     error.code = 'execution.redaction_required';
     throw error;

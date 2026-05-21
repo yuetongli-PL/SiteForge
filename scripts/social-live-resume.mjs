@@ -470,6 +470,8 @@ export async function main(argv) {
       run: (stageOptions) => runResumeLoop(stageOptions),
       successMessage: (stageResult) => `stop=${stageResult?.stopReason ?? 'unknown'} cycles=${stageResult?.cycles ?? 0} attempts=${stageResult?.attempts ?? 0}`,
       artifacts: (stageResult) => stageResult?.finalState ? [{ label: 'Final state', path: stageResult.finalState }] : [],
+      isFailureResult: undefined,
+      failureReason: undefined,
       warningResult: (stageResult) => !['complete', 'no-candidates'].includes(String(stageResult?.stopReason ?? '')),
       failureTitle: 'Social live resume safely stopped',
       nextStep: 'Inspect the generated resume manifests and rerun only ready candidates after cooldown.',

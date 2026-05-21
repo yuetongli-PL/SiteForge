@@ -22,7 +22,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createRequest(overrides = {}) {
+function createRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     taskId: 'task:synthetic-dry-run',
@@ -35,7 +35,7 @@ function createRequest(overrides = {}) {
   };
 }
 
-function createContext(overrides = {}) {
+function createContext(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     graphCompatibility: {
@@ -179,6 +179,7 @@ test('Planner dry-run fails closed on unvalidated Graph and unsupported handoff 
       },
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.graph_not_validated');
       return true;
     },
@@ -194,6 +195,7 @@ test('Planner dry-run fails closed on unvalidated Graph and unsupported handoff 
       validationReport: validationReportFor(graph),
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.layer_handoff_unavailable');
       return true;
     },
@@ -237,7 +239,9 @@ test('Planner dry-run rejects sensitive and runtime material without echoing sec
         validationReport: validationReportFor(graph),
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'planner.sensitive_material_forbidden');
+        // @ts-ignore
         assert.doesNotMatch(error.message, /synthetic-secret-value/u, name);
         return true;
       },
@@ -270,6 +274,7 @@ test('Planner dry-run result validator rejects runtime payload fields and execut
     );
   }
   for (const [field, value] of [
+    // @ts-ignore
     ['payload', { unsafe: true }],
     ['json', '{"unsafe":true}'],
     ['artifactValue', { unsafe: true }],
@@ -279,10 +284,11 @@ test('Planner dry-run result validator rejects runtime payload fields and execut
     assert.throws(
       () => assertPlannerDryRunResultCompatible({
         ...result,
+        // @ts-ignore
         [field]: value,
       }),
       new RegExp(`must not expose runtime payload field ${field}`, 'u'),
-      field,
+      String(field),
     );
   }
   assert.throws(

@@ -329,6 +329,7 @@ function assertDisabledFlag(value, fieldName, label) {
   return false;
 }
 
+/** @param {Record<string, any>} [value] */
 function assertNoRuntimeBoundaryPayload(value = {}, label = 'NonGoalRuntimeBoundaryHandoffGuard') {
   const pending = [{ value, path: label }];
   while (pending.length) {
@@ -342,6 +343,7 @@ function assertNoRuntimeBoundaryPayload(value = {}, label = 'NonGoalRuntimeBound
     if (!current.value || typeof current.value !== 'object') {
       if (
         typeof current.value === 'string'
+        // @ts-ignore
         && NON_GOAL_RUNTIME_HANDOFF_RUNTIME_TEXT_PATTERNS.some((pattern) => pattern.test(current.value))
       ) {
         throw new Error(`${label} must remain descriptor-only and must not include runtime material at ${current.path}`);
@@ -363,6 +365,7 @@ function assertNoRuntimeBoundaryPayload(value = {}, label = 'NonGoalRuntimeBound
   }
 }
 
+/** @param {Record<string, any>} [value] */
 function assertNoForbiddenRuntimeBoundaryPatterns(value = {}) {
   const findings = scanForbiddenPatterns(value);
   if (findings.length > 0) {
@@ -370,6 +373,7 @@ function assertNoForbiddenRuntimeBoundaryPatterns(value = {}) {
   }
 }
 
+/** @param {Record<string, any>} [value] */
 function assertNonGoalRuntimeHandoffDisabledFlags(value = {}, label = 'NonGoalRuntimeBoundaryHandoffGuard') {
   for (const fieldName of NON_GOAL_RUNTIME_HANDOFF_DISABLED_FLAG_KEYS) {
     assertDisabledFlag(value[fieldName], fieldName, label);
@@ -417,6 +421,7 @@ function assertNonGoalLiveConsumerAcceptanceDisabledFlags(
   }
 }
 
+/** @param {Record<string, any>} [boundary] */
 function createSafeBoundarySummary(boundary = {}) {
   const result = assertNonGoalBoundary(boundary);
   return {
@@ -472,6 +477,7 @@ function textIndicatesNonGoalBypass(text) {
   );
 }
 
+/** @param {Record<string, any>} options */
 function scanFields({ owner, root, basePath, findings }) {
   for (const field of collectWalkFields(root, basePath)) {
     const value = field.value;
@@ -514,6 +520,7 @@ function scanFields({ owner, root, basePath, findings }) {
   }
 }
 
+/** @param {Record<string, any>} options */
 function scanImports({ owner, imports, findings }) {
   for (const [index, rawImport] of normalizeArray(imports).entries()) {
     const entry = normalizeImportDescriptor(rawImport, index);
@@ -551,6 +558,7 @@ function scanImports({ owner, imports, findings }) {
   }
 }
 
+/** @param {Record<string, any>} [descriptor] */
 export function scanNonGoalBoundary(descriptor = {}) {
   if (!isPlainObject(descriptor)) {
     throw new Error('NonGoalsBoundary descriptor must be an object');
@@ -584,9 +592,11 @@ export function scanNonGoalBoundary(descriptor = {}) {
   };
 }
 
+/** @param {Record<string, any>} [descriptor] */
 export function assertNonGoalBoundary(descriptor = {}) {
   const result = scanNonGoalBoundary(descriptor);
   if (!result.allowed) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error(
       `NonGoalsBoundary violation: ${result.findings.map((finding) => finding.rule).join(', ')}`,
     );
@@ -598,6 +608,7 @@ export function assertNonGoalBoundary(descriptor = {}) {
   return result;
 }
 
+/** @param {Record<string, any>} [descriptor] */
 export function assertNonGoalRuntimeBoundaryHandoffGuardCompatibility(descriptor = {}) {
   if (!isPlainObject(descriptor)) {
     throw new Error('NonGoalRuntimeBoundaryHandoffGuard descriptor must be an object');
@@ -654,6 +665,8 @@ export function assertNonGoalRuntimeBoundaryHandoffGuardCompatibility(descriptor
   return true;
 }
 
+/** @param {Record<string, any>} [sourcesOrOptions] */
+// @ts-ignore
 export function createNonGoalRuntimeBoundaryHandoffGuard(sourcesOrOptions = {}, maybeOptions) {
   const hasSourceShape = isPlainObject(sourcesOrOptions)
     && (
@@ -757,6 +770,7 @@ export function createNonGoalRuntimeBoundaryHandoffGuard(sourcesOrOptions = {}, 
   return guardDescriptor;
 }
 
+/** @param {Record<string, any>} [sourceHandoff] */
 function createSafeNonGoalRuntimeHandoffSummary(sourceHandoff = {}) {
   assertNonGoalRuntimeBoundaryHandoffGuardCompatibility(sourceHandoff);
   const item = sourceHandoff.items[0];
@@ -782,6 +796,7 @@ function createSafeNonGoalRuntimeHandoffSummary(sourceHandoff = {}) {
   };
 }
 
+/** @param {Record<string, any>} [summary] */
 function assertSafeNonGoalRuntimeHandoffSummary(summary = {}) {
   if (!isPlainObject(summary)) {
     throw new Error('NonGoalLiveConsumerAcceptanceGuard sourceHandoff must be an object');
@@ -809,6 +824,7 @@ function assertSafeNonGoalRuntimeHandoffSummary(summary = {}) {
   }
 }
 
+/** @param {Record<string, any>} [descriptor] */
 export function assertNonGoalLiveConsumerAcceptanceGuardCompatibility(descriptor = {}) {
   if (!isPlainObject(descriptor)) {
     throw new Error('NonGoalLiveConsumerAcceptanceGuard descriptor must be an object');
@@ -860,6 +876,8 @@ export function assertNonGoalLiveConsumerAcceptanceGuardCompatibility(descriptor
   return true;
 }
 
+/** @param {Record<string, any>} [sourceOrOptions] */
+// @ts-ignore
 export function createNonGoalLiveConsumerAcceptanceGuard(sourceOrOptions = {}, maybeOptions) {
   const hasSourceHandoff = isPlainObject(sourceOrOptions)
     && sourceOrOptions.queryName === 'createNonGoalRuntimeBoundaryHandoffGuard';
@@ -926,6 +944,7 @@ export function createNonGoalLiveConsumerAcceptanceGuard(sourceOrOptions = {}, m
   return descriptor;
 }
 
+/** @param {Record<string, any>} [sourceAcceptance] */
 function createSafeNonGoalLiveConsumerAcceptanceSummary(sourceAcceptance = {}) {
   assertNonGoalLiveConsumerAcceptanceGuardCompatibility(sourceAcceptance);
   const item = sourceAcceptance.items[0];
@@ -961,6 +980,7 @@ function createSafeNonGoalLiveConsumerAcceptanceSummary(sourceAcceptance = {}) {
   };
 }
 
+/** @param {Record<string, any>} [summary] */
 function assertSafeNonGoalLiveConsumerAcceptanceSummary(summary = {}) {
   if (!isPlainObject(summary)) {
     throw new Error('NonGoalLiveConsumerCompatibilityReviewGate sourceAcceptance must be an object');
@@ -995,6 +1015,7 @@ function assertSafeNonGoalLiveConsumerAcceptanceSummary(summary = {}) {
   assertSafeNonGoalRuntimeHandoffSummary(summary.sourceHandoff);
 }
 
+/** @param {Record<string, any>} [descriptor] */
 export function assertNonGoalLiveConsumerCompatibilityReviewGateCompatibility(descriptor = {}) {
   if (!isPlainObject(descriptor)) {
     throw new Error('NonGoalLiveConsumerCompatibilityReviewGate descriptor must be an object');

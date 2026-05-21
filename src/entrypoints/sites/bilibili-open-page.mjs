@@ -49,7 +49,7 @@ Notes:
   - If the authenticated page needs login bootstrap and --auto-login-bootstrap is enabled, this helper automatically runs site-login first.
 `;
 
-function mergeOptions(options = {}) {
+function mergeOptions(options = /** @type {any} */ ({})) {
   return {
     ...DEFAULT_OPTIONS,
     ...options,
@@ -77,7 +77,7 @@ export function parseCliArgs(argv) {
   }
 
   const [targetUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -153,7 +153,7 @@ function isReusableAuthStatus(status) {
 }
 
 function buildBootstrapFailureError(reasonCode, message, report = null) {
-  const error = new Error(message);
+  const error = /** @type {Error & Record<string, any>} */ (new Error(message));
   error.code = reasonCode;
   if (report) {
     error.report = report;
@@ -260,7 +260,7 @@ async function bootstrapLocalLogin(targetUrl, options, deps) {
   };
 }
 
-export async function openBilibiliPage(targetUrl, options = {}, deps = {}) {
+export async function openBilibiliPage(targetUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(options);
   const decision = await (deps.resolveBilibiliOpenDecision ?? resolveBilibiliOpenDecision)(targetUrl, settings, deps.decisionDeps ?? {});
   const warnings = [...(decision.warnings ?? [])];

@@ -144,7 +144,7 @@ async function writeJsonIfMissing(filePath, payload) {
   return true;
 }
 
-export function siteForgeWorkspaceRoot({ cwd = process.cwd(), workspaceRoot } = {}) {
+export function siteForgeWorkspaceRoot({ cwd = process.cwd(), workspaceRoot } = /** @type {any} */ ({})) {
   const expectedRoot = path.resolve(cwd, '.siteforge');
   const resolvedRoot = workspaceRoot === undefined || workspaceRoot === null
     ? expectedRoot
@@ -155,12 +155,12 @@ export function siteForgeWorkspaceRoot({ cwd = process.cwd(), workspaceRoot } = 
   return expectedRoot;
 }
 
-export function siteForgeSiteDir({ cwd = process.cwd(), workspaceRoot, siteId } = {}) {
+export function siteForgeSiteDir({ cwd = process.cwd(), workspaceRoot, siteId } = /** @type {any} */ ({})) {
   const safeSiteId = assertSafeSegment(siteId, 'siteId');
   return path.join(siteForgeWorkspaceRoot({ cwd, workspaceRoot }), 'sites', safeSiteId);
 }
 
-export function siteForgeBuildDir({ cwd = process.cwd(), workspaceRoot, siteId, buildId } = {}) {
+export function siteForgeBuildDir({ cwd = process.cwd(), workspaceRoot, siteId, buildId } = /** @type {any} */ ({})) {
   const safeBuildId = assertSafeSegment(buildId, 'buildId');
   return path.join(siteForgeSiteDir({ cwd, workspaceRoot, siteId }), 'builds', safeBuildId);
 }
@@ -170,7 +170,7 @@ export function createSiteWorkspacePaths({
   workspaceRoot,
   siteId,
   buildId,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const rootDir = siteForgeWorkspaceRoot({ cwd, workspaceRoot });
   const siteDir = siteForgeSiteDir({ cwd, workspaceRoot, siteId });
   const setupDir = path.join(siteDir, 'setup');
@@ -200,7 +200,7 @@ export function createSiteWorkspacePaths({
   };
 }
 
-export function createSiteWorkspace({ cwd, workspaceRoot, site, buildId, startedAt } = {}) {
+export function createSiteWorkspace({ cwd, workspaceRoot, site, buildId, startedAt } = /** @type {any} */ ({})) {
   const paths = createSiteWorkspacePaths({
     cwd,
     workspaceRoot,
@@ -216,7 +216,7 @@ export function createSiteWorkspace({ cwd, workspaceRoot, site, buildId, started
   };
 }
 
-export async function ensureSiteWorkspace(workspace, site, { nowIso = new Date().toISOString() } = {}) {
+export async function ensureSiteWorkspace(workspace, site, { nowIso = new Date().toISOString() } = /** @type {any} */ ({})) {
   const { paths, siteId } = workspace;
   await ensureDir(paths.siteDir);
   await ensureDir(paths.setupDir);

@@ -96,6 +96,7 @@ export function getSiteCapabilityKernelRuntimeReadinessEvidence() {
   };
 }
 
+/** @param {Record<string, any>} options */
 export function assertSiteCapabilityKernelRuntimeReadiness(options = {}) {
   const responsibilities = options.responsibilities ?? listKernelAllowedResponsibilities();
   assertKernelContract(responsibilities);

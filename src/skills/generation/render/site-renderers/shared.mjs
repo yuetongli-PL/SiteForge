@@ -79,8 +79,8 @@ export function renderSkillTemplate({
   description,
   heading,
   scopeLines,
-  sampleCoverageLines = [],
-  executionPolicyLines = [],
+  sampleCoverageLines = /** @type {any[]} */ ([]),
+  executionPolicyLines = /** @type {any[]} */ ([]),
   compileResultSummary,
   siteCapabilityGraphStatusLines = renderSiteCapabilityGraphStatusLines(),
   siteCapabilityCompilerStatusLines = renderSiteCapabilityCompilerStatusLines(compileResultSummary),
@@ -115,7 +115,7 @@ export function renderIndexTemplate({
   title,
   siteSummaryLines,
   referenceNavigationLines,
-  sampleCoverageTable,
+  sampleCoverageTable = null,
   notesTitle,
   notesLines,
 }) {
@@ -170,7 +170,7 @@ export function renderNlIntentsTemplate(entries) {
   return joinLines(lines);
 }
 
-export function renderInteractionTemplate({ summaryTitle, summaryLines, table, extraSections = [] }) {
+export function renderInteractionTemplate({ summaryTitle, summaryLines, table = null, extraSections = /** @type {any[]} */ ([]) }) {
   const lines = ['# Interaction Model', ''];
   pushSection(lines, summaryTitle, summaryLines);
   if (table) {
@@ -198,7 +198,7 @@ export function buildIntentCoverageRows(intents, docsByIntent, currentFilePath, 
 
 export function dedupeSampleList(values, normalizer) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const value of values ?? []) {
     const normalized = normalizer(value);
     if (!normalized) {

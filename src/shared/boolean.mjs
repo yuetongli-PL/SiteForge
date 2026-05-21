@@ -4,7 +4,7 @@ function normalizeBooleanText(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
-export function parseBoolean(value, { mode = 'friendly', defaultValue, onInvalid } = {}) {
+export function parseBoolean(value, { mode = 'friendly', defaultValue, onInvalid } = /** @type {any} */ ({})) {
   if (value === undefined || value === null) {
     return defaultValue;
   }

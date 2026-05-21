@@ -85,7 +85,7 @@ function extractVideoLinks(maxItems) {
     'a[href*="/bangumi/play/"]',
   ];
   const seen = new Set();
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   const absolutize = (href) => {
     try {
       return new URL(href, location.href).toString();

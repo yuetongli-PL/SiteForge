@@ -22,7 +22,7 @@ function normalizeCard(card) {
 
 function dedupeCards(cards) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const card of toArray(cards)) {
     const normalized = normalizeCard(card);
     if (!normalized) {
@@ -92,7 +92,7 @@ export function summarizeXiaohongshuKnowledgeFacts(states) {
   const authorUserIds = new Set();
   const queries = new Set();
   const categories = new Set();
-  const featuredContentCards = [];
+  const featuredContentCards = /** @type {any[]} */ ([]);
   const seenFeatured = new Set();
 
   for (const state of toArray(states)) {
@@ -167,7 +167,7 @@ export function renderXiaohongshuStateSections({
     return [];
   }
 
-  const factRows = [];
+  const factRows = /** @type {any[]} */ ([]);
   if (facts.noteId) {
     factRows.push({ field: 'Note ID', value: `\`${facts.noteId}\`` });
   }

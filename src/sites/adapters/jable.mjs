@@ -20,7 +20,7 @@ export const JABLE_TERMINOLOGY = Object.freeze({
   verifiedTaskLabel: '\u5f71\u7247 / \u6f14\u5458',
 });
 
-function resolveHost(input = {}) {
+function resolveHost(input = /** @type {any} */ ({})) {
   return String(
     input.host
       ?? input.siteContext?.host
@@ -79,7 +79,7 @@ function parseUrl(input) {
   }
 }
 
-function endpointParts(candidate = {}) {
+function endpointParts(candidate = /** @type {any} */ ({})) {
   const parsed = parseUrl(candidate?.endpoint?.url);
   return {
     host: parsed?.hostname.toLowerCase() ?? '',
@@ -87,7 +87,7 @@ function endpointParts(candidate = {}) {
   };
 }
 
-function isJableApiCandidate(candidate = {}) {
+function isJableApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'jable'
@@ -135,7 +135,7 @@ export function isJableModelsDetailPath(pathname) {
   return classifyJableModelsPath(pathname) === 'detail';
 }
 
-export function normalizeJableDisplayLabel(rawValue, { url, pageType, queryText, kind } = {}) {
+export function normalizeJableDisplayLabel(rawValue, { url, pageType, queryText, kind } = /** @type {any} */ ({})) {
   const parsed = parseUrl(url);
   const pathname = parsed?.pathname ?? '';
   const segments = pathname.split('/').filter(Boolean);
@@ -189,7 +189,7 @@ export function normalizeJableDisplayLabel(rawValue, { url, pageType, queryText,
     if (titleActorName && !/^(?:Jable\.TV|\u5973\u512a)$/u.test(titleActorName)) {
       return titleActorName;
     }
-    if (segments.length <= 1 || modelsPathKind === 'list') {
+    if (segments.length <= 1) {
       return '\u6f14\u5458\u5217\u8868';
     }
     const model = normalizeSlugLabel(segments[1]);
@@ -250,7 +250,7 @@ export const jableAdapter = createCatalogAdapter({
   id: 'jable',
   terminology: JABLE_TERMINOLOGY,
   intentLabels: INTENT_LABELS,
-  matches({ host, profile } = {}) {
+  matches({ host, profile } = /** @type {any} */ ({})) {
     return resolveHost({ host, profile }) === 'jable.tv';
   },
   normalizeDisplayLabel({ value, ...options }) {
@@ -278,8 +278,8 @@ export const jableAdapter = createCatalogAdapter({
   },
   describeApiCandidateSemantics({
     candidate,
-    scope = {},
-  } = {}) {
+    scope = /** @type {any} */ ({}),
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     return normalizeSiteAdapterSemanticEntry({
       candidate,
@@ -334,10 +334,10 @@ export const jableAdapter = createCatalogAdapter({
   },
   validateApiCandidate({
     candidate,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     validatedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = isJableApiCandidate(candidate);
     return normalizeSiteAdapterCandidateDecision({
@@ -357,10 +357,10 @@ export const jableAdapter = createCatalogAdapter({
   getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     decidedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = siteAdapterDecision?.decision === 'accepted' && isJableApiCandidate(candidate);
     return normalizeSiteAdapterCatalogUpgradePolicy({

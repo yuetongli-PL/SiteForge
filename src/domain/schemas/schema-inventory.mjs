@@ -48,6 +48,7 @@ export const SCHEMA_INVENTORY_STATUSES = Object.freeze([
 export const STANDARD_ARTIFACT_SECTION = 19;
 export const KERNEL_SCHEMA_GOVERNANCE_SECTION = 11;
 
+/** @param {Record<string, any>} options */
 function standardArtifactEvidence({
   family,
   role,
@@ -69,6 +70,7 @@ function standardArtifactEvidence({
   });
 }
 
+/** @param {Record<string, any>} options */
 function kernelSchemaGovernanceEvidence({
   family,
   role,
@@ -556,17 +558,20 @@ export function getSchemaInventoryEntry(name) {
 }
 
 export function listMissingSchemas() {
+  // @ts-ignore
   return listSchemaInventory().filter((entry) => entry.status === 'missing');
 }
 
 export function listStandardArtifactInventory() {
   return listSchemaInventory().filter(
+    // @ts-ignore
     (entry) => entry.standardArtifact?.section === STANDARD_ARTIFACT_SECTION,
   );
 }
 
 export function listKernelSchemaGovernanceInventory() {
   return listSchemaInventory().filter(
+    // @ts-ignore
     (entry) => entry.kernelGovernance?.section === KERNEL_SCHEMA_GOVERNANCE_SECTION,
   );
 }

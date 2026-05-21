@@ -190,7 +190,7 @@ function setupDisplayText(value) {
   return SETUP_DISPLAY_TEXT_ZH.get(text) ?? text;
 }
 
-function spawnDetached(command, args = []) {
+function spawnDetached(command, args = /** @type {any[]} */ ([])) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       detached: true,
@@ -205,7 +205,7 @@ function spawnDetached(command, args = []) {
   });
 }
 
-export async function launchExternalBrowserUrl(url, options = {}) {
+export async function launchExternalBrowserUrl(url, options = /** @type {any} */ ({})) {
   const targetUrl = String(url ?? '').trim();
   if (!targetUrl) {
     throw new Error('External browser launch URL is required');
@@ -237,9 +237,9 @@ function parseBrowserAuthorizationConfirmationChoice(answer) {
 }
 
 function browserAuthRows(ui, targetUrl) {
-  const rows = [
+  const rows = /** @type {any[]} */ ([
     { type: 'section', id: 'scope', title: '授权范围', right: `目标站点：${targetUrl}` },
-  ];
+  ]);
   if (ui.expanded.has('scope')) {
     rows.push(
       { type: 'detail', left: '    [ ] 打开目标站点', right: '已在系统默认浏览器中打开' },
@@ -281,7 +281,7 @@ function renderBrowserAuthTui(ui, targetUrl) {
   return `${lines.join('\n')}\n`;
 }
 
-async function promptBrowserAuthorizationConfirmationTui({ targetUrl, options = {} }) {
+async function promptBrowserAuthorizationConfirmationTui({ targetUrl, options = /** @type {any} */ ({}) }) {
   if (!canUseSetupTui(options)) {
     return null;
   }
@@ -335,7 +335,7 @@ async function promptBrowserAuthorizationConfirmationTui({ targetUrl, options = 
   return { status: 'cancel' };
 }
 
-async function waitForBrowserAuthorizationConfirmation({ targetUrl, options = {} }) {
+async function waitForBrowserAuthorizationConfirmation({ targetUrl, options = /** @type {any} */ ({}) }) {
   if (typeof options.browserAuthorizationConfirmationProvider === 'function') {
     return await options.browserAuthorizationConfirmationProvider({ targetUrl, options });
   }
@@ -347,11 +347,11 @@ async function waitForBrowserAuthorizationConfirmation({ targetUrl, options = {}
   return parseBrowserAuthorizationConfirmationChoice(answer);
 }
 
-function setupNow(options = {}) {
+function setupNow(options = /** @type {any} */ ({})) {
   return options.now instanceof Date ? options.now : new Date();
 }
 
-export function buildSetupAssistantPaths(inputUrl, options = {}) {
+export function buildSetupAssistantPaths(inputUrl, options = /** @type {any} */ ({})) {
   const now = setupNow(options);
   const generatedAt = now.toISOString();
   const site = createSiteRecord(inputUrl, generatedAt);
@@ -641,7 +641,7 @@ function normalizeAuthorizedStructureItem(item, index) {
   };
 }
 
-function shouldAttemptUserAuthorizedSetup(setupPlan, options = {}) {
+function shouldAttemptUserAuthorizedSetup(setupPlan, options = /** @type {any} */ ({})) {
   if (options.allowUserAuthorizedSetup === false || options.noUserAuthorizedSetup === true) {
     return false;
   }
@@ -810,7 +810,7 @@ function normalizeAutoDiscoverySummary(autoDiscovery) {
   };
 }
 
-function normalizeUserAuthorizedEvidence(evidence, site, setupPlan, options = {}) {
+function normalizeUserAuthorizedEvidence(evidence, site, setupPlan, options = /** @type {any} */ ({})) {
   const autoDiscovery = options.autoDiscovery === false || options.noAutoDiscovery === true
     ? null
     : createSocialSpaAutoDiscoverySummary({
@@ -881,7 +881,7 @@ function defaultKnownSiteAuthorizedFinalUrl(site) {
   return site.rootUrl;
 }
 
-function createKnownSiteAutoAuthorizedEvidence(inputUrl, setupPlan, paths, options = {}) {
+function createKnownSiteAutoAuthorizedEvidence(inputUrl, setupPlan, paths, options = /** @type {any} */ ({})) {
   const finalUrl = defaultKnownSiteAuthorizedFinalUrl(paths.site);
   const host = new URL(paths.site.rootUrl).hostname;
   const evidence = {
@@ -942,10 +942,10 @@ async function persistAutoAuthorizedKnownSiteProfile({ inputUrl, paths, setupPla
 
 function userAuthorizedSetupIncompleteError(paths, evidence) {
   const signals = uniqueSortedStrings(evidence?.authState?.riskSignals ?? ['unknown-auth-state']);
-  const error = new Error(
+  const error = /** @type {Error & Record<string, any>} */ (new Error(
     `user-authorized-setup-incomplete: 用户授权设置尚未完成。` +
     `风险信号=${signals.join(',')}。请手动完成登录、MFA、授权或验证后，重新运行 siteforge build <url>。`,
-  );
+  ));
   error.code = 'user-authorized-setup-incomplete';
   error.reasonCode = signals.includes('login-wall')
     ? 'login-wall'
@@ -1141,7 +1141,7 @@ async function detectUserAuthorizedAuthState(session) {
     const bodyText = String(document.body?.innerText || '').slice(0, 2000);
     const text = (title + ' ' + bodyText).toLowerCase();
     const hasPasswordInput = Boolean(document.querySelector('input[type="password"]'));
-    const riskSignals = [];
+    const riskSignals = /** @type {any[]} */ ([]);
     if (
       hasPasswordInput
       || /\\/(?:login|signin|signup)(?:\\/|$)/.test(path)
@@ -1247,7 +1247,7 @@ function authorizedBrowserRouteKindFromPath(pathName) {
   return 'authorized-route';
 }
 
-function capabilityIdsFromAuthorizedBrowserSeedSummary(summary = {}) {
+function capabilityIdsFromAuthorizedBrowserSeedSummary(summary = /** @type {any} */ ({})) {
   const capabilities = new Set();
   const pathName = normalizedPathName(summary.pathName);
   const articleLikeCount = Number(summary.articleLikeCount ?? 0);
@@ -1294,22 +1294,31 @@ async function collectAuthorizedBrowserSeedsFromSession(session, site) {
       const articleLikeCount = document.querySelectorAll('article, [role="article"], [data-testid="tweet"], [data-testid*="cellInnerDiv"]').length;
       const feedLikeCount = [
         ...document.querySelectorAll('[role="feed"], main, [data-testid*="primaryColumn"], [data-testid*="timeline"]'),
-      ].filter((node) => /timeline|feed|home|primary|main/i.test([
-        node.getAttribute?.('aria-label'),
-        node.getAttribute?.('data-testid'),
-        node.id,
-        node.className,
-        node.tagName,
-      ].join(' '))).length;
+      ].filter((node) => {
+        const element = /** @type {any} */ (node);
+        return /timeline|feed|home|primary|main/i.test([
+          element.getAttribute?.('aria-label'),
+          element.getAttribute?.('data-testid'),
+          element.id,
+          element.className,
+          element.tagName,
+        ].join(' '));
+      }).length;
       const searchInputCount = [...document.querySelectorAll('input, [role="searchbox"], [aria-label]')]
-        .filter((node) => /search|搜索/i.test([
-          node.getAttribute?.('aria-label'),
-          node.getAttribute?.('placeholder'),
-          node.getAttribute?.('role'),
-          node.name,
-          node.type,
-        ].join(' '))).length;
-      const links = [...document.querySelectorAll('a[href]')].map((node) => String(node.href || node.getAttribute('href') || ''));
+        .filter((node) => {
+          const element = /** @type {any} */ (node);
+          return /search|搜索/i.test([
+            element.getAttribute?.('aria-label'),
+            element.getAttribute?.('placeholder'),
+            element.getAttribute?.('role'),
+            element.name,
+            element.type,
+          ].join(' '));
+        }).length;
+      const links = [...document.querySelectorAll('a[href]')].map((node) => {
+        const element = /** @type {any} */ (node);
+        return String(element.href || element.getAttribute('href') || '');
+      });
       const profileLinkCount = links.filter(isAllowedProfileUrl).length;
       const followingLinkCount = links.filter((url) => /\/following(?:[/?#]|$)/i.test(url)).length;
       return {
@@ -1389,13 +1398,13 @@ function authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, site, knownSitePolicy
     || supported.has('list-profile-content');
   const hasUtilityRoutes = families.has('navigate-to-utility-page')
     || supported.has('open-utility-page');
-  const seeds = [];
+  const seeds = /** @type {any[]} */ ([]);
   const addSeed = (urlValue, {
     routeKind = 'authorized-route',
-    capabilityIds = [],
+    capabilityIds = /** @type {any[]} */ ([]),
     visibleItemCount = 0,
     searchInputCount = 0,
-  } = {}) => {
+  } = /** @type {any} */ ({})) => {
     let seedUrl;
     try {
       seedUrl = normalizeUrl(urlValue, site.rootUrl);
@@ -1651,15 +1660,15 @@ function capabilityIdsFromUserAuthorizedEvidence(evidence) {
     .filter(Boolean));
 }
 
-function knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized = false, userAuthorizedEvidence = null } = {}) {
+function knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized = false, userAuthorizedEvidence = null } = /** @type {any} */ ({})) {
   if (!knownSitePolicy || !userAuthorized) {
     return [];
   }
   const supported = new Set(knownSitePolicy.supportedIntents ?? []);
   const families = new Set(knownSitePolicy.capabilityFamilies ?? []);
   const observed = capabilityIdsFromUserAuthorizedEvidence(userAuthorizedEvidence);
-  const capabilities = [];
-  const add = (id, name, reason, safety = 'read_only', recommended = false, extra = {}) => {
+  const capabilities = /** @type {any[]} */ ([]);
+  const add = (id, name, reason, safety = 'read_only', recommended = false, extra = /** @type {any} */ ({})) => {
     if (!capabilities.some((capability) => capability.id === id)) {
       capabilities.push({
         id,
@@ -1841,7 +1850,7 @@ function requestedCapabilityFromHint(hint) {
   };
 }
 
-function evaluateUserIntentCoverage(hints = [], availableCapabilities = []) {
+function evaluateUserIntentCoverage(hints = /** @type {any[]} */ ([]), availableCapabilities = /** @type {any[]} */ ([])) {
   const capabilityById = new Map(availableCapabilities.map((capability) => [normalizeCapabilityId(capability.id), capability]));
   const findAvailableCapability = (requestId) => {
     const normalizedId = normalizeCapabilityId(requestId);
@@ -1857,9 +1866,9 @@ function evaluateUserIntentCoverage(hints = [], availableCapabilities = []) {
     hint,
     request: requestedCapabilityFromHint(hint),
   })).filter((entry) => entry.request);
-  const supportedRequests = [];
-  const unsupportedRequests = [];
-  const unmatchedRequests = [];
+  const supportedRequests = /** @type {any[]} */ ([]);
+  const unsupportedRequests = /** @type {any[]} */ ([]);
+  const unmatchedRequests = /** @type {any[]} */ ([]);
   for (const entry of requested) {
     const available = findAvailableCapability(entry.request.id);
     const record = {
@@ -1964,7 +1973,7 @@ function isProfileMarkedUnusable(profile) {
     );
 }
 
-function resolveSetupInteractive(options = {}) {
+function resolveSetupInteractive(options = /** @type {any} */ ({})) {
   if (typeof options.setupInteractive === 'boolean') {
     return options.setupInteractive && !options.json && !options.quiet;
   }
@@ -2030,7 +2039,7 @@ function categoryForPage(page) {
   return { id: 'general', name: 'General public pages' };
 }
 
-function addPageCandidate(pages, site, input, options = {}) {
+function addPageCandidate(pages, site, input, options = /** @type {any} */ ({})) {
   if (!input?.url) {
     return;
   }
@@ -2089,7 +2098,7 @@ function groupPages(pages) {
   });
 }
 
-function inspectForms(forms = []) {
+function inspectForms(forms = /** @type {any[]} */ ([])) {
   return forms.map((form) => {
     const haystack = `${form.label ?? ''} ${form.action ?? ''} ${form.textSummary ?? ''}`.toLowerCase();
     const method = String(form.method ?? 'GET').toUpperCase();
@@ -2124,7 +2133,7 @@ function inspectForms(forms = []) {
 
 function recommendedCapabilitiesFor({ pageGroups, forms }) {
   const groups = new Set(pageGroups.map((group) => group.id));
-  const capabilities = [];
+  const capabilities = /** @type {any[]} */ ([]);
   const add = (id, name, reason, safety = 'read_only', recommended = true) => {
     capabilities.push({ id, name, reason, safety, recommended });
   };
@@ -2186,7 +2195,7 @@ function buildSetupEvidenceQuality({
   sitemapAvailable,
   sitemapUrlsDiscovered,
   sitemapUrlsSampled,
-  robotsExcludedUrls = [],
+  robotsExcludedUrls = /** @type {any[]} */ ([]),
   knownSitePolicy = null,
   pages,
   userAuthorizedEvidence = null,
@@ -2530,13 +2539,13 @@ function collectionReviewCapabilityEvidenceStatus(setupPlan, capability, collect
 }
 
 export function buildCollectionReviewModel({
-  setupPlan = {},
+  setupPlan = /** @type {any} */ ({}),
   userAuthorizedEvidence = setupPlan?.userAuthorizedEvidence ?? null,
   knownSitePolicy = setupPlan?.knownSitePolicy ?? null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const buckets = Object.fromEntries(COLLECTION_REVIEW_KINDS.map((kind) => [kind, collectionReviewBucket()]));
   const proofs = collectionReviewVerifiedProofs(userAuthorizedEvidence);
-  const collectedSignals = [];
+  const collectedSignals = /** @type {any[]} */ ([]);
   const addSignal = (...values) => {
     collectedSignals.push(...values.filter(Boolean));
   };
@@ -2836,7 +2845,7 @@ export function buildCollectionReviewModel({
 
 export const createCollectionReviewModel = buildCollectionReviewModel;
 
-export async function generateSetupPlan(inputUrl, options = {}) {
+export async function generateSetupPlan(inputUrl, options = /** @type {any} */ ({})) {
   const paths = buildSetupAssistantPaths(inputUrl, options);
   await ensureDir(paths.siteArtifactDir);
   await ensureDir(paths.siteBuildsDir);
@@ -2848,16 +2857,16 @@ export async function generateSetupPlan(inputUrl, options = {}) {
     fetchDelayMs: policy.fetchDelayMs,
     fetchTimeoutMs: policy.fetchTimeoutMs,
   });
-  const warnings = [];
+  const warnings = /** @type {any[]} */ ([]);
   const knownSitePolicy = await readKnownSitePolicy(paths);
   if (knownSitePolicy) {
     warnings.push(`known site policy loaded for ${knownSitePolicy.siteKey ?? knownSitePolicy.host}; user choices cannot bypass adapter or evidence constraints.`);
   }
-  const sourceDiagnostics = [];
-  const pages = [];
-  const forms = [];
+  const sourceDiagnostics = /** @type {any[]} */ ([]);
+  const pages = /** @type {any[]} */ ([]);
+  const forms = /** @type {any[]} */ ([]);
   const sitemapUrls = new Set();
-  const robotsExcludedUrls = [];
+  const robotsExcludedUrls = /** @type {any[]} */ ([]);
   let sitemapUrlsDiscovered = 0;
   let sitemapUrlsSampled = 0;
   let robotsPolicy = null;
@@ -3141,7 +3150,7 @@ function defaultChoicesFromPlan(setupPlan, mode = 'accept-recommended') {
   });
 }
 
-function applyBuildModeChoiceOverrides(userChoices, options = {}) {
+function applyBuildModeChoiceOverrides(userChoices, options = /** @type {any} */ ({})) {
   const next = clone(userChoices);
   next.scope = {
     ...(next.scope ?? {}),
@@ -3359,7 +3368,7 @@ function writeSetupTreeRow(options, left, right = '') {
   writeSetupLine(options, right ? `${leftText}${' '.repeat(padding)} │ ${right}` : leftText);
 }
 
-function canUseSetupTui(options = {}) {
+function canUseSetupTui(options = /** @type {any} */ ({})) {
   if (typeof options.setupPrompt === 'function' || options.setupTui === false) {
     return false;
   }
@@ -3492,7 +3501,7 @@ function buildUserAuthorizedCollectionReviewPrompt(setupPlan) {
   };
 }
 
-function renderUserAuthorizedCollectionReviewPrompt(review, options = {}) {
+function renderUserAuthorizedCollectionReviewPrompt(review, options = /** @type {any} */ ({})) {
   if (!review) {
     return;
   }
@@ -3542,7 +3551,7 @@ function parseContinueUncollectedAnswer(answer) {
   };
 }
 
-async function promptUserAuthorizedCollectionReview(setupPlan, options = {}) {
+async function promptUserAuthorizedCollectionReview(setupPlan, options = /** @type {any} */ ({})) {
   const review = buildUserAuthorizedCollectionReviewPrompt(setupPlan);
   if (!review) {
     return { setupPlan, continueUncollected: true, nextChoiceHint: null };
@@ -3603,7 +3612,7 @@ async function promptUserAuthorizedCollectionReview(setupPlan, options = {}) {
   };
 }
 
-function setupKnownAdapterLabel(setupPlan = {}) {
+function setupKnownAdapterLabel(setupPlan = /** @type {any} */ ({})) {
   const policy = setupPlan.knownSitePolicy ?? {};
   if (policy.adapterId && policy.siteKey) {
     return `${policy.adapterId} (${policy.siteKey})`;
@@ -3617,7 +3626,7 @@ function setupKnownAdapterLabel(setupPlan = {}) {
   return '未匹配；使用通用只读预扫描';
 }
 
-function setupKnownAdapterDisplayLabel(setupPlan = {}) {
+function setupKnownAdapterDisplayLabel(setupPlan = /** @type {any} */ ({})) {
   const policy = setupPlan.knownSitePolicy ?? {};
   if (policy.adapterId && policy.siteKey) {
     return `${policy.adapterId}（匹配：${policy.siteKey}）`;
@@ -3686,7 +3695,7 @@ function defaultSetupConfiguration() {
   return clone(DEFAULT_SETUP_CONFIGURATION);
 }
 
-function normalizeSetupConfiguration(configuration = {}) {
+function normalizeSetupConfiguration(configuration = /** @type {any} */ ({})) {
   const defaults = defaultSetupConfiguration();
   const generationStrategy = {
     ...defaults.generationStrategy,
@@ -3757,7 +3766,7 @@ function applySetupConfigurationToChoices(userChoices) {
   return next;
 }
 
-function renderCurrentSetupConfiguration(configuration, options = {}) {
+function renderCurrentSetupConfiguration(configuration, options = /** @type {any} */ ({})) {
   const normalized = normalizeSetupConfiguration(configuration);
   writeSetupLine(options, '当前配置');
   writeSetupTable(options, [
@@ -3773,7 +3782,7 @@ function renderCurrentSetupConfiguration(configuration, options = {}) {
   ]);
 }
 
-function renderSetupSafetyLimits(options = {}) {
+function renderSetupSafetyLimits(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '安全限制');
   writeSetupTable(options, [
     { key: 'index', label: '#', maxLength: 4 },
@@ -3787,7 +3796,7 @@ function renderSetupSafetyLimits(options = {}) {
   ]);
 }
 
-function renderSetupConfigurationMenu(options = {}) {
+function renderSetupConfigurationMenu(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '可修改配置');
   writeSetupTable(options, [
     { key: 'index', label: '#', maxLength: 4 },
@@ -3802,7 +3811,7 @@ function renderSetupConfigurationMenu(options = {}) {
   ]);
 }
 
-function renderSetupOperationHelp(options = {}) {
+function renderSetupOperationHelp(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '操作说明');
   writeSetupTable(options, [
     { key: 'input', label: '输入', maxLength: 18 },
@@ -3818,7 +3827,7 @@ function renderSetupOperationHelp(options = {}) {
   ]);
 }
 
-function renderSetupShortcutExamples(options = {}) {
+function renderSetupShortcutExamples(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '快捷示例');
   writeSetupTable(options, [
     { key: 'input', label: '输入', maxLength: 18 },
@@ -3831,7 +3840,7 @@ function renderSetupShortcutExamples(options = {}) {
   ]);
 }
 
-function renderSetupConfigurationScreen(configuration, options = {}) {
+function renderSetupConfigurationScreen(configuration, options = /** @type {any} */ ({})) {
   const normalized = normalizeSetupConfiguration(configuration);
   writeSetupLine(options, '准备开始自动构建');
   writeSetupLine(options, '');
@@ -3865,15 +3874,15 @@ function setupTuiRow(left, right = '') {
   return right ? `${setupTuiPad(left)} │ ${right}` : left;
 }
 
-function isSetupTuiSpaceKey(key = {}) {
+function isSetupTuiSpaceKey(key = /** @type {any} */ ({})) {
   return isTerminalSpaceKey(key);
 }
 
-function isSetupTuiSlashKey(key = {}) {
+function isSetupTuiSlashKey(key = /** @type {any} */ ({})) {
   return isTerminalSlashKey(key);
 }
 
-function isSetupTuiCharacterKey(key = {}, character) {
+function isSetupTuiCharacterKey(key = /** @type {any} */ ({}), character) {
   return isTerminalCharacterKey(key, character);
 }
 
@@ -4014,9 +4023,9 @@ function cycleSetupTuiField(configuration, field, direction = 1) {
 
 function setupTuiRows(configuration, ui) {
   const fields = setupTuiFieldDefinitions();
-  const rows = [
+  const rows = /** @type {any[]} */ ([
     { type: 'section', id: 'config', title: '当前配置', right: 'Space 切换选中配置项' },
-  ];
+  ]);
   if (ui.expanded.has('config')) {
     for (const field of fields) {
       rows.push({
@@ -4105,7 +4114,7 @@ function renderSetupConfigurationTui(configuration, ui) {
   return `${lines.join('\n')}\n`;
 }
 
-async function promptSetupConfigurationTui(options = {}, configuration = defaultSetupConfiguration()) {
+async function promptSetupConfigurationTui(options = /** @type {any} */ ({}), configuration = defaultSetupConfiguration()) {
   if (typeof options.setupPrompt === 'function' || options.setupTui === false) {
     return null;
   }
@@ -4214,7 +4223,7 @@ async function promptSetupConfigurationTui(options = {}, configuration = default
   return { configuration: next, changed };
 }
 
-async function completeSetupConfigurationCustomPrompts(configuration, options = {}) {
+async function completeSetupConfigurationCustomPrompts(configuration, options = /** @type {any} */ ({})) {
   let next = normalizeSetupConfiguration(configuration);
   if (next.scanScope === 'custom' && !next.customScopeHint) {
     const customScope = await askSetupQuestion('范围说明：', options);
@@ -4236,7 +4245,7 @@ async function completeSetupConfigurationCustomPrompts(configuration, options = 
   return normalizeSetupConfiguration(next);
 }
 
-function renderSetupPlan(setupPlan, options = {}) {
+function renderSetupPlan(setupPlan, options = /** @type {any} */ ({})) {
   const configuration = defaultSetupConfiguration();
   renderSetupConfigurationScreen(configuration, options);
   if (setupPlan.buildReadiness?.buildable === false) {
@@ -4250,7 +4259,7 @@ function renderSetupPlan(setupPlan, options = {}) {
   return;
 }
 
-function renderSavedProfileSummary(profile, options = {}) {
+function renderSavedProfileSummary(profile, options = /** @type {any} */ ({})) {
   const selectedCapabilities = profile.capabilityScope?.selectedCapabilities ?? [];
   writeSetupLine(options, 'SiteForge 已保存设置');
   writeSetupLine(options, `站点：${profile.site?.rootUrl ?? '-'}`);
@@ -4260,7 +4269,7 @@ function renderSavedProfileSummary(profile, options = {}) {
   writeSetupLine(options, '');
 }
 
-async function askSetupQuestion(message, options = {}) {
+async function askSetupQuestion(message, options = /** @type {any} */ ({})) {
   if (typeof options.setupPrompt === 'function') {
     return compactText(await options.setupPrompt(message));
   }
@@ -4353,7 +4362,7 @@ function capabilityProofsFromAuthorizedBrowserSeeds(setupPlan, capability) {
   if (!descriptor) {
     return [];
   }
-  const proofs = [];
+  const proofs = /** @type {any[]} */ ([]);
   for (const seed of setupPlan.userAuthorizedEvidence?.browserSeeds ?? []) {
     if (!browserSeedMatchesCapability(seed, capability, descriptor)) {
       continue;
@@ -4372,7 +4381,7 @@ function capabilityProofsFromAuthorizedBrowserSeeds(setupPlan, capability) {
   return normalizeUserAuthorizedCapabilityProofs(proofs);
 }
 
-async function collectProofForCapability(setupPlan, userChoices, capability, options = {}) {
+async function collectProofForCapability(setupPlan, userChoices, capability, options = /** @type {any} */ ({})) {
   const descriptor = userAuthorizedCapabilityProofDescriptor(capability.id);
   if (!descriptor) {
     return [];
@@ -4443,7 +4452,7 @@ function mergeCapabilityProofsIntoSetupPlan(setupPlan, proofs) {
     return setupPlan;
   }
   const existing = normalizeUserAuthorizedCapabilityProofs(setupPlan.userAuthorizedEvidence.capabilityProofs);
-  const merged = [];
+  const merged = /** @type {any[]} */ ([]);
   const seen = new Set();
   for (const proof of [...existing, ...normalized]) {
     const key = [
@@ -4498,7 +4507,7 @@ function mergeCapabilityProofsIntoSetupPlan(setupPlan, proofs) {
   return nextPlan;
 }
 
-async function collectMissingCapabilityProofs(setupPlan, options = {}) {
+async function collectMissingCapabilityProofs(setupPlan, options = /** @type {any} */ ({})) {
   if (!setupPlan.userAuthorizedEvidence) {
     return setupPlan;
   }
@@ -4509,7 +4518,7 @@ async function collectMissingCapabilityProofs(setupPlan, options = {}) {
   }
   writeSetupLine(options, '');
   writeSetupLine(options, '开始补充确认。每一项都只需要站内页面地址或看到的数量；不需要的项直接按 Enter 跳过。');
-  const collected = [];
+  const collected = /** @type {any[]} */ ([]);
   const userChoices = {
     availableCapabilities: targets.map((capability) => ({ ...capability, selected: true })),
     selectedCapabilityIds: targets.map((capability) => capability.id),
@@ -4523,11 +4532,11 @@ async function collectMissingCapabilityProofs(setupPlan, options = {}) {
   return mergeCapabilityProofsIntoSetupPlan(setupPlan, collected);
 }
 
-async function collectSelectedCapabilityProofs(setupPlan, userChoices, options = {}) {
+async function collectSelectedCapabilityProofs(setupPlan, userChoices, options = /** @type {any} */ ({})) {
   if (!setupPlan.userAuthorizedEvidence) {
     return setupPlan;
   }
-  const collected = [];
+  const collected = /** @type {any[]} */ ([]);
   for (const capability of selectedCapabilityProofTargets(userChoices)) {
     if (hasVerifiedCapabilityProof(setupPlan, capability)) {
       continue;
@@ -4538,7 +4547,7 @@ async function collectSelectedCapabilityProofs(setupPlan, userChoices, options =
 }
 
 function setupCancelledError() {
-  const error = new Error('setup-cancelled: 用户取消了首次设置。');
+  const error = /** @type {Error & Record<string, any>} */ (new Error('setup-cancelled: 用户取消了首次设置。'));
   error.code = 'setup-cancelled';
   return error;
 }
@@ -4587,7 +4596,7 @@ function setupConfigurationContinuePrompt() {
   return '选择：';
 }
 
-function renderExplorationModeMenu(options = {}) {
+function renderExplorationModeMenu(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '');
   writeSetupLine(options, '探索模式');
   writeSetupLine(options, '');
@@ -4605,7 +4614,7 @@ function renderExplorationModeMenu(options = {}) {
   writeSetupLine(options, '');
 }
 
-function renderSensitiveCapabilityStrategyMenu(options = {}) {
+function renderSensitiveCapabilityStrategyMenu(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '');
   writeSetupLine(options, '敏感能力策略');
   writeSetupLine(options, '');
@@ -4623,7 +4632,7 @@ function renderSensitiveCapabilityStrategyMenu(options = {}) {
   writeSetupLine(options, '');
 }
 
-function renderScanScopeMenu(options = {}) {
+function renderScanScopeMenu(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '');
   writeSetupLine(options, '扫描范围');
   writeSetupLine(options, '');
@@ -4635,7 +4644,7 @@ function renderScanScopeMenu(options = {}) {
   writeSetupLine(options, '');
 }
 
-function renderGenerationStrategyMenu(options = {}) {
+function renderGenerationStrategyMenu(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '');
   writeSetupLine(options, '生成策略');
   writeSetupLine(options, '');
@@ -4656,7 +4665,7 @@ function renderGenerationStrategyMenu(options = {}) {
   writeSetupLine(options, '');
 }
 
-function renderWriteModeMenu(options = {}) {
+function renderWriteModeMenu(options = /** @type {any} */ ({})) {
   writeSetupLine(options, '');
   writeSetupLine(options, '写入方式');
   writeSetupLine(options, '');
@@ -4677,7 +4686,7 @@ function selectionOrDefault(answer, defaultValue) {
   return text;
 }
 
-async function updateSetupConfigurationSection(section, configuration, options = {}, presetAnswer = null) {
+async function updateSetupConfigurationSection(section, configuration, options = /** @type {any} */ ({}), presetAnswer = null) {
   const next = normalizeSetupConfiguration(configuration);
   if (section === '1') {
     if (presetAnswer === null) {
@@ -4778,7 +4787,7 @@ async function updateSetupConfigurationSection(section, configuration, options =
   return normalizeSetupConfiguration(next);
 }
 
-function renderUpdatedSetupConfiguration(configuration, options = {}) {
+function renderUpdatedSetupConfiguration(configuration, options = /** @type {any} */ ({})) {
   const normalized = normalizeSetupConfiguration(configuration);
   writeSetupLine(options, '');
   writeSetupLine(options, '已更新配置');
@@ -4856,7 +4865,7 @@ async function promptAutomaticSetupConfiguration(options, choices, initialAnswer
   }
 }
 
-async function promptFirstRunChoices(setupPlan, options = {}, mode = 'accept-recommended', initialAnswer = null, promptOptions = {}) {
+async function promptFirstRunChoices(setupPlan, options = /** @type {any} */ ({}), mode = 'accept-recommended', initialAnswer = null, promptOptions = /** @type {any} */ ({})) {
   if (promptOptions.renderPlan !== false) {
     renderSetupPlan(setupPlan, options);
   }
@@ -4901,11 +4910,11 @@ function buildOptionsFromProfile(options, paths, profile) {
 }
 
 function firstTimeSetupRequiredError(paths, setupPlan) {
-  const error = new Error(
+  const error = /** @type {Error & Record<string, any>} */ (new Error(
     `first-time-setup-required: ${setupPlan.site.rootUrl} 还没有已保存的 build_profile.json。` +
     `请先在交互式终端运行一次 siteforge build <url>，接受或编辑设置。` +
     `setup_plan.json 已写入 ${paths.setupPlanPath}`,
-  );
+  ));
   error.code = 'first-time-setup-required';
   error.artifactDir = paths.artifactDir;
   error.setupPlanPath = paths.setupPlanPath;
@@ -4914,12 +4923,12 @@ function firstTimeSetupRequiredError(paths, setupPlan) {
 
 function setupEvidenceNotBuildableError(paths, setupPlan) {
   const guidance = (setupPlan.buildReadiness?.guidance ?? []).map((line) => setupDisplayText(line)).join(' ');
-  const error = new Error(
+  const error = /** @type {Error & Record<string, any>} */ (new Error(
     `setup-evidence-not-buildable: SiteForge 没有找到足够的公开设置证据，站点为 ${setupPlan.site.rootUrl}。` +
     `${setupDisplayText(setupPlan.buildReadiness?.reason ?? '设置尚未就绪，不能构建。')} ` +
     `${guidance ? `${guidance} ` : ''}` +
     `setup_plan.json 已写入 ${paths.setupPlanPath}`,
-  );
+  ));
   error.code = 'setup-evidence-not-buildable';
   error.reasonCode = setupPlan.buildReadiness?.reasonCode ?? 'setup-no-page-evidence';
   error.guidance = setupPlan.buildReadiness?.guidance ?? [];
@@ -4945,7 +4954,7 @@ async function persistUnbuildableSetupAndThrow({ paths, setupPlan, options, mode
   throw setupEvidenceNotBuildableError(paths, setupPlan);
 }
 
-export async function prepareSiteForgeBuildSetup(inputUrl, options = {}) {
+export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {any} */ ({})) {
   const paths = buildSetupAssistantPaths(inputUrl, options);
   const interactive = resolveSetupInteractive(options);
   const savedProfileCandidate = await readJsonOrNull(paths.savedBuildProfilePath);

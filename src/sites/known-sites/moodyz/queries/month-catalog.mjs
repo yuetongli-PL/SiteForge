@@ -59,7 +59,7 @@ async function mapLimit(items, concurrency, mapper) {
   return results;
 }
 
-export function buildMoodyzDateListUrl({ year, month, day, baseUrl = DEFAULT_BASE_URL } = {}) {
+export function buildMoodyzDateListUrl({ year, month, day, baseUrl = DEFAULT_BASE_URL } = /** @type {any} */ ({})) {
   assertValidMonth(year, month);
   if (!Number.isInteger(day) || day < 1 || day > 31) {
     throw new Error(`Invalid Moodyz catalog day: ${day}`);
@@ -71,7 +71,7 @@ export function buildMoodyzDateListUrl({ year, month, day, baseUrl = DEFAULT_BAS
   return parsed.toString();
 }
 
-export function buildMoodyzMonthDateListUrls({ year, month, baseUrl = DEFAULT_BASE_URL } = {}) {
+export function buildMoodyzMonthDateListUrls({ year, month, baseUrl = DEFAULT_BASE_URL } = /** @type {any} */ ({})) {
   assertValidMonth(year, month);
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return Array.from({ length: daysInMonth }, (_, index) => buildMoodyzDateListUrl({
@@ -82,9 +82,9 @@ export function buildMoodyzMonthDateListUrls({ year, month, baseUrl = DEFAULT_BA
   }));
 }
 
-export function parseMoodyzDateListHtml(html, { sourceUrl } = {}) {
+export function parseMoodyzDateListHtml(html, { sourceUrl } = /** @type {any} */ ({})) {
   const date = extractDateFromDateListUrl(sourceUrl);
-  const works = [];
+  const works = /** @type {any[]} */ ([]);
   for (const match of String(html ?? '').matchAll(DETAIL_HREF_RE)) {
     const url = normalizeUrlNoFragment(match.groups?.url);
     const title = normalizeWhitespace(decodeHtmlEntities(
@@ -110,7 +110,7 @@ export async function collectMoodyzMonthCatalog({
   fetchHtml,
   concurrency = 6,
   allowPartial = false,
-} = {}) {
+} = /** @type {any} */ ({})) {
   assertValidMonth(year, month);
   if (typeof fetchHtml !== 'function') {
     throw new Error('collectMoodyzMonthCatalog requires fetchHtml(url).');
@@ -155,10 +155,10 @@ export async function collectMoodyzMonthCatalog({
     String(left.date ?? '').localeCompare(String(right.date ?? ''), 'en')
     || String(left.url).localeCompare(String(right.url), 'en')
   ));
-  const byDate = {};
+  const byDate = /** @type {any} */ ({});
   for (const work of works) {
     const date = work.date ?? 'unknown';
-    byDate[date] ??= [];
+    byDate[date] ??= /** @type {any[]} */ ([]);
     byDate[date].push(work);
   }
 

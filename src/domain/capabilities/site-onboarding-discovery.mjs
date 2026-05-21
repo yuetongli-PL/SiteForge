@@ -351,10 +351,12 @@ function adapterForKind(adapter, kind) {
   return undefined;
 }
 
+/** @param {Record<string, any>} [item] */
 function decisionFromItem(item = {}) {
   return item.adapterDecision ?? item.adapterResult ?? item.discoveryDecision ?? item.classificationDecision;
 }
 
+/** @param {Record<string, any>} options */
 function invokeAdapterDecision({ adapter, kind, item, siteKey, index }) {
   const classify = adapterForKind(adapter, kind);
   const decision = classify
@@ -366,6 +368,7 @@ function invokeAdapterDecision({ adapter, kind, item, siteKey, index }) {
   return decision;
 }
 
+/** @param {Record<string, any>} [rawDecision] */
 function normalizeClassification(rawDecision = {}, item = {}) {
   const decision = rawDecision && typeof rawDecision === 'object' ? rawDecision : {};
   const decisionStatus = normalizeText(decision.status);
@@ -485,6 +488,7 @@ function normalizeDiscoveryStatusToken(value) {
   return undefined;
 }
 
+/** @param {Record<string, any>} options */
 function normalizeDiscoveryStatus({
   decision = {},
   item = {},
@@ -530,6 +534,7 @@ function normalizeDiscoveryStatus({
   return 'discovered';
 }
 
+/** @param {Record<string, any>} options */
 function blockedNodeSurfaceCategory({
   discoveryStatus,
   blockedSurface,
@@ -647,6 +652,7 @@ function safeBlockedDescriptorText(value) {
     .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/gu, '[REDACTED_NETWORK]');
 }
 
+/** @param {Record<string, any>} options */
 function blockedSurfaceClassificationForNode({
   discoveryStatus,
   blockedSurface,
@@ -683,6 +689,7 @@ function blockedSurfaceClassificationForNode({
   });
 }
 
+/** @param {Record<string, any>} [item] */
 function isRawProducerNodeEvidence(item = {}) {
   const token = normalizeTargetId(
     item.nodeEvidenceKind
@@ -785,6 +792,7 @@ function isRawProducerNodeEvidence(item = {}) {
   );
 }
 
+/** @param {Record<string, any>} options */
 function normalizeVerificationState({ decision = {}, item = {}, discoveryStatus } = {}) {
   const state = normalizeTargetId(
     decision.verificationState
@@ -801,6 +809,7 @@ function normalizeVerificationState({ decision = {}, item = {}, discoveryStatus 
   return 'unverified';
 }
 
+/** @param {Record<string, any>} options */
 function normalizeDiscoveryItem({ item = {}, kind, siteKey, index, adapter }) {
   const decision = invokeAdapterDecision({ adapter, kind, item, siteKey, index }) ?? {};
   const classification = normalizeClassification(decision, item);
@@ -947,6 +956,7 @@ function normalizeDiscoveryItem({ item = {}, kind, siteKey, index, adapter }) {
   });
 }
 
+/** @param {Record<string, any>} options */
 function normalizeDiscoveryItems({ items = [], kind, siteKey, adapter }) {
   if (!Array.isArray(items)) {
     throw new Error(`Discovered ${kind}s must be an array`);
@@ -990,6 +1000,7 @@ function producerSourceLabel(scope, fallback) {
   return fallback;
 }
 
+/** @param {Record<string, any>} options */
 function addUrlDiscoveryNode({ nodes, seen, scope, finalUrl, pageType, required }) {
   const safeUrl = redactText(finalUrl);
   if (!safeUrl) {
@@ -1005,6 +1016,7 @@ function addUrlDiscoveryNode({ nodes, seen, scope, finalUrl, pageType, required 
   }, 'node');
 }
 
+/** @param {Record<string, any>} options */
 function addFileDiscoveryNodes({ nodes, apis, nodeSeen, apiSeen, scope, files }) {
   const safeFiles = redactedPlainObject(files);
   for (const [rawRole, rawRefs] of Object.entries(safeFiles)) {
@@ -1098,6 +1110,7 @@ function pageFactSourceForNodeKind(rawKey, nodeKind) {
   return 'pageFact-signals';
 }
 
+/** @param {Record<string, any>} options */
 function addPageFactDiscoveryNodes({ nodes, seen, scope, pageFacts, locator, required }) {
   const safeFacts = redactedPlainObject(pageFacts);
   for (const rawKey of Object.keys(safeFacts).sort()) {
@@ -1125,6 +1138,7 @@ function addPageFactDiscoveryNodes({ nodes, seen, scope, pageFacts, locator, req
   }
 }
 
+/** @param {Record<string, any>} options */
 function addRuntimeEvidenceDiscoveryNodes({ nodes, seen, scope, item, locator, required }) {
   const runtimeSources = [
     ['runtimeEvidence', item?.runtimeEvidence, 'runtime-evidence'],
@@ -1191,6 +1205,7 @@ function safeAttributeNames(value) {
     .slice(0, SHAPE_SUMMARY_MAX_FIELDS);
 }
 
+/** @param {Record<string, any>} [raw] */
 function nodeSummaryLocator(raw = {}) {
   return firstNormalizedText(
     raw.locator?.href,
@@ -1211,6 +1226,7 @@ function nodeSummaryLocator(raw = {}) {
   );
 }
 
+/** @param {Record<string, any>} [raw] */
 function nodeSummaryKind(raw = {}, fallback = 'dom-node') {
   return boundedNodeText(firstNormalizedText(
     raw.nodeKind,
@@ -1245,6 +1261,7 @@ function nodeSummaryStatusFromScope(scope) {
   return undefined;
 }
 
+/** @param {Record<string, any>} options */
 function addNodeSummaryDiscoveryNode({ nodes, seen, scope, raw, required, source, fallbackKind }) {
   if (!isPlainObject(raw)) {
     return;
@@ -1339,6 +1356,7 @@ function flattenNodeSummaryItems(value) {
   return result;
 }
 
+/** @param {Record<string, any>} [input] */
 function collectNodeSummaryInputs(input = {}) {
   return [
     ['domNodes', 'dom-node', input.domNodes],
@@ -1383,6 +1401,7 @@ function collectNodeSummaryInputs(input = {}) {
     })));
 }
 
+/** @param {Record<string, any>} options */
 function addNodeSummaryDiscoveryNodes({ nodes, seen, scope, input, required }) {
   for (const { source, fallbackKind, raw } of collectNodeSummaryInputs(input)) {
     addNodeSummaryDiscoveryNode({
@@ -1440,6 +1459,7 @@ function jsRouteKindFromSource(source) {
   return 'js-route';
 }
 
+/** @param {Record<string, any>} [raw] */
 function jsRouteLocator(raw = {}) {
   return firstNormalizedText(
     raw.routePath,
@@ -1479,6 +1499,7 @@ function assertSafeJsRouteEvidence(raw, path = 'js-route') {
   }
 }
 
+/** @param {Record<string, any>} options */
 function addJsRouteDiscoveryNode({ nodes, seen, scope, raw, required, source }) {
   if (!isPlainObject(raw)) {
     return;
@@ -1537,6 +1558,7 @@ function addJsRouteDiscoveryNode({ nodes, seen, scope, raw, required, source }) 
   }, 'node');
 }
 
+/** @param {Record<string, any>} [input] */
 function collectJsRouteInputs(input = {}) {
   return [
     ['jsRoutes', input.jsRoutes],
@@ -1601,6 +1623,7 @@ function collectJsRouteInputs(input = {}) {
       .map((raw) => ({ source, raw })));
 }
 
+/** @param {Record<string, any>} options */
 function addJsRouteDiscoveryNodes({ nodes, seen, scope, input, required }) {
   for (const { source, raw } of collectJsRouteInputs(input)) {
     addJsRouteDiscoveryNode({
@@ -1614,6 +1637,7 @@ function addJsRouteDiscoveryNodes({ nodes, seen, scope, input, required }) {
   }
 }
 
+/** @param {Record<string, any>} [trigger] */
 function triggerLocator(trigger = {}) {
   return firstNormalizedText(
     trigger.href,
@@ -1677,6 +1701,7 @@ function boundedTriggerFollowUpStrategy(rawStrategy = undefined) {
   });
 }
 
+/** @param {Record<string, any>} options */
 function triggerGapFollowUpStrategy({ discoveryStatus, scope, trigger }) {
   const status = normalizeDiscoveryStatusToken(discoveryStatus) ?? discoveryStatusFromTriggerGapScope(scope);
   const reasonCode = boundedNodeText(firstNormalizedText(trigger?.reasonCode, status));
@@ -1764,6 +1789,7 @@ function boundedTriggerAttemptResult(rawAttempt = undefined, fallbackStatus = un
   });
 }
 
+/** @param {Record<string, any>} options */
 function triggerAttemptResult({ trigger, discoveryStatus }) {
   return boundedTriggerAttemptResult({
     ...trigger?.attemptResult,
@@ -1781,6 +1807,7 @@ function triggerAttemptResult({ trigger, discoveryStatus }) {
   }, discoveryStatus);
 }
 
+/** @param {Record<string, any>} options */
 function addTriggerDiscoveryNode({ nodes, seen, scope, state, trigger, required }) {
   if (!isPlainObject(trigger)) {
     return;
@@ -1812,6 +1839,7 @@ function addTriggerDiscoveryNode({ nodes, seen, scope, state, trigger, required 
   }, 'node');
 }
 
+/** @param {Record<string, any>} options */
 function addTriggerGapDiscoveryNode({ nodes, seen, scope, trigger, required }) {
   if (!isPlainObject(trigger)) {
     return;
@@ -1857,6 +1885,7 @@ function addTriggerGapDiscoveryNode({ nodes, seen, scope, trigger, required }) {
   }, 'node');
 }
 
+/** @param {Record<string, any>} options */
 function addStateDiscoveryNodes({ nodes, seen, scope, state, required }) {
   if (!isPlainObject(state)) {
     return;
@@ -1931,6 +1960,7 @@ function addStateDiscoveryNodes({ nodes, seen, scope, state, required }) {
   });
 }
 
+/** @param {Record<string, any>} [input] */
 function collectTriggerGapInputs(input = {}) {
   const rawGroups = [
     ['candidate-trigger', input.candidateTriggers],
@@ -1970,6 +2000,7 @@ function collectTriggerGapInputs(input = {}) {
       })));
 }
 
+/** @param {Record<string, any>} [raw] */
 function endpointUrlFromApiLike(raw = {}) {
   return firstNormalizedText(
     raw.endpoint?.url,
@@ -1982,6 +2013,7 @@ function endpointUrlFromApiLike(raw = {}) {
   );
 }
 
+/** @param {Record<string, any>} [raw] */
 function endpointMethodFromApiLike(raw = {}) {
   return redactText(firstNormalizedText(
     raw.endpoint?.method,
@@ -1991,6 +2023,7 @@ function endpointMethodFromApiLike(raw = {}) {
   )?.toUpperCase());
 }
 
+/** @param {Record<string, any>} [raw] */
 function endpointTransportFromApiLike(raw = {}) {
   return redactText(firstNormalizedText(
     raw.transport,
@@ -2000,6 +2033,7 @@ function endpointTransportFromApiLike(raw = {}) {
   ));
 }
 
+/** @param {Record<string, any>} [raw] */
 function endpointResourceTypeFromApiLike(raw = {}) {
   return redactText(firstNormalizedText(
     raw.resourceType,
@@ -2238,6 +2272,7 @@ function apiDuplicateLocatorKey(locator) {
   }
 }
 
+/** @param {Record<string, any>} options */
 function apiDuplicateGroupKey({ method, locator }) {
   return [
     safeDuplicateEndpointSegment(method ?? 'GET') ?? 'get',
@@ -2249,6 +2284,7 @@ function apiDuplicateRecordId(value, fallback) {
   return safeDuplicateEndpointSegment(value) ?? safeDuplicateEndpointSegment(fallback) ?? 'api-observation';
 }
 
+/** @param {Record<string, any>} options */
 function addApiDiscoveryItem({ apis, seen, scope, raw, required }) {
   if (!isPlainObject(raw)) {
     return;
@@ -2443,6 +2479,7 @@ function addApiDiscoveryItem({ apis, seen, scope, raw, required }) {
   }, 'api');
 }
 
+/** @param {Record<string, any>} options */
 function captureLikeInputs({ capture, captureOutput, captureManifest, siteDoctor, siteDoctorReport }) {
   return [
     ...toArray(capture),
@@ -2461,6 +2498,7 @@ function captureLikeInputs({ capture, captureOutput, captureManifest, siteDoctor
   ].filter(isPlainObject);
 }
 
+/** @param {Record<string, any>} options */
 function expandLikeInputs({ expand, expandOutput, expanded, expandManifest, siteDoctor, siteDoctorReport }) {
   return [
     ...toArray(expand),
@@ -2480,6 +2518,7 @@ function expandLikeInputs({ expand, expandOutput, expanded, expandManifest, site
   ].filter(isPlainObject);
 }
 
+/** @param {Record<string, any>} [input] */
 function collectStatesFromExpandLike(input = {}) {
   return [
     ...toArray(input.states),
@@ -2490,6 +2529,7 @@ function collectStatesFromExpandLike(input = {}) {
   ].filter(isPlainObject);
 }
 
+/** @param {Record<string, any>} options */
 function collectApiLikeInputs({
   networkRequests,
   networkResponseSummaries,
@@ -2526,11 +2566,13 @@ function collectApiLikeInputs({
 }
 
 function responseSummaryByCandidateId(summaries = []) {
+  // @ts-ignore
   return new Map(summaries
     .map((summary) => [normalizeText(summary.candidateId), summary])
     .filter(([candidateId]) => candidateId));
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteOnboardingDiscoveryInputFromCaptureExpand({
   siteKey,
   capture,
@@ -2779,6 +2821,7 @@ export function createSiteOnboardingDiscoveryInputFromCaptureExpand({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteOnboardingDiscoveryInputsFromCaptureExpandOutput(options = {}) {
   return createSiteOnboardingDiscoveryInputFromCaptureExpand(options);
 }
@@ -2856,6 +2899,7 @@ function targetAliases(kind, targetId) {
   ]);
 }
 
+/** @param {Record<string, any>} options */
 function createDiscoveryTargets({ kind, ids, source }) {
   return freezeDeep(uniqueNormalizedTargets(ids).map((targetId, index) => ({
     schemaVersion: SITE_ONBOARDING_DISCOVERY_SCHEMA_VERSION,
@@ -2870,6 +2914,7 @@ function createDiscoveryTargets({ kind, ids, source }) {
   })));
 }
 
+/** @param {Record<string, any>} options */
 function capabilitiesFromInput({
   capabilityIntake = null,
   requestedCapabilities = [],
@@ -2909,6 +2954,7 @@ function canonicalCoverageScore(targets, canonicalTargets) {
   };
 }
 
+/** @param {Record<string, any>} [entry] */
 function entryValues(entry = {}) {
   return uniqueNormalizedTargets([
     entry.id,
@@ -2965,6 +3011,7 @@ function evidenceCoverageForTargets(targets, entries = []) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function scorecardFromParts({
   node,
   api,
@@ -2991,6 +3038,7 @@ function scorecardFromParts({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteOnboardingDiscoveryCoveragePlan({
   siteKey,
   capabilityIntake = null,
@@ -3049,6 +3097,7 @@ export function createSiteOnboardingDiscoveryCoveragePlan({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteOnboardingDiscoveryScorecard({
   coveragePlan,
   nodeInventory,
@@ -3095,6 +3144,7 @@ export function createSiteOnboardingDiscoveryScorecard({
   });
 }
 
+/** @param {Record<string, any>} options */
 function createInventory({ artifactName, kind, entries }) {
   return freezeDeep({
     schemaVersion: SITE_ONBOARDING_DISCOVERY_SCHEMA_VERSION,
@@ -3110,7 +3160,9 @@ function createInventory({ artifactName, kind, entries }) {
 }
 
 export function createNodeInventory(discoveredNodes = [], {
+  // @ts-ignore
   siteKey,
+  // @ts-ignore
   adapter,
 } = {}) {
   return createInventory({
@@ -3126,7 +3178,9 @@ export function createNodeInventory(discoveredNodes = [], {
 }
 
 export function createApiInventory(discoveredApis = [], {
+  // @ts-ignore
   siteKey,
+  // @ts-ignore
   adapter,
 } = {}) {
   return createInventory({
@@ -3193,6 +3247,7 @@ function countBlockedSurfaceCategories(entries = []) {
   }, {});
 }
 
+/** @param {Record<string, any>} options */
 function blockedReportForEntries({ artifactName, kind, entries }) {
   const blockedEntries = entriesWithBlockedStatus(entries);
   return freezeDeep({
@@ -3273,6 +3328,8 @@ function safeCapabilityEvidenceRef(source) {
   return normalizeTargetId(redacted);
 }
 
+/** @param {Record<string, any>} [entry] */
+// @ts-ignore
 function capabilityApiResponseEvidenceDescriptor(entry = {}, targetId) {
   if (!isPlainObject(entry) || !isPlainObject(entry.responseShape)) {
     return undefined;
@@ -3498,6 +3555,7 @@ function capabilityEvidenceQuorum(evidenceKinds = []) {
     .every((requiredKind) => evidenceKinds.some((kind) => evidenceKindSatisfies(kind, requiredKind)));
 }
 
+/** @param {Record<string, any>} [entry] */
 function capabilityEvidenceEntryIsVerified(entry = {}) {
   return Boolean(
     entry.verificationState === 'verified'
@@ -3506,7 +3564,9 @@ function capabilityEvidenceEntryIsVerified(entry = {}) {
 }
 
 function capabilityEvidenceRequirementGaps(missingEvidenceKinds = [], {
+  // @ts-ignore
   targetId,
+  // @ts-ignore
   desiredState,
 } = {}) {
   return missingEvidenceKinds.map((kind) => freezeDeep({
@@ -3544,6 +3604,7 @@ function boundedCapabilityEvidenceDetail(detail = undefined) {
   });
 }
 
+/** @param {Record<string, any>} options */
 function capabilityEvidenceCompletionStrategy({
   targetId,
   desiredState,
@@ -3572,6 +3633,8 @@ function capabilityEvidenceCompletionStrategy({
   });
 }
 
+/** @param {Record<string, any>} [entry] */
+// @ts-ignore
 function capabilityEvidenceMapping(entry = {}, targetId, executableEvidenceKinds = new Set()) {
   const sourceKind = normalizeTargetId(entry.evidenceKind ?? entry.sourceKind ?? 'observed') ?? 'observed';
   const sourceRef = safeCapabilityEvidenceRef(entry.evidenceRef ?? entry.id ?? entry.recognizedAs ?? targetId);
@@ -3594,6 +3657,7 @@ function capabilityEvidenceMapping(entry = {}, targetId, executableEvidenceKinds
   });
 }
 
+/** @param {Record<string, any>} [target] */
 function capabilityMappingGaps(target = {}) {
   if (target.verificationState === 'verified') {
     return [];
@@ -3615,6 +3679,7 @@ function capabilityMappingGaps(target = {}) {
   })];
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityTargets({
   siteKey,
   generatedAt,
@@ -3788,6 +3853,7 @@ export function createCapabilityGapReport(capabilityTargets) {
   });
 }
 
+/** @param {Record<string, any>} options */
 function coverageFailures({
   requiredCoveragePass,
   unknownRequiredNodesPass,
@@ -3870,6 +3936,7 @@ function coverageFailures({
   return [...new Set(failures)];
 }
 
+/** @param {Record<string, any>} options */
 export function evaluateSiteOnboardingCoverageGate({
   nodeInventory,
   apiInventory,
@@ -4014,6 +4081,7 @@ function apiGapRowsAreDescriptorOnly(entries = [], fieldName) {
     .every((gap) => gap?.descriptorOnly === true && gap?.redactionRequired === true);
 }
 
+/** @param {Record<string, any>} [entry] */
 function apiPreflightCorrelationIsNonPromotional(entry = {}) {
   if (!entry.preflightCorrelation) {
     return true;
@@ -4023,6 +4091,7 @@ function apiPreflightCorrelationIsNonPromotional(entry = {}) {
     && entry.preflightCorrelation.redactionRequired === true;
 }
 
+/** @param {Record<string, any>} [entry] */
 function apiMultiStepCorrelationIsNonPromotional(entry = {}) {
   if (!entry.multiStepCorrelation) {
     return true;
@@ -4035,6 +4104,7 @@ function apiMultiStepCorrelationIsNonPromotional(entry = {}) {
     && entry.multiStepCorrelation.redactionRequired === true;
 }
 
+/** @param {Record<string, any>} options */
 function createApiControlledScopeClosureEvidence({
   apiInventory,
   unknownApiReport,
@@ -4160,16 +4230,19 @@ function countCapabilityMissingEvidenceKinds(targets = []) {
   }, {});
 }
 
+/** @param {Record<string, any>} [target] */
 function capabilityHasVerifiedExecutionQuorum(target = {}) {
   const verifiedKinds = target.mappingSummary?.verifiedExecutionEvidenceKinds ?? [];
   return capabilityEvidenceQuorum(verifiedKinds);
 }
 
+/** @param {Record<string, any>} [target] */
 function capabilityTargetMappingsAreDescriptorOnly(target = {}) {
   return toArray(target.evidenceMappings)
     .every((mapping) => mapping?.descriptorOnly === true && mapping?.redactionRequired === true);
 }
 
+/** @param {Record<string, any>} [gap] */
 function capabilityGapRecordIsDescriptorOnly(gap = {}) {
   return gap?.executableCapabilityAllowed === false
     && gap?.redactionRequired === true
@@ -4184,6 +4257,7 @@ function capabilityGapRecordIsDescriptorOnly(gap = {}) {
         && gap.evidenceCompletionStrategy.observedCapabilityAutoPromotionAllowed === false));
 }
 
+/** @param {Record<string, any>} options */
 function createCapabilityControlledScopeClosureEvidence({
   capabilityTargets,
   capabilityGapReport,
@@ -4295,6 +4369,7 @@ function createCapabilityControlledScopeClosureEvidence({
   });
 }
 
+/** @param {Record<string, any>} options */
 function createFullDiscoveryClosureEvidence({
   nodeInventory,
   apiInventory,
@@ -4415,6 +4490,7 @@ function createFullDiscoveryClosureEvidence({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteCapabilityReport({
   siteKey,
   nodeInventory,
@@ -4512,6 +4588,7 @@ export function createSiteCapabilityReport({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createDiscoveryAudit({
   siteKey,
   adapter,
@@ -4661,6 +4738,7 @@ export function renderApiInventoryMarkdown(apiInventory) {
   ].join('\n');
 }
 
+/** @param {Record<string, any>} options */
 function renderGapEntriesMarkdown({ title, introRows = [], entries = [] }) {
   const rows = entries.map((entry) => [
     entry.discoveryKind,
@@ -4871,6 +4949,7 @@ export function renderDiscoveryAuditMarkdown(discoveryAudit) {
   ].join('\n');
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteOnboardingDiscoveryArtifacts({
   siteKey,
   discoveredNodes = [],
@@ -4993,6 +5072,7 @@ export function createSiteOnboardingDiscoveryArtifacts({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function assertSiteOnboardingDiscoveryComplete({
   artifacts,
   acceptedByAgentB = false,

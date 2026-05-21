@@ -46,13 +46,13 @@ export function parseProgressCliOption(args, current, index, options) {
   }
 }
 
-export function stripProgressCliOptions(options = {}) {
+export function stripProgressCliOptions(options = /** @type {any} */ ({})) {
   return Object.fromEntries(
     Object.entries(options).filter(([key]) => !PROGRESS_OPTION_KEYS.has(key)),
   );
 }
 
-export function createCliProgressRenderer(options = {}) {
+export function createCliProgressRenderer(options = /** @type {any} */ ({})) {
   return createProgressRenderer({
     stdout: process.stdout,
     stderr: process.stderr,
@@ -64,9 +64,12 @@ export function createCliProgressRenderer(options = {}) {
   });
 }
 
+/**
+ * @param {any} config
+ */
 export async function runSingleStageCliWithProgress({
   inputUrl,
-  options = {},
+  options = /** @type {any} */ ({}),
   taskId,
   title,
   stageId,

@@ -11,7 +11,7 @@ import {
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 
-function createRequest(overrides = {}) {
+function createRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     siteKey: 'qidian',

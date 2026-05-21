@@ -17,7 +17,7 @@ const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'entrypoints', 'operator', 'capabilities.mjs');
 
-function sensitiveReadCapability(overrides = {}) {
+function sensitiveReadCapability(overrides = /** @type {any} */ ({})) {
   return {
     id: 'capability:x:list-bookmarks',
     name: 'list bookmarks',
@@ -29,7 +29,7 @@ function sensitiveReadCapability(overrides = {}) {
   };
 }
 
-function draftWriteCapability(overrides = {}) {
+function draftWriteCapability(overrides = /** @type {any} */ ({})) {
   return {
     id: 'capability:x:create-post-draft',
     name: 'create post draft',
@@ -42,7 +42,7 @@ function draftWriteCapability(overrides = {}) {
   };
 }
 
-function disabledDirectMessageCapability(overrides = {}) {
+function disabledDirectMessageCapability(overrides = /** @type {any} */ ({})) {
   return {
     id: 'capability:x:send-direct-message',
     name: 'send direct message',
@@ -56,7 +56,7 @@ function disabledDirectMessageCapability(overrides = {}) {
   };
 }
 
-function privateMessageDetailCapability(overrides = {}) {
+function privateMessageDetailCapability(overrides = /** @type {any} */ ({})) {
   return {
     id: 'capability:x:private-message-detail',
     name: 'read private message detail',
@@ -70,7 +70,7 @@ function privateMessageDetailCapability(overrides = {}) {
   };
 }
 
-function privateMessageBodyCapability(overrides = {}) {
+function privateMessageBodyCapability(overrides = /** @type {any} */ ({})) {
   return {
     id: 'capability:x:direct-message-body',
     name: 'read direct message body',

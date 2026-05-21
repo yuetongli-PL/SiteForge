@@ -205,16 +205,16 @@ function normalizeText(value) {
   return text || undefined;
 }
 
-function qidianDiscoveryContext(context = {}) {
+function qidianDiscoveryContext(context = /** @type {any} */ ({})) {
   return String(context.siteKey ?? '').toLowerCase() === 'qidian';
 }
 
-function bz888DiscoveryContext(context = {}) {
+function bz888DiscoveryContext(context = /** @type {any} */ ({})) {
   return String(context.siteKey ?? '').toLowerCase() === 'bz888'
     || String(context.host ?? '').toLowerCase() === 'www.bz888888888.com';
 }
 
-function twentyTwoBiquDiscoveryContext(context = {}) {
+function twentyTwoBiquDiscoveryContext(context = /** @type {any} */ ({})) {
   return String(context.siteKey ?? '').toLowerCase() === '22biqu'
     || String(context.host ?? '').toLowerCase() === 'www.22biqu.com';
 }
@@ -231,7 +231,7 @@ function qidianUrlPath(value) {
   }
 }
 
-function qidianRecognizedPageType(item = {}) {
+function qidianRecognizedPageType(item = /** @type {any} */ ({})) {
   const rawPageType =
     item.pageType
     ?? item.semanticPageType
@@ -243,7 +243,7 @@ function qidianRecognizedPageType(item = {}) {
   return pageType && QIDIAN_RECOGNIZED_PAGE_TYPES.has(pageType) ? pageType : undefined;
 }
 
-function qidianPageTypeFromLocator(item = {}) {
+function qidianPageTypeFromLocator(item = /** @type {any} */ ({})) {
   const path = qidianUrlPath(item.locator ?? item.url ?? item.path);
   if (path === '/' || path === '') {
     return 'home';
@@ -266,7 +266,7 @@ function qidianPageTypeFromLocator(item = {}) {
   return undefined;
 }
 
-function bz888PageTypeFromLocator(item = {}) {
+function bz888PageTypeFromLocator(item = /** @type {any} */ ({})) {
   const path = qidianUrlPath(item.locator ?? item.url ?? item.path);
   if (path === '/' || path === '') {
     return 'home';
@@ -292,7 +292,7 @@ function bz888PageTypeFromLocator(item = {}) {
   return undefined;
 }
 
-function twentyTwoBiquPageTypeFromLocator(item = {}) {
+function twentyTwoBiquPageTypeFromLocator(item = /** @type {any} */ ({})) {
   const path = qidianUrlPath(item.locator ?? item.url ?? item.path);
   if (path === '/' || path === '') {
     return 'home';
@@ -318,7 +318,7 @@ function twentyTwoBiquPageTypeFromLocator(item = {}) {
   return undefined;
 }
 
-function qidianNodeKind(item = {}) {
+function qidianNodeKind(item = /** @type {any} */ ({})) {
   return normalizeText(item.nodeKind ?? item.kind ?? item.type);
 }
 
@@ -338,7 +338,7 @@ function ignoredDecision(item, reason) {
   };
 }
 
-function qidianApiEndpoint(item = {}) {
+function qidianApiEndpoint(item = /** @type {any} */ ({})) {
   return normalizeText(
     item.locator
       ?? item.url
@@ -348,11 +348,11 @@ function qidianApiEndpoint(item = {}) {
   );
 }
 
-function qidianApiPath(item = {}) {
+function qidianApiPath(item = /** @type {any} */ ({})) {
   return qidianUrlPath(qidianApiEndpoint(item));
 }
 
-function candidateHost(candidate = {}) {
+function candidateHost(candidate = /** @type {any} */ ({})) {
   try {
     return new URL(qidianApiEndpoint(candidate) ?? '').hostname.toLowerCase();
   } catch {
@@ -360,7 +360,7 @@ function candidateHost(candidate = {}) {
   }
 }
 
-function candidatePath(candidate = {}) {
+function candidatePath(candidate = /** @type {any} */ ({})) {
   try {
     return new URL(qidianApiEndpoint(candidate) ?? '').pathname || '/';
   } catch {
@@ -368,14 +368,14 @@ function candidatePath(candidate = {}) {
   }
 }
 
-function chapterContentCandidateSiteAllowed(candidate = {}) {
+function chapterContentCandidateSiteAllowed(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim().toLowerCase();
   const host = candidateHost(candidate);
   return CHAPTER_CONTENT_SITES.has(siteKey)
     || CHAPTER_CONTENT_SITES.has(host);
 }
 
-function chapterContentApiClassification(candidate = {}) {
+function chapterContentApiClassification(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim().toLowerCase();
   const host = candidateHost(candidate);
   const context = {
@@ -398,7 +398,7 @@ export const chapterContentAdapter = Object.freeze({
   ...genericAdapterDefaults,
   id: 'chapter-content',
   version: CHAPTER_CONTENT_ADAPTER_VERSION,
-  siteKey({ host, profile } = {}) {
+  siteKey({ host, profile } = /** @type {any} */ ({})) {
     const resolvedHost = String(host ?? profile?.host ?? '').toLowerCase();
     if (resolvedHost === 'www.22biqu.com') {
       return '22biqu';
@@ -411,7 +411,7 @@ export const chapterContentAdapter = Object.freeze({
     }
     return 'chapter-content';
   },
-  matches({ host, profile } = {}) {
+  matches({ host, profile } = /** @type {any} */ ({})) {
     const resolvedHost = String(host ?? profile?.host ?? '').toLowerCase();
     return resolveProfileArchetype(profile, { host }) === 'chapter-content'
       || resolvedHost === 'www.22biqu.com'
@@ -419,7 +419,7 @@ export const chapterContentAdapter = Object.freeze({
       || resolvedHost === 'www.bz888888888.com'
       || Boolean(profile?.bookDetail && profile?.chapter);
   },
-  inferPageType({ pathname = '/', hostname = '' } = {}) {
+  inferPageType({ pathname = '/', hostname = '' } = /** @type {any} */ ({})) {
     const resolvedHost = String(hostname ?? '').toLowerCase();
     if (resolvedHost === 'www.22biqu.com') {
       return twentyTwoBiquPageTypeFromLocator({ path: pathname }) ?? null;
@@ -451,7 +451,7 @@ export const chapterContentAdapter = Object.freeze({
     }
     return null;
   },
-  classifyNode(item = {}, context = {}) {
+  classifyNode(item = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
     if (twentyTwoBiquDiscoveryContext(context)) {
       const nodeKind = qidianNodeKind(item);
       if (nodeKind && TWENTY_TWO_BIQU_SENSITIVE_NODE_KINDS.has(nodeKind)) {
@@ -489,7 +489,7 @@ export const chapterContentAdapter = Object.freeze({
     }
 
     if (!qidianDiscoveryContext(context)) {
-      return genericAdapterDefaults.classifyNode(item, context);
+      return genericAdapterDefaults.classifyNode(/** @type {any} */ (item));
     }
 
     const nodeKind = qidianNodeKind(item);
@@ -514,7 +514,7 @@ export const chapterContentAdapter = Object.freeze({
       required: Boolean(item.required),
     };
   },
-  classifyApi(item = {}, context = {}) {
+  classifyApi(item = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
     if (twentyTwoBiquDiscoveryContext(context)) {
       const endpoint = qidianApiEndpoint(item);
       const path = qidianApiPath(item);
@@ -573,7 +573,7 @@ export const chapterContentAdapter = Object.freeze({
     }
 
     if (!qidianDiscoveryContext(context)) {
-      return genericAdapterDefaults.classifyApi(item, context);
+      return genericAdapterDefaults.classifyApi(/** @type {any} */ (item));
     }
 
     const endpoint = qidianApiEndpoint(item);
@@ -603,10 +603,10 @@ export const chapterContentAdapter = Object.freeze({
   },
   validateApiCandidate({
     candidate,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     validatedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const siteAllowed = chapterContentCandidateSiteAllowed(candidate);
     const classification = siteAllowed
       ? chapterContentApiClassification(candidate)
@@ -632,10 +632,10 @@ export const chapterContentAdapter = Object.freeze({
   getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     decidedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const candidateStatus = String(candidate?.status ?? '').trim();
     const accepted = siteAdapterDecision?.decision === 'accepted' && candidateStatus === 'verified';
     return normalizeSiteAdapterCatalogUpgradePolicy({

@@ -40,6 +40,7 @@ function normalizeText(value) {
   return text || undefined;
 }
 
+/** @param {Record<string, any>} [event] */
 function normalizeCdpRequestEvent(event = {}) {
   const method = normalizeText(event.method ?? event.params?.method);
   if (method === 'Network.webSocketCreated') {
@@ -69,6 +70,7 @@ function normalizeCdpRequestEvent(event = {}) {
   };
 }
 
+/** @param {Record<string, any>} [event] */
 function normalizeCdpResponseEvent(event = {}) {
   const method = normalizeText(event.method ?? event.params?.method);
   if (method !== 'Network.responseReceived') {
@@ -82,6 +84,7 @@ function normalizeCdpResponseEvent(event = {}) {
   };
 }
 
+/** @param {Record<string, any>} [raw] */
 function apiCandidateFromObservedRequest(raw = {}) {
   const siteKey = normalizeText(raw.siteKey);
   if (!siteKey) {
@@ -117,6 +120,7 @@ function compactAudit(...audits) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function inferNetworkTransport({ method, resourceType, url }) {
   const normalizedMethod = normalizeText(method)?.toUpperCase() ?? 'GET';
   const normalizedResourceType = String(resourceType ?? '').toLowerCase();
@@ -179,6 +183,10 @@ export function assertNoNetworkCaptureSiteSemanticClassification(record) {
   return true;
 }
 
+/**
+ * @param {Record<string, any>} [event]
+ * @param {Record<string, any>} options
+ */
 export function observedRequestFromNetworkCaptureEvent(event = {}, {
   siteKey,
   observedAt,
@@ -249,6 +257,10 @@ export function observedRequestsFromNetworkCaptureEvents(events = [], options = 
   return events.map((event) => observedRequestFromNetworkCaptureEvent(event, options));
 }
 
+/**
+ * @param {Record<string, any>} [event]
+ * @param {Record<string, any>} options
+ */
 export function responseSummaryFromNetworkCaptureEvent(event = {}, {
   candidate,
   observedRequest,

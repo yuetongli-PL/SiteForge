@@ -61,10 +61,10 @@ Options:
   -h, --help                        Show this help.
 `;
 
-export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {}) {
+export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = /** @type {any} */ ({})) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
     if (token === '-h') {

@@ -49,7 +49,7 @@ import { formatTimestampForDir } from '../../shared/time.mjs';
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
-const SITE_LOGIN_REPORT_PROFILE_KEYS = reportProfileKeySet(SESSION_REPORT_PROFILE_KEYS);
+const SITE_LOGIN_REPORT_PROFILE_KEYS = reportProfileKeySet(/** @type {any[]} */ (SESSION_REPORT_PROFILE_KEYS));
 
 const DEFAULT_OPTIONS = {
   outDir: path.join(REPO_ROOT, 'runs', 'sites', 'site-login'),
@@ -93,7 +93,7 @@ function createWaitPolicy(timeoutMs) {
   };
 }
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = { ...DEFAULT_OPTIONS, ...options };
   const parsed = new URL(inputUrl);
   merged.host = parsed.hostname;
@@ -198,7 +198,7 @@ function auditPath(pathParts) {
   return pathParts.join('.');
 }
 
-function redactSiteLoginProfileRefs(value, pathParts = [], audit = {
+function redactSiteLoginProfileRefs(value, pathParts = /** @type {any[]} */ ([]), audit = {
   schemaVersion: SECURITY_GUARD_SCHEMA_VERSION,
   redactedPaths: [],
   findings: [],
@@ -212,7 +212,7 @@ function redactSiteLoginProfileRefs(value, pathParts = [], audit = {
   if (!isPlainObject(value)) {
     return { value, audit };
   }
-  const output = {};
+  const output = /** @type {any} */ ({});
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...pathParts, key];
     if (SITE_LOGIN_REPORT_PROFILE_KEYS.has(key)) {
@@ -226,8 +226,8 @@ function redactSiteLoginProfileRefs(value, pathParts = [], audit = {
 }
 
 function mergeRedactionAudits(...audits) {
-  const redactedPaths = [];
-  const findings = [];
+  const redactedPaths = /** @type {any[]} */ ([]);
+  const findings = /** @type {any[]} */ ([]);
   for (const audit of audits) {
     if (!audit || typeof audit !== 'object') {
       continue;
@@ -248,7 +248,7 @@ function createSiteLoginReportRedactionFailure(error) {
     name: error instanceof Error ? error.name : undefined,
     code: error && typeof error === 'object' ? error.code : undefined,
   }).value;
-  const failure = new Error('Redaction failed for site-login report; persistent report write blocked');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Redaction failed for site-login report; persistent report write blocked'));
   failure.name = 'SiteLoginReportRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -301,8 +301,8 @@ export async function writeSiteLoginReportArtifacts(report, {
   return prepared.value;
 }
 
-function uniqueUrls(values = []) {
-  const deduped = [];
+function uniqueUrls(values = /** @type {any[]} */ ([])) {
+  const deduped = /** @type {any[]} */ ([]);
   const seen = new Set();
   for (const value of values) {
     const normalized = String(value ?? '').trim();
@@ -384,7 +384,7 @@ async function performRuntimeWarmup(session, navigationPlan, settings) {
   }
 
   const waitPolicy = createWaitPolicy(Math.min(settings.timeoutMs, 12_000));
-  const steps = [];
+  const steps = /** @type {any[]} */ ([]);
   let completed = true;
   let previousUrl = String(session?.browserStartUrl ?? '').trim() || null;
 
@@ -507,7 +507,7 @@ async function verifyPersistentLoginReuse(inputUrl, settings, authContext, runti
 async function inspectConfirmedLoginStateWithRetry(runtime, session, authConfig, {
   timeoutMs = 20_000,
   pollMs = 800,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const deadline = Date.now() + timeoutMs;
   let lastState = null;
   let lastError = null;
@@ -538,7 +538,7 @@ export function parseCliArgs(argv) {
   }
 
   const [inputUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -701,7 +701,7 @@ async function probeReusableSessionBeforeManualWait(session, inputUrl, settings,
   return null;
 }
 
-export async function siteLogin(inputUrl, options = {}, deps = {}) {
+export async function siteLogin(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   const reportDir = path.join(settings.outDir, `${formatTimestampForDir()}_${sanitizeHost(settings.host)}`);
   const reportJsonPath = path.join(reportDir, 'site-login-report.json');
@@ -750,11 +750,11 @@ export async function siteLogin(inputUrl, options = {}, deps = {}) {
     },
   }, deps.siteSessionGovernanceDeps ?? {});
   if (!governance.policyDecision.allowed) {
-    const blockedError = new Error(
+    const blockedError = /** @type {Error & Record<string, any>} */ (new Error(
       governance.policyDecision.riskCauseCode === 'concurrent-profile-use'
         ? 'Persistent browser profile is already in use by another active authenticated session.'
         : `Site login blocked by runtime governance: ${governance.policyDecision.riskCauseCode ?? 'unknown-risk'}.`,
-    );
+    ));
     blockedError.code = governance.policyDecision.riskCauseCode ?? 'SITE_LOGIN_BLOCKED';
     if (governance.lease) {
       await runtime.releaseSessionLease(governance.lease);

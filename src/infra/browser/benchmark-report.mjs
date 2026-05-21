@@ -119,7 +119,7 @@ function deriveBenchmarkOutcome(entry) {
     };
   }
 
-  const observations = [];
+  const observations = /** @type {any[]} */ ([]);
   if (entry.budget?.hit && entry.budget?.stopReason) {
     observations.push(`Budget was exhausted: ${entry.budget.stopReason}`);
   }
@@ -161,7 +161,7 @@ function deriveBenchmarkOutcome(entry) {
   };
 }
 
-export function summarizeSessionMetrics(metrics = {}) {
+export function summarizeSessionMetrics(metrics = /** @type {any} */ ({})) {
   const safeMetrics = metrics ?? {};
   return {
     send: pluck(safeMetrics.counts, 'send'),
@@ -187,7 +187,7 @@ export function summarizeSessionMetrics(metrics = {}) {
   };
 }
 
-export function buildBenchmarkReport({ generatedAt, cwd, outputDir, browserPath = null, benchmarks = [] }) {
+export function buildBenchmarkReport({ generatedAt, cwd, outputDir, browserPath = null, benchmarks = /** @type {any[]} */ ([]) }) {
   const normalizedBenchmarks = benchmarks.map((entry) => {
     const captureDurationMs = toInt(entry.capture?.durationMs);
     const expandDurationMs = toInt(entry.expand?.durationMs);

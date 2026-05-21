@@ -126,10 +126,10 @@ export class ProfileValidationError extends Error {
   }
 }
 
-export function validateProfileObject(profile, options = {}) {
+export function validateProfileObject(profile, options = /** @type {any} */ ({})) {
   const { expectedHost, source = 'profile object' } = options;
-  const errors = [];
-  const warnings = [];
+  const errors = /** @type {any[]} */ ([]);
+  const warnings = /** @type {any[]} */ ([]);
 
   if (!isPlainObject(profile)) {
     throw new ProfileValidationError(source, [{ path: 'profile', message: 'must be an object' }]);
@@ -193,7 +193,7 @@ export function validateProfileObject(profile, options = {}) {
   };
 }
 
-export async function validateProfileFile(profilePath, options = {}) {
+export async function validateProfileFile(profilePath, options = /** @type {any} */ ({})) {
   const resolvedPath = path.resolve(profilePath);
   const source = options.source ?? resolvedPath;
   const raw = await readFile(resolvedPath, 'utf8');

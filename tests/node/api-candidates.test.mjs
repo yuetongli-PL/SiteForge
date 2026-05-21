@@ -72,7 +72,7 @@ import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-r
 import { createCapabilityHookRegistry } from '../../src/domain/lifecycle/capability-hook.mjs';
 import { writeCatalogStorePlannerPolicyHandoffArtifact } from '../../src/app/planner/policy-handoff.mjs';
 
-function createCandidate(overrides = {}) {
+function createCandidate(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: API_CANDIDATE_SCHEMA_VERSION,
     siteKey: 'example',
@@ -3629,6 +3629,7 @@ test('ApiCatalog verified upgrade fixture helper rejects incomplete optional art
       await assert.rejects(
         promise,
         (error) => {
+          // @ts-ignore
           assert.match(error.message, expectedPattern);
           assert.doesNotMatch(JSON.stringify(error), /synthetic-incomplete-path-token|authorization|cookie|csrf|sessionId/iu);
           return true;
@@ -4133,6 +4134,7 @@ test('ApiCatalog collection status transition updates verified entries with safe
       status: 'verified',
     }),
   ], {
+    // @ts-ignore
     generatedAt: '2026-05-02T02:50:00.000Z',
     catalogId: 'transition-catalog',
     catalogVersion: 'transition-v1',
@@ -4179,6 +4181,7 @@ test('ApiCatalog collection status transition updates verified entries with safe
     correlationId: 'transition-correlation',
   });
   const index = createApiCatalogIndex([blocked], {
+    // @ts-ignore
     generatedAt: '2026-05-02T02:53:00.000Z',
   });
 
@@ -4242,6 +4245,7 @@ test('ApiCatalog collection status transition artifact writes guarded summaries 
         },
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath: catalogAuditPath,
       generatedAt: '2026-05-02T03:00:00.000Z',
@@ -4342,6 +4346,7 @@ test('ApiCatalog collection status transition artifact rejects invalid transitio
         status: 'verified',
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath: catalogAuditPath,
       generatedAt: '2026-05-02T03:05:00.000Z',
@@ -4454,6 +4459,7 @@ test('ApiCatalog collection status transition rolls back catalog when audit repl
         },
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath: catalogAuditPath,
       generatedAt: '2026-05-02T03:08:00.000Z',
@@ -4476,6 +4482,7 @@ test('ApiCatalog collection status transition rolls back catalog when audit repl
         reasonCode: 'api-catalog-endpoint-expired',
       }),
       (error) => {
+        // @ts-ignore
         assert.match(error?.code ?? error?.message ?? '', /EPERM|EACCES|operation not permitted|access denied/iu);
         assert.doesNotMatch(JSON.stringify(error), /synthetic-transition-rollback-token|authorization|cookie|csrf|sessionId/iu);
         return true;
@@ -4529,6 +4536,7 @@ test('runtime ApiCatalog maintenance helper consumes explicit stale and blocked 
         status: 'verified',
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath: catalogAuditPath,
       generatedAt: '2026-05-02T03:10:00.000Z',
@@ -4691,6 +4699,7 @@ test('runtime ApiCatalog maintenance helper rejects promotion and unsafe evidenc
         status: 'verified',
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath: catalogAuditPath,
       generatedAt: '2026-05-02T03:15:00.000Z',
@@ -4715,18 +4724,31 @@ test('runtime ApiCatalog maintenance helper rejects promotion and unsafe evidenc
       }),
       (error) => {
         const recovery = reasonCodeSummary('api-verification-failed');
+        // @ts-ignore
         assert.equal(error.name, 'ApiCatalogMaintenanceFailure');
+        // @ts-ignore
         assert.equal(error.message, 'ApiCatalog maintenance failed before artifact write');
+        // @ts-ignore
         assert.equal(error.reasonCode, recovery.code);
+        // @ts-ignore
         assert.equal(error.retryable, recovery.retryable);
+        // @ts-ignore
         assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+        // @ts-ignore
         assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+        // @ts-ignore
         assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+        // @ts-ignore
         assert.equal(error.degradable, recovery.degradable);
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+        // @ts-ignore
         assert.equal(error.catalogAction, recovery.catalogAction);
+        // @ts-ignore
         assert.equal(error.failureMode, 'api-catalog-maintenance-failed');
+        // @ts-ignore
         assert.deepEqual(error.causeSummary, { name: 'Error' });
+        // @ts-ignore
         assert.equal(Object.hasOwn(error, 'cause'), false);
         return true;
       },
@@ -4749,18 +4771,31 @@ test('runtime ApiCatalog maintenance helper rejects promotion and unsafe evidenc
           lifecycleEventRedactionAuditPath: eventAuditPath,
         }),
         (error) => {
+          // @ts-ignore
           assert.equal(error.name, 'ApiCatalogMaintenanceFailure');
+          // @ts-ignore
           assert.equal(error.message, 'ApiCatalog maintenance failed before artifact write');
+          // @ts-ignore
           assert.equal(error.reasonCode, verificationFailureRecovery.code);
+          // @ts-ignore
           assert.equal(error.retryable, verificationFailureRecovery.retryable);
+          // @ts-ignore
           assert.equal(error.cooldownNeeded, verificationFailureRecovery.cooldownNeeded);
+          // @ts-ignore
           assert.equal(error.isolationNeeded, verificationFailureRecovery.isolationNeeded);
+          // @ts-ignore
           assert.equal(error.manualRecoveryNeeded, verificationFailureRecovery.manualRecoveryNeeded);
+          // @ts-ignore
           assert.equal(error.degradable, verificationFailureRecovery.degradable);
+          // @ts-ignore
           assert.equal(error.artifactWriteAllowed, verificationFailureRecovery.artifactWriteAllowed);
+          // @ts-ignore
           assert.equal(error.catalogAction, verificationFailureRecovery.catalogAction);
+          // @ts-ignore
           assert.equal(error.failureMode, 'api-catalog-maintenance-failed');
+          // @ts-ignore
           assert.deepEqual(error.causeSummary, { name: 'Error' });
+          // @ts-ignore
           assert.equal(Object.hasOwn(error, 'cause'), false);
           return true;
         },
@@ -4783,14 +4818,22 @@ test('runtime ApiCatalog maintenance helper rejects promotion and unsafe evidenc
       }),
       (error) => {
         const serialized = JSON.stringify(error);
+        // @ts-ignore
         assert.equal(error.name, 'ApiCatalogMaintenanceFailure');
+        // @ts-ignore
         assert.equal(error.message, 'ApiCatalog maintenance failed before artifact write');
+        // @ts-ignore
         assert.equal(error.reasonCode, verificationFailureRecovery.code);
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, verificationFailureRecovery.artifactWriteAllowed);
+        // @ts-ignore
         assert.deepEqual(error.causeSummary, { name: 'Error' });
+        // @ts-ignore
         assert.equal(Object.hasOwn(error, 'cause'), false);
+        // @ts-ignore
         assert.equal(error.message.includes('synthetic-maintenance-leak'), false);
         assert.equal(serialized.includes('synthetic-maintenance-leak'), false);
+        // @ts-ignore
         assert.equal(JSON.stringify(error.causeSummary).includes('synthetic-maintenance-leak'), false);
         return true;
       },
@@ -4816,21 +4859,36 @@ test('runtime ApiCatalog maintenance helper rejects promotion and unsafe evidenc
       (error) => {
         const serialized = JSON.stringify(error);
         const recovery = reasonCodeSummary('api-catalog-entry-blocked');
+        // @ts-ignore
         assert.equal(error.name, 'ApiCatalogMaintenanceFailure');
+        // @ts-ignore
         assert.equal(error.message, 'ApiCatalog maintenance failed before artifact write');
+        // @ts-ignore
         assert.equal(error.reasonCode, recovery.code);
+        // @ts-ignore
         assert.equal(error.retryable, recovery.retryable);
+        // @ts-ignore
         assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+        // @ts-ignore
         assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+        // @ts-ignore
         assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+        // @ts-ignore
         assert.equal(error.degradable, recovery.degradable);
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+        // @ts-ignore
         assert.equal(error.catalogAction, recovery.catalogAction);
+        // @ts-ignore
         assert.equal(error.failureMode, 'api-catalog-maintenance-failed');
+        // @ts-ignore
         assert.deepEqual(error.causeSummary, { name: 'Error' });
+        // @ts-ignore
         assert.equal(Object.hasOwn(error, 'cause'), false);
+        // @ts-ignore
         assert.equal(error.message.includes('synthetic-maintenance-unsafe-token'), false);
         assert.equal(serialized.includes('synthetic-maintenance-unsafe-token'), false);
+        // @ts-ignore
         assert.equal(JSON.stringify(error.causeSummary).includes('synthetic-maintenance-unsafe-token'), false);
         return true;
       },
@@ -4955,6 +5013,7 @@ test('ApiCatalog index artifact preserves deprecated and blocked lifecycle summa
         },
       }),
     ], {
+      // @ts-ignore
       catalogId: 'fixture-lifecycle-catalog',
       catalogVersion: 'fixture-lifecycle-v1',
       generatedAt: '2026-05-01T06:10:00.000Z',
@@ -5676,6 +5735,7 @@ test('ApiCatalog collection writer persists only verified redacted entries', asy
         },
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath,
       lifecycleEventPath,
@@ -5825,6 +5885,7 @@ test('ApiCatalog collection writer persists only verified redacted entries', asy
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath: partialLifecycleCatalogPath,
         lifecycleEventPath: partialLifecycleEventPath,
       }),
@@ -5876,6 +5937,7 @@ test('ApiCatalog collection upsert preserves verified entries and writes safe li
         },
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath,
       generatedAt: '2026-05-01T07:00:00.000Z',
@@ -5906,6 +5968,7 @@ test('ApiCatalog collection upsert preserves verified entries and writes safe li
         },
       }),
     ], {
+      // @ts-ignore
       catalogPath,
       redactionAuditPath,
       lifecycleEventPath,
@@ -5988,6 +6051,7 @@ test('ApiCatalog collection upsert preserves verified entries and writes safe li
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath: incompatibleCatalogPath,
         redactionAuditPath: path.join(runDir, 'incompatible-catalog.redaction-audit.json'),
       }),
@@ -6002,6 +6066,7 @@ test('ApiCatalog collection upsert preserves verified entries and writes safe li
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath: candidateStateCatalogPath,
         redactionAuditPath: path.join(runDir, 'candidate-state-catalog.redaction-audit.json'),
         lifecycleEventPath: path.join(runDir, 'candidate-state-catalog.lifecycle-event.json'),
@@ -6019,6 +6084,7 @@ test('ApiCatalog collection upsert preserves verified entries and writes safe li
           id: 'candidate-upsert-non-verified',
           status: 'candidate',
         }),
+      // @ts-ignore
       ], { catalogPath }),
       /ApiCandidate must be verified before catalog entry/u,
     );
@@ -6045,6 +6111,7 @@ test('ApiCatalog collection writer fails closed before writing when forbidden ma
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath: missingAuditCatalogPath,
       }),
       /ApiCatalog redactionAuditPath is required/u,
@@ -6058,6 +6125,7 @@ test('ApiCatalog collection writer fails closed before writing when forbidden ma
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath,
         redactionAuditPath,
         generatedAt: '2026-05-01T06:00:00.000Z',
@@ -6069,11 +6137,14 @@ test('ApiCatalog collection writer fails closed before writing when forbidden ma
         },
       }),
       (error) => {
+        // @ts-ignore
         const recovery = reasonCodeSummary(error.code);
+        // @ts-ignore
         assert.equal(error.code, 'redaction-failed');
         assert.equal(recovery.retryable, false);
         assert.equal(recovery.manualRecoveryNeeded, true);
         assert.equal(recovery.artifactWriteAllowed, false);
+        // @ts-ignore
         assert.equal(error.findings.some((finding) => finding.pattern === 'sensitive-query-assignment'), true);
         return true;
       },
@@ -6107,6 +6178,7 @@ test('ApiCatalog collection writer preserves existing artifacts when redaction f
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath,
         redactionAuditPath,
         generatedAt: '2026-05-01T06:10:00.000Z',
@@ -6118,11 +6190,14 @@ test('ApiCatalog collection writer preserves existing artifacts when redaction f
         },
       }),
       (error) => {
+        // @ts-ignore
         const recovery = reasonCodeSummary(error.code);
+        // @ts-ignore
         assert.equal(error.code, 'redaction-failed');
         assert.equal(recovery.retryable, false);
         assert.equal(recovery.manualRecoveryNeeded, true);
         assert.equal(recovery.artifactWriteAllowed, false);
+        // @ts-ignore
         assert.equal(error.findings.some((finding) => finding.pattern === 'sensitive-query-assignment'), true);
         return true;
       },
@@ -6145,6 +6220,7 @@ test('ApiCatalog collection writer rejects duplicate output paths before writing
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath: duplicatePath,
         redactionAuditPath: duplicatePath,
       }),
@@ -6180,6 +6256,7 @@ test('ApiCatalog collection writer rejects audit IO failure without partial cata
           },
         }),
       ], {
+        // @ts-ignore
         catalogPath,
         redactionAuditPath,
       }),
@@ -6211,6 +6288,7 @@ test('ApiCatalog collection writer preserves existing catalog when audit IO fail
           status: 'verified',
         }),
       ], {
+        // @ts-ignore
         catalogPath,
         redactionAuditPath,
       }),
@@ -6251,6 +6329,7 @@ test('ApiCatalog collection writer rejects lifecycle audit IO failure without pa
           },
         }),
       ], {
+        // @ts-ignore
         catalogPath,
         redactionAuditPath,
         lifecycleEventPath,
@@ -6280,11 +6359,13 @@ test('ApiCatalog collection writer rejects non-verified entries before writing',
       writeApiCatalogCollectionArtifact([
         createCandidate({ id: 'verified-candidate', status: 'verified' }),
         createCandidate({ id: 'unverified-candidate', status: 'candidate' }),
+      // @ts-ignore
       ], { catalogPath }),
       /ApiCandidate must be verified before catalog entry/u,
     );
     await assert.rejects(access(catalogPath), /ENOENT/u);
     assert.throws(
+      // @ts-ignore
       () => createApiCatalogCollection('not-an-array'),
       /candidates must be an array/u,
     );
@@ -6346,12 +6427,14 @@ test('ApiCatalog index artifact summarizes catalog versions without endpoint or 
       },
     }]);
     const catalog = createApiCatalogCollection(fixture.candidates, {
+      // @ts-ignore
       catalogId: 'fixture-catalog-main',
       catalogVersion: 'fixture-api-v1',
       generatedAt: fixture.generatedAt,
       metadataByCandidateId: fixture.metadataByCandidateId,
     });
     const index = createApiCatalogIndex([catalog], {
+      // @ts-ignore
       generatedAt: '2026-05-01T05:20:00.000Z',
       indexVersion: 'fixture-index-v1',
     });
@@ -6640,6 +6723,7 @@ test('ApiCatalog index artifact summarizes catalog versions without endpoint or 
     await assert.rejects(access(partialEventIndexPath), /ENOENT/u);
     await assert.rejects(access(partialEventPath), /ENOENT/u);
     assert.throws(
+      // @ts-ignore
       () => createApiCatalogIndex('not-an-array'),
       /catalogs must be an array/u,
     );
@@ -6653,6 +6737,7 @@ test('ApiCatalog index artifact writer rejects duplicate output paths before wri
   try {
     const fixture = createVerifiedCatalogRegressionFixture();
     const catalog = createApiCatalogCollection(fixture.candidates, {
+      // @ts-ignore
       catalogId: 'fixture-catalog-main',
       catalogVersion: 'fixture-api-v1',
       generatedAt: fixture.generatedAt,
@@ -6677,6 +6762,7 @@ test('ApiCatalog index artifact writer rejects audit IO failure without partial 
   try {
     const fixture = createVerifiedCatalogRegressionFixture();
     const catalog = createApiCatalogCollection(fixture.candidates, {
+      // @ts-ignore
       catalogId: 'fixture-catalog-main',
       catalogVersion: 'fixture-api-v1',
       generatedAt: fixture.generatedAt,
@@ -6708,6 +6794,7 @@ test('ApiCatalog index artifact writer preserves existing index when audit IO fa
   try {
     const fixture = createVerifiedCatalogRegressionFixture();
     const catalog = createApiCatalogCollection(fixture.candidates, {
+      // @ts-ignore
       catalogId: 'fixture-catalog-main',
       catalogVersion: 'fixture-api-v1',
       generatedAt: fixture.generatedAt,
@@ -6738,6 +6825,7 @@ test('ApiCatalog index artifact writer rejects lifecycle audit IO failure withou
   try {
     const fixture = createVerifiedCatalogRegressionFixture();
     const catalog = createApiCatalogCollection(fixture.candidates, {
+      // @ts-ignore
       catalogId: 'fixture-catalog-main',
       catalogVersion: 'fixture-api-v1',
       generatedAt: fixture.generatedAt,
@@ -6820,6 +6908,7 @@ test('ApiCatalog synthetic verified fixture covers entry collection event and au
       },
     });
     const collectionResult = await writeApiCatalogCollectionArtifact(fixture.candidates, {
+      // @ts-ignore
       catalogPath: collectionPath,
       redactionAuditPath: collectionAuditPath,
       generatedAt: fixture.generatedAt,
@@ -7015,6 +7104,7 @@ test('ApiCatalog schema incompatibility emits safe lifecycle evidence without ca
       /not compatible/u,
     );
     await assert.rejects(
+      // @ts-ignore
       writeApiCatalogCollectionArtifact([futureCandidate], { catalogPath: collectionPath }),
       /not compatible/u,
     );

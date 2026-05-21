@@ -16,7 +16,7 @@ async function withTempDir(t) {
   return rootDir;
 }
 
-function manifest(overrides = {}) {
+function manifest(overrides = /** @type {any} */ ({})) {
   return {
     runId: 'run-1',
     results: [{
@@ -40,8 +40,8 @@ test('social-live-resume execute loop waits cooldown then rereads completed mani
   const manifestPath = path.join(rootDir, 'manifest.json');
   await writeFile(manifestPath, `${JSON.stringify(manifest(), null, 2)}\n`, 'utf8');
 
-  const sleeps = [];
-  const commands = [];
+  const sleeps = /** @type {any[]} */ ([]);
+  const commands = /** @type {any[]} */ ([]);
   const result = await runResumeLoop(parseArgs([
     '--state',
     manifestPath,
@@ -94,7 +94,7 @@ test('social-live-resume execute loop stops at max attempts without rerunning st
   const manifestPath = path.join(rootDir, 'manifest.json');
   await writeFile(manifestPath, `${JSON.stringify(manifest(), null, 2)}\n`, 'utf8');
 
-  const commands = [];
+  const commands = /** @type {any[]} */ ([]);
   const result = await runResumeLoop(parseArgs([
     '--state',
     manifestPath,
@@ -128,7 +128,7 @@ test('social-live-resume execute loop stops at max cycles for repeatedly incompl
   const manifestPath = path.join(rootDir, 'manifest.json');
   await writeFile(manifestPath, `${JSON.stringify(manifest(), null, 2)}\n`, 'utf8');
 
-  const commands = [];
+  const commands = /** @type {any[]} */ ([]);
   const result = await runResumeLoop(parseArgs([
     '--state',
     manifestPath,

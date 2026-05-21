@@ -42,7 +42,7 @@ export function parseCliArgs(argv) {
     reuseLoginState: true,
     allowAutoLoginBootstrap: true,
   };
-  const items = [];
+  const items = /** @type {any[]} */ ([]);
   let targetUrl = null;
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -162,7 +162,7 @@ export function parseCliArgs(argv) {
   };
 }
 
-export async function cli(argv = process.argv.slice(2), deps = {}) {
+export async function cli(argv = process.argv.slice(2), deps = /** @type {any} */ ({})) {
   initializeCliUtf8();
   const parsed = parseCliArgs(argv);
   if (parsed.help) {

@@ -20,26 +20,45 @@ test('site-capability compile entrypoint returns descriptor-only dry-run summary
 
   assert.equal(result.command, 'site-capability-compile');
   assert.equal(result.descriptorOnly, true);
+  // @ts-ignore
   assert.equal(result.graphValidationResult, 'passed');
+  // @ts-ignore
   assert.equal(result.planStatus, 'ready');
   assert.equal(result.executionAttempted, false);
   assert.equal(result.downloaderInvocationAllowed, false);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerReady, true);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.consumerOwner, 'site-capability-layer');
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.runtimeTaskExecutedByConsumer, false);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.directDownloaderInvocationAllowed, false);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.directSiteAdapterInvocationAllowed, false);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.sessionViewMaterializationAllowed, false);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.lifecycleEvent.eventType, 'execution.layer.consumer.receipt');
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.coverageDeltaArtifactWrite.redactionApplied, true);
+  // @ts-ignore
   assert.equal(result.coverageCompleteness, 'partial');
+  // @ts-ignore
   assert.equal(result.unknownNodeCount, 0);
+  // @ts-ignore
   assert.equal(result.capabilityCount > 0, true);
+  // @ts-ignore
   assert.equal(result.capabilityIntake.inquiryRequired, true);
+  // @ts-ignore
   assert.equal(result.capabilityCoverageSummary.unconfirmedCapabilityPolicy, 'best_effort_full_coverage');
+  // @ts-ignore
   assert.equal(result.bestEffortUnconfirmedCount > 0, true);
+  // @ts-ignore
   assert.equal(result.routeCount > 0, true);
+  // @ts-ignore
   assert.equal(result.executionPathCount > 0, true);
+  // @ts-ignore
   assert.match(result.sourceDigest, /^sha256:[a-f0-9]{64}$/u);
 });
 
@@ -51,15 +70,23 @@ test('site-capability compile entrypoint accepts targeted capability intake', as
   });
 
   assert.equal(result.command, 'site-capability-compile');
+  // @ts-ignore
   assert.equal(result.graphValidationResult, 'passed');
+  // @ts-ignore
   assert.deepEqual(result.requestedCapabilities, ['open-book']);
+  // @ts-ignore
   assert.equal(result.capabilityIntake.intakeMode, 'user_requested');
+  // @ts-ignore
   assert.equal(result.capabilityIntake.inquiryRequired, false);
+  // @ts-ignore
   assert.equal(result.targetedCapabilityCount >= 1, true);
   assert.equal(result.executionAttempted, false);
   assert.equal(result.downloaderInvocationAllowed, false);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerReady, true);
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.executionFeedback.feedbackSource, 'site-capability-layer');
+  // @ts-ignore
   assert.equal(result.layerRuntimeConsumerResult.coverageDelta.evidenceRefs.length > 0, true);
 });
 
@@ -70,17 +97,29 @@ test('site-capability compile entrypoint blocks unrelated handoff for missing re
   });
 
   assert.equal(result.command, 'site-capability-compile');
+  // @ts-ignore
   assert.equal(result.graphValidationResult, 'passed');
+  // @ts-ignore
   assert.deepEqual(result.requestedCapabilities, ['missing-capability']);
+  // @ts-ignore
   assert.deepEqual(result.missingRequestedCapabilities, ['missing-capability']);
+  // @ts-ignore
   assert.equal(result.missingRequestedCapabilityCount, 1);
+  // @ts-ignore
   assert.equal(result.capabilityGapStatus, 'missing_requested_capability');
+  // @ts-ignore
   assert.equal(result.targetedCapabilityCount, 0);
+  // @ts-ignore
   assert.equal(result.capabilityGapBlocksPlannerHandoff, true);
+  // @ts-ignore
   assert.equal(result.normalizedIntent, 'missing-capability');
+  // @ts-ignore
   assert.equal(result.planStatus, 'blocked');
+  // @ts-ignore
   assert.equal(result.plannerHandoffReady, false);
+  // @ts-ignore
   assert.equal(result.executionPolicyStatus, 'blocked_by_compile_gap');
+  // @ts-ignore
   assert.equal(result.reasonCode, 'compiler.capability_inventory_invalid');
   assert.equal(result.executionAttempted, false);
   assert.equal(result.liveCaptureAttempted, false);
@@ -96,12 +135,19 @@ test('site-capability compile entrypoint blocks missing requested capability eve
     requestedCapabilities: ['missing-capability'],
   });
 
+  // @ts-ignore
   assert.equal(result.graphValidationResult, 'passed');
+  // @ts-ignore
   assert.deepEqual(result.missingRequestedCapabilities, ['missing-capability']);
+  // @ts-ignore
   assert.equal(result.normalizedIntent, 'missing-capability');
+  // @ts-ignore
   assert.equal(result.planStatus, 'blocked');
+  // @ts-ignore
   assert.equal(result.plannerHandoffReady, false);
+  // @ts-ignore
   assert.equal(result.capabilityGapBlocksPlannerHandoff, true);
+  // @ts-ignore
   assert.equal(result.reasonCode, 'compiler.capability_inventory_invalid');
   assert.equal(Object.hasOwn(result, 'capabilityPlan'), false);
   assert.equal(Object.hasOwn(result, 'selectedRoute'), false);
@@ -119,8 +165,11 @@ test('site-capability compile entrypoint can return a capability intake question
 
   assert.equal(result.command, 'site-capability-compile');
   assert.equal(result.descriptorOnly, true);
+  // @ts-ignore
   assert.equal(result.inquiryRequired, true);
+  // @ts-ignore
   assert.equal(result.capabilityIntakeQuestionnaire.questionId, 'site-capability-intake');
+  // @ts-ignore
   assert.equal(result.capabilityIntakeQuestionnaire.redactionRequired, true);
   assert.equal(result.executionAttempted, false);
   assert.equal(result.liveCaptureAttempted, false);
@@ -221,9 +270,13 @@ test('site-capability compile artifact writes are redacted and audited', async (
   const coverageDeltaQueue = JSON.parse(coverageDeltaQueueJson);
   const lifecycleEvent = JSON.parse(lifecycleEventJson);
 
+  // @ts-ignore
   assert.equal(result.artifactWrite.redactionApplied, true);
+  // @ts-ignore
   assert.equal(result.artifactWrite.artifactRefs.includes('site-compile-result-summary.json'), true);
+  // @ts-ignore
   assert.equal(result.artifactWrite.artifactRefs.includes('layer-runtime-execution-feedback.json'), true);
+  // @ts-ignore
   assert.equal(result.compileResultSummary.artifactType, 'SITE_COMPILE_RESULT_SUMMARY');
   assert.equal(summary.compileResult.layerRuntimeConsumerReady, true);
   assert.equal(summary.layerRuntimeConsumerResult.consumerOwner, 'site-capability-layer');

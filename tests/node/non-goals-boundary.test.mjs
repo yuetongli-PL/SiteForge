@@ -320,6 +320,7 @@ test('NonGoalsBoundary runtime handoff guard keeps blocked non-goals from becomi
   assert.equal(guard.queryName, 'createNonGoalRuntimeBoundaryHandoffGuard');
   assert.equal(guard.artifactFamily, 'site-capability-graph-non-goal-runtime-boundary-handoff-guard');
   assert.equal(guard.redactionRequired, true);
+  // @ts-ignore
   assert.equal(item.handoffMode ?? item.guardMode ?? item.contractMode, 'descriptor-only');
   assert.equal(item.result, 'blocked');
   assert.equal(item.reasonCode, 'non-goal-runtime-boundary-disabled');
@@ -504,6 +505,7 @@ test('NonGoalsBoundary runtime handoff guard keeps blocked non-goals from becomi
     boundary: descriptor,
     guardName: 'synthetic-non-goal-runtime-boundary-handoff-guard',
   });
+  // @ts-ignore
   unsafeGuard.items[0].runtimeConsumerEnabled = true;
   assert.throws(
     () => assertCompatibility(unsafeGuard),
@@ -548,9 +550,12 @@ test('NonGoalsBoundary live consumer acceptance guard keeps runtime handoffs fro
     guardName: 'synthetic-non-goal-live-consumer-acceptance-guard',
   });
   const item = acceptanceGuard.items[0];
+  // @ts-ignore
   const sourceHandoff = item.sourceRuntimeBoundaryHandoff
+    // @ts-ignore
     ?? item.sourceHandoffGuard
     ?? item.sourceHandoff
+    // @ts-ignore
     ?? item.sourceNonGoalRuntimeBoundaryHandoff;
 
   assert.equal(boundaryResult.allowed, true);
@@ -564,6 +569,7 @@ test('NonGoalsBoundary live consumer acceptance guard keeps runtime handoffs fro
     'site-capability-graph-non-goal-live-consumer-acceptance-guard',
   );
   assert.equal(acceptanceGuard.redactionRequired, true);
+  // @ts-ignore
   assert.equal(item.guardMode ?? item.acceptanceMode ?? item.contractMode, 'descriptor-only');
   assert.equal(item.result, 'blocked');
   assert.equal(item.reasonCode, 'non-goal-runtime-boundary-disabled');
@@ -573,17 +579,24 @@ test('NonGoalsBoundary live consumer acceptance guard keeps runtime handoffs fro
   assert.equal(sourceHandoff.result, handoffGuard.items[0].result);
   assert.equal(sourceHandoff.reasonCode, handoffGuard.items[0].reasonCode);
   assert.equal(
+    // @ts-ignore
     item.requiredRuntimeBoundaryHandoffGuard
       ?? item.requiredSourceHandoffGuard
+      // @ts-ignore
       ?? item.requiredHandoffGuard
+      // @ts-ignore
       ?? item.requiredGuards?.runtimeBoundaryHandoffGuard
+      // @ts-ignore
       ?? item.requiredGuards?.handoffGuard,
     'assertNonGoalRuntimeBoundaryHandoffGuardCompatibility',
   );
   assert.equal(
+    // @ts-ignore
     item.requiredLiveConsumerAcceptanceGuard
       ?? item.requiredAcceptanceGuard
+      // @ts-ignore
       ?? item.requiredGuards?.liveConsumerAcceptanceGuard
+      // @ts-ignore
       ?? item.requiredGuards?.acceptanceGuard,
     'assertNonGoalLiveConsumerAcceptanceGuardCompatibility',
   );
@@ -746,6 +759,7 @@ test('NonGoalsBoundary live consumer acceptance guard keeps runtime handoffs fro
   const unsafeGuard = createAcceptanceGuard(handoffGuard, {
     guardName: 'synthetic-non-goal-live-consumer-acceptance-guard',
   });
+  // @ts-ignore
   unsafeGuard.items[0].liveConsumerEnabled = true;
   assert.throws(
     () => assertAcceptanceCompatibility(unsafeGuard),
@@ -798,10 +812,14 @@ test('NonGoalsBoundary live consumer compatibility review gate consumes only acc
     guardName: 'synthetic-non-goal-live-consumer-compatibility-review-gate',
   });
   const item = reviewGate.items[0];
+  // @ts-ignore
   const sourceAcceptance = item.sourceLiveConsumerAcceptance
+    // @ts-ignore
     ?? item.sourceAcceptanceGuard
     ?? item.sourceAcceptance
+    // @ts-ignore
     ?? item.sourceNonGoalLiveConsumerAcceptance
+    // @ts-ignore
     ?? item.sourceLiveConsumerAcceptanceGuard;
 
   assert.equal(boundaryResult.allowed, true);
@@ -815,6 +833,7 @@ test('NonGoalsBoundary live consumer compatibility review gate consumes only acc
     'site-capability-graph-non-goal-live-consumer-compatibility-review-gate',
   );
   assert.equal(reviewGate.redactionRequired, true);
+  // @ts-ignore
   assert.equal(item.guardMode ?? item.reviewMode ?? item.contractMode, 'descriptor-only');
   assert.equal(item.result, 'blocked');
   assert.equal(item.reasonCode, 'non-goal-runtime-boundary-disabled');
@@ -834,17 +853,24 @@ test('NonGoalsBoundary live consumer compatibility review gate consumes only acc
     'assertNonGoalLiveConsumerAcceptanceGuardCompatibility',
   );
   assert.equal(
+    // @ts-ignore
     item.requiredLiveConsumerAcceptanceGuard
+      // @ts-ignore
       ?? item.requiredSourceAcceptanceGuard
       ?? item.requiredAcceptanceGuard
+      // @ts-ignore
       ?? item.requiredGuards?.liveConsumerAcceptanceGuard
+      // @ts-ignore
       ?? item.requiredGuards?.acceptanceGuard,
     'assertNonGoalLiveConsumerAcceptanceGuardCompatibility',
   );
   assert.equal(
+    // @ts-ignore
     item.requiredCompatibilityReviewGate
       ?? item.requiredReviewGate
+      // @ts-ignore
       ?? item.requiredGuards?.compatibilityReviewGate
+      // @ts-ignore
       ?? item.requiredGuards?.reviewGate,
     'assertNonGoalLiveConsumerCompatibilityReviewGateCompatibility',
   );
@@ -962,7 +988,7 @@ test('NonGoalsBoundary live consumer compatibility review gate rejects live runt
     guardName: 'synthetic-non-goal-review-rejection-source-acceptance-guard',
   });
 
-  const unexpectedlyAccepted = [];
+  const unexpectedlyAccepted = /** @type {any[]} */ ([]);
   for (const { name, options, pattern } of [
     {
       name: 'runtimeConsumerEnabled',
@@ -1095,12 +1121,15 @@ test('NonGoalsBoundary live consumer compatibility review gate rejects live runt
   const unsafeGate = createReviewGate(acceptanceGuard, {
     guardName: 'synthetic-non-goal-live-consumer-compatibility-review-gate',
   });
+  // @ts-ignore
   unsafeGate.items[0].externalDispatchEnabled = true;
   assert.throws(
     () => assertReviewGateCompatibility(unsafeGate),
     /externalDispatchEnabled must be false|externalDispatchEnabled must remain false|runtime field|dispatch/u,
   );
+  // @ts-ignore
   unsafeGate.items[0].externalDispatchEnabled = false;
+  // @ts-ignore
   unsafeGate.items[0].SessionView = { sessionId: 'synthetic-secret-value' };
   const compatibilityMessage = captureThrownMessage(() => assertReviewGateCompatibility(unsafeGate));
   assert.match(compatibilityMessage, /SessionView|sessionView|descriptor-only|runtime field|raw sensitive material/i);

@@ -78,6 +78,7 @@ test('bilibili KB augmentation renders overview sections with surfaced facts sum
 
 test('bilibili KB augmentation renderStateSections returns empty sections without surfaced bilibili facts', () => {
   const sections = renderBilibiliStateSections({
+    // @ts-ignore
     model: { states: [] },
     state: { pageFacts: null },
     edge: null,
@@ -95,7 +96,7 @@ test('bilibili KB augmentation renderStateSections returns empty sections withou
 });
 
 test('bilibili KB augmentation renders state sections from bilibili facts and featured cards', () => {
-  const tableCalls = [];
+  const tableCalls = /** @type {any[]} */ ([]);
   const sections = bilibiliKnowledgeBaseAugmentation.renderStateSections({
     model: { states: [] },
     state: {

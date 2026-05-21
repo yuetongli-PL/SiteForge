@@ -215,7 +215,7 @@ test('queryDouyinFollow counts scanned users correctly and avoids per-user navig
   /** @type {any} */
   let capturedSettings = null;
   /** @type {string[]} */
-  const navigatedUrls = [];
+  const navigatedUrls = /** @type {any[]} */ ([]);
   let tempDir = null;
   let callIndex = 0;
   const report = await queryDouyinFollow('https://www.douyin.com/?recommend=1', {

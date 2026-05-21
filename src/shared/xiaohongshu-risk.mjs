@@ -43,7 +43,7 @@ export function detectXiaohongshuRestrictionPage({
   pageType = '',
   pageFacts = null,
   runtimeEvidence = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const parsedFinalUrl = parseUrl(finalUrl || inputUrl);
   const parsedInputUrl = parseUrl(inputUrl);
   const hostname = parsedFinalUrl?.hostname ?? parsedInputUrl?.hostname ?? '';

@@ -140,9 +140,11 @@ function loadGraphDocsOutputLiveLayerConsumerIntegrationCheckpointApi() {
 
 function loadGraphDocsOutputLiveConsumerDispatchDryRunResultApi() {
   const create = graphArtifacts.createGraphDocsOutputLiveConsumerDispatchDryRunResult
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveLayerConsumerDispatchDryRunResult;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerDispatchDryRunResultCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveLayerConsumerDispatchDryRunResultCompatibility;
   if (typeof create !== 'function' || typeof assertCompatibility !== 'function') {
     throw new Error(
@@ -156,9 +158,11 @@ function loadGraphDocsOutputLiveConsumerDispatchDryRunResultApi() {
 
 function loadGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGateApi() {
   const create = graphArtifacts.createGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGate
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveLayerConsumerDispatchCompatibilityReviewGate;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGateCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveLayerConsumerDispatchCompatibilityReviewGateCompatibility;
   if (typeof create !== 'function' || typeof assertCompatibility !== 'function') {
     throw new Error(
@@ -575,9 +579,11 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingPlanReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScanCompatibility;
   if (
     typeof createNoopPackagingPlanReviewScanSafeSummary !== 'function'
@@ -597,12 +603,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScanApi() {
   const createNoopPackagingOutputReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScanCompatibility;
   if (
     typeof createNoopPackagingOutputReviewScanSafeSummary !== 'function'
@@ -622,12 +631,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScanApi() {
   const createNoopPackagingRetentionReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScanCompatibility;
   const missingExports = [
     [
@@ -659,12 +671,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScanApi() {
   const createNoopPackagingCleanupReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScanCompatibility;
   const missingExports = [
     [
@@ -694,12 +709,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScanApi() {
   const createNoopPackagingPublicationReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScanCompatibility;
   const missingExports = [
     [
@@ -729,12 +747,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScanApi() {
   const createNoopPackagingDeliveryReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScanCompatibility;
   const missingExports = [
     [
@@ -764,12 +785,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScanApi() {
   const createNoopDeliveryIndexReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScanCompatibility;
   const missingExports = [
     [
@@ -799,12 +823,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScanApi() {
   const createNoopDeliveryManifestReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScanCompatibility;
   const missingExports = [
     [
@@ -834,12 +861,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScanApi() {
   const createNoopDeliveryReceiptReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScanCompatibility;
   const missingExports = [
     [
@@ -869,12 +899,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScanApi() {
   const createNoopDeliveryAuditReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScanCompatibility;
   const missingExports = [
     [
@@ -904,12 +937,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScanApi() {
   const createNoopDeliveryCompletionReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScanCompatibility;
   const missingExports = [
     [
@@ -939,12 +975,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScanApi() {
   const createNoopDeliveryFinalizationReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScanCompatibility;
   const missingExports = [
     [
@@ -974,12 +1013,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScanApi() {
   const createNoopDeliveryCloseoutReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScanCompatibility;
   const missingExports = [
     [
@@ -1009,12 +1051,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySealReviewScanApi() {
   const createNoopDeliveryClosureReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySealReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySealReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySealReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySealReviewScanCompatibility;
   const missingExports = [
     [
@@ -1044,12 +1089,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScanApi() {
   const createNoopDeliverySealReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySealReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySealReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScanCompatibility;
   const missingExports = [
     [
@@ -1079,12 +1127,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScanApi() {
   const createNoopDeliveryAttestationReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScanCompatibility;
   const missingExports = [
     [
@@ -1114,12 +1165,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScanApi() {
   const createNoopDeliveryVerificationReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScanCompatibility;
   const missingExports = [
     [
@@ -1149,12 +1203,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScanApi() {
   const createNoopDeliveryConfirmationReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScanCompatibility;
   const missingExports = [
     [
@@ -1184,12 +1241,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScanApi() {
   const createNoopDeliveryAcknowledgementReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScanCompatibility;
   const missingExports = [
     [
@@ -1219,12 +1279,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScanApi() {
   const createNoopDeliveryAcceptanceReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScanCompatibility;
   const missingExports = [
     [
@@ -1254,12 +1317,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScanApi() {
   const createNoopDeliveryReleaseReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScanCompatibility;
   const missingExports = [
     [
@@ -1289,12 +1355,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScanApi() {
   const createNoopDeliverySignoffReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScanCompatibility;
   const missingExports = [
     [
@@ -1324,12 +1393,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScanApi() {
   const createNoopDeliveryHandoffReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScanCompatibility;
   const missingExports = [
     [
@@ -1359,12 +1431,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScanApi() {
   const createNoopDeliveryTurnoverReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScanCompatibility;
   const missingExports = [
     [
@@ -1394,12 +1469,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScanApi() {
   const createNoopDeliveryTransferReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScanCompatibility;
   const missingExports = [
     [
@@ -1429,12 +1507,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScanApi() {
   const createNoopDeliveryTransitionReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScanCompatibility;
   const missingExports = [
     [
@@ -1464,12 +1545,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScanApi() {
   const createNoopDeliveryConveyanceReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScanCompatibility;
   const missingExports = [
     [
@@ -1499,12 +1583,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScanApi() {
   const createNoopDeliveryCarriageReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScanCompatibility;
   const missingExports = [
     [
@@ -1534,12 +1621,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScanApi() {
   const createNoopDeliveryTransportReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScanCompatibility;
   const missingExports = [
     [
@@ -1569,12 +1659,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScanApi() {
   const createNoopDeliveryRoutingReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScanCompatibility;
   const missingExports = [
     [
@@ -1604,12 +1697,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScanApi() {
   const createNoopDeliveryForwardingReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScanCompatibility;
   const missingExports = [
     [
@@ -1639,12 +1735,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScanApi() {
   const createNoopDeliveryRelayReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScanCompatibility;
   const missingExports = [
     [
@@ -1674,12 +1773,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScanApi() {
   const createNoopDeliveryPassThroughReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScanCompatibility;
   const missingExports = [
     [
@@ -1709,12 +1811,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScanApi() {
   const createNoopDeliveryTransitReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScanCompatibility;
   const missingExports = [
     [
@@ -1744,12 +1849,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScanApi() {
   const createNoopDeliveryCarrierReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScanCompatibility;
   const missingExports = [
     [
@@ -1779,12 +1887,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScanApi() {
   const createNoopDeliveryCourierReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScanCompatibility;
   const missingExports = [
     [
@@ -1814,12 +1925,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScanApi() {
   const createNoopDeliveryServiceReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScanCompatibility;
   const missingExports = [
     [
@@ -1849,12 +1963,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScanApi() {
   const createNoopDeliveryProviderReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScanCompatibility;
   const missingExports = [
     [
@@ -1884,12 +2001,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScanApi() {
   const createNoopDeliverySupplierReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScanCompatibility;
   const missingExports = [
     [
@@ -1919,12 +2039,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScanApi() {
   const createNoopDeliveryVendorReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScanCompatibility;
   const missingExports = [
     [
@@ -1954,12 +2077,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScanApi() {
   const createNoopDeliveryContractorReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScanCompatibility;
   const missingExports = [
     [
@@ -1989,12 +2115,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScanApi() {
   const createNoopDeliveryPartnerReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScanCompatibility;
   const missingExports = [
     [
@@ -2024,12 +2153,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScanApi() {
   const createNoopDeliveryCollaboratorReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScanCompatibility;
   const missingExports = [
     [
@@ -2059,12 +2191,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScanApi() {
   const createNoopDeliveryAssociateReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScanCompatibility;
   const missingExports = [
     [
@@ -2094,12 +2229,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScanApi() {
   const createNoopDeliveryAffiliateReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScanCompatibility;
   const missingExports = [
     [
@@ -2129,12 +2267,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScanApi() {
   const createNoopDeliveryAllianceReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScanCompatibility;
   const missingExports = [
     [
@@ -2164,12 +2305,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScanApi() {
   const createNoopDeliveryNetworkReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScanCompatibility;
   const missingExports = [
     [
@@ -2199,12 +2343,15 @@ function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryCon
 function loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryLaneReviewScanApi() {
   const createNoopDeliveryChannelReviewScanSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScanSafeSummary
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScanSafeSummary;
   const create =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryLaneReviewScan
+    // @ts-ignore
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryLaneReviewScan;
   const assertCompatibility =
     graphArtifacts.assertGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDeliveryLaneReviewScanCompatibility
+    // @ts-ignore
     ?? graphArtifacts.assertGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryLaneReviewScanCompatibility;
   const missingExports = [
     [
@@ -2285,7 +2432,7 @@ async function captureRejectedMessage(fn) {
   throw new Error('Expected function to reject');
 }
 
-function createGraphDocsOutputLiveWriterCompletionGuard(create, sourceGuard, options = {}) {
+function createGraphDocsOutputLiveWriterCompletionGuard(create, sourceGuard, options = /** @type {any} */ ({})) {
   try {
     return create(sourceGuard, options);
   } catch (error) {
@@ -2303,7 +2450,7 @@ function createGraphDocsOutputLiveWriterCompletionGuard(create, sourceGuard, opt
   }
 }
 
-function createGraphDocsOutputLiveLayerConsumerFinalAcceptancePreflight(create, sourceGuard, options = {}) {
+function createGraphDocsOutputLiveLayerConsumerFinalAcceptancePreflight(create, sourceGuard, options = /** @type {any} */ ({})) {
   try {
     return create(sourceGuard, options);
   } catch (error) {
@@ -2324,7 +2471,7 @@ function createGraphDocsOutputLiveLayerConsumerFinalAcceptancePreflight(create, 
 function createGraphDocsOutputLiveLayerConsumerRegistrationAcceptanceBoundary(
   create,
   sourcePreflight,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return create(sourcePreflight, options);
@@ -2346,7 +2493,7 @@ function createGraphDocsOutputLiveLayerConsumerRegistrationAcceptanceBoundary(
 function createGraphDocsOutputLiveLayerConsumerNoopRegistrationCatalog(
   create,
   sourceBoundary,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return create(sourceBoundary, options);
@@ -2368,7 +2515,7 @@ function createGraphDocsOutputLiveLayerConsumerNoopRegistrationCatalog(
 function createGraphDocsOutputLiveLayerConsumerIntegrationCheckpoint(
   create,
   sourceCatalog,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return create(sourceCatalog, options);
@@ -2439,7 +2586,7 @@ async function dispatchGraphDerivedArtifact(registry, artifact) {
   throw new Error('Graph-derived artifact consumer registry must expose dispatch()');
 }
 
-async function createGraphDocsOutputLiveConsumerDispatchDryRunResult(create, options = {}) {
+async function createGraphDocsOutputLiveConsumerDispatchDryRunResult(create, options = /** @type {any} */ ({})) {
   try {
     return await create(options);
   } catch (error) {
@@ -2461,7 +2608,7 @@ async function createGraphDocsOutputLiveConsumerDispatchDryRunResult(create, opt
 async function createGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGate(
   create,
   sourceDispatchDryRunResult,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create(sourceDispatchDryRunResult, options);
@@ -2485,7 +2632,7 @@ async function createGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGate(
 async function createGraphDocsOutputLiveConsumerExternalDispatchAcceptancePreflight(
   create,
   sourceDispatchDryRunResult,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create(sourceDispatchDryRunResult, options);
@@ -2509,7 +2656,7 @@ async function createGraphDocsOutputLiveConsumerExternalDispatchAcceptancePrefli
 async function createGraphDocsOutputLiveConsumerExternalDispatchNoopHandoffGate(
   create,
   sourceExternalDispatchAcceptancePreflight,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create(sourceExternalDispatchAcceptancePreflight, options);
@@ -2534,7 +2681,7 @@ async function createGraphDocsOutputLiveConsumerExternalDispatchNoopHandoffGate(
 async function createGraphDocsOutputLiveConsumerArtifactWriterInvocationPreflight(
   create,
   sourceExternalDispatchNoopHandoffGate,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2561,7 +2708,7 @@ async function createGraphDocsOutputLiveConsumerArtifactWriterInvocationPrefligh
 async function createGraphDocsOutputLiveConsumerRuntimeWriteObservabilityPreflight(
   create,
   sourceArtifactWriterInvocationPreflight,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2660,7 +2807,7 @@ async function createArtifactWriterInvocationPreflightForInvocationEvidence() {
 
 async function createControlledGraphDocsOutputLiveConsumerArtifactWriterInvocationEvidence({
   mode = 'test-harness-ephemeral',
-} = {}) {
+} = /** @type {any} */ ({})) {
   const {
     create: createInvocationEvidence,
   } = loadGraphDocsOutputLiveConsumerArtifactWriterInvocationEvidenceApi();
@@ -2702,7 +2849,7 @@ async function createControlledGraphDocsOutputLiveConsumerArtifactWriterInvocati
 async function createGraphDocsOutputLiveConsumerReviewedArtifactPipelineReadinessGate(
   create,
   sourceRuntimeDocsArtifactWriteObservabilityEvidence,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2734,7 +2881,7 @@ async function createGraphDocsOutputLiveConsumerReviewedArtifactPipelineReadines
 async function createGraphDocsOutputLiveConsumerArtifactPipelineAcceptanceBoundary(
   create,
   sourceReviewedArtifactPipelineReadinessGate,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2767,7 +2914,7 @@ async function createGraphDocsOutputLiveConsumerArtifactPipelineAcceptanceBounda
 async function createGraphDocsOutputLiveConsumerArtifactPipelineCompletionGapScan(
   create,
   sourceArtifactPipelineAcceptanceBoundary,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2800,7 +2947,7 @@ async function createGraphDocsOutputLiveConsumerArtifactPipelineCompletionGapSca
 async function createGraphDocsOutputLiveConsumerArtifactPipelineRegistrationToWriterBoundaryGapScan(
   create,
   sourceArtifactPipelineCompletionGapScan,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2833,7 +2980,7 @@ async function createGraphDocsOutputLiveConsumerArtifactPipelineRegistrationToWr
 async function createGraphDocsOutputLiveConsumerArtifactPipelineWriterResultToRedactionAuditBoundaryGapScan(
   create,
   sourceArtifactPipelineRegistrationToWriterBoundaryGapScan,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return await create({
@@ -2872,7 +3019,7 @@ async function createGraphDocsOutputLiveConsumerArtifactPipelineWriterResultToRe
 async function createGraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoffGapScan(
   create,
   sourceWriterResultToRedactionAuditBoundaryGapScan,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   const createSafeSummary =
     graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineWriterResultToRedactionAuditBoundaryGapScanSafeSummary;
@@ -2916,9 +3063,10 @@ async function createGraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoff
 async function createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScan(
   create,
   sourceRedactionAuditSafeSummaryHandoffGapScan,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   const createSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoffGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineRedactionAuditSafeSummaryHandoffGapScanSafeSummary;
   if (typeof createSafeSummary !== 'function') {
@@ -5068,9 +5216,13 @@ test('docs-output live consumer artifact-writer invocation evidence writes redac
   assert.equal(evidence.invocationAttempted, true);
   assert.equal(evidence.filesystemWritePerformed, true);
   assert.equal(evidence.auditBeforeArtifact, true);
+  // @ts-ignore
   assert.equal(evidence.artifactFamilyWritten, 'site-capability-graph-docs-markdown');
+  // @ts-ignore
   assert.equal(evidence.artifactFileName, placement.artifactFileName);
+  // @ts-ignore
   assert.equal(evidence.auditFileName, placement.auditFileName);
+  // @ts-ignore
   assert.equal(evidence.redactionAuditAttachment?.writeOrder, 'audit-before-artifact');
   assert.equal(await pathExists(placement.artifactPath), true);
   assert.equal(await pathExists(placement.auditPath), true);
@@ -7767,6 +7919,7 @@ test('post-handoff safe-summary consumer boundary gap scan consumes redaction-au
       sourceWriterResultToRedactionAuditBoundaryGapScan,
     );
   const createRedactionAuditSafeSummaryHandoffGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoffGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelineRedactionAuditSafeSummaryHandoffGapScanSafeSummary;
   assert.equal(
@@ -8129,6 +8282,7 @@ test('downstream safe-summary consumer eligibility scan consumes post-handoff bo
     assertCompatibility,
   } = loadGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerEligibilityScanApi();
   const createPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary;
   assert.equal(
@@ -8191,11 +8345,16 @@ test('downstream safe-summary consumer eligibility scan consumes post-handoff bo
     },
   );
   const sourceSummary =
+    // @ts-ignore
     eligibilityScan.sourcePostHandoffSafeSummaryConsumerBoundaryGapScan
     ?? eligibilityScan.sourceArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScan
+    // @ts-ignore
     ?? eligibilityScan.sourcePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
+    // @ts-ignore
     ?? eligibilityScan.sourceArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
+    // @ts-ignore
     ?? eligibilityScan.sourceSafeSummary
+    // @ts-ignore
     ?? eligibilityScan.source;
   const renderedScan = JSON.stringify(eligibilityScan);
 
@@ -8577,6 +8736,7 @@ test('downstream safe-summary consumer no-op registration review scan consumes e
   } =
     loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopRegistrationReviewScanApi();
   const createPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary;
   const createEligibilityScanSafeSummary =
@@ -8656,11 +8816,16 @@ test('downstream safe-summary consumer no-op registration review scan consumes e
     },
   );
   const sourceSummary =
+    // @ts-ignore
     noopRegistrationReviewScan.sourceDownstreamSafeSummaryConsumerEligibilityScan
+    // @ts-ignore
     ?? noopRegistrationReviewScan.sourceArtifactPipelineDownstreamSafeSummaryConsumerEligibilityScan
+    // @ts-ignore
     ?? noopRegistrationReviewScan.sourceDownstreamSafeSummaryConsumerEligibilityScanSafeSummary
     ?? noopRegistrationReviewScan.sourceArtifactPipelineDownstreamSafeSummaryConsumerEligibilityScanSafeSummary
+    // @ts-ignore
     ?? noopRegistrationReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopRegistrationReviewScan.source;
   const renderedScan = JSON.stringify(noopRegistrationReviewScan);
 
@@ -9093,6 +9258,7 @@ test('downstream safe-summary consumer no-op dispatch review scan consumes no-op
   } =
     loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopDispatchReviewScanApi();
   const createPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary;
   const createEligibilityScanSafeSummary =
@@ -9183,9 +9349,13 @@ test('downstream safe-summary consumer no-op dispatch review scan consumes no-op
   );
   const sourceSummary =
     noopDispatchReviewScan.sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopRegistrationReviewScanSafeSummary
+    // @ts-ignore
     ?? noopDispatchReviewScan.sourceDownstreamSafeSummaryConsumerNoopRegistrationReviewScanSafeSummary
+    // @ts-ignore
     ?? noopDispatchReviewScan.sourceNoopRegistrationReviewScanSafeSummary
+    // @ts-ignore
     ?? noopDispatchReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopDispatchReviewScan.source;
   const renderedScan = JSON.stringify(noopDispatchReviewScan);
 
@@ -9635,6 +9805,7 @@ test('downstream safe-summary consumer no-op telemetry review scan consumes no-o
   } =
     loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopTelemetryReviewScanApi();
   const createPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary;
   const createEligibilityScanSafeSummary =
@@ -9735,9 +9906,13 @@ test('downstream safe-summary consumer no-op telemetry review scan consumes no-o
   );
   const sourceSummary =
     noopTelemetryReviewScan.sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopDispatchReviewScanSafeSummary
+    // @ts-ignore
     ?? noopTelemetryReviewScan.sourceDownstreamSafeSummaryConsumerNoopDispatchReviewScanSafeSummary
+    // @ts-ignore
     ?? noopTelemetryReviewScan.sourceNoopDispatchReviewScanSafeSummary
+    // @ts-ignore
     ?? noopTelemetryReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopTelemetryReviewScan.source;
   const renderedScan = JSON.stringify(noopTelemetryReviewScan);
 
@@ -10209,6 +10384,7 @@ test('downstream safe-summary consumer no-op artifact publication review scan co
   } =
     loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopArtifactPublicationReviewScanApi();
   const createPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary;
   const createEligibilityScanSafeSummary =
@@ -10320,9 +10496,13 @@ test('downstream safe-summary consumer no-op artifact publication review scan co
     );
   const sourceSummary =
     noopArtifactPublicationReviewScan.sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopTelemetryReviewScanSafeSummary
+    // @ts-ignore
     ?? noopArtifactPublicationReviewScan.sourceDownstreamSafeSummaryConsumerNoopTelemetryReviewScanSafeSummary
+    // @ts-ignore
     ?? noopArtifactPublicationReviewScan.sourceNoopTelemetryReviewScanSafeSummary
+    // @ts-ignore
     ?? noopArtifactPublicationReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopArtifactPublicationReviewScan.source;
   const renderedScan = JSON.stringify(noopArtifactPublicationReviewScan);
 
@@ -10800,6 +10980,7 @@ test('downstream safe-summary consumer no-op retained-output review scan consume
   } =
     loadGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeSummaryConsumerNoopRetainedOutputReviewScanApi();
   const createPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary =
+    // @ts-ignore
     graphArtifacts.createGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary
     ?? graphArtifacts.createGraphDocsOutputLiveConsumerArtifactPipelinePostHandoffSafeSummaryConsumerBoundaryGapScanSafeSummary;
   const createEligibilityScanSafeSummary =
@@ -10925,9 +11106,13 @@ test('downstream safe-summary consumer no-op retained-output review scan consume
     noopRetainedOutputReviewScan
       .sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopArtifactPublicationReviewScanSafeSummary
     ?? noopRetainedOutputReviewScan
+      // @ts-ignore
       .sourceDownstreamSafeSummaryConsumerNoopArtifactPublicationReviewScanSafeSummary
+    // @ts-ignore
     ?? noopRetainedOutputReviewScan.sourceNoopArtifactPublicationReviewScanSafeSummary
+    // @ts-ignore
     ?? noopRetainedOutputReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopRetainedOutputReviewScan.source;
   const renderedScan = JSON.stringify(noopRetainedOutputReviewScan);
 
@@ -10947,7 +11132,9 @@ test('downstream safe-summary consumer no-op retained-output review scan consume
   assert.equal(sourceSummary?.descriptorOnly, true);
   assert.equal(sourceSummary?.disabled, true);
   assert.equal(sourceSummary?.safeSummaryOnly, true);
+  // @ts-ignore
   assert.equal(sourceSummary?.result, 'blocked');
+  // @ts-ignore
   assert.equal(sourceSummary?.reasonCode, 'graph-runtime-consumer-disabled');
 
   for (const fieldName of [
@@ -11304,9 +11491,13 @@ test('downstream safe-summary consumer no-op cleanup-policy review scan consumes
     noopCleanupPolicyReviewScan
       .sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopRetainedOutputReviewScanSafeSummary
     ?? noopCleanupPolicyReviewScan
+      // @ts-ignore
       .sourceDownstreamSafeSummaryConsumerNoopRetainedOutputReviewScanSafeSummary
+    // @ts-ignore
     ?? noopCleanupPolicyReviewScan.sourceNoopRetainedOutputReviewScanSafeSummary
+    // @ts-ignore
     ?? noopCleanupPolicyReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopCleanupPolicyReviewScan.source;
   const renderedScan = JSON.stringify(noopCleanupPolicyReviewScan);
 
@@ -11326,7 +11517,9 @@ test('downstream safe-summary consumer no-op cleanup-policy review scan consumes
   assert.equal(sourceSummary?.descriptorOnly, true);
   assert.equal(sourceSummary?.disabled, true);
   assert.equal(sourceSummary?.safeSummaryOnly, true);
+  // @ts-ignore
   assert.equal(sourceSummary?.result, 'blocked');
+  // @ts-ignore
   assert.equal(sourceSummary?.reasonCode, 'graph-runtime-consumer-disabled');
 
   for (const fieldName of [
@@ -11699,9 +11892,13 @@ test('downstream safe-summary consumer no-op retention-report review scan consum
     noopRetentionReportReviewScan
       .sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopCleanupPolicyReviewScanSafeSummary
     ?? noopRetentionReportReviewScan
+      // @ts-ignore
       .sourceDownstreamSafeSummaryConsumerNoopCleanupPolicyReviewScanSafeSummary
+    // @ts-ignore
     ?? noopRetentionReportReviewScan.sourceNoopCleanupPolicyReviewScanSafeSummary
+    // @ts-ignore
     ?? noopRetentionReportReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopRetentionReportReviewScan.source;
   const renderedScan = JSON.stringify(noopRetentionReportReviewScan);
 
@@ -11721,7 +11918,9 @@ test('downstream safe-summary consumer no-op retention-report review scan consum
   assert.equal(sourceSummary?.descriptorOnly, true);
   assert.equal(sourceSummary?.disabled, true);
   assert.equal(sourceSummary?.safeSummaryOnly, true);
+  // @ts-ignore
   assert.equal(sourceSummary?.result, 'blocked');
+  // @ts-ignore
   assert.equal(sourceSummary?.reasonCode, 'graph-runtime-consumer-disabled');
 
   for (const fieldName of [
@@ -12110,9 +12309,13 @@ test('downstream safe-summary consumer no-op archive-manifest review scan consum
     noopArchiveManifestReviewScan
       .sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopRetentionReportReviewScanSafeSummary
     ?? noopArchiveManifestReviewScan
+      // @ts-ignore
       .sourceDownstreamSafeSummaryConsumerNoopRetentionReportReviewScanSafeSummary
+    // @ts-ignore
     ?? noopArchiveManifestReviewScan.sourceNoopRetentionReportReviewScanSafeSummary
+    // @ts-ignore
     ?? noopArchiveManifestReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopArchiveManifestReviewScan.source;
   const renderedScan = JSON.stringify(noopArchiveManifestReviewScan);
 
@@ -12132,7 +12335,9 @@ test('downstream safe-summary consumer no-op archive-manifest review scan consum
   assert.equal(sourceSummary?.descriptorOnly, true);
   assert.equal(sourceSummary?.disabled, true);
   assert.equal(sourceSummary?.safeSummaryOnly, true);
+  // @ts-ignore
   assert.equal(sourceSummary?.result, 'blocked');
+  // @ts-ignore
   assert.equal(sourceSummary?.reasonCode, 'graph-runtime-consumer-disabled');
 
   for (const fieldName of [
@@ -12544,9 +12749,13 @@ test('downstream safe-summary consumer no-op packaging-plan review scan consumes
     noopPackagingPlanReviewScan
       .sourceArtifactPipelineDownstreamSafeSummaryConsumerNoopArchiveManifestReviewScanSafeSummary
     ?? noopPackagingPlanReviewScan
+      // @ts-ignore
       .sourceDownstreamSafeSummaryConsumerNoopArchiveManifestReviewScanSafeSummary
+    // @ts-ignore
     ?? noopPackagingPlanReviewScan.sourceNoopArchiveManifestReviewScanSafeSummary
+    // @ts-ignore
     ?? noopPackagingPlanReviewScan.sourceSafeSummary
+    // @ts-ignore
     ?? noopPackagingPlanReviewScan.source;
   const renderedScan = JSON.stringify(noopPackagingPlanReviewScan);
 
@@ -12566,7 +12775,9 @@ test('downstream safe-summary consumer no-op packaging-plan review scan consumes
   assert.equal(sourceSummary?.descriptorOnly, true);
   assert.equal(sourceSummary?.disabled, true);
   assert.equal(sourceSummary?.safeSummaryOnly, true);
+  // @ts-ignore
   assert.equal(sourceSummary?.result, 'blocked');
+  // @ts-ignore
   assert.equal(sourceSummary?.reasonCode, 'graph-runtime-consumer-disabled');
 
   for (const fieldName of [
@@ -13034,7 +13245,9 @@ test('downstream safe-summary consumer no-op packaging-output review scan consum
   assert.equal(sourceSummary?.descriptorOnly, true);
   assert.equal(sourceSummary?.disabled, true);
   assert.equal(sourceSummary?.safeSummaryOnly, true);
+  // @ts-ignore
   assert.equal(sourceSummary?.result, 'blocked');
+  // @ts-ignore
   assert.equal(sourceSummary?.reasonCode, 'graph-runtime-consumer-disabled');
 
   for (const fieldName of [

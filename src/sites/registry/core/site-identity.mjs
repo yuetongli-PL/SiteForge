@@ -7,7 +7,7 @@ import {
 } from '../catalog/context.mjs';
 import { resolveSiteAdapterById, resolveSiteIdentity } from '../../adapters/resolver.mjs';
 
-function resolveIdentityProfile(context = {}) {
+function resolveIdentityProfile(context = /** @type {any} */ ({})) {
   return context?.siteProfileDocument
     ?? context?.liveSiteProfileDocument
     ?? context?.siteProfile
@@ -15,14 +15,14 @@ function resolveIdentityProfile(context = {}) {
     ?? null;
 }
 
-function resolveIdentityUrl(context = {}) {
+function resolveIdentityUrl(context = /** @type {any} */ ({})) {
   return context?.url
     ?? context?.baseUrl
     ?? context?.inputUrl
     ?? '';
 }
 
-export function resolveCanonicalSiteIdentity(context = {}) {
+export function resolveCanonicalSiteIdentity(context = /** @type {any} */ ({})) {
   const siteContext = context?.siteContext ?? null;
   const inputUrl = resolveIdentityUrl(context);
   const profile = resolveIdentityProfile(context);
@@ -44,10 +44,10 @@ export function resolveCanonicalSiteIdentity(context = {}) {
   };
 }
 
-export function resolveCanonicalSiteKey(context = {}) {
+export function resolveCanonicalSiteKey(context = /** @type {any} */ ({})) {
   return resolveCanonicalSiteIdentity(context).siteKey ?? null;
 }
 
-export function resolveCanonicalAdapterId(context = {}) {
+export function resolveCanonicalAdapterId(context = /** @type {any} */ ({})) {
   return resolveCanonicalSiteIdentity(context).adapterId ?? null;
 }

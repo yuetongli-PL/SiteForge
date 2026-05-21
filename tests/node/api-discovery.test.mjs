@@ -34,7 +34,7 @@ async function assertMissingFiles(filePaths) {
 function createSyntheticMultiAspectVerificationFixtures({
   verifierId = 'synthetic-manual-multi-aspect-verifier',
   verifiedAt = '2026-05-02T02:15:00.000Z',
-} = {}) {
+} = /** @type {any} */ ({})) {
   return {
     verifierId,
     verifiedAt,
@@ -74,7 +74,7 @@ function createSyntheticMultiAspectVerificationFixtures({
 function createSyntheticMultiAspectVerificationResult(candidate, {
   verifierId = 'synthetic-manual-multi-aspect-verifier',
   verifiedAt = '2026-05-02T02:15:00.000Z',
-} = {}) {
+} = /** @type {any} */ ({})) {
   return createApiCandidateMultiAspectVerificationResultFromFixtures({
     candidate,
     ...createSyntheticMultiAspectVerificationFixtures({ verifierId, verifiedAt }),
@@ -476,6 +476,7 @@ test('ApiDiscovery-produced candidates can enter SiteAdapter validation without 
       source: 'synthetic-observed-request',
     });
     const decision = validateApiCandidateWithAdapter(candidate, genericNavigationAdapter, {
+      // @ts-ignore
       validatedAt: '2026-05-01T02:00:00.000Z',
       evidence: {
         authorization: 'Bearer synthetic-discovery-adapter-token',
@@ -532,6 +533,7 @@ test('ApiDiscovery writes redacted SiteAdapter decision artifacts without catalo
     });
 
     const decisions = await writeSiteAdapterCandidateDecisionArtifacts(candidateResults, {
+      // @ts-ignore
       outputDir: decisionDir,
       redactionAuditDir: decisionAuditDir,
       catalogUpgradeDecisionOutputDir: upgradeDecisionDir,
@@ -672,6 +674,7 @@ test('ApiDiscovery requires redaction audit directory before SiteAdapter decisio
           artifactPath: path.join(runDir, 'api-candidates', 'candidate-0001.json'),
         },
       ], {
+        // @ts-ignore
         outputDir: decisionDir,
         resolveAdapter: () => genericNavigationAdapter,
       }),
@@ -717,6 +720,7 @@ test('ApiDiscovery preflights SiteAdapter decisions before writing paired audit 
           artifactPath: path.join(runDir, 'api-candidates', 'candidate-0002.json'),
         },
       ], {
+        // @ts-ignore
         outputDir: decisionDir,
         redactionAuditDir: auditDir,
         resolveAdapter: ({ host }) => (host === 'generic-navigation' ? genericNavigationAdapter : invalidAdapter),
@@ -756,6 +760,7 @@ test('ApiDiscovery manual verification helper writes explicit verified evidence 
       source: 'synthetic-observed-request',
     });
     const siteAdapterDecision = validateApiCandidateWithAdapter(candidate, genericNavigationAdapter, {
+      // @ts-ignore
       validatedAt: '2026-05-02T01:40:00.000Z',
       evidence: {
         source: 'synthetic-manual-verification-decision',
@@ -848,6 +853,7 @@ test('ApiDiscovery manual verification helper materializes explicit verification
       source: 'synthetic-observed-request',
     });
     const siteAdapterDecision = validateApiCandidateWithAdapter(candidate, genericNavigationAdapter, {
+      // @ts-ignore
       validatedAt: '2026-05-02T02:47:00.000Z',
       evidence: {
         source: 'synthetic-manual-fixtures-decision',
@@ -911,6 +917,7 @@ test('ApiDiscovery manual verification helper fails closed before partial writes
       source: 'synthetic-observed-request',
     });
     const acceptedDecision = validateApiCandidateWithAdapter(candidate, genericNavigationAdapter, {
+      // @ts-ignore
       validatedAt: '2026-05-02T01:50:00.000Z',
     });
     const validRecord = {
@@ -1100,6 +1107,7 @@ test('ApiDiscovery manual verification output can explicitly feed runtime catalo
       source: 'synthetic-observed-request',
     });
     const siteAdapterDecision = validateApiCandidateWithAdapter(candidate, genericNavigationAdapter, {
+      // @ts-ignore
       validatedAt: '2026-05-02T02:00:00.000Z',
     });
     const manualResults = await writeManualApiCandidateVerificationArtifacts([
@@ -1208,6 +1216,7 @@ test('ApiDiscovery rejects malformed observed request inputs before writing', as
   const runDir = await mkdtemp(path.join(os.tmpdir(), 'api-discovery-invalid-'));
   try {
     await assert.rejects(
+      // @ts-ignore
       writeApiCandidateArtifactsFromObservedRequests('not-an-array', { outputDir: runDir }),
       /Observed requests must be an array/u,
     );
@@ -1236,6 +1245,7 @@ test('ApiDiscovery adapter validation requires an adapter validation method', ()
 
 test('ApiDiscovery decision artifact writer requires output and adapter boundaries', async () => {
   await assert.rejects(
+    // @ts-ignore
     writeSiteAdapterCandidateDecisionArtifacts('not-an-array', {
       outputDir: 'unused',
       redactionAuditDir: 'unused',
@@ -1245,6 +1255,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       redactionAuditDir: 'unused',
       resolveAdapter: () => genericNavigationAdapter,
     }),
@@ -1252,6 +1263,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       outputDir: 'unused',
       resolveAdapter: () => genericNavigationAdapter,
     }),
@@ -1259,6 +1271,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       outputDir: 'unused',
       redactionAuditDir: 'unused',
       catalogUpgradeDecisionOutputDir: 'unused',
@@ -1268,6 +1281,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       outputDir: 'unused',
       redactionAuditDir: 'unused',
       catalogUpgradeDecisionRedactionAuditDir: 'unused',
@@ -1277,6 +1291,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       outputDir: 'unused',
       redactionAuditDir: 'unused',
       catalogUpgradeDecisionOutputDir: 'unused',
@@ -1288,6 +1303,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       outputDir: 'unused',
       redactionAuditDir: 'unused',
       catalogUpgradeDecisionLifecycleEventOutputDir: 'unused',
@@ -1298,6 +1314,7 @@ test('ApiDiscovery decision artifact writer requires output and adapter boundari
   );
   await assert.rejects(
     writeSiteAdapterCandidateDecisionArtifacts([], {
+      // @ts-ignore
       outputDir: 'unused',
       redactionAuditDir: 'unused',
     }),
@@ -1413,11 +1430,17 @@ test('ApiDiscovery fails closed with recovery metadata when capture output gener
         redactionAuditDir: path.join(runDir, 'api-candidate-audits'),
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.name, 'ApiDiscoveryFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'api-candidate-generation-failed');
+        // @ts-ignore
         assert.deepEqual(error.reasonRecovery, reasonCodeSummary('api-candidate-generation-failed'));
+        // @ts-ignore
         assert.equal(error.retryable, true);
+        // @ts-ignore
         assert.equal(error.metadata.stage, 'candidate-generation');
+        // @ts-ignore
         assert.equal(error.metadata.requestCount, 0);
         return true;
       },
@@ -1465,6 +1488,7 @@ test('ApiDiscovery fails closed when SiteAdapter validation is missing', async (
           artifactPath: path.join(runDir, 'api-candidates', 'candidate-0002.json'),
         },
       ], {
+        // @ts-ignore
         outputDir: path.join(runDir, 'api-candidate-decisions'),
         redactionAuditDir: path.join(runDir, 'api-candidate-decision-audits'),
         resolveAdapter: ({ host }) => (host === 'generic-navigation'
@@ -1472,14 +1496,23 @@ test('ApiDiscovery fails closed when SiteAdapter validation is missing', async (
           : { id: 'missing-adapter-validation' }),
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.name, 'ApiDiscoveryFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'site-adapter-core-api-unidentified');
+        // @ts-ignore
         assert.deepEqual(error.reasonRecovery, reasonCodeSummary('site-adapter-core-api-unidentified'));
+        // @ts-ignore
         assert.equal(error.retryable, false);
+        // @ts-ignore
         assert.equal(error.manualRecoveryNeeded, true);
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, false);
+        // @ts-ignore
         assert.equal(error.metadata.stage, 'site-adapter-validation');
+        // @ts-ignore
         assert.equal(error.metadata.candidateId, 'missing-adapter-validation-candidate');
+        // @ts-ignore
         assert.equal(error.metadata.siteKey, 'missing-adapter-validation');
         return true;
       },

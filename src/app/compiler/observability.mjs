@@ -18,6 +18,7 @@ const REQUIRED_FIELDS = Object.freeze([
   'redactionEvent',
 ]);
 
+/** @param {Record<string, any>} options */
 export function createCompilerLifecycleEvent({
   eventType = 'compiler.manifest.generated',
   traceId,
@@ -71,12 +72,14 @@ export function createCompilerLifecycleEvent({
 export function assertCompilerLifecycleEventCompatible(event) {
   for (const field of REQUIRED_FIELDS) {
     if (event[field] === undefined || event[field] === null || event[field] === '') {
+      /** @type {Error & Record<string, any>} */
       const error = new Error(`CompilerLifecycleEvent ${field} is required`);
       error.code = 'compiler.schema_invalid';
       throw error;
     }
   }
   if (event.redactionRequired !== true || event.redactionEvent?.redactionRequired !== true) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('CompilerLifecycleEvent redactionRequired must be true');
     error.code = 'compiler.redaction_required';
     throw error;

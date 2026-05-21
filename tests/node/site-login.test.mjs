@@ -129,7 +129,7 @@ test('siteLogin writes identity-aware report fields for authenticated sessions',
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-'));
   let closed = false;
   let openCalls = 0;
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     const report = await siteLogin('https://www.bilibili.com/', {
@@ -289,14 +289,23 @@ test('siteLogin report writer fails closed before persistent report writes when 
         markdownAuditPath: path.join(reportDir, 'site-login-report.md.redaction-audit.json'),
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.name, 'SiteLoginReportRedactionFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'redaction-failed');
+        // @ts-ignore
         assert.equal(error.retryable, recovery.retryable);
+        // @ts-ignore
         assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+        // @ts-ignore
         assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+        // @ts-ignore
         assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+        // @ts-ignore
         assert.equal(error.degradable, recovery.degradable);
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+        // @ts-ignore
         assert.equal(error.catalogAction, recovery.catalogAction);
         assert.equal(JSON.stringify(error).includes('synthetic-site-login'), false);
         return true;
@@ -351,8 +360,11 @@ test('siteLogin report writer preserves existing artifacts when redaction fails 
         ...paths,
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.name, 'SiteLoginReportRedactionFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'redaction-failed');
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, false);
         assert.equal(JSON.stringify(error).includes('synthetic-site-login'), false);
         return true;
@@ -423,7 +435,7 @@ test('siteLogin report writer redacts session identity from persisted artifacts'
 
 test('siteLogin uses the login URL as startup page when interactive manual login is expected', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-manual-start-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     await siteLogin('https://www.bilibili.com/', {
@@ -553,7 +565,7 @@ test('siteLogin reports manual-login-timeout after an interactive manual wait ex
       async inspectLoginState() {
         throw new Error('final inspect should use the manual wait login state');
       },
-      async waitForAuthenticatedSession(_session, _authConfig, options = {}) {
+      async waitForAuthenticatedSession(_session, _authConfig, options = /** @type {any} */ ({})) {
         assert.equal(options.timeoutMs, 25);
         assert.equal(options.assistManualLogin, true);
         return {
@@ -581,7 +593,7 @@ test('siteLogin reports manual-login-timeout after an interactive manual wait ex
 
 test('siteLogin reports session-reused when persisted session is already authenticated', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-reused-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
   try {
     const report = await siteLogin('https://www.bilibili.com/', {
       outDir: workspace,
@@ -1100,7 +1112,7 @@ test('siteLogin defaults reports under runs/sites/site-login when outDir is omit
 
 test('siteLogin uses the Douyin verification URL for non-interactive startup and persistence checks', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-douyin-verification-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     const report = await siteLogin('https://www.douyin.com/?recommend=1', {
@@ -1189,7 +1201,7 @@ test('siteLogin uses the Douyin verification URL for non-interactive startup and
 
 test('siteLogin reuses Douyin verification startup and can auto-restore auth after reopening the browser', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-douyin-auto-restore-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
   let authAttempts = 0;
 
   try {
@@ -1282,7 +1294,7 @@ test('siteLogin reuses Douyin verification startup and can auto-restore auth aft
 
 test('siteLogin uses the Douyin keepalive URL for keepalive runtime startup and persistence checks', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-douyin-keepalive-runtime-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     const report = await siteLogin('https://www.douyin.com/?recommend=1', {
@@ -1375,7 +1387,7 @@ test('siteLogin uses the Douyin keepalive URL for keepalive runtime startup and 
 
 test('siteLogin uses the Xiaohongshu verification URL for non-interactive startup and persistence checks', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-xiaohongshu-verification-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     const report = await siteLogin('https://www.xiaohongshu.com/explore', {
@@ -1465,7 +1477,7 @@ test('siteLogin uses the Xiaohongshu verification URL for non-interactive startu
 
 test('siteLogin uses the Xiaohongshu login URL as startup page when interactive manual login is expected', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-xiaohongshu-manual-start-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     await siteLogin('https://www.xiaohongshu.com/explore', {
@@ -1542,8 +1554,8 @@ test('siteLogin uses the Xiaohongshu login URL as startup page when interactive 
 
 test('siteLogin recovers a reusable Xiaohongshu session before entering manual wait', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-xiaohongshu-reuse-probe-'));
-  const startupUrls = [];
-  const navigatedUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
+  const navigatedUrls = /** @type {any[]} */ ([]);
   let inspectCalls = 0;
 
   try {
@@ -1633,7 +1645,7 @@ test('siteLogin recovers a reusable Xiaohongshu session before entering manual w
 
 test('siteLogin uses the Xiaohongshu notification URL for keepalive runtime startup and persistence checks', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-login-xiaohongshu-keepalive-runtime-'));
-  const startupUrls = [];
+  const startupUrls = /** @type {any[]} */ ([]);
 
   try {
     const report = await siteLogin('https://www.xiaohongshu.com/explore', {

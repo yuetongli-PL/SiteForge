@@ -235,6 +235,7 @@ test('output validation accepts a complete graph, capability map, intents, and r
   assert.equal(report.gates.registryLookup.skillId, 'simple-shop');
   assert.equal(report.gates.registryLookup.intentId, 'intent:fixture-local:view-homepage');
   assert.equal(report.gates.registryLookup.capabilityId, 'capability:fixture-local:view-homepage');
+  // @ts-ignore
   assert.equal(report.gates.registryLookup.executionPlanId, 'plan:fixture-local:view-homepage');
 });
 
@@ -529,6 +530,7 @@ test('output validation keeps disabled high-risk capabilities visible and non-ex
     status: 'disabled',
     informational: true,
   };
+  // @ts-ignore
   fixture.stageResults.discoverCapabilities.capabilities.push(disabledCapability);
 
   const report = await validateFixture(fixture);
@@ -570,11 +572,13 @@ test('safe remediation model rejects high-risk write auto-prepare', async () => 
     },
   };
 
+  // @ts-ignore
   const directErrors = validateCapabilitySafeRemediationPath(disabledCapability, disabledCapability.safe_remediation);
   assert.equal(directErrors.some((error) => error.code === 'capability.safe_remediation_high_risk_write_auto_prepare'), true);
   assert.equal(directErrors.some((error) => error.code === 'capability.safe_remediation_resulting_status_enabled'), true);
   assert.equal(directErrors.some((error) => error.code === 'capability.safe_remediation_privacy_boundary_invalid'), true);
 
+  // @ts-ignore
   fixture.stageResults.discoverCapabilities.capabilities.push(disabledCapability);
   const report = await validateFixture(fixture);
   const codes = errorCodes(report);
@@ -635,7 +639,7 @@ test('output validation redacts raw setup hints in validation details', async ()
 
 test('output validation rejects nodes without evidence or discoveredBy and missing edge endpoints', async () => {
   const fixture = createValidationFixture();
-  fixture.stageResults.classifyNodes.graph.nodes[0].evidence = [];
+  fixture.stageResults.classifyNodes.graph.nodes[0].evidence = /** @type {any[]} */ ([]);
   delete fixture.stageResults.classifyNodes.graph.nodes[0].discoveredBy;
   fixture.stageResults.classifyNodes.graph.edges[0].to = 'node:missing';
 
@@ -654,10 +658,10 @@ test('output validation rejects nodes without evidence or discoveredBy and missi
 test('output validation rejects evidence-free, source-free, or unplanned active capabilities', async () => {
   const fixture = createValidationFixture();
   const capability = fixture.stageResults.discoverCapabilities.capabilities[0];
-  capability.evidence = [];
-  capability.entryNodeIds = [];
+  capability.evidence = /** @type {any[]} */ ([]);
+  capability.entryNodeIds = /** @type {any[]} */ ([]);
   capability.executionPlan = null;
-  fixture.stageResults.discoverCapabilities.executionPlans = [];
+  fixture.stageResults.discoverCapabilities.executionPlans = /** @type {any[]} */ ([]);
 
   const report = await validateFixture(fixture);
   const codes = errorCodes(report);
@@ -814,7 +818,7 @@ test('output validation rejects intents and registry lookups for candidate capab
 
 test('output validation rejects active capabilities without mapped intent capability', async () => {
   const fixture = createValidationFixture();
-  fixture.stageResults.generateIntents.intents = [];
+  fixture.stageResults.generateIntents.intents = /** @type {any[]} */ ([]);
 
   const report = await validateFixture(fixture);
   const codes = errorCodes(report);
@@ -828,8 +832,8 @@ test('output validation rejects active capabilities without mapped intent capabi
 test('output validation rejects malformed intents and safety mismatches', async () => {
   const fixture = createValidationFixture();
   const intent = fixture.stageResults.generateIntents.intents[0];
-  intent.utteranceExamples = [];
-  intent.negativeExamples = [];
+  intent.utteranceExamples = /** @type {any[]} */ ([]);
+  intent.negativeExamples = /** @type {any[]} */ ([]);
   intent.safetyLevel = 'destructive';
 
   const report = await validateFixture(fixture);
@@ -972,21 +976,28 @@ test('validation failure preserves artifacts without promoting current skill or 
       }),
       (error) => {
         capturedError = error;
+        // @ts-ignore
         return /Static crawl produced no pages/u.test(error?.message ?? '');
       },
     );
 
+    // @ts-ignore
     assert.ok(capturedError?.artifactDir);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(capturedError.artifactDir, 'build_report.json')), true);
 
+    // @ts-ignore
     const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
     assert.equal(buildReport.status, 'blocked');
     assert.equal(buildReport.failedStage, 'crawlStatic');
     assert.equal(buildReport.reasonCode, 'empty-crawl');
     assert.equal(buildReport.summary.registryStatus, null);
     assert.equal(await pathExists(path.join(buildReport.workspace.currentDir, 'skill.yaml')), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(capturedError.artifactDir, 'crawl_static.json')), true);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(capturedError.artifactDir, 'graph.json')), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(capturedError.artifactDir, 'verification_report.json')), false);
     assert.equal(await pathExists(path.join(buildReport.workspace.buildDir, 'skill', 'skill.yaml')), false);
 

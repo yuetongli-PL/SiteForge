@@ -135,7 +135,7 @@ function addCapabilityRequirementNodes(graph) {
   );
 }
 
-function addCapabilityRequirementEdges(graph, capability = {}) {
+function addCapabilityRequirementEdges(graph, capability = /** @type {any} */ ({})) {
   const capabilityId = capability.id ?? 'capability:synthetic.example:open-public-page';
   graph.edges.push(
     {
@@ -157,7 +157,7 @@ function addCapabilityRequirementEdges(graph, capability = {}) {
   );
 }
 
-function addFallbackRouteNode(graph, overrides = {}) {
+function addFallbackRouteNode(graph, overrides = /** @type {any} */ ({})) {
   const capability = graph.nodes.find((node) => node.type === 'CapabilityNode');
   const primaryRoute = graph.nodes.find((node) => node.type === 'RouteNode');
   const fallbackRouteId = overrides.id ?? 'route:synthetic.example:fallback-public-page';
@@ -182,7 +182,7 @@ function addFallbackRouteNode(graph, overrides = {}) {
   return fallbackRoute;
 }
 
-function addEndpointNode(graph, overrides = {}) {
+function addEndpointNode(graph, overrides = /** @type {any} */ ({})) {
   const endpoint = {
     schemaVersion: 1,
     id: 'endpoint:synthetic.example:public-detail',
@@ -207,7 +207,7 @@ function addEndpointNode(graph, overrides = {}) {
   return endpoint;
 }
 
-function addEndpointRequirementEdges(graph, endpoint = {}) {
+function addEndpointRequirementEdges(graph, endpoint = /** @type {any} */ ({})) {
   const endpointId = endpoint.id ?? 'endpoint:synthetic.example:public-detail';
   graph.edges.push(
     {
@@ -440,7 +440,7 @@ test('validator rejects CapabilityNode auth refs missing reverse requiredFor dec
   addCapabilityRequirementEdges(graph, capability);
 
   const authRequirement = graph.nodes.find((node) => node.id === capability.authRequirementRefs[0]);
-  authRequirement.requiredFor = [];
+  authRequirement.requiredFor = /** @type {any[]} */ ([]);
 
   const report = validateSiteCapabilityGraph(graph);
 
@@ -476,7 +476,7 @@ test('validator rejects agent-exposed CapabilityNode without test evidence indep
   const graph = await readMinimalGraphFixture();
   const capability = graph.nodes.find((node) => node.type === 'CapabilityNode');
   capability.agentExposed = true;
-  capability.testEvidenceRefs = [];
+  capability.testEvidenceRefs = /** @type {any[]} */ ([]);
 
   const report = validateSiteCapabilityGraph(graph);
 
@@ -511,7 +511,7 @@ for (const variant of [
   {
     name: 'empty',
     mutate(riskPolicy) {
-      riskPolicy.sourceRefs = [];
+      riskPolicy.sourceRefs = /** @type {any[]} */ ([]);
     },
     messagePattern: /sourceRefs must include at least one approved Layer config source/u,
   },
@@ -715,8 +715,8 @@ test('validator rejects EndpointNode requirement refs missing reverse node decla
 
   const authRequirement = graph.nodes.find((node) => node.id === endpoint.authRequirementRef);
   const signer = graph.nodes.find((node) => node.id === endpoint.signerRef);
-  authRequirement.requiredFor = [];
-  signer.supportedEndpointRefs = [];
+  authRequirement.requiredFor = /** @type {any[]} */ ([]);
+  signer.supportedEndpointRefs = /** @type {any[]} */ ([]);
 
   const report = validateSiteCapabilityGraph(graph);
 
@@ -856,7 +856,7 @@ for (const lifecycleState of ['observed', 'candidate']) {
 }
 
 test('validator emits only graph reasonCodes registered in the central catalog', async () => {
-  const reports = [];
+  const reports = /** @type {any[]} */ ([]);
 
   {
     const graph = await readMinimalGraphFixture();

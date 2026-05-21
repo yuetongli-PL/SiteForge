@@ -230,8 +230,11 @@ test('classifyRiskFromContext maps anti-crawl and network drift to the new risk 
 test('risk governance outputs consume the reasonCode catalog while preserving unknown legacy causes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-risk-reason-codes-'));
   try {
+    // @ts-ignore
     const requestBurst = requireReasonCodeDefinition('request-burst', { family: 'risk' }).code;
+    // @ts-ignore
     const concurrentProfileUse = requireReasonCodeDefinition('concurrent-profile-use', { family: 'risk' }).code;
+    // @ts-ignore
     const browserFingerprintRisk = requireReasonCodeDefinition('browser-fingerprint-risk', { family: 'risk' }).code;
 
     assert.equal(
@@ -253,6 +256,7 @@ test('risk governance outputs consume the reasonCode catalog while preserving un
     assert.equal(concurrentDecision.riskState.transition.from, 'normal');
     assert.equal(concurrentDecision.riskState.transition.to, 'cooldown');
     assert.equal(concurrentDecision.riskState.transition.observedAt, '2026-04-30T16:00:00.000Z');
+    // @ts-ignore
     const concurrentReason = requireReasonCodeDefinition('concurrent-profile-use', { family: 'risk' });
     assert.equal(concurrentDecision.riskState.recovery.retryable, concurrentReason.retryable);
     assert.equal(concurrentDecision.riskState.recovery.cooldownNeeded, concurrentReason.cooldownNeeded);
@@ -289,6 +293,7 @@ test('risk governance outputs consume the reasonCode catalog while preserving un
     assert.equal(quarantineDecision.riskState.transition.from, 'normal');
     assert.equal(quarantineDecision.riskState.transition.to, 'isolated');
     assert.equal(quarantineDecision.riskState.transition.observedAt, '2026-04-30T16:00:00.000Z');
+    // @ts-ignore
     const browserFingerprintReason = requireReasonCodeDefinition('browser-fingerprint-risk', { family: 'risk' });
     assert.equal(quarantineDecision.riskState.recovery.retryable, browserFingerprintReason.retryable);
     assert.equal(quarantineDecision.riskState.recovery.cooldownNeeded, browserFingerprintReason.cooldownNeeded);
@@ -352,6 +357,7 @@ test('evaluateSessionPolicy blocks pipeline on drift but still allows keepalive'
   assert.equal(pipelineDecision.riskState.transition.from, 'normal');
   assert.equal(pipelineDecision.riskState.transition.to, 'cooldown');
   assert.equal(pipelineDecision.riskState.transition.observedAt, '2026-04-30T16:00:00.000Z');
+  // @ts-ignore
   const networkDriftReason = requireReasonCodeDefinition('network-identity-drift', { family: 'risk' });
   assert.equal(pipelineDecision.riskState.recovery.retryable, networkDriftReason.retryable);
   assert.equal(pipelineDecision.riskState.recovery.cooldownNeeded, networkDriftReason.cooldownNeeded);
@@ -382,7 +388,7 @@ test('download session preflight maps governance risk to a sanitized quarantine 
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-download-governance-risk-'));
   t.after(() => rm(workspace, { recursive: true, force: true }));
 
-  const released = [];
+  const released = /** @type {any[]} */ ([]);
   const health = await inspectDownloadSessionHealth('x', {
     host: 'x.com',
     userDataDir: workspace,

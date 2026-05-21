@@ -71,7 +71,7 @@ function control(controlType, pageType, tabState, index, {
   label = null,
   selector = null,
   type = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const labelText = label ?? labelSummary(controlType, pageType, tabState);
   return {
     kind,
@@ -92,9 +92,9 @@ function control(controlType, pageType, tabState, index, {
 }
 
 function controlsForPage(page) {
-  const controls = [];
+  const controls = /** @type {any[]} */ ([]);
   let index = 0;
-  const add = (controlType, options = {}) => {
+  const add = (controlType, options = /** @type {any} */ ({})) => {
     index += 1;
     controls.push(control(controlType, page.pageType, page.tabState, index, options));
   };
@@ -220,7 +220,7 @@ function pageState(input) {
   };
 }
 
-function defaultSocialSpaStates({ deep = false } = {}) {
+function defaultSocialSpaStates({ deep = false } = /** @type {any} */ ({})) {
   const states = [
     pageState({
       pageType: 'home',
@@ -416,7 +416,7 @@ function defaultSocialSpaStates({ deep = false } = {}) {
   ];
 }
 
-function mergeSeedRoutes(states, seeds = []) {
+function mergeSeedRoutes(states, seeds = /** @type {any[]} */ ([])) {
   const byRoute = new Map(states.map((state) => [`${state.routeTemplate}:${state.tabState}`, state]));
   for (const seed of Array.isArray(seeds) ? seeds : []) {
     const urlValue = seed?.normalizedUrl ?? seed?.url;
@@ -447,7 +447,7 @@ function mergeSeedRoutes(states, seeds = []) {
   return [...byRoute.values()];
 }
 
-function networkSummary({ network = false } = {}) {
+function networkSummary({ network = false } = /** @type {any} */ ({})) {
   return {
     status: network ? 'redacted_summary_allowed' : 'not_enabled',
     allowedFields: network
@@ -463,9 +463,9 @@ function networkSummary({ network = false } = {}) {
 export function createSocialSpaAutoDiscoverySummary({
   site,
   knownSitePolicy = null,
-  evidence = {},
-  options = {},
-} = {}) {
+  evidence = /** @type {any} */ ({}),
+  options = /** @type {any} */ ({}),
+} = /** @type {any} */ ({})) {
   if (!site?.rootUrl || !isKnownSocialSpaSite(site, knownSitePolicy)) {
     return null;
   }
@@ -473,7 +473,7 @@ export function createSocialSpaAutoDiscoverySummary({
   const rendered = deep || options.renderJs === true || options.autoDiscoveryRendered === true;
   const network = options.network === true || options.captureNetwork === true || options.autoDiscoveryNetwork === true;
   const states = mergeSeedRoutes(defaultSocialSpaStates({ deep }), evidence?.browserSeeds);
-  const pages = [];
+  const pages = /** @type {any[]} */ ([]);
   for (const state of states) {
     const normalizedUrl = routeUrl(site, state.routePath);
     if (!isInternalUrl(normalizedUrl, site.allowedDomains ?? [new URL(site.rootUrl).hostname])) {
@@ -538,7 +538,7 @@ export function createSocialSpaAutoDiscoverySummary({
   };
 }
 
-export function mergeAutoDiscoveryPages(rawPages = [], autoDiscovery = null) {
+export function mergeAutoDiscoveryPages(rawPages = /** @type {any[]} */ ([]), autoDiscovery = null) {
   const merged = new Map();
   for (const page of Array.isArray(rawPages) ? rawPages : []) {
     const key = page?.stateKey
@@ -559,7 +559,7 @@ export function mergeAutoDiscoveryPages(rawPages = [], autoDiscovery = null) {
   return [...merged.values()];
 }
 
-export function summarizeAutoDiscoveryFromGraph(graph = {}, affordances = [], capabilities = []) {
+export function summarizeAutoDiscoveryFromGraph(graph = /** @type {any} */ ({}), affordances = /** @type {any[]} */ ([]), capabilities = /** @type {any[]} */ ([])) {
   const nodes = graph?.nodes ?? [];
   const autoSummary = graph?.autoDiscoverySummary ?? null;
   if (autoSummary) {

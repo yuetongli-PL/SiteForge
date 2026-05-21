@@ -322,7 +322,7 @@ test('social-live-report surfaces state-only started runs as stale when no proce
   }, null, 2)}\n`, 'utf8');
 
   const options = parseReportArgs(['--runs-root', rootDir, '--no-write']);
-  options.activeProcessCommandLines = [];
+  options.activeProcessCommandLines = /** @type {any[]} */ ([]);
   const report = await buildReport(options);
 
   assert.equal(report.totalRows, 1);

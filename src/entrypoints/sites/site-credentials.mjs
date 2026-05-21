@@ -33,7 +33,7 @@ Notes:
   - show only returns target metadata and username; it never prints the stored password.
 `;
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = { ...options };
   merged.profilePath = merged.profilePath
     ? path.resolve(merged.profilePath)
@@ -49,7 +49,7 @@ export function parseCliArgs(argv) {
   }
 
   const [action, inputUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => {
     if (index + 1 >= rest.length) {
       throw new Error(`Missing value for ${rest[index]}`);
@@ -91,7 +91,7 @@ export function parseCliArgs(argv) {
   return { help: false, action, inputUrl, options };
 }
 
-export async function siteCredentials(action, inputUrl, options = {}, deps = {}) {
+export async function siteCredentials(action, inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   if (!(deps.isWindowsCredentialManagerSupported ?? isWindowsCredentialManagerSupported)()) {
     throw new Error('Windows Credential Manager is only supported on Windows.');
   }
@@ -165,7 +165,7 @@ export async function siteCredentials(action, inputUrl, options = {}, deps = {})
   };
 }
 
-export async function runCli(argv = process.argv.slice(2), deps = {}) {
+export async function runCli(argv = process.argv.slice(2), deps = /** @type {any} */ ({})) {
   (deps.initializeCliUtf8 ?? initializeCliUtf8)();
   const parsed = parseCliArgs(argv);
   if (parsed.help) {

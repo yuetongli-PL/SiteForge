@@ -1,6 +1,6 @@
 // @ts-check
 
-function uniqueSortedStrings(values = []) {
+function uniqueSortedStrings(values = /** @type {any[]} */ ([])) {
   return [...new Set(
     (Array.isArray(values) ? values : [])
       .map((value) => String(value ?? '').trim())
@@ -35,7 +35,7 @@ function deriveCollectionCount(primaryValue, ...collections) {
   return 0;
 }
 
-function inferAntiCrawlReasonCode(antiCrawlSignals = []) {
+function inferAntiCrawlReasonCode(antiCrawlSignals = /** @type {any[]} */ ([])) {
   const joined = uniqueSortedStrings(antiCrawlSignals).join(' ');
   if (!joined) {
     return 'ok';
@@ -55,7 +55,7 @@ function inferAntiCrawlReasonCode(antiCrawlSignals = []) {
 function diagnoseXiaohongshuSurfaceState(state = null, {
   authRequired = false,
   authAvailable = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const pageFacts = state?.pageFacts ?? {};
   const antiCrawlSignals = uniqueSortedStrings(pageFacts.antiCrawlSignals);
   const featuredContentCount = deriveCollectionCount(
@@ -128,7 +128,7 @@ function diagnoseXiaohongshuSurfaceState(state = null, {
 export function createXiaohongshuSiteDoctorScenarioSuite({
   profile = null,
   helpers,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const {
     buildScenarioResult,
     findFirstDetailState,

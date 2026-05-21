@@ -143,8 +143,8 @@ function nextCommands(inputUrl, skillName) {
   ];
 }
 
-export function renderBuildSummary(result, options = {}) {
-  const lines = [];
+export function renderBuildSummary(result, options = /** @type {any} */ ({})) {
+  const lines = /** @type {any[]} */ ([]);
   const stdoutColumns = Number(options.columns ?? 100) || 100;
   const verbose = options.verbose === true;
   const useGlyphs = options.ascii ? GLYPHS.ascii : GLYPHS.unicode;
@@ -228,7 +228,7 @@ export function renderBuildSummary(result, options = {}) {
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
-export function renderBuildFailure(error, state, options = {}) {
+export function renderBuildFailure(error, state, options = /** @type {any} */ ({})) {
   const useGlyphs = options.ascii ? GLYPHS.ascii : GLYPHS.unicode;
   const stage = state.currentStage ?? state.stages.find((entry) => entry.status === 'failed');
   const reason = error?.message ?? String(error);
@@ -254,11 +254,11 @@ export class BuildProgressController {
   constructor({
     inputUrl,
     stageSpecs,
-    options = {},
+    options = /** @type {any} */ ({}),
     stdout = process.stdout,
     stderr = process.stderr,
     cwd = process.cwd(),
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     this.inputUrl = inputUrl;
     this.options = options;
     this.stdout = stdout;
@@ -306,7 +306,7 @@ export class BuildProgressController {
     this.currentStage = null;
   }
 
-  stage(input = {}) {
+  stage(input = /** @type {any} */ ({})) {
     const stage = this.stages.find((entry) => entry.id === input.id) ?? this.stages[input.index - 1];
     if (!stage) {
       return this.#noopStage();
@@ -319,17 +319,17 @@ export class BuildProgressController {
     this.#emitPlainStage(stage, 'start');
     this.#render();
     return {
-      update: (update = {}) => this.#updateStage(stage, update, 'running'),
-      succeed: (update = {}) => this.#completeStage(stage, update, 'completed'),
-      warn: (update = {}) => this.#completeStage(stage, update, 'warning'),
-      fail: (update = {}) => this.#completeStage(stage, update, 'failed'),
-      skip: (update = {}) => this.#completeStage(stage, update, 'skipped'),
-      cancel: (update = {}) => this.#completeStage(stage, update, 'failed'),
+      update: (update = /** @type {any} */ ({})) => this.#updateStage(stage, update, 'running'),
+      succeed: (update = /** @type {any} */ ({})) => this.#completeStage(stage, update, 'completed'),
+      warn: (update = /** @type {any} */ ({})) => this.#completeStage(stage, update, 'warning'),
+      fail: (update = /** @type {any} */ ({})) => this.#completeStage(stage, update, 'failed'),
+      skip: (update = /** @type {any} */ ({})) => this.#completeStage(stage, update, 'skipped'),
+      cancel: (update = /** @type {any} */ ({})) => this.#completeStage(stage, update, 'failed'),
       subtask: () => this.#noopStage(),
     };
   }
 
-  complete(result = {}) {
+  complete(result = /** @type {any} */ ({})) {
     this.finalized = true;
     if (this.mode === 'interactive') {
       this.#clearPanel();

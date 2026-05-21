@@ -45,12 +45,12 @@ export async function listDirectories(parentDir) {
     .sort(compareNullableStrings);
 }
 
-export function buildWarning(code, message, details = {}) {
+export function buildWarning(code, message, details = /** @type {any} */ ({})) {
   const normalizedDetails = typeof details === 'string' ? { path: details } : details;
   return { severity: 'warning', code, message, ...normalizedDetails };
 }
 
-export function buildError(code, message, details = {}) {
+export function buildError(code, message, details = /** @type {any} */ ({})) {
   const normalizedDetails = typeof details === 'string' ? { path: details } : details;
   return { severity: 'error', code, message, ...normalizedDetails };
 }

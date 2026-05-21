@@ -53,6 +53,7 @@ function normalizeNonNegativeInteger(value, fallback, fieldName) {
   return Math.trunc(numeric);
 }
 
+/** @param {Record<string, any>} [value] */
 function assertNoCredentialContainers(value = {}) {
   const pending = [value];
   while (pending.length) {
@@ -158,10 +159,12 @@ function normalizeHealthGate(value = undefined) {
   });
 }
 
+/** @param {Record<string, any>} [value] */
 function stripUndefined(value = {}) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 }
 
+/** @param {Record<string, any>} [raw] */
 function normalizeTaskItem(raw = {}, index = 0) {
   assertNoCredentialContainers(raw);
   const reasonCode = normalizeText(raw.reasonCode);
@@ -185,6 +188,7 @@ function normalizeTaskItem(raw = {}, index = 0) {
   return item;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertStandardTaskListCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -196,6 +200,7 @@ export function assertStandardTaskListCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeStandardTaskList(raw = {}, defaults = {}) {
   if (raw.schemaVersion !== undefined) {
     assertStandardTaskListCompatible(raw);

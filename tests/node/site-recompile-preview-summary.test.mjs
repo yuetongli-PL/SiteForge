@@ -28,7 +28,7 @@ test('site recompile preview summary parses CLI options', () => {
 
 test('site recompile preview summary writes guarded descriptor-only matrix', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-recompile-summary-'));
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
 
   try {
     await writeJson(path.join(workspace, 'config', 'site-registry.json'), {

@@ -14,8 +14,8 @@ const USER_AGENT = 'Mozilla/5.0 SiteForge moodyz catalog';
 const execFile = promisify(execFileCallback);
 
 export function parseArgs(argv) {
-  const flags = {};
-  const positionals = [];
+  const flags = /** @type {any} */ ({});
+  const positionals = /** @type {any[]} */ ([]);
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token.startsWith('--')) {

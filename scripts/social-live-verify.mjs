@@ -1401,6 +1401,8 @@ async function main(argv) {
     },
     successMessage: (result) => `manifest=${result?.manifestPath ?? 'none'}`,
     artifacts: (result) => result?.manifestPath ? [{ label: 'Manifest', path: result.manifestPath }] : [],
+    isFailureResult: undefined,
+    failureReason: undefined,
     warningResult: (result) => result?.status === 'warning',
     failureTitle: 'Social live verification safely stopped',
     nextStep: 'Inspect the generated manifest and rerun only blocked or failed cases after manual recovery.',

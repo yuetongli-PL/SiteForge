@@ -19,6 +19,10 @@ function deriveScenarioCollectionCount(primaryValue, ...collections) {
   return 0;
 }
 
+/**
+ * @param {any} [state]
+ * @param {(state: any) => any[]} [extractAntiCrawlSignals]
+ */
 function scoreDouyinAuthorSubpageState(state = null, extractAntiCrawlSignals = () => []) {
   const pageFacts = state?.pageFacts ?? {};
   const identityConfirmed = pageFacts.identityConfirmed === true || pageFacts.authenticatedSessionConfirmed === true;
@@ -89,7 +93,7 @@ function findFirstStateByAuthorSubpage(states, subpage, extractAntiCrawlSignals 
 
 export function createDouyinSiteDoctorScenarioSuite({
   helpers,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const {
     buildScenarioResult,
     extractAntiCrawlSignals,

@@ -49,7 +49,7 @@ function parseUrl(input) {
   }
 }
 
-function endpointParts(candidate = {}) {
+function endpointParts(candidate = /** @type {any} */ ({})) {
   const parsed = parseUrl(candidate?.endpoint?.url);
   return {
     host: parsed?.hostname.toLowerCase() ?? '',
@@ -57,7 +57,7 @@ function endpointParts(candidate = {}) {
   };
 }
 
-function isDouyinApiCandidate(candidate = {}) {
+function isDouyinApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'douyin'
@@ -110,7 +110,7 @@ const DOUYIN_HEALTH_SIGNAL_MAP = Object.freeze({
   }),
 });
 
-function normalizeDouyinHealthSignal(rawSignal = {}) {
+function normalizeDouyinHealthSignal(rawSignal = /** @type {any} */ ({})) {
   const signal = typeof rawSignal === 'string'
     ? rawSignal
     : String(rawSignal?.rawSignal ?? rawSignal?.signal ?? rawSignal?.reasonCode ?? 'unknown-health-risk');
@@ -139,10 +139,10 @@ export const douyinAdapter = createCatalogAdapter({
   normalizeDisplayLabel: ({ value }) => cleanText(value),
   validateApiCandidate({
     candidate,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     validatedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = isDouyinApiCandidate(candidate);
     return normalizeSiteAdapterCandidateDecision({
@@ -162,10 +162,10 @@ export const douyinAdapter = createCatalogAdapter({
   getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     decidedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = siteAdapterDecision?.decision === 'accepted' && isDouyinApiCandidate(candidate);
     return normalizeSiteAdapterCatalogUpgradePolicy({

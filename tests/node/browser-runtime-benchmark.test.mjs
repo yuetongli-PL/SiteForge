@@ -11,7 +11,7 @@ import {
 } from '../../src/infra/browser/benchmark-report.mjs';
 
 test('BrowserSession metrics count protocol and helper activity without changing caller APIs', async () => {
-  const sentMethods = [];
+  const sentMethods = /** @type {any[]} */ ([]);
   const fakeClient = {
     async send(method, params) {
       sentMethods.push(method);

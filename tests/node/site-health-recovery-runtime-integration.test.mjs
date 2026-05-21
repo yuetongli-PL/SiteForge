@@ -15,7 +15,7 @@ import {
   writeSiteDoctorReportArtifacts,
 } from '../../src/entrypoints/sites/site-doctor.mjs';
 
-function minimalSiteDoctorReport(overrides = {}) {
+function minimalSiteDoctorReport(overrides = /** @type {any} */ ({})) {
   return {
     site: {
       id: 'x',
@@ -304,6 +304,7 @@ test('site-doctor report writer persists redacted healthRecovery audit and repor
         }],
       },
     },
+  // @ts-ignore
   }), paths);
 
   const reportText = await readFile(paths.jsonPath, 'utf8');

@@ -186,7 +186,7 @@ function addEndpointSupportDescriptors(graph, endpointId = 'endpoint:synthetic.e
   );
 }
 
-function addEndpointDescriptor(graph, overrides = {}) {
+function addEndpointDescriptor(graph, overrides = /** @type {any} */ ({})) {
   const endpoint = {
     schemaVersion: 1,
     id: 'endpoint:synthetic.example:public-detail',
@@ -240,7 +240,7 @@ function addFallbackRouteDescriptor(graph) {
   return { primaryRoute, fallbackRoute };
 }
 
-function addEndpointRequirementEdges(graph, endpoint = {}) {
+function addEndpointRequirementEdges(graph, endpoint = /** @type {any} */ ({})) {
   const endpointId = endpoint.id ?? 'endpoint:synthetic.example:public-detail';
   graph.edges.push(
     {
@@ -1497,6 +1497,7 @@ test('disabled docs markdown runtime consumer keeps failureModeSummary artifact 
     ['downloadPolicy', {}],
   ]) {
     const message = captureThrownMessage(() => (
+      // @ts-ignore
       createDisabledGraphDocsMarkdownRuntimeConsumerResult(artifact, { [fieldName]: value })
     ));
     assert.match(message, fieldName === 'featureEnabled' ? /featureEnabled must remain false/u : new RegExp(`descriptor-only.*${fieldName}`, 'u'));
@@ -1553,9 +1554,11 @@ test('docs markdown repo output dry-run keeps failureModeSummary artifact contai
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownRepoOutputDryRun(artifact, {
         targetRelativePath,
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
+    // @ts-ignore
     assert.match(message, fieldName.endsWith('Enabled') ? new RegExp(`${fieldName} must remain false`, 'u') : new RegExp(`descriptor-only.*${fieldName}`, 'u'));
     assert.doesNotMatch(message, /failure:graph-schema-invalid|Authorization|synthetic-secret-value/u);
   }
@@ -1676,6 +1679,7 @@ test('docs markdown failureModeSummary repo output approval gate stays design-on
     ['publishPayload', { authorization: 'Authorization: Bearer synthetic-secret-value' }],
   ]) {
     const message = captureThrownMessage(() => (
+      // @ts-ignore
       createGraphRepoOutputApprovalGateDesign(dryRun, { [fieldName]: value })
     ));
     assert.match(message, new RegExp(`descriptor-only.*${fieldName}`, 'u'));
@@ -1810,6 +1814,7 @@ test('docs markdown failureModeSummary generated-output manifest guard stays des
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownGeneratedOutputManifestGuard(gate, {
         manifestRelativePath,
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -1959,6 +1964,7 @@ test('docs markdown failureModeSummary retained-output index guard stays descrip
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownRetainedOutputIndexGuard(manifestGuard, {
         indexRelativePath,
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -2116,6 +2122,7 @@ test('docs markdown failureModeSummary cleanup-policy guard stays descriptor-onl
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownCleanupPolicyGuard(indexGuard, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -2265,6 +2272,7 @@ test('docs markdown failureModeSummary retention-cleanup handoff stays descripto
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownRetentionCleanupCompatibilityHandoff(cleanupGuard, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -2403,6 +2411,7 @@ test('docs markdown failureModeSummary final docs-output boundary summary stays 
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsMarkdownFinalOutputBoundarySummary(handoff, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -2548,6 +2557,7 @@ test('GraphDocsSummary docs-output completion checklist stays descriptor-only', 
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsOutputCompletionChecklist(finalSummary, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -2726,6 +2736,7 @@ test('GraphDocsSummary docs-output completion final matrix handoff stays descrip
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsOutputFinalMatrixHandoff(checklist, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -2872,6 +2883,7 @@ test('GraphDocsSummary docs-output completion final acceptance descriptor stays 
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsOutputFinalAcceptanceDescriptor(matrixHandoff, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -3033,6 +3045,7 @@ test('GraphDocsSummary docs-output final acceptance report descriptor stays desc
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsOutputFinalAcceptanceReportDescriptor(acceptance, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));
@@ -3201,6 +3214,7 @@ test('GraphDocsSummary docs-output final B-review checklist stays descriptor-onl
   ]) {
     const message = captureThrownMessage(() => (
       createGraphDocsOutputFinalBReviewChecklist(acceptanceReport, {
+        // @ts-ignore
         [fieldName]: value,
       })
     ));

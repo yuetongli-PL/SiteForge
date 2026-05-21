@@ -155,7 +155,7 @@ function normalizeArchetype(value) {
   return null;
 }
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = { ...DEFAULT_OPTIONS, ...options };
   const parsed = new URL(inputUrl);
   const normalizedArchetype = normalizeArchetype(merged.archetype);
@@ -187,7 +187,7 @@ function decodeHtmlEntities(value) {
 }
 
 function parseAttributes(raw) {
-  const attributes = {};
+  const attributes = /** @type {any} */ ({});
   const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gu;
   let match;
   while ((match = pattern.exec(raw)) !== null) {
@@ -198,7 +198,7 @@ function parseAttributes(raw) {
 }
 
 function extractForms(html) {
-  const forms = [];
+  const forms = /** @type {any[]} */ ([]);
   const pattern = /<form\b([^>]*)>([\s\S]*?)<\/form>/giu;
   let match;
   while ((match = pattern.exec(html)) !== null) {
@@ -211,7 +211,7 @@ function extractForms(html) {
 }
 
 function extractAnchors(html, baseUrl) {
-  const hrefs = [];
+  const hrefs = /** @type {any[]} */ ([]);
   const pattern = /<a\b([^>]*)>/giu;
   let match;
   while ((match = pattern.exec(html)) !== null) {
@@ -230,7 +230,7 @@ function extractAnchors(html, baseUrl) {
 }
 
 function extractInputs(formBody) {
-  const inputs = [];
+  const inputs = /** @type {any[]} */ ([]);
   const pattern = /<(input|button)\b([^>]*)>/giu;
   let match;
   while ((match = pattern.exec(formBody)) !== null) {
@@ -333,7 +333,7 @@ function inferNavigationPrefixes(urls) {
     ],
   };
 
-  const inferred = {};
+  const inferred = /** @type {any} */ ({});
   for (const [key, patternList] of Object.entries(patterns)) {
     inferred[key] = uniqueSortedStrings(
       urls
@@ -345,7 +345,7 @@ function inferNavigationPrefixes(urls) {
 }
 
 function inferAllowedHosts(baseUrl, finalUrl) {
-  const hosts = [];
+  const hosts = /** @type {any[]} */ ([]);
   for (const candidate of [baseUrl, finalUrl]) {
     try {
       const parsed = new URL(candidate);
@@ -420,7 +420,7 @@ function inferSearchConfig(searchForm, baseUrl) {
   const submitSelectors = uniqueSortedStrings(submitControls.map(({ tagName, attrs }) => buildAttributeSelector(tagName, attrs)));
   const queryParamNames = uniqueSortedStrings(searchInputs.map(({ attrs }) => attrs.name).filter(Boolean));
 
-  let searchResultsPrefixes = [];
+  let searchResultsPrefixes = /** @type {any[]} */ ([]);
   if (searchForm.attrs.action) {
     try {
       const actionUrl = new URL(searchForm.attrs.action, baseUrl);
@@ -535,7 +535,7 @@ function auditPath(pathParts) {
   return pathParts.join('.');
 }
 
-function redactSiteScaffoldProfileRefs(value, pathParts = [], audit = {
+function redactSiteScaffoldProfileRefs(value, pathParts = /** @type {any[]} */ ([]), audit = {
   schemaVersion: SECURITY_GUARD_SCHEMA_VERSION,
   redactedPaths: [],
   findings: [],
@@ -549,7 +549,7 @@ function redactSiteScaffoldProfileRefs(value, pathParts = [], audit = {
   if (!isPlainObject(value)) {
     return { value, audit };
   }
-  const output = {};
+  const output = /** @type {any} */ ({});
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...pathParts, key];
     if (SITE_SCAFFOLD_REPORT_PROFILE_KEYS.has(key)) {
@@ -563,8 +563,8 @@ function redactSiteScaffoldProfileRefs(value, pathParts = [], audit = {
 }
 
 function mergeRedactionAudits(...audits) {
-  const redactedPaths = [];
-  const findings = [];
+  const redactedPaths = /** @type {any[]} */ ([]);
+  const findings = /** @type {any[]} */ ([]);
   for (const audit of audits) {
     if (!audit || typeof audit !== 'object') {
       continue;
@@ -585,7 +585,7 @@ function createSiteScaffoldReportRedactionFailure(error) {
     name: error instanceof Error ? error.name : undefined,
     code: error && typeof error === 'object' ? error.code : undefined,
   }).value;
-  const failure = new Error('Redaction failed for site-scaffold report; persistent report write blocked');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Redaction failed for site-scaffold report; persistent report write blocked'));
   failure.name = 'SiteScaffoldReportRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -672,7 +672,7 @@ function buildInferenceSummary(html, baseUrl, finalUrl) {
   };
 }
 
-export async function scaffoldSite(inputUrl, options = {}, deps = {}) {
+export async function scaffoldSite(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   if (await pathExists(settings.profilePath)) {
     throw new Error(`Profile already exists: ${settings.profilePath}`);
@@ -744,7 +744,7 @@ export function parseCliArgs(argv) {
   }
 
   const [inputUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {

@@ -111,7 +111,7 @@ export function parseNaturalLanguageSiteLoginRequest(requestText) {
   );
 
   const manualLoginTimeoutMs = parseManualTimeoutMs(text);
-  const warnings = [];
+  const warnings = /** @type {any[]} */ ([]);
   if (loginPassword) {
     warnings.push('Inline passwords are supported, but environment variables are safer than putting secrets in shell history.');
   }

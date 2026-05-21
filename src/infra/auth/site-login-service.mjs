@@ -4,7 +4,7 @@ import { inspectReusableSiteSession as inspectReusableSiteSessionEntrypoint } fr
 
 export const inspectReusableSiteSession = inspectReusableSiteSessionEntrypoint;
 
-export async function siteLogin(inputUrl, options = {}) {
+export async function siteLogin(inputUrl, options = /** @type {any} */ ({})) {
   return {
     site: {
       url: inputUrl,
@@ -34,7 +34,7 @@ function definedEntries(input) {
   );
 }
 
-export function buildSiteLoginBootstrapOptions(request = {}, overrides = {}) {
+export function buildSiteLoginBootstrapOptions(request = /** @type {any} */ ({}), overrides = /** @type {any} */ ({})) {
   const reuseLoginState = hasOwn(overrides, 'reuseLoginState')
     ? overrides.reuseLoginState
     : (hasOwn(request, 'reuseLoginState') ? request.reuseLoginState : true);
@@ -64,7 +64,7 @@ export function buildSiteLoginBootstrapOptions(request = {}, overrides = {}) {
   });
 }
 
-export function buildReusableSessionInspectionSettings(request = {}, overrides = {}) {
+export function buildReusableSessionInspectionSettings(request = /** @type {any} */ ({}), overrides = /** @type {any} */ ({})) {
   const reuseLoginState = hasOwn(overrides, 'reuseLoginState')
     ? overrides.reuseLoginState
     : (hasOwn(request, 'reuseLoginState') ? request.reuseLoginState : true);
@@ -76,14 +76,14 @@ export function buildReusableSessionInspectionSettings(request = {}, overrides =
   });
 }
 
-export function buildReusableSessionInspectionOptions(request = {}, overrides = {}) {
+export function buildReusableSessionInspectionOptions(request = /** @type {any} */ ({}), overrides = /** @type {any} */ ({})) {
   return definedEntries({
     profilePath: hasOwn(overrides, 'profilePath') ? overrides.profilePath : request.profilePath,
     siteProfile: hasOwn(overrides, 'siteProfile') ? overrides.siteProfile : request.siteProfile,
   });
 }
 
-export async function runSiteLoginBootstrap(inputUrl, request = {}, deps = {}, overrides = {}) {
+export async function runSiteLoginBootstrap(inputUrl, request = /** @type {any} */ ({}), deps = /** @type {any} */ ({}), overrides = /** @type {any} */ ({})) {
   return await (deps.siteLogin ?? siteLogin)(
     inputUrl,
     buildSiteLoginBootstrapOptions(request, overrides),
@@ -91,7 +91,7 @@ export async function runSiteLoginBootstrap(inputUrl, request = {}, deps = {}, o
   );
 }
 
-export async function inspectRequestReusableSiteSession(inputUrl, request = {}, deps = {}, settingsOverrides = {}, optionOverrides = {}) {
+export async function inspectRequestReusableSiteSession(inputUrl, request = /** @type {any} */ ({}), deps = /** @type {any} */ ({}), settingsOverrides = /** @type {any} */ ({}), optionOverrides = /** @type {any} */ ({})) {
   return await (deps.inspectReusableSiteSession ?? inspectReusableSiteSession)(
     inputUrl,
     buildReusableSessionInspectionSettings(request, settingsOverrides),
@@ -104,7 +104,7 @@ export function didSiteLoginProduceReusableSession(report) {
   return report?.auth?.persistenceVerified === true || report?.auth?.status === 'session-reused';
 }
 
-export async function bootstrapReusableSiteSession(inputUrl, request = {}, deps = {}, overrides = {}) {
+export async function bootstrapReusableSiteSession(inputUrl, request = /** @type {any} */ ({}), deps = /** @type {any} */ ({}), overrides = /** @type {any} */ ({})) {
   const report = await runSiteLoginBootstrap(inputUrl, request, deps, overrides);
   return {
     ok: (deps.didSiteLoginProduceReusableSession ?? didSiteLoginProduceReusableSession)(report),

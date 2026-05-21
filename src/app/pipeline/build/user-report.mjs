@@ -36,8 +36,8 @@ function publicFailureReason(code) {
   return null;
 }
 
-function failedBuildReasons(report = {}) {
-  const reasons = [];
+function failedBuildReasons(report = /** @type {any} */ ({})) {
+  const reasons = /** @type {any[]} */ ([]);
   const codes = [
     report.reason_code,
     report.reasonCode,
@@ -117,7 +117,7 @@ function normalizeText(value) {
 
 const DEBUG_ONLY_STATUS_VALUES = new Set(['debug_only', 'candidate_debug_only']);
 
-function isDebugOnlyCapability(capability = {}) {
+function isDebugOnlyCapability(capability = /** @type {any} */ ({})) {
   if (capability.debug_only === true || capability.debugOnly === true || capability.candidate_debug_only === true) {
     return true;
   }
@@ -144,7 +144,7 @@ function isDebugOnlyCapability(capability = {}) {
     || normalizeText(capability.status) === 'candidate';
 }
 
-function capabilitySortText(capability = {}) {
+function capabilitySortText(capability = /** @type {any} */ ({})) {
   return [
     capability.category,
     capability.name,
@@ -156,7 +156,7 @@ function capabilitySortText(capability = {}) {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-function capabilityUserSortRank(capability = {}) {
+function capabilityUserSortRank(capability = /** @type {any} */ ({})) {
   const text = capabilitySortText(capability);
   const category = normalizeText(capability.category);
   const riskLevel = normalizeText(capability.risk_level);
@@ -200,7 +200,7 @@ function capabilityUserSortRank(capability = {}) {
   return 55;
 }
 
-function filterAndSortUserCapabilities(capabilities = []) {
+function filterAndSortUserCapabilities(capabilities = /** @type {any[]} */ ([])) {
   return (Array.isArray(capabilities) ? capabilities : [])
     .filter((capability) => !isDebugOnlyCapability(capability))
     .sort((left, right) => (
@@ -236,7 +236,7 @@ function friendlyCapabilityLabel(value) {
   return text;
 }
 
-function capabilityName(capability = {}) {
+function capabilityName(capability = /** @type {any} */ ({})) {
   for (const value of [
     capability.user_facing_name,
     capability.userFacingName,
@@ -250,7 +250,7 @@ function capabilityName(capability = {}) {
   return '未命名能力';
 }
 
-function capabilityReason(capability = {}) {
+function capabilityReason(capability = /** @type {any} */ ({})) {
   const reasonCode = normalizeText(capability.reason_code);
   if (INTERNAL_REASON_TEXT.has(reasonCode)) return INTERNAL_REASON_TEXT.get(reasonCode);
   const reason = String(capability.reason ?? '').trim();
@@ -273,7 +273,7 @@ function capabilityReason(capability = {}) {
   return '需要更多证据或用户确认';
 }
 
-function capabilityStrategy(capability = {}) {
+function capabilityStrategy(capability = /** @type {any} */ ({})) {
   const strategy = normalizeText(capability.strategy);
   if (INTERNAL_STRATEGY_TEXT.has(strategy)) return INTERNAL_STRATEGY_TEXT.get(strategy);
   if (normalizeText(capability.enabled_status) === 'limited_enabled') return '只保存脱敏结构摘要，不保存正文';
@@ -283,7 +283,7 @@ function capabilityStrategy(capability = {}) {
   return '默认禁用，不自动执行';
 }
 
-function isBlockedUserCapability(capability = {}) {
+function isBlockedUserCapability(capability = /** @type {any} */ ({})) {
   return normalizeText(capability.confirmation_group) === 'blocked'
     || capability.ordinary_confirmation_allowed === false
     || normalizeText(capability.enabled_status) === 'disabled'
@@ -291,7 +291,7 @@ function isBlockedUserCapability(capability = {}) {
     || ['write_high', 'account_security_critical', 'read_private_high'].includes(normalizeText(capability.risk_level));
 }
 
-function safePathForCapability(capability = {}) {
+function safePathForCapability(capability = /** @type {any} */ ({})) {
   const riskLevel = normalizeText(capability.risk_level);
   const status = normalizeText(capability.enabled_status ?? capability.status);
   if (riskLevel === 'read_private_high') {
@@ -312,7 +312,7 @@ function safePathForCapability(capability = {}) {
   return '可补脱敏证据和验证计划，通过后仍按安全策略确认';
 }
 
-function nonRepairableReasonForCapability(capability = {}) {
+function nonRepairableReasonForCapability(capability = /** @type {any} */ ({})) {
   const riskLevel = normalizeText(capability.risk_level);
   const text = capabilitySortText(capability);
   if (/direct message|private message|\bdm\b/u.test(text)) {
@@ -333,7 +333,7 @@ function nonRepairableReasonForCapability(capability = {}) {
   return '缺少满足门禁的能力级证据或安全计划';
 }
 
-function nextStepForBlockedCapability(capability = {}) {
+function nextStepForBlockedCapability(capability = /** @type {any} */ ({})) {
   const reviewCommand = String(capability.review_command ?? '').trim();
   const nextStep = String(capability.next_step ?? '').trim();
   if (reviewCommand && !path.isAbsolute(reviewCommand)) {
@@ -357,7 +357,7 @@ function compactCell(value, maxLength = 48) {
   return `${chars.slice(0, Math.max(0, maxLength - 1)).join('')}…`;
 }
 
-function appendTable(lines, columns, rows, options = {}) {
+function appendTable(lines, columns, rows, options = /** @type {any} */ ({})) {
   const indent = options.indent ?? '  ';
   lines.push(`${indent}| ${columns.map((column) => column.label).join(' | ')} |`);
   lines.push(`${indent}| ${columns.map(() => '---').join(' | ')} |`);
@@ -388,7 +388,7 @@ function capabilityCompactReason(capability) {
   return capabilityStrategy(capability) || capabilityReason(capability) || '-';
 }
 
-function appendTreeCapabilityRows(lines, capabilities, options = {}) {
+function appendTreeCapabilityRows(lines, capabilities, options = /** @type {any} */ ({})) {
   const limit = options.limit ?? 8;
   const checkbox = options.checkbox ?? '[ ]';
   const items = filterAndSortUserCapabilities(capabilities);
@@ -431,7 +431,7 @@ function capabilityStatusLabel(statusKey) {
 
 function appendCapabilityTableRows(lines, capabilities, statusKey, limit) {
   const items = filterAndSortUserCapabilities(capabilities);
-  const displayItems = [];
+  const displayItems = /** @type {any[]} */ ([]);
   const seenNames = new Set();
   for (const capability of items) {
     const name = capabilityName(capability);
@@ -492,7 +492,7 @@ function appendCapabilityTableRows(lines, capabilities, statusKey, limit) {
   }
 }
 
-export function renderSiteForgeUserBuildSummary(result, options = {}) {
+export function renderSiteForgeUserBuildSummary(result, options = /** @type {any} */ ({})) {
   if (typeof result?.user_report !== 'object') {
     return `SiteForge 构建状态：${result?.status ?? 'unknown'}\n`;
   }

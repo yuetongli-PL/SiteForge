@@ -65,8 +65,8 @@ function normalizeStringList(value) {
 
 export function parseDouyinActionArgs(argv = process.argv.slice(2)) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   const appendFlag = (key, value) => {
     if (!(key in flags)) {
       flags[key] = value;
@@ -167,7 +167,7 @@ function selectCliPayload(result, output) {
 
 function toDouyinActionCliOutputRedactionFailure(error) {
   const recovery = reasonCodeSummary('redaction-failed');
-  const failure = new Error('Douyin action CLI output redaction failed');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Douyin action CLI output redaction failed'));
   failure.name = 'DouyinActionCliOutputRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -253,7 +253,7 @@ export async function runDouyinActionCli(argv = process.argv.slice(2)) {
     siteKey: 'douyin',
     host: 'www.douyin.com',
   });
-  let result;
+  let result = /** @type {any} */ (undefined);
   try {
     result = {
       ...await runDouyinAction(stripProgressCliOptions(request)),

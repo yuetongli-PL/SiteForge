@@ -49,6 +49,7 @@ function normalizeFlagObject(value, fallback = false) {
   };
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertDownloadPolicyCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -60,6 +61,7 @@ export function assertDownloadPolicyCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeDownloadPolicy(raw = {}, defaults = {}) {
   if (raw.schemaVersion !== undefined) {
     assertDownloadPolicyCompatible(raw);

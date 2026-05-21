@@ -11,16 +11,19 @@ import {
   assertNoCompilerSensitiveMaterial,
 } from './validator.mjs';
 
+/** @param {Record<string, any>} options */
 export function prepareCompilerDerivedArtifact({
   artifactType,
   value,
 } = {}) {
   if (typeof artifactType !== 'string' || artifactType.trim() === '') {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Compiler artifact type is required');
     error.code = 'compiler.schema_invalid';
     throw error;
   }
   if (value?.redactionRequired !== true) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Compiler-derived artifact redactionRequired must be true');
     error.code = 'compiler.redaction_required';
     throw error;

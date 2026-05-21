@@ -11,7 +11,7 @@ function asInputText(chunk) {
   return String(chunk ?? '');
 }
 
-function key(name, sequence, extra = {}) {
+function key(name, sequence, extra = /** @type {any} */ ({})) {
   return { name, sequence, ...extra };
 }
 
@@ -96,7 +96,7 @@ function legacyWindowsKey(text, index) {
 
 export function parseTerminalInputKeys(chunk) {
   const text = asInputText(chunk);
-  const keys = [];
+  const keys = /** @type {any[]} */ ([]);
   for (let index = 0; index < text.length;) {
     const csi = csiKey(text, index);
     if (csi) {
@@ -139,7 +139,7 @@ export function parseTerminalInputKeys(chunk) {
 }
 
 export async function* readTerminalKeys(input) {
-  const queue = [];
+  const queue = /** @type {any[]} */ ([]);
   let done = false;
   let failure = null;
   let notify = null;
@@ -228,19 +228,19 @@ export function enterTerminalTui(input, output) {
   };
 }
 
-export function isTerminalReturnKey(key = {}) {
+export function isTerminalReturnKey(key = /** @type {any} */ ({})) {
   return key.name === 'return' || key.name === 'enter' || key.sequence === '\r' || key.sequence === '\n' || key.sequence === '\r\n';
 }
 
-export function isTerminalSpaceKey(key = {}) {
+export function isTerminalSpaceKey(key = /** @type {any} */ ({})) {
   return key.name === 'space' || key.name === 'spacebar' || key.sequence === ' ' || key.text === ' ';
 }
 
-export function isTerminalSlashKey(key = {}) {
+export function isTerminalSlashKey(key = /** @type {any} */ ({})) {
   return key.name === 'slash' || key.sequence === '/' || key.text === '/';
 }
 
-export function isTerminalCharacterKey(key = {}, character) {
+export function isTerminalCharacterKey(key = /** @type {any} */ ({}), character) {
   const wanted = String(character ?? '').toLowerCase();
   return key.name === wanted
     || String(key.sequence ?? '').toLowerCase() === wanted

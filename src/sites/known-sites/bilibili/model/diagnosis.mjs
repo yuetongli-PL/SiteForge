@@ -4,7 +4,7 @@ function normalizeSignal(signal) {
   return cleanText(signal ?? '').toLowerCase();
 }
 
-export function deriveBilibiliAntiCrawlReasonCode(signals = []) {
+export function deriveBilibiliAntiCrawlReasonCode(signals = /** @type {any[]} */ ([])) {
   const normalized = uniqueSortedStrings(toArray(signals).map(normalizeSignal).filter(Boolean));
   if (normalized.some((signal) => /verify|challenge|captcha|登录校验|安全验证/u.test(signal))) {
     return 'anti-crawl-verify';
@@ -38,7 +38,7 @@ function normalizeSubpage(value) {
   return cleanText(value ?? '').toLowerCase();
 }
 
-export function diagnoseBilibiliSurfaceState(state = null, options = {}) {
+export function diagnoseBilibiliSurfaceState(state = null, options = /** @type {any} */ ({})) {
   const pageFacts = state?.pageFacts ?? options.pageFacts ?? {};
   const pageType = String(state?.pageType ?? options.pageType ?? '');
   const antiCrawlSignals = uniqueSortedStrings(toArray(pageFacts?.antiCrawlSignals).filter(Boolean));

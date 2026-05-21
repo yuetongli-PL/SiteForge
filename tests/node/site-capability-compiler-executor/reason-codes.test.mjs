@@ -41,6 +41,7 @@ test('compiler/executor reason codes are cataloged with gate semantics', () => {
 test('unknown compiler/executor reason codes fail closed', () => {
   assert.throws(
     () => requireCompilerExecutorReasonCodeDefinition('compiler.unknown'),
+    // @ts-ignore
     (error) => error.code === 'compiler.reason_code_unknown',
   );
 });

@@ -11,7 +11,7 @@ async function loadRecoveryModule() {
   return await import('../../src/domain/risks/site-health-recovery.mjs');
 }
 
-async function evaluateGate(task, context = {}) {
+async function evaluateGate(task, context = /** @type {any} */ ({})) {
   const {
     evaluateSiteHealthExecutionGate,
   } = await loadExecutionGateModule();
@@ -23,7 +23,7 @@ async function evaluateGate(task, context = {}) {
   });
 }
 
-function writeTask(overrides = {}) {
+function writeTask(overrides = /** @type {any} */ ({})) {
   return {
     taskId: 'task-write-post',
     taskType: 'write',
@@ -35,7 +35,7 @@ function writeTask(overrides = {}) {
   };
 }
 
-function readTask(overrides = {}) {
+function readTask(overrides = /** @type {any} */ ({})) {
   return {
     taskId: 'task-read-profile',
     taskType: 'read',
@@ -72,6 +72,7 @@ test('execution gate safe-stop, quarantine, and user-action risks block write ta
           risks: [{
             type: riskType,
             affectedCapability: 'post.write',
+            // @ts-ignore
             requiresUserAction: ['captcha-required', 'mfa-required'].includes(riskType),
             autoRecoverable: false,
           }],
@@ -174,9 +175,11 @@ test('RecoveryPolicyRegistry overrides default recovery policy decisions', async
     fallbackMode: 'disabled',
     requiresAuditLog: true,
   });
+  // @ts-ignore
   const engine = new SiteHealthRecoveryEngine({ policyRegistry });
 
   const result = await engine.recover({
+    // @ts-ignore
     siteId: 'example',
     rawSignals: [{
       rawSignal: 'network_failed',
@@ -338,6 +341,7 @@ test('captcha, MFA, and rate-limit recovery policy never recommends bypass actio
     ['rate-limit', ['apply-backoff', 'reduce-concurrency', 'switch-to-readonly-mode']],
   ]) {
     const result = await engine.recover({
+      // @ts-ignore
       siteId: 'x',
       rawSignals: [{
         rawSignal,

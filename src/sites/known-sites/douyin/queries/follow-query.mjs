@@ -138,7 +138,7 @@ function buildDayKeys(startAt, endAt) {
   if (!start || !end || end.getTime() <= start.getTime()) {
     return [];
   }
-  const keys = [];
+  const keys = /** @type {any[]} */ ([]);
   for (let cursor = start.getTime(); cursor < end.getTime(); cursor += DAY_MS) {
     keys.push(formatShanghaiDayKey(new Date(cursor)));
   }
@@ -243,7 +243,7 @@ function resolveMonthWindow(now, previous = false) {
   };
 }
 
-export function normalizeDouyinTimeWindow(input, options = {}) {
+export function normalizeDouyinTimeWindow(input, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const rawInput = normalizeWindowLabel(input);
 
@@ -454,7 +454,7 @@ function deriveDouyinTimeConfidence(precision, timeSource) {
   return 'low';
 }
 
-export function normalizeDouyinPublishFields(card = {}, options = {}) {
+export function normalizeDouyinPublishFields(card = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const timeText = normalizeText(card.timeText ?? card.publishTimeText ?? card.publishText ?? '');
   const existingPublishedAt = toDate(card.publishedAt);
@@ -482,7 +482,7 @@ function escapeRegExp(value) {
   return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
-export function parseDouyinCreateTimeMapFromHtml(html, videoIds = []) {
+export function parseDouyinCreateTimeMapFromHtml(html, videoIds = /** @type {any[]} */ ([])) {
   const source = String(html ?? '');
   if (!source) {
     return new Map();
@@ -533,7 +533,7 @@ export function parseDouyinCreateTimeMapFromHtml(html, videoIds = []) {
   return results;
 }
 
-export function normalizeDouyinFollowUser(user = {}) {
+export function normalizeDouyinFollowUser(user = /** @type {any} */ ({})) {
   const name = normalizeText(user.name ?? user.nickname);
   const url = normalizeText(user.url ?? user.homeUrl);
   const urlUserId = normalizeText(url.match(/\/user\/([^/?#]+)/u)?.[1] ?? '');
@@ -554,7 +554,7 @@ export function normalizeDouyinFollowUser(user = {}) {
   };
 }
 
-export function sortDouyinFollowUsers(users = []) {
+export function sortDouyinFollowUsers(users = /** @type {any[]} */ ([])) {
   return [...users]
     .map((user) => normalizeDouyinFollowUser(user))
     .filter(Boolean)
@@ -563,7 +563,7 @@ export function sortDouyinFollowUsers(users = []) {
       || String(left.url ?? '').localeCompare(String(right.url ?? ''), 'en'));
 }
 
-export function sortDouyinFollowVideos(videos = []) {
+export function sortDouyinFollowVideos(videos = /** @type {any[]} */ ([])) {
   return [...videos]
     .filter(Boolean)
     .sort((left, right) => {
@@ -585,7 +585,7 @@ function matchesAnyFilter(textValues, needles) {
   return normalizedNeedles.some((needle) => normalizedValues.some((value) => value.includes(needle)));
 }
 
-function filterDouyinFollowUsers(users = [], userFilter = []) {
+function filterDouyinFollowUsers(users = /** @type {any[]} */ ([]), userFilter = /** @type {any[]} */ ([])) {
   const normalizedUsers = sortDouyinFollowUsers(users);
   if (!normalizeStringList(userFilter).length) {
     return normalizedUsers;
@@ -600,7 +600,7 @@ function filterDouyinFollowUsers(users = [], userFilter = []) {
   ], userFilter));
 }
 
-function filterDouyinVideosByTitle(videos = [], titleKeyword = []) {
+function filterDouyinVideosByTitle(videos = /** @type {any[]} */ ([]), titleKeyword = /** @type {any[]} */ ([])) {
   const keywords = normalizeStringList(titleKeyword);
   if (!keywords.length) {
     return sortDouyinFollowVideos(videos);
@@ -611,7 +611,7 @@ function filterDouyinVideosByTitle(videos = [], titleKeyword = []) {
   ], keywords)));
 }
 
-function rebuildVideoGroupsFromFlatVideos(videos = []) {
+function rebuildVideoGroupsFromFlatVideos(videos = /** @type {any[]} */ ([])) {
   const groups = new Map();
   for (const video of sortDouyinFollowVideos(videos)) {
     const key = normalizeText(video?.userId) || normalizeText(video?.authorUrl) || normalizeText(video?.authorName) || normalizeText(video?.videoId);
@@ -636,7 +636,7 @@ function rebuildVideoGroupsFromFlatVideos(videos = []) {
     .sort((left, right) => String(left.authorName ?? '').localeCompare(String(right.authorName ?? ''), 'zh-Hans-CN'));
 }
 
-function buildFollowResultMeta(result = {}) {
+function buildFollowResultMeta(result = /** @type {any} */ ({})) {
   return {
     queryType: result.queryType ?? null,
     window: result.window ?? null,
@@ -649,7 +649,7 @@ function buildFollowResultMeta(result = {}) {
   };
 }
 
-export function projectDouyinFollowResult(result = {}, outputMode = 'full') {
+export function projectDouyinFollowResult(result = /** @type {any} */ ({}), outputMode = 'full') {
   const normalizedMode = normalizeText(outputMode) || 'full';
   const meta = buildFollowResultMeta(result);
   if (normalizedMode === 'summary') {
@@ -676,8 +676,8 @@ export function projectDouyinFollowResult(result = {}, outputMode = 'full') {
   return result;
 }
 
-export function renderDouyinFollowResultMarkdown(report = {}, projected = {}) {
-  const lines = [];
+export function renderDouyinFollowResultMarkdown(report = /** @type {any} */ ({}), projected = /** @type {any} */ ({})) {
+  const lines = /** @type {any[]} */ ([]);
   const siteUrl = normalizeText(report?.site?.url);
   const queryType = projected?.queryType ?? report?.result?.queryType ?? 'query';
   const windowLabel = projected?.window?.label ?? projected?.window?.input ?? null;
@@ -806,7 +806,7 @@ export async function writeDouyinFollowCache(userDataDir, cache) {
   return cachePath;
 }
 
-export function isDouyinFollowIndexFresh(cache, options = {}) {
+export function isDouyinFollowIndexFresh(cache, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const lastFollowSyncAt = toDate(cache?.followIndex?.lastFollowSyncAt);
   if (!lastFollowSyncAt) {
@@ -815,7 +815,7 @@ export function isDouyinFollowIndexFresh(cache, options = {}) {
   return (now.getTime() - lastFollowSyncAt.getTime()) <= FOLLOW_CACHE_MAX_AGE_MS;
 }
 
-export function pruneDouyinFollowCache(cache, options = {}) {
+export function pruneDouyinFollowCache(cache, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const cutoff = new Date(now.getTime() - FOLLOW_VIDEO_RETENTION_DAYS * DAY_MS);
   const nextCache = {
@@ -848,8 +848,8 @@ export function pruneDouyinFollowCache(cache, options = {}) {
   return nextCache;
 }
 
-function dedupeVideoRows(videos = []) {
-  const rows = [];
+function dedupeVideoRows(videos = /** @type {any[]} */ ([])) {
+  const rows = /** @type {any[]} */ ([]);
   const seen = new Map();
   const scoreVideoRow = (video) => {
     let total = 0;
@@ -932,7 +932,7 @@ function dedupeVideoRows(videos = []) {
   return rows;
 }
 
-export function updateDouyinFollowIndexCache(cache, users, options = {}) {
+export function updateDouyinFollowIndexCache(cache, users, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const nextCache = pruneDouyinFollowCache(cache, { now });
   nextCache.followIndex = {
@@ -943,7 +943,7 @@ export function updateDouyinFollowIndexCache(cache, users, options = {}) {
   return nextCache;
 }
 
-export function updateDouyinUserVideoCache(cache, user, videos, options = {}) {
+export function updateDouyinUserVideoCache(cache, user, videos, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const normalizedUser = normalizeDouyinFollowUser(user);
   if (!normalizedUser?.userId) {
@@ -975,7 +975,7 @@ export function updateDouyinUserVideoCache(cache, user, videos, options = {}) {
   return nextCache;
 }
 
-function mergeDouyinUserCacheEntry(cache, userId, entry, options = {}) {
+function mergeDouyinUserCacheEntry(cache, userId, entry, options = /** @type {any} */ ({})) {
   const normalizedUserId = normalizeText(userId);
   if (!normalizedUserId || !entry || typeof entry !== 'object') {
     return pruneDouyinFollowCache(cache, options);
@@ -993,7 +993,7 @@ function mergeDouyinUserCacheEntry(cache, userId, entry, options = {}) {
   return nextCache;
 }
 
-function selectCacheCoveredUsers(cache, users = [], window, options = {}) {
+function selectCacheCoveredUsers(cache, users = /** @type {any[]} */ ([]), window, options = /** @type {any} */ ({})) {
   return users.filter((user) => {
     if (!user?.userId || options.forceRefreshUserCache === true) {
       return false;
@@ -1002,7 +1002,7 @@ function selectCacheCoveredUsers(cache, users = [], window, options = {}) {
   });
 }
 
-export function isDouyinUserCacheWindowCovered(cache, userId, window, options = {}) {
+export function isDouyinUserCacheWindowCovered(cache, userId, window, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const entry = cache?.users?.[String(userId ?? '')];
   const lastScannedAt = toDate(entry?.lastScannedAt);
@@ -1028,7 +1028,7 @@ function buildDouyinWindowKey(window = null) {
   return [window.startAt ?? '', window.endAt ?? '', window.label ?? ''].join('::');
 }
 
-function canReuseCachedVideosAfterHeadCheck(cache, userId, window, firstPageHeadVideoId, options = {}) {
+function canReuseCachedVideosAfterHeadCheck(cache, userId, window, firstPageHeadVideoId, options = /** @type {any} */ ({})) {
   const entry = cache?.users?.[String(userId ?? '')];
   if (!entry || !firstPageHeadVideoId) {
     return false;
@@ -1048,7 +1048,7 @@ function canReuseCachedVideosAfterHeadCheck(cache, userId, window, firstPageHead
   return startAt.getTime() >= coverageStart.getTime();
 }
 
-function resolveDouyinFollowResumeState(cache, intent, window, targetUsers, options = {}) {
+function resolveDouyinFollowResumeState(cache, intent, window, targetUsers, options = /** @type {any} */ ({})) {
   if (options.forceRefreshUserCache === true) {
     return { resumed: false, resumeIndex: 0 };
   }
@@ -1085,7 +1085,7 @@ function resolveDouyinFollowResumeState(cache, intent, window, targetUsers, opti
   };
 }
 
-function updateDouyinFollowQueryCheckpoint(cache, intent, window, processedUserId, completedUsersCount, totalUsers, options = {}) {
+function updateDouyinFollowQueryCheckpoint(cache, intent, window, processedUserId, completedUsersCount, totalUsers, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   return {
     ...cache,
@@ -1102,7 +1102,7 @@ function updateDouyinFollowQueryCheckpoint(cache, intent, window, processedUserI
   };
 }
 
-function updateDouyinPrewarmState(cache, summary = {}, options = {}) {
+function updateDouyinPrewarmState(cache, summary = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const nextFollowSyncAt = new Date(now.getTime() + FOLLOW_CACHE_MAX_AGE_MS).toISOString();
   const nextActiveUsersWarmupAt = new Date(now.getTime() + (2 * 60 * 60 * 1000)).toISOString();
@@ -1120,7 +1120,7 @@ function updateDouyinPrewarmState(cache, summary = {}, options = {}) {
   };
 }
 
-function selectRecentActiveUsersFromCache(cache, options = {}) {
+function selectRecentActiveUsersFromCache(cache, options = /** @type {any} */ ({})) {
   const now = toDate(options.now) ?? new Date();
   const recentActiveDays = normalizePositiveInteger(options.recentActiveDays, DEFAULT_OPTIONS.recentActiveDays);
   const recentActiveUsersLimit = normalizePositiveInteger(options.recentActiveUsersLimit, DEFAULT_OPTIONS.recentActiveUsersLimit);
@@ -1236,7 +1236,7 @@ function buildQueryWaitPolicy(timeoutMs) {
   };
 }
 
-function normalizeObservedVideo(video, fallbackUser = {}, options = {}) {
+function normalizeObservedVideo(video, fallbackUser = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const normalized = {
     title: normalizeText(video?.title),
     url: normalizeText(video?.url),
@@ -1260,7 +1260,7 @@ function normalizeObservedVideo(video, fallbackUser = {}, options = {}) {
   };
 }
 
-function finalizePostsApiVideo(video = {}) {
+function finalizePostsApiVideo(video = /** @type {any} */ ({})) {
   const { awemeData, ...rest } = video ?? {};
   const seed = buildDouyinDownloadTaskSeed(video?.awemeData ?? null, {
     requestedUrl: normalizeText(video?.url) || (normalizeText(video?.videoId) ? `https://www.douyin.com/video/${video.videoId}` : null),
@@ -1358,7 +1358,7 @@ async function pageCollectDouyinFollowUsers(session) {
       return rect.width >= 8 && rect.height >= 8;
     };
     const terminalPatterns = [/没有更多/u, /已经到底了/u, /暂无关注/u];
-    const users = [];
+    const users = /** @type {any[]} */ ([]);
     const seen = new Set();
     let terminalReached = false;
 
@@ -1428,12 +1428,12 @@ async function pageCollectDouyinUserPosts(session) {
     };
     const timePattern = /(刚刚|今天(?:\s+\d{1,2}:\d{2})?|昨天(?:\s+\d{1,2}:\d{2})?|前天|\d+\s*(?:分钟前|小时前|天前)|\d{4}-\d{1,2}-\d{1,2}(?:\s+\d{1,2}:\d{2})?|\d{1,2}月\d{1,2}日(?:\s+\d{1,2}:\d{2})?)/u;
     const terminalPatterns = [/没有更多/u, /已经到底了/u, /暂无内容/u, /暂无作品/u];
-    const posts = [];
+    const posts = /** @type {any[]} */ ([]);
     const seen = new Set();
     let terminalReached = false;
 
     const pickTimeText = (container) => {
-      const candidates = [];
+      const candidates = /** @type {any[]} */ ([]);
       for (const selector of ['[data-e2e*="time"]', '[class*="time"]', '[class*="date"]', 'time']) {
         try {
           for (const node of Array.from(container?.querySelectorAll?.(selector) ?? [])) {
@@ -1535,8 +1535,8 @@ async function scrollDouyinPage(session) {
   await sleep(FOLLOW_SCROLL_DELAY_MS);
 }
 
-async function pageFetchDouyinFollowingPage(session, input = {}) {
-  return await session.callPageFunction(async (request = {}) => {
+async function pageFetchDouyinFollowingPage(session, input = /** @type {any} */ ({})) {
+  return await session.callPageFunction(async (request = /** @type {any} */ ({})) => {
     const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
     const renderNode = document.getElementById('RENDER_DATA');
     let renderData = null;
@@ -1606,8 +1606,8 @@ async function pageFetchDouyinFollowingPage(session, input = {}) {
   }, input);
 }
 
-async function pageFetchDouyinUserPostsPage(session, input = {}) {
-  const page = await session.callPageFunction(async (request = {}) => {
+async function pageFetchDouyinUserPostsPage(session, input = /** @type {any} */ ({})) {
+  const page = await session.callPageFunction(async (request = /** @type {any} */ ({})) => {
     const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
     const compactVideo = (video) => {
       if (!video || typeof video !== 'object') {
@@ -1709,7 +1709,7 @@ async function pageFetchDouyinUserPostsPage(session, input = {}) {
   };
 }
 
-async function collectFollowUsersWithCache(session, authContext, cache, options = {}) {
+async function collectFollowUsersWithCache(session, authContext, cache, options = /** @type {any} */ ({})) {
   const cachedUsers = sortDouyinFollowUsers(cache?.followIndex?.users ?? []);
   if (options.forceRefreshFollowIndex !== true && isDouyinFollowIndexFresh(cache, options) && cachedUsers.length > 0) {
     return {
@@ -1723,7 +1723,7 @@ async function collectFollowUsersWithCache(session, authContext, cache, options 
   const followUsersUrl = normalizeText(authContext?.siteProfile?.authValidationSamples?.followUsersUrl)
     || 'https://www.douyin.com/follow?tab=user';
   await navigateDouyinPage(session, followUsersUrl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const apiUsers = [];
+  const apiUsers = /** @type {any[]} */ ([]);
   const seenApiUsers = new Set();
   let apiOffset = 0;
   let apiHasMore = true;
@@ -1811,7 +1811,7 @@ function isTransientFollowQueryError(error) {
     || /Target closed|Inspector\.detached/iu.test(message);
 }
 
-async function collectUserUpdatesWithRetry(session, user, window, cache, options = {}) {
+async function collectUserUpdatesWithRetry(session, user, window, cache, options = /** @type {any} */ ({})) {
   const maxRetries = Math.max(0, normalizePositiveInteger(options.userScanRetries, DEFAULT_USER_SCAN_RETRIES) ?? DEFAULT_USER_SCAN_RETRIES);
   let lastError = null;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -1833,7 +1833,7 @@ async function collectUserUpdatesWithRetry(session, user, window, cache, options
   };
 }
 
-async function collectUserUpdates(session, user, window, cache, options = {}) {
+async function collectUserUpdates(session, user, window, cache, options = /** @type {any} */ ({})) {
   const entry = cache?.users?.[String(user?.userId ?? '')] ?? null;
   if (options.forceRefreshUserCache !== true && user?.userId && isDouyinUserCacheWindowCovered(cache, user.userId, window, options)) {
     const cachedVideos = toArray(entry?.videos).map((video) => normalizeObservedVideo(video, user, options));
@@ -1861,7 +1861,7 @@ async function collectUserUpdates(session, user, window, cache, options = {}) {
     };
   }
 
-  const apiVideos = [];
+  const apiVideos = /** @type {any[]} */ ([]);
   const seenApiVideos = new Set();
   let apiCursor = 0;
   let apiHasMore = true;
@@ -1938,7 +1938,7 @@ async function collectUserUpdates(session, user, window, cache, options = {}) {
 
   await navigateDouyinPage(session, postsUrl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   let observed = null;
-  let normalizedVideos = [];
+  let normalizedVideos = /** @type {any[]} */ ([]);
   let stableRounds = 0;
   let previousCount = 0;
   let olderStreak = 0;
@@ -2023,7 +2023,7 @@ async function collectUserUpdates(session, user, window, cache, options = {}) {
   };
 }
 
-function buildFollowUsersResult(users, partial = false, errors = [], totalFollowedUsers = users.length) {
+function buildFollowUsersResult(users, partial = false, errors = /** @type {any[]} */ ([]), totalFollowedUsers = users.length) {
   return {
     queryType: 'list-followed-users',
     window: null,
@@ -2039,7 +2039,7 @@ function buildFollowUsersResult(users, partial = false, errors = [], totalFollow
   };
 }
 
-function buildFollowUpdatesResult(window, users, groups, videos, partial = false, errors = [], scannedUsers = users.length, totalFollowedUsers = users.length) {
+function buildFollowUpdatesResult(window, users, groups, videos, partial = false, errors = /** @type {any[]} */ ([]), scannedUsers = users.length, totalFollowedUsers = users.length) {
   return {
     queryType: 'list-followed-updates',
     window,
@@ -2062,7 +2062,7 @@ function buildFollowUpdatesResult(window, users, groups, videos, partial = false
   };
 }
 
-function buildPrewarmFollowCacheResult(users, summary = {}, partial = false, errors = []) {
+function buildPrewarmFollowCacheResult(users, summary = /** @type {any} */ ({}), partial = false, errors = /** @type {any[]} */ ([])) {
   return {
     queryType: 'prewarm-follow-cache',
     window: null,
@@ -2108,7 +2108,7 @@ function deriveAuthMissingResult(intent, window) {
   };
 }
 
-async function openDouyinWorkerSession(inputUrl, authContext, settings, deps = {}) {
+async function openDouyinWorkerSession(inputUrl, authContext, settings, deps = /** @type {any} */ ({})) {
   const workerSession = await (deps.openBrowserSession ?? openBrowserSession)({
     ...settings,
     userDataDir: authContext.userDataDir,
@@ -2123,7 +2123,7 @@ async function openDouyinWorkerSession(inputUrl, authContext, settings, deps = {
   return workerSession;
 }
 
-async function openDouyinWorkerPool(baseSession, inputUrl, authContext, settings, desiredCount, deps = {}) {
+async function openDouyinWorkerPool(baseSession, inputUrl, authContext, settings, desiredCount, deps = /** @type {any} */ ({})) {
   const workers = [{ session: baseSession, reusable: false }];
   const targetCount = Math.max(1, Math.min(
     normalizePositiveInteger(desiredCount, 1) ?? 1,
@@ -2140,7 +2140,7 @@ async function openDouyinWorkerPool(baseSession, inputUrl, authContext, settings
   return workers;
 }
 
-async function closeDouyinWorkerPool(workers = []) {
+async function closeDouyinWorkerPool(workers = /** @type {any[]} */ ([])) {
   for (const worker of workers.slice(1)) {
     try {
       await worker?.session?.close?.();
@@ -2150,7 +2150,7 @@ async function closeDouyinWorkerPool(workers = []) {
   }
 }
 
-async function reopenDouyinWorker(worker, inputUrl, authContext, settings, deps = {}) {
+async function reopenDouyinWorker(worker, inputUrl, authContext, settings, deps = /** @type {any} */ ({})) {
   if (!worker?.reusable) {
     return worker;
   }
@@ -2163,7 +2163,7 @@ async function reopenDouyinWorker(worker, inputUrl, authContext, settings, deps 
   return worker;
 }
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = { ...DEFAULT_OPTIONS, ...options };
   merged.profilePath = merged.profilePath
     ? path.resolve(merged.profilePath)
@@ -2198,7 +2198,7 @@ function mergeOptions(inputUrl, options = {}) {
   return merged;
 }
 
-async function queryDouyinFollowOnce(inputUrl, options = {}, deps = {}) {
+async function queryDouyinFollowOnce(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   const authProfile = await (deps.resolveSiteAuthProfile ?? resolveSiteAuthProfile)(inputUrl, {
     profilePath: settings.profilePath,
@@ -2289,7 +2289,7 @@ async function queryDouyinFollowOnce(inputUrl, options = {}, deps = {}) {
     const allFollowUsers = sortDouyinFollowUsers(followUsers.users);
     const targetUsers = filterDouyinFollowUsers(allFollowUsers, settings.userFilter);
     /** @type {Array<{reason: string, userId?: string|null, authorName?: string|null, url?: string|null, message?: string|null}>} */
-    const errors = [];
+    const errors = /** @type {any[]} */ ([]);
     let partial = followUsers.partial === true;
 
     let result;
@@ -2384,7 +2384,7 @@ async function queryDouyinFollowOnce(inputUrl, options = {}, deps = {}) {
         nextSuggestedActiveUsersWarmupAt: cache?.prewarm?.nextSuggestedActiveUsersWarmupAt ?? null,
       }, partial, errors);
     } else {
-      const flatVideos = [];
+      const flatVideos = /** @type {any[]} */ ([]);
       const resumeState = resolveDouyinFollowResumeState(cache, settings.intent, window, targetUsers, settings);
       let scannedUsers = resumeState.resumeIndex;
       const pendingUsers = resumeState.resumed ? targetUsers.slice(resumeState.resumeIndex) : targetUsers;
@@ -2522,7 +2522,7 @@ async function queryDouyinFollowOnce(inputUrl, options = {}, deps = {}) {
   }
 }
 
-export async function queryDouyinFollow(inputUrl, options = {}, deps = {}) {
+export async function queryDouyinFollow(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   let lastError = null;
   const maxAttempts = 2;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -2540,8 +2540,8 @@ export async function queryDouyinFollow(inputUrl, options = {}, deps = {}) {
 
 export function parseDouyinFollowQueryArgs(argv) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   const appendFlag = (key, value) => {
     if (!(key in flags)) {
       flags[key] = value;
@@ -2613,7 +2613,7 @@ export function parseDouyinFollowQueryArgs(argv) {
   };
 }
 
-function douyinFollowProgressMessage(report = {}) {
+function douyinFollowProgressMessage(report = /** @type {any} */ ({})) {
   const result = report?.result ?? {};
   return [
     result?.queryType ?? 'follow-query',

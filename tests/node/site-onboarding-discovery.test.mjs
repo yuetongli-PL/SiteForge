@@ -14,7 +14,7 @@ function discoveredNode(id, {
   nodeKind = 'dom-node',
   required = false,
   locator = `#${id}`,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return {
     id,
     kind: nodeKind,
@@ -29,7 +29,7 @@ function discoveredApi(id, {
   required = false,
   url = `https://example.invalid/api/${id}`,
   ...rest
-} = {}) {
+} = /** @type {any} */ ({})) {
   return {
     id,
     method,
@@ -41,11 +41,11 @@ function discoveredApi(id, {
 }
 
 function adapterFromDecisions({
-  nodes = {},
-  apis = {},
-  capabilityEvidence = [],
-  capabilityEvidenceFixtures = [],
-} = {}) {
+  nodes = /** @type {any} */ ({}),
+  apis = /** @type {any} */ ({}),
+  capabilityEvidence = /** @type {any[]} */ ([]),
+  capabilityEvidenceFixtures = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   return {
     id: 'synthetic-adapter',
     capabilityEvidence,

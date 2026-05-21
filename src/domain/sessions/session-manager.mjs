@@ -3,6 +3,7 @@
 import { normalizeText } from '../../shared/normalize.mjs';
 import { normalizeSessionHealth } from './contracts.mjs';
 
+/** @param {Record<string, any>} [health] */
 export function buildSessionRepairPlan(health = {}) {
   const reason = normalizeText(health.reason ?? health.riskCauseCode ?? health.status);
   const riskSignals = [
@@ -67,6 +68,7 @@ function timestampMs(value) {
   return Number.isFinite(time) ? time : null;
 }
 
+/** @param {Record<string, any>} [profileHealth] */
 function isProfileHealthRecoveredBySessionReuse(profileHealth = {}, authSummary = {}) {
   if (profileHealth?.profileLifecycle === 'uninitialized' || profileHealth?.profileLifecycle === 'missing') {
     return false;

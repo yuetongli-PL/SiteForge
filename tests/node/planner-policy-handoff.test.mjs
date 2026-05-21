@@ -175,7 +175,7 @@ function assertNoPlannerRuntimeProducts(value, label) {
   }
 }
 
-function createCatalogEntry(overrides = {}) {
+function createCatalogEntry(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: API_CATALOG_ENTRY_SCHEMA_VERSION,
     candidateId: 'candidate-synthetic-planner-list',
@@ -229,7 +229,7 @@ function assignGraphRouteRiskPolicy(graph, routeId, riskPolicyId, state) {
   });
 }
 
-function createCandidateFromCatalogEntry(catalogEntry = createCatalogEntry(), overrides = {}) {
+function createCandidateFromCatalogEntry(catalogEntry = createCatalogEntry(), overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: API_CANDIDATE_SCHEMA_VERSION,
     id: catalogEntry.candidateId,
@@ -437,6 +437,7 @@ test('graph planner route handoff rejects Layer runtime products before executio
     assert.throws(
       () => assertGraphPlannerRouteHandoffLayerEntrypointBoundaryCompatibility({
         ...handoff,
+        // @ts-ignore
         [fieldName]: fieldValue,
       }),
       /descriptor-only/u,
@@ -450,7 +451,9 @@ test('graph planner route handoff rejects Layer runtime products before executio
       diagnostic: 'Authorization: Bearer synthetic-secret-value',
     }),
     (error) => {
+      // @ts-ignore
       assert.match(error.message, /Forbidden sensitive pattern|raw sensitive material/u);
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -583,7 +586,7 @@ test('graph planner runtime integration design rejects execution and runtime pro
     graph,
     capabilityId: GRAPH_CAPABILITY_ID,
   });
-  unsafeDesign.items[0].handoff.taskList = [];
+  unsafeDesign.items[0].handoff.taskList = /** @type {any[]} */ ([]);
   assert.throws(
     () => assertGraphPlannerRuntimeIntegrationDesignCompatibility(unsafeDesign),
     /descriptor-only.*taskList/u,
@@ -958,7 +961,7 @@ test('disabled graph planner runtime consumer rejects enabled flags and runtime 
   );
 
   const runtimePayloadResult = createDisabledGraphPlannerRuntimeConsumerResult(design);
-  runtimePayloadResult.items[0].taskList = [];
+  runtimePayloadResult.items[0].taskList = /** @type {any[]} */ ([]);
   assert.throws(
     () => assertDisabledGraphPlannerRuntimeConsumerResultCompatibility(runtimePayloadResult),
     /descriptor-only.*taskList/u,
@@ -1082,7 +1085,9 @@ test('graph planner Layer entrypoint handoff guard keeps Graph from becoming a s
   const item = guard.items[0];
   const requiredGuards = item.requiredGuards ?? {};
   const sourceRuntimeConsumer = item.sourceRuntimeConsumer
+    // @ts-ignore
     ?? item.sourceDisabledRuntimeConsumer
+    // @ts-ignore
     ?? item.disabledRuntimeConsumer;
 
   assert.equal(assertPreflightCompatibility(preflightContract), true);
@@ -1095,6 +1100,7 @@ test('graph planner Layer entrypoint handoff guard keeps Graph from becoming a s
     'site-capability-graph-planner-layer-entrypoint-handoff-guard',
   );
   assert.equal(guard.redactionRequired, true);
+  // @ts-ignore
   assert.equal(item.handoffMode ?? item.guardMode ?? item.contractMode, 'descriptor-only');
   assert.equal(item.result, 'blocked');
   assert.equal(item.reasonCode, 'graph-runtime-consumer-disabled');
@@ -1108,17 +1114,21 @@ test('graph planner Layer entrypoint handoff guard keeps Graph from becoming a s
     'assertGraphPlannerLayerEntrypointHandoffGuardCompatibility',
   );
   assert.equal(
+    // @ts-ignore
     requiredGuards.preflightGuard ?? item.requiredPreflightGuard,
     'assertFutureGraphLayerConsumerPreflightCompatibility',
   );
   assert.equal(
+    // @ts-ignore
     requiredGuards.runtimeConsumerGuard
+      // @ts-ignore
       ?? requiredGuards.disabledRuntimeConsumerGuard
       ?? item.requiredRuntimeConsumerGuard
       ?? item.requiredDisabledRuntimeConsumerGuard,
     'assertDisabledGraphPlannerRuntimeConsumerResultCompatibility',
   );
   assert.equal(
+    // @ts-ignore
     requiredGuards.handoffGuard ?? item.requiredHandoffGuard,
     'assertGraphPlannerLayerEntrypointHandoffGuardCompatibility',
   );
@@ -1279,6 +1289,7 @@ test('graph planner Layer entrypoint handoff guard keeps Graph from becoming a s
   }, {
     handoffName: 'synthetic-section3-planner-layer-entrypoint-handoff-guard',
   });
+  // @ts-ignore
   unsafeGuard.items[0].graphExecutionEnabled = true;
   assert.throws(
     () => assertHandoffGuardCompatibility(unsafeGuard),
@@ -1534,9 +1545,12 @@ test('graph planner Layer entrypoint handoff safe summary proves minimum Layer c
     ['profile', 'synthetic-secret-value'],
   ]) {
     const unsafeGuard = cloneJson(guard);
+    // @ts-ignore
     unsafeGuard.items[0][fieldName] = fieldValue;
     const message = captureThrownMessage(() => createSafeSummary(unsafeGuard));
+    // @ts-ignore
     assert.match(message, /descriptor-only|runtime field|must remain false|raw|sensitive|forbidden/iu, fieldName);
+    // @ts-ignore
     assert.doesNotMatch(message, /synthetic-secret-value/u, fieldName);
   }
 
@@ -1652,7 +1666,7 @@ test('graph planner Layer entrypoint live execution denial guard rejects runtime
   });
   assert.equal(assertDenialGuardCompatibility(validAliasedGuard), true);
 
-  for (const { name, source, options = {}, pattern } of [
+  for (const { name, source, options = /** @type {any} */ ({}), pattern } of [
     {
       name: 'missing source',
       source: {},
@@ -1779,6 +1793,7 @@ test('graph planner Layer entrypoint live execution denial guard rejects runtime
   const unsafeGuard = createLiveExecutionDenialGuard(summary, {
     guardName: 'synthetic-section3-live-denial-mutated-guard',
   });
+  // @ts-ignore
   unsafeGuard.items[0].executionAllowed = true;
   const enabledMessage = captureThrownMessage(() => assertDenialGuardCompatibility(unsafeGuard));
   assert.match(enabledMessage, /executionAllowed|must be false|descriptor-only/iu);
@@ -1787,6 +1802,7 @@ test('graph planner Layer entrypoint live execution denial guard rejects runtime
   const unsafePayloadGuard = createLiveExecutionDenialGuard(summary, {
     guardName: 'synthetic-section3-live-denial-mutated-payload-guard',
   });
+  // @ts-ignore
   unsafePayloadGuard.items[0].runtimePayload = {
     Authorization: 'Bearer synthetic-secret-value',
   };
@@ -1936,13 +1952,21 @@ test('planner policy handoff gates graph versions before route planning', async 
         capabilityId: GRAPH_CAPABILITY_ID,
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.reasonCode, 'graph-version-incompatible');
+        // @ts-ignore
         assert.equal(error.retryable, false);
+        // @ts-ignore
         assert.equal(error.manualRecoveryNeeded, true);
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, false);
+        // @ts-ignore
         assert.equal(error.failureMode, 'graph-version-compatibility');
+        // @ts-ignore
         assert.equal(error.causeSummary.reasonCode, 'graph-version-incompatible');
+        // @ts-ignore
         assert.equal(error.causeSummary.supportedGraphSchemaVersion, 1);
+        // @ts-ignore
         assert.deepEqual(error.causeSummary.supportedGraphDataVersions, [
           'synthetic-graph-v1',
           'synthetic-generated-from-layer-v1',
@@ -2719,11 +2743,17 @@ test('planner policy handoff writer maps schema compatibility failure to reasonC
       redactionAuditPath: auditPath,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.reasonCode, 'schema-version-incompatible');
+      // @ts-ignore
       assert.equal(error.retryable, false);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, true);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
+      // @ts-ignore
       assert.equal(error.failureMode, 'schema-compatibility');
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         reasonCode: 'schema-version-incompatible',
         message: 'schema compatibility failure',
@@ -2759,8 +2789,11 @@ test('planner policy handoff writer fails closed on downstream policy incompatib
       redactionAuditPath: auditPath,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.reasonCode, 'schema-version-incompatible');
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
+      // @ts-ignore
       assert.equal(error.failureMode, 'schema-compatibility');
       assert.doesNotMatch(JSON.stringify(error), /synthetic-planner-token|authorization|cookie|csrf|sessionId/iu);
       return true;
@@ -2793,12 +2826,19 @@ test('planner policy handoff writer maps policy generation failure and writes no
       redactionAuditPath: auditPath,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.reasonCode, 'download-policy-generation-failed');
+      // @ts-ignore
       assert.equal(error.retryable, false);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, true);
+      // @ts-ignore
       assert.equal(error.degradable, true);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
+      // @ts-ignore
       assert.equal(error.failureMode, 'download-policy-generation');
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         reasonCode: 'download-policy-generation-failed',
         message: 'download policy generation failure',

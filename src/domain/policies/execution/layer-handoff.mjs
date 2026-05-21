@@ -12,6 +12,7 @@ import {
   assertNoExecutionSensitiveMaterial,
 } from './validator.mjs';
 
+/** @param {Record<string, any>} options */
 export function createLayerExecutionHandoffDescriptor(options = {}) {
   assertNoExecutionSensitiveMaterial(options);
   const {
@@ -45,6 +46,7 @@ export function createLayerExecutionHandoffDescriptor(options = {}) {
   return handoff;
 }
 
+/** @param {Record<string, any>} options */
 export function createExecutionFeedbackFromLayerReceipt(options = {}) {
   assertNoExecutionSensitiveMaterial(options);
   const {
@@ -73,6 +75,7 @@ export function createExecutionFeedbackFromLayerReceipt(options = {}) {
   return feedback;
 }
 
+/** @param {Record<string, any>} options */
 export function createCoverageDeltaFromExecutionFeedback(options = {}) {
   assertNoExecutionSensitiveMaterial(options);
   const {

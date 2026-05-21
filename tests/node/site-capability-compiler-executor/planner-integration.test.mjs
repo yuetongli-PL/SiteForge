@@ -69,6 +69,7 @@ test('Planner rejects compiler Graph without passed validation report', () => {
       graph,
       validationReport: undefined,
     }),
+    // @ts-ignore
     (error) => error.code === 'planner.graph_not_validated',
   );
   assert.throws(
@@ -82,6 +83,7 @@ test('Planner rejects compiler Graph without passed validation report', () => {
         findings: [{ reasonCode: 'graph.edge_broken' }],
       },
     }),
+    // @ts-ignore
     (error) => error.code === 'planner.graph_not_validated',
   );
 });

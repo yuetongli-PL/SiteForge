@@ -228,22 +228,35 @@ test('session repair plan JSON stdout fails closed without raw cause exposure', 
   assert.throws(
     () => sessionRepairPlanCliJson(payload),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'SessionRepairPlanCliSummaryRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.retryable, recovery.retryable);
+      // @ts-ignore
       assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+      // @ts-ignore
       assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+      // @ts-ignore
       assert.equal(error.degradable, recovery.degradable);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+      // @ts-ignore
       assert.equal(error.catalogAction, recovery.catalogAction);
+      // @ts-ignore
       assert.equal(error.diagnosticWriteAllowed, false);
+      // @ts-ignore
       assert.equal(Object.hasOwn(error, 'cause'), false);
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         name: 'Error',
         code: null,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         `${error.message}\n${JSON.stringify(error)}`,
         /synthetic-session-repair-stdout-|Cookie:|csrf=/iu,
       );
@@ -389,15 +402,25 @@ test('session repair plan out-file writer fails closed before writing artifacts'
   await assert.rejects(
     () => writeSessionRepairPlanResult(outFile, circular),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'SessionRepairPlanRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.retryable, recovery.retryable);
+      // @ts-ignore
       assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+      // @ts-ignore
       assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+      // @ts-ignore
       assert.equal(error.degradable, recovery.degradable);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+      // @ts-ignore
       assert.equal(error.catalogAction, recovery.catalogAction);
+      // @ts-ignore
       assert.equal(String(error.message).includes('synthetic-session-repair-fail-closed-token'), false);
       return true;
     },
@@ -424,8 +447,11 @@ test('session repair plan out-file writer preserves existing artifacts when reda
   await assert.rejects(
     () => writeSessionRepairPlanResult(outFile, circular),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'SessionRepairPlanRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
       assert.equal(JSON.stringify(error).includes('synthetic-session-repair-preserve'), false);
       return true;
@@ -452,15 +478,21 @@ test('session repair plan out-file writer does not expose raw redaction failure 
   await assert.rejects(
     () => writeSessionRepairPlanResult(outFile, payload),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'SessionRepairPlanRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
+      // @ts-ignore
       assert.equal(Object.hasOwn(error, 'cause'), false);
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         name: 'Error',
         code: null,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         `${error.message}\n${JSON.stringify(error)}`,
         /synthetic-session-repair-cause-|Authorization: Bearer|access_token=/iu,
       );

@@ -130,7 +130,7 @@ function renderMoodyzFlowsReference(input) {
   const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
   const entries = intents.map((intent) => {
     const label = moodyzIntentLabel(intent.intentType);
-    const bodyLines = [];
+    const bodyLines = /** @type {any[]} */ ([]);
     if (['search-work', 'search-book', '搜索作品'].includes(label)) {
       const queries = samples.searchQueries.length ? samples.searchQueries : samples.works.slice(0, 3);
       bodyLines.push(`- Example user requests: ${queries.map((query) => `\`搜索「${query}」\``).join(', ') || '`搜索作品`'}`);
@@ -182,7 +182,7 @@ function renderMoodyzNlIntentsReference(input) {
   const workExamples = samples.works.slice(0, 4);
   const actressExamples = samples.actresses.slice(0, 4);
   const searchExamples = samples.searchQueries.slice(0, 4);
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   if (intentTypes.has('search-work') || intentTypes.has('search-book')) {
     entries.push({
       title: '搜索作品',

@@ -80,6 +80,7 @@ async function withTestServer(handler, callback) {
       resolve();
     });
   });
+  // @ts-ignore
   const { port } = server.address();
   try {
     return await callback(`http://127.0.0.1:${port}/`);
@@ -121,7 +122,7 @@ async function assertArtifactsExist(artifactDir, artifactNames) {
 async function writeParallelCrawlFixture(fixtureDir, {
   rootUrl = 'https://parallel.local/',
   productCount = 8,
-} = {}) {
+} = /** @type {any} */ ({})) {
   await mkdir(fixtureDir, { recursive: true });
   const productPaths = Array.from({ length: productCount }, (_, index) => `/product-${index + 1}.html`);
   const pagePaths = ['/', '/products.html', ...productPaths, '/contact.html'];
@@ -270,7 +271,7 @@ test('SiteForge robots parser treats root disallow as a cross-site crawl stop', 
 test('live SiteForge build fails closed when robots.txt is unavailable', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-robots-unavailable-'));
   try {
-    const fetchCalls = [];
+    const fetchCalls = /** @type {any[]} */ ([]);
     await withTestServer((request, response) => {
       fetchCalls.push(request.url);
       response.writeHead(503, { 'content-type': 'text/plain' });
@@ -295,16 +296,20 @@ test('live SiteForge build fails closed when robots.txt is unavailable', async (
         /robots\.txt unavailable for live SiteForge build/u,
       );
 
+      // @ts-ignore
       assert.equal(failure.code, 'robots-unavailable');
+      // @ts-ignore
       assert.equal(failure.stage, 'discoverSeeds');
       assert.deepEqual(fetchCalls, ['/robots.txt']);
 
+      // @ts-ignore
       const seeds = await readJson(path.join(failure.artifactDir, 'seeds.json'));
       assert.equal(seeds.status, 'blocked');
       assert.equal(seeds.robots.status, 'unavailable');
       assert.match(seeds.robots.reason, /HTTP 503/u);
       assert.deepEqual(seeds.seeds, []);
 
+      // @ts-ignore
       const buildReport = await readJson(failure.buildReportPath);
       assert.equal(buildReport.status, 'blocked');
       assert.equal(buildReport.failedStage, 'discoverSeeds');
@@ -314,7 +319,9 @@ test('live SiteForge build fails closed when robots.txt is unavailable', async (
       assert.equal(buildReport.stages.discoverSeeds.status, 'blocked');
       assert.equal(buildReport.stages.crawlStatic.status, 'skipped');
       assert.equal(buildReport.stages.generateSkill.status, 'skipped');
+      // @ts-ignore
       assert.equal(await fileExists(path.join(failure.artifactDir, 'crawl_static.json')), false);
+      // @ts-ignore
       assert.equal(await fileExists(path.join(failure.artifactDir, 'skill.yaml')), false);
     });
   } finally {
@@ -325,7 +332,7 @@ test('live SiteForge build fails closed when robots.txt is unavailable', async (
 test('live SiteForge build stops early when robots.txt disallows all planned seeds', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-robots-disallowed-'));
   try {
-    const fetchCalls = [];
+    const fetchCalls = /** @type {any[]} */ ([]);
     await withTestServer((request, response) => {
       fetchCalls.push(request.url);
       response.writeHead(200, { 'content-type': 'text/plain' });
@@ -350,10 +357,13 @@ test('live SiteForge build stops early when robots.txt disallows all planned see
         /robots\.txt disallows all planned seed URLs/u,
       );
 
+      // @ts-ignore
       assert.equal(failure.code, 'robots-disallowed');
+      // @ts-ignore
       assert.equal(failure.stage, 'discoverSeeds');
       assert.deepEqual(fetchCalls, ['/robots.txt']);
 
+      // @ts-ignore
       const seeds = await readJson(path.join(failure.artifactDir, 'seeds.json'));
       assert.equal(seeds.status, 'blocked');
       assert.equal(seeds.robots.status, 'parsed');
@@ -361,6 +371,7 @@ test('live SiteForge build stops early when robots.txt disallows all planned see
       assert.deepEqual(seeds.robots.excludedUrls, [rootUrl]);
       assert.deepEqual(seeds.seeds, []);
 
+      // @ts-ignore
       const buildReport = await readJson(failure.buildReportPath);
       assert.equal(buildReport.status, 'blocked');
       assert.equal(buildReport.failedStage, 'discoverSeeds');
@@ -369,7 +380,9 @@ test('live SiteForge build stops early when robots.txt disallows all planned see
       assert.equal(buildReport.warningCodes.includes('robots-disallowed'), true);
       assert.equal(buildReport.stages.crawlStatic.status, 'skipped');
       assert.equal(buildReport.stages.generateSkill.status, 'skipped');
+      // @ts-ignore
       assert.equal(await fileExists(path.join(failure.artifactDir, 'crawl_static.json')), false);
+      // @ts-ignore
       assert.equal(await fileExists(path.join(failure.artifactDir, 'skill.yaml')), false);
     });
   } finally {
@@ -885,7 +898,9 @@ test('runSiteForgeBuild compiles the deterministic simple-shop fixture end-to-en
     });
     assert.equal(lookup.status, 'found');
     assert.equal(lookup.skillId, 'simple-shop');
+    // @ts-ignore
     assert.equal(lookup.intentName, 'search products');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'search products');
 
     const registry = await readJson(result.workspace.registryPath);
@@ -1047,6 +1062,7 @@ test('runSiteForgeBuild compiles a deterministic Tencent News fixture with robot
     });
     assert.equal(homepageLookup.status, 'found');
     assert.equal(homepageLookup.skillId, 'tencent-news');
+    // @ts-ignore
     assert.equal(homepageLookup.capabilityName, 'view news homepage');
 
     const channelLookup = await lookupSkillIntent({
@@ -1055,6 +1071,7 @@ test('runSiteForgeBuild compiles a deterministic Tencent News fixture with robot
       utterance: '帮我浏览新闻频道',
     });
     assert.equal(channelLookup.status, 'found');
+    // @ts-ignore
     assert.equal(channelLookup.capabilityName, 'browse news channels');
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1336,10 +1353,12 @@ test('SiteForge build_report classifies robots-disallowed static blocks', async 
       }),
       (error) => {
         capturedError = error;
+        // @ts-ignore
         return /robots\.txt disallows all planned seed URLs|Static crawl produced no pages/u.test(error?.message ?? '');
       },
     );
 
+    // @ts-ignore
     const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
     assert.equal(buildReport.status, 'blocked');
     assert.equal(['discoverSeeds', 'crawlStatic'].includes(buildReport.failedStage), true);
@@ -1411,10 +1430,12 @@ test('SiteForge build_report classifies dynamic-shell static evidence blocks', a
       }),
       (error) => {
         capturedError = error;
+        // @ts-ignore
         return /dynamic-shell pages/u.test(error?.message ?? '');
       },
     );
 
+    // @ts-ignore
     const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
     assert.equal(buildReport.status, 'blocked');
     assert.equal(buildReport.failureClass, 'unsupported');
@@ -1449,10 +1470,12 @@ test('SiteForge build_report classifies crawl network failures', async () => {
         }),
         (error) => {
           capturedError = error;
+          // @ts-ignore
           return /Static crawl produced no pages/u.test(error?.message ?? '');
         },
       );
 
+      // @ts-ignore
       const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
       assert.equal(buildReport.status, 'blocked');
       assert.equal(buildReport.failureClass, 'network');

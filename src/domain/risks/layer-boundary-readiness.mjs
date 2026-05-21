@@ -107,6 +107,7 @@ function assertCapabilityServiceBoundaryEvidence(boundaryById, capabilityService
   }
 }
 
+/** @param {Record<string, any>} options */
 export function assertLayerBoundaryReadiness({
   boundaries = listLayerBoundaries(),
   crossings = listLayerCrossings(),

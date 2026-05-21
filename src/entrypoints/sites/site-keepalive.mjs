@@ -50,7 +50,7 @@ Notes:
   - On Windows, stored WinCred credentials are used automatically before environment-variable fallbacks.
 `;
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = { ...DEFAULT_OPTIONS, ...options };
   merged.outDir = path.resolve(merged.outDir);
   merged.profilePath = merged.profilePath
@@ -76,7 +76,7 @@ export function parseCliArgs(argv) {
   }
 
   const [inputUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -191,7 +191,7 @@ function shouldRunDouyinFollowCachePrewarm(inputUrl, settings, loginReport) {
   return /douyin\.com$/iu.test(host || inputUrl);
 }
 
-export async function siteKeepalive(inputUrl, options = {}, deps = {}) {
+export async function siteKeepalive(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   const loginReport = await (deps.siteLogin ?? siteLogin)(
     inputUrl,

@@ -181,6 +181,7 @@ export function extractSiteCapabilityGraphMatrixSections(markdown = '') {
   });
 }
 
+/** @param {Record<string, any>} [section] */
 function normalizeSection(section = {}) {
   assertPlainObject(section, 'SiteCapabilityGraphFinalValidationSection');
   const number = Number(section.number);
@@ -270,6 +271,7 @@ function booleanOption(options, fieldName) {
   return options?.[fieldName] === true;
 }
 
+/** @param {Record<string, any>} [testingStrategy] */
 function createSection19Gaps(testingStrategy = {}) {
   assertPlainObject(testingStrategy, 'SiteCapabilityGraphFinalValidationSection19TestingStrategy');
   assertNoUnsafeFinalValidationPayload(
@@ -292,6 +294,7 @@ function createSection19Gaps(testingStrategy = {}) {
     }));
 }
 
+/** @param {Record<string, any>} [completionGate] */
 function createSection20Gaps(completionGate = {}, agentBReview = {}) {
   assertPlainObject(completionGate, 'SiteCapabilityGraphFinalValidationSection20CompletionGate');
   assertPlainObject(agentBReview, 'SiteCapabilityGraphFinalValidationAgentBReview');
@@ -334,6 +337,7 @@ function normalizeKnownRisks(value) {
   return value.map((entry) => entry.trim());
 }
 
+/** @param {Record<string, any>} [input] */
 export function createSiteCapabilityGraphFinalValidationSummary(input = {}) {
   assertPlainObject(input, 'SiteCapabilityGraphFinalValidationInput');
   assertNoUnsafeFinalValidationPayload(input, 'SiteCapabilityGraphFinalValidationInput');
@@ -417,6 +421,7 @@ export function createSiteCapabilityGraphFinalValidationSummary(input = {}) {
   return summary;
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertSiteCapabilityGraphFinalValidationSummaryCompatible(summary = {}) {
   assertPlainObject(summary, 'SiteCapabilityGraphFinalValidationSummary');
   assertNoUnsafeFinalValidationPayload(summary, 'SiteCapabilityGraphFinalValidationSummary');
@@ -504,6 +509,7 @@ export function assertSiteCapabilityGraphFinalValidationSummaryCompatible(summar
   return true;
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertSiteCapabilityGraphFinalValidationPassed(summary = {}) {
   assertSiteCapabilityGraphFinalValidationSummaryCompatible(summary);
   if (summary.result !== 'passed') {

@@ -55,7 +55,7 @@ function candidateFixtureFiles(fixtureDir, urlValue) {
   const rawPathMatch = String(urlValue).match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*(\/[^?#]*)?/iu);
   const rawPath = rawPathMatch?.[1] ?? '';
   if (/(?:^|\/)(?:\.|%2e){2}(?:\/|$)|%2f|%5c/iu.test(rawPath)) {
-    const error = new Error(`Fixture path traversal is not allowed for ${urlValue}`);
+    const error = /** @type {Error & Record<string, any>} */ (new Error(`Fixture path traversal is not allowed for ${urlValue}`));
     error.code = 'fixture-path-traversal';
     throw error;
   }
@@ -66,7 +66,7 @@ function candidateFixtureFiles(fixtureDir, urlValue) {
   }
   const segments = pathname.replace(/^\/+/u, '').replace(/\/+$/u, '').split('/').filter(Boolean);
   if (segments.some((segment) => segment === '.' || segment === '..')) {
-    const error = new Error(`Fixture path traversal is not allowed for ${urlValue}`);
+    const error = /** @type {Error & Record<string, any>} */ (new Error(`Fixture path traversal is not allowed for ${urlValue}`));
     error.code = 'fixture-path-traversal';
     throw error;
   }
@@ -82,7 +82,7 @@ function candidateFixtureFiles(fixtureDir, urlValue) {
   return candidates;
 }
 
-export function resolveFixtureForUrl(inputUrl, options = {}) {
+export function resolveFixtureForUrl(inputUrl, options = /** @type {any} */ ({})) {
   const parsed = new URL(inputUrl);
   const explicitFixture = options.fixturePath
     ? path.resolve(options.fixturePath)
@@ -125,13 +125,13 @@ export async function readFixtureUrl(urlValue, fixture) {
       };
     }
   }
-  const error = new Error(`Fixture resource not found for ${urlValue}`);
+  const error = /** @type {Error & Record<string, any>} */ (new Error(`Fixture resource not found for ${urlValue}`));
   error.code = 'fixture-resource-not-found';
   throw error;
 }
 
-function reasonedError(message, code, details = {}) {
-  const error = new Error(message);
+function reasonedError(message, code, details = /** @type {any} */ ({})) {
+  const error = /** @type {Error & Record<string, any>} */ (new Error(message));
   error.code = code;
   error.reasonCode = code;
   Object.assign(error, details);
@@ -149,7 +149,7 @@ function proxyEnvValue(env, names) {
 }
 
 function proxyEnvValues(env, names) {
-  const values = [];
+  const values = /** @type {any[]} */ ([]);
   for (const name of names) {
     const value = env?.[name];
     if (value !== undefined && value !== null && String(value).trim()) {
@@ -182,7 +182,7 @@ function proxyDiagnostic(proxyUrl) {
     : null;
 }
 
-function requestDiagnostic({ statusCode, proxyUrl = null } = {}) {
+function requestDiagnostic({ statusCode, proxyUrl = null } = /** @type {any} */ ({})) {
   return {
     method: 'GET',
     statusCode,
@@ -245,7 +245,7 @@ function resolveLiveFetchProxies(urlValue, env = process.env) {
   if (!proxyValues.length) {
     return [];
   }
-  const proxies = [];
+  const proxies = /** @type {any[]} */ ([]);
   for (const proxyValue of proxyValues) {
     let proxyUrl;
     try {
@@ -325,7 +325,7 @@ function socketWrite(socket, payload) {
   });
 }
 
-async function connectSocks5Proxy(target, proxyUrl, options = {}) {
+async function connectSocks5Proxy(target, proxyUrl, options = /** @type {any} */ ({})) {
   const timeoutMs = options.fetchTimeoutMs;
   const targetPort = Number(target.port || (target.protocol === 'https:' ? 443 : 80));
   const socket = net.connect({
@@ -401,7 +401,7 @@ async function connectSocks5Proxy(target, proxyUrl, options = {}) {
 function responsePayload(response, urlValue) {
   return new Promise((resolve, reject) => {
     let settled = false;
-    const chunks = [];
+    const chunks = /** @type {any[]} */ ([]);
     const cleanup = () => {
       response.off('data', onData);
       response.off('error', onError);
@@ -455,7 +455,7 @@ function parseRawHttpResponse(buffer, urlValue) {
   if (!statusMatch) {
     throw reasonedError(`Static fetch received an invalid HTTP response for ${urlValue}.`, 'static-fetch-proxy-network-failed');
   }
-  const headers = {};
+  const headers = /** @type {any} */ ({});
   for (const line of lines.slice(1)) {
     const index = line.indexOf(':');
     if (index <= 0) {
@@ -484,7 +484,7 @@ function decodeRawHttpBody(body, headers, urlValue) {
       ? body.subarray(0, contentLength)
       : body;
   }
-  const chunks = [];
+  const chunks = /** @type {any[]} */ ([]);
   let offset = 0;
   while (offset < body.length) {
     const lineEnd = body.indexOf('\r\n', offset);
@@ -510,13 +510,13 @@ function decodeRawHttpBody(body, headers, urlValue) {
   throw reasonedError(`Static fetch received an unterminated chunked response for ${urlValue}.`, 'static-fetch-proxy-network-failed');
 }
 
-function rawHttpGetOverSocket(target, socket, options = {}) {
+function rawHttpGetOverSocket(target, socket, options = /** @type {any} */ ({})) {
   const timeoutMs = options.fetchTimeoutMs;
   const secure = target.protocol === 'https:';
   return new Promise((resolve, reject) => {
     let settled = false;
     let transport = socket;
-    const chunks = [];
+    const chunks = /** @type {any[]} */ ([]);
     const cleanup = () => {
       transport.off('data', onData);
       transport.off('end', onEnd);
@@ -600,7 +600,7 @@ function rawHttpGetOverSocket(target, socket, options = {}) {
   });
 }
 
-async function requestViaSocksProxy(urlValue, proxyUrl, options = {}) {
+async function requestViaSocksProxy(urlValue, proxyUrl, options = /** @type {any} */ ({})) {
   const target = new URL(urlValue);
   const socket = await connectSocks5Proxy(target, proxyUrl, options);
   return await rawHttpGetOverSocket(target, socket, options);
@@ -634,7 +634,7 @@ function withProxyDeadline(promise, timeoutMs, message) {
   });
 }
 
-function requestHttpViaProxy(urlValue, proxyUrl, options = {}) {
+function requestHttpViaProxy(urlValue, proxyUrl, options = /** @type {any} */ ({})) {
   const target = new URL(urlValue);
   const headers = {
     ...STATIC_FETCH_HEADERS,
@@ -700,7 +700,7 @@ function requestHttpViaProxy(urlValue, proxyUrl, options = {}) {
   });
 }
 
-function requestHttpsViaHttpProxy(urlValue, proxyUrl, options = {}) {
+function requestHttpsViaHttpProxy(urlValue, proxyUrl, options = /** @type {any} */ ({})) {
   const target = new URL(urlValue);
   const targetPort = target.port || '443';
   const connectHeaders = {
@@ -779,7 +779,7 @@ function requestHttpsViaHttpProxy(urlValue, proxyUrl, options = {}) {
   });
 }
 
-async function readLiveUrlViaProxy(urlValue, proxyUrl, options = {}, redirectCount = 0) {
+async function readLiveUrlViaProxy(urlValue, proxyUrl, options = /** @type {any} */ ({}), redirectCount = 0) {
   const target = new URL(urlValue);
   const requestPromise = proxyUrl.protocol === 'socks5:'
     ? requestViaSocksProxy(urlValue, proxyUrl, options)
@@ -827,7 +827,7 @@ function wrapStaticFetchFailure(error, urlValue, proxyUrl = null) {
   );
 }
 
-async function readLiveUrl(urlValue, options = {}) {
+async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
   const timeoutMs = Math.max(1, Number(options.fetchTimeoutMs ?? 10000));
   const proxyUrls = resolveLiveFetchProxies(urlValue, options.env ?? process.env);
   if (proxyUrls.length) {
@@ -875,7 +875,7 @@ async function readLiveUrl(urlValue, options = {}) {
     clearTimeout(timeout);
   }
       if (!response.ok) {
-    const error = new Error(`Static fetch failed for ${urlValue}: HTTP ${response.status}`);
+    const error = /** @type {Error & Record<string, any>} */ (new Error(`Static fetch failed for ${urlValue}: HTTP ${response.status}`));
     error.code = 'static-fetch-failed';
     throw error;
       }
@@ -887,7 +887,7 @@ async function readLiveUrl(urlValue, options = {}) {
   };
 }
 
-export function createBuildSource(inputUrl, options = {}) {
+export function createBuildSource(inputUrl, options = /** @type {any} */ ({})) {
   const fixture = resolveFixtureForUrl(inputUrl, options);
   let lastLiveReadAt = 0;
   return {

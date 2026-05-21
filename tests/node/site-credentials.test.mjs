@@ -18,7 +18,7 @@ function createDouyinProfile() {
 }
 
 test('siteCredentials set stores WinCred secrets using the profile target', async () => {
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
   const report = await siteCredentials('set', 'https://www.douyin.com/', {
     profilePath: path.resolve('profiles/www.douyin.com.json'),
     username: 'douyin-user',
@@ -74,8 +74,8 @@ test('siteCredentials show and delete surface WinCred metadata without leaking t
 });
 
 test('site-credentials CLI progress receives the target URL, not the action name', async () => {
-  const calls = [];
-  const writes = [];
+  const calls = /** @type {any[]} */ ([]);
+  const writes = /** @type {any[]} */ ([]);
   await runCli([
     'show',
     'https://www.douyin.com/user/MS4wLjABAAAA/',

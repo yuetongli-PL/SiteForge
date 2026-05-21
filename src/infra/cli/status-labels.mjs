@@ -6,7 +6,7 @@ export function resultStatusLabel(status) {
   return '部分成功';
 }
 
-export function resultBuildStatusLabel(result = {}) {
+export function resultBuildStatusLabel(result = /** @type {any} */ ({})) {
   const report = result.user_report ?? result.userReport ?? {};
   if (report.result_status === 'success') return resultStatusLabel('success');
   if (report.result_status === 'failed') return resultStatusLabel('failed');

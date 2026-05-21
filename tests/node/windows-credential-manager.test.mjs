@@ -24,7 +24,7 @@ test('resolveWindowsCredentialTarget uses explicit targets and shared profile ke
 });
 
 test('set/get/delete Windows credentials delegate through the PowerShell executor', async () => {
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
   const executePowerShell = async (_script, payload) => {
     calls.push(payload);
     if (payload.action === 'set') {

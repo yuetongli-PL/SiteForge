@@ -153,7 +153,7 @@ function processInfo() {
 }
 
 function normalizeInterfaceSummary(interfaces = os.networkInterfaces()) {
-  const summary = [];
+  const summary = /** @type {any[]} */ ([]);
   for (const [name, addresses] of Object.entries(interfaces ?? {})) {
     const relevant = toArray(addresses)
       .filter((entry) => entry && entry.internal !== true)
@@ -235,7 +235,7 @@ async function lookupPublicNetworkInfo(fetchImpl, timeoutMs) {
   return merged;
 }
 
-export function resolveAuthSessionPolicy(authConfig = {}) {
+export function resolveAuthSessionPolicy(authConfig = /** @type {any} */ ({})) {
   const verificationUrl = cleanText(authConfig?.verificationUrl);
   const keepaliveUrl = cleanText(authConfig?.keepaliveUrl) || verificationUrl || cleanText(authConfig?.postLoginUrl) || cleanText(authConfig?.loginUrl) || null;
   return {
@@ -253,7 +253,7 @@ export function resolveAuthSessionPolicy(authConfig = {}) {
   };
 }
 
-export async function collectNetworkIdentityFingerprint(options = {}, deps = {}) {
+export async function collectNetworkIdentityFingerprint(options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const now = options.now instanceof Date ? options.now : new Date();
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const timeoutMs = normalizePositiveNumber(options.timeoutMs, NETWORK_LOOKUP_TIMEOUT_MS);
@@ -302,7 +302,7 @@ export function compareNetworkIdentityFingerprints(previous = null, current = nu
     };
   }
 
-  const reasons = [];
+  const reasons = /** @type {any[]} */ ([]);
   if (cleanText(previous.publicIp) && cleanText(current.publicIp) && previous.publicIp !== current.publicIp) {
     reasons.push('public-ip-changed');
   }
@@ -350,7 +350,7 @@ function isProcessAlive(pid) {
   }
 }
 
-export async function acquireSessionLease(userDataDir, options = {}) {
+export async function acquireSessionLease(userDataDir, options = /** @type {any} */ ({})) {
   if (!userDataDir) {
     return {
       acquired: false,
@@ -458,7 +458,7 @@ export async function releaseSessionLease(lease) {
   }
 }
 
-export async function readProfileQuarantine(userDataDir, options = {}) {
+export async function readProfileQuarantine(userDataDir, options = /** @type {any} */ ({})) {
   if (!userDataDir) {
     return null;
   }
@@ -474,7 +474,7 @@ export async function readProfileQuarantine(userDataDir, options = {}) {
   return quarantine;
 }
 
-export async function writeProfileQuarantine(userDataDir, payload = {}, options = {}) {
+export async function writeProfileQuarantine(userDataDir, payload = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   if (!userDataDir) {
     return null;
   }
@@ -512,7 +512,7 @@ export async function clearProfileQuarantine(userDataDir) {
   }
 }
 
-export async function appendRiskLedgerEvent(userDataDir, event = {}) {
+export async function appendRiskLedgerEvent(userDataDir, event = /** @type {any} */ ({})) {
   if (!userDataDir) {
     return null;
   }
@@ -553,7 +553,7 @@ function minutesBetween(start, end) {
   return Math.max(0, Math.round(deltaMs / 60_000));
 }
 
-export function summarizeAuthSessionState(state = null, authConfig = null, options = {}) {
+export function summarizeAuthSessionState(state = null, authConfig = null, options = /** @type {any} */ ({})) {
   const now = options.now instanceof Date ? options.now : new Date();
   const policy = resolveAuthSessionPolicy(authConfig);
   const lastHealthyAt = cleanText(state?.lastHealthyAt) || null;
@@ -596,7 +596,7 @@ export function summarizeAuthSessionState(state = null, authConfig = null, optio
   };
 }
 
-export function classifyRiskFromContext(context = {}) {
+export function classifyRiskFromContext(context = /** @type {any} */ ({})) {
   const antiCrawlSignals = uniqueSortedStrings(toArray(context.antiCrawlSignals).map((value) => cleanText(value).toLowerCase()).filter(Boolean));
   const antiCrawlSource = antiCrawlSignals.join(' ');
   if (context.concurrentProfileUse === true) {
@@ -653,7 +653,7 @@ export function classifyRiskFromContext(context = {}) {
   };
 }
 
-export function shouldQuarantineRisk(context = {}) {
+export function shouldQuarantineRisk(context = /** @type {any} */ ({})) {
   const antiCrawlSignals = uniqueSortedStrings(toArray(context.antiCrawlSignals).map((value) => cleanText(value).toLowerCase()).filter(Boolean));
   return antiCrawlSignals.some((value) => /verify|captcha|challenge|middle/u.test(value));
 }
@@ -663,8 +663,8 @@ export function normalizeSessionGovernanceHealthRisk({
   riskCauseCode,
   riskAction,
   affectedCapability = 'session.reuse',
-  metadata = {},
-} = {}) {
+  metadata = /** @type {any} */ ({}),
+} = /** @type {any} */ ({})) {
   if (!riskCauseCode) {
     return null;
   }
@@ -680,7 +680,7 @@ export function normalizeSessionGovernanceHealthRisk({
   });
 }
 
-function riskStateForPolicyDecision(decision = {}, context = {}) {
+function riskStateForPolicyDecision(decision = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
   if (decision.allowed !== false) {
     return undefined;
   }
@@ -710,12 +710,12 @@ function riskStateForPolicyDecision(decision = {}, context = {}) {
   });
 }
 
-function withPolicyRiskState(decision = {}, context = {}) {
+function withPolicyRiskState(decision = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
   const riskState = riskStateForPolicyDecision(decision, context);
   return riskState ? { ...decision, riskState } : decision;
 }
 
-export function evaluateSessionPolicy(options = {}) {
+export function evaluateSessionPolicy(options = /** @type {any} */ ({})) {
   const operation = cleanText(options.operation) || 'unknown';
   const policy = resolveAuthSessionPolicy(options.authConfig);
   const quarantine = options.quarantine ?? null;
@@ -796,7 +796,7 @@ export function evaluateSessionPolicy(options = {}) {
   };
 }
 
-export async function prepareSiteSessionGovernance(inputUrl, authContext = {}, settings = {}, options = {}, deps = {}) {
+export async function prepareSiteSessionGovernance(inputUrl, authContext = /** @type {any} */ ({}), settings = /** @type {any} */ ({}), options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const authConfig = authContext?.authConfig ?? null;
   const userDataDir = authContext?.userDataDir ?? settings.userDataDir ?? null;
   const operation = cleanText(options.operation) || 'unknown';
@@ -850,7 +850,7 @@ export async function prepareSiteSessionGovernance(inputUrl, authContext = {}, s
   };
 }
 
-export async function finalizeSiteSessionGovernance(governance = {}, result = {}, options = {}) {
+export async function finalizeSiteSessionGovernance(governance = /** @type {any} */ ({}), result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const authPolicy = resolveAuthSessionPolicy(governance.authConfig);
   const now = options.now instanceof Date ? options.now : new Date();
   const nowIso = now.toISOString();

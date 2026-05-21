@@ -16,6 +16,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -78,6 +79,7 @@ export function assertPlannerGraphSourceCompatible(source) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function loadValidatedPlannerGraphSource({
   graph,
   validationReport,

@@ -98,20 +98,34 @@ export function sessionFailureReasonRecovery(reasonCode) {
   };
 }
 
+/**
+ * @param {Record<string, any>} message
+ * @param {Record<string, any>} options
+ */
 export function createSessionFailureError(message, {
   cause,
   reasonCode,
 } = {}) {
   const reasonRecovery = sessionFailureReasonRecovery(reasonCode);
+  // @ts-ignore
   const error = cause === undefined ? new Error(message) : new Error(message, { cause });
+  // @ts-ignore
   error.reasonCode = reasonRecovery.code;
+  // @ts-ignore
   error.reasonRecovery = reasonRecovery;
+  // @ts-ignore
   error.retryable = reasonRecovery.retryable;
+  // @ts-ignore
   error.cooldownNeeded = reasonRecovery.cooldownNeeded;
+  // @ts-ignore
   error.isolationNeeded = reasonRecovery.isolationNeeded;
+  // @ts-ignore
   error.manualRecoveryNeeded = reasonRecovery.manualRecoveryNeeded;
+  // @ts-ignore
   error.degradable = reasonRecovery.degradable;
+  // @ts-ignore
   error.artifactWriteAllowed = reasonRecovery.artifactWriteAllowed;
+  // @ts-ignore
   error.catalogAction = reasonRecovery.catalogAction;
   return error;
 }
@@ -135,6 +149,7 @@ function normalizeSessionRepairPlan(value = undefined) {
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createSessionPlanId({ siteKey, purpose, seed } = {}) {
   return `session-plan-${compactSlug(siteKey || 'site')}-${compactSlug(purpose || 'health-check')}-${stableId([
     siteKey,
@@ -143,6 +158,7 @@ export function createSessionPlanId({ siteKey, purpose, seed } = {}) {
   ])}`;
 }
 
+/** @param {Record<string, any>} options */
 export function createSessionRunId({ siteKey, purpose, seed } = {}) {
   return `session-run-${compactSlug(siteKey || 'site')}-${compactSlug(purpose || 'health-check')}-${stableId([
     siteKey,
@@ -151,6 +167,7 @@ export function createSessionRunId({ siteKey, purpose, seed } = {}) {
   ])}`;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeSessionPlan(raw = {}, defaults = {}) {
   const host = sanitizeHost(normalizeText(raw.host ?? defaults.host));
   const siteKey = normalizeText(raw.siteKey ?? raw.site ?? defaults.siteKey ?? inferSiteKeyFromHost(host));
@@ -176,6 +193,7 @@ export function normalizeSessionPlan(raw = {}, defaults = {}) {
   };
 }
 
+/** @param {Record<string, any>} [plan] */
 export function sanitizeSessionPlanForManifest(plan = {}) {
   const normalized = normalizeSessionPlan(plan);
   return stripEmptyObject({
@@ -194,6 +212,7 @@ export function sanitizeSessionPlanForManifest(plan = {}) {
   });
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeSessionHealth(raw = {}, defaults = {}) {
   const host = sanitizeHost(normalizeText(raw.host ?? defaults.host));
   const siteKey = normalizeText(raw.siteKey ?? raw.site ?? defaults.siteKey ?? inferSiteKeyFromHost(host));
@@ -220,6 +239,7 @@ export function normalizeSessionHealth(raw = {}, defaults = {}) {
   });
 }
 
+/** @param {Record<string, any>} [health] */
 export function sessionRunStatusFromHealth(health = {}) {
   const status = enumValue(health.status, SESSION_LEASE_STATUSES, 'blocked');
   if (status === 'ready') {
@@ -228,11 +248,13 @@ export function sessionRunStatusFromHealth(health = {}) {
   return status;
 }
 
+/** @param {Record<string, any>} options */
 export function defaultSessionRunDir({ siteKey, purpose, outDir, createdAt } = {}) {
   const root = path.resolve(outDir ?? path.join('runs', 'session'));
   return path.join(root, compactSlug(siteKey || 'site'), `${timestampForRun(new Date(createdAt ?? Date.now()))}_${compactSlug(purpose || 'health-check')}`);
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeSessionRunManifest(raw = {}, defaults = {}) {
   const plan = sanitizeSessionPlanForManifest(raw.plan ?? defaults.plan ?? raw);
   const health = normalizeSessionHealth(raw.health ?? defaults.health, {
@@ -282,6 +304,7 @@ export function normalizeSessionRunManifest(raw = {}, defaults = {}) {
   };
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function assertManifestIsSanitized(manifest = {}) {
   const serialized = JSON.stringify(manifest);
   if (hasSecretLikeFields(manifest) || /cookie|authorization|bearer|userDataDir["']?\s*:/iu.test(serialized)) {

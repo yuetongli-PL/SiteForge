@@ -44,6 +44,7 @@ function parseObservedUrl(url) {
   }
 }
 
+/** @param {Record<string, any>} options */
 function canonicalEndpointKey({ siteKey, method, url }) {
   const parsed = parseObservedUrl(url);
   const normalizedMethod = normalizeText(method)?.toUpperCase() ?? 'GET';
@@ -53,6 +54,7 @@ function canonicalEndpointKey({ siteKey, method, url }) {
   return `${siteKey}:${normalizedMethod}:${parsed.hostname}${parsed.pathname}`;
 }
 
+/** @param {Record<string, any>} options */
 function canonicalEndpointPathKey({ siteKey, url }) {
   const parsed = parseObservedUrl(url);
   if (!parsed) {
@@ -71,6 +73,10 @@ function isSensitiveQueryKeyName(key) {
     || /^xsec[_-]?token$/iu.test(normalized);
 }
 
+/**
+ * @param {Record<string, any>} parsedUrl
+ * @param {Record<string, any>} options
+ */
 function queryShape(parsedUrl, { includeSensitive = false } = {}) {
   if (!parsedUrl) {
     return [];
@@ -82,6 +88,7 @@ function queryShape(parsedUrl, { includeSensitive = false } = {}) {
     .sort();
 }
 
+/** @param {Record<string, any>} options */
 function inferEndpointKind({ url, method, resourceType, body }) {
   const parsed = parseObservedUrl(url);
   const path = String(parsed?.pathname ?? url ?? '').toLowerCase();
@@ -114,6 +121,7 @@ function inferEndpointKind({ url, method, resourceType, body }) {
   return 'unknown';
 }
 
+/** @param {Record<string, any>} options */
 function inferTransport({ method, resourceType, url }) {
   const normalizedMethod = normalizeText(method)?.toUpperCase() ?? 'GET';
   const normalizedResourceType = String(resourceType ?? '').toLowerCase();
@@ -130,6 +138,7 @@ function inferTransport({ method, resourceType, url }) {
   return 'http';
 }
 
+/** @param {Record<string, any>} options */
 function inferRoleHint({ url, endpointKind }) {
   const parsed = parseObservedUrl(url);
   const text = `${parsed?.pathname ?? url ?? ''} ${parsed?.search ?? ''}`.toLowerCase();
@@ -178,6 +187,7 @@ function inferParameterShape(parsedUrl, body) {
   return shapes.length ? [...new Set(shapes)] : ['opaque'];
 }
 
+/** @param {Record<string, any>} options */
 function inferRiskClass({ endpointKind, roleHint, queryKeys = [], parameterShape = [] }) {
   const text = [
     endpointKind,
@@ -203,6 +213,7 @@ function inferRiskClass({ endpointKind, roleHint, queryKeys = [], parameterShape
   return 'observed-unverified';
 }
 
+/** @param {Record<string, any>} [raw] */
 function createApiTargetObservation(raw = {}) {
   const method = normalizeText(raw.method ?? raw.endpoint?.method) ?? 'GET';
   const url = normalizeText(raw.url ?? raw.endpoint?.url);
@@ -342,6 +353,7 @@ function verificationLifecycleEventArtifactName(index) {
   return `verification-lifecycle-event-${String(index + 1).padStart(4, '0')}.json`;
 }
 
+/** @param {Record<string, any>} [captureOutput] */
 function requestsFromCaptureOutput(captureOutput = {}) {
   if (Array.isArray(captureOutput)) {
     return captureOutput;
@@ -355,11 +367,13 @@ function requestsFromCaptureOutput(captureOutput = {}) {
 
 export function createApiDiscoveryFailure(reasonCode, message, {
   stage = 'api-discovery',
+  // @ts-ignore
   cause,
   metadata = {},
 } = {}) {
   const recovery = reasonCodeSummary(reasonCode);
   requireReasonCodeDefinition(reasonCode, { family: 'api' });
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message, cause ? { cause } : undefined);
   error.name = 'ApiDiscoveryFailure';
   error.code = recovery.code;
@@ -379,6 +393,7 @@ export function createApiDiscoveryFailure(reasonCode, message, {
   return error;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function apiCandidateFromObservedRequest(raw = {}) {
   const siteKey = normalizeText(raw.siteKey);
   if (!siteKey) {
@@ -423,7 +438,9 @@ export function apiCandidateFromObservedRequest(raw = {}) {
 }
 
 export async function writeApiCandidateArtifactsFromObservedRequests(requests = [], {
+  // @ts-ignore
   outputDir,
+  // @ts-ignore
   redactionAuditDir,
 } = {}) {
   if (!Array.isArray(requests)) {
@@ -468,6 +485,7 @@ export async function writeApiCandidateArtifactsFromObservedRequests(requests = 
   return artifacts;
 }
 
+/** @param {Record<string, any>} [captureOutput] */
 export async function writeApiCandidateArtifactsFromCaptureOutput(captureOutput = {}, options = {}) {
   return writeApiCandidateArtifactsFromObservedRequests(requestsFromCaptureOutput(captureOutput), options);
 }
@@ -479,6 +497,7 @@ function assertManualVerificationResultIsMultiAspect(verificationResult) {
   }
 }
 
+/** @param {Record<string, any>} [record] */
 function materializeManualVerificationResult(record = {}) {
   if (record?.verificationResult) {
     return record.verificationResult;
@@ -500,13 +519,21 @@ function materializeManualVerificationResult(record = {}) {
 }
 
 export async function writeManualApiCandidateVerificationArtifacts(records = [], {
+  // @ts-ignore
   outputDir,
+  // @ts-ignore
   redactionAuditDir,
+  // @ts-ignore
   lifecycleEventOutputDir,
+  // @ts-ignore
   lifecycleEventRedactionAuditDir,
+  // @ts-ignore
   lifecycleEventTraceId,
+  // @ts-ignore
   lifecycleEventCorrelationId,
+  // @ts-ignore
   lifecycleEventTaskType,
+  // @ts-ignore
   lifecycleEventAdapterVersion,
 } = {}) {
   if (!Array.isArray(records)) {
@@ -577,9 +604,11 @@ export async function writeManualApiCandidateVerificationArtifacts(records = [],
   return artifacts;
 }
 
+/** @param {Record<string, any>} [candidate] */
 export function validateApiCandidateWithAdapter(candidate = {}, adapter = {}, {
   evidence = {},
   scope = {},
+  // @ts-ignore
   validatedAt,
 } = {}) {
   if (typeof adapter.validateApiCandidate !== 'function') {
@@ -596,20 +625,33 @@ export function validateApiCandidateWithAdapter(candidate = {}, adapter = {}, {
 }
 
 export async function writeSiteAdapterCandidateDecisionArtifacts(candidateResults = [], {
+  // @ts-ignore
   outputDir,
+  // @ts-ignore
   redactionAuditDir,
+  // @ts-ignore
   resolveAdapter,
+  // @ts-ignore
   validatedAt,
+  // @ts-ignore
   decidedAt,
   validationMode = 'capture-observed-candidate',
   evidenceSource = 'api-candidate-artifact',
+  // @ts-ignore
   catalogUpgradeDecisionOutputDir,
+  // @ts-ignore
   catalogUpgradeDecisionRedactionAuditDir,
+  // @ts-ignore
   catalogUpgradeDecisionLifecycleEventOutputDir,
+  // @ts-ignore
   catalogUpgradeDecisionLifecycleEventRedactionAuditDir,
+  // @ts-ignore
   lifecycleEventTraceId,
+  // @ts-ignore
   lifecycleEventCorrelationId,
+  // @ts-ignore
   lifecycleEventTaskType,
+  // @ts-ignore
   lifecycleEventAdapterVersion,
 } = {}) {
   if (!Array.isArray(candidateResults)) {
@@ -671,6 +713,7 @@ export async function writeSiteAdapterCandidateDecisionArtifacts(candidateResult
       artifactName.replace(/\.json$/u, '.redaction-audit.json'),
     );
     const decision = validateApiCandidateWithAdapter(candidate, adapter, {
+      // @ts-ignore
       validatedAt,
       scope: {
         validationMode,

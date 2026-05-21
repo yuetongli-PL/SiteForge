@@ -243,7 +243,7 @@ function defaultPowerShellExecutor(script, payload) {
   });
 }
 
-async function invokeWindowsCredentialCommand(action, payload = {}, deps = {}) {
+async function invokeWindowsCredentialCommand(action, payload = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   if (process.platform !== 'win32') {
     return {
       ok: false,
@@ -268,7 +268,7 @@ export function isWindowsCredentialManagerSupported() {
   return process.platform === 'win32';
 }
 
-export function resolveWindowsCredentialTarget(input, options = {}) {
+export function resolveWindowsCredentialTarget(input, options = /** @type {any} */ ({})) {
   const explicit = trimOrNull(options.credentialTarget);
   if (explicit) {
     return explicit;
@@ -277,7 +277,7 @@ export function resolveWindowsCredentialTarget(input, options = {}) {
   return `${DEFAULT_WINDOWS_CREDENTIAL_NAMESPACE}:${profileKey}`;
 }
 
-export async function getWindowsCredential(target, deps = {}) {
+export async function getWindowsCredential(target, deps = /** @type {any} */ ({})) {
   const resolvedTarget = trimOrNull(target);
   if (!resolvedTarget) {
     throw new Error('Missing Windows credential target.');
@@ -293,7 +293,7 @@ export async function getWindowsCredential(target, deps = {}) {
   };
 }
 
-export async function setWindowsCredential(target, { username, password, comment = null } = {}, deps = {}) {
+export async function setWindowsCredential(target, { username, password, comment = null } = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const resolvedTarget = trimOrNull(target);
   const resolvedUsername = trimOrNull(username);
   const resolvedPassword = String(password ?? '');
@@ -320,7 +320,7 @@ export async function setWindowsCredential(target, { username, password, comment
   };
 }
 
-export async function deleteWindowsCredential(target, deps = {}) {
+export async function deleteWindowsCredential(target, deps = /** @type {any} */ ({})) {
   const resolvedTarget = trimOrNull(target);
   if (!resolvedTarget) {
     throw new Error('Missing Windows credential target.');

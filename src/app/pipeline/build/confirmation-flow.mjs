@@ -30,23 +30,23 @@ function commandArg(value) {
   return `"${text.replace(/"/gu, '\\"')}"`;
 }
 
-export function formatCapabilityCommand(args = []) {
+export function formatCapabilityCommand(args = /** @type {any[]} */ ([])) {
   return ['node', 'src/entrypoints/operator/capabilities.mjs', ...args.map(commandArg)].join(' ');
 }
 
-export function isSensitiveReadCapability(capability = {}) {
+export function isSensitiveReadCapability(capability = /** @type {any} */ ({})) {
   const riskLevel = asLowerText(capability.risk_level ?? capability.riskPolicy?.riskLevel);
   return riskLevel === 'read_personal_medium' || riskLevel === 'read_private_high';
 }
 
-export function isDraftWriteCapability(capability = {}) {
+export function isDraftWriteCapability(capability = /** @type {any} */ ({})) {
   const riskLevel = asLowerText(capability.risk_level ?? capability.riskPolicy?.riskLevel);
   const defaultPolicy = asLowerText(capability.default_policy);
   const safetyLevel = asLowerText(capability.safety_level ?? capability.safetyLevel);
   return riskLevel === 'write_low' || defaultPolicy === 'draft_only' || safetyLevel === 'requires_confirmation';
 }
 
-export function isForcedPrivateMessageCapability(capability = {}) {
+export function isForcedPrivateMessageCapability(capability = /** @type {any} */ ({})) {
   const text = [
     capability.id,
     capability.name,
@@ -59,7 +59,7 @@ export function isForcedPrivateMessageCapability(capability = {}) {
   return /direct[-_\s]?message\s+(?:detail|body|conversation|conversations?|draft)|private[-_\s]?message\s+(?:detail|body|conversation|conversations?|draft)|\bdm\s+(?:detail|body|conversation|conversations?|draft)|send direct[-_\s]?message|send private[-_\s]?message|send dm|direct message sending/u.test(text);
 }
 
-export function isOrdinaryConfirmationBlocked(capability = {}) {
+export function isOrdinaryConfirmationBlocked(capability = /** @type {any} */ ({})) {
   if (isForcedPrivateMessageCapability(capability)) {
     return true;
   }
@@ -72,7 +72,7 @@ export function isOrdinaryConfirmationBlocked(capability = {}) {
   return riskLevel === 'write_high' || riskLevel === 'account_security_critical';
 }
 
-export function capabilityConfirmationGroup(capability = {}) {
+export function capabilityConfirmationGroup(capability = /** @type {any} */ ({})) {
   if (isOrdinaryConfirmationBlocked(capability)) {
     return CONFIRMATION_GROUPS.blocked;
   }
@@ -85,7 +85,7 @@ export function capabilityConfirmationGroup(capability = {}) {
   return CONFIRMATION_GROUPS.capability;
 }
 
-export function confirmationModeForCapability(capability = {}) {
+export function confirmationModeForCapability(capability = /** @type {any} */ ({})) {
   const group = capabilityConfirmationGroup(capability);
   if (group === CONFIRMATION_GROUPS.sensitiveRead) {
     return 'limited';
@@ -99,7 +99,7 @@ export function confirmationModeForCapability(capability = {}) {
   return 'confirmation';
 }
 
-export function capabilityConfirmCommand(skillId, capability = {}) {
+export function capabilityConfirmCommand(skillId, capability = /** @type {any} */ ({})) {
   const resolvedSkillId = asText(skillId);
   if (!resolvedSkillId || isOrdinaryConfirmationBlocked(capability)) {
     return null;
@@ -114,7 +114,7 @@ export function capabilityConfirmCommand(skillId, capability = {}) {
   return formatCapabilityCommand(['confirm', resolvedSkillId, '--capability', capability.id ?? capability.name]);
 }
 
-export function capabilityNextStep(skillId, capability = {}) {
+export function capabilityNextStep(skillId, capability = /** @type {any} */ ({})) {
   const blocked = isOrdinaryConfirmationBlocked(capability);
   if (blocked) {
     const review = skillId
@@ -131,7 +131,7 @@ export function capabilityNextStep(skillId, capability = {}) {
   return `Confirm this capability with: ${capabilityConfirmCommand(skillId, capability)}`;
 }
 
-function preserveExistingSafeRemediation(capability = {}) {
+function preserveExistingSafeRemediation(capability = /** @type {any} */ ({})) {
   const remediation = capability.safe_remediation ?? capability.safeRemediation;
   if (!remediation || typeof remediation !== 'object') {
     return null;
@@ -155,7 +155,7 @@ function preserveExistingSafeRemediation(capability = {}) {
   };
 }
 
-export function decorateCapabilityConfirmation(capability = {}, { skillId = null } = {}) {
+export function decorateCapabilityConfirmation(capability = /** @type {any} */ ({}), { skillId = null } = /** @type {any} */ ({})) {
   const group = capabilityConfirmationGroup(capability);
   const command = capabilityConfirmCommand(skillId, capability);
   const blocked = group === CONFIRMATION_GROUPS.blocked;
@@ -174,15 +174,15 @@ export function decorateCapabilityConfirmation(capability = {}, { skillId = null
   };
 }
 
-function uniqueCommands(values = []) {
+function uniqueCommands(values = /** @type {any[]} */ ([])) {
   return [...new Set(values.filter(Boolean).map(asText).filter(Boolean))];
 }
 
 export function buildConfirmationPaths({
   skillId = null,
-  confirmationRequiredCapabilities = [],
-  disabledCapabilities = [],
-} = {}) {
+  confirmationRequiredCapabilities = /** @type {any[]} */ ([]),
+  disabledCapabilities = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   const decoratedConfirmation = confirmationRequiredCapabilities.map((capability) => (
     decorateCapabilityConfirmation(capability, { skillId })
   ));
@@ -238,11 +238,11 @@ export function buildConfirmationPaths({
   };
 }
 
-export function confirmationCapabilitiesForGroup(capabilities = [], group) {
+export function confirmationCapabilitiesForGroup(capabilities = /** @type {any[]} */ ([]), group) {
   const normalizedGroup = asLowerText(group);
   return capabilities.filter((capability) => capabilityConfirmationGroup(capability) === normalizedGroup);
 }
 
-export function shouldSkipInStrictPrivacy(capability = {}) {
+export function shouldSkipInStrictPrivacy(capability = /** @type {any} */ ({})) {
   return isSensitiveReadCapability(capability);
 }

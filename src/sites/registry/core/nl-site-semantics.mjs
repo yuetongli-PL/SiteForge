@@ -4,7 +4,7 @@ import { createJableNlSemantics } from '../../known-sites/jable/nl/semantics.mjs
 import { createMoodyzNlSemantics } from '../../known-sites/moodyz/nl/semantics.mjs';
 import { createXiaohongshuNlSemantics } from '../../known-sites/xiaohongshu/nl/semantics.mjs';
 
-export function resolveSiteNlSemantics({ baseUrl = '', siteProfileDocument = null, deps = {} } = {}) {
+export function resolveSiteNlSemantics({ baseUrl = '', siteProfileDocument = null, deps = /** @type {any} */ ({}) } = /** @type {any} */ ({})) {
   const siteKey = resolveCanonicalSiteKey({
     baseUrl,
     inputUrl: baseUrl,

@@ -35,15 +35,22 @@ function createSimulatedTtyPair() {
   let rawMode = false;
   let terminalOutput = '';
 
+  // @ts-ignore
   input.isTTY = true;
+  // @ts-ignore
   input.isRaw = false;
+  // @ts-ignore
   input.setRawMode = (enabled) => {
     rawMode = enabled === true;
+    // @ts-ignore
     input.isRaw = rawMode;
     return input;
   };
+  // @ts-ignore
   output.isTTY = true;
+  // @ts-ignore
   output.columns = 120;
+  // @ts-ignore
   output.rows = 40;
   output.on('data', (chunk) => {
     terminalOutput += chunk.toString('utf8');
@@ -172,7 +179,7 @@ function unsafeSubmittingDraftPlan(capabilityId) {
 
 let capabilitySequence = 0;
 
-function capability(name, overrides = {}) {
+function capability(name, overrides = /** @type {any} */ ({})) {
   capabilitySequence += 1;
   const id = `capability:test:${capabilitySequence}`;
   return {
@@ -192,7 +199,7 @@ function capability(name, overrides = {}) {
   };
 }
 
-function remediationPathType(entry = {}) {
+function remediationPathType(entry = /** @type {any} */ ({})) {
   const remediation = entry.safe_remediation
     ?? entry.safeRemediation
     ?? entry.safe_remediation_path

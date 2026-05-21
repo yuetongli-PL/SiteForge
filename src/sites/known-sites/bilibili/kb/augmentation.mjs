@@ -84,7 +84,7 @@ export function renderBilibiliStateSections({
     return [];
   }
 
-  const factRows = [];
+  const factRows = /** @type {any[]} */ ([]);
   if (bilibiliFacts.searchFamily) {
     factRows.push({ field: 'Search Family', value: `\`${cleanText(bilibiliFacts.searchFamily)}\`` });
   }
@@ -140,7 +140,7 @@ export function renderBilibiliStateSections({
     return [];
   }
 
-  const sections = [];
+  const sections = /** @type {any[]} */ ([]);
   if (factRows.length > 0) {
     sections.push(
       '## Surfaced bilibili facts',

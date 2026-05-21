@@ -16,7 +16,7 @@ import {
   writePlannerArtifact,
 } from '../../../src/app/planner/index.mjs';
 
-function createBaseEvent(overrides = {}) {
+function createBaseEvent(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     eventType: 'planner.plan.generated',
@@ -52,7 +52,7 @@ function createBaseEvent(overrides = {}) {
   };
 }
 
-function createArtifact(overrides = {}) {
+function createArtifact(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     type: 'PLAN_MANIFEST',
@@ -103,6 +103,7 @@ test('Planner observability rejects missing required fields and incompatible sch
       schemaVersion: '99.0.0',
     })),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.version_incompatible');
       return true;
     },
@@ -238,7 +239,9 @@ test('Planner observability rejects sensitive and runtime material without echoi
     assert.throws(
       () => createPlannerLifecycleEvent(createBaseEvent(override)),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'planner.sensitive_material_forbidden');
+        // @ts-ignore
         assert.doesNotMatch(error.message, /synthetic-secret-value/u, name);
         return true;
       },

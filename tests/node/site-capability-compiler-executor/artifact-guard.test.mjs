@@ -29,7 +29,9 @@ test('compiler artifact guard rejects unredacted sensitive material', () => {
       value: manifest,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -45,7 +47,9 @@ test('compiler artifact guard rejects unsafe evidence refs before writes', () =>
       value: manifest,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /example\.test/u);
       return true;
     },

@@ -10,7 +10,7 @@ function normalizeWords(value) {
     .toLowerCase()
     .normalize('NFKC');
   const tokens = normalized.match(/[\p{L}\p{N}]+/gu) ?? [];
-  const expanded = [];
+  const expanded = /** @type {any[]} */ ([]);
   for (const token of tokens) {
     expanded.push(token);
     if (/[\p{Script=Han}]/u.test(token)) {
@@ -158,7 +158,7 @@ export async function readSkillRegistry(registryPath) {
 export function lookupSkillIntentFromRegistry(registry, {
   domain,
   utterance,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const normalizedDomain = String(domain ?? '').toLowerCase();
   const matchingSkills = (registry?.skills ?? []).filter((skill) => (
     isCallableSkillRecord(skill)
@@ -234,7 +234,7 @@ export async function lookupSkillIntent({
   registryPath = path.resolve(process.cwd(), 'skills', 'registry.json'),
   domain,
   utterance,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const registry = await readSkillRegistry(registryPath);
   return lookupSkillIntentFromRegistry(registry, { domain, utterance });
 }

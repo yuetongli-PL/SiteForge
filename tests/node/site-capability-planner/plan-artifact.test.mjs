@@ -14,7 +14,7 @@ import {
   writePlannerManifest,
 } from '../../../src/app/planner/index.mjs';
 
-function createArtifact(overrides = {}) {
+function createArtifact(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     type: 'PLAN_MANIFEST',
@@ -117,6 +117,7 @@ test('Planner artifact governance rejects missing redaction requirement before w
       auditPath: 'unused.audit.json',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.artifact_redaction_required');
       return true;
     },
@@ -131,7 +132,9 @@ test('Planner artifact governance rejects sensitive artifact payload before pers
       },
     })),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -157,7 +160,9 @@ test('Planner artifact governance fails before persistence for unsafe write inpu
       auditPath,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },

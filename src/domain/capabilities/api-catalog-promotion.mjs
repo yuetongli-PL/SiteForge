@@ -31,6 +31,7 @@ function normalizeEvidenceRefs(values, fieldName) {
   return values.map((value) => normalizeEvidenceRef(value, fieldName));
 }
 
+/** @param {Record<string, any>} [promotionEvidence] */
 function normalizePromotionEvidence(promotionEvidence = {}) {
   if (!promotionEvidence || typeof promotionEvidence !== 'object' || Array.isArray(promotionEvidence)) {
     throw new Error('Verified API catalog promotion evidence is required');
@@ -53,6 +54,7 @@ function normalizePromotionEvidence(promotionEvidence = {}) {
   return evidence;
 }
 
+/** @param {Record<string, any>} options */
 export function assertVerifiedApiCatalogPromotionEvidence({
   candidate,
   siteAdapterDecision,
@@ -121,6 +123,7 @@ function addAuditSummary(summary, artifact) {
   }
 }
 
+/** @param {Record<string, any>} [artifacts] */
 function summarizePromotionRedactionAudits(artifacts = {}) {
   const summary = {
     auditPaths: [],
@@ -144,6 +147,10 @@ function summarizePromotionRedactionAudits(artifacts = {}) {
   return redactionAudit;
 }
 
+/**
+ * @param {Record<string, any>} candidate
+ * @param {Record<string, any>} options
+ */
 function createVerificationResult(candidate, {
   verificationResult,
   verifierId,
@@ -169,6 +176,7 @@ function createVerificationResult(candidate, {
   });
 }
 
+/** @param {Record<string, any>} options */
 export async function writeVerifiedApiCatalogArtifactsFromObservedProducerEvidence({
   observedRequest,
   siteAdapterDecision,

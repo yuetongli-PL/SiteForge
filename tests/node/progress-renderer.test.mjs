@@ -19,7 +19,7 @@ import {
   renderBuildSummary,
 } from '../../src/infra/cli/build-progress.mjs';
 
-function createStream({ isTTY = false, columns = 80 } = {}) {
+function createStream({ isTTY = false, columns = 80 } = /** @type {any} */ ({})) {
   let output = '';
   return {
     isTTY,

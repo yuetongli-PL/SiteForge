@@ -22,7 +22,7 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createRequest(overrides = {}) {
+function createRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     taskId: 'task:synthetic-layer-handoff',
@@ -35,7 +35,7 @@ function createRequest(overrides = {}) {
   };
 }
 
-function createContext(overrides = {}) {
+function createContext(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     graphCompatibility: { validated: true },
@@ -158,6 +158,7 @@ test('Planner layer handoff descriptor rejects runtime payloads and execution cl
     );
   }
   for (const [field, value] of [
+    // @ts-ignore
     ['payload', { unsafe: true }],
     ['runtimePayload', { unsafe: true }],
     ['handoffPayload', { unsafe: true }],
@@ -176,10 +177,11 @@ test('Planner layer handoff descriptor rejects runtime payloads and execution cl
     assert.throws(
       () => assertPlannerLayerHandoffDescriptorCompatible({
         ...descriptor,
+        // @ts-ignore
         [field]: value,
       }),
       new RegExp(`must not expose runtime payload field ${field}`, 'u'),
-      field,
+      String(field),
     );
   }
 });

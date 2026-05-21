@@ -21,7 +21,7 @@ export function pickRecordText(record, candidateKeys) {
 }
 
 export function collectNamedSamples(records, candidateKeys, limit = 6) {
-  const values = [];
+  const values = /** @type {any[]} */ ([]);
   for (const record of toArray(records)) {
     const text = pickRecordText(record, candidateKeys);
     if (text) {
@@ -32,7 +32,7 @@ export function collectNamedSamples(records, candidateKeys, limit = 6) {
 }
 
 export function collectSearchQueries(records, limit = 6) {
-  const values = [];
+  const values = /** @type {any[]} */ ([]);
   for (const record of toArray(records)) {
     const text = pickRecordText(record, ['queryText', 'query', 'keyword', 'title', 'name']);
     if (text) {
@@ -44,7 +44,7 @@ export function collectSearchQueries(records, limit = 6) {
 
 export function collectStateDisplayTitles(context, pageTypes, limit = 8) {
   const allowedPageTypes = new Set(toArray(pageTypes));
-  const values = [];
+  const values = /** @type {any[]} */ ([]);
   for (const state of toArray(context.statesDocument?.states)) {
     const statePageType = String(state?.pageType ?? '');
     const matchesAllowedPageType = allowedPageTypes.has(statePageType)
@@ -69,7 +69,7 @@ export function collectStateDisplayTitles(context, pageTypes, limit = 8) {
 
 export function collectIntentTargetLabels(context, intentTypes, limit = 8) {
   const allowed = new Set(toArray(intentTypes));
-  const values = [];
+  const values = /** @type {any[]} */ ([]);
   for (const intent of toArray(context.intentsDocument?.intents)) {
     if (!allowed.has(intent.intentType)) {
       continue;
@@ -512,7 +512,7 @@ function formatBilibiliCategoryPrefix(prefix) {
 
 function uniqueOrderedStrings(values) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const value of values ?? []) {
     const normalized = cleanText(value);
     if (!normalized) {

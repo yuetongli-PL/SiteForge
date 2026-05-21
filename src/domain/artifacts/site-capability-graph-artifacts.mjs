@@ -291,6 +291,7 @@ function assertNonNegativeInteger(value, label) {
   return value;
 }
 
+/** @param {Record<string, any>} options */
 function createGraphDerivedArtifactRedactionAuditAttachment({
   prepared,
   artifactPath,
@@ -332,6 +333,7 @@ function createGraphDerivedArtifactRedactionAuditAttachment({
   return attachment;
 }
 
+/** @param {Record<string, any>} [attachment] */
 export function assertGraphDerivedArtifactRedactionAuditAttachmentCompatible(attachment = {}) {
   assertPlainObject(attachment, 'GraphDerivedArtifactRedactionAuditAttachment');
   if (attachment.schemaVersion !== GRAPH_DERIVED_ARTIFACT_REDACTION_AUDIT_ATTACHMENT_SCHEMA_VERSION) {
@@ -374,6 +376,7 @@ export function assertGraphDerivedArtifactRedactionAuditAttachmentCompatible(att
   return true;
 }
 
+/** @param {Record<string, any>} [attachment] */
 function createRedactionAuditAttachmentSummary(attachment = {}) {
   assertGraphDerivedArtifactRedactionAuditAttachmentCompatible(attachment);
   return {
@@ -391,6 +394,7 @@ function createRedactionAuditAttachmentSummary(attachment = {}) {
   };
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphDocsMarkdownRuntimeWritePathIntegrationGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphDocsMarkdownRuntimeWritePathIntegrationGuard');
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(
@@ -528,6 +532,7 @@ export function createGraphDocsMarkdownRuntimeWritePathIntegrationGuard(
   return guard;
 }
 
+/** @param {Record<string, any>} [preflight] */
 export function assertGraphDocsMarkdownReviewedLayerConsumerPreflightCompatibility(preflight = {}) {
   assertPlainObject(preflight, 'GraphDocsMarkdownReviewedLayerConsumerPreflight');
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(
@@ -695,6 +700,7 @@ export function createGraphDocsMarkdownReviewedLayerConsumerPreflight(
   return preflight;
 }
 
+/** @param {Record<string, any>} [reviewedPreflight] */
 function createGraphDocsMarkdownReviewedLayerConsumerPreflightSummary(reviewedPreflight = {}) {
   assertGraphDocsMarkdownReviewedLayerConsumerPreflightCompatibility(reviewedPreflight);
   return {
@@ -721,6 +727,7 @@ function createGraphDocsMarkdownReviewedLayerConsumerPreflightSummary(reviewedPr
   };
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphDocsMarkdownRedactionIntegrationAcceptanceGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphDocsMarkdownRedactionIntegrationAcceptanceGuard');
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(
@@ -7613,6 +7620,7 @@ function normalizeGraphDerivedArtifactConsumerFamilies(artifactFamilies = ['*'],
   return [...new Set(normalized)];
 }
 
+/** @param {Record<string, any>} options */
 function createGraphDerivedArtifactConsumerDescriptor({
   consumerId,
   artifactFamilies = ['*'],
@@ -7703,6 +7711,7 @@ function removeAllowedFalseRuntimeFlagsForRedactionGate(value) {
   return sanitized;
 }
 
+/** @param {Record<string, any>} [attachment] */
 function assertGraphDerivedArtifactRedactionAuditMatchesArtifact(attachment = {}, artifact = {}) {
   assertGraphDerivedArtifactRedactionAuditAttachmentCompatible(attachment);
   if (attachment.artifactFamily !== artifact.artifactFamily) {
@@ -7718,6 +7727,7 @@ function assertGraphDerivedArtifactRedactionAuditMatchesArtifact(attachment = {}
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDerivedArtifactConsumerDispatchRedactionGateCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDerivedArtifactConsumerDispatchRedactionGate');
   assertNoGraphDerivedArtifactConsumerDispatchRedactionGateRuntimeOptions(
@@ -7765,6 +7775,7 @@ export function assertGraphDerivedArtifactConsumerDispatchRedactionGateCompatibi
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export async function dispatchGraphDerivedArtifactWithRedactionAuditGate(options = {}) {
   assertPlainObject(options, 'GraphDerivedArtifactConsumerDispatchRedactionGateOptions');
   const {
@@ -7869,6 +7880,7 @@ function assertNoGraphDocsOutputLiveWriterCompletionRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function createGraphDocsOutputLiveWriterCompletionSourceSummary(source = {}) {
   if (source === undefined || source === null) {
     return undefined;
@@ -7893,6 +7905,7 @@ function createGraphDocsOutputLiveWriterCompletionSourceSummary(source = {}) {
   };
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertGraphDocsOutputLiveWriterCompletionGuardCompatibility(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputLiveWriterCompletionGuard');
   assertNoGraphDocsOutputLiveWriterCompletionRuntimeProducts(result);
@@ -8070,6 +8083,7 @@ function assertNoGraphDocsOutputLiveLayerConsumerFinalAcceptanceRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function createGraphDocsOutputLiveLayerConsumerFinalAcceptanceSourceSummary(source = {}) {
   assertGraphDocsOutputLiveWriterCompletionGuardCompatibility(source);
   return {
@@ -8307,6 +8321,7 @@ function assertNoGraphDocsOutputLiveLayerConsumerRegistrationAcceptanceRuntimePr
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function createGraphDocsOutputLiveLayerConsumerRegistrationAcceptanceSourceSummary(source = {}) {
   assertGraphDocsOutputLiveLayerConsumerFinalAcceptancePreflightCompatibility(source);
   return {
@@ -8562,6 +8577,7 @@ function assertNoGraphDocsOutputLiveLayerConsumerNoopRegistrationCatalogRuntimeP
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function createGraphDocsOutputLiveLayerConsumerNoopRegistrationCatalogSourceSummary(source = {}) {
   assertGraphDocsOutputLiveLayerConsumerRegistrationAcceptanceBoundaryCompatibility(source);
   return {
@@ -8858,6 +8874,7 @@ function assertNoGraphDocsOutputLiveLayerConsumerIntegrationCheckpointRuntimePro
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function createGraphDocsOutputLiveLayerConsumerIntegrationCheckpointSourceSummary(source = {}) {
   assertGraphDocsOutputLiveLayerConsumerNoopRegistrationCatalogCompatibility(source);
   return {
@@ -9172,6 +9189,7 @@ function assertNoGraphDocsOutputLiveConsumerDispatchDryRunRuntimeProducts(
   return true;
 }
 
+/** @param {Record<string, any>} [source] */
 function createGraphDocsOutputLiveConsumerDispatchDryRunCheckpointSummary(source = {}) {
   assertGraphDocsOutputLiveLayerConsumerIntegrationCheckpointCompatibility(source);
   return {
@@ -9203,6 +9221,7 @@ function createGraphDocsOutputLiveConsumerDispatchDryRunCheckpointSummary(source
   };
 }
 
+/** @param {Record<string, any>} [artifact] */
 function createGraphDocsOutputLiveConsumerDispatchDryRunArtifactSummary(artifact = {}) {
   assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact);
   return {
@@ -9213,6 +9232,7 @@ function createGraphDocsOutputLiveConsumerDispatchDryRunArtifactSummary(artifact
   };
 }
 
+/** @param {Record<string, any>} [result] */
 function createGraphDocsOutputLiveConsumerDispatchDryRunResultSummary(result = {}) {
   assertPlainObject(result, 'GraphDocsOutputLiveConsumerDispatchDryRunResult consumerResult');
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(
@@ -9471,6 +9491,7 @@ function assertNoGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGateRunti
   return true;
 }
 
+/** @param {Record<string, any>} [result] */
 function createGraphDocsOutputLiveConsumerDispatchDryRunSafeSummary(result = {}) {
   assertGraphDocsOutputLiveConsumerDispatchDryRunResultCompatibility(result);
   return {
@@ -10980,6 +11001,8 @@ const GRAPH_DOCS_OUTPUT_LIVE_CONSUMER_ARTIFACT_WRITER_INVOCATION_EVIDENCE_FALSE_
   'sessionViewEnabled',
 ]);
 
+/** @param {Record<string, any>} [placement] */
+// @ts-ignore
 function assertTempDirPlacement(placement = {}, label) {
   assertPlainObject(placement, label);
   if (placement.schemaVersion !== GRAPH_DERIVED_ARTIFACT_PLACEMENT_SCHEMA_VERSION) {
@@ -11392,6 +11415,8 @@ function assertNoGraphDocsOutputLiveConsumerRuntimeDocsArtifactWriteObservabilit
   return true;
 }
 
+/** @param {Record<string, any>} [summary] */
+// @ts-ignore
 function assertRedactionAuditAttachmentSummaryCompatible(summary = {}, label) {
   assertPlainObject(summary, label);
   if (
@@ -16712,6 +16737,7 @@ export function createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeS
     artifactWriterInvocationDisabled: true,
     eligibilityPromotionDisabled: true,
     registrationPromotionDisabled: true,
+    // @ts-ignore
     dispatchPromotionDisabled: true,
     statusPromotionDisabled: true,
     verifiedPromotionDisabled: true,
@@ -16915,6 +16941,7 @@ export function createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeS
     artifactWriterInvocationDisabled: scan.artifactWriterInvocationDisabled,
     eligibilityPromotionDisabled: scan.eligibilityPromotionDisabled,
     registrationPromotionDisabled: scan.registrationPromotionDisabled,
+    // @ts-ignore
     dispatchPromotionDisabled: scan.dispatchPromotionDisabled,
     statusPromotionDisabled: scan.statusPromotionDisabled,
     verifiedPromotionDisabled: scan.verifiedPromotionDisabled,
@@ -17720,6 +17747,7 @@ export function createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeS
     eligibilityPromotionDisabled: scan.eligibilityPromotionDisabled,
     registrationPromotionDisabled: scan.registrationPromotionDisabled,
     dispatchPromotionDisabled: scan.dispatchPromotionDisabled,
+    // @ts-ignore
     telemetryPromotionDisabled: scan.telemetryPromotionDisabled,
     statusPromotionDisabled: scan.statusPromotionDisabled,
     verifiedPromotionDisabled: scan.verifiedPromotionDisabled,
@@ -19003,6 +19031,7 @@ export function createGraphDocsOutputLiveConsumerArtifactPipelineDownstreamSafeS
     dispatchPromotionDisabled: true,
     telemetryPromotionDisabled: true,
     publicationPromotionDisabled: true,
+    // @ts-ignore
     retainedOutputPromotionDisabled: true,
     statusPromotionDisabled: true,
     verifiedPromotionDisabled: true,
@@ -53124,6 +53153,7 @@ export function createGraphDocsOutputLiveConsumerRuntimeWriteObservabilityPrefli
   return runtimeWriteObservabilityPreflight;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDerivedArtifactConsumerRegistry({
   consumers = [],
 } = {}) {
@@ -53133,6 +53163,7 @@ export function createGraphDerivedArtifactConsumerRegistry({
   const registry = new Map();
 
   function registerConsumer({
+    // @ts-ignore
     consumerId,
     artifactFamilies = ['*'],
     redactionRequired = true,
@@ -53144,6 +53175,7 @@ export function createGraphDerivedArtifactConsumerRegistry({
     siteAdapterInvocation = false,
     downloaderInvocation = false,
     sessionMaterialization = false,
+    // @ts-ignore
     consumer,
   } = {}) {
     if (typeof consumer !== 'function') {
@@ -53225,6 +53257,7 @@ export function createGraphDerivedArtifactConsumerRegistry({
   };
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDocsMarkdownArtifactRegistryConsumer(options = {}) {
   assertPlainObject(options, 'GraphDocsMarkdownArtifactRegistryConsumerOptions');
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(
@@ -53275,6 +53308,7 @@ export function createGraphDocsMarkdownArtifactRegistryConsumer(options = {}) {
   };
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphDerivedArtifactPlacement(options = {}) {
   const outputDir = path.resolve(assertPathText(options.outputDir, 'outputDir'));
   const runId = assertPlacementSegment(options.runId, 'runId');
@@ -53314,6 +53348,7 @@ export function createGraphDerivedArtifactPlacement(options = {}) {
   return placement;
 }
 
+/** @param {Record<string, any>} [artifact] */
 export function prepareGraphDerivedArtifactWrite(artifact = {}, options = {}) {
   assertGraphDerivedArtifactWriteAllowed(artifact);
   const prepared = prepareRedactedArtifactJsonWithAudit(artifact, options);
@@ -53338,6 +53373,7 @@ export function prepareGraphDerivedArtifactWrite(artifact = {}, options = {}) {
   };
 }
 
+/** @param {Record<string, any>} [artifact] */
 export async function writeGraphDerivedArtifactPair(artifact = {}, options = {}) {
   const artifactTarget = resolveOutputPath(
     options.outputDir,

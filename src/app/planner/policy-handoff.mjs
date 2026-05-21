@@ -400,6 +400,7 @@ function findForbiddenHandoffRefValue(value) {
   return FORBIDDEN_HANDOFF_REF_VALUE_PATTERNS.find(({ pattern }) => pattern.test(text));
 }
 
+/** @param {Record<string, any>} [value] */
 function assertNoPlannerSecrets(value = {}, label = 'PlannerPolicyHandoff') {
   const pending = [{ value, path: label }];
   while (pending.length) {
@@ -432,6 +433,7 @@ function assertNoPlannerSecrets(value = {}, label = 'PlannerPolicyHandoff') {
   }
 }
 
+/** @param {Record<string, any>} [value] */
 function assertNoGraphPlannerRouteHandoffRuntimeProducts(value = {}, label = 'GraphPlannerRouteHandoffConsumer') {
   const pending = [{ value, path: label }];
   while (pending.length) {
@@ -670,6 +672,7 @@ function assertNoGraphPlannerLayerEntrypointLiveExecutionDenialGuardRuntimeField
   return true;
 }
 
+/** @param {Record<string, any>} [gate] */
 function assertGraphPlannerRiskBlockingGateDescriptor(gate = {}, label = 'GraphPlannerRiskBlockingRuntimePreflightContract gate', expected = {}) {
   assertPlainObject(gate, label);
   for (const [fieldName, expectedValue] of Object.entries(expected)) {
@@ -686,6 +689,7 @@ function assertDisabledFlag(value, fieldName, label) {
   return false;
 }
 
+/** @param {Record<string, any>} options */
 function assertGraphPlannerRiskBlockingPreflightDisabledOptions(options = {}) {
   for (const fieldName of GRAPH_PLANNER_RISK_BLOCKING_PREFLIGHT_DISABLED_FLAG_KEYS) {
     assertDisabledFlag(
@@ -696,6 +700,7 @@ function assertGraphPlannerRiskBlockingPreflightDisabledOptions(options = {}) {
   }
 }
 
+/** @param {Record<string, any>} options */
 function assertGraphPlannerLayerEntrypointHandoffDisabledOptions(options = {}) {
   for (const fieldName of GRAPH_PLANNER_LAYER_ENTRYPOINT_HANDOFF_DISABLED_FLAG_KEYS) {
     assertDisabledFlag(
@@ -706,6 +711,7 @@ function assertGraphPlannerLayerEntrypointHandoffDisabledOptions(options = {}) {
   }
 }
 
+/** @param {Record<string, any>} options */
 function assertGraphPlannerLayerEntrypointLiveExecutionDenialGuardDisabledOptions(options = {}) {
   for (const fieldName of GRAPH_PLANNER_LAYER_ENTRYPOINT_LIVE_EXECUTION_DENIAL_GUARD_DISABLED_FLAG_KEYS) {
     assertDisabledFlag(
@@ -716,6 +722,7 @@ function assertGraphPlannerLayerEntrypointLiveExecutionDenialGuardDisabledOption
   }
 }
 
+/** @param {Record<string, any>} options */
 function selectGraphPlannerLayerEntrypointHandoffSourceAlias({
   sources,
   aliases,
@@ -744,6 +751,7 @@ function selectGraphPlannerLayerEntrypointHandoffSourceAlias({
   return selected;
 }
 
+/** @param {Record<string, any>} [preflight] */
 function summarizeFutureGraphLayerConsumerPreflight(preflight = {}) {
   assertFutureGraphLayerConsumerPreflightCompatibility(preflight);
   const item = preflight.items[0];
@@ -765,6 +773,7 @@ function summarizeFutureGraphLayerConsumerPreflight(preflight = {}) {
   };
 }
 
+/** @param {Record<string, any>} [result] */
 function summarizeDisabledGraphPlannerRuntimeConsumerResult(result = {}) {
   assertDisabledGraphPlannerRuntimeConsumerResultCompatibility(result);
   const item = result.items[0];
@@ -792,6 +801,7 @@ function summarizeDisabledGraphPlannerRuntimeConsumerResult(result = {}) {
   };
 }
 
+/** @param {Record<string, any>} [design] */
 function summarizeGraphPlannerRuntimeIntegrationDesignForEntrypointGuard(design = {}) {
   assertGraphPlannerRuntimeIntegrationDesignCompatibility(design);
   const item = design.items[0];
@@ -822,6 +832,7 @@ function summarizeGraphPlannerRuntimeIntegrationDesignForEntrypointGuard(design 
   };
 }
 
+/** @param {Record<string, any>} options */
 function createGraphPlannerRuntimeSourcePreflightSummary({
   graphVersion,
   consumerName = 'site-capability-layer-graph-planner-runtime-preflight',
@@ -911,6 +922,7 @@ function deriveSessionRequirement(catalogEntry, policy) {
   return catalogEntry.auth?.required === true ? 'required' : 'none';
 }
 
+/** @param {Record<string, any>} [audit] */
 function summarizeRedactionAudit(audit = {}) {
   return {
     redactedPathCount: Array.isArray(audit.redactedPaths) ? audit.redactedPaths.length : 0,
@@ -918,6 +930,7 @@ function summarizeRedactionAudit(audit = {}) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function applyPlannerHealthGate({ healthRecovery, tasks = [] } = {}) {
   if (!healthRecovery) {
     return tasks;
@@ -928,6 +941,7 @@ function applyPlannerHealthGate({ healthRecovery, tasks = [] } = {}) {
   });
 }
 
+/** @param {Record<string, any>} [catalogEntry] */
 function assertPlannerPolicyCatalogGate(catalogEntry = {}, catalogUpgradeDecision = {}) {
   assertPlainObject(catalogUpgradeDecision, 'PlannerPolicyHandoff catalogUpgradeDecision');
   assertNoPlannerSecrets(catalogUpgradeDecision, 'PlannerPolicyHandoff catalogUpgradeDecision');
@@ -958,6 +972,7 @@ function assertPlannerPolicyCatalogGate(catalogEntry = {}, catalogUpgradeDecisio
   return decision;
 }
 
+/** @param {Record<string, any>} [decision] */
 function summarizeCatalogGate(decision = {}) {
   return {
     candidateId: decision.candidateId,
@@ -984,17 +999,28 @@ function isDownloadPolicyGenerationError(error) {
 }
 
 function createSchemaCompatibilityFailure() {
+  // @ts-ignore
   const reason = requireReasonCodeDefinition('schema-version-incompatible', { family: 'schema' });
   const failure = new Error('PlannerPolicyHandoff schema compatibility failed before artifact write');
+  // @ts-ignore
   failure.reasonCode = reason.code;
+  // @ts-ignore
   failure.retryable = reason.retryable;
+  // @ts-ignore
   failure.cooldownNeeded = reason.cooldownNeeded;
+  // @ts-ignore
   failure.isolationNeeded = reason.isolationNeeded;
+  // @ts-ignore
   failure.manualRecoveryNeeded = reason.manualRecoveryNeeded;
+  // @ts-ignore
   failure.degradable = reason.degradable;
+  // @ts-ignore
   failure.artifactWriteAllowed = reason.artifactWriteAllowed;
+  // @ts-ignore
   failure.catalogAction = reason.catalogAction;
+  // @ts-ignore
   failure.failureMode = 'schema-compatibility';
+  // @ts-ignore
   failure.causeSummary = {
     reasonCode: reason.code,
     message: 'schema compatibility failure',
@@ -1003,17 +1029,28 @@ function createSchemaCompatibilityFailure() {
 }
 
 function createDownloadPolicyGenerationFailure() {
+  // @ts-ignore
   const reason = requireReasonCodeDefinition('download-policy-generation-failed', { family: 'download' });
   const failure = new Error('PlannerPolicyHandoff download policy generation failed before artifact write');
+  // @ts-ignore
   failure.reasonCode = reason.code;
+  // @ts-ignore
   failure.retryable = reason.retryable;
+  // @ts-ignore
   failure.cooldownNeeded = reason.cooldownNeeded;
+  // @ts-ignore
   failure.isolationNeeded = reason.isolationNeeded;
+  // @ts-ignore
   failure.manualRecoveryNeeded = reason.manualRecoveryNeeded;
+  // @ts-ignore
   failure.degradable = reason.degradable;
+  // @ts-ignore
   failure.artifactWriteAllowed = reason.artifactWriteAllowed;
+  // @ts-ignore
   failure.catalogAction = reason.catalogAction;
+  // @ts-ignore
   failure.failureMode = 'download-policy-generation';
+  // @ts-ignore
   failure.causeSummary = {
     reasonCode: reason.code,
     message: 'download policy generation failure',
@@ -1037,21 +1074,32 @@ function summarizeGraphPlannerReason(reasonCode) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function createGraphVersionIncompatibleFailure({
   graphSchemaVersion,
   graphDataVersion,
   supportedGraphDataVersions,
 } = {}) {
+  // @ts-ignore
   const reason = requireReasonCodeDefinition('graph-version-incompatible', { family: 'graph' });
   const failure = new Error('Graph planner handoff version compatibility failed before planner use');
+  // @ts-ignore
   failure.reasonCode = reason.code;
+  // @ts-ignore
   failure.retryable = reason.retryable;
+  // @ts-ignore
   failure.cooldownNeeded = reason.cooldownNeeded;
+  // @ts-ignore
   failure.isolationNeeded = reason.isolationNeeded;
+  // @ts-ignore
   failure.manualRecoveryNeeded = reason.manualRecoveryNeeded;
+  // @ts-ignore
   failure.degradable = reason.degradable;
+  // @ts-ignore
   failure.artifactWriteAllowed = reason.artifactWriteAllowed;
+  // @ts-ignore
   failure.failureMode = 'graph-version-compatibility';
+  // @ts-ignore
   failure.causeSummary = {
     reasonCode: reason.code,
     graphSchemaVersion,
@@ -1062,6 +1110,10 @@ function createGraphVersionIncompatibleFailure({
   return failure;
 }
 
+/**
+ * @param {Record<string, any>} [graph]
+ * @param {Record<string, any>} options
+ */
 function assertGraphPlannerVersionCompatibility(graph = {}, {
   supportedGraphDataVersions = SUPPORTED_GRAPH_PLANNER_DATA_VERSIONS,
 } = {}) {
@@ -1093,6 +1145,7 @@ async function writeTextArtifact(filePath, text) {
   await writeFile(filePath, `${text}\n`, 'utf8');
 }
 
+/** @param {Record<string, any>} options */
 export function assertPlannerPolicyHandoffWriterCompatibility({
   catalogEntry,
   downloadPolicy,
@@ -1107,6 +1160,7 @@ export function assertPlannerPolicyHandoffWriterCompatibility({
   return true;
 }
 
+/** @param {Record<string, any>} [handoff] */
 export function assertPlannerPolicyRuntimeHandoffCompatibility(handoff = {}) {
   assertPlainObject(handoff, 'PlannerPolicyRuntimeHandoff');
   assertGovernedSchemaCompatible('DownloadPolicy', handoff.downloadPolicy);
@@ -1124,6 +1178,7 @@ export function assertPlannerPolicyRuntimeHandoffCompatibility(handoff = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [handoff] */
 export function assertGraphPlannerRouteHandoffConsumerCompatibility(handoff = {}) {
   assertPlainObject(handoff, 'GraphPlannerRouteHandoffConsumer');
   assertNoGraphPlannerRouteHandoffRuntimeProducts(handoff);
@@ -1181,6 +1236,7 @@ export function assertGraphPlannerRouteHandoffConsumerCompatibility(handoff = {}
   return true;
 }
 
+/** @param {Record<string, any>} [handoff] */
 export function assertGraphPlannerRouteHandoffLayerEntrypointBoundaryCompatibility(handoff = {}) {
   assertGraphPlannerRouteHandoffConsumerCompatibility(handoff);
   assertNoGraphPlannerRuntimeIntegrationProducts(
@@ -1192,6 +1248,7 @@ export function assertGraphPlannerRouteHandoffLayerEntrypointBoundaryCompatibili
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphPlannerRouteHandoff({
   graph,
   capabilityId,
@@ -1221,6 +1278,7 @@ export function createGraphPlannerRouteHandoff({
   return handoff;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphPlannerRouteHandoffArtifact(options = {}) {
   const handoff = createGraphPlannerRouteHandoff(options);
   const artifact = {
@@ -1236,6 +1294,7 @@ export function createGraphPlannerRouteHandoffArtifact(options = {}) {
   return artifact;
 }
 
+/** @param {Record<string, any>} [handoff] */
 function summarizeGraphPlannerRouteHandoffForLayerRelationship(handoff = {}) {
   assertGraphPlannerRouteHandoffLayerEntrypointBoundaryCompatibility(handoff);
   return {
@@ -1254,6 +1313,7 @@ function summarizeGraphPlannerRouteHandoffForLayerRelationship(handoff = {}) {
   };
 }
 
+/** @param {Record<string, any>} [handoff] */
 function summarizePlannerPolicyRuntimeHandoffForLayerRelationship(handoff = {}) {
   assertPlannerPolicyRuntimeHandoffCompatibility(handoff);
   return {
@@ -1271,6 +1331,7 @@ function summarizePlannerPolicyRuntimeHandoffForLayerRelationship(handoff = {}) 
   };
 }
 
+/** @param {Record<string, any>} [item] */
 function assertGraphLayerPolicyPlannerRelationshipFlags(item = {}) {
   for (const fieldName of [
     'graphExecutionAllowed',
@@ -1289,6 +1350,7 @@ function assertGraphLayerPolicyPlannerRelationshipFlags(item = {}) {
   }
 }
 
+/** @param {Record<string, any>} [evidence] */
 export function assertGraphLayerPolicyPlannerRelationshipEvidenceCompatibility(evidence = {}) {
   assertPlainObject(evidence, 'GraphLayerPolicyPlannerRelationshipEvidence');
   assertNoPlannerSecrets(evidence, 'GraphLayerPolicyPlannerRelationshipEvidence');
@@ -1381,6 +1443,7 @@ export function assertGraphLayerPolicyPlannerRelationshipEvidenceCompatibility(e
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphLayerPolicyPlannerRelationshipEvidence({
   graph,
   capabilityId,
@@ -1439,6 +1502,7 @@ export function createGraphLayerPolicyPlannerRelationshipEvidence({
   return evidence;
 }
 
+/** @param {Record<string, any>} [design] */
 export function assertGraphPlannerRuntimeIntegrationDesignCompatibility(design = {}) {
   assertPlainObject(design, 'GraphPlannerRuntimeIntegrationDesign');
   assertNoGraphPlannerRuntimeIntegrationProducts(design);
@@ -1495,6 +1559,7 @@ export function assertGraphPlannerRuntimeIntegrationDesignCompatibility(design =
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createGraphPlannerRuntimeIntegrationDesign(options = {}) {
   assertPlainObject(options, 'GraphPlannerRuntimeIntegrationDesignOptions');
   assertNoGraphPlannerRuntimeIntegrationProducts(options, 'GraphPlannerRuntimeIntegrationDesignOptions');
@@ -1590,6 +1655,7 @@ export function createGraphPlannerRuntimeIntegrationDesign(options = {}) {
   return design;
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertDisabledGraphPlannerRuntimeConsumerResultCompatibility(result = {}) {
   assertPlainObject(result, 'DisabledGraphPlannerRuntimeConsumerResult');
   assertNoGraphPlannerRuntimeIntegrationProducts(result, 'DisabledGraphPlannerRuntimeConsumerResult');
@@ -1639,6 +1705,7 @@ export function assertDisabledGraphPlannerRuntimeConsumerResultCompatibility(res
       }
     }
     const reasonCode = normalizeText(item.reasonCode);
+    // @ts-ignore
     requireReasonCodeDefinition(reasonCode);
     if (reasonCode !== GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE) {
       throw new Error(`DisabledGraphPlannerRuntimeConsumerResult reasonCode must be ${GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE}`);
@@ -1686,6 +1753,7 @@ export function assertDisabledGraphPlannerRuntimeConsumerResultCompatibility(res
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function createDisabledGraphPlannerRuntimeConsumerResult(design = {}, options = {}) {
   assertGraphPlannerRuntimeIntegrationDesignCompatibility(design);
   assertPlainObject(options, 'DisabledGraphPlannerRuntimeConsumerOptions');
@@ -1735,6 +1803,7 @@ export function createDisabledGraphPlannerRuntimeConsumerResult(design = {}, opt
   const sourceItem = design.items[0];
   const handoff = sourceItem.handoff;
   const sourceHandoffReasonCode = normalizeText(handoff.reasonCode) ?? 'graph-planner-context-unsatisfied';
+  // @ts-ignore
   const reasonDefinition = requireReasonCodeDefinition(GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE, {
     family: 'graph',
   });
@@ -1796,6 +1865,7 @@ export function createDisabledGraphPlannerRuntimeConsumerResult(design = {}, opt
   return result;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphPlannerLayerEntrypointHandoffGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphPlannerLayerEntrypointHandoffGuard');
   assertNoGraphPlannerLayerEntrypointHandoffRuntimeFields(guard);
@@ -1931,6 +2001,7 @@ export function assertGraphPlannerLayerEntrypointHandoffGuardCompatibility(guard
   return true;
 }
 
+/** @param {Record<string, any>} [sources] */
 export function createGraphPlannerLayerEntrypointHandoffGuard(sources = {}, options = {}) {
   assertPlainObject(sources, 'GraphPlannerLayerEntrypointHandoffGuardSources');
   assertPlainObject(options, 'GraphPlannerLayerEntrypointHandoffGuardOptions');
@@ -1979,6 +2050,7 @@ export function createGraphPlannerLayerEntrypointHandoffGuard(sources = {}, opti
     GRAPH_PLANNER_LAYER_ENTRYPOINT_HANDOFF_DISABLED_FLAG_KEYS
       .map((fieldName) => [fieldName, false]),
   );
+  // @ts-ignore
   const reasonDefinition = requireReasonCodeDefinition(GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE, {
     family: 'graph',
   });
@@ -2050,6 +2122,7 @@ export function createGraphPlannerLayerEntrypointHandoffGuard(sources = {}, opti
   return result;
 }
 
+/** @param {Record<string, any>} [summary] */
 export function assertGraphPlannerLayerEntrypointHandoffSafeSummaryCompatibility(summary = {}) {
   assertPlainObject(summary, 'GraphPlannerLayerEntrypointHandoffSafeSummary');
   assertNoGraphPlannerLayerEntrypointHandoffSafeSummaryRuntimeFields(summary);
@@ -2168,6 +2241,7 @@ export function assertGraphPlannerLayerEntrypointHandoffSafeSummaryCompatibility
   return true;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function createGraphPlannerLayerEntrypointHandoffSafeSummary(guard = {}) {
   assertNoGraphPlannerLayerEntrypointHandoffSafeSummaryRuntimeFields(
     guard,
@@ -2223,6 +2297,7 @@ export function createGraphPlannerLayerEntrypointHandoffSafeSummary(guard = {}) 
   return summary;
 }
 
+/** @param {Record<string, any>} [guard] */
 export function assertGraphPlannerLayerEntrypointLiveExecutionDenialGuardCompatibility(guard = {}) {
   assertPlainObject(guard, 'GraphPlannerLayerEntrypointLiveExecutionDenialGuard');
   assertNoGraphPlannerLayerEntrypointLiveExecutionDenialGuardRuntimeFields(guard);
@@ -2325,6 +2400,7 @@ export function assertGraphPlannerLayerEntrypointLiveExecutionDenialGuardCompati
   return true;
 }
 
+/** @param {Record<string, any>} [sources] */
 export function createGraphPlannerLayerEntrypointLiveExecutionDenialGuard(sources = {}, options = {}) {
   const normalizedSources = sources?.queryName === 'createGraphPlannerLayerEntrypointHandoffSafeSummary'
     ? { safeSummary: sources }
@@ -2361,6 +2437,7 @@ export function createGraphPlannerLayerEntrypointLiveExecutionDenialGuard(source
     guardName = 'site-capability-graph-planner-layer-entrypoint-live-execution-denial-guard',
   } = options;
   const sourceItem = safeSummary.items[0];
+  // @ts-ignore
   const reasonDefinition = requireReasonCodeDefinition(GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE, {
     family: 'graph',
   });
@@ -2430,6 +2507,7 @@ export function createGraphPlannerLayerEntrypointLiveExecutionDenialGuard(source
   return guard;
 }
 
+/** @param {Record<string, any>} [contract] */
 export function assertGraphPlannerRiskBlockingRuntimePreflightCompatibility(contract = {}) {
   assertPlainObject(contract, 'GraphPlannerRiskBlockingRuntimePreflightContract');
   assertNoGraphPlannerRiskBlockingRuntimeExecutionFields(contract);
@@ -2599,6 +2677,7 @@ export function assertGraphPlannerRiskBlockingRuntimePreflightCompatibility(cont
   return true;
 }
 
+/** @param {Record<string, any>} [design] */
 export function createGraphPlannerRiskBlockingRuntimePreflightContract(design = {}, options = {}) {
   assertNoGraphPlannerRiskBlockingRuntimeExecutionFields(
     design,
@@ -2626,6 +2705,7 @@ export function createGraphPlannerRiskBlockingRuntimePreflightContract(design = 
   if (!riskState) {
     throw new Error('GraphPlannerRiskBlockingRuntimePreflightContract requires source handoff riskState');
   }
+  // @ts-ignore
   const reasonDefinition = requireReasonCodeDefinition(GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE, {
     family: 'graph',
   });
@@ -2754,6 +2834,7 @@ export function createGraphPlannerRiskBlockingRuntimePreflightContract(design = 
   return contract;
 }
 
+/** @param {Record<string, any>} options */
 export function createPlannerPolicyHandoff({
   catalogEntry,
   catalogUpgradeDecision,
@@ -2841,6 +2922,7 @@ export function createPlannerPolicyHandoff({
   return handoff;
 }
 
+/** @param {Record<string, any>} options */
 export async function writePlannerPolicyHandoffArtifact({
   catalogEntry,
   catalogUpgradeDecision,
@@ -2848,7 +2930,9 @@ export async function writePlannerPolicyHandoffArtifact({
   policy = {},
   healthRecovery,
 } = {}, {
+  // @ts-ignore
   handoffPath,
+  // @ts-ignore
   redactionAuditPath,
 } = {}) {
   const outputPath = normalizeText(handoffPath);
@@ -2891,6 +2975,10 @@ export async function writePlannerPolicyHandoffArtifact({
   };
 }
 
+/**
+ * @param {Record<string, any>} [storeResult]
+ * @param {Record<string, any>} options
+ */
 export async function writeCatalogStorePlannerPolicyHandoffArtifact(storeResult = {}, {
   taskIntent = {},
   policy = {},

@@ -67,6 +67,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code = 'planner.fallback_not_found') {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -295,6 +296,7 @@ export function assertPlannerFallbackDecisionCompatible(decision) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function selectPlannerFallbackRoute({
   routeResolution,
   contextCheck,

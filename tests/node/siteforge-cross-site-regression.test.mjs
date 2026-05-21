@@ -48,7 +48,7 @@ function evidence(source = 'tests/fixtures/sites/simple-shop/index.html') {
   }];
 }
 
-function fixtureSensitiveRead(id, overrides = {}) {
+function fixtureSensitiveRead(id, overrides = /** @type {any} */ ({})) {
   return {
     id,
     name: 'read saved account summary',
@@ -283,6 +283,7 @@ test('non-x known-site capability generation filters duplicates and keeps callab
   assert.equal(disabledWrite.executionPlan, undefined);
 
   const intents = generateAutoIntentRecords(context, [following, draft, disabledWrite]);
+  // @ts-ignore
   const intentsByCapability = Map.groupBy(intents, (intent) => intent.capabilityId);
   assert.equal(intentsByCapability.get(following.id).every((intent) => intent.callable === true), true);
   assert.equal(intentsByCapability.get(draft.id).every((intent) => intent.callable === true), true);
@@ -323,8 +324,10 @@ test('news fixture registry resolves Chinese utterances without x.com assumption
 
   assert.equal(lookup.status, 'found');
   assert.equal(lookup.skillId, 'tencent-news');
+  // @ts-ignore
   assert.equal(lookup.skillDir, '.siteforge/sites/news.qq.com-5cc57f4c/current');
   assert.equal(lookup.intentId, 'intent:news.qq.com:view-news-homepage');
   assert.equal(lookup.capabilityId, 'capability:news.qq.com:view-news-homepage');
+  // @ts-ignore
   assert.equal(lookup.executionPlanId, 'plan:news.qq.com:view-news-homepage');
 });

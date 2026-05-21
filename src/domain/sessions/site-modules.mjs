@@ -104,6 +104,7 @@ export function listSessionSiteDefinitions() {
   }));
 }
 
+/** @param {Record<string, any>} [request] */
 export async function resolveSessionSiteDefinition(request = {}, options = {}, deps = {}) {
   const requestedKey = siteKeyFromInput(request.siteKey ?? request.site ?? request.host);
   const definition = definitionForKey(requestedKey);

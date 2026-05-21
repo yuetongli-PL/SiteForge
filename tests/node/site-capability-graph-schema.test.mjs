@@ -147,7 +147,9 @@ test('FailureModeNode schema accepts catalog deprecation descriptors without cat
       catalogAction: 'Authorization: Bearer synthetic-secret-value',
     }),
     (error) => {
+      // @ts-ignore
       assert.match(error.message, /FailureModeNode catalogAction is unsupported/u);
+      // @ts-ignore
       assert.doesNotMatch(error.message, /Authorization|synthetic-secret-value/u);
       return true;
     },

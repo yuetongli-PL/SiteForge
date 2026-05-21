@@ -27,7 +27,7 @@ const COVERAGE_FIELDS = Object.freeze([
   'capabilityFamilies',
 ]);
 
-function uniqueSorted(values = []) {
+function uniqueSorted(values = /** @type {any[]} */ ([])) {
   return [...new Set(
     values
       .map((value) => String(value ?? '').trim())
@@ -104,7 +104,7 @@ function extractIntentTypes(flowsMd) {
 }
 
 function inferApprovalActionKinds(markdown) {
-  const actions = [];
+  const actions = /** @type {any[]} */ ([]);
   if (/\bsearch-submit\b/u.test(markdown)) {
     actions.push('search-submit');
   }
@@ -151,9 +151,9 @@ function compileEvidencePresence(skillMd) {
 }
 
 export function buildSkillCoverageFingerprint({
-  documents = {},
-  coverage = {},
-} = {}) {
+  documents = /** @type {any} */ ({}),
+  coverage = /** @type {any} */ ({}),
+} = /** @type {any} */ ({})) {
   const skillMd = documents.skillMd ?? '';
   const flowsMd = documents.flowsMd ?? '';
   const indexMd = documents.indexMd ?? '';
@@ -221,13 +221,13 @@ async function readRepoSkillDocuments(skillDir) {
   };
 }
 
-function missingItems(baseline = [], candidate = []) {
+function missingItems(baseline = /** @type {any[]} */ ([]), candidate = /** @type {any[]} */ ([])) {
   const candidateSet = new Set(candidate);
   return baseline.filter((item) => !candidateSet.has(item));
 }
 
 function compareFingerprints(baseline, candidate) {
-  const reasons = [];
+  const reasons = /** @type {any[]} */ ([]);
 
   for (const field of COVERAGE_FIELDS) {
     const missing = missingItems(baseline[field], candidate[field]);
@@ -305,9 +305,9 @@ export async function evaluateSkillCoverageRegressionGate({
   skillName,
   targetDir,
   candidateDocuments,
-  candidateCoverage = {},
+  candidateCoverage = /** @type {any} */ ({}),
   baselineCoverage = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   if (!skillName) {
     throw new Error('Skill coverage regression gate requires skillName.');
   }
@@ -379,7 +379,7 @@ export class SkillCoverageRegressionError extends Error {
   }
 }
 
-export async function enforceSkillCoverageRegressionGate(options = {}) {
+export async function enforceSkillCoverageRegressionGate(options = /** @type {any} */ ({})) {
   const report = await evaluateSkillCoverageRegressionGate(options);
   if (!report.allowed) {
     throw new SkillCoverageRegressionError(report);

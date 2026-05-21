@@ -151,12 +151,12 @@ export function selectSiteForgePrimaryReason(entries, fallbackReasonCode = 'vali
 }
 
 function createValidationAccumulator() {
-  const errors = [];
-  const warnings = [];
+  const errors = /** @type {any[]} */ ([]);
+  const warnings = /** @type {any[]} */ ([]);
   return {
     errors,
     warnings,
-    fail(gate, code, message, details = {}) {
+    fail(gate, code, message, details = /** @type {any} */ ({})) {
       const profile = details.reasonCode
         ? normalizeSiteForgeReason(details.reasonCode)
         : classifySiteForgeValidationError({ code, message });
@@ -168,7 +168,7 @@ function createValidationAccumulator() {
         ...details,
       });
     },
-    warn(gate, code, message, details = {}) {
+    warn(gate, code, message, details = /** @type {any} */ ({})) {
       const profile = details.reasonCode
         ? normalizeSiteForgeReason(details.reasonCode)
         : classifySiteForgeWarning(message);
@@ -431,7 +431,7 @@ export function isHighRiskCapability(capability) {
 }
 
 export function validateCapabilitySafetyForVerification(capability) {
-  const errors = [];
+  const errors = /** @type {any[]} */ ([]);
   if (capability?.status !== 'active' || !isHighRiskCapability(capability)) {
     return errors;
   }
@@ -748,9 +748,10 @@ function validateRegistryLookup({
       intentId: invocation.intentId ?? null,
     });
   }
-  if (capability?.status === 'active' && capability.informational !== true && !executionPlanIds.has(invocation.executionPlanId)) {
-    acc.fail('registry', 'registry.lookup_missing_execution_plan', `Registry lookup execution plan ${invocation.executionPlanId} is missing.`, {
-      executionPlanId: invocation.executionPlanId,
+  const invocationExecutionPlanId = /** @type {any} */ (invocation).executionPlanId;
+  if (capability?.status === 'active' && capability.informational !== true && !executionPlanIds.has(invocationExecutionPlanId)) {
+    acc.fail('registry', 'registry.lookup_missing_execution_plan', `Registry lookup execution plan ${invocationExecutionPlanId} is missing.`, {
+      executionPlanId: invocationExecutionPlanId,
       capabilityId: invocation.capabilityId,
     });
   }
@@ -763,10 +764,10 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
   candidateRegistry = null,
   invocationProbe = null,
   successfulBuild = true,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const acc = createValidationAccumulator();
   const exists = artifactExists ?? (async () => false);
-  const missingArtifacts = [];
+  const missingArtifacts = /** @type {any[]} */ ([]);
   for (const artifactName of requiredArtifacts) {
     const artifactPath = path.join(context.artifactDir, artifactName);
     if (!await exists(artifactPath)) {
@@ -878,7 +879,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
   });
 
   const skillPaths = getStage(stageResults, 'generateSkill').skillPaths ?? {};
-  const missingSkillFiles = [];
+  const missingSkillFiles = /** @type {any[]} */ ([]);
   for (const [name, filePath] of Object.entries(skillPaths)) {
     if (!filePath) {
       missingSkillFiles.push(name);

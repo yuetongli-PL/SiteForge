@@ -86,7 +86,7 @@ function normalizeComparableUrl(value) {
   }
 }
 
-export async function resolveCredentialSource(authConfig, options = {}, deps = {}) {
+export async function resolveCredentialSource(authConfig, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const username = String(options.loginUsername ?? '').trim();
   const password = String(options.loginPassword ?? '').trim();
   if (username && password) {
@@ -206,7 +206,7 @@ export function resolveAuthVerificationUrl(inputUrl, authProfile = null, authCon
   }
 
   const samples = siteProfile?.authValidationSamples ?? {};
-  const orderedCandidates = [];
+  const orderedCandidates = /** @type {any[]} */ ([]);
   const seen = new Set();
   const pushCandidate = (value) => {
     const normalized = String(value ?? '').trim();
@@ -245,7 +245,7 @@ export function resolveAuthKeepaliveUrl(inputUrl, authProfile = null, authConfig
   return String(resolvedAuthConfig?.postLoginUrl ?? '').trim() || String(inputUrl ?? '').trim() || null;
 }
 
-export function isAuthRequiredNavigationTarget(inputUrl, { authConfig = null, siteProfile = null } = {}) {
+export function isAuthRequiredNavigationTarget(inputUrl, { authConfig = null, siteProfile = null } = /** @type {any} */ ({})) {
   const resolvedAuthConfig = authConfig ?? buildResolvedAuthConfig(siteProfile);
   const pathname = readPathname(inputUrl);
   if (!resolvedAuthConfig?.authRequiredPathPrefixes?.length || !pathname) {
@@ -254,7 +254,7 @@ export function isAuthRequiredNavigationTarget(inputUrl, { authConfig = null, si
   return resolvedAuthConfig.authRequiredPathPrefixes.some((prefix) => isPathFamilyMatch(pathname, prefix));
 }
 
-export function shouldUsePersistentProfileForNavigation(inputUrl, settings = {}, context = {}) {
+export function shouldUsePersistentProfileForNavigation(inputUrl, settings = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
   if (context.reuseLoginState !== true) {
     return false;
   }
@@ -271,7 +271,7 @@ export function shouldUsePersistentProfileForNavigation(inputUrl, settings = {},
   return true;
 }
 
-export function shouldEnsureAuthenticatedNavigationSession(inputUrl, settings = {}, context = {}) {
+export function shouldEnsureAuthenticatedNavigationSession(inputUrl, settings = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
   const resolvedAuthConfig = context.authConfig ?? buildResolvedAuthConfig(context.siteProfile ?? null);
   if (!resolvedAuthConfig?.loginUrl) {
     return false;
@@ -425,7 +425,7 @@ function dedupeSortedStrings(values) {
   return [...new Set((values ?? []).map((value) => String(value ?? '').trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'en'));
 }
 
-function buildAcceptLanguage(navigatorInfo = {}) {
+function buildAcceptLanguage(navigatorInfo = /** @type {any} */ ({})) {
   const languages = Array.isArray(navigatorInfo.languages)
     ? navigatorInfo.languages.map((value) => String(value ?? '').trim()).filter(Boolean)
     : [];
@@ -469,7 +469,7 @@ function cookieMatchesHost(cookieDomain, host) {
 
 function filterCookiesForHosts(cookies, hosts) {
   const normalizedHosts = dedupeSortedStrings(hosts);
-  const filtered = [];
+  const filtered = /** @type {any[]} */ ([]);
   const seen = new Set();
   for (const cookie of Array.isArray(cookies) ? cookies : []) {
     const name = String(cookie?.name ?? '').trim();
@@ -545,7 +545,7 @@ function pageReadDownloadPassthroughContext() {
   };
 }
 
-function createDownloadPassthroughResult(overrides = {}) {
+function createDownloadPassthroughResult(overrides = /** @type {any} */ ({})) {
   return {
     available: false,
     reasonCode: null,
@@ -571,9 +571,9 @@ function createDownloadPassthroughResult(overrides = {}) {
   };
 }
 
-function buildDownloadPassthroughEnv(envToken, payload = {}) {
+function buildDownloadPassthroughEnv(envToken, payload = /** @type {any} */ ({})) {
   const normalizedToken = normalizeHostToken(envToken).replace(/_COM$/u, '') || 'SITE';
-  const env = {};
+  const env = /** @type {any} */ ({});
   if (payload.sidecarPath) {
     env[`BWS_${normalizedToken}_DOWNLOAD_AUTH_SIDECAR`] = payload.sidecarPath;
   }
@@ -888,7 +888,7 @@ export async function pageAssistManualLoginStep(config) {
   return { status: 'next-control-not-found', selector: usernameMatch.selector };
 }
 
-export async function resolveSiteAuthProfile(inputUrl, options = {}) {
+export async function resolveSiteAuthProfile(inputUrl, options = /** @type {any} */ ({})) {
   if (options.siteProfile) {
     return {
       profile: options.siteProfile,
@@ -902,7 +902,7 @@ export async function resolveSiteAuthProfile(inputUrl, options = {}) {
   return await maybeLoadValidatedProfileForUrl(inputUrl);
 }
 
-export async function resolveSiteBrowserSessionOptions(inputUrl, settings = {}, options = {}) {
+export async function resolveSiteBrowserSessionOptions(inputUrl, settings = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const authProfile = options.authProfile ?? await resolveSiteAuthProfile(inputUrl, options);
   const siteProfile = authProfile?.profile ?? null;
   const authConfig = buildResolvedAuthConfig(siteProfile);
@@ -929,7 +929,7 @@ function hasNoMissingProfilePaths(profileHealth) {
     && profileHealth.missingPaths.length === 0;
 }
 
-function resolveReusableSessionSignals({ authConfig = null, siteProfile = null } = {}) {
+function resolveReusableSessionSignals({ authConfig = null, siteProfile = null } = /** @type {any} */ ({})) {
   const resolvedAuthConfig = authConfig ?? buildResolvedAuthConfig(siteProfile);
   if (resolvedAuthConfig?.reusableSessionSignals?.length) {
     return resolvedAuthConfig.reusableSessionSignals;
@@ -937,7 +937,7 @@ function resolveReusableSessionSignals({ authConfig = null, siteProfile = null }
   return ['usableForCookies'];
 }
 
-export function isReusableLoginStateAvailable(profileHealth, { authConfig = null, siteProfile = null } = {}) {
+export function isReusableLoginStateAvailable(profileHealth, { authConfig = null, siteProfile = null } = /** @type {any} */ ({})) {
   if (!profileHealth || typeof profileHealth !== 'object') {
     return false;
   }
@@ -971,7 +971,7 @@ export function isReusableLoginStateAvailable(profileHealth, { authConfig = null
   return false;
 }
 
-export async function inspectReusableSiteSession(inputUrl, settings = {}, options = {}, deps = {}) {
+export async function inspectReusableSiteSession(inputUrl, settings = /** @type {any} */ ({}), options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const sessionOptions = await (deps.resolveSiteBrowserSessionOptions ?? resolveSiteBrowserSessionOptions)(
     inputUrl,
     settings,
@@ -1003,7 +1003,7 @@ export async function inspectReusableSiteSession(inputUrl, settings = {}, option
   };
 }
 
-export async function exportDownloadSessionPassthrough(session, inputUrl, authContext = {}, options = {}, _deps = {}) {
+export async function exportDownloadSessionPassthrough(session, inputUrl, authContext = /** @type {any} */ ({}), options = /** @type {any} */ ({}), _deps = /** @type {any} */ ({})) {
   const authProfile = authContext.authProfile ?? null;
   const authConfig = authContext.authConfig ?? null;
   const siteProfile = authContext.siteProfile ?? null;
@@ -1050,7 +1050,7 @@ export async function exportDownloadSessionPassthrough(session, inputUrl, authCo
     || deriveOrigin(currentUrl)
     || deriveOrigin(verificationUrl)
     || deriveOrigin(inputUrl);
-  const headers = {};
+  const headers = /** @type {any} */ ({});
   if (cookieHeader) {
     headers.Cookie = cookieHeader;
   }
@@ -1140,7 +1140,7 @@ export async function exportDownloadSessionPassthrough(session, inputUrl, authCo
   });
 }
 
-export async function exportSiteDownloadPassthrough(inputUrl, settings = {}, options = {}, deps = {}) {
+export async function exportSiteDownloadPassthrough(inputUrl, settings = /** @type {any} */ ({}), options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const authContext = options.authContext ?? await (deps.resolveSiteBrowserSessionOptions ?? resolveSiteBrowserSessionOptions)(
     inputUrl,
     settings,
@@ -1235,7 +1235,7 @@ export async function waitForAuthenticatedSession(
     assistManualLogin = false,
     timeoutMs = DEFAULT_LOGIN_WAIT_TIMEOUT_MS,
     pollMs = 1_000,
-  } = {},
+  } = /** @type {any} */ ({}),
 ) {
   const deadline = Date.now() + timeoutMs;
   let lastState = null;
@@ -1272,7 +1272,7 @@ export async function waitForAuthenticatedSession(
   };
 }
 
-export async function attemptCredentialLogin(session, authConfig, credentials, settings = {}) {
+export async function attemptCredentialLogin(session, authConfig, credentials, settings = /** @type {any} */ ({})) {
   const loginUrl = authConfig?.loginUrl;
   if (!loginUrl) {
     return {
@@ -1318,7 +1318,7 @@ export async function attemptCredentialLogin(session, authConfig, credentials, s
   };
 }
 
-export async function ensureAuthenticatedSession(session, inputUrl, settings = {}, options = {}) {
+export async function ensureAuthenticatedSession(session, inputUrl, settings = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const { authProfile, authConfig } = options.authContext
     ? options.authContext
     : await resolveSiteBrowserSessionOptions(inputUrl, settings, options);

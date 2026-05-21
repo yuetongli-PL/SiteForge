@@ -46,6 +46,7 @@ function canonicalizeHeaderName(value) {
     .join('-');
 }
 
+/** @param {Record<string, any>} [headers] */
 function normalizeHeaderEntries(headers = {}) {
   return Object.fromEntries(
     Object.entries(headers ?? {})
@@ -94,6 +95,7 @@ export function redactFreshEvidenceUrlTokens(value) {
   }
 }
 
+/** @param {Record<string, any>} [headers] */
 export function sanitizeFreshEvidenceHeaders(headers = {}) {
   return Object.fromEntries(
     Object.entries(normalizeHeaderEntries(headers))

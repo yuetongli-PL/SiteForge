@@ -137,7 +137,7 @@ function firstContractItem(contract) {
   return contract;
 }
 
-function createGraphAggregateExecutionBoundaryGuard(create, sourceGuard, options = {}) {
+function createGraphAggregateExecutionBoundaryGuard(create, sourceGuard, options = /** @type {any} */ ({})) {
   try {
     return create(sourceGuard, options);
   } catch (error) {
@@ -158,7 +158,7 @@ function createGraphAggregateExecutionBoundaryGuard(create, sourceGuard, options
 function createGraphLayerAggregateExecutionBoundaryHandoffReviewGate(
   create,
   aggregateExecutionBoundaryGuard,
-  options = {},
+  options = /** @type {any} */ ({}),
 ) {
   try {
     return create(aggregateExecutionBoundaryGuard, options);
@@ -2007,6 +2007,7 @@ test('graph artifact guard reasonCodes remain fail-closed', () => {
     'graph-artifact-redaction-required',
     'graph-docs-generation-failed',
   ]) {
+    // @ts-ignore
     const definition = requireReasonCodeDefinition(code, { family: 'graph' });
     assert.equal(definition.retryable, false);
     assert.equal(definition.manualRecoveryNeeded, true);

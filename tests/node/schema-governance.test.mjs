@@ -55,12 +55,14 @@ function compatibleKernelPayload(schemaName) {
   assert.notEqual(schema, null);
   if (schemaName === 'reasonCode') {
     return {
+      // @ts-ignore
       schemaVersion: schema.version,
       entries: listReasonCodeDefinitions(),
     };
   }
   if (schemaName === 'ArtifactReferenceSet') {
     return {
+      // @ts-ignore
       schemaVersion: schema.version,
       manifest: 'runs/kernel/schema-governance/manifest.json',
     };
@@ -70,11 +72,13 @@ function compatibleKernelPayload(schemaName) {
   }
   if (schemaName === 'CapabilityHookRegistrySnapshot') {
     return {
+      // @ts-ignore
       schemaVersion: schema.version,
       hooks: [],
     };
   }
   return {
+    // @ts-ignore
     schemaVersion: schema.version,
   };
 }
@@ -106,6 +110,7 @@ test('Kernel-owned schema governance entrypoint covers Section 11 design familie
     'CapabilityHook',
   ]);
 
+  // @ts-ignore
   const governed = new Map(listKernelGovernedSchemas().map((entry) => [entry.name, entry]));
   for (const [family, schemaNames] of Object.entries(families)) {
     assert.equal(assertKernelDesignSchemaFamilyGoverned(family), true);
@@ -116,6 +121,7 @@ test('Kernel-owned schema governance entrypoint covers Section 11 design familie
       assert.equal(schema.kernelGovernance.owner, 'Kernel');
       assert.equal(schema.kernelGovernance.entrypoint, 'src/domain/schemas/kernel/site-capability-schema-governance.mjs');
       assert.notEqual(schema.compatibility, null);
+      // @ts-ignore
       assert.equal(schema.compatibility.version, schema.version);
       assert.equal(assertKernelGovernedSchemaCompatible(schemaName, compatibleKernelPayload(schemaName)), true);
     }
@@ -149,6 +155,7 @@ test('Kernel-owned schema governance entrypoint fails closed on unknown schema a
     assert.throws(
       () => assertKernelGovernedSchemaCompatible(schemaName, {
         ...compatibleKernelPayload(schemaName),
+        // @ts-ignore
         schemaVersion: schema.version + 1,
       }),
       /not compatible/u,
@@ -183,7 +190,9 @@ test('schema governance facade covers every design schema family from one Kernel
       const governed = getGovernedSchema(schemaName);
       assert.notEqual(governed, null);
       assert.equal(governed.governanceVersion, SCHEMA_GOVERNANCE_SCHEMA_VERSION);
+      // @ts-ignore
       assert.notEqual(governed.status, 'missing');
+      // @ts-ignore
       assert.equal(typeof governed.sourcePath, 'string');
     }
   }
@@ -227,12 +236,15 @@ test('schema governance facade governs the current reasonCode catalog compatibil
 test('schema governance facade aligns inventory and compatibility metadata', () => {
   const governed = listGovernedSchemas();
   const inventory = listSchemaInventory();
+  // @ts-ignore
   assert.deepEqual(governed.map((entry) => entry.name), inventory.map((entry) => entry.name));
 
   for (const entry of governed) {
     assert.equal(entry.governanceVersion, SCHEMA_GOVERNANCE_SCHEMA_VERSION);
     if (entry.compatibility) {
+      // @ts-ignore
       assert.equal(entry.compatibility.version, entry.version);
+      // @ts-ignore
       assert.equal(entry.compatibility.sourcePath, entry.sourcePath);
     }
   }

@@ -139,7 +139,7 @@ const INTENT_LABELS = Object.freeze({
   'open-utility-page': '\u6253\u5f00\u529f\u80fd\u9875',
 });
 
-function endpointParts(candidate = {}) {
+function endpointParts(candidate = /** @type {any} */ ({})) {
   try {
     const parsed = new URL(String(candidate?.endpoint?.url ?? candidate?.url ?? ''));
     return {
@@ -158,7 +158,7 @@ function bilibiliEndpointSemantics(pathname) {
   return BILIBILI_API_ENDPOINT_SEMANTICS[pathname] ?? null;
 }
 
-function isBilibiliApiCandidate(candidate = {}) {
+function isBilibiliApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'bilibili'
@@ -211,7 +211,7 @@ const BILIBILI_HEALTH_SIGNAL_MAP = Object.freeze({
   }),
 });
 
-function normalizeBilibiliHealthSignal(rawSignal = {}) {
+function normalizeBilibiliHealthSignal(rawSignal = /** @type {any} */ ({})) {
   const signal = typeof rawSignal === 'string'
     ? rawSignal
     : String(rawSignal?.rawSignal ?? rawSignal?.signal ?? rawSignal?.reasonCode ?? 'unknown-health-risk');
@@ -238,7 +238,7 @@ export const bilibiliAdapter = createCatalogAdapter({
     return inferBilibiliPageTypeFromUrl(inputUrl);
   },
   normalizeDisplayLabel: ({ value }) => cleanText(value),
-  describeApiCandidateSemantics(input = {}) {
+  describeApiCandidateSemantics(input = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(input.candidate);
     const semantics = bilibiliEndpointSemantics(pathname);
     return normalizeSiteAdapterSemanticEntry({
@@ -286,10 +286,10 @@ export const bilibiliAdapter = createCatalogAdapter({
   },
   validateApiCandidate({
     candidate,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     validatedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = isBilibiliApiCandidate(candidate);
     return normalizeSiteAdapterCandidateDecision({
@@ -313,10 +313,10 @@ export const bilibiliAdapter = createCatalogAdapter({
   getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     decidedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = siteAdapterDecision?.decision === 'accepted' && isBilibiliApiCandidate(candidate);
     return normalizeSiteAdapterCatalogUpgradePolicy({

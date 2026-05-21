@@ -359,11 +359,11 @@ function buildUrlFromTemplate(config, template, account = null) {
   return new URL(pathValue, `${config.baseUrl}/`).toString();
 }
 
-function buildSearchUrl(config, { query, date, fromDate, toDate } = {}) {
+function buildSearchUrl(config, { query, date, fromDate, toDate } = /** @type {any} */ ({})) {
   const parsed = new URL(config.routes.search, `${config.baseUrl}/`);
   const normalizedQuery = normalizeText(query || '');
   if (config.siteKey === 'x') {
-    const searchTerms = [];
+    const searchTerms = /** @type {any[]} */ ([]);
     if (normalizedQuery) {
       searchTerms.push(normalizedQuery);
     }
@@ -402,7 +402,7 @@ function isDateString(value) {
   return /^\d{4}-\d{2}-\d{2}$/u.test(String(value ?? '').trim());
 }
 
-function normalizeDateWindow({ date, fromDate, toDate } = {}) {
+function normalizeDateWindow({ date, fromDate, toDate } = /** @type {any} */ ({})) {
   const normalizedDate = String(date ?? '').trim();
   const normalizedFrom = String(fromDate ?? '').trim();
   const normalizedTo = String(toDate ?? '').trim();
@@ -413,7 +413,7 @@ function normalizeDateWindow({ date, fromDate, toDate } = {}) {
   };
 }
 
-function firstNonEmpty(values = []) {
+function firstNonEmpty(values = /** @type {any[]} */ ([])) {
   for (const value of values) {
     const normalized = normalizeText(value);
     if (normalized) {
@@ -423,7 +423,7 @@ function firstNonEmpty(values = []) {
   return null;
 }
 
-export function buildSocialActionPlan(input = {}) {
+export function buildSocialActionPlan(input = /** @type {any} */ ({})) {
   const config = resolveSocialSiteConfig(input.site ?? input.siteKey ?? input.host);
   const action = normalizeAction(input.action ?? 'account-info', input.contentType);
   const contentType = normalizeContentType(input.action, input.contentType, config.siteKey);
@@ -438,7 +438,7 @@ export function buildSocialActionPlan(input = {}) {
   let url = config.homeUrl;
   let requiresAccount = false;
   let requiresAuth = true;
-  let plannerNotes = [];
+  let plannerNotes = /** @type {any[]} */ ([]);
 
   if (action === 'account-info') {
     requiresAccount = true;
@@ -506,7 +506,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function socialStateHasExtractedContent(state = {}) {
+function socialStateHasExtractedContent(state = /** @type {any} */ ({})) {
   return Boolean(
     (Array.isArray(state.items) && state.items.length > 0)
     || (Array.isArray(state.relations) && state.relations.length > 0)
@@ -514,7 +514,7 @@ function socialStateHasExtractedContent(state = {}) {
   );
 }
 
-function socialStateHasProfileSurface(state = {}) {
+function socialStateHasProfileSurface(state = /** @type {any} */ ({})) {
   return Boolean(
     cleanText(state?.account?.displayName || '')
     || cleanText(state?.account?.bio || '')
@@ -522,14 +522,14 @@ function socialStateHasProfileSurface(state = {}) {
   );
 }
 
-function socialStateHasBoundarySignal(state = {}) {
+function socialStateHasBoundarySignal(state = /** @type {any} */ ({})) {
   return Boolean(
     (Array.isArray(state.visibilitySignals) && state.visibilitySignals.length > 0)
     || (Array.isArray(state.riskSignals) && state.riskSignals.length > 0)
   );
 }
 
-function isLikelyXBlankShell(state = {}) {
+function isLikelyXBlankShell(state = /** @type {any} */ ({})) {
   const title = cleanText(state?.title || '');
   return title === 'X'
     && !socialStateHasExtractedContent(state)
@@ -537,7 +537,7 @@ function isLikelyXBlankShell(state = {}) {
     && !socialStateHasBoundarySignal(state);
 }
 
-function initialSocialStateReady(config, state = {}) {
+function initialSocialStateReady(config, state = /** @type {any} */ ({})) {
   if (!state) {
     return false;
   }
@@ -691,7 +691,7 @@ function pageExtractSocialState(config, request) {
       };
     }).filter(Boolean);
   };
-  const isDecorativeMedia = (entry = {}) => {
+  const isDecorativeMedia = (entry = /** @type {any} */ ({})) => {
     const url = String(entry.url ?? '').toLowerCase();
     const alt = String(entry.alt ?? '').toLowerCase();
     return /(?:\/profile_images\/|\/profile_banners\/|\/emoji\/)/iu.test(url)
@@ -788,8 +788,8 @@ function pageExtractSocialState(config, request) {
     .filter((entry) => !isDecorativeMedia(entry));
   const bodyText = normalize(document.body?.innerText || '').slice(0, 12_000);
   const normalizedPath = String(window.location?.pathname ?? '').toLowerCase();
-  const visibilitySignals = [];
-  const riskSignals = [];
+  const visibilitySignals = /** @type {any[]} */ ([]);
+  const riskSignals = /** @type {any[]} */ ([]);
   if (/private account|this account is private|account is private/iu.test(bodyText)) {
     visibilitySignals.push('private-account');
   }
@@ -962,7 +962,7 @@ function pageClickSocialRetry() {
   };
 }
 
-function pageScrollToBottom(config = {}, request = {}) {
+function pageScrollToBottom(config = /** @type {any} */ ({}), request = /** @type {any} */ ({})) {
   const findDialogScroller = () => {
     if (
       config.siteKey !== 'instagram'
@@ -1041,7 +1041,7 @@ function pageScrollToBottom(config = {}, request = {}) {
 
 function mergeByKey(items, keyFn, maxItems) {
   const seen = new Set();
-  const merged = [];
+  const merged = /** @type {any[]} */ ([]);
   for (const item of items) {
     const key = keyFn(item);
     if (!key || seen.has(key)) {
@@ -1056,7 +1056,7 @@ function mergeByKey(items, keyFn, maxItems) {
   return merged;
 }
 
-function dedupeSortedStrings(values = []) {
+function dedupeSortedStrings(values = /** @type {any[]} */ ([])) {
   return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'en'));
 }
@@ -1065,7 +1065,7 @@ function isSocialRelationAction(action) {
   return ['profile-following', 'profile-followers', 'followed-users'].includes(String(action ?? ''));
 }
 
-function pickRuntimeRiskSignal(signals = []) {
+function pickRuntimeRiskSignal(signals = /** @type {any[]} */ ([])) {
   const normalized = new Set((Array.isArray(signals) ? signals : []).map((signal) => String(signal ?? '').trim()).filter(Boolean));
   if (normalized.has('challenge')) {
     return 'challenge';
@@ -1117,7 +1117,7 @@ function adaptiveRiskBackoffDelayMs(settings, retryIndex, consecutiveRateLimits 
   return Math.min(120_000, Math.max(adaptiveMs, retryAfterMs ?? 0));
 }
 
-function hasItemAuthor(item = {}) {
+function hasItemAuthor(item = /** @type {any} */ ({})) {
   return Boolean(
     item.sourceAccount
     || item.author?.handle
@@ -1129,7 +1129,7 @@ function hasItemAuthor(item = {}) {
   );
 }
 
-function summarizeJsonShape(value, prefix = '$', paths = [], depth = 0) {
+function summarizeJsonShape(value, prefix = '$', paths = /** @type {any[]} */ ([]), depth = 0) {
   if (paths.length >= API_CAPTURE_SHAPE_PATH_LIMIT || depth > 5) {
     return paths;
   }
@@ -1168,7 +1168,7 @@ function redactApiPayload(value, depth = 0) {
     }
     return value;
   }
-  const output = {};
+  const output = /** @type {any} */ ({});
   for (const [key, item] of Object.entries(value).slice(0, 80)) {
     if (/(?:token|cookie|authorization|csrf|password|email|phone|bearer|session|claim)/iu.test(key)) {
       output[key] = '<redacted>';
@@ -1222,14 +1222,14 @@ function summarizeParsedApiResponse(response, parsed, config, plan) {
 async function collectSocialPage(session, config, plan, settings) {
   const maxItems = settings.maxItems;
   const maxScrolls = settings.maxScrolls;
-  const collectedStates = [];
+  const collectedStates = /** @type {any[]} */ ([]);
   let stagnantRounds = 0;
   let previousItemCount = 0;
   let previousRelationCount = 0;
-  let scrollSummary = [];
-  const visibilitySignals = [];
-  const riskSignals = [];
-  const riskEvents = [];
+  let scrollSummary = /** @type {any[]} */ ([]);
+  const visibilitySignals = /** @type {any[]} */ ([]);
+  const riskSignals = /** @type {any[]} */ ([]);
+  const riskEvents = /** @type {any[]} */ ([]);
   let riskRetryCount = 0;
   let stopReason = null;
   let relationExpectedCount = null;
@@ -1405,7 +1405,7 @@ const FORBIDDEN_FETCH_HEADER_RE = /^(?:accept-encoding|connection|content-length
 const REPLAY_FETCH_HEADER_RE = /^(?:accept|authorization|content-type|x-[a-z0-9-]+)$/iu;
 const API_DEBUG_HEADER_RE = /^(?:retry-after|x-rate-limit-|x-app-limit|x-business-use-case-usage|x-ig-|x-fb-|x-twitter-|cf-|content-type|date)$/iu;
 
-function normalizeHeaderEntries(headers = {}) {
+function normalizeHeaderEntries(headers = /** @type {any} */ ({})) {
   return Object.entries(headers || {})
     .filter(([, value]) => value !== undefined && value !== null)
     .map(([name, value]) => [String(name).toLowerCase(), String(value)]);
@@ -1416,8 +1416,8 @@ function truncateHeaderValue(value) {
   return text.length > 240 ? `${text.slice(0, 240)}...<truncated>` : text;
 }
 
-function sanitizeApiDebugHeaders(headers = {}) {
-  const result = {};
+function sanitizeApiDebugHeaders(headers = /** @type {any} */ ({})) {
+  const result = /** @type {any} */ ({});
   for (const [name, value] of normalizeHeaderEntries(headers)) {
     if (!API_DEBUG_HEADER_RE.test(name)) {
       continue;
@@ -1473,7 +1473,7 @@ function parseApiRequestDetails(url, postData = '') {
   return details;
 }
 
-export function sanitizeSocialApiRequestTemplate(request = {}) {
+export function sanitizeSocialApiRequestTemplate(request = /** @type {any} */ ({})) {
   const headerEntries = normalizeHeaderEntries(request.headers);
   const headers = Object.fromEntries(headerEntries.map(([name, value]) => [
     name,
@@ -1489,8 +1489,8 @@ export function sanitizeSocialApiRequestTemplate(request = {}) {
   };
 }
 
-function buildBrowserReplayHeaders(request = {}) {
-  const headers = {};
+function buildBrowserReplayHeaders(request = /** @type {any} */ ({})) {
+  const headers = /** @type {any} */ ({});
   for (const [name, value] of normalizeHeaderEntries(request.headers)) {
     if (FORBIDDEN_FETCH_HEADER_RE.test(name) || !REPLAY_FETCH_HEADER_RE.test(name)) {
       continue;
@@ -1503,7 +1503,7 @@ function buildBrowserReplayHeaders(request = {}) {
   return headers;
 }
 
-function buildSocialApiReplayRequest(request = {}) {
+function buildSocialApiReplayRequest(request = /** @type {any} */ ({})) {
   return {
     url: request.url || null,
     method: request.method || 'GET',
@@ -1516,11 +1516,11 @@ async function createSocialApiCapture(session, config, settings) {
   if (typeof session?.send !== 'function' || !session?.client?.on) {
     return null;
   }
-  const responses = [];
+  const responses = /** @type {any[]} */ ([]);
   const candidates = new Map();
   const requests = new Map();
   const pendingBodies = new Set();
-  const errors = [];
+  const errors = /** @type {any[]} */ ([]);
   const stats = {
     requests: 0,
     responses: 0,
@@ -1692,17 +1692,17 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function dimensionsScore(entry = {}) {
+function dimensionsScore(entry = /** @type {any} */ ({})) {
   return finiteNumber(entry.width) * finiteNumber(entry.height);
 }
 
-function selectBestImageCandidate(candidates = []) {
+function selectBestImageCandidate(candidates = /** @type {any[]} */ ([])) {
   return (Array.isArray(candidates) ? candidates : [])
     .filter((candidate) => candidate?.url)
     .sort((left, right) => dimensionsScore(right) - dimensionsScore(left))[0] ?? null;
 }
 
-function selectBestVideoCandidate(candidates = []) {
+function selectBestVideoCandidate(candidates = /** @type {any[]} */ ([])) {
   return (Array.isArray(candidates) ? candidates : [])
     .filter((candidate) => candidate?.url)
     .sort((left, right) => {
@@ -1723,13 +1723,13 @@ function xVideoMediaKeyFromUrl(value) {
   return match?.[1] ?? null;
 }
 
-function isXVideoPosterMedia(entry = {}) {
+function isXVideoPosterMedia(entry = /** @type {any} */ ({})) {
   const value = String(entry.url ?? entry.posterUrl ?? '').toLowerCase();
   return /\/(?:ext_tw_video|amplify_video|tweet_video)_thumb\//u.test(value)
     || /[?&]format=(?:jpg|jpeg|png|webp)\b/u.test(value) && /(?:ext_tw_video|amplify_video|tweet_video)/u.test(value);
 }
 
-function isXDirectVideoMedia(entry = {}) {
+function isXDirectVideoMedia(entry = /** @type {any} */ ({})) {
   const value = String(entry.url ?? '').toLowerCase();
   return entry.type === 'video'
     && /^https?:\/\//iu.test(value)
@@ -1739,7 +1739,7 @@ function isXDirectVideoMedia(entry = {}) {
     );
 }
 
-function upgradeXPosterMediaWithVideoResources(items = [], media = []) {
+function upgradeXPosterMediaWithVideoResources(items = /** @type {any[]} */ ([]), media = /** @type {any[]} */ ([])) {
   const videosByKey = new Map();
   for (const entry of Array.isArray(media) ? media : []) {
     if (!isXDirectVideoMedia(entry)) {
@@ -1798,7 +1798,7 @@ function upgradeXPosterMediaWithVideoResources(items = [], media = []) {
   });
 }
 
-function dedupeMediaEntries(media = []) {
+function dedupeMediaEntries(media = /** @type {any[]} */ ([])) {
   return mergeByKey(
     (Array.isArray(media) ? media : []).filter((entry) => entry?.url),
     (entry) => `${entry.type}:${entry.url}`,
@@ -1841,9 +1841,9 @@ function parseDimensionsFromUrl(value) {
   };
 }
 
-function parseXMedia(legacy = {}) {
+function parseXMedia(legacy = /** @type {any} */ ({})) {
   const media = legacy.extended_entities?.media || legacy.entities?.media || [];
-  return (Array.isArray(media) ? media : []).flatMap((entry) => {
+  return /** @type {any[]} */ (Array.isArray(media) ? media : []).flatMap((entry) => {
     const imageUrl = normalizeXImageUrl(entry?.media_url_https || entry?.media_url || '');
     const variants = entry?.video_info?.variants || [];
     const video = Array.isArray(variants)
@@ -1883,6 +1883,11 @@ function parseXMedia(legacy = {}) {
         url: imageUrl,
         posterUrl: null,
         alt: entry?.ext_alt_text || '',
+        bitrate: null,
+        width: null,
+        height: null,
+        durationMillis: null,
+        variants: [],
       }];
     }
     return [];
@@ -1940,8 +1945,8 @@ function normalizeXUserResult(result) {
 }
 
 function collectXRelationEntries(json) {
-  const users = [];
-  const cursors = [];
+  const users = /** @type {any[]} */ ([]);
+  const cursors = /** @type {any[]} */ ([]);
   collectRecursive(json, (node) => {
     const cursor = xCursorFromTimelineContent(node, node?.entryId || node?.entry_id);
     if (cursor) {
@@ -1973,7 +1978,7 @@ function isXRelationApiUrl(url, action) {
     : /\/i\/api\/graphql\/[^/]+\/Following\?/u.test(value);
 }
 
-function xCursorFromTimelineContent(content = {}, entryId = '') {
+function xCursorFromTimelineContent(content = /** @type {any} */ ({}), entryId = '') {
   const cursorType = String(content?.cursorType ?? content?.cursor_type ?? '').toLowerCase();
   const value = content?.value;
   if (!value) {
@@ -1986,7 +1991,7 @@ function xCursorFromTimelineContent(content = {}, entryId = '') {
   return null;
 }
 
-function xTweetResultFromItemContent(itemContent = {}) {
+function xTweetResultFromItemContent(itemContent = /** @type {any} */ ({})) {
   return itemContent?.tweet_results?.result
     || itemContent?.tweetResult?.result
     || itemContent?.tweet?.result
@@ -1994,8 +1999,8 @@ function xTweetResultFromItemContent(itemContent = {}) {
 }
 
 function collectXTimelineEntries(json) {
-  const items = [];
-  const cursors = [];
+  const items = /** @type {any[]} */ ([]);
+  const cursors = /** @type {any[]} */ ([]);
   collectRecursive(json, (node) => {
     if (!Array.isArray(node?.instructions)) {
       return;
@@ -2038,7 +2043,7 @@ function collectXTimelineEntries(json) {
   };
 }
 
-function instagramTimestampFromNode(node = {}) {
+function instagramTimestampFromNode(node = /** @type {any} */ ({})) {
   const value = node?.taken_at_timestamp ?? node?.taken_at ?? node?.caption?.created_at ?? node?.device_timestamp ?? null;
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -2053,7 +2058,7 @@ function instagramTimestampFromNode(node = {}) {
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
 }
 
-function instagramDurationMillisFromNode(node = {}) {
+function instagramDurationMillisFromNode(node = /** @type {any} */ ({})) {
   const candidates = [
     node?.video_duration,
     node?.videoDuration,
@@ -2070,7 +2075,7 @@ function instagramDurationMillisFromNode(node = {}) {
   return null;
 }
 
-function instagramAuthorFromNode(node = {}) {
+function instagramAuthorFromNode(node = /** @type {any} */ ({})) {
   const user = node?.owner || node?.user || node?.caption?.user || node?.user_info || {};
   const handle = cleanText(user?.username || user?.handle || node?.owner_username || '');
   const id = user?.id ?? user?.pk ?? node?.owner_id ?? null;
@@ -2085,7 +2090,7 @@ function instagramAuthorFromNode(node = {}) {
   };
 }
 
-function instagramPermalinkPath(node = {}) {
+function instagramPermalinkPath(node = /** @type {any} */ ({})) {
   const productType = String(node?.product_type ?? node?.media_product_type ?? '').toLowerCase();
   if (productType === 'clips' || node?.clips_metadata || node?.is_dash_eligible === true) {
     return 'reel';
@@ -2186,7 +2191,7 @@ function parseInstagramMediaNode(node) {
     || (node?.caption && typeof node.caption === 'object' ? node.caption.text : node?.caption)
     || '';
   const timestamp = instagramTimestampFromNode(node);
-  const media = [];
+  const media = /** @type {any[]} */ ([]);
   const children = node?.edge_sidecar_to_children?.edges || node?.carousel_media || [];
   const childNodes = Array.isArray(children) ? children : [];
   if (childNodes.length === 0) {
@@ -2243,8 +2248,8 @@ function collectInstagramPaginationCursors(json, cursors) {
 
 export function parseSocialApiPayload(site, json) {
   const config = resolveSocialSiteConfig(site);
-  const items = [];
-  const cursors = [];
+  const items = /** @type {any[]} */ ([]);
+  const cursors = /** @type {any[]} */ ([]);
   if (config.siteKey === 'x') {
     const timeline = collectXTimelineEntries(json);
     items.push(...timeline.items);
@@ -2300,7 +2305,7 @@ export function parseSocialApiPayload(site, json) {
 }
 
 function apiErrorTexts(json) {
-  const texts = [];
+  const texts = /** @type {any[]} */ ([]);
   collectRecursive(json, (node) => {
     for (const key of ['message', 'msg', 'error', 'error_message', 'errorSummary', 'errorDescription', 'title', 'detail']) {
       if (node?.[key] !== undefined && node?.[key] !== null && typeof node[key] !== 'object') {
@@ -2319,7 +2324,7 @@ function apiErrorTexts(json) {
 
 function detectApiPayloadRisk(json, status = null) {
   const texts = apiErrorTexts(json).join(' ').toLowerCase();
-  const signals = [];
+  const signals = /** @type {any[]} */ ([]);
   if (status === 401 || status === 403 || /login_required|login required|not logged in|auth(?:entication)? required|unauthorized|forbidden|checkpoint_required|consent_required/iu.test(texts)) {
     signals.push('login-wall');
   }
@@ -2348,12 +2353,12 @@ function parseRetryAfterMs(value) {
   return null;
 }
 
-function retryAfterMsFromHeaders(headers = {}) {
+function retryAfterMsFromHeaders(headers = /** @type {any} */ ({})) {
   const normalized = Object.fromEntries(normalizeHeaderEntries(headers));
   return parseRetryAfterMs(normalized['retry-after']);
 }
 
-function apiRiskReasonFromSignals(signals = [], status = null) {
+function apiRiskReasonFromSignals(signals = /** @type {any[]} */ ([]), status = null) {
   const runtimeSignal = pickRuntimeRiskSignal(signals);
   if (runtimeSignal === 'rate-limited') {
     return 'api-rate-limited';
@@ -2380,7 +2385,7 @@ function boundedReasonFromArchiveReason(reason) {
     : null;
 }
 
-function isSoftCursorReplayExhaustion(fetchResult = {}, context = {}) {
+function isSoftCursorReplayExhaustion(fetchResult = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
   const status = Number(fetchResult.status);
   if (!(status === 404 || status === 410)) {
     return false;
@@ -2538,19 +2543,19 @@ export function buildCursorReplayRequest(seedRequest, cursor) {
   return request;
 }
 
-function pageFetchJson(requestOrUrl, replayHeaders = {}) {
+function pageFetchJson(requestOrUrl, replayHeaders = /** @type {any} */ ({})) {
   const request = typeof requestOrUrl === 'string'
     ? { url: requestOrUrl, method: 'GET', headers: replayHeaders }
     : requestOrUrl;
   const method = String(request?.method || 'GET').toUpperCase();
-  const init = {
+  const init = /** @type {RequestInit & { headers: any }} */ ({
     method,
     credentials: 'include',
     headers: {
       accept: 'application/json, text/plain, */*',
       ...(request?.headers || {}),
     },
-  };
+  });
   if (request?.body && method !== 'GET' && method !== 'HEAD') {
     init.body = request.body;
   }
@@ -2562,7 +2567,7 @@ function pageFetchJson(requestOrUrl, replayHeaders = {}) {
     } catch {
       json = null;
     }
-    const headers = {};
+    const headers = /** @type {any} */ ({});
     if (typeof response.headers?.forEach === 'function') {
       response.headers.forEach((value, name) => {
         headers[name] = value;
@@ -2579,11 +2584,11 @@ function pageFetchJson(requestOrUrl, replayHeaders = {}) {
   });
 }
 
-function operationNameFromApiEntry(entry = {}) {
+function operationNameFromApiEntry(entry = /** @type {any} */ ({})) {
   return String(entry.response?.request?.operationName ?? entry.response?.requestTemplate?.operationName ?? '').toLowerCase();
 }
 
-function urlFromApiEntry(entry = {}) {
+function urlFromApiEntry(entry = /** @type {any} */ ({})) {
   return String(entry.response?.url ?? '').toLowerCase();
 }
 
@@ -2635,7 +2640,7 @@ function scoreSocialApiSeed(entry, config, plan) {
   return score;
 }
 
-function parsedApiEntries(parsed = {}) {
+function parsedApiEntries(parsed = /** @type {any} */ ({})) {
   if (Array.isArray(parsed?.items)) {
     return parsed.items;
   }
@@ -2645,7 +2650,7 @@ function parsedApiEntries(parsed = {}) {
   return [];
 }
 
-function isTargetTimelineApiSummary(summary, config = {}, plan = {}) {
+function isTargetTimelineApiSummary(summary, config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   const operationName = String(summary?.operationName ?? '').toLowerCase();
   const url = String(summary?.url ?? '').toLowerCase();
   if (config.siteKey === 'x') {
@@ -2678,7 +2683,7 @@ function isTargetTimelineApiSummary(summary, config = {}, plan = {}) {
   return false;
 }
 
-function requiresTargetTimelineApiSeed(config = {}, plan = {}) {
+function requiresTargetTimelineApiSeed(config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   if (config.siteKey === 'x') {
     return ['profile-content', 'search', 'followed-posts-by-date'].includes(plan.action);
   }
@@ -2688,7 +2693,7 @@ function requiresTargetTimelineApiSeed(config = {}, plan = {}) {
   return false;
 }
 
-function isTargetTimelineApiEntry(entry, config = {}, plan = {}) {
+function isTargetTimelineApiEntry(entry, config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   return isTargetTimelineApiSummary(
     summarizeParsedApiResponse(entry.response, entry.parsed, config, plan),
     config,
@@ -2696,7 +2701,7 @@ function isTargetTimelineApiEntry(entry, config = {}, plan = {}) {
   );
 }
 
-function isSchemaDriftApiSummary(summary, config = {}, plan = {}) {
+function isSchemaDriftApiSummary(summary, config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   return isTargetTimelineApiSummary(summary, config, plan)
     && (
       summary.itemCount === 0
@@ -2706,7 +2711,7 @@ function isSchemaDriftApiSummary(summary, config = {}, plan = {}) {
     );
 }
 
-function classifyApiSchemaDrift(summary = {}) {
+function classifyApiSchemaDrift(summary = /** @type {any} */ ({})) {
   if (summary.riskSignals?.length || summary.reason) {
     return {
       category: 'parse-risk',
@@ -2778,7 +2783,7 @@ function selectSocialApiSeed(parsedResponses, config, plan) {
     })[0] ?? null;
 }
 
-function summarizeSocialApiCapture(apiCapture, parsedResponses = [], config = null, plan = null) {
+function summarizeSocialApiCapture(apiCapture, parsedResponses = /** @type {any[]} */ ([]), config = null, plan = null) {
   if (!apiCapture) {
     return null;
   }
@@ -2821,7 +2826,7 @@ function normalizeHandleForCompare(value) {
   return String(value ?? '').trim().replace(/^@/u, '').toLowerCase();
 }
 
-function itemAuthorHandle(item = {}) {
+function itemAuthorHandle(item = /** @type {any} */ ({})) {
   const explicit = item?.author?.handle ?? item?.sourceAccount ?? null;
   if (explicit) {
     return normalizeHandleForCompare(explicit);
@@ -2835,7 +2840,7 @@ function itemAuthorHandle(item = {}) {
   }
 }
 
-function itemMatchesRequestedAccount(item = {}, plan = {}) {
+function itemMatchesRequestedAccount(item = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   const requested = normalizeHandleForCompare(plan.account);
   if (!requested) {
     return true;
@@ -2868,7 +2873,7 @@ function statusFromFetchError(error) {
 
 async function fetchCursorReplayJson(session, request, settings) {
   const maxAttempts = Math.max(1, (settings.apiRetries ?? DEFAULT_API_RETRIES) + 1);
-  const attempts = [];
+  const attempts = /** @type {any[]} */ ([]);
   let consecutiveRateLimitEvents = 0;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     let result;
@@ -2970,7 +2975,7 @@ async function fetchCursorReplayJson(session, request, settings) {
   };
 }
 
-async function collectSocialApiArchive(session, config, plan, settings, apiCapture, checkpoint = null, options = {}) {
+async function collectSocialApiArchive(session, config, plan, settings, apiCapture, checkpoint = null, options = /** @type {any} */ ({})) {
   const seedOnly = options.seedOnly === true || settings.apiCursor !== true;
   if (!apiCapture || (!settings.apiCursor && !seedOnly)) {
     return null;
@@ -3047,7 +3052,7 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
   let pages = Math.max(Number(previousArchive?.pages ?? 0), 0) + 1;
   let reason = cursor ? 'max-api-pages' : 'no-next-cursor';
   const apiRiskSignals = [...capturedRiskSignals, ...(seed.parsed?.riskSignals ?? [])];
-  const apiRiskEvents = [];
+  const apiRiskEvents = /** @type {any[]} */ ([]);
   if (allItems.length >= settings.maxItems) {
     reason = 'max-items';
   }
@@ -3261,7 +3266,7 @@ function filterInstagramFeedItemsForPlan(items, plan) {
   return (Array.isArray(items) ? items : []).filter((item) => instagramFeedItemMatchesPlan(item, plan));
 }
 
-function instagramDirectArchiveCapture(profileUrl, feedUrl, events = []) {
+function instagramDirectArchiveCapture(profileUrl, feedUrl, events = /** @type {any[]} */ ([])) {
   return {
     requestCount: null,
     networkResponseCount: null,
@@ -3361,7 +3366,7 @@ async function collectInstagramFeedUserArchive(session, config, plan, settings, 
   let pages = 0;
   let reason = maxPages < 1 ? 'max-api-pages' : 'max-api-pages';
   let lastUrl = feedUrl;
-  const samples = [];
+  const samples = /** @type {any[]} */ ([]);
   while (pages < maxPages && allItems.length < settings.maxItems) {
     const request = cursor
       ? buildCursorReplayRequest({ url: feedUrl, method: 'GET', headers }, cursor)
@@ -3497,6 +3502,9 @@ function isXRelationApiResponse(entry, plan) {
   return isXRelationApiUrl(entry.response?.url, plan.action);
 }
 
+/**
+ * @returns {{ promise: Promise<any>, resolve: (value?: any) => void, reject: (reason?: any) => void }}
+ */
 function createDeferred() {
   let resolve;
   let reject;
@@ -3578,10 +3586,10 @@ async function collectXRelationUsersFromReplayRequest(session, seedRequest, sett
   let replayRequest = seedRequest;
   let cursor = null;
   let pages = 0;
-  let users = [];
+  let users = /** @type {any[]} */ ([]);
   let reason = 'no-next-cursor';
-  const riskSignals = [];
-  const riskEvents = [];
+  const riskSignals = /** @type {any[]} */ ([]);
+  const riskEvents = /** @type {any[]} */ ([]);
 
   while (replayRequest?.url && pages < settings.maxApiPages && users.length < settings.maxItems) {
     const fetchResult = await fetchCursorReplayJson(session, replayRequest, settings);
@@ -3678,7 +3686,7 @@ async function collectXRelationApiUsers(session, plan, settings, apiCapture) {
   };
 }
 
-function normalizeFollowedUserSeedEntry(entry = {}) {
+function normalizeFollowedUserSeedEntry(entry = /** @type {any} */ ({})) {
   if (!entry || typeof entry !== 'object') {
     return null;
   }
@@ -3707,7 +3715,7 @@ function pathnameHandleFromUrl(url) {
   }
 }
 
-async function loadFollowedUsersSeed(filePath, settings = {}) {
+async function loadFollowedUsersSeed(filePath, settings = /** @type {any} */ ({})) {
   if (!filePath) {
     return null;
   }
@@ -3741,7 +3749,7 @@ async function loadFollowedUsersSeed(filePath, settings = {}) {
   };
 }
 
-function summarizeXRelationApiArchive(relationApiArchive, relationApiUsers = [], users = []) {
+function summarizeXRelationApiArchive(relationApiArchive, relationApiUsers = /** @type {any[]} */ ([]), users = /** @type {any[]} */ ([])) {
   if (!relationApiArchive) {
     return null;
   }
@@ -3756,7 +3764,7 @@ function summarizeXRelationApiArchive(relationApiArchive, relationApiUsers = [],
   };
 }
 
-function summarizeFollowedRelationArchive(relationApiArchive, relationApiUsers = [], users = [], followedUsersSeed = null) {
+function summarizeFollowedRelationArchive(relationApiArchive, relationApiUsers = /** @type {any[]} */ ([]), users = /** @type {any[]} */ ([]), followedUsersSeed = null) {
   const apiSummary = summarizeXRelationApiArchive(relationApiArchive, relationApiUsers, users);
   if (!followedUsersSeed?.archive) {
     return apiSummary;
@@ -3768,13 +3776,13 @@ function summarizeFollowedRelationArchive(relationApiArchive, relationApiUsers =
   };
 }
 
-function prefersDomForNoApiCursorFollowedPosts(plan = {}, settings = {}) {
+function prefersDomForNoApiCursorFollowedPosts(plan = /** @type {any} */ ({}), settings = /** @type {any} */ ({})) {
   return plan.siteKey === 'x'
     && plan.action === 'followed-posts-by-date'
     && settings.apiCursor !== true;
 }
 
-function apiMediaByItemKey(items = []) {
+function apiMediaByItemKey(items = /** @type {any[]} */ ([])) {
   const mediaByItem = new Map();
   for (const item of items || []) {
     const key = item.id || item.url || null;
@@ -3836,7 +3844,7 @@ function mergeDomPrimaryPageResultWithArchive(pageResult, archive, settings) {
   };
 }
 
-function mergePageResultWithArchive(pageResult, archive, settings, plan = {}) {
+function mergePageResultWithArchive(pageResult, archive, settings, plan = /** @type {any} */ ({})) {
   const preferDomForNoApiCursor = prefersDomForNoApiCursorFollowedPosts(plan, settings);
   if (preferDomForNoApiCursor && (pageResult.items?.length ?? 0) > 0) {
     return mergeDomPrimaryPageResultWithArchive(pageResult, archive, settings);
@@ -3971,7 +3979,7 @@ async function inferCurrentAccountFromPage(session, config, plan) {
 }
 
 async function enrichInstagramItemsFromDetails(session, config, plan, settings, account, items) {
-  const enriched = [];
+  const enriched = /** @type {any[]} */ ([]);
   const candidates = mergeByKey(items, (entry) => entry.url, settings.maxDetailPages)
     .filter((entry) => /^https:\/\/www\.instagram\.com\/(?:p|reel|tv)\//iu.test(String(entry.url ?? '')));
   for (const item of candidates) {
@@ -4004,7 +4012,7 @@ async function enrichInstagramItemsFromDetails(session, config, plan, settings, 
   return enriched;
 }
 
-async function collectProfileDateScanAttempt(session, config, profilePlan, settings, apiCapture, profileApiDisabledAfterRateLimit, options = {}) {
+async function collectProfileDateScanAttempt(session, config, profilePlan, settings, apiCapture, profileApiDisabledAfterRateLimit, options = /** @type {any} */ ({})) {
   const apiCaptureStartIndex = apiCapture?.mark?.() ?? 0;
   await session.navigateAndWait(profilePlan.url, createWaitPolicy(settings.timeoutMs));
   const profileResult = await collectSocialPage(session, config, profilePlan, {
@@ -4025,14 +4033,14 @@ async function collectProfileDateScanAttempt(session, config, profilePlan, setti
   return { profileResult, apiProfileArchive };
 }
 
-function initialProfileDateScanMaxScrolls(config, settings = {}) {
+function initialProfileDateScanMaxScrolls(config, settings = /** @type {any} */ ({})) {
   if (config?.siteKey === 'x' && settings.apiCursor === true) {
     return Math.min(settings.maxScrolls, 2);
   }
   return settings.maxScrolls;
 }
 
-function shouldRetryEmptyXProfileDateScan(config, profileResult = {}, apiProfileArchive = null) {
+function shouldRetryEmptyXProfileDateScan(config, profileResult = /** @type {any} */ ({}), apiProfileArchive = null) {
   if (config?.siteKey !== 'x') {
     return false;
   }
@@ -4411,7 +4419,7 @@ function mergeCheckpointItemsIntoPayload(payload, checkpoint, settings) {
   };
 }
 
-function riskStateForRuntimeRisk(pageResult = {}, plan = {}, settings = {}, riskSummary = {}) {
+function riskStateForRuntimeRisk(pageResult = /** @type {any} */ ({}), plan = /** @type {any} */ ({}), settings = /** @type {any} */ ({}), riskSummary = /** @type {any} */ ({})) {
   if (riskSummary.rateLimited !== true) {
     return null;
   }
@@ -4426,7 +4434,7 @@ function riskStateForRuntimeRisk(pageResult = {}, plan = {}, settings = {}, risk
   });
 }
 
-function summarizeRuntimeRisk(pageResult = {}, settings = {}, plan = {}) {
+function summarizeRuntimeRisk(pageResult = /** @type {any} */ ({}), settings = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   const riskSignals = dedupeSortedStrings([
     ...(pageResult.riskSignals ?? []),
     ...(pageResult.archive?.boundarySignals ?? []).filter((signal) => ['challenge', 'login-wall', 'rate-limited'].includes(signal)),
@@ -4464,7 +4472,7 @@ function summarizeRuntimeRisk(pageResult = {}, settings = {}, plan = {}) {
   };
 }
 
-function summarizeSocialAuthHealth(plan, settings, authContext = {}, authResult = null, runtimeRisk = null) {
+function summarizeSocialAuthHealth(plan, settings, authContext = /** @type {any} */ ({}), authResult = null, runtimeRisk = null) {
   if (!plan.requiresAuth) {
     return {
       required: false,
@@ -4623,7 +4631,7 @@ function socialActionAuthConfirmed(authResult = null) {
     || authResult?.loggedIn === true;
 }
 
-function shouldRecordSocialActionSessionReuse({ plan = {}, authContext = {}, authResult = null, finalResult = null, closeSummary = null } = {}) {
+function shouldRecordSocialActionSessionReuse({ plan = /** @type {any} */ ({}), authContext = /** @type {any} */ ({}), authResult = null, finalResult = null, closeSummary = null } = /** @type {any} */ ({})) {
   if (plan.requiresAuth !== true || !authContext.userDataDir || authContext.reuseLoginState === false) {
     return false;
   }
@@ -4641,13 +4649,13 @@ function shouldRecordSocialActionSessionReuse({ plan = {}, authContext = {}, aut
 }
 
 async function recordSocialActionSessionReuse({
-  plan = {},
-  authContext = {},
+  plan = /** @type {any} */ ({}),
+  authContext = /** @type {any} */ ({}),
   authResult = null,
   finalResult = null,
   closeSummary = null,
-  settings = {},
-} = {}, deps = {}) {
+  settings = /** @type {any} */ ({}),
+} = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   if (!shouldRecordSocialActionSessionReuse({ plan, authContext, authResult, finalResult, closeSummary })) {
     return null;
   }
@@ -4707,7 +4715,7 @@ async function recordSocialActionSessionReuse({
   };
 }
 
-function buildSocialSessionGate(result = {}, { requiresAuth = false } = {}) {
+function buildSocialSessionGate(result = /** @type {any} */ ({}), { requiresAuth = false } = /** @type {any} */ ({})) {
   return evaluateAuthenticatedSessionReleaseGate({
     authHealth: { required: requiresAuth },
     sessionProvider: result.sessionProvider,
@@ -4717,7 +4725,7 @@ function buildSocialSessionGate(result = {}, { requiresAuth = false } = {}) {
   });
 }
 
-function buildSocialSessionRepairCommand(result = {}, gate = {}) {
+function buildSocialSessionRepairCommand(result = /** @type {any} */ ({}), gate = /** @type {any} */ ({})) {
   if (gate.status !== 'blocked') {
     return null;
   }
@@ -4742,7 +4750,7 @@ function relativeIndexHref(filePath, layout) {
   return parts.join('/');
 }
 
-function collectDownloadsForIndex(downloads = []) {
+function collectDownloadsForIndex(downloads = /** @type {any[]} */ ([])) {
   const byKey = new Map();
   const add = (key, entry) => {
     if (!key) {
@@ -4920,7 +4928,7 @@ function formatArchiveComplete(value) {
   return 'unknown';
 }
 
-function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
+function buildSocialActionRecoveryCommand(result, layout, extraArgs = /** @type {any[]} */ ([])) {
   const plan = result.plan || {};
   const settings = result.settings || result._settings || {};
   const site = plan.siteKey || result.siteKey || 'x';
@@ -4975,7 +4983,7 @@ function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
 }
 
 export function buildRecoveryRunbook(result, layout) {
-  const commands = [];
+  const commands = /** @type {any[]} */ ([]);
   const addCommand = (id, reason, command, explanation) => {
     if (!command || commands.some((entry) => entry.id === id && entry.command === command)) {
       return;
@@ -5129,7 +5137,7 @@ async function hashFileSha256(filePath) {
   return createHash('sha256').update(await readFile(filePath)).digest('hex');
 }
 
-function expectedMinimumBytes(entry = {}) {
+function expectedMinimumBytes(entry = /** @type {any} */ ({})) {
   if (entry.type === 'video') {
     return 1024;
   }
@@ -5141,7 +5149,7 @@ function expectedMinimumBytes(entry = {}) {
 
 async function buildMediaValidationManifest(result, layout) {
   const downloads = Array.isArray(result.download?.downloads) ? result.download.downloads : [];
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   for (const download of downloads) {
     const entry = {
       ok: download.ok === true,
@@ -5506,12 +5514,12 @@ async function loadSocialCheckpoint(layout, settings) {
       return rest;
     });
   const previousDownloads = await readJsonLinesFile(layout.downloadsJsonlPath);
-  let previousDownloadQueue = [];
+  let previousDownloadQueue = /** @type {any[]} */ ([]);
   try {
     const queueArtifact = await readJsonFile(layout.mediaQueuePath);
     previousDownloadQueue = Array.isArray(queueArtifact?.queue) ? queueArtifact.queue : [];
   } catch {
-    previousDownloadQueue = [];
+    previousDownloadQueue = /** @type {any[]} */ ([]);
   }
   return {
     previousState,
@@ -5526,7 +5534,7 @@ function createCheckpointWriter(layout, plan, settings, checkpoint) {
   return {
     previousState: checkpoint.previousState,
     previousItems: checkpoint.previousItems,
-    async write(patch = {}) {
+    async write(patch = /** @type {any} */ ({})) {
       currentState = {
         ...currentState,
         ...patch,
@@ -5543,7 +5551,7 @@ function createCheckpointWriter(layout, plan, settings, checkpoint) {
   };
 }
 
-export function createSocialArtifactRedactionFailure(error, { artifactKind = 'artifact' } = {}) {
+export function createSocialArtifactRedactionFailure(error, { artifactKind = 'artifact' } = /** @type {any} */ ({})) {
   const reason = reasonCodeSummary('redaction-failed');
   const causeSummary = Object.fromEntries(Object.entries(redactValue({
     name: error instanceof Error ? error.name : undefined,
@@ -5571,7 +5579,7 @@ export async function writeRedactedJsonArtifactWithAudit(
   artifactPath,
   auditPath,
   payload,
-  { artifactKind = 'artifact' } = {},
+  { artifactKind = 'artifact' } = /** @type {any} */ ({}),
 ) {
   let prepared;
   try {
@@ -5597,7 +5605,7 @@ function externalReportMarkdownAuditPath(markdownPath) {
   return `${markdownPath}.redaction-audit.json`;
 }
 
-function prepareRedactedMarkdownArtifact(markdown, { artifactKind = 'social-report-markdown' } = {}) {
+function prepareRedactedMarkdownArtifact(markdown, { artifactKind = 'social-report-markdown' } = /** @type {any} */ ({})) {
   try {
     const redactedMarkdown = redactValue(String(markdown ?? ''));
     const markdownText = String(redactedMarkdown.value ?? '');
@@ -5650,7 +5658,7 @@ export async function writeInternalSocialReportArtifact(reportPath, auditPath, m
 function capabilityHookMatchSummaryForLifecycleEvent(lifecycleEvent, {
   capabilityHookRegistry,
   capabilityHooks,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const hooks = capabilityHookRegistry ?? capabilityHooks;
   if (!hooks) {
     return undefined;
@@ -5658,13 +5666,13 @@ function capabilityHookMatchSummaryForLifecycleEvent(lifecycleEvent, {
   return matchCapabilityHooksForLifecycleEvent(hooks, lifecycleEvent);
 }
 
-function socialActionTaskType(finalResult = {}) {
+function socialActionTaskType(finalResult = /** @type {any} */ ({})) {
   const taskId = String(finalResult.runtimeRisk?.riskState?.taskId ?? '');
   const [, taskType] = taskId.split(':');
   return taskType || finalResult.plan?.action || 'social-action';
 }
 
-function buildSocialRiskBlockedLifecycleEvent(finalResult = {}, layout, hookOptions = {}) {
+function buildSocialRiskBlockedLifecycleEvent(finalResult = /** @type {any} */ ({}), layout, hookOptions = /** @type {any} */ ({})) {
   const riskState = finalResult.runtimeRisk?.riskState;
   if (finalResult.runtimeRisk?.hardStop !== true || !riskState) {
     return null;
@@ -5701,7 +5709,7 @@ function buildSocialRiskBlockedLifecycleEvent(finalResult = {}, layout, hookOpti
   return lifecycleEvent;
 }
 
-async function writeSocialArtifacts(finalResult, layout, checkpointWriter, hookOptions = {}) {
+async function writeSocialArtifacts(finalResult, layout, checkpointWriter, hookOptions = /** @type {any} */ ({})) {
   await ensureDir(layout.runDir);
   await ensureDir(layout.mediaDir);
   const rows = extractArtifactRows(finalResult);
@@ -5909,7 +5917,7 @@ async function prepareSocialRelationSurface(session, config, plan, settings) {
   return clickResult;
 }
 
-function normalizeRunSettings(plan, options = {}) {
+function normalizeRunSettings(plan, options = /** @type {any} */ ({})) {
   const outputRoot = path.resolve(String(options.outDir || options.outputDir || path.join(process.cwd(), 'runs', 'social', plan.siteKey)).trim());
   const artifactRunId = compactSlug(
     options.artifactRunId || options.runId || new Date().toISOString().replace(/[:.]/gu, '-'),
@@ -5974,7 +5982,7 @@ function normalizeRunSettings(plan, options = {}) {
   };
 }
 
-async function resolveSocialSessionMetadata(plan, config, settings, artifactLayout, deps = {}) {
+async function resolveSocialSessionMetadata(plan, config, settings, artifactLayout, deps = /** @type {any} */ ({})) {
   if (settings.useUnifiedSessionHealth === true && !settings.sessionManifest) {
     const sessionResult = await (deps.runSessionTask ?? runSessionTask)({
       action: 'health',
@@ -5998,7 +6006,7 @@ async function resolveSocialSessionMetadata(plan, config, settings, artifactLayo
   });
 }
 
-export async function runSocialAction(options = {}, deps = {}) {
+export async function runSocialAction(options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const plan = buildSocialActionPlan(options);
   const config = resolveSocialSiteConfig(plan.siteKey);
   const settings = normalizeRunSettings(plan, options);
@@ -6008,7 +6016,7 @@ export async function runSocialAction(options = {}, deps = {}) {
     throw new Error(`${plan.action} requires --account <handle> or a profile URL.`);
   }
   if (settings.dryRun) {
-    const dryRunResult = {
+    const dryRunResult = /** @type {any} */ ({
       ok: true,
       siteKey: plan.siteKey,
       dryRun: true,
@@ -6031,7 +6039,7 @@ export async function runSocialAction(options = {}, deps = {}) {
       },
       ...sessionMetadata,
       artifacts: artifactPathSummary(artifactLayout),
-    };
+    });
     dryRunResult.sessionGate = buildSocialSessionGate(dryRunResult, {
       requiresAuth: plan.requiresAuth === true,
     });
@@ -6049,7 +6057,7 @@ export async function runSocialAction(options = {}, deps = {}) {
   if (initialSessionGate.status === 'blocked') {
     const loadedCheckpoint = await loadSocialCheckpoint(artifactLayout, settings);
     const checkpoint = createCheckpointWriter(artifactLayout, plan, settings, loadedCheckpoint);
-    const blockedResult = {
+    const blockedResult = /** @type {any} */ ({
       ok: false,
       siteKey: plan.siteKey,
       dryRun: false,
@@ -6064,7 +6072,7 @@ export async function runSocialAction(options = {}, deps = {}) {
       ...sessionMetadata,
       sessionGate: initialSessionGate,
       artifacts: artifactPathSummary(artifactLayout),
-    };
+    });
     blockedResult.markdown = renderMarkdownReport(blockedResult);
     blockedResult.recoveryRunbook = buildRecoveryRunbook(blockedResult, artifactLayout);
     blockedResult.artifacts = await writeSocialArtifacts(blockedResult, artifactLayout, checkpoint, {
@@ -6091,7 +6099,7 @@ export async function runSocialAction(options = {}, deps = {}) {
   let session = null;
   let apiCapture = null;
   let authResult = null;
-  let finalResult = null;
+  let finalResult = /** @type {any} */ (null);
   let sessionCloseSummary = null;
   try {
     await ensureDir(artifactLayout.runDir);
@@ -6197,7 +6205,7 @@ export async function runSocialAction(options = {}, deps = {}) {
       }
     }
     let surfacePreparation = null;
-    let pageResult = null;
+    let pageResult = /** @type {any} */ (null);
     if (shouldUseFollowedProfileDateScan(config, executionPlan, settings)) {
       pageResult = await collectFollowedPostsByProfiles(session, config, executionPlan, settings, checkpoint, apiCapture);
       surfacePreparation = pageResult.surfacePreparation ?? null;
@@ -6228,11 +6236,11 @@ export async function runSocialAction(options = {}, deps = {}) {
         : settings;
       const domPageResult = await collectSocialPage(session, config, executionPlan, domPageSettings);
       const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action));
-      let apiArchive = shouldCollectContentApiArchive
+      let apiArchive = /** @type {any} */ (shouldCollectContentApiArchive
         ? await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint, {
           seedOnly: false,
         })
-        : null;
+        : null);
       if (shouldCollectContentApiArchive && isInstagramFeedUserArchivePlan(config, executionPlan, settings)) {
         const instagramFeedArchive = await collectInstagramFeedUserArchive(session, config, executionPlan, settings, checkpoint);
         if (shouldPreferInstagramDirectArchive(apiArchive, instagramFeedArchive)) {
@@ -6241,7 +6249,7 @@ export async function runSocialAction(options = {}, deps = {}) {
       }
       pageResult = mergePageResultWithArchive(domPageResult, apiArchive, settings, executionPlan);
       if (config.siteKey === 'x' && isSocialRelationAction(executionPlan.action)) {
-        const relationApi = await collectXRelationApiUsers(session, executionPlan, settings, apiCapture);
+        const relationApi = /** @type {any} */ (await collectXRelationApiUsers(session, executionPlan, settings, apiCapture));
         if (relationApi) {
           const relationApiUsers = Array.isArray(relationApi.users) ? relationApi.users : [];
           pageResult = {
@@ -6389,13 +6397,13 @@ export async function runSocialAction(options = {}, deps = {}) {
   }
 }
 
-function socialProgressSubject(parsed = {}) {
+function socialProgressSubject(parsed = /** @type {any} */ ({})) {
   const site = normalizeText(parsed.site) || 'social';
   const action = normalizeText(parsed.action) || 'action';
   return `${site}:${action}`;
 }
 
-function socialProgressArtifacts(result = {}) {
+function socialProgressArtifacts(result = /** @type {any} */ ({})) {
   const artifacts = result?.artifacts && typeof result.artifacts === 'object'
     ? result.artifacts
     : {};
@@ -6416,7 +6424,7 @@ function socialProgressArtifacts(result = {}) {
     .map(([key, value]) => ({ label: key, path: value }));
 }
 
-function socialProgressMessage(result = {}) {
+function socialProgressMessage(result = /** @type {any} */ ({})) {
   const outcome = normalizeText(result?.outcome?.status) || (result?.ok === true ? 'completed' : 'stopped');
   const reason = normalizeText(result?.outcome?.reason);
   const itemCount = Number(result?.result?.archive?.items?.length ?? result?.counts?.items ?? 0);
@@ -6429,7 +6437,7 @@ function socialProgressMessage(result = {}) {
   ].filter(Boolean).join(' ');
 }
 
-export async function runSocialActionCli(argv = process.argv.slice(2), defaults = {}) {
+export async function runSocialActionCli(argv = process.argv.slice(2), defaults = /** @type {any} */ ({})) {
   initializeCliUtf8();
   const parsed = parseSocialActionArgs(argv, defaults);
   if (parsed.help) {

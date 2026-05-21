@@ -44,6 +44,9 @@ export async function main(argv) {
       stageResult?.outputs?.jsonPath ? { label: 'JSON', path: stageResult.outputs.jsonPath } : null,
       stageResult?.outputs?.markdownPath ? { label: 'Markdown', path: stageResult.outputs.markdownPath } : null,
     ].filter(Boolean),
+    isFailureResult: undefined,
+    failureReason: undefined,
+    warningResult: undefined,
     failureTitle: 'Social live report safely stopped',
     nextStep: 'Check the runs root and rerun the report after the expected manifests exist.',
   });

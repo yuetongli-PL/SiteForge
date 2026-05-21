@@ -78,14 +78,14 @@ const SOCIAL_SITE_KEYS = new Set(['x', 'instagram']);
 const VIDEO_SITE_KEYS = new Set(['bilibili', 'douyin', 'jable']);
 const CHAPTER_ADAPTERS = new Set(['chapter-content']);
 
-function collectConfigReasonCodes(value, path = []) {
+function collectConfigReasonCodes(value, path = /** @type {any[]} */ ([])) {
   if (Array.isArray(value)) {
     return value.flatMap((item, index) => collectConfigReasonCodes(item, [...path, index]));
   }
   if (!value || typeof value !== 'object') {
     return [];
   }
-  const hits = [];
+  const hits = /** @type {any[]} */ ([]);
   for (const [key, child] of Object.entries(value)) {
     if (key === 'reasonCode' || key === 'unsupportedLiveReasonCode') {
       hits.push({ path: [...path, key].join('.'), code: child });

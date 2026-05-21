@@ -32,7 +32,7 @@ async function listMarkdownFiles(dirPath) {
 }
 
 export function buildSourceMapper(kbDir, sourcesDocument) {
-  const mappings = [];
+  const mappings = /** @type {any[]} */ ([]);
   for (const source of sourcesDocument?.activeSources ?? []) {
     const rawAbsolute = path.resolve(kbDir, source.rawDir);
     if (source.originalDir) {
@@ -64,7 +64,7 @@ export function buildSourceMapper(kbDir, sourcesDocument) {
 }
 
 export function buildRawToOriginalMapper(kbDir, sourcesDocument) {
-  const mappings = [];
+  const mappings = /** @type {any[]} */ ([]);
   for (const source of sourcesDocument?.activeSources ?? []) {
     if (!source.originalDir || !source.rawDir) {
       continue;
@@ -133,7 +133,7 @@ function pushUniqueString(values, value) {
 }
 
 function compileSummarySiteKeys(locator) {
-  const keys = [];
+  const keys = /** @type {any[]} */ ([]);
   for (const key of [
     locator?.siteContext?.registryRecord?.siteKey,
     locator?.siteContext?.capabilitiesRecord?.siteKey,
@@ -155,7 +155,7 @@ function compileSummaryMatchesLocator(summary, locator) {
   return Boolean(summarySiteKey && allowed.includes(summarySiteKey));
 }
 
-async function readCompileResultSummary(pathValue, { locator, requireSiteMatch = false } = {}) {
+async function readCompileResultSummary(pathValue, { locator, requireSiteMatch = false } = /** @type {any} */ ({})) {
   const resolved = path.resolve(pathValue);
   if (!await pathExists(resolved)) {
     throw new Error(`compile summary not found: ${resolved}`);
@@ -208,7 +208,7 @@ async function pushCompileSummaryDirCandidates(candidates, seen, dirPath) {
 async function resolveLatestCompileResultSummary(locator) {
   const workspaceRoot = path.resolve(locator?.workspaceRoot ?? process.cwd());
   const rootDir = path.join(workspaceRoot, COMPILE_SUMMARY_ROOT);
-  const candidates = [];
+  const candidates = /** @type {any[]} */ ([]);
   const seen = new Set();
   const keys = compileSummarySiteKeys(locator);
 
@@ -225,7 +225,7 @@ async function resolveLatestCompileResultSummary(locator) {
     await pushCompileSummaryCandidate(candidates, seen, path.join(latestRootRunDir, COMPILE_SUMMARY_FILE));
   }
 
-  const matched = [];
+  const matched = /** @type {any[]} */ ([]);
   for (const candidate of candidates) {
     try {
       const resolution = await readCompileResultSummary(candidate.path, {
@@ -242,7 +242,7 @@ async function resolveLatestCompileResultSummary(locator) {
 }
 
 export async function resolveSourceInputs(url, options) {
-  const warnings = [];
+  const warnings = /** @type {any[]} */ ([]);
   const workspaceRoot = process.cwd();
   const locator = await resolveArtifactLocatorContext({
     workspaceRoot,
@@ -363,7 +363,7 @@ export async function resolveSourceInputs(url, options) {
       path.join(kbDir, 'schema', 'naming-rules.json'),
       path.join(kbDir, 'schema', 'evidence-rules.json'),
     ];
-    const missing = [];
+    const missing = /** @type {any[]} */ ([]);
     for (const filePath of schemaFiles) {
       if (!await pathExists(filePath)) {
         missing.push(filePath);

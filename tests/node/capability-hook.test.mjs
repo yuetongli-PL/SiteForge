@@ -35,7 +35,7 @@ import {
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-function collectFiles(dir, predicate, collected = []) {
+function collectFiles(dir, predicate, collected = /** @type {any[]} */ ([])) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -221,12 +221,14 @@ test('CapabilityHook execution policy is versioned, descriptor-only, and fail-cl
   });
   assert.equal(assertHookExecutionPolicyCompatible(CAPABILITY_HOOK_EXECUTION_POLICY), true);
   assert.throws(
+    // @ts-ignore
     () => assertHookExecutionPolicyCompatible({}),
     /schemaVersion is required/u,
   );
   assert.throws(
     () => assertHookExecutionPolicyCompatible({
       ...CAPABILITY_HOOK_EXECUTION_POLICY,
+      // @ts-ignore
       schemaVersion: CAPABILITY_HOOK_EXECUTION_POLICY_SCHEMA_VERSION + 1,
     }),
     /not compatible/u,
@@ -234,7 +236,9 @@ test('CapabilityHook execution policy is versioned, descriptor-only, and fail-cl
   assert.throws(
     () => assertHookExecutionPolicyCompatible({
       ...CAPABILITY_HOOK_EXECUTION_POLICY,
+      // @ts-ignore
       executionMode: 'executable_dispatch',
+      // @ts-ignore
       executableDispatchEnabled: true,
     }),
     /descriptor-only, dispatch-disabled, and fail closed/u,
@@ -242,6 +246,7 @@ test('CapabilityHook execution policy is versioned, descriptor-only, and fail-cl
   assert.throws(
     () => assertHookExecutionPolicyCompatible({
       ...CAPABILITY_HOOK_EXECUTION_POLICY,
+      // @ts-ignore
       executableHooksAllowed: true,
     }),
     /descriptor-only, dispatch-disabled, and fail closed/u,
@@ -249,6 +254,7 @@ test('CapabilityHook execution policy is versioned, descriptor-only, and fail-cl
   assert.throws(
     () => assertHookExecutionPolicyCompatible({
       ...CAPABILITY_HOOK_EXECUTION_POLICY,
+      // @ts-ignore
       hookInvocationAllowed: true,
     }),
     /descriptor-only, dispatch-disabled, and fail closed/u,
@@ -256,6 +262,7 @@ test('CapabilityHook execution policy is versioned, descriptor-only, and fail-cl
   assert.throws(
     () => assertHookExecutionPolicyCompatible({
       ...CAPABILITY_HOOK_EXECUTION_POLICY,
+      // @ts-ignore
       failClosed: false,
     }),
     /descriptor-only, dispatch-disabled, and fail closed/u,
@@ -263,6 +270,7 @@ test('CapabilityHook execution policy is versioned, descriptor-only, and fail-cl
   assert.throws(
     () => assertHookExecutionPolicyCompatible({
       ...CAPABILITY_HOOK_EXECUTION_POLICY,
+      // @ts-ignore
       dispatch: () => {},
     }),
     /must not include executable functions/u,
@@ -444,6 +452,7 @@ test('CapabilityHook registry snapshot is versioned, compatible, and descriptor-
     }],
   });
   assert.equal(assertCapabilityHookRegistrySnapshotCompatible(snapshot), true);
+  // @ts-ignore
   assert.deepEqual(createCapabilityHookRegistrySnapshot(registry), snapshot);
 
   snapshot.hooks[0].phase = 'on_failure';
@@ -496,6 +505,7 @@ test('CapabilityHook registry snapshot fails closed for drift, duplicates, and s
   );
   assert.throws(
     () => createCapabilityHookRegistrySnapshot({
+      // @ts-ignore
       list() {
         return [safeSnapshot.hooks[0]];
       },
@@ -579,6 +589,7 @@ test('CapabilityHook lifecycle matching rejects untrusted registry-like objects 
   };
 
   assert.throws(
+    // @ts-ignore
     () => matchCapabilityHooksForLifecycleEvent(untrustedRegistry, {
       eventType: 'capture.manifest.written',
       siteKey: 'x',
@@ -833,6 +844,7 @@ test('CapabilityHook lifecycle evidence summarizes capture phases and matches wi
     },
   ]);
 
+  // @ts-ignore
   const evidence = createCapabilityHookLifecycleEvidence(registry, {
     eventType: 'capture.api_candidates.written',
     traceId: 'trace-capture-hook-evidence',
@@ -922,6 +934,7 @@ test('CapabilityHook lifecycle evidence summarizes session producer phases and s
     },
   ]);
 
+  // @ts-ignore
   const evidence = createCapabilityHookLifecycleEvidence(registry, {
     eventType: 'session.run.completed',
     traceId: 'trace-session-hook-evidence',
@@ -1031,6 +1044,7 @@ test('CapabilityHook lifecycle evidence summarizes API catalog producer phases a
     },
   ]);
 
+  // @ts-ignore
   const schemaEvidence = createCapabilityHookLifecycleEvidence(registry, {
     eventType: 'api.catalog.schema_incompatible',
     traceId: 'trace-api-catalog-schema-hook-evidence',
@@ -1067,6 +1081,7 @@ test('CapabilityHook lifecycle evidence summarizes API catalog producer phases a
     ['api-catalog-schema-failure-observer', 'api-catalog-verify-observer'],
   );
 
+  // @ts-ignore
   const collectionEvidence = createCapabilityHookLifecycleEvidence(registry, {
     eventType: 'api.catalog.collection.written',
     traceId: 'trace-api-catalog-collection-hook-evidence',

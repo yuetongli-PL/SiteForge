@@ -36,7 +36,7 @@ function isDouyinHttpUrl(value) {
 }
 
 function filterObservedHeaders(headers) {
-  const filtered = {};
+  const filtered = /** @type {any} */ ({});
   for (const [rawName, rawValue] of Object.entries(headers ?? {})) {
     const name = normalizeHeaderName(rawName);
     const value = normalizeText(rawValue);
@@ -48,7 +48,7 @@ function filterObservedHeaders(headers) {
   return filtered;
 }
 
-function buildAcceptLanguage(navigatorInfo = {}) {
+function buildAcceptLanguage(navigatorInfo = /** @type {any} */ ({})) {
   const languages = Array.isArray(navigatorInfo.languages)
     ? navigatorInfo.languages.map((value) => normalizeText(value)).filter(Boolean)
     : [];
@@ -64,7 +64,7 @@ function deriveSafeHeaders({
   pageInfo,
   observedNavigationHeaders,
 }) {
-  const headers = {};
+  const headers = /** @type {any} */ ({});
   const observed = filterObservedHeaders(observedNavigationHeaders);
   const userAgent = normalizeText(observed['user-agent'])
     || normalizeText(navigatorInfo?.userAgent)
@@ -133,7 +133,7 @@ async function createSessionTarget(client, inputUrl, timeoutMs) {
 
     const requestHeadersById = new Map();
     let documentRequestId = null;
-    let navigationRequest = null;
+    let navigationRequest = /** @type {{ url?: string, method?: string, headers?: Record<string, string> } | null} */ (null);
 
     const offRequest = client.on(
       'Network.requestWillBeSent',
@@ -208,9 +208,10 @@ async function createSessionTarget(client, inputUrl, timeoutMs) {
     );
 
     const runtimeValue = runtimeResult?.result?.value ?? {};
+    const navigationHeaders = navigationRequest?.headers ?? {};
     const mergedObservedHeaders = documentRequestId
-      ? requestHeadersById.get(documentRequestId) ?? navigationRequest?.headers ?? {}
-      : navigationRequest?.headers ?? {};
+      ? requestHeadersById.get(documentRequestId) ?? navigationHeaders
+      : navigationHeaders;
     const pageInfo = {
       url: normalizeText(runtimeValue.locationHref) || normalizeText(inputUrl),
       origin: normalizeText(runtimeValue.locationOrigin),

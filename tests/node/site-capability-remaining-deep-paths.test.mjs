@@ -38,10 +38,10 @@ import {
 } from '../../src/domain/sessions/security-guard.mjs';
 
 function adapterFromDecisions({
-  nodes = {},
-  apis = {},
-  capabilityEvidenceFixtures = [],
-} = {}) {
+  nodes = /** @type {any} */ ({}),
+  apis = /** @type {any} */ ({}),
+  capabilityEvidenceFixtures = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   return {
     id: 'synthetic-adapter',
     metadata: {
@@ -473,6 +473,7 @@ test('executable capability requires exact adapter schema test policy risk appro
       capability: 'search-content',
       evidenceKinds: ['adapter', 'schema', 'test', 'policy', 'risk'],
     }),
+    // @ts-ignore
     (error) => error.code === 'capability.executable_quorum_missing',
   );
 });
@@ -554,6 +555,7 @@ test('Layer-owned runtime consumer accepts Layer receipt without direct task exe
       siteKey: 'synthetic-navigation',
       adapterVersion: 'adapter-v1',
     }),
+    // @ts-ignore
     (error) => error.code === 'execution.approval_required',
   );
   assert.throws(
@@ -571,6 +573,7 @@ test('Layer-owned runtime consumer accepts Layer receipt without direct task exe
       siteKey: 'synthetic-navigation',
       adapterVersion: 'adapter-v1',
     }),
+    // @ts-ignore
     (error) => error.code === 'execution.raw_sensitive_material_rejected',
   );
 });

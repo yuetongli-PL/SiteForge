@@ -429,6 +429,7 @@ function createGeneratedAuthRequiredReadGraphFromLayerDescriptor(descriptor) {
       schemaVersion: 1,
       id: authRequirementId,
       type: 'AuthRequirementNode',
+      // @ts-ignore
       authKind: 'login-state',
       requiredFor: [capabilityId],
       proofType: 'redacted-session-view',
@@ -1469,6 +1470,7 @@ test('graph inventory runtime descriptors enforce no database or runtime state s
       ['DisabledGraphInventoryRuntimeConsumerOptions', (options) => createDisabledGraphInventoryRuntimeConsumerResult(design, options)],
       ['GraphInventoryRepoOutputDryRunOptions', (options) => createGraphInventoryRepoOutputDryRun(graph, options)],
     ]) {
+      // @ts-ignore
       const message = captureThrownMessage(() => factory({ [fieldName]: value }));
       assert.match(
         message,
@@ -1635,6 +1637,7 @@ test('schema-governed graph inventory output remains dry-run and design-only', a
       ['GraphInventoryRepoOutputDryRunOptions', (options) => createGraphInventoryRepoOutputDryRun(graph, options)],
       ['GraphRepoOutputApprovalGateDesignOptions', (options) => createGraphRepoOutputApprovalGateDesign(dryRun, options)],
     ]) {
+      // @ts-ignore
       const message = captureThrownMessage(() => factory({ [fieldName]: true }));
       assert.match(
         message,
@@ -1657,6 +1660,7 @@ test('schema-governed graph inventory output remains dry-run and design-only', a
       ['DisabledGraphInventoryRuntimeConsumerOptions', (options) => createDisabledGraphInventoryRuntimeConsumerResult(design, options)],
       ['GraphInventoryRepoOutputDryRunOptions', (options) => createGraphInventoryRepoOutputDryRun(graph, options)],
     ]) {
+      // @ts-ignore
       const message = captureThrownMessage(() => factory({ [fieldName]: value }));
       assert.match(
         message,

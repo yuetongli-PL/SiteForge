@@ -80,6 +80,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;

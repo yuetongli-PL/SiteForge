@@ -50,6 +50,7 @@ const REPO_ROOT_URL = new URL('../../../', import.meta.url);
 const CONCRETE_SITE_SEMANTIC_PATTERN =
   /\b(?:22biqu|bilibili|douyin|instagram|jable|moodyz|xiaohongshu)\b/iu;
 
+/** @param {Record<string, any>} options */
 function schemaEvidence({
   schemaName,
   version,
@@ -64,6 +65,7 @@ function schemaEvidence({
   });
 }
 
+/** @param {Record<string, any>} options */
 function boundary({
   role,
   owner = 'CapabilityService',
@@ -97,6 +99,7 @@ function siteSemanticsStatement(statement) {
   });
 }
 
+/** @param {Record<string, any>} options */
 function serviceEntry({
   stableName,
   serviceKind,
@@ -746,6 +749,7 @@ export function getCapabilityServiceInventoryEntry(stableName) {
   return listCapabilityServiceInventory().find((entry) => entry.stableName === normalizedName) ?? null;
 }
 
+/** @param {Record<string, any>} [entry] */
 export function assertCapabilityServiceContract(entry = {}) {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     throw new Error('CapabilityService entry must be an object');
@@ -778,6 +782,7 @@ export function assertCapabilityServiceContract(entry = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} [entry] */
 export function assertCapabilityServiceArchitecture(entry = {}) {
   assertCapabilityServiceContract(entry);
   assertCapabilityServicePathBoundary(entry, entry.modulePath, 'modulePath');
@@ -825,6 +830,7 @@ export function assertCapabilityServiceInventoryArchitecture(entries = listCapab
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export async function assertCapabilityServiceInventoryRuntimeCompatible({
   entries = listCapabilityServiceInventory(),
   importModule = importInventoryModule,

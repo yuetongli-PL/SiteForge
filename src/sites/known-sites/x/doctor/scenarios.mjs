@@ -1,6 +1,6 @@
 // @ts-check
 
-function uniqueSortedStrings(values = []) {
+function uniqueSortedStrings(values = /** @type {any[]} */ ([])) {
   return [...new Set(
     (Array.isArray(values) ? values : [])
       .map((value) => String(value ?? '').trim())
@@ -33,7 +33,7 @@ function collectionCount(primaryValue, ...collections) {
 function diagnoseXSurfaceState(state = null, {
   authRequired = false,
   authAvailable = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const pageFacts = state?.pageFacts ?? {};
   const antiCrawlSignals = uniqueSortedStrings(pageFacts.antiCrawlSignals);
   const pathname = normalizePathname(state?.finalUrl);
@@ -93,7 +93,7 @@ function findStateForPath(states, expectedUrl, findStateByUrl, findFirstState) {
 
 export function createXSiteDoctorScenarioSuite({
   helpers,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const {
     buildScenarioResult,
     extractAntiCrawlSignals,

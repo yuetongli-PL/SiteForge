@@ -51,7 +51,7 @@ function runNode(script, args) {
   });
 }
 
-function dispatchForRoute(route, args = []) {
+function dispatchForRoute(route, args = /** @type {any[]} */ ([])) {
   return {
     script: routeScript(route),
     args: [...(route.prefixArgs ?? []), ...args],

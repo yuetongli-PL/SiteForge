@@ -39,6 +39,7 @@ import {
 } from './manifest-bridge.mjs';
 import { resolveSessionSiteDefinition } from './site-modules.mjs';
 
+/** @param {Record<string, any>} [request] */
 function requestSessionRequirement(request = {}) {
   if (request.sessionRequired === true) {
     return 'required';
@@ -52,6 +53,7 @@ function requestSessionRequirement(request = {}) {
   return request.sessionRequirement ?? 'optional';
 }
 
+/** @param {Record<string, any>} [request] */
 function injectedHealth(request = {}, plan = {}) {
   if (!request.status && !request.reason && !request.riskCauseCode && !request.riskSignals?.length) {
     return null;
@@ -73,6 +75,7 @@ function normalizeLifecycleText(value) {
   return text || undefined;
 }
 
+/** @param {Record<string, any>} [manifest] */
 function sessionLifecycleContext(manifest = {}) {
   const traceId = normalizeLifecycleText(manifest.runId);
   return {
@@ -83,6 +86,10 @@ function sessionLifecycleContext(manifest = {}) {
   };
 }
 
+/**
+ * @param {Record<string, any>} lifecycleEvent
+ * @param {Record<string, any>} options
+ */
 function capabilityHookMatchSummaryForLifecycleEvent(lifecycleEvent, {
   capabilityHookRegistry,
   capabilityHooks,
@@ -94,6 +101,7 @@ function capabilityHookMatchSummaryForLifecycleEvent(lifecycleEvent, {
   return matchCapabilityHooksForLifecycleEvent(hooks, lifecycleEvent);
 }
 
+/** @param {Record<string, any>} [manifest] */
 function revocationHandleForSessionMaterialization(manifest = {}) {
   const digest = createHash('sha256')
     .update(JSON.stringify({
@@ -108,6 +116,7 @@ function revocationHandleForSessionMaterialization(manifest = {}) {
   return `rvk-${digest}`;
 }
 
+/** @param {Record<string, any>} [manifest] */
 function sessionMaterializationRevocationContext(manifest = {}, options = {}, deps = {}) {
   const now = deps.now instanceof Date ? deps.now : new Date();
   const revocationStore = deps.sessionRevocationStore
@@ -130,11 +139,13 @@ function sessionMaterializationRevocationContext(manifest = {}, options = {}, de
   };
 }
 
+/** @param {Record<string, any>} [manifest] */
 function sessionViewMaterializationAuditForRun(manifest = {}, expected = {}, context = {}) {
   try {
     return sessionViewMaterializationAuditFromRunManifest(manifest, expected, context);
   } catch (error) {
     if (/revocation handle/iu.test(String(error?.message ?? ''))) {
+      // @ts-ignore
       throw createSessionFailureError(`Session materialization failed: ${error.message}`, {
         cause: error,
         reasonCode: SESSION_REVOCATION_FAILURE_REASON_CODE,
@@ -144,6 +155,10 @@ function sessionViewMaterializationAuditForRun(manifest = {}, expected = {}, con
   }
 }
 
+/**
+ * @param {Record<string, any>} [manifest]
+ * @param {Record<string, any>} options
+ */
 function sessionRiskStateForReason(manifest = {}, {
   reasonCode = manifest.reason,
   state,
@@ -176,6 +191,7 @@ function isNonBlockingSessionHealthSignal(signal) {
   return signal === 'profile-health-recovered-after-session-reuse';
 }
 
+/** @param {Record<string, any>} [plan] */
 async function createSessionHealthRecovery(plan = {}, health = {}, deps = {}) {
   const rawSignals = [
     health.riskCauseCode,
@@ -216,6 +232,7 @@ function attachSessionRiskState(error, manifest = {}, options = {}) {
   return riskState;
 }
 
+/** @param {Record<string, any>} [request] */
 export async function createSessionPlan(request = {}, options = {}, deps = {}) {
   const siteDefinition = await resolveSessionSiteDefinition(request, options, deps);
   return normalizeSessionPlan({
@@ -256,6 +273,7 @@ async function inspectHealthForPlan(plan, request = {}, deps = {}) {
   };
 }
 
+/** @param {Record<string, any>} [request] */
 export async function runSessionTask(request = {}, options = {}, deps = {}) {
   const action = request.action ?? request.command ?? 'health';
   if (!['health', 'plan-repair'].includes(action)) {

@@ -15,7 +15,7 @@ function asText(value) {
   return String(value ?? '').trim();
 }
 
-export function createConfirmationLoginStateReuse({ targetRoute = null } = {}) {
+export function createConfirmationLoginStateReuse({ targetRoute = null } = /** @type {any} */ ({})) {
   return {
     strategy: 'reuse_existing_system_browser_login_state',
     status: 'ready_for_sanitized_authorized_recheck',
@@ -36,7 +36,7 @@ export function createConfirmationLoginStateReuse({ targetRoute = null } = {}) {
   };
 }
 
-export function createConfirmationLoginStateReuseSummary(options = {}) {
+export function createConfirmationLoginStateReuseSummary(options = /** @type {any} */ ({})) {
   const reuse = createConfirmationLoginStateReuse(options);
   return {
     strategy: reuse.strategy,
@@ -64,7 +64,7 @@ export function confirmationDecisionForMode(mode) {
   return 'confirmed_safe_capability';
 }
 
-export function confirmationUsablePathForMode(mode, { targetRoute = null } = {}) {
+export function confirmationUsablePathForMode(mode, { targetRoute = null } = /** @type {any} */ ({})) {
   const loginStateReuse = createConfirmationLoginStateReuse({ targetRoute });
   if (mode === 'limited') {
     return {
@@ -91,7 +91,7 @@ export function confirmationUsablePathForMode(mode, { targetRoute = null } = {})
 }
 
 export function buildCapabilityConfirmationDecisionRecord({
-  capability = {},
+  capability = /** @type {any} */ ({}),
   mode = 'confirmation',
   decision = confirmationDecisionForMode(mode),
   command = 'siteforge build interactive capability selection',
@@ -100,7 +100,7 @@ export function buildCapabilityConfirmationDecisionRecord({
   updatedAt = new Date().toISOString(),
   targetRoute = null,
   usableAfterSelection = decision !== 'disabled',
-} = {}) {
+} = /** @type {any} */ ({})) {
   const usablePath = confirmationUsablePathForMode(mode, { targetRoute });
   const capabilityId = asText(capability.id ?? capability.capabilityId ?? capability.name);
   return {
@@ -125,11 +125,11 @@ export function buildCapabilityConfirmationDecisionRecord({
   };
 }
 
-function decisionKey(entry = {}) {
+function decisionKey(entry = /** @type {any} */ ({})) {
   return `${entry.capabilityId}:${entry.decision}:${entry.mode}`;
 }
 
-export function mergeCapabilityDecisionRecords(existingDecisions = [], nextDecisions = []) {
+export function mergeCapabilityDecisionRecords(existingDecisions = /** @type {any[]} */ ([]), nextDecisions = /** @type {any[]} */ ([])) {
   const decisionByKey = new Map((Array.isArray(existingDecisions) ? existingDecisions : []).map((entry) => [
     decisionKey(entry),
     entry,

@@ -9,7 +9,7 @@ export function relativeOrCompactPath(value, {
   cwd = process.cwd(),
   verbose = false,
   maxWidth = 70,
-} = {}) {
+} = /** @type {any} */ ({})) {
   if (!value) return null;
   const text = String(value);
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(text)) {
@@ -40,7 +40,7 @@ export function displayPath(value, cwd = process.cwd()) {
   return relative && !relative.startsWith('..') ? relative.replace(/\\/gu, '/') : String(value).replace(/\\/gu, '/');
 }
 
-export function displayReportPath(value, options = {}) {
+export function displayReportPath(value, options = /** @type {any} */ ({})) {
   const reportPath = String(value ?? '').trim();
   if (!reportPath) {
     return '-';

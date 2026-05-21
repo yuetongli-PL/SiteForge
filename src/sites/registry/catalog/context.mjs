@@ -4,7 +4,7 @@ import { readSiteCapabilities } from './capabilities.mjs';
 import { readSiteRegistry } from './registry.mjs';
 import { sanitizeHost, uniqueSortedStrings } from '../../../shared/normalize.mjs';
 
-export async function readSiteContext(workspaceRoot = process.cwd(), host, pathOptions = {}) {
+export async function readSiteContext(workspaceRoot = process.cwd(), host, pathOptions = /** @type {any} */ ({})) {
   const hostKey = sanitizeHost(host);
   const [registry, capabilities] = await Promise.all([
     readSiteRegistry(workspaceRoot, pathOptions),
@@ -21,7 +21,7 @@ export async function readSiteContext(workspaceRoot = process.cwd(), host, pathO
   };
 }
 
-export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = []) {
+export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   const candidates = [
     siteContext?.capabilitiesRecord?.primaryArchetype,
     siteContext?.registryRecord?.siteArchetype,
@@ -30,7 +30,7 @@ export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = 
   return candidates.find((value) => typeof value === 'string' && value.trim()) ?? null;
 }
 
-function resolveFallbackStringList(fallbacks = []) {
+function resolveFallbackStringList(fallbacks = /** @type {any[]} */ ([])) {
   return uniqueSortedStrings(
     fallbacks.flatMap((value) => {
       if (Array.isArray(value)) {
@@ -41,7 +41,7 @@ function resolveFallbackStringList(fallbacks = []) {
   );
 }
 
-export function resolveCapabilityFamiliesFromSiteContext(siteContext, fallbacks = []) {
+export function resolveCapabilityFamiliesFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   const fallbackValues = resolveFallbackStringList(fallbacks);
   if (fallbackValues.length) {
     return fallbackValues;
@@ -52,7 +52,7 @@ export function resolveCapabilityFamiliesFromSiteContext(siteContext, fallbacks 
   ]);
 }
 
-export function resolveSupportedIntentsFromSiteContext(siteContext, fallbacks = []) {
+export function resolveSupportedIntentsFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   const fallbackValues = resolveFallbackStringList(fallbacks);
   if (fallbackValues.length) {
     return fallbackValues;
@@ -62,7 +62,7 @@ export function resolveSupportedIntentsFromSiteContext(siteContext, fallbacks = 
   ]);
 }
 
-export function resolveSafeActionKindsFromSiteContext(siteContext, fallbacks = []) {
+export function resolveSafeActionKindsFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   const fallbackValues = resolveFallbackStringList(fallbacks);
   if (fallbackValues.length) {
     return fallbackValues;
@@ -72,7 +72,7 @@ export function resolveSafeActionKindsFromSiteContext(siteContext, fallbacks = [
   ]);
 }
 
-export function resolvePageTypesFromSiteContext(siteContext, fallbacks = []) {
+export function resolvePageTypesFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   const fallbackValues = resolveFallbackStringList(fallbacks);
   if (fallbackValues.length) {
     return fallbackValues;
@@ -82,7 +82,7 @@ export function resolvePageTypesFromSiteContext(siteContext, fallbacks = []) {
   ]);
 }
 
-function resolveFirstStringFromSiteContext(siteContext, keys = [], fallbacks = []) {
+function resolveFirstStringFromSiteContext(siteContext, keys = /** @type {any[]} */ ([]), fallbacks = /** @type {any[]} */ ([])) {
   const candidates = [
     ...keys.flatMap((key) => [
       siteContext?.capabilitiesRecord?.[key],
@@ -93,10 +93,10 @@ function resolveFirstStringFromSiteContext(siteContext, keys = [], fallbacks = [
   return candidates.find((value) => typeof value === 'string' && value.trim()) ?? null;
 }
 
-export function resolveSiteKeyFromSiteContext(siteContext, fallbacks = []) {
+export function resolveSiteKeyFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolveFirstStringFromSiteContext(siteContext, ['siteKey'], fallbacks);
 }
 
-export function resolveAdapterIdFromSiteContext(siteContext, fallbacks = []) {
+export function resolveAdapterIdFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolveFirstStringFromSiteContext(siteContext, ['adapterId'], fallbacks);
 }

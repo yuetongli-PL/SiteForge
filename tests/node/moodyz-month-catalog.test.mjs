@@ -54,7 +54,7 @@ test('Moodyz month collector probes every day and keeps sparse single-work dates
       card({ code: 'MIHD001', title: 'May 14 Work Duplicate' }),
     ].join('\n')],
   ]);
-  const fetched = [];
+  const fetched = /** @type {any[]} */ ([]);
 
   const catalog = await collectMoodyzMonthCatalog({
     year: 2026,

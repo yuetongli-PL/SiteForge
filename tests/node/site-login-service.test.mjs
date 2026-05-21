@@ -88,11 +88,17 @@ test('runSiteLoginBootstrap delegates through the injectable siteLogin seam', as
     headless: false,
   });
 
+  // @ts-ignore
   assert.equal(captured.url, 'https://www.bilibili.com/');
+  // @ts-ignore
   assert.equal(captured.options.profilePath, 'profiles/www.bilibili.com.json');
+  // @ts-ignore
   assert.equal(captured.options.reuseLoginState, true);
+  // @ts-ignore
   assert.equal(captured.options.autoLogin, true);
+  // @ts-ignore
   assert.equal(captured.options.headless, false);
+  // @ts-ignore
   assert.deepEqual(captured.deps, { source: 'test' });
   assert.equal(report.auth.status, 'session-reused');
 });
@@ -117,12 +123,19 @@ test('inspectRequestReusableSiteSession delegates through the injectable session
     marker: 'deps',
   });
 
+  // @ts-ignore
   assert.equal(captured.inputUrl, 'https://www.douyin.com/');
+  // @ts-ignore
   assert.equal(captured.settings.browserProfileRoot, 'profiles');
+  // @ts-ignore
   assert.equal(captured.settings.userDataDir, 'profiles/www.douyin.com');
+  // @ts-ignore
   assert.equal(captured.settings.reuseLoginState, true);
+  // @ts-ignore
   assert.equal(captured.options.profilePath, 'profiles/www.douyin.com.json');
+  // @ts-ignore
   assert.equal(captured.options.siteProfile.host, 'www.douyin.com');
+  // @ts-ignore
   assert.equal(captured.deps.marker, 'deps');
   assert.equal(report.authAvailable, true);
 });

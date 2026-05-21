@@ -30,6 +30,7 @@ import {
   createIncrementalCompileSummary,
 } from './digest.mjs';
 
+/** @param {Record<string, any>} [request] */
 function siteIdFromRequest(request = {}) {
   if (request.siteId) {
     return request.siteId;
@@ -44,6 +45,7 @@ function siteIdFromRequest(request = {}) {
   }
 }
 
+/** @param {Record<string, any>} [request] */
 function siteKeyFromRequest(request = {}) {
   if (request.siteKey) {
     return request.siteKey;
@@ -83,6 +85,7 @@ function normalizeCapabilityAlias(value) {
     .replace(/^-+|-+$/gu, '') || null;
 }
 
+/** @param {Record<string, any>} [capability] */
 function capabilityAliases(capability = {}) {
   return [
     capability.capabilityKey,
@@ -92,6 +95,7 @@ function capabilityAliases(capability = {}) {
   ].map(normalizeCapabilityAlias).filter(Boolean);
 }
 
+/** @param {Record<string, any>} options */
 function unresolvedRequestedCapabilityNodes({
   siteKey,
   capabilities = [],
@@ -112,6 +116,7 @@ function unresolvedRequestedCapabilityNodes({
     }));
 }
 
+/** @param {Record<string, any>} options */
 export function createStaticSiteCompileManifest({
   request,
   registrySite = {},

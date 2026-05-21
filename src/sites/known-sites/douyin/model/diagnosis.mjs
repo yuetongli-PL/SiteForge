@@ -35,12 +35,12 @@ export function isDouyinAuthenticatedSubpage(value) {
   return DOUYIN_AUTHENTICATED_SUBPAGES.includes(normalizeDouyinAuthorSubpage(value, ''));
 }
 
-export function detectDouyinAntiCrawlSignals({ title = '', documentText = '' } = {}) {
+export function detectDouyinAntiCrawlSignals({ title = '', documentText = '' } = /** @type {any} */ ({})) {
   const source = cleanText([title, documentText].filter(Boolean).join(' ')).toLowerCase();
   if (!source) {
     return [];
   }
-  const signals = [];
+  const signals = /** @type {any[]} */ ([]);
   if (
     /captcha|verify|challenge/u.test(source)
     || /\u9a8c\u8bc1\u7801/u.test(source)
@@ -64,7 +64,7 @@ export function detectDouyinAntiCrawlSignals({ title = '', documentText = '' } =
   return uniqueSortedStrings(signals);
 }
 
-export function deriveDouyinAntiCrawlReasonCode(signals = []) {
+export function deriveDouyinAntiCrawlReasonCode(signals = /** @type {any[]} */ ([])) {
   const normalized = uniqueSortedStrings(toArray(signals).map((value) => cleanText(value).toLowerCase()).filter(Boolean));
   if (normalized.some((value) => /verify|captcha|middle|middle-page-loading/u.test(value))) {
     return 'anti-crawl-verify';
@@ -94,7 +94,7 @@ function deriveCount(primaryValue, ...fallbackCollections) {
   return normalizedPrimary;
 }
 
-export function diagnoseDouyinSurfaceState(state = null, options = {}) {
+export function diagnoseDouyinSurfaceState(state = null, options = /** @type {any} */ ({})) {
   const pageFacts = state?.pageFacts ?? options.pageFacts ?? {};
   const pageType = String(state?.pageType ?? options.pageType ?? '');
   const antiCrawlSignals = uniqueSortedStrings(toArray(pageFacts?.antiCrawlSignals).filter(Boolean));

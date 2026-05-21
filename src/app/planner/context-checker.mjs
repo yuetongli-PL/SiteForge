@@ -22,6 +22,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -50,6 +51,10 @@ function isSatisfied(state, keys = ['satisfied', 'available', 'ready', 'approved
   return keys.some((key) => state[key] === true || state[key] === 'satisfied' || state[key] === 'available');
 }
 
+/**
+ * @param {Record<string, any>} failures
+ * @param {Record<string, any>} options
+ */
 function addFailure(failures, {
   reasonCode,
   requirement,
@@ -112,6 +117,10 @@ function checkCompatibility(failures, context) {
   }
 }
 
+/**
+ * @param {Record<string, any>} failures
+ * @param {Record<string, any>} options
+ */
 function checkRequirements(failures, {
   context,
   requirements,
@@ -202,6 +211,7 @@ export function assertPlannerContextCheckCompatible(check) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function checkPlannerContext({
   routeResolution,
   planContext,

@@ -9,8 +9,8 @@ import { createXiaohongshuSiteDoctorScenarioSuite } from '../../known-sites/xiao
 export function resolveSiteDoctorScenarioSuite({
   siteKey = null,
   profile = null,
-  helpers = {},
-} = {}) {
+  helpers = /** @type {any} */ ({}),
+} = /** @type {any} */ ({})) {
   switch (String(siteKey ?? '')) {
     case 'bilibili':
       return createBilibiliSiteDoctorScenarioSuite({ profile, helpers });

@@ -74,7 +74,7 @@ const DEFAULT_PORT_BY_PROTOCOL = Object.freeze({
   'https:': '443',
 });
 
-export function mergeBuildPolicy(policy = {}) {
+export function mergeBuildPolicy(policy = /** @type {any} */ ({})) {
   return {
     ...DEFAULT_BUILD_POLICY,
     ...Object.fromEntries(Object.entries(policy ?? {}).filter(([, value]) => value !== undefined)),
@@ -168,7 +168,7 @@ export function buildArtifactDir({
   artifactRoot,
   siteId,
   buildId,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const expectedRoot = path.resolve(cwd, '.siteforge', 'sites');
   const resolvedRoot = artifactRoot === undefined || artifactRoot === null
     ? expectedRoot
@@ -205,7 +205,7 @@ export function buildEvidence({
   endpoint,
   method,
   confidence = 1,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return normalizeEvidenceObject({
     type,
     source,

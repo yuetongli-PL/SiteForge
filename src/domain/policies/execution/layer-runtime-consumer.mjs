@@ -37,6 +37,7 @@ import {
 } from './validator.mjs';
 
 function fail(message, code = 'execution.layer_consumer_invalid') {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -55,6 +56,10 @@ function auditSummaryFromJson(auditJson) {
   };
 }
 
+/**
+ * @param {Record<string, any>} lifecycleEvent
+ * @param {Record<string, any>} options
+ */
 function capabilityHookMatchSummaryForLifecycleEvent(lifecycleEvent, {
   capabilityHookRegistry,
   capabilityHooks,
@@ -71,6 +76,10 @@ function capabilityHookMatchSummaryForLifecycleEvent(lifecycleEvent, {
   );
 }
 
+/**
+ * @param {Record<string, any>} lifecycleEvent
+ * @param {Record<string, any>} options
+ */
 function lifecycleEventWithCapabilityHookMatches(lifecycleEvent, {
   capabilityHookRegistry,
   capabilityHooks,
@@ -93,6 +102,7 @@ function lifecycleEventWithCapabilityHookMatches(lifecycleEvent, {
   });
 }
 
+/** @param {Record<string, any>} options */
 async function writeExecutionArtifactPair({
   outDir,
   fileName,
@@ -110,6 +120,7 @@ async function writeExecutionArtifactPair({
   };
 }
 
+/** @param {Record<string, any>} [result] */
 export function assertLayerOwnedRuntimeConsumerResultCompatible(result = {}) {
   if (result.schemaVersion !== SITE_CAPABILITY_EXECUTION_SCHEMA_VERSION) {
     fail('LayerOwnedRuntimeConsumerResult schemaVersion is not compatible', 'execution.version_incompatible');
@@ -140,6 +151,7 @@ export function assertLayerOwnedRuntimeConsumerResultCompatible(result = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createLayerOwnedRuntimeConsumerResult({
   handoffDescriptor,
   policyDecision,
@@ -246,6 +258,7 @@ export function createLayerOwnedRuntimeConsumerResult({
   return result;
 }
 
+/** @param {Record<string, any>} options */
 export async function writeLayerOwnedRuntimeFeedbackArtifacts({
   outDir,
   result,

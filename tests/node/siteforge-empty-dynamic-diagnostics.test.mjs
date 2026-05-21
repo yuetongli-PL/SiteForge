@@ -52,7 +52,9 @@ test('empty static crawl blocks before graph, verification, registry, or draft s
       /Static crawl produced no pages with evidence/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'siteforge-static-crawl-empty');
+    // @ts-ignore
     const buildReport = await readJson(path.join(failure.artifactDir, 'build_report.json'));
     assert.equal(buildReport.status, 'blocked');
     assert.equal(buildReport.failedStage, 'crawlStatic');
@@ -63,11 +65,14 @@ test('empty static crawl blocks before graph, verification, registry, or draft s
     assert.equal(buildReport.stages.generateSkill.status, 'skipped');
     assert.equal(buildReport.summary.registryStatus, null);
 
+    // @ts-ignore
     const crawlStatic = await readJson(path.join(failure.artifactDir, 'crawl_static.json'));
     assert.equal(crawlStatic.status, 'blocked');
     assert.equal(crawlStatic.summary.pages, 0);
     assert.equal(crawlStatic.summary.blockedReason, 'siteforge-static-crawl-empty');
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'graph.json')), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'verification_report.json')), false);
     assert.equal(await pathExists(path.join(buildReport.workspace.buildDir, 'skill', 'skill.yaml')), false);
 
@@ -111,7 +116,9 @@ test('dynamic shell pages block with static limitation diagnostics before draft 
       /Static crawl found only empty or dynamic-shell pages/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'siteforge-static-evidence-unavailable');
+    // @ts-ignore
     const crawlStatic = await readJson(path.join(failure.artifactDir, 'crawl_static.json'));
     assert.equal(crawlStatic.status, 'blocked');
     assert.equal(crawlStatic.diagnostics.staticEvidence.dynamicShell, 1);
@@ -119,6 +126,7 @@ test('dynamic shell pages block with static limitation diagnostics before draft 
     assert.equal(crawlStatic.warnings.some((warning) => /browser-rendered crawl may be required/u.test(warning)), true);
     assert.equal(crawlStatic.warnings.some((warning) => /javascript-required-copy/u.test(warning)), true);
 
+    // @ts-ignore
     const buildReport = await readJson(path.join(failure.artifactDir, 'build_report.json'));
     assert.equal(buildReport.status, 'blocked');
     assert.equal(buildReport.failedStage, 'crawlStatic');

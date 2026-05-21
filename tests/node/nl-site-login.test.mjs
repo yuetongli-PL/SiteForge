@@ -27,7 +27,7 @@ test('parseNaturalLanguageSiteLoginRequest supports bilibili url and no-reuse wo
 
 test('runNaturalLanguageSiteLogin forwards parsed options into siteLogin', async () => {
   /** @type {any[]} */
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
   const result = await runNaturalLanguageSiteLogin('登录 哔哩哔哩 账号 foo 密码 bar', {
     outDir: 'C:/tmp/custom-out',
   }, {

@@ -83,7 +83,7 @@ export function socialAuthImportRedactionAuditPath(manifestPath) {
 
 function toSocialAuthImportRedactionFailure(error) {
   const recovery = reasonCodeSummary('redaction-failed');
-  const failure = new Error('Social auth import manifest redaction failed');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Social auth import manifest redaction failed'));
   failure.name = 'SocialAuthImportManifestRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -281,7 +281,7 @@ function parseJsonCookies(text) {
 }
 
 function parseNetscapeCookies(text) {
-  const cookies = [];
+  const cookies = /** @type {any[]} */ ([]);
   for (const line of text.split(/\r?\n/u)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) {
@@ -401,7 +401,7 @@ function mapSameSite(value) {
   return undefined;
 }
 
-function normalizeCookie(cookie, defaults = {}) {
+function normalizeCookie(cookie, defaults = /** @type {any} */ ({})) {
   const name = String(cookie?.name ?? '').trim();
   if (!name) {
     return null;
@@ -426,7 +426,7 @@ function normalizeCookie(cookie, defaults = {}) {
   return normalized;
 }
 
-export function parseCookieInput(text, { defaultDomain = '.x.com' } = {}) {
+export function parseCookieInput(text, { defaultDomain = '.x.com' } = /** @type {any} */ ({})) {
   const source = String(text ?? '').trim();
   if (!source) {
     return [];
@@ -444,7 +444,7 @@ export function parseCookieInput(text, { defaultDomain = '.x.com' } = {}) {
     .filter(Boolean);
 }
 
-export function summarizeCookies(cookies, requiredCookieNames = []) {
+export function summarizeCookies(cookies, requiredCookieNames = /** @type {any[]} */ ([])) {
   const names = [...new Set(cookies.map((cookie) => cookie.name))].sort((left, right) => left.localeCompare(right, 'en'));
   const missingRequired = requiredCookieNames.filter((name) => !names.includes(name));
   return {
@@ -463,8 +463,8 @@ function cookieIdentity(cookie) {
   ].join('|');
 }
 
-export function validateCookieImportPlan(cookies, cookieSummary = {}, siteConfig = {}) {
-  const errors = [];
+export function validateCookieImportPlan(cookies, cookieSummary = /** @type {any} */ ({}), siteConfig = /** @type {any} */ ({})) {
+  const errors = /** @type {any[]} */ ([]);
   if (!Array.isArray(cookies) || cookies.length === 0) {
     errors.push({
       code: 'empty-cookie-input',
@@ -544,14 +544,14 @@ function toCookieParam(cookie, origin) {
 
 function createCookieApiRejectedError(imported) {
   const failed = imported.filter((entry) => entry.success !== true);
-  const error = new Error(`Cookie API rejected ${failed.length} of ${imported.length} cookie(s)`);
+  const error = /** @type {Error & Record<string, any>} */ (new Error(`Cookie API rejected ${failed.length} of ${imported.length} cookie(s)`));
   error.code = 'cookie-api-rejected';
   error.failedCookieNames = [...new Set(failed.map((entry) => entry.name).filter(Boolean))];
   return error;
 }
 
 async function importCookiesIntoSession(session, cookies, origin) {
-  const results = [];
+  const results = /** @type {any[]} */ ([]);
   for (const cookie of cookies) {
     const params = toCookieParam(cookie, origin);
     const result = await session.send('Network.setCookie', params);
@@ -564,7 +564,7 @@ async function importCookiesIntoSession(session, cookies, origin) {
   return results;
 }
 
-export async function runImport(options = {}, deps = {}) {
+export async function runImport(options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const siteConfig = deps.siteConfig ?? SITE_CONFIG[options.site ?? 'x'];
   if (!siteConfig) {
     throw new Error(`Unsupported site: ${options.site ?? 'x'}`);
@@ -689,7 +689,7 @@ export async function runImport(options = {}, deps = {}) {
 
 function toSocialAuthImportCliSummaryRedactionFailure(error) {
   const recovery = reasonCodeSummary('redaction-failed');
-  const failure = new Error('Social auth import CLI summary redaction failed');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Social auth import CLI summary redaction failed'));
   failure.name = 'SocialAuthImportCliSummaryRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';

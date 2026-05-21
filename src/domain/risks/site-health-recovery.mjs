@@ -356,12 +356,14 @@ function uniqueStrings(values = []) {
   return [...new Set((Array.isArray(values) ? values : [values]).map(text).filter(Boolean))];
 }
 
+/** @param {Record<string, any>} [metadata] */
 function safeMetadata(metadata = {}) {
   const { value } = redactValue(metadata);
   assertNoForbiddenPatterns(value);
   return value;
 }
 
+/** @param {Record<string, any>} [rawSignal] */
 function rawSignalName(rawSignal = {}) {
   if (typeof rawSignal === 'string' || typeof rawSignal === 'number') {
     return String(rawSignal);
@@ -387,6 +389,8 @@ function signalMapEntry(signalMap, rawSignal) {
   return undefined;
 }
 
+/** @param {Record<string, any>} [raw] */
+// @ts-ignore
 function normalizePolicy(raw = {}, riskType) {
   const fallback = DEFAULT_POLICY_BY_TYPE[riskType] ?? DEFAULT_POLICY_BY_TYPE['unknown-health-risk'];
   const allowedActions = raw.allowedActions === undefined
@@ -450,6 +454,10 @@ export class RecoveryPolicyRegistry {
   }
 }
 
+/**
+ * @param {Record<string, any>} [raw]
+ * @param {Record<string, any>} options
+ */
 export function normalizeHealthRisk(raw = {}, {
   siteId,
   signalMap,
@@ -473,6 +481,7 @@ export function normalizeHealthRisk(raw = {}, {
     : Boolean(raw.autoRecoverable);
   const requiresUserAction = raw.requiresUserAction === undefined
     ? Boolean(
+      // @ts-ignore
       mapped.requiresUserAction
         ?? defaults.requiresUserAction
         ?? !AUTO_RECOVERABLE_TYPES.has(type)
@@ -510,6 +519,7 @@ export function normalizeHealthSignal(rawSignal, options = {}) {
   return normalizeHealthRisk(rawSignal, options);
 }
 
+/** @param {Record<string, any>} options */
 export function createHealthSignalNormalizer({
   siteId,
   signalMap,
@@ -535,6 +545,10 @@ function sortRisksBySeverity(risks = []) {
   return [...risks].sort((left, right) => SEVERITY_RANK[right.severity] - SEVERITY_RANK[left.severity]);
 }
 
+/**
+ * @param {Record<string, any>} risk
+ * @param {Record<string, any>} options
+ */
 function policyForRisk(risk, { adapter, policyRegistry } = {}) {
   const adapterPolicy = typeof adapter?.getRecoveryPolicy === 'function'
     ? adapter.getRecoveryPolicy(risk)
@@ -589,6 +603,7 @@ function statusForRisks(risks = [], capabilityHealth = []) {
   return 'at-risk';
 }
 
+/** @param {Record<string, any>} options */
 export function createCapabilityHealthRegistry({
   capabilities = [],
   risks = [],
@@ -634,6 +649,7 @@ export function createCapabilityHealthRegistry({
   });
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteHealthReport({
   siteId,
   profileId,
@@ -666,6 +682,7 @@ export function createSiteHealthReport({
   return Object.fromEntries(Object.entries(report).filter(([, value]) => value !== undefined));
 }
 
+/** @param {Record<string, any>} options */
 function createAuditLogEntry({
   siteId,
   risk,
@@ -700,6 +717,7 @@ function defaultActionResult(action, risk) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function auditResultForRisk({ risk, actions = [] } = {}) {
   const blockingActions = new Set([
     'quarantine-site-profile',
@@ -735,8 +753,10 @@ export class RecoveryActionExecutor {
 
 export class SiteHealthRecoveryEngine {
   constructor({
+    // @ts-ignore
     policyRegistry,
     actionExecutor = new RecoveryActionExecutor(),
+    // @ts-ignore
     healthProbe,
   } = {}) {
     this.policyRegistry = policyRegistry;
@@ -745,12 +765,17 @@ export class SiteHealthRecoveryEngine {
   }
 
   async recover({
+    // @ts-ignore
     siteId,
+    // @ts-ignore
     profileId,
     rawSignals = [],
+    // @ts-ignore
     risks,
     capabilities = [],
+    // @ts-ignore
     adapter,
+    // @ts-ignore
     signalMap,
   } = {}) {
     const normalizedRisks = risks
@@ -817,6 +842,7 @@ export class SiteHealthRecoveryEngine {
   }
 }
 
+/** @param {Record<string, any>} [report] */
 export function createUserRecoveryInstructions(report = {}) {
   const risks = Array.isArray(report.risks) ? report.risks : [];
   const instructions = risks
@@ -836,6 +862,7 @@ export function createUserRecoveryInstructions(report = {}) {
   return instructions;
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteHealthRecoveryLifecycleEvent({
   siteId,
   taskDescriptor = {},

@@ -31,7 +31,7 @@ async function createRouteResolution() {
   });
 }
 
-function createPlanContext(overrides = {}) {
+function createPlanContext(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     graphCompatibility: {
@@ -226,7 +226,9 @@ test('Planner context checker rejects raw sensitive and runtime material', async
       requirements: REQUIRED_REQUIREMENTS,
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },

@@ -14,7 +14,7 @@ export function createPageStateCore() {
     return value === undefined || value === null ? [] : [value];
   }
 
-  function uniqueSortedStrings(values = []) {
+  function uniqueSortedStrings(values = /** @type {any[]} */ ([])) {
     return [...new Set(
       toArray(values)
         .flatMap((value) => Array.isArray(value) ? value : [value])
@@ -23,7 +23,7 @@ export function createPageStateCore() {
     )].sort((left, right) => left.localeCompare(right, 'en'));
   }
 
-  function uniqueValues(values = []) {
+  function uniqueValues(values = /** @type {any[]} */ ([])) {
     return [...new Set(
       toArray(values)
         .flatMap((value) => Array.isArray(value) ? value : [value])
@@ -36,9 +36,9 @@ export function createPageStateCore() {
     return cleanText(signal).toLowerCase();
   }
 
-  function dedupeSignalsInOrder(signals = []) {
+  function dedupeSignalsInOrder(signals = /** @type {any[]} */ ([])) {
     const seen = new Set();
-    const result = [];
+    const result = /** @type {any[]} */ ([]);
     for (const signal of toArray(signals).map(normalizeSignal).filter(Boolean)) {
       if (seen.has(signal)) {
         continue;
@@ -51,7 +51,7 @@ export function createPageStateCore() {
 
   function deriveRuntimeEvidence(pageFacts = null, {
     antiCrawlReasonCode = null,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const antiCrawlSignals = dedupeSignalsInOrder(pageFacts?.antiCrawlSignals);
     const resolvedAntiCrawlReasonCode = cleanText(pageFacts?.antiCrawlReasonCode ?? antiCrawlReasonCode) || null;
     const antiCrawlDetected = (
@@ -81,7 +81,7 @@ export function createPageStateCore() {
     };
   }
 
-  function mergePageStateEvidence(pageFacts = null, runtimeEvidence = null, options = {}) {
+  function mergePageStateEvidence(pageFacts = null, runtimeEvidence = null, options = /** @type {any} */ ({})) {
     const derived = deriveRuntimeEvidence(pageFacts, options);
     const mergedRuntimeEvidence = (derived || runtimeEvidence)
       ? {
@@ -128,12 +128,12 @@ export function createPageStateCore() {
     }
   }
 
-  function matchesExactPath(pathname, values = []) {
+  function matchesExactPath(pathname, values = /** @type {any[]} */ ([])) {
     const normalizedPath = String(pathname || '/').toLowerCase();
     return toArray(values).some((value) => String(value || '').toLowerCase() === normalizedPath);
   }
 
-  function matchesPathPrefix(pathname, values = []) {
+  function matchesPathPrefix(pathname, values = /** @type {any[]} */ ([])) {
     const normalizedPath = String(pathname || '/').toLowerCase();
     return toArray(values).some((value) => {
       const normalizedValue = String(value || '').toLowerCase();
@@ -159,7 +159,7 @@ export function createPageStateCore() {
       return [];
     }
 
-    const configured = [];
+    const configured = /** @type {any[]} */ ([]);
     if (hasConfiguredPaths(pageTypes.homeExact) || hasConfiguredPaths(pageTypes.homePrefixes)) {
       configured.push('home');
     }
@@ -261,7 +261,7 @@ export function createPageStateCore() {
     parsedUrl = null,
     pathname = '/',
     hostname = '',
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const normalizedHostname = normalizeHostname(hostname || parsedUrl?.hostname || '');
     if (normalizedHostname === 'jable.tv') {
       const modelsPathKind = classifyJableModelsPath(pathname);
@@ -329,7 +329,7 @@ export function createPageStateCore() {
     return null;
   }
 
-  function inferPageTypeFromUrl(input, siteProfile = null, { inferSiteSpecificPageType = inferBuiltinSiteSpecificPageType } = {}) {
+  function inferPageTypeFromUrl(input, siteProfile = null, { inferSiteSpecificPageType = inferBuiltinSiteSpecificPageType } = /** @type {any} */ ({})) {
     const normalized = normalizeUrlNoFragment(input);
     if (!normalized) {
       return 'unknown-page';

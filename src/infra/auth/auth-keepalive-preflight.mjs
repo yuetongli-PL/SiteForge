@@ -49,7 +49,7 @@ function buildKeepaliveDecision(sessionHealthSummary, thresholdMinutes) {
   };
 }
 
-export async function maybeRunAuthenticatedKeepalivePreflight(inputUrl, options = {}, deps = {}) {
+export async function maybeRunAuthenticatedKeepalivePreflight(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const authProfile = deps.authProfile ?? await (deps.resolveSiteAuthProfile ?? resolveSiteAuthProfile)(inputUrl, {
     profilePath: options.profilePath,
     siteProfile: deps.siteProfile ?? null,

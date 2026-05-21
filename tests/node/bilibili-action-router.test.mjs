@@ -121,6 +121,8 @@ test('runBilibiliAction triggers site-login before authenticated downloads', asy
   assert.equal(result.plan.route, 'download-after-login');
   assert.equal(result.reasonCode, 'download-started');
   assert.equal(result.loginReport.auth.status, 'session-reused');
+  // @ts-ignore
   assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/known-sites\/bilibili\/download\/python\/bilibili\.py$/u);
+  // @ts-ignore
   assert.equal((await stat(String(capturedArgs?.[0] ?? ''))).isFile(), true);
 });

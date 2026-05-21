@@ -49,6 +49,7 @@ function assertFocusedRegressionBatchCompatible(batch, index) {
   assertOptionalStringArray(batch.recentPassingEvidence, `batches.${index}.recentPassingEvidence`);
 }
 
+/** @param {Record<string, any>} [definition] */
 export function assertFocusedRegressionBatchDefinitionCompatible(definition = {}) {
   if (!isObject(definition)) {
     throw new Error('FocusedRegressionBatchDefinition must be an object');
@@ -85,6 +86,7 @@ export function assertFocusedRegressionBatchDefinitionCompatible(definition = {}
   return true;
 }
 
+/** @param {Record<string, any>} [overrides] */
 export function createFocusedRegressionBatchDefinitionFixture(overrides = {}) {
   return {
     schemaVersion: FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION,

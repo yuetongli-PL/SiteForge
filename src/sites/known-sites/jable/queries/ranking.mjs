@@ -167,7 +167,7 @@ function normalizeTagHref(href, baseUrl) {
 }
 
 export function parseJableVideoCardsFromHtml(html, sourcePage, siteBaseUrl = 'https://jable.tv/') {
-  const cards = [];
+  const cards = /** @type {any[]} */ ([]);
   const cardPattern = /<div class="video-img-box[\s\S]*?<h6 class="title">\s*<a href="([^"]+)">([\s\S]*?)<\/a>\s*<\/h6>\s*<p class="sub-title">([\s\S]*?)<\/p>/giu;
   let match;
   let rank = 0;
@@ -216,9 +216,9 @@ export function extractJableCategoryTaxonomy(statesDocument) {
 }
 
 export function buildJableTaxonomyIndex(categoryGroups) {
-  const allLabels = [];
-  const tagEntries = [];
-  const groupEntries = [];
+  const allLabels = /** @type {any[]} */ ([]);
+  const tagEntries = /** @type {any[]} */ ([]);
+  const groupEntries = /** @type {any[]} */ ([]);
   for (const group of categoryGroups ?? []) {
     const groupCanonical = normalizeJableRankingLabel(group.groupLabel);
     const groupEntry = {
@@ -283,7 +283,7 @@ export function resolveJableRankingTarget(queryOrLabel, taxonomyIndex) {
       suggestions: [],
     };
   }
-  const matches = [];
+  const matches = /** @type {any[]} */ ([]);
   for (const entry of taxonomyIndex?.allLabels ?? []) {
     const aliases = [...new Set([entry.canonicalLabel, ...(entry.aliases ?? []).map((value) => normalizeJableRankingLabel(value))].filter(Boolean))];
     for (const alias of aliases) {

@@ -257,7 +257,7 @@ function renderBilibiliFlowsReference(input) {
     .sort((left, right) => String(left.intentType).localeCompare(String(right.intentType), 'en'))
     .map((intent) => {
       const normalizedIntentType = normalizeBilibiliIntentType(intent.intentType);
-      const bodyLines = [];
+      const bodyLines = /** @type {any[]} */ ([]);
       if (normalizedIntentType === 'search-video') {
         bodyLines.push(`- Example user requests: ${samples.searchQueries.map((item) => `\`search ${item}\``).join(', ') || '`search bilibili videos`'}`);
         bodyLines.push('- Start state: any verified public bilibili page.');
@@ -334,7 +334,7 @@ function renderBilibiliNlIntentsReference(input) {
   const { context, helpers } = input;
   const samples = buildBilibiliSamples(helpers.collectBilibiliSamples(context));
   const intentTypes = helpers.getIntentTypes(context);
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   if (intentTypes.has('search-video') || intentTypes.has('search-book') || intentTypes.has('search-work')) {
     entries.push({
       title: 'Search videos',

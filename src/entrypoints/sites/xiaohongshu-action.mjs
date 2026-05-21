@@ -94,8 +94,8 @@ function parseAuthorResumeStateFlag(value) {
 
 export function parseXiaohongshuActionArgs(argv = process.argv.slice(2)) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   const appendFlag = (key, value) => {
     if (!(key in flags)) {
       flags[key] = value;
@@ -192,7 +192,7 @@ function selectCliPayload(result, outputMode) {
 
 function toXiaohongshuActionCliOutputRedactionFailure(error) {
   const recovery = reasonCodeSummary('redaction-failed');
-  const failure = new Error('Xiaohongshu action CLI output redaction failed');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Xiaohongshu action CLI output redaction failed'));
   failure.name = 'XiaohongshuActionCliOutputRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -297,7 +297,7 @@ export async function runXiaohongshuActionCli(argv = process.argv.slice(2)) {
     siteKey: 'xiaohongshu',
     host: 'www.xiaohongshu.com',
   });
-  let result;
+  let result = /** @type {any} */ (undefined);
   try {
     result = {
       ...await runXiaohongshuAction(stripProgressCliOptions(request)),

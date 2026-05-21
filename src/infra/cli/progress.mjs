@@ -85,7 +85,7 @@ export function resolveProgressMode({
   json = false,
   quiet = false,
   env = process.env,
-} = {}) {
+} = /** @type {any} */ ({})) {
   if (json || quiet) {
     return 'silent';
   }
@@ -225,12 +225,12 @@ export function formatEta(seconds) {
   return `${hours}h${String(restMinutes).padStart(2, '0')}m`;
 }
 
-export function calculateRate({ current = 0, startTime = Date.now(), now = Date.now() } = {}) {
+export function calculateRate({ current = 0, startTime = Date.now(), now = Date.now() } = /** @type {any} */ ({})) {
   const elapsedSeconds = Math.max(0, (Number(now) - Number(startTime)) / 1000);
   return elapsedSeconds > 0 ? Number(current) / elapsedSeconds : 0;
 }
 
-export function calculateEta({ current = 0, total = 0, startTime = Date.now(), now = Date.now() } = {}) {
+export function calculateEta({ current = 0, total = 0, startTime = Date.now(), now = Date.now() } = /** @type {any} */ ({})) {
   const rate = calculateRate({ current, startTime, now });
   if (!rate || !Number.isFinite(rate)) {
     return Infinity;
@@ -326,7 +326,7 @@ function displayProgressValues(node) {
 }
 
 class ProgressNode {
-  constructor(renderer, task, level, input = {}) {
+  constructor(renderer, task, level, input = /** @type {any} */ ({})) {
     this.renderer = renderer;
     this.taskRef = task;
     this.level = level;
@@ -346,53 +346,53 @@ class ProgressNode {
     this.failedItems = input.failedItems ?? 0;
     this.skippedExisting = input.skippedExisting ?? 0;
     this.verified = input.verified ?? 0;
-    this.artifacts = [];
-    this.warnings = [];
+    this.artifacts = /** @type {any[]} */ ([]);
+    this.warnings = /** @type {any[]} */ ([]);
     this.startedAt = Date.now();
     this.updatedAt = this.startedAt;
   }
 
-  stage(input = {}) {
+  stage(input = /** @type {any} */ ({})) {
     return this.renderer._createStage(this, input);
   }
 
-  subtask(input = {}) {
+  subtask(input = /** @type {any} */ ({})) {
     return this.renderer._createSubtask(this, input);
   }
 
-  update(input = {}) {
+  update(input = /** @type {any} */ ({})) {
     this.renderer._updateNode(this, { ...input, status: input.status ?? 'running' });
     return this;
   }
 
-  succeed(input = {}) {
+  succeed(input = /** @type {any} */ ({})) {
     this.renderer._updateNode(this, { ...input, status: 'success' });
     return this;
   }
 
-  warn(input = {}) {
+  warn(input = /** @type {any} */ ({})) {
     this.renderer._updateNode(this, { ...input, status: 'warning' });
     return this;
   }
 
-  fail(input = {}) {
+  fail(input = /** @type {any} */ ({})) {
     this.renderer._updateNode(this, { ...input, status: 'failed' });
     return this;
   }
 
-  skip(input = {}) {
+  skip(input = /** @type {any} */ ({})) {
     this.renderer._updateNode(this, { ...input, status: 'skipped' });
     return this;
   }
 
-  cancel(input = {}) {
+  cancel(input = /** @type {any} */ ({})) {
     this.renderer._updateNode(this, { ...input, status: 'cancelled' });
     return this;
   }
 }
 
 class ProgressRenderer {
-  constructor(options = {}) {
+  constructor(options = /** @type {any} */ ({})) {
     this.stdout = options.stdout ?? process.stdout;
     this.stderr = options.stderr ?? process.stderr;
     this.stdin = options.stdin ?? defaultStdin;
@@ -418,7 +418,7 @@ class ProgressRenderer {
     this.currentLineWidth = 0;
   }
 
-  task(input = {}) {
+  task(input = /** @type {any} */ ({})) {
     const task = new ProgressNode(this, null, 'task', input);
     this.tasks.set(task.id, task);
     this._emitPlain(task, 'start');
@@ -426,11 +426,11 @@ class ProgressRenderer {
     return task;
   }
 
-  download(input = {}) {
+  download(input = /** @type {any} */ ({})) {
     return this.task({ id: input.id ?? 'download', title: input.title ?? 'Download', ...input });
   }
 
-  failure(input = {}) {
+  failure(input = /** @type {any} */ ({})) {
     const safeInput = redactProgressData(input);
     if (this.mode === 'silent') return;
     if (this.mode === 'plain') {
@@ -459,7 +459,7 @@ class ProgressRenderer {
     this.currentLineWidth = 0;
   }
 
-  async confirm({ message, defaultValue = false, nonInteractive = 'default' } = {}) {
+  async confirm({ message, defaultValue = false, nonInteractive = 'default' } = /** @type {any} */ ({})) {
     if (this.mode !== 'interactive') {
       if (nonInteractive === 'error') {
         throw new Error('Cannot prompt for confirmation in non-TTY mode.');
@@ -477,7 +477,7 @@ class ProgressRenderer {
     }
   }
 
-  async select({ message, choices = [], defaultValue = undefined, nonInteractive = 'default' } = {}) {
+  async select({ message, choices = /** @type {any[]} */ ([]), defaultValue = undefined, nonInteractive = 'default' } = /** @type {any} */ ({})) {
     if (this.mode !== 'interactive') {
       if (nonInteractive === 'error' && defaultValue === undefined) {
         throw new Error('Cannot prompt for selection in non-TTY mode.');
@@ -498,7 +498,7 @@ class ProgressRenderer {
     }
   }
 
-  async multiSelect({ message, choices = [], defaultValue = [], nonInteractive = 'default' } = {}) {
+  async multiSelect({ message, choices = /** @type {any[]} */ ([]), defaultValue = /** @type {any[]} */ ([]), nonInteractive = 'default' } = /** @type {any} */ ({})) {
     if (this.mode !== 'interactive') {
       if (nonInteractive === 'error') {
         throw new Error('Cannot prompt for multi-selection in non-TTY mode.');
@@ -509,7 +509,7 @@ class ProgressRenderer {
     return selected === null ? [] : [selected];
   }
 
-  _createStage(task, input = {}) {
+  _createStage(task, input = /** @type {any} */ ({})) {
     const title = input.title ?? pipelineStageTitle(input.id ?? input.name, this.language);
     const stage = new ProgressNode(this, task, 'stage', { ...input, title });
     task.currentStage = stage;
@@ -518,7 +518,7 @@ class ProgressRenderer {
     return stage;
   }
 
-  _createSubtask(task, input = {}) {
+  _createSubtask(task, input = /** @type {any} */ ({})) {
     const subtask = new ProgressNode(this, task, 'subtask', input);
     task.currentSubtask = subtask;
     this._emitPlain(subtask, 'subtask');
@@ -526,7 +526,7 @@ class ProgressRenderer {
     return subtask;
   }
 
-  _updateNode(node, input = {}) {
+  _updateNode(node, input = /** @type {any} */ ({})) {
     const safeInput = redactProgressData(input);
     for (const [key, value] of Object.entries(safeInput)) {
       if (key === 'artifacts' && Array.isArray(value)) {
@@ -671,7 +671,7 @@ class ProgressRenderer {
   }
 }
 
-export function createProgressRenderer(options = {}) {
+export function createProgressRenderer(options = /** @type {any} */ ({})) {
   return new ProgressRenderer(options);
 }
 
@@ -679,7 +679,7 @@ export function renderProgressBar(current, total, {
   width = 20,
   unicode = true,
   brackets = true,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const bar = progressBar(current, total, width, unicode);
   return brackets ? `[${bar}]` : bar;
 }
@@ -701,8 +701,8 @@ export function hasCursorControl(value) {
   return CURSOR_CONTROL_PATTERN.test(String(value ?? ''));
 }
 
-export function renderFailureSummary(input = {}, options = {}) {
-  const chunks = [];
+export function renderFailureSummary(input = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
+  const chunks = /** @type {any[]} */ ([]);
   const stream = {
     isTTY: false,
     write(chunk) {
@@ -730,7 +730,7 @@ export function createProgressLifecycle(renderer, task) {
     update(stage, updateInput) {
       stage.update(updateInput);
     },
-    finishStage(stage, status, input = {}) {
+    finishStage(stage, status, input = /** @type {any} */ ({})) {
       const method = statusFromMethod(status);
       if (method === 'success') stage.succeed(input);
       else if (method === 'warning') stage.warn(input);

@@ -15,7 +15,7 @@ function deriveKeepaliveStatus(loginReport) {
   return loginReport?.auth?.status ?? 'unknown';
 }
 
-export async function siteKeepalive(inputUrl, options = {}, deps = {}) {
+export async function siteKeepalive(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const loginReport = await (deps.siteLogin ?? siteLogin)(
     inputUrl,
     {

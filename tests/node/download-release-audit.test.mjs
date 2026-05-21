@@ -88,7 +88,7 @@ test('download-release-audit audits download and social matrix session gates off
   }, null, 2)}\n`, 'utf8');
 
   const outDir = path.join(rootDir, 'audit');
-  const compileCalls = [];
+  const compileCalls = /** @type {any[]} */ ([]);
   const audit = await buildAudit(parseArgs(['--runs-root', rootDir, '--out-dir', outDir]), {
     runSiteCapabilityCompile: async ({ site, writeArtifacts }) => {
       compileCalls.push({ site, writeArtifacts });

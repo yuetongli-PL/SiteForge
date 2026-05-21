@@ -135,7 +135,7 @@ async function navigateDouyinPage(session, url, timeoutMs = DEFAULT_TIMEOUT_MS) 
   return { url, pageType };
 }
 
-function normalizeObservedVideo(video = {}, fallbackUser = {}) {
+function normalizeObservedVideo(video = /** @type {any} */ ({}), fallbackUser = /** @type {any} */ ({})) {
   return {
     title: normalizeText(video?.title) || normalizeText(video?.videoId),
     url: canonicalizeDouyinVideoUrl(video?.url),
@@ -154,7 +154,7 @@ function normalizeObservedVideo(video = {}, fallbackUser = {}) {
   };
 }
 
-function finalizePostsApiVideo(video = {}) {
+function finalizePostsApiVideo(video = /** @type {any} */ ({})) {
   const { awemeData, ...rest } = video ?? {};
   const seed = buildDouyinDownloadTaskSeed(video?.awemeData ?? null, {
     requestedUrl: normalizeText(video?.url) || (normalizeText(video?.videoId) ? `https://www.douyin.com/video/${video.videoId}` : null),
@@ -168,7 +168,7 @@ function finalizePostsApiVideo(video = {}) {
   };
 }
 
-function sortObservedVideos(videos = []) {
+function sortObservedVideos(videos = /** @type {any[]} */ ([])) {
   return toArray(videos)
     .filter((video) => video && typeof video === 'object')
     .slice()
@@ -182,8 +182,8 @@ function sortObservedVideos(videos = []) {
     });
 }
 
-function dedupeObservedVideos(videos = []) {
-  const deduped = [];
+function dedupeObservedVideos(videos = /** @type {any[]} */ ([])) {
+  const deduped = /** @type {any[]} */ ([]);
   const seen = new Set();
   for (const video of videos) {
     const normalized = normalizeObservedVideo(video);
@@ -197,7 +197,7 @@ function dedupeObservedVideos(videos = []) {
   return sortObservedVideos(deduped);
 }
 
-export function isLikelyDouyinAuthorShellSurface(snapshot = {}) {
+export function isLikelyDouyinAuthorShellSurface(snapshot = /** @type {any} */ ({})) {
   const title = normalizeText(snapshot?.title);
   const h1 = normalizeText(snapshot?.h1);
   const body = normalizeText(snapshot?.bodyText || snapshot?.bodySnippet);
@@ -254,8 +254,8 @@ async function pageDescribeCurrentAuthorSurface(session) {
   }));
 }
 
-async function pageFetchDouyinUserPostsPage(session, input = {}) {
-  const page = await session.callPageFunction(async (request = {}) => {
+async function pageFetchDouyinUserPostsPage(session, input = /** @type {any} */ ({})) {
+  const page = await session.callPageFunction(async (request = /** @type {any} */ ({})) => {
     const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
     const compactVideo = (video) => {
       if (!video || typeof video !== 'object') {
@@ -380,7 +380,7 @@ async function pageCollectDouyinUserPosts(session) {
       return rect.width >= 8 && rect.height >= 8;
     };
     const terminalPatterns = [/没有更多/u, /已经到底了?/u, /暂无内容/u, /暂无作品/u];
-    const posts = [];
+    const posts = /** @type {any[]} */ ([]);
     const seen = new Set();
     let terminalReached = false;
 
@@ -437,7 +437,7 @@ async function scrollDouyinPage(session) {
   await sleep(FOLLOW_SCROLL_DELAY_MS);
 }
 
-export async function enumerateDouyinAuthorVideos(inputUrl, options = {}, deps = {}) {
+export async function enumerateDouyinAuthorVideos(inputUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const settings = {
     timeoutMs: Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS,
     profilePath: options.profilePath ?? null,
@@ -505,7 +505,7 @@ export async function enumerateDouyinAuthorVideos(inputUrl, options = {}, deps =
     }
     const author = await pageResolveDouyinAuthorIdentity(session);
 
-    const apiVideos = [];
+    const apiVideos = /** @type {any[]} */ ([]);
     const seenApiVideos = new Set();
     let cursor = 0;
     let hasMore = true;
@@ -559,9 +559,9 @@ export async function enumerateDouyinAuthorVideos(inputUrl, options = {}, deps =
 
     let videos = dedupeObservedVideos(apiVideos);
     let partial = Boolean(apiError);
-    const errors = [];
+    const errors = /** @type {any[]} */ ([]);
     if (!videos.length) {
-      let observed = [];
+      let observed = /** @type {any[]} */ ([]);
       let stableRounds = 0;
       let previousCount = 0;
       for (let round = 0; round < AUTHOR_POST_SCROLL_MAX_ROUNDS; round += 1) {

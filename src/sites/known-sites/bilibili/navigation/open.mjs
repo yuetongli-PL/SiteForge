@@ -44,7 +44,7 @@ function auditPath(pathParts) {
   return pathParts.join('.');
 }
 
-function redactBilibiliOpenProfileRefs(value, pathParts = [], audit = {
+function redactBilibiliOpenProfileRefs(value, pathParts = /** @type {any[]} */ ([]), audit = {
   schemaVersion: SECURITY_GUARD_SCHEMA_VERSION,
   redactedPaths: [],
   findings: [],
@@ -58,7 +58,7 @@ function redactBilibiliOpenProfileRefs(value, pathParts = [], audit = {
   if (!isPlainObject(value)) {
     return { value, audit };
   }
-  const output = {};
+  const output = /** @type {any} */ ({});
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...pathParts, key];
     if (BILIBILI_OPEN_REPORT_PROFILE_KEYS.has(key)) {
@@ -72,8 +72,8 @@ function redactBilibiliOpenProfileRefs(value, pathParts = [], audit = {
 }
 
 function mergeRedactionAudits(...audits) {
-  const redactedPaths = [];
-  const findings = [];
+  const redactedPaths = /** @type {any[]} */ ([]);
+  const findings = /** @type {any[]} */ ([]);
   for (const audit of audits) {
     if (!audit || typeof audit !== 'object') {
       continue;
@@ -93,7 +93,7 @@ function createBilibiliOpenReportRedactionFailure(error) {
     name: error instanceof Error ? error.name : undefined,
     code: error && typeof error === 'object' ? error.code : undefined,
   }).value;
-  const failure = new Error('Redaction failed for bilibili open report; persistent report write blocked');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Redaction failed for bilibili open report; persistent report write blocked'));
   failure.name = 'BilibiliOpenReportRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -159,7 +159,7 @@ function isPathFamilyMatch(pathname, prefix) {
 
 function authSamplePathPrefixes(profile = null) {
   const samples = profile?.authValidationSamples ?? {};
-  const prefixes = [];
+  const prefixes = /** @type {any[]} */ ([]);
   for (const value of Object.values(samples)) {
     const parsed = readPathname(value);
     if (parsed?.pathname) {
@@ -280,7 +280,7 @@ function buildMarkdownReport(report) {
   return lines.join('\n');
 }
 
-export async function resolveBilibiliOpenDecision(targetUrl, options = {}, deps = {}) {
+export async function resolveBilibiliOpenDecision(targetUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const authProfile = await (deps.resolveSiteAuthProfile ?? resolveSiteAuthProfile)(targetUrl, {
     profilePath: options.profilePath,
     siteProfile: options.siteProfile,
@@ -302,10 +302,10 @@ export async function resolveBilibiliOpenDecision(targetUrl, options = {}, deps 
   };
 }
 
-export async function openBilibiliPageInLocalBrowser(targetUrl, options = {}, deps = {}) {
+export async function openBilibiliPageInLocalBrowser(targetUrl, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const browserPath = options.browserPath ?? await (deps.detectBrowserPath ?? detectBrowserPath)();
   if (!browserPath) {
-    const error = new Error('Unable to locate a Chromium-compatible browser for bilibili local browsing.');
+    const error = /** @type {Error & Record<string, any>} */ (new Error('Unable to locate a Chromium-compatible browser for bilibili local browsing.'));
     error.code = 'browser-not-found';
     throw error;
   }
@@ -328,7 +328,7 @@ export async function openBilibiliPageInLocalBrowser(targetUrl, options = {}, de
 
   const userDataDir = sessionOptions.userDataDir;
   if (!userDataDir) {
-    const error = new Error('Missing persistent bilibili user-data-dir for local authenticated browsing.');
+    const error = /** @type {Error & Record<string, any>} */ (new Error('Missing persistent bilibili user-data-dir for local authenticated browsing.'));
     error.code = 'missing-user-data-dir';
     throw error;
   }
@@ -349,7 +349,7 @@ export async function openBilibiliPageInLocalBrowser(targetUrl, options = {}, de
         timeoutMs: Math.min(options.timeoutMs ?? 30_000, 5_000),
       });
       if (!targetInfo) {
-        const error = new Error(`Timed out while confirming the bilibili browser opened ${targetUrl}.`);
+        const error = /** @type {Error & Record<string, any>} */ (new Error(`Timed out while confirming the bilibili browser opened ${targetUrl}.`));
         error.code = 'attach-timeout';
         throw error;
       }
@@ -385,7 +385,7 @@ export async function openBilibiliPageInLocalBrowser(targetUrl, options = {}, de
 
   while (Date.now() < startupDeadline) {
     if (browserProcess.exitCode !== null) {
-      const error = new Error(`Local bilibili browser exited before the target page opened (code ${browserProcess.exitCode}).`);
+      const error = /** @type {Error & Record<string, any>} */ (new Error(`Local bilibili browser exited before the target page opened (code ${browserProcess.exitCode}).`));
       error.code = 'browser-exited-before-open';
       throw error;
     }
@@ -414,7 +414,7 @@ export async function openBilibiliPageInLocalBrowser(targetUrl, options = {}, de
   }
 
   if (!startupVerified) {
-    const error = new Error(`Timed out while waiting for the local bilibili browser to open ${targetUrl}.`);
+    const error = /** @type {Error & Record<string, any>} */ (new Error(`Timed out while waiting for the local bilibili browser to open ${targetUrl}.`));
     error.code = 'startup-navigation-failed';
     throw error;
   }

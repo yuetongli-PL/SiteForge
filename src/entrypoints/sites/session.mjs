@@ -46,7 +46,7 @@ Options:
   -h, --help                        Show this help.
 `;
 
-export function parseArgs(argv = []) {
+export function parseArgs(argv = /** @type {any[]} */ ([])) {
   const options = {
     action: null,
     riskSignals: [],
@@ -136,7 +136,7 @@ function render(result) {
   ].join('\n') + '\n';
 }
 
-export async function main(argv = process.argv.slice(2), deps = {}) {
+export async function main(argv = process.argv.slice(2), deps = /** @type {any} */ ({})) {
   const options = parseArgs(argv);
   if (options.help) {
     const output = options.json ? `${JSON.stringify({ help: HELP }, null, 2)}\n` : HELP;

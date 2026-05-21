@@ -117,7 +117,7 @@ export function createBrowserPageStateRuntime(runtime) {
     }
 
     function textsFromSelectors(selectors) {
-      const values = [];
+      const values = /** @type {any[]} */ ([]);
       for (const selector of selectors) {
         try {
           values.push(
@@ -131,7 +131,7 @@ export function createBrowserPageStateRuntime(runtime) {
     }
 
     function hrefsFromSelectors(selectors) {
-      const values = [];
+      const values = /** @type {any[]} */ ([]);
       for (const selector of selectors) {
         try {
           values.push(
@@ -153,7 +153,7 @@ export function createBrowserPageStateRuntime(runtime) {
       ) || null;
     }
 
-    function extractStructuredBilibiliAuthorCards({ currentAuthorMid = null, currentAuthorName = null, authorSubpage = null } = {}) {
+    function extractStructuredBilibiliAuthorCards({ currentAuthorMid = null, currentAuthorName = null, authorSubpage = null } = /** @type {any} */ ({})) {
       const containerSelectors = [
         '.bili-dyn-list__item',
         '.bili-dyn-item',
@@ -221,7 +221,7 @@ export function createBrowserPageStateRuntime(runtime) {
         }
       };
 
-      const containers = [];
+      const containers = /** @type {any[]} */ ([]);
       for (const node of Array.from(document.querySelectorAll(contentSelector))) {
         registerContainer(containers, node);
       }
@@ -229,8 +229,8 @@ export function createBrowserPageStateRuntime(runtime) {
         registerContainer(containers, node);
       }
 
-      const authorCards = [];
-      const contentCards = [];
+      const authorCards = /** @type {any[]} */ ([]);
+      const contentCards = /** @type {any[]} */ ([]);
       for (const container of containers) {
         const contentLink = Array.from(container.querySelectorAll(contentSelector))
           .find((node) => isVisible(node) && normalizeUrlNoFragment(node.getAttribute?.('href') || '', document.baseURI));

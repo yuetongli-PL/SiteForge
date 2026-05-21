@@ -101,6 +101,7 @@ test('Planner route resolver rejects missing Graph source and version mismatch',
       normalizedIntent: 'open-page',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.graph_missing');
       return true;
     },
@@ -116,6 +117,7 @@ test('Planner route resolver rejects missing Graph source and version mismatch',
       normalizedIntent: 'open-page',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.version_incompatible');
       return true;
     },
@@ -134,6 +136,7 @@ test('Planner route resolver returns Planner reason codes for unresolved site ca
       normalizedIntent: 'open-page',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.site_unresolved');
       return true;
     },
@@ -146,6 +149,7 @@ test('Planner route resolver returns Planner reason codes for unresolved site ca
       normalizedIntent: 'missing-intent',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.capability_not_found');
       return true;
     },
@@ -172,6 +176,7 @@ test('Planner route resolver returns Planner reason codes for unresolved site ca
       normalizedIntent: 'open-page',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.route_not_found');
       return true;
     },
@@ -202,7 +207,9 @@ test('Planner route resolver rejects sensitive and runtime route fields without 
       normalizedIntent: 'open-page',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },

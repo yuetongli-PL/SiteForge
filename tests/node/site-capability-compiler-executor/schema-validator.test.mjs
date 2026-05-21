@@ -37,7 +37,7 @@ const REQUIRED_SCHEMA_NAMES = [
 const SYNTHETIC_DIGEST_A = `sha256:${'a'.repeat(64)}`;
 const SYNTHETIC_DIGEST_B = `sha256:${'b'.repeat(64)}`;
 
-function createCompileScope(overrides = {}) {
+function createCompileScope(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     coverageMode: 'hybrid',
@@ -57,7 +57,7 @@ function createCompileScope(overrides = {}) {
   };
 }
 
-function createCompileRequest(overrides = {}) {
+function createCompileRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     siteId: 'site:example.test',
@@ -74,7 +74,7 @@ function createCompileRequest(overrides = {}) {
   };
 }
 
-function createCapabilityIntake(overrides = {}) {
+function createCapabilityIntake(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     intakeMode: 'user_requested',
@@ -89,7 +89,7 @@ function createCapabilityIntake(overrides = {}) {
   };
 }
 
-function createCompileManifest(overrides = {}) {
+function createCompileManifest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
     compilerVersion: SITE_CAPABILITY_COMPILER_VERSION,
@@ -185,6 +185,7 @@ test('CapabilityIntake supports targeted requested capabilities and rejects unsa
         requestedCapabilities: ['https://example.test/public/path'],
       }),
     })),
+    // @ts-ignore
     (error) => error.code === 'compiler.capability_intake_invalid',
   );
 
@@ -194,6 +195,7 @@ test('CapabilityIntake supports targeted requested capabilities and rejects unsa
         browserProfilePath: 'C:/Users/example/profile',
       }),
     })),
+    // @ts-ignore
     (error) => error.code === 'compiler.raw_sensitive_material_rejected',
   );
 
@@ -242,7 +244,9 @@ test('Compiler validators reject raw sensitive fields and values without echoing
       cookie: 'SESSDATA=synthetic-secret-value',
     })),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -253,7 +257,9 @@ test('Compiler validators reject raw sensitive fields and values without echoing
       evidence: 'https://example.test/?access_token=synthetic-secret-value',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -310,10 +316,13 @@ test('Compiler validators reject raw sensitive fields and values without echoing
   for (const [fieldName, fieldValue] of rejectedFields) {
     assert.throws(
       () => assertNoCompilerSensitiveMaterial({
+        // @ts-ignore
         [fieldName]: fieldValue,
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+        // @ts-ignore
         assert.doesNotMatch(error.message, /synthetic-secret-value|192\.0\.2\.10/u);
         return true;
       },
@@ -348,7 +357,9 @@ test('Compiler validators reject unsafe source and evidence refs', () => {
         ],
       })),
       (error) => {
+        // @ts-ignore
         assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+        // @ts-ignore
         assert.doesNotMatch(error.message, /access_token|example\.test|192\.0\.2\.44/u);
         return true;
       },
@@ -374,6 +385,7 @@ test('Compiler validators reject unsafe source and evidence refs', () => {
         },
       },
     })),
+    // @ts-ignore
     (error) => error.code === 'compiler.raw_sensitive_material_rejected',
   );
 });

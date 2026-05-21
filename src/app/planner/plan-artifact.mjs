@@ -24,6 +24,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -161,6 +162,7 @@ export function preparePlannerManifestForWrite(manifest) {
   return preparePlannerValueForWrite(manifest, assertPlanManifestCompatible);
 }
 
+/** @param {Record<string, any>} options */
 function createWriteResult({
   artifactKind,
   artifactType,
@@ -196,6 +198,7 @@ function createWriteResult({
   return result;
 }
 
+/** @param {Record<string, any>} options */
 export async function writePlannerArtifact({
   artifact,
   artifactPath,
@@ -215,6 +218,7 @@ export async function writePlannerArtifact({
   });
 }
 
+/** @param {Record<string, any>} options */
 export async function writePlannerManifest({
   manifest,
   manifestPath,

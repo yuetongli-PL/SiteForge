@@ -286,7 +286,7 @@ export async function shutdownBrowser(
     gracefulExitTimeoutMs = DEFAULT_GRACEFUL_EXIT_TIMEOUT_MS,
     forceKillTimeoutMs = 2_000,
     waitForProfileFlushOnShutdown = !cleanupUserDataDirOnShutdown,
-  } = {},
+  } = /** @type {any} */ ({}),
 ) {
   let shutdownMode = 'graceful';
 

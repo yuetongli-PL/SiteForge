@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-const SENSITIVE_PATTERNS = [
+const SENSITIVE_PATTERNS = /** @type {[string, RegExp][]} */ ([
   ['authorization-header', /Authorization\s*:\s*(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/iu],
   ['cookie-header', /\b(?:Cookie|Set-Cookie)\s*:\s*[^;\r\n]+=[^;\r\n]+/iu],
   ['sessdata', /\bSESSDATA\s*[=:]\s*[^&\s"']+/iu],
@@ -12,7 +12,7 @@ const SENSITIVE_PATTERNS = [
   ['refresh-token', /\brefresh[_-]?token\s*[=:]\s*['"][^'"]{8,}['"]|\brefresh_token=[^&\s"']+/iu],
   ['session-id', /\bsession(?:id|_id|-id)\s*[=:]\s*['"][^'"]{8,}['"]|\bsessionid=[^&\s"']+/iu],
   ['browser-profile-path', /\b(?:profilePath|browserProfileRoot|userDataDir)\s*[=:]\s*['"][A-Za-z]:[\\/][^'"]+['"]/iu],
-];
+]);
 
 const ALLOWED_SYNTHETIC_PATTERNS = [
   /synthetic/iu,

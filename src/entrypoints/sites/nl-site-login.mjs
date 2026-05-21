@@ -32,8 +32,8 @@ export function parseCliArgs(argv) {
     return { help: true };
   }
 
-  const requestTokens = [];
-  const rest = [];
+  const requestTokens = /** @type {any[]} */ ([]);
+  const rest = /** @type {any[]} */ ([]);
   let readingOptions = false;
   for (const token of argv) {
     if (!readingOptions && !token.startsWith('--')) {
@@ -48,7 +48,7 @@ export function parseCliArgs(argv) {
     throw new Error('Missing natural-language login request.');
   }
 
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => {
     if (index + 1 >= rest.length) {
       throw new Error(`Missing value for ${rest[index]}`);
@@ -118,7 +118,7 @@ export function parseCliArgs(argv) {
   };
 }
 
-export async function runNaturalLanguageSiteLogin(requestText, options = {}, deps = {}) {
+export async function runNaturalLanguageSiteLogin(requestText, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const parsed = parseNaturalLanguageSiteLoginRequest(requestText);
   const report = await (deps.siteLogin ?? siteLogin)(parsed.inputUrl, {
     ...parsed.options,

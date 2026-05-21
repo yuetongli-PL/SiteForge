@@ -45,7 +45,7 @@ export function resolvePersistentBrowserRootBrandPaths({
   homeDir = os.homedir(),
   localAppData = process.env.LOCALAPPDATA,
   xdgStateHome = process.env.XDG_STATE_HOME,
-} = {}) {
+} = /** @type {any} */ ({})) {
   if (platform === 'win32') {
     const appDataRoot = localAppData || path.win32.join(homeDir, 'AppData', 'Local');
     return {
@@ -69,7 +69,7 @@ export function resolvePersistentBrowserRootBrandPaths({
 
 export function resolveDefaultPersistentBrowserRoot({
   brandPaths = resolvePersistentBrowserRootBrandPaths(),
-} = {}) {
+} = /** @type {any} */ ({})) {
   const { preferred } = brandPaths;
   return preferred;
 }
@@ -77,7 +77,7 @@ export function resolveDefaultPersistentBrowserRoot({
 export function resolvePersistentUserDataDir(input, {
   rootDir,
   brandPaths = resolvePersistentBrowserRootBrandPaths(),
-} = {}) {
+} = /** @type {any} */ ({})) {
   const profileKey = derivePersistentProfileKey(input);
   if (rootDir !== undefined && rootDir !== null) {
     return path.resolve(rootDir, profileKey);
@@ -146,7 +146,7 @@ function buildSnapshotSignature(entries) {
     .join('|');
 }
 
-function classifyPersistentProfileLifecycle({ exists, missingPaths = [], suspiciousExit = false } = {}) {
+function classifyPersistentProfileLifecycle({ exists, missingPaths = /** @type {any[]} */ ([]), suspiciousExit = false } = /** @type {any} */ ({})) {
   if (!exists) {
     return 'missing';
   }
@@ -171,7 +171,7 @@ export async function inspectPersistentProfileHealth(userDataDir) {
   const sessionDataStatus = preferences?.sessions?.session_data_status ?? null;
   const suspiciousExit = Boolean(exitType && !/^normal$/iu.test(exitType));
   const profileLifecycle = classifyPersistentProfileLifecycle({ exists, missingPaths, suspiciousExit });
-  const warnings = [];
+  const warnings = /** @type {any[]} */ ([]);
 
   if (!exists) {
     warnings.push(`Persistent browser profile directory does not exist yet: ${resolvedDir}`);
@@ -203,7 +203,7 @@ export async function waitForPersistentProfileFlush(
     timeoutMs = 3_000,
     settleMs = 600,
     pollMs = 150,
-  } = {},
+  } = /** @type {any} */ ({}),
 ) {
   const resolvedDir = path.resolve(userDataDir);
   const exists = await pathExists(resolvedDir);

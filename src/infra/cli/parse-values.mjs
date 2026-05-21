@@ -21,7 +21,7 @@ import { parseBoolean as parseSharedBoolean } from '../../shared/boolean.mjs';
  * }} NumericRangeOptions
  */
 
-export function parseBoolean(value, options = {}) {
+export function parseBoolean(value, options = /** @type {any} */ ({})) {
   return parseSharedBoolean(value, options);
 }
 
@@ -35,7 +35,7 @@ export function parseNumber(value, {
   integer = false,
   defaultValue,
   onInvalid,
-} = {}) {
+} = /** @type {any} */ ({})) {
   if (value === undefined || value === null || value === '') {
     return defaultValue;
   }
@@ -89,7 +89,7 @@ export function parseNonNegativeNumberOption(value, flagName) {
  */
 export function readCliValue(args, current, index, {
   allowDashValue = false,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const token = String(current ?? '');
   const flagName = token.split('=')[0];
   const eqIndex = token.indexOf('=');
@@ -118,7 +118,7 @@ export function readCliValue(args, current, index, {
 export function parseIntegerOption(value, flagName, {
   min,
   max,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
     throw new Error(`${flagName} must be a finite integer`);
@@ -140,7 +140,7 @@ export function parseIntegerOption(value, flagName, {
 export function parseFiniteNumberOption(value, flagName, {
   min,
   max,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
     throw new Error(`${flagName} must be a finite number`);

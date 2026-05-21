@@ -23,7 +23,7 @@ import {
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'social-live-verify.mjs');
 
-function execNode(args, options = {}) {
+function execNode(args, options = /** @type {any} */ ({})) {
   return new Promise((resolve, reject) => {
     const child = execFile(process.execPath, [SCRIPT, ...args], {
       cwd: REPO_ROOT,
@@ -45,7 +45,7 @@ function execNode(args, options = {}) {
   });
 }
 
-function boundedArgs(extra = []) {
+function boundedArgs(extra = /** @type {any[]} */ ([])) {
   return [
     '--live',
     '--site',

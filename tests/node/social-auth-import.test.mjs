@@ -17,7 +17,7 @@ import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
 
 function createExecuteDeps({
   userDataDir,
-  cookieResults = {},
+  cookieResults = /** @type {any} */ ({}),
   authState = {
     currentUrl: 'https://x.com/home',
     title: 'X Home',
@@ -26,7 +26,7 @@ function createExecuteDeps({
     identityConfirmed: true,
     identitySource: 'test-double',
   },
-} = {}) {
+} = /** @type {any} */ ({})) {
   const calls = {
     opened: false,
     sent: [],
@@ -380,21 +380,33 @@ test('social auth import manifest writer fails closed without raw cause exposure
   await assert.rejects(
     () => writeSocialAuthImportManifest(manifestPath, payload),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'SocialAuthImportManifestRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.retryable, recovery.retryable);
+      // @ts-ignore
       assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+      // @ts-ignore
       assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+      // @ts-ignore
       assert.equal(error.degradable, recovery.degradable);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+      // @ts-ignore
       assert.equal(error.catalogAction, recovery.catalogAction);
+      // @ts-ignore
       assert.equal(Object.hasOwn(error, 'cause'), false);
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         name: 'Error',
         code: null,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         `${error.message}\n${JSON.stringify(error)}`,
         /synthetic-social-auth-cause-|Authorization: Bearer|refresh_token=/iu,
       );
@@ -450,21 +462,33 @@ test('social auth import CLI summary maps redaction failure to safe reasonCode',
   assert.throws(
     () => socialAuthImportCliSummary(manifest),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'SocialAuthImportCliSummaryRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.retryable, recovery.retryable);
+      // @ts-ignore
       assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+      // @ts-ignore
       assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+      // @ts-ignore
       assert.equal(error.degradable, recovery.degradable);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+      // @ts-ignore
       assert.equal(error.catalogAction, recovery.catalogAction);
+      // @ts-ignore
       assert.equal(Object.hasOwn(error, 'cause'), false);
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         name: 'Error',
         code: null,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         `${error.message}\n${JSON.stringify(error)}`,
         /synthetic-social-auth-summary-|Authorization: Bearer|access_token=|summary-profile/iu,
       );

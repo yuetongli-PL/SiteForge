@@ -7,6 +7,7 @@ import {
 
 export { quoteCommandArg } from '../../infra/cli/command-map.mjs';
 
+/** @param {Record<string, any>} options */
 export function buildSessionRepairPlanCommand({
   site,
   reason = 'blocked',

@@ -198,7 +198,9 @@ test('site-doctor enables download preflight for navigation profiles with downlo
     });
 
     assert.equal(report.download?.status, 'pass');
+    // @ts-ignore
     assert.equal(observedDownloadCheck?.sample?.url, 'https://videos.example.com/video/BV1WjDDBGE3p/');
+    // @ts-ignore
     assert.equal(observedDownloadCheck?.siteProfile?.downloader?.maxBatchItems, 5);
     assert.equal(report.reports.jsonRedactionAudit.endsWith('doctor-report.redaction-audit.json'), true);
     assert.equal(report.reports.markdownRedactionAudit.endsWith('doctor-report.md.redaction-audit.json'), true);
@@ -320,6 +322,7 @@ test('site-doctor report writer fails closed before persistent report writes whe
 
   try {
     await assert.rejects(
+      // @ts-ignore
       () => writeSiteDoctorReportArtifacts(circularReport, {
         reportDir,
         jsonPath: path.join(reportDir, 'doctor-report.json'),
@@ -328,8 +331,11 @@ test('site-doctor report writer fails closed before persistent report writes whe
         markdownAuditPath: path.join(reportDir, 'doctor-report.md.redaction-audit.json'),
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.name, 'SiteDoctorReportRedactionFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'redaction-failed');
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, false);
         assert.equal(JSON.stringify(error).includes('synthetic-site-doctor'), false);
         return true;
@@ -381,13 +387,17 @@ test('site-doctor report writer preserves existing artifacts when redaction fail
     await Promise.all(sentinelFiles.map(([filePath, content]) => writeFile(filePath, content)));
 
     await assert.rejects(
+      // @ts-ignore
       () => writeSiteDoctorReportArtifacts(circularReport, {
         reportDir,
         ...paths,
       }),
       (error) => {
+        // @ts-ignore
         assert.equal(error.name, 'SiteDoctorReportRedactionFailure');
+        // @ts-ignore
         assert.equal(error.reasonCode, 'redaction-failed');
+        // @ts-ignore
         assert.equal(error.artifactWriteAllowed, false);
         assert.equal(JSON.stringify(error).includes('synthetic-site-doctor'), false);
         return true;
@@ -464,6 +474,7 @@ test('site-doctor still runs download preflight when bilibili-style downloader-o
     });
 
     assert.equal(report.download?.status, 'pass');
+    // @ts-ignore
     assert.equal(observedDownloadCheck?.sample?.url ?? null, null);
     assert.deepEqual(report.download?.details?.inputSources, ['favorite-list', 'watch-later', 'collection', 'channel']);
     assert.deepEqual(report.download?.details?.filters, {

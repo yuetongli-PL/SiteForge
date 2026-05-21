@@ -80,7 +80,7 @@ function render22BiquFlowsReference(input) {
   const bookExample = books[0] ?? '凡人修仙传';
   const authorExample = authors[0] ?? '忘语';
   const entries = intents.map((intent) => {
-    const bodyLines = [];
+    const bodyLines = /** @type {any[]} */ ([]);
     if (intent.intentType === 'search-book') {
       bodyLines.push(`- Example user requests: \`搜索「${bookExample}」\`, \`搜索${authorExample}\``);
       bodyLines.push('- Start state: any verified public page.');

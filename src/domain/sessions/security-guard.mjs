@@ -123,6 +123,7 @@ function createAudit() {
 
 function appendRedaction(audit, path, {
   reason = 'sensitive-field-name',
+  // @ts-ignore
   pattern,
 } = {}) {
   const entry = {
@@ -147,6 +148,7 @@ function redactSensitiveText(value, path, audit) {
       });
       appendRedaction(audit, path, {
         reason: 'forbidden-pattern',
+        // @ts-ignore
         pattern: name,
       });
     }
@@ -205,6 +207,10 @@ export function redactValue(value) {
   };
 }
 
+/**
+ * @param {Record<string, any>} value
+ * @param {Record<string, any>} options
+ */
 export function redactPublicIdentifierText(value, {
   path = ['text'],
   maxLength,
@@ -222,6 +228,7 @@ export function redactPublicIdentifierText(value, {
       });
       appendRedaction(audit, path, {
         reason: 'public-identifier-pattern',
+        // @ts-ignore
         pattern: name,
       });
     }
@@ -235,6 +242,7 @@ export function redactPublicIdentifierText(value, {
   };
 }
 
+/** @param {Record<string, any>} [headers] */
 export function redactHeaders(headers = {}) {
   const audit = createAudit();
   const output = {};
@@ -333,6 +341,7 @@ export function redactBody(body) {
   };
 }
 
+/** @param {Record<string, any>} [error] */
 export function redactError(error = {}) {
   const { value, audit } = redactValue({
     name: error?.name,
@@ -395,6 +404,7 @@ export function scanForbiddenPatterns(value) {
 export function assertNoForbiddenPatterns(value) {
   const findings = scanForbiddenPatterns(value);
   if (findings.length) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Forbidden sensitive pattern detected');
     error.code = 'redaction-failed';
     error.findings = findings;
@@ -403,6 +413,10 @@ export function assertNoForbiddenPatterns(value) {
   return true;
 }
 
+/**
+ * @param {Record<string, any>} value
+ * @param {Record<string, any>} options
+ */
 export function prepareRedactedArtifactJson(value, { space = 2 } = {}) {
   const redacted = redactValue(value);
   assertNoForbiddenPatterns(redacted.value);

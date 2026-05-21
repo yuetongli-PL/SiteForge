@@ -174,7 +174,7 @@ function normalizeUrlValue(value) {
 }
 
 function collectUrlList(value) {
-  const results = [];
+  const results = /** @type {any[]} */ ([]);
   const seen = new Set();
   const append = (candidate) => {
     const normalized = normalizeUrlValue(candidate);
@@ -264,8 +264,8 @@ function normalizeFormatEntry(sourceType, rawEntry, video, codecHint = null) {
   };
 }
 
-function buildFormatEntries(video = {}) {
-  const entries = [];
+function buildFormatEntries(video = /** @type {any} */ ({})) {
+  const entries = /** @type {any[]} */ ([]);
   const pushEntry = (entry) => {
     if (!entry?.url) {
       return;
@@ -308,7 +308,7 @@ function formatSourceRank(sourceType) {
   }
 }
 
-export function selectBestDouyinFormat(formats = []) {
+export function selectBestDouyinFormat(formats = /** @type {any[]} */ ([])) {
   return [...toArray(formats)]
     .filter((item) => item?.url)
     .sort((left, right) => {
@@ -320,7 +320,7 @@ export function selectBestDouyinFormat(formats = []) {
     })[0] ?? null;
 }
 
-export function normalizeDouyinVideoDownloadMetadata(detail = {}, options = {}) {
+export function normalizeDouyinVideoDownloadMetadata(detail = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const awemeDetail = detail?.aweme_detail ?? detail?.awemeDetail ?? detail?.data?.aweme_detail ?? detail?.data?.awemeDetail ?? detail;
   if (!awemeDetail || typeof awemeDetail !== 'object') {
     return null;
@@ -371,7 +371,7 @@ export function normalizeDouyinVideoDownloadMetadata(detail = {}, options = {}) 
   };
 }
 
-export function buildDouyinDownloadTaskSeed(detail = {}, options = {}) {
+export function buildDouyinDownloadTaskSeed(detail = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const metadata = normalizeDouyinVideoDownloadMetadata(detail, options);
   if (!metadata?.bestUrl) {
     return null;
@@ -394,8 +394,8 @@ function userIdFromDouyinAuthorUrl(value) {
   return normalizeText(String(value ?? '').match(/\/user\/([^/?#]+)/u)?.[1] ?? '') || null;
 }
 
-function buildPageContextHeaders(pageContext = {}, requestedUrl = '') {
-  const headers = {};
+function buildPageContextHeaders(pageContext = /** @type {any} */ ({}), requestedUrl = '') {
+  const headers = /** @type {any} */ ({});
   const userAgent = normalizeText(pageContext?.userAgent);
   const acceptLanguage = normalizeText(pageContext?.acceptLanguage);
   const referer = normalizeText(requestedUrl) || normalizeText(pageContext?.pageUrl);
@@ -422,7 +422,7 @@ const MEDIA_SHAPE_CONTAINER_KEYS = Object.freeze([
   ['download_addr', ['download_addr', 'downloadAddr']],
 ]);
 
-function firstObjectProperty(source = {}, keys = []) {
+function firstObjectProperty(source = /** @type {any} */ ({}), keys = /** @type {any[]} */ ([])) {
   for (const key of keys) {
     const value = source?.[key];
     if (value && typeof value === 'object') {
@@ -432,7 +432,7 @@ function firstObjectProperty(source = {}, keys = []) {
   return null;
 }
 
-export function buildDouyinMediaShapeDiagnostics(detail = {}, options = {}) {
+export function buildDouyinMediaShapeDiagnostics(detail = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const awemeDetail = detail?.aweme_detail ?? detail?.awemeDetail ?? detail?.data?.aweme_detail ?? detail?.data?.awemeDetail ?? detail;
   const result = {
     sourceType: normalizeText(options.sourceType) || 'unknown',
@@ -460,9 +460,9 @@ export function buildDouyinMediaShapeDiagnostics(detail = {}, options = {}) {
   if (!video || typeof video !== 'object') {
     return result;
   }
-  const containerNames = [];
+  const containerNames = /** @type {any[]} */ ([]);
   let urlCount = 0;
-  for (const [name, keys] of MEDIA_SHAPE_CONTAINER_KEYS) {
+  for (const [name, keys] of /** @type {[string, string[]][]} */ (MEDIA_SHAPE_CONTAINER_KEYS)) {
     const container = firstObjectProperty(video, keys);
     const urls = collectUrlList(container);
     if (container || urls.length > 0) {
@@ -488,7 +488,7 @@ export function buildDouyinMediaShapeDiagnostics(detail = {}, options = {}) {
   return result;
 }
 
-function resolverPhase(phase, status, reason = '', details = {}) {
+function resolverPhase(phase, status, reason = '', details = /** @type {any} */ ({})) {
   return {
     phase: normalizeText(phase) || 'unknown',
     status: normalizeText(status) || 'unknown',
@@ -501,8 +501,8 @@ function resolverPhase(phase, status, reason = '', details = {}) {
   };
 }
 
-async function pageFetchDouyinVideoDetail(session, input = {}) {
-  return await session.callPageFunction(async (request = {}) => {
+async function pageFetchDouyinVideoDetail(session, input = /** @type {any} */ ({})) {
+  return await session.callPageFunction(async (request = /** @type {any} */ ({})) => {
     const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
     const awemeId = normalizeTextLocal(request.awemeId || '');
     if (!awemeId) {
@@ -669,7 +669,7 @@ async function pageReadDouyinDetailContext(session) {
       };
     };
     const authorPayload = detailPayload?.author ?? {};
-    const readPattern = (patterns = [], sources = []) => {
+    const readPattern = (patterns = /** @type {any[]} */ ([]), sources = /** @type {any[]} */ ([])) => {
       for (const source of sources) {
         if (!source) {
           continue;
@@ -736,8 +736,8 @@ async function pageReadDouyinDetailContext(session) {
   });
 }
 
-async function pageFetchDouyinUserPostsPage(session, input = {}) {
-  return await session.callPageFunction(async (request = {}) => {
+async function pageFetchDouyinUserPostsPage(session, input = /** @type {any} */ ({})) {
+  return await session.callPageFunction(async (request = /** @type {any} */ ({})) => {
     const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
     const compactVideo = (video) => {
       if (!video || typeof video !== 'object') {
@@ -853,7 +853,7 @@ async function pageFetchDouyinUserPostsPage(session, input = {}) {
   }, input);
 }
 
-function finalizePostsApiVideo(video = {}) {
+function finalizePostsApiVideo(video = /** @type {any} */ ({})) {
   const metadata = buildDouyinDownloadTaskSeed(video?.awemeData ?? null, {
     requestedUrl: normalizeText(video?.url) || (normalizeText(video?.videoId) ? `https://www.douyin.com/video/${video.videoId}` : null),
   });
@@ -866,7 +866,7 @@ function finalizePostsApiVideo(video = {}) {
   };
 }
 
-async function resolveSingleVideoViaAuthorPosts(session, item, settings, detailContext = null, phaseDiagnostics = [], structuralDiagnostics = []) {
+async function resolveSingleVideoViaAuthorPosts(session, item, settings, detailContext = null, phaseDiagnostics = /** @type {any[]} */ ([]), structuralDiagnostics = /** @type {any[]} */ ([])) {
   const pageContext = detailContext?.pageContext ?? {};
   const authorUrl = normalizeText(detailContext?.authorUrl);
   const userId = normalizeText(detailContext?.userId) || userIdFromDouyinAuthorUrl(authorUrl);
@@ -1008,8 +1008,8 @@ async function resolveSingleVideoMetadata(session, item, settings) {
 
 async function resolveSingleVideoMetadataStable(session, item, settings) {
   const requestedUrl = item.normalizedUrl;
-  const phaseDiagnostics = [];
-  const structuralDiagnostics = [];
+  const phaseDiagnostics = /** @type {any[]} */ ([]);
+  const structuralDiagnostics = /** @type {any[]} */ ([]);
   const detailResponse = await pageFetchDouyinVideoDetail(session, {
     awemeId: item.videoId,
     count: DETAIL_FETCH_COUNT,
@@ -1116,7 +1116,7 @@ function isTransientResolverError(error) {
   return /CDP timeout for Runtime\.evaluate|Target closed|Session closed|Execution context was destroyed|Browser exited before DevTools became ready/iu.test(text);
 }
 
-export function shouldRetryDouyinUnresolvedResult(result = {}) {
+export function shouldRetryDouyinUnresolvedResult(result = /** @type {any} */ ({})) {
   if (!result || result.resolved === true || result.bestUrl) {
     return false;
   }
@@ -1147,7 +1147,7 @@ export function shouldRetryDouyinUnresolvedResult(result = {}) {
   });
 }
 
-function mergeResolverOptions(inputUrl, options = {}) {
+function mergeResolverOptions(inputUrl, options = /** @type {any} */ ({})) {
   const merged = {
     profilePath: null,
     browserPath: undefined,
@@ -1180,7 +1180,7 @@ function mergeResolverOptions(inputUrl, options = {}) {
   return merged;
 }
 
-export async function resolveDouyinMediaBatch(inputs, options = {}, deps = {}) {
+export async function resolveDouyinMediaBatch(inputs, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const normalizedInputs = toArray(inputs).map((value) => normalizeDouyinVideoInput(value));
   if (!normalizedInputs.length) {
     return {
@@ -1280,7 +1280,7 @@ export async function resolveDouyinMediaBatch(inputs, options = {}, deps = {}) {
       settings.timeoutMs,
     );
 
-    const results = [];
+    const results = /** @type {any[]} */ ([]);
     for (const item of normalizedInputs) {
       let resolved = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1347,8 +1347,8 @@ export async function resolveDouyinMediaBatch(inputs, options = {}, deps = {}) {
 
 export function parseDouyinMediaResolverArgs(argv) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   const appendFlag = (key, value) => {
     if (!(key in flags)) {
       flags[key] = value;
@@ -1401,7 +1401,7 @@ export function parseDouyinMediaResolverArgs(argv) {
   };
 }
 
-function douyinMediaProgressMessage(report = {}) {
+function douyinMediaProgressMessage(report = /** @type {any} */ ({})) {
   const summary = report?.summary ?? {};
   return [
     `total=${Number(summary.total ?? 0)}`,

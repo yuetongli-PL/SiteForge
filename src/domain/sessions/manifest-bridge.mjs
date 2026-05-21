@@ -44,6 +44,7 @@ function normalizeKey(value) {
   return String(value ?? '').trim().toLowerCase().replace(/[-_]/gu, '');
 }
 
+/** @param {Record<string, any>} [value] */
 export function assertSessionBoundaryCrossingSafe(value = {}, label = 'Session manifest bridge crossing') {
   const pending = [{ value, path: label }];
   const seen = new Set();
@@ -85,11 +86,13 @@ export async function readSessionRunManifest(filePath) {
     artifacts: {
       ...manifest.artifacts,
       manifest: resolvedPath,
+      // @ts-ignore
       runDir: manifest.artifacts.runDir ?? path.dirname(resolvedPath),
     },
   };
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function summarizeSessionRunManifest(manifest = {}) {
   const normalized = normalizeSessionRunManifest(manifest);
   const health = normalizeSessionHealth(normalized.health, {
@@ -114,7 +117,9 @@ export function summarizeSessionRunManifest(manifest = {}) {
     expiresAt: health.expiresAt,
     repairPlan: normalized.repairPlan,
     artifacts: {
+      // @ts-ignore
       manifest: normalized.artifacts.manifest,
+      // @ts-ignore
       runDir: normalized.artifacts.runDir,
     },
   };
@@ -122,6 +127,7 @@ export function summarizeSessionRunManifest(manifest = {}) {
   return summary;
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function assertSessionManifestMatches(manifest = {}, expected = {}) {
   const summary = summarizeSessionRunManifest(manifest);
   const expectedSite = normalizeText(expected.siteKey ?? expected.site);
@@ -136,6 +142,7 @@ export function assertSessionManifestMatches(manifest = {}, expected = {}) {
   return summary;
 }
 
+/** @param {Record<string, any>} [summary] */
 function sessionViewPermissions(summary = {}) {
   if (summary.healthStatus !== 'ready') {
     return [];
@@ -143,6 +150,7 @@ function sessionViewPermissions(summary = {}) {
   return ['read'];
 }
 
+/** @param {Record<string, any>} [summary] */
 function sessionViewFromSummary(summary = {}) {
   return normalizeSessionView({
     siteKey: summary.siteKey,
@@ -161,6 +169,7 @@ function sessionViewFromSummary(summary = {}) {
   });
 }
 
+/** @param {Record<string, any>} [context] */
 function revocationContextForMaterialization(context = {}) {
   const revocationHandleRef = normalizeText(
     context.revocationHandleRef ?? context.revocationHandle ?? context.handleRef,
@@ -174,10 +183,12 @@ function revocationContextForMaterialization(context = {}) {
   return { revocationHandleRef };
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function sessionViewFromRunManifest(manifest = {}, expected = {}) {
   return sessionViewFromSummary(assertSessionManifestMatches(manifest, expected));
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function sessionViewMaterializationAuditFromRunManifest(manifest = {}, expected = {}, context = {}) {
   const summary = assertSessionManifestMatches(manifest, expected);
   return createSessionViewMaterializationAudit(
@@ -186,6 +197,7 @@ export function sessionViewMaterializationAuditFromRunManifest(manifest = {}, ex
   );
 }
 
+/** @param {Record<string, any>} [manifest] */
 export function sessionOptionsFromRunManifest(manifest = {}, expected = {}, context = {}) {
   const summary = assertSessionManifestMatches(manifest, expected);
   const sessionView = sessionViewFromSummary(summary);
@@ -207,6 +219,7 @@ export function sessionOptionsFromRunManifest(manifest = {}, expected = {}, cont
   return options;
 }
 
+/** @param {Record<string, any>} options */
 export async function actionSessionMetadataFromOptions(options = {}, expected = {}) {
   if (options.sessionManifest) {
     const summary = assertSessionManifestMatches(

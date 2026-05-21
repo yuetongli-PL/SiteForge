@@ -24,11 +24,11 @@ function createProfileHash(raw) {
   return createHash('sha256').update(String(raw), 'utf8').digest('hex');
 }
 
-export function resolveProfilesDir(options = {}) {
+export function resolveProfilesDir(options = /** @type {any} */ ({})) {
   return path.resolve(options.profilesDir ?? DEFAULT_PROFILES_DIR);
 }
 
-export function resolveProfilePathForHost(host, options = {}) {
+export function resolveProfilePathForHost(host, options = /** @type {any} */ ({})) {
   const hostname = resolveHostname(host);
   if (!hostname) {
     return null;
@@ -39,7 +39,7 @@ export function resolveProfilePathForHost(host, options = {}) {
   return path.join(resolveProfilesDir(options), `${hostname}.json`);
 }
 
-export function resolveProfilePathForUrl(inputUrl, options = {}) {
+export function resolveProfilePathForUrl(inputUrl, options = /** @type {any} */ ({})) {
   return resolveProfilePathForHost(inputUrl, options);
 }
 
@@ -52,7 +52,7 @@ export async function loadValidatedProfile(profilePath) {
   };
 }
 
-export async function maybeLoadValidatedProfileForHost(host, options = {}) {
+export async function maybeLoadValidatedProfileForHost(host, options = /** @type {any} */ ({})) {
   const profilePath = resolveProfilePathForHost(host, options);
   if (!profilePath || !await pathExists(profilePath)) {
     return null;
@@ -60,11 +60,11 @@ export async function maybeLoadValidatedProfileForHost(host, options = {}) {
   return loadValidatedProfile(profilePath);
 }
 
-export async function maybeLoadValidatedProfileForUrl(inputUrl, options = {}) {
+export async function maybeLoadValidatedProfileForUrl(inputUrl, options = /** @type {any} */ ({})) {
   return maybeLoadValidatedProfileForHost(inputUrl, options);
 }
 
-export async function loadValidatedProfileForHost(host, options = {}) {
+export async function loadValidatedProfileForHost(host, options = /** @type {any} */ ({})) {
   const profilePath = resolveProfilePathForHost(host, options);
   if (!profilePath) {
     throw new Error(`Missing site profile host: ${host}`);
@@ -75,6 +75,6 @@ export async function loadValidatedProfileForHost(host, options = {}) {
   return loadValidatedProfile(profilePath);
 }
 
-export async function loadValidatedProfileForUrl(inputUrl, options = {}) {
+export async function loadValidatedProfileForUrl(inputUrl, options = /** @type {any} */ ({})) {
   return loadValidatedProfileForHost(inputUrl, options);
 }

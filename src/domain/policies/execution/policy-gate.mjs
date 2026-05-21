@@ -10,6 +10,7 @@ import {
 } from './validator.mjs';
 
 function fail(message, code = 'execution.policy_denied') {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -43,6 +44,7 @@ export function assertExecutionPolicyDecisionCompatible(decision) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createExecutionPolicyDecision({
   handoffDescriptor,
   plannerHandoffRef,

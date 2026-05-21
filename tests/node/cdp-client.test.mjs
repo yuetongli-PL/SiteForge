@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 
 import { CdpClient } from '../../src/infra/browser/cdp-client.mjs';
 
-function createManualWebSocketClass({ sendImpl } = {}) {
-  const instances = [];
+function createManualWebSocketClass({ sendImpl } = /** @type {any} */ ({})) {
+  const instances = /** @type {any[]} */ ([]);
 
   class ManualWebSocket {
     constructor(url) {
       this.url = url;
       this.closed = false;
-      this.sent = [];
+      this.sent = /** @type {any[]} */ ([]);
       this.listeners = new Map();
       instances.push(this);
     }
@@ -25,7 +25,7 @@ function createManualWebSocketClass({ sendImpl } = {}) {
       this.listeners.get(type)?.delete(handler);
     }
 
-    emit(type, event = {}) {
+    emit(type, event = /** @type {any} */ ({})) {
       for (const handler of [...(this.listeners.get(type) ?? [])]) {
         handler(event);
       }
@@ -48,7 +48,7 @@ function createManualWebSocketClass({ sendImpl } = {}) {
   return { instances, WebSocketImpl: ManualWebSocket };
 }
 
-async function openFakeClient({ sendImpl, timeoutMs = 100 } = {}) {
+async function openFakeClient({ sendImpl, timeoutMs = 100 } = /** @type {any} */ ({})) {
   const { instances, WebSocketImpl } = createManualWebSocketClass({ sendImpl });
   const client = new CdpClient('ws://127.0.0.1:9222/devtools/browser/test', {
     timeoutMs,

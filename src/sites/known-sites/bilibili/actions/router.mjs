@@ -74,7 +74,7 @@ function buildLoginFailureResult(plan, report) {
   };
 }
 
-export async function planBilibiliAction(request, deps = {}) {
+export async function planBilibiliAction(request, deps = /** @type {any} */ ({})) {
   const action = normalizeText(request?.action) || 'open';
   const reuseLoginState = request?.reuseLoginState !== false;
   if (action === 'open') {
@@ -178,7 +178,7 @@ export async function planBilibiliAction(request, deps = {}) {
   throw new Error(`Unsupported bilibili action: ${action}`);
 }
 
-async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = {}) {
+async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = /** @type {any} */ ({})) {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -205,7 +205,7 @@ async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = {}) {
   });
 }
 
-async function invokeDownloadCli(request, deps = {}) {
+async function invokeDownloadCli(request, deps = /** @type {any} */ ({})) {
   const pythonPath = request.pythonPath || 'python';
   const scriptPath = BILIBILI_DOWNLOAD_PYTHON_ENTRY;
   const args = [scriptPath, ...(request.items || [])];
@@ -284,7 +284,7 @@ async function invokeDownloadCli(request, deps = {}) {
   }
 }
 
-export async function runBilibiliAction(request, deps = {}) {
+export async function runBilibiliAction(request, deps = /** @type {any} */ ({})) {
   const plan = await planBilibiliAction(request, deps);
   if (plan.action === 'open') {
     let loginReport = null;

@@ -22,9 +22,9 @@ function normalizeHosts(hosts) {
 export function createCatalogAdapter({
   id,
   siteKey = id,
-  hosts = [],
+  hosts = /** @type {any[]} */ ([]),
   terminology,
-  intentLabels = {},
+  intentLabels = /** @type {any} */ ({}),
   matches = null,
   inferPageType = () => null,
   normalizeDisplayLabel = ({ value }) => cleanText(value),
@@ -38,9 +38,9 @@ export function createCatalogAdapter({
   probeHealth,
   normalizeHealthSignal,
   getRecoveryPolicy,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const normalizedHosts = normalizeHosts(hosts);
-  const resolvedMatches = matches ?? (({ host, profile } = {}) => {
+  const resolvedMatches = matches ?? (({ host, profile } = /** @type {any} */ ({})) => {
     const resolvedHost = String(host ?? profile?.host ?? '').toLowerCase();
     return normalizedHosts.has(resolvedHost);
   });
@@ -50,7 +50,7 @@ export function createCatalogAdapter({
     ...genericAdapterDefaults
   } = genericNavigationAdapter;
 
-  const adapter = {
+  const adapter = /** @type {any} */ ({
     ...genericAdapterDefaults,
     id,
     siteKey,
@@ -64,10 +64,10 @@ export function createCatalogAdapter({
     },
     normalizeDisplayLabel,
     classifyPath,
-    runtimePolicy({ profile } = {}) {
+    runtimePolicy({ profile } = /** @type {any} */ ({})) {
       return createNavigationRuntimePolicy(profile);
     },
-  };
+  });
 
   if (typeof validateApiCandidate === 'function') {
     adapter.validateApiCandidate = validateApiCandidate;

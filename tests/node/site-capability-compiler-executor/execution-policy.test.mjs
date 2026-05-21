@@ -50,6 +50,7 @@ test('ExecutionPolicyDecision blocks before approval and rejects runtime fields'
       approvalSatisfied: true,
       downloaderTask: { id: 'task' },
     }),
+    // @ts-ignore
     (error) => error.code === 'execution.raw_sensitive_material_rejected',
   );
 });

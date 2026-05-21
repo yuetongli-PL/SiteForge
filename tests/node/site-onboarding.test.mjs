@@ -219,7 +219,7 @@ test('site-doctor validates a generic navigation host with stubbed runtime steps
   try {
     const profilePath = path.join(workspace, 'example.com.json');
     await writeFile(profilePath, `${JSON.stringify(createNavigationProfile(), null, 2)}\n`, 'utf8');
-    const compileCalls = [];
+    const compileCalls = /** @type {any[]} */ ([]);
 
     const report = await siteDoctor('https://example.com/', {
       profilePath,

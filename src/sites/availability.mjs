@@ -81,7 +81,7 @@ export function isDownloadIntent(intent) {
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function isGenericLiveBuildBlocked(registry = {}, capabilities = {}) {
+export function isGenericLiveBuildBlocked(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   return isBlockedAvailabilityStatus(registry.genericLiveBuild?.status)
     || isBlockedAvailabilityStatus(capabilities.genericLiveBuild?.status)
     || isBlockedAvailabilityStatus(registry.siteAccessStatus)
@@ -92,7 +92,7 @@ export function isGenericLiveBuildBlocked(registry = {}, capabilities = {}) {
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function declaredDownloadTaskTypes(registry = {}, capabilities = {}) {
+export function declaredDownloadTaskTypes(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   return uniqueStrings(
     registry.declaredDownloadTaskTypes,
     registry.downloadTaskTypes,
@@ -107,7 +107,7 @@ export function declaredDownloadTaskTypes(registry = {}, capabilities = {}) {
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function availableDownloadTaskTypes(registry = {}, capabilities = {}) {
+export function availableDownloadTaskTypes(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   const registrySupport = registry.downloadSupport ?? {};
   const capabilitySupport = capabilities.downloader ?? {};
   const blocked = isBlockedAvailabilityStatus(registrySupport.status)
@@ -138,7 +138,7 @@ export function availableDownloadTaskTypes(registry = {}, capabilities = {}) {
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function blockedDownloadTaskTypes(registry = {}, capabilities = {}) {
+export function blockedDownloadTaskTypes(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   const declared = declaredDownloadTaskTypes(registry, capabilities);
   const explicitBlocked = uniqueStrings(
     registry.blockedDownloadTaskTypes,
@@ -160,7 +160,7 @@ export function blockedDownloadTaskTypes(registry = {}, capabilities = {}) {
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function downloadRuntimeDependencies(registry = {}, capabilities = {}) {
+export function downloadRuntimeDependencies(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   return uniqueStrings(
     registry.interpreterRequired,
     registry.downloadSupport?.interpreterRequired,
@@ -174,7 +174,7 @@ export function downloadRuntimeDependencies(registry = {}, capabilities = {}) {
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function downloadDependencyReasonCodes(registry = {}, capabilities = {}) {
+export function downloadDependencyReasonCodes(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   const dependencies = downloadRuntimeDependencies(registry, capabilities);
   return uniqueStrings(
     dependencies.some((dependency) => /^pypy(?:3)?$/iu.test(dependency)) ? ['runtime-dependency-missing'] : [],
@@ -186,7 +186,7 @@ export function downloadDependencyReasonCodes(registry = {}, capabilities = {}) 
  * @param {RegistryAvailabilityInput} [registry]
  * @param {CapabilityAvailabilityInput} [capabilities]
  */
-export function normalizeDownloadAvailability(registry = {}, capabilities = {}) {
+export function normalizeDownloadAvailability(registry = /** @type {any} */ ({}), capabilities = /** @type {any} */ ({})) {
   const declaredTaskTypes = declaredDownloadTaskTypes(registry, capabilities);
   const availableTaskTypes = availableDownloadTaskTypes(registry, capabilities);
   const blockedTaskTypes = blockedDownloadTaskTypes(registry, capabilities);

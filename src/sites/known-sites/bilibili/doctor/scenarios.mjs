@@ -5,7 +5,7 @@ import { diagnoseBilibiliSurfaceState } from '../model/diagnosis.mjs';
 export function createBilibiliSiteDoctorScenarioSuite({
   profile = null,
   helpers,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const {
     buildScenarioResult,
     extractAntiCrawlSignals,

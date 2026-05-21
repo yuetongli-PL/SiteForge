@@ -280,6 +280,7 @@ function hasRequiredDetailValue(details, fieldPath) {
   return current !== undefined && current !== null;
 }
 
+/** @param {Record<string, any>} [audit] */
 function summarizeRedactionAudit(audit = {}) {
   return {
     redactedPathCount: Array.isArray(audit.redactedPaths) ? audit.redactedPaths.length : 0,
@@ -287,6 +288,7 @@ function summarizeRedactionAudit(audit = {}) {
   };
 }
 
+/** @param {Record<string, any>} [raw] */
 export function normalizeLifecycleEvent(raw = {}, defaults = {}) {
   const eventType = normalizeText(raw.eventType ?? defaults.eventType) ?? 'task.event';
   const reasonCode = normalizeText(raw.reasonCode ?? defaults.reasonCode);
@@ -339,6 +341,7 @@ function normalizeLifecycleProducerDescriptorPolicy(raw = LIFECYCLE_EVENT_PRODUC
   return value;
 }
 
+/** @param {Record<string, any>} [raw] */
 function normalizeLifecycleEventProducerDescriptor(raw = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('LifecycleEvent producer descriptor must be an object');
@@ -380,6 +383,7 @@ function normalizeLifecycleEventProducerDescriptor(raw = {}) {
   return value;
 }
 
+/** @param {Record<string, any>} options */
 export function createLifecycleEventProducerInventory({
   producers = LIFECYCLE_EVENT_PRODUCER_DESCRIPTORS,
 } = {}) {
@@ -392,6 +396,7 @@ export function createLifecycleEventProducerInventory({
   return inventory;
 }
 
+/** @param {Record<string, any>} [raw] */
 export function assertLifecycleEventProducerInventoryCompatible(raw = {}) {
   const version = Number(raw?.schemaVersion);
   if (!Number.isInteger(version)) {
@@ -428,6 +433,7 @@ export function assertLifecycleEventProducerInventoryCompatible(raw = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function listLifecycleEventProducerEventTypes({
   inventory = createLifecycleEventProducerInventory(),
 } = {}) {
@@ -435,6 +441,7 @@ export function listLifecycleEventProducerEventTypes({
   return inventory.producers.map((producer) => producer.eventType);
 }
 
+/** @param {Record<string, any>} options */
 export function summarizeLifecycleEventProducerInventory({
   inventory = createLifecycleEventProducerInventory(),
 } = {}) {
@@ -460,6 +467,7 @@ export function summarizeLifecycleEventProducerInventory({
   };
 }
 
+/** @param {Record<string, any>} [payload] */
 export function assertLifecycleEventCompatible(payload = {}) {
   if (payload?.schemaVersion === undefined || payload?.schemaVersion === null) {
     throw new Error('LifecycleEvent schemaVersion is required');
@@ -472,6 +480,10 @@ export function assertLifecycleEventCompatible(payload = {}) {
   return true;
 }
 
+/**
+ * @param {Record<string, any>} [event]
+ * @param {Record<string, any>} options
+ */
 export function assertLifecycleEventObservabilityFields(event = {}, {
   requiredFields = LIFECYCLE_OBSERVABILITY_CORE_FIELDS,
   requiredDetailFields = [],
@@ -491,6 +503,7 @@ export function assertLifecycleEventObservabilityFields(event = {}, {
   return true;
 }
 
+/** @param {Record<string, any>} [event] */
 export function assertLifecycleEventProducerObservability(event = {}) {
   const normalized = normalizeLifecycleEvent(event);
   const profile = LIFECYCLE_EVENT_OBSERVABILITY_PROFILES[normalized.eventType];
@@ -501,6 +514,10 @@ export function assertLifecycleEventProducerObservability(event = {}) {
   return assertLifecycleEventObservabilityFields(normalized, profile);
 }
 
+/**
+ * @param {Record<string, any>} event
+ * @param {Record<string, any>} options
+ */
 export async function writeLifecycleEventArtifact(event, {
   eventPath,
   auditPath,
@@ -524,6 +541,7 @@ export async function writeLifecycleEventArtifact(event, {
   };
 }
 
+/** @param {Record<string, any>} options */
 export function createLifecycleArtifactWriterSubscriber({
   eventPath,
   auditPath,
@@ -578,6 +596,7 @@ function assertLifecycleSubscriberDescriptorHasNoSensitiveFields(value, path = [
   return true;
 }
 
+/** @param {Record<string, any>} options */
 function normalizeLifecycleSubscriberDescriptor({
   subscriberId,
   eventTypes = ['*'],
@@ -622,6 +641,7 @@ function subscriberMatchesEvent(descriptor, eventType) {
   return descriptor.eventTypes.includes('*') || descriptor.eventTypes.includes(eventType);
 }
 
+/** @param {Record<string, any>} options */
 export function createLifecycleEventSubscriberRegistry({
   subscribers = [],
 } = {}) {
@@ -631,12 +651,14 @@ export function createLifecycleEventSubscriberRegistry({
   const registry = new Map();
 
   function registerSubscriber({
+    // @ts-ignore
     subscriberId,
     eventTypes = ['*'],
     redactionRequired = true,
     externalTelemetry = false,
     writesArtifacts = false,
     writesLogs = false,
+    // @ts-ignore
     subscriber,
     ...extraDescriptorFields
   } = {}) {
@@ -696,6 +718,10 @@ export function createLifecycleEventSubscriberRegistry({
   };
 }
 
+/**
+ * @param {Record<string, any>} event
+ * @param {Record<string, any>} options
+ */
 export async function dispatchLifecycleEvent(event, {
   subscribers = [],
 } = {}) {

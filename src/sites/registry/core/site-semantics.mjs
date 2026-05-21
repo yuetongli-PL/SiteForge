@@ -88,7 +88,7 @@ export function resolveSocialIntentAlias(intentType, context) {
   return SOCIAL_INTENT_ALIASES[normalized] ?? normalized;
 }
 
-export function resolveSocialNaturalLanguageSemantics(context = {}) {
+export function resolveSocialNaturalLanguageSemantics(context = /** @type {any} */ ({})) {
   if (!isSocialContext(context)) {
     return null;
   }

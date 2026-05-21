@@ -102,15 +102,15 @@ function hasUnsafeTerminalText(value) {
   return /[A-Za-z]:\\|\/Users\/|\/home\/|cookie|token|authorization|csrf|raw dom|raw html|原始 DOM|原始 HTML|session id|userDataDir/iu.test(asText(value));
 }
 
-function capabilityId(capability = {}) {
+function capabilityId(capability = /** @type {any} */ ({})) {
   return asText(capability.id ?? capability.name);
 }
 
-function capabilityName(capability = {}) {
+function capabilityName(capability = /** @type {any} */ ({})) {
   return asText(capability.user_facing_name ?? capability.userFacingName ?? capability.userValue ?? capability.name ?? capability.id);
 }
 
-function capabilitySearchText(capability = {}) {
+function capabilitySearchText(capability = /** @type {any} */ ({})) {
   return [
     capability.id,
     capability.name,
@@ -128,21 +128,21 @@ function capabilitySearchText(capability = {}) {
   ].map(lower).join(' ');
 }
 
-function resultReport(result = {}) {
+function resultReport(result = /** @type {any} */ ({})) {
   return result.user_report ?? result.userReport ?? result;
 }
 
-function resultSkillId(result = {}) {
+function resultSkillId(result = /** @type {any} */ ({})) {
   const report = resultReport(result);
   return asText(report.skill_id ?? report.skillId ?? result.skill_id ?? result.skillId);
 }
 
-function resultBuildId(result = {}) {
+function resultBuildId(result = /** @type {any} */ ({})) {
   const report = resultReport(result);
   return asText(report.build_id ?? report.buildId ?? result.build_id ?? result.buildId);
 }
 
-function resultSiteDir(result = {}) {
+function resultSiteDir(result = /** @type {any} */ ({})) {
   return asText(
     result.buildContext?.siteDir
     ?? result.workspace?.siteDir
@@ -151,7 +151,7 @@ function resultSiteDir(result = {}) {
   );
 }
 
-function resultSiteUrl(result = {}) {
+function resultSiteUrl(result = /** @type {any} */ ({})) {
   const report = resultReport(result);
   return asText(
     report.site?.root_url
@@ -162,13 +162,13 @@ function resultSiteUrl(result = {}) {
   );
 }
 
-function resultStatusAllowsInteraction(result = {}) {
+function resultStatusAllowsInteraction(result = /** @type {any} */ ({})) {
   const report = resultReport(result);
   const status = lower(report.result_status ?? result.result_status ?? result.status);
   return status === 'success' || status === 'partial_success';
 }
 
-function hasArrayEvidence(capability = {}) {
+function hasArrayEvidence(capability = /** @type {any} */ ({})) {
   const evidenceArrays = [
     capability.evidence_sources,
     capability.evidenceSources,
@@ -183,18 +183,18 @@ function hasArrayEvidence(capability = {}) {
   return evidenceArrays.some((value) => Array.isArray(value) && value.length > 0);
 }
 
-function hasObjectEvidence(capability = {}) {
+function hasObjectEvidence(capability = /** @type {any} */ ({})) {
   const evidence = capability.evidence;
   if (!evidence || typeof evidence !== 'object') return false;
   return Object.keys(evidence).length > 0;
 }
 
-function hasUsableEvidence(capability = {}) {
+function hasUsableEvidence(capability = /** @type {any} */ ({})) {
   const status = lower(capability.evidence_status ?? capability.evidenceStatus);
   return USABLE_EVIDENCE_STATUSES.has(status) || hasArrayEvidence(capability) || hasObjectEvidence(capability);
 }
 
-function disallowsRawMaterial(capability = {}) {
+function disallowsRawMaterial(capability = /** @type {any} */ ({})) {
   const plan = executionPlan(capability);
   const remediationPlan = capability.remediationPlan ?? capability.remediation_plan ?? capability.remediation?.plan;
   return capability.raw_content_saved === true
@@ -209,7 +209,7 @@ function disallowsRawMaterial(capability = {}) {
     || findUnsafeExecutionPlanMaterialFlags(remediationPlan).length > 0;
 }
 
-function executionPlan(capability = {}) {
+function executionPlan(capability = /** @type {any} */ ({})) {
   const plan = capability.executionPlan ?? capability.execution_plan;
   return plan && typeof plan === 'object' ? plan : null;
 }
@@ -236,7 +236,7 @@ function sameSiteSafeRouteTarget(value, baseUrl) {
   }
 }
 
-function routeTemplateFromCapability(capability = {}, result = {}) {
+function routeTemplateFromCapability(capability = /** @type {any} */ ({}), result = /** @type {any} */ ({})) {
   const plan = executionPlan(capability);
   const candidates = [
     capability.routeTemplate,
@@ -264,7 +264,7 @@ function routeTemplateFromCapability(capability = {}, result = {}) {
   return null;
 }
 
-function planDisablesFinalActions(plan = {}) {
+function planDisablesFinalActions(plan = /** @type {any} */ ({})) {
   const steps = asArray(plan.steps);
   return plan.autoExecute !== true
     && plan.finalSubmit !== true
@@ -280,7 +280,7 @@ function planDisablesFinalActions(plan = {}) {
     ));
 }
 
-function hasSafeLimitedReadPlan(capability = {}) {
+function hasSafeLimitedReadPlan(capability = /** @type {any} */ ({})) {
   const plan = executionPlan(capability);
   if (!plan) return false;
   return planDisablesFinalActions(plan)
@@ -291,32 +291,32 @@ function hasSafeLimitedReadPlan(capability = {}) {
     );
 }
 
-function hasSafeDraftPlan(capability = {}) {
+function hasSafeDraftPlan(capability = /** @type {any} */ ({})) {
   const plan = executionPlan(capability);
   return Boolean(plan && plan.dryRunOnly === true && planDisablesFinalActions(plan));
 }
 
-function modeForCapability(capability = {}) {
+function modeForCapability(capability = /** @type {any} */ ({})) {
   const group = capabilityConfirmationGroup(capability);
   if (group === 'sensitive-read') return 'limited';
   if (group === 'draft-write') return 'draft_only';
   return 'confirmed';
 }
 
-function riskLevel(capability = {}) {
+function riskLevel(capability = /** @type {any} */ ({})) {
   return lower(capability.risk_level ?? capability.riskPolicy?.riskLevel);
 }
 
-function defaultPolicy(capability = {}) {
+function defaultPolicy(capability = /** @type {any} */ ({})) {
   return lower(capability.default_policy ?? capability.riskPolicy?.defaultAction);
 }
 
-function hasPrivateBodyRisk(capability = {}) {
+function hasPrivateBodyRisk(capability = /** @type {any} */ ({})) {
   const text = capabilitySearchText(capability);
   return /private message detail|direct message detail|message body|private body|raw body|body text|content body|正文|私信详情|私信正文|通知正文/u.test(text);
 }
 
-function hasForcedDisabledActionRisk(capability = {}) {
+function hasForcedDisabledActionRisk(capability = /** @type {any} */ ({})) {
   const text = capabilitySearchText(capability);
   const explicitAction = lower(capability.action);
   return FORCED_DISABLED_REMEDIATION_ACTIONS.some((action) => (
@@ -383,7 +383,7 @@ function remediationResultingStatusForType(type, canAutoPrepare) {
   return 'disabled';
 }
 
-function normalizeSafeRemediationPath(remediation = {}) {
+function normalizeSafeRemediationPath(remediation = /** @type {any} */ ({})) {
   const type = normalizeRemediationPathType(remediation.path ?? remediation.type);
   const canAutoPrepare = (
     remediation.canAutoPrepare === true
@@ -410,7 +410,7 @@ function normalizeSafeRemediationPath(remediation = {}) {
   };
 }
 
-function remediationReason(capability = {}) {
+function remediationReason(capability = /** @type {any} */ ({})) {
   const explicitReason = asText(capability.interaction_blocked_reason ?? capability.confirmation_blocked_reason);
   if (explicitReason && hasCjk(explicitReason) && !hasUnsafeTerminalText(explicitReason)) {
     return explicitReason;
@@ -445,7 +445,7 @@ function remediationNextStep(pathType) {
   return '下一步：先实现站点专用安全路径和验证计划，再重新运行构建。';
 }
 
-function enrichSafeRemediation(capability = {}, remediation = buildCapabilitySafeRemediationPath(capability)) {
+function enrichSafeRemediation(capability = /** @type {any} */ ({}), remediation = buildCapabilitySafeRemediationPath(capability)) {
   const pathType = normalizeRemediationPathType(remediation.path ?? remediation.type ?? remediation.safe_remediation_path);
   const canAutoPrepare = (
     remediation.canAutoPrepare === true
@@ -487,11 +487,11 @@ function enrichSafeRemediation(capability = {}, remediation = buildCapabilitySaf
   };
 }
 
-export function buildCapabilityRemediationPath(capability = {}) {
+export function buildCapabilityRemediationPath(capability = /** @type {any} */ ({})) {
   return enrichSafeRemediation(capability);
 }
 
-function attachRemediation(capability = {}) {
+function attachRemediation(capability = /** @type {any} */ ({})) {
   const safeRemediation = buildCapabilityRemediationPath(capability);
   const safeRemediationPath = safeRemediation.path ?? safeRemediation.type;
   const publicRemediation = publicSafeRemediation({
@@ -506,7 +506,7 @@ function attachRemediation(capability = {}) {
   };
 }
 
-function remediationTerminalFields(remediation = {}) {
+function remediationTerminalFields(remediation = /** @type {any} */ ({})) {
   const label = asText(remediation.label) || '保持当前策略';
   const requiredEvidence = asArray(remediation.requiredEvidence)
     .map((item) => asText(item))
@@ -562,7 +562,7 @@ function remediationTerminalFields(remediation = {}) {
   };
 }
 
-function capabilityValidity(capability = {}) {
+function capabilityValidity(capability = /** @type {any} */ ({})) {
   const decorated = decorateCapabilityConfirmation(capability, { skillId: null });
   const status = lower(capability.enabled_status ?? capability.enabledStatus ?? capability.status);
   if (!CONFIRMABLE_STATUSES.has(status)) {
@@ -587,13 +587,13 @@ function capabilityValidity(capability = {}) {
   return { ok: true, reason: null, capability: decorated };
 }
 
-function decorateList(capabilities = [], skillId) {
+function decorateList(capabilities = /** @type {any[]} */ ([]), skillId) {
   return capabilities.map((capability) => decorateCapabilityConfirmation(capability, { skillId }));
 }
 
-function collectConfirmable(capabilities = []) {
-  const safe = [];
-  const blocked = [];
+function collectConfirmable(capabilities = /** @type {any[]} */ ([])) {
+  const safe = /** @type {any[]} */ ([]);
+  const blocked = /** @type {any[]} */ ([]);
   for (const capability of capabilities) {
     const validity = capabilityValidity(capability);
     if (validity.ok) {
@@ -608,7 +608,7 @@ function collectConfirmable(capabilities = []) {
   return { safe, blocked };
 }
 
-function remediationSummary(capabilities = []) {
+function remediationSummary(capabilities = /** @type {any[]} */ ([])) {
   const summary = {
     total: 0,
     autoPreparable: 0,
@@ -625,7 +625,7 @@ function remediationSummary(capabilities = []) {
     const remediation = capability.safe_remediation
       ?? (typeof capability.safe_remediation_path === 'object' ? capability.safe_remediation_path : null)
       ?? buildCapabilityRemediationPath(capability);
-    const type = normalizeRemediationPathType(remediation.type ?? remediation.path ?? capability.safe_remediation_path);
+    const type = /** @type {any} */ (normalizeRemediationPathType(remediation.type ?? remediation.path ?? capability.safe_remediation_path));
     summary.total += 1;
     const canAutoPrepare = (
       remediation.canAutoPrepare === true
@@ -658,7 +658,7 @@ function remediationSummary(capabilities = []) {
   };
 }
 
-export function capabilityInteractionState(result = {}) {
+export function capabilityInteractionState(result = /** @type {any} */ ({})) {
   const report = resultReport(result);
   const skillId = resultSkillId(result);
   const enabled = decorateList(report.enabled_capabilities ?? [], skillId);
@@ -689,7 +689,7 @@ export function capabilityInteractionState(result = {}) {
   };
 }
 
-export function shouldOfferCapabilityInteraction(result = {}, options = {}) {
+export function shouldOfferCapabilityInteraction(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   if (options.interactive !== true || options.json === true || options.quiet === true) return false;
   if (options.debug === true || options.verbose === true) return false;
   if (options.manual === true) return false;
@@ -698,7 +698,7 @@ export function shouldOfferCapabilityInteraction(result = {}, options = {}) {
   return state.safeConfirmable.length > 0 || state.disabledReview.length > 0 || state.blockedConfirmable.length > 0;
 }
 
-function modeLabel(capability = {}) {
+function modeLabel(capability = /** @type {any} */ ({})) {
   const mode = modeForCapability(capability);
   if (mode === 'limited') return '有限只读';
   if (mode === 'draft_only') return '草稿模式';
@@ -718,7 +718,7 @@ function firstItems(capabilities, limit = MAX_INLINE_CAPABILITIES) {
   return lines;
 }
 
-export function renderCapabilityInteractionPrompt(result = {}, options = {}) {
+export function renderCapabilityInteractionPrompt(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const state = capabilityInteractionState(result);
   const lines = [
     '',
@@ -803,7 +803,7 @@ async function readExistingDecisionFile(filePath, skillId) {
   }
 }
 
-export async function writeCapabilityInteractionDecisions(result = {}, capabilities = [], options = {}) {
+export async function writeCapabilityInteractionDecisions(result = /** @type {any} */ ({}), capabilities = /** @type {any[]} */ ([]), options = /** @type {any} */ ({})) {
   const state = capabilityInteractionState(result);
   const siteDir = asText(options.siteDir ?? state.siteDir);
   if (!siteDir) {
@@ -859,7 +859,7 @@ export async function writeCapabilityInteractionDecisions(result = {}, capabilit
   };
 }
 
-function remediationPlanRecord(capability = {}) {
+function remediationPlanRecord(capability = /** @type {any} */ ({})) {
   const remediation = capability.safe_remediation
     ?? (typeof capability.safe_remediation_path === 'object' ? capability.safe_remediation_path : null)
     ?? buildCapabilityRemediationPath(capability);
@@ -902,7 +902,7 @@ function remediationPlanRecord(capability = {}) {
   };
 }
 
-export async function writeCapabilityRemediationPlan(result = {}, capabilities = [], options = {}) {
+export async function writeCapabilityRemediationPlan(result = /** @type {any} */ ({}), capabilities = /** @type {any[]} */ ([]), options = /** @type {any} */ ({})) {
   const state = capabilityInteractionState(result);
   const siteDir = asText(options.siteDir ?? state.siteDir);
   if (!siteDir) {
@@ -1051,15 +1051,15 @@ function treeRow(left, right = '') {
   return right ? `${treePad(left)} │ ${right}` : left;
 }
 
-function isTreeSpaceKey(key = {}) {
+function isTreeSpaceKey(key = /** @type {any} */ ({})) {
   return isTerminalSpaceKey(key);
 }
 
-function isTreeSlashKey(key = {}) {
+function isTreeSlashKey(key = /** @type {any} */ ({})) {
   return isTerminalSlashKey(key);
 }
 
-function isTreeCharacterKey(key = {}, character) {
+function isTreeCharacterKey(key = /** @type {any} */ ({}), character) {
   return isTerminalCharacterKey(key, character);
 }
 
@@ -1070,15 +1070,15 @@ function compactTreeText(value, maxLength = 52) {
   return `${chars.slice(0, Math.max(0, maxLength - 1)).join('')}…`;
 }
 
-function resultUserReport(result = {}) {
+function resultUserReport(result = /** @type {any} */ ({})) {
   return result.user_report ?? result.userReport ?? {};
 }
 
-function treeBuildStatus(result = {}) {
+function treeBuildStatus(result = /** @type {any} */ ({})) {
   return resultBuildStatusLabel(result);
 }
 
-function capabilityTreeRightText(capability = {}, state = {}) {
+function capabilityTreeRightText(capability = /** @type {any} */ ({}), state = /** @type {any} */ ({})) {
   const id = capabilityId(capability);
   if (state.safeById?.has(id)) {
     const group = capabilityConfirmationGroup(capability);
@@ -1099,7 +1099,7 @@ function capabilityTreeRightText(capability = {}, state = {}) {
   return compactTreeText(capability.reason ?? capability.default_policy ?? capability.enabled_status, 64);
 }
 
-function capabilityTreeBox(capability = {}, state = {}, ui = {}) {
+function capabilityTreeBox(capability = /** @type {any} */ ({}), state = /** @type {any} */ ({}), ui = /** @type {any} */ ({})) {
   const id = capabilityId(capability);
   if (state.safeById?.has(id) || state.remediationById?.has(id)) {
     return ui.selected.has(id) ? '[x]' : '[ ]';
@@ -1209,7 +1209,7 @@ function treeSections(result, state, ui) {
 }
 
 function visibleTreeRows(result, state, ui) {
-  const rows = [];
+  const rows = /** @type {any[]} */ ([]);
   for (const section of treeSections(result, state, ui)) {
     rows.push({ type: 'section', section });
     if (!ui.expanded.has(section.id)) continue;
@@ -1380,7 +1380,7 @@ async function promptCapabilityTreeInteraction(result, options, state) {
     output.write('已保持当前能力策略。\n');
     return { status: 'kept', count: 0 };
   }
-  const results = [];
+  const results = /** @type {any[]} */ ([]);
   if (selectedConfirmations.length) {
     const recorded = await writeCapabilityInteractionDecisions(result, selectedConfirmations, options);
     output.write(renderDecisionResult(recorded, options.cwd ?? process.cwd()));
@@ -1398,7 +1398,7 @@ async function promptCapabilityTreeInteraction(result, options, state) {
   };
 }
 
-export async function promptForCapabilityInteraction(result = {}, options = {}) {
+export async function promptForCapabilityInteraction(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   if (!shouldOfferCapabilityInteraction(result, options)) {
     return null;
   }

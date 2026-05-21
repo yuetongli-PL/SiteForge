@@ -229,11 +229,16 @@ test('x.com generic static build stops at robots Disallow before crawl, skill, o
       /robots\.txt disallows all planned seed URLs/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'robots-disallowed');
+    // @ts-ignore
     assert.equal(failure.stage, 'discoverSeeds');
+    // @ts-ignore
     assert.ok(failure.artifactDir);
 
+    // @ts-ignore
     const seeds = await readJson(path.join(failure.artifactDir, 'seeds.json'));
+    // @ts-ignore
     const buildReport = await readJson(path.join(failure.artifactDir, 'build_report.json'));
     assert.equal(seeds.status, 'blocked');
     assert.equal(seeds.robots.status, 'parsed');
@@ -246,8 +251,11 @@ test('x.com generic static build stops at robots Disallow before crawl, skill, o
     assert.equal(buildReport.summary.registryStatus, null);
     assert.equal(buildReport.stages.crawlStatic.status, 'skipped');
     assert.equal(buildReport.stages.generateSkill.status, 'skipped');
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'crawl_static.json')), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'skill', 'skill.yaml')), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'verification_report.json')), false);
 
     const registry = await readJson(siteRegistryPath(workspace));
@@ -294,12 +302,18 @@ test('x.com known social policy and robots Disallow make noninteractive setup no
     );
 
     assert.equal(prompted, false);
+    // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'setup-known-policy-robots-disallowed');
+    // @ts-ignore
     assert.equal(await pathExists(failure.setupPlanPath), true);
+    // @ts-ignore
     assert.equal(await pathExists(failure.buildProfilePath), false);
+    // @ts-ignore
     assert.equal(await pathExists(failure.savedBuildProfilePath), false);
 
+    // @ts-ignore
     const setupPlan = await readJson(failure.setupPlanPath);
     assertKnownXPolicy(setupPlan);
     assert.equal(setupPlan.summary.buildable, false);
@@ -387,8 +401,8 @@ test('interactive x.com setup uses normal browser handoff by default for user au
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-external-browser-setup-'));
   try {
     await writeKnownXPolicyConfig(workspace);
-    const openedUrls = [];
-    const prompts = [];
+    const openedUrls = /** @type {any[]} */ ([]);
+    const prompts = /** @type {any[]} */ ([]);
     let outputText = '';
     let authorizationChoiceUsed = false;
     const setup = await prepareSiteForgeBuildSetup(X_URL, {
@@ -451,8 +465,8 @@ test('interactive x.com setup reviews authorized collection status before missin
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-authorized-review-'));
   try {
     await writeKnownXPolicyConfig(workspace);
-    const prompts = [];
-    const output = [];
+    const prompts = /** @type {any[]} */ ([]);
+    const output = /** @type {any[]} */ ([]);
     const setup = await prepareSiteForgeBuildSetup(X_URL, {
       cwd: workspace,
       buildId: 'x-authorized-review-setup',
@@ -506,8 +520,8 @@ test('interactive x.com setup reviews authorized collection status before missin
 test('interactive x.com setup loads installed repo policy outside the repository cwd', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-installed-policy-'));
   try {
-    const openedUrls = [];
-    const prompts = [];
+    const openedUrls = /** @type {any[]} */ ([]);
+    const prompts = /** @type {any[]} */ ([]);
     const setup = await prepareSiteForgeBuildSetup(X_URL, {
       cwd: workspace,
       buildId: 'x-installed-policy-setup',
@@ -577,7 +591,9 @@ test('interactive x.com setup rejects unfinished user-authorized login surfaces'
       /user-authorized-setup-incomplete/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'user-authorized-setup-incomplete');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'login-wall');
     const setupPaths = buildSetupAssistantPaths(X_URL, {
       cwd: workspace,
@@ -629,7 +645,9 @@ test('interactive x.com setup reports blocked Google identity-provider handoff c
       /identity-provider-blocked-unsafe-browser/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'user-authorized-setup-incomplete');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'identity-provider-blocked-unsafe-browser');
     const setupPaths = buildSetupAssistantPaths(X_URL, {
       cwd: workspace,
@@ -695,6 +713,7 @@ test('x.com build with surface-only user-authorized setup gates followed-users a
       utterance: 'list followed users',
     });
     assert.equal(lookup.status, 'found');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'read followed users');
     assert.equal(result.summary.registryStatus, 'registered');
   } finally {
@@ -744,6 +763,7 @@ test('x.com user-authorized build models requested recommended timeline through 
       utterance: '读取时间线上推荐的帖子',
     });
     assert.equal(lookup.status, 'found');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'read recommended timeline');
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -803,7 +823,9 @@ test('x.com user-authorized build activates recommended timeline from sanitized 
       utterance: '读取时间线上被推荐的帖子',
     });
     assert.equal(lookup.status, 'found');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'read recommended timeline');
+    // @ts-ignore
     assert.match(lookup.executionPlanId, /read-recommended-timeline/u);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -911,6 +933,7 @@ test('x.com user-authorized browser seed scan activates recommended timeline wit
       utterance: '读取时间线上被推荐的帖子',
     });
     assert.equal(lookup.status, 'found');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'list recommended timeline posts');
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -921,7 +944,7 @@ test('x.com normal browser route seed auto-registers bounded recommended timelin
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-normal-browser-route-seed-'));
   try {
     await writeKnownXPolicyConfig(workspace);
-    const openedUrls = [];
+    const openedUrls = /** @type {any[]} */ ([]);
     let sawManualPrompt = false;
     const setup = await prepareSiteForgeBuildSetup(X_URL, {
       cwd: workspace,
@@ -1019,6 +1042,7 @@ test('x.com normal browser route seed auto-registers bounded recommended timelin
       utterance: '读取时间线上被推荐的帖子',
     });
     assert.equal(lookup.status, 'found');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'read recommended timeline');
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1077,7 +1101,9 @@ test('x.com build activates followed-users only with sanitized capability proof'
       utterance: 'list followed users',
     });
     assert.equal(lookup.status, 'found');
+    // @ts-ignore
     assert.equal(lookup.capabilityName, 'list followed users');
+    // @ts-ignore
     assert.match(lookup.executionPlanId, /list-followed-users/u);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1189,10 +1215,15 @@ test('x.com legacy saved setup profile cannot bypass current evidence gates or c
       /setup-evidence-not-buildable/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'setup-known-policy-robots-disallowed');
+    // @ts-ignore
     assert.equal(await pathExists(failure.buildProfilePath), false);
+    // @ts-ignore
     assert.equal(await pathExists(path.join(failure.artifactDir, 'skill', 'skill.yaml')), false);
+    // @ts-ignore
     const setupPlan = await readJson(failure.setupPlanPath);
     assertKnownXPolicy(setupPlan);
 
@@ -1294,7 +1325,9 @@ test('x.com saved profile with user hints must include userIntentCoverage before
       /setup-evidence-not-buildable/u,
     );
 
+    // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
+    // @ts-ignore
     assert.equal(failure.reasonCode, 'setup-known-policy-robots-disallowed');
   } finally {
     await rm(workspace, { recursive: true, force: true });

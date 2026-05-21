@@ -40,7 +40,7 @@ export function resolveSkillName(inputUrl, explicitSkillName) {
   }
 }
 
-export function mergeSkillOptions(options = {}) {
+export function mergeSkillOptions(options = /** @type {any} */ ({})) {
   const merged = { ...DEFAULT_SKILL_OPTIONS };
   for (const [key, value] of Object.entries(options ?? {})) {
     if (value !== undefined) {

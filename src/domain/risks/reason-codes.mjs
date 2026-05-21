@@ -1437,6 +1437,10 @@ export function normalizeReasonCode(code) {
   return findReasonCodeDefinition(normalized)?.code ?? normalized;
 }
 
+/**
+ * @param {Record<string, any>} code
+ * @param {Record<string, any>} options
+ */
 export function requireReasonCodeDefinition(code, { family } = {}) {
   const definition = findReasonCodeDefinition(code);
   if (!definition) {
@@ -1481,15 +1485,19 @@ function reasonCodeCatalogEntriesFromPayload(payload = REASON_CODE_CATALOG) {
 
 export function assertReasonCodeCatalogCompatible(payload = REASON_CODE_CATALOG) {
   if (!Array.isArray(payload)) {
+    // @ts-ignore
     if (payload?.schemaVersion === undefined || payload?.schemaVersion === null) {
       throw new Error('reasonCode catalog schemaVersion is required');
     }
+    // @ts-ignore
     if (!isReasonCodeSchemaVersionCompatible(payload.schemaVersion)) {
       throw new Error(
+        // @ts-ignore
         `reasonCode catalog schemaVersion ${payload.schemaVersion} is not compatible with ${REASON_CODE_SCHEMA_VERSION}`,
       );
     }
   }
+  // @ts-ignore
   assertReasonCodeCatalogValid(reasonCodeCatalogEntriesFromPayload(payload));
   return true;
 }

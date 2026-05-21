@@ -101,7 +101,7 @@ function deriveContentTypeFromUrl(input) {
 
 function dedupeCards(cards) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const card of cards) {
     const title = normalizeDisplayText(card?.title);
     const url = normalizeUrlNoFragment(card?.url);
@@ -133,7 +133,7 @@ function dedupeCards(cards) {
 
 function dedupeAuthors(authors) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const author of authors) {
     const name = normalizeDisplayText(author?.name);
     const url = normalizeUrlNoFragment(author?.url);
@@ -156,7 +156,7 @@ function dedupeAuthors(authors) {
 }
 
 function cardsFromOutgoingEdges(state, outgoingEdges, statesById) {
-  const cards = [];
+  const cards = /** @type {any[]} */ ([]);
   for (const edge of outgoingEdges ?? []) {
     const triggerKind = edge?.trigger?.kind ?? null;
     const semanticRole = edge?.trigger?.semanticRole ?? null;
@@ -193,7 +193,7 @@ function cardsFromOutgoingEdges(state, outgoingEdges, statesById) {
 }
 
 function cardsFromPageFacts(pageFacts) {
-  const cards = [];
+  const cards = /** @type {any[]} */ ([]);
   for (const entry of toArray(pageFacts?.featuredContentCards)) {
     cards.push({
       title: entry?.title,
@@ -255,7 +255,7 @@ function authorsFromPageFacts(pageFacts) {
   const urls = toArray(pageFacts?.featuredAuthorUrls);
   const mids = toArray(pageFacts?.featuredAuthorMids);
   const length = Math.max(names.length, urls.length, mids.length);
-  const authors = [];
+  const authors = /** @type {any[]} */ ([]);
   for (let index = 0; index < length; index += 1) {
     authors.push({
       name: names[index],
@@ -266,7 +266,7 @@ function authorsFromPageFacts(pageFacts) {
   return authors;
 }
 
-export function enrichBilibiliPageFactsForState(state, context = {}) {
+export function enrichBilibiliPageFactsForState(state, context = /** @type {any} */ ({})) {
   const finalUrl = state?.finalUrl ?? null;
   const rawPageFacts = state?.pageFacts ?? null;
   if (!rawPageFacts && !isBilibiliUrl(finalUrl)) {

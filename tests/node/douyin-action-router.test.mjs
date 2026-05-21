@@ -126,22 +126,35 @@ test('Douyin action CLI output fails closed without raw cause exposure', () => {
   assert.throws(
     () => douyinActionCliJson(payload),
     (error) => {
+      // @ts-ignore
       assert.equal(error.name, 'DouyinActionCliOutputRedactionFailure');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'redaction-failed');
+      // @ts-ignore
       assert.equal(error.retryable, recovery.retryable);
+      // @ts-ignore
       assert.equal(error.cooldownNeeded, recovery.cooldownNeeded);
+      // @ts-ignore
       assert.equal(error.isolationNeeded, recovery.isolationNeeded);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, recovery.manualRecoveryNeeded);
+      // @ts-ignore
       assert.equal(error.degradable, recovery.degradable);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, recovery.artifactWriteAllowed);
+      // @ts-ignore
       assert.equal(error.catalogAction, recovery.catalogAction);
+      // @ts-ignore
       assert.equal(error.diagnosticWriteAllowed, false);
+      // @ts-ignore
       assert.equal(Object.hasOwn(error, 'cause'), false);
+      // @ts-ignore
       assert.deepEqual(error.causeSummary, {
         name: 'Error',
         code: null,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         `${error.message}\n${JSON.stringify(error)}`,
         /synthetic-douyin-cli-cause-|Authorization: Bearer|csrf=/iu,
       );
@@ -522,8 +535,11 @@ test('runDouyinAction resolves followed updates and author pages into concrete d
   assert.equal(result.download.summary.total, 3);
   assert.equal(typeof capturedInputPayload, 'string');
   assert.ok(Array.isArray(capturedArgs));
+  // @ts-ignore
   assert.match(String(capturedArgs[0]).replace(/\\/gu, '/'), /\/src\/sites\/douyin\/download\/python\/douyin\.py$/u);
+  // @ts-ignore
   assert.ok(capturedArgs.includes('--browser-timeout'));
+  // @ts-ignore
   assert.equal(capturedArgs[capturedArgs.indexOf('--browser-timeout') + 1], '45000');
   assert.equal(mediaResolveCalled, false);
   assert.match(capturedInputPayload, /"resolvedMediaUrl":"https:\/\/sf5-hl-ali-cdn-tos\.douyinstatic\.com\/obj\/tos-cn-ve-2774\/example111"/u);
@@ -595,6 +611,7 @@ test('runDouyinAction pre-resolves direct douyin video inputs before spawning py
   assert.equal(result.mediaResolution?.attemptedCount, 1);
   assert.equal(result.mediaResolution?.resolvedCount, 1);
   assert.equal(typeof capturedInputPayload, 'string');
+  // @ts-ignore
   assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/douyin\/download\/python\/douyin\.py$/u);
   assert.match(capturedInputPayload, /"resolvedMediaUrl":"https:\/\/v26-web\.douyinvod\.com\/example\/direct\.mp4"/u);
   assert.match(capturedInputPayload, /"videoId":"7592547346870620763"/u);

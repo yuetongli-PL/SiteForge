@@ -53,6 +53,7 @@ const DATA_FLOW_ARTIFACT_FILE_NAMES = Object.freeze({
   redactionAudit: 'site-capability-data-flow-redaction-audit.json',
 });
 
+/** @param {Record<string, any>} [audit] */
 function summarizeRedactionAudit(audit = {}) {
   return {
     redactedPathCount: Array.isArray(audit.redactedPaths) ? audit.redactedPaths.length : 0,
@@ -133,6 +134,7 @@ async function writePreparedArtifactSet(entries = [], label = 'DataFlowEvidence 
   }
 }
 
+/** @param {Record<string, any>} [overrides] */
 function createDefaultCaptureFixture(overrides = {}) {
   return {
     schemaVersion: 1,
@@ -153,6 +155,7 @@ function createDefaultCaptureFixture(overrides = {}) {
   };
 }
 
+/** @param {Record<string, any>} options */
 function createCandidateFromRedactedCapture({
   captureEvidence,
   siteKey,
@@ -188,6 +191,7 @@ function createReasonCodeEvidence(codes) {
   };
 }
 
+/** @param {Record<string, any>} [reasonCodes] */
 function assertReasonCodeEvidenceCompatible(reasonCodes = {}) {
   if (reasonCodes.schemaVersion !== REASON_CODE_SCHEMA_VERSION) {
     throw new Error(
@@ -203,6 +207,7 @@ function assertReasonCodeEvidenceCompatible(reasonCodes = {}) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createSiteCapabilityDataFlowEvidence({
   siteKey = 'section6-fixture',
   candidateId = 'section6-synthetic-capture-items',
@@ -411,10 +416,12 @@ export function createSiteCapabilityDataFlowEvidence({
   return redactedEvidence;
 }
 
+/** @param {Record<string, any>} options */
 export async function writeSiteCapabilityDataFlowEvidenceArtifacts({
   evidence,
   ...evidenceOptions
 } = {}, {
+  // @ts-ignore
   outputDir,
 } = {}) {
   const outputRoot = normalizeText(outputDir);
@@ -511,6 +518,7 @@ export async function writeSiteCapabilityDataFlowEvidenceArtifacts({
   };
 }
 
+/** @param {Record<string, any>} [evidence] */
 export function assertSiteCapabilityDataFlowEvidenceCompatible(evidence = {}) {
   if (evidence.schemaVersion !== SITE_CAPABILITY_DATA_FLOW_EVIDENCE_SCHEMA_VERSION) {
     throw new Error(

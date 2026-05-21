@@ -53,7 +53,7 @@ function toArray(value) {
 }
 
 function dedupeBy(items, keyBuilder) {
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   const seen = new Set();
   for (const item of items) {
     const key = normalizeText(keyBuilder(item));
@@ -91,7 +91,7 @@ function readUrlSearchParam(value, paramName) {
   }
 }
 
-function inferXiaohongshuXsecSource(candidate = {}) {
+function inferXiaohongshuXsecSource(candidate = /** @type {any} */ ({})) {
   const explicitSource = normalizeText(
     candidate.xsecSource
     || readUrlSearchParam(candidate.navigationUrl, 'xsec_source')
@@ -114,7 +114,7 @@ function inferXiaohongshuXsecSource(candidate = {}) {
   return null;
 }
 
-function buildXiaohongshuNavigableNoteUrl(candidate = {}) {
+function buildXiaohongshuNavigableNoteUrl(candidate = /** @type {any} */ ({})) {
   const noteId = normalizeText(candidate.noteId) || extractXiaohongshuNoteId(candidate.navigationUrl) || extractXiaohongshuNoteId(candidate.url);
   const fallbackUrl = normalizeUrl(candidate.navigationUrl || candidate.url || '');
   const xsecToken = normalizeText(
@@ -146,7 +146,7 @@ function buildXiaohongshuNavigableNoteUrl(candidate = {}) {
   }
 }
 
-function buildXiaohongshuCandidateDetailTargets(candidate = {}) {
+function buildXiaohongshuCandidateDetailTargets(candidate = /** @type {any} */ ({})) {
   return dedupeBy([
     buildXiaohongshuNavigableNoteUrl(candidate),
     normalizeUrl(candidate.navigationUrl || ''),
@@ -160,7 +160,7 @@ function buildXiaohongshuAuthorUrl(userId) {
   return normalizedUserId ? `https://www.xiaohongshu.com/user/profile/${normalizedUserId}` : null;
 }
 
-function resolveXiaohongshuFollowQueryInputUrl(profile = {}) {
+function resolveXiaohongshuFollowQueryInputUrl(profile = /** @type {any} */ ({})) {
   return normalizeUrl(
     profile?.authSession?.verificationUrl
     || profile?.authSession?.keepaliveUrl
@@ -225,7 +225,7 @@ function normalizeSessionStatus(value) {
     : null;
 }
 
-function resolveRequestSessionStatus(request = {}) {
+function resolveRequestSessionStatus(request = /** @type {any} */ ({})) {
   return normalizeSessionStatus(
     request.sessionStatus
     ?? request.sessionHealthManifest?.healthStatus
@@ -235,7 +235,7 @@ function resolveRequestSessionStatus(request = {}) {
   );
 }
 
-function buildAuthRequiredSessionBlock(plan, request = {}) {
+function buildAuthRequiredSessionBlock(plan, request = /** @type {any} */ ({})) {
   if (plan.authRequired !== true) {
     return null;
   }
@@ -273,7 +273,7 @@ function parseTimestampMs(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function resolveXiaohongshuDownloadSessionMaxAgeMs(request = {}, profile = {}) {
+function resolveXiaohongshuDownloadSessionMaxAgeMs(request = /** @type {any} */ ({}), profile = /** @type {any} */ ({})) {
   const explicitValue = normalizePositiveDurationMs(
     request.download?.sessionMaxAgeMs
     ?? request.download?.sidecarMaxAgeMs
@@ -318,7 +318,7 @@ function normalizeStringRecord(value) {
   );
 }
 
-function resolveFirstValue(sources = [], reader) {
+function resolveFirstValue(sources = /** @type {any[]} */ ([]), reader) {
   for (const source of sources) {
     const value = reader(source);
     if (value !== undefined && value !== null && value !== '') {
@@ -337,7 +337,7 @@ function decodeEmbeddedJsonString(value = '') {
   );
 }
 
-function extractEmbeddedJsonString(source = '', keys = []) {
+function extractEmbeddedJsonString(source = '', keys = /** @type {any[]} */ ([])) {
   const text = String(source ?? '');
   for (const key of toArray(keys).map((entry) => normalizeText(entry)).filter(Boolean)) {
     const matched = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"])*)"`, 'iu'));
@@ -348,7 +348,7 @@ function extractEmbeddedJsonString(source = '', keys = []) {
   return null;
 }
 
-function extractEmbeddedJsonBoolean(source = '', keys = []) {
+function extractEmbeddedJsonBoolean(source = '', keys = /** @type {any[]} */ ([])) {
   const text = String(source ?? '');
   for (const key of toArray(keys).map((entry) => normalizeText(entry)).filter(Boolean)) {
     const matched = text.match(new RegExp(`"${key}"\\s*:\\s*(true|false)`, 'iu'));
@@ -359,7 +359,7 @@ function extractEmbeddedJsonBoolean(source = '', keys = []) {
   return null;
 }
 
-function extractEmbeddedJsonNumber(source = '', keys = []) {
+function extractEmbeddedJsonNumber(source = '', keys = /** @type {any[]} */ ([])) {
   const text = String(source ?? '');
   for (const key of toArray(keys).map((entry) => normalizeText(entry)).filter(Boolean)) {
     const matched = text.match(new RegExp(`"${key}"\\s*:\\s*(\\d+)`, 'iu'));
@@ -370,11 +370,11 @@ function extractEmbeddedJsonNumber(source = '', keys = []) {
   return 0;
 }
 
-function findMatchingRecordKey(record = {}, pattern) {
+function findMatchingRecordKey(record = /** @type {any} */ ({}), pattern) {
   return Object.keys(normalizeStringRecord(record)).find((key) => pattern.test(key)) || null;
 }
 
-function applyQueryEntriesToUrl(url, queryEntries = {}) {
+function applyQueryEntriesToUrl(url, queryEntries = /** @type {any} */ ({})) {
   const normalizedUrl = normalizeUrl(url);
   if (!normalizedUrl) {
     return null;
@@ -423,7 +423,7 @@ function canonicalizeHeaderName(value) {
     .join('-');
 }
 
-function normalizeHeaderEntries(headers = {}) {
+function normalizeHeaderEntries(headers = /** @type {any} */ ({})) {
   return Object.fromEntries(
     Object.entries(headers ?? {})
       .map(([key, value]) => [canonicalizeHeaderName(key), normalizeText(value)])
@@ -488,7 +488,7 @@ function extractXiaohongshuInitialState(html = '') {
   }
 }
 
-function extractXiaohongshuImageCount(candidate = {}) {
+function extractXiaohongshuImageCount(candidate = /** @type {any} */ ({})) {
   const sources = [
     candidate,
     candidate.noteCard,
@@ -511,7 +511,7 @@ function extractXiaohongshuImageCount(candidate = {}) {
   return 0;
 }
 
-function normalizeXiaohongshuAuthorFields(author = {}, fallback = {}) {
+function normalizeXiaohongshuAuthorFields(author = /** @type {any} */ ({}), fallback = /** @type {any} */ ({})) {
   const source = author && typeof author === 'object' ? author : {};
   const fallbackSource = fallback && typeof fallback === 'object' ? fallback : {};
   const authorUserId = normalizeText(
@@ -547,13 +547,13 @@ function normalizeXiaohongshuAuthorFields(author = {}, fallback = {}) {
   };
 }
 
-function normalizeXiaohongshuCandidate(rawCandidate = {}, {
-  fallbackAuthor = {},
+function normalizeXiaohongshuCandidate(rawCandidate = /** @type {any} */ ({}), {
+  fallbackAuthor = /** @type {any} */ ({}),
   queryText = null,
   sourceType = null,
   sourceOrder = Number.MAX_SAFE_INTEGER,
   baseUrl = undefined,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const wrapper = rawCandidate && typeof rawCandidate === 'object' ? rawCandidate : {};
   const noteCard = wrapper.noteCard && typeof wrapper.noteCard === 'object' ? wrapper.noteCard : wrapper;
   const xsecToken = normalizeText(
@@ -660,7 +660,7 @@ function normalizeXiaohongshuCandidate(rawCandidate = {}, {
 }
 
 function mergeXiaohongshuCandidates(...lists) {
-  const mergedCandidates = [];
+  const mergedCandidates = /** @type {any[]} */ ([]);
   const keyToIndex = new Map();
   const buildKeys = (candidate) => dedupeBy([
     candidate.noteId ? `note:${candidate.noteId}` : null,
@@ -719,7 +719,7 @@ function mergeXiaohongshuCandidates(...lists) {
   return mergedCandidates;
 }
 
-function buildCandidateSearchText(candidate = {}) {
+function buildCandidateSearchText(candidate = /** @type {any} */ ({})) {
   return [
     candidate.title,
     candidate.excerpt,
@@ -732,7 +732,7 @@ function buildCandidateSearchText(candidate = {}) {
     .join(' ');
 }
 
-function scoreQueryMatch(candidate = {}, queryText = null) {
+function scoreQueryMatch(candidate = /** @type {any} */ ({}), queryText = null) {
   const normalizedQuery = normalizeText(queryText).toLowerCase();
   if (!normalizedQuery) {
     return 0;
@@ -757,7 +757,7 @@ function scoreQueryMatch(candidate = {}, queryText = null) {
   return score;
 }
 
-function scoreXiaohongshuCandidate(candidate = {}, { queryText = null } = {}) {
+function scoreXiaohongshuCandidate(candidate = /** @type {any} */ ({}), { queryText = null } = /** @type {any} */ ({})) {
   const contentType = normalizeText(candidate.contentType).toLowerCase();
   let score = 0;
   if (contentType === 'normal') {
@@ -779,7 +779,7 @@ function scoreXiaohongshuCandidate(candidate = {}, { queryText = null } = {}) {
   return score;
 }
 
-function sortXiaohongshuCandidates(candidates, { queryText = null } = {}) {
+function sortXiaohongshuCandidates(candidates, { queryText = null } = /** @type {any} */ ({})) {
   return [...candidates]
     .map((candidate, index) => ({
       ...candidate,
@@ -794,7 +794,7 @@ function sortXiaohongshuCandidates(candidates, { queryText = null } = {}) {
     ));
 }
 
-function classifyXiaohongshuCandidatePrefilterPhase(candidate = {}) {
+function classifyXiaohongshuCandidatePrefilterPhase(candidate = /** @type {any} */ ({})) {
   const contentType = normalizeText(candidate.contentType).toLowerCase();
   const imageCount = normalizePositiveInteger(candidate.imageCount, 0);
   const hasResolvableTarget = Boolean(candidate.url || candidate.noteId);
@@ -838,7 +838,7 @@ function buildCandidateResolutionPlan(candidates, request) {
     rankedCandidates.length,
     Math.max(limit * 3, limit + 4, 8),
   );
-  const orderedCandidates = [];
+  const orderedCandidates = /** @type {any[]} */ ([]);
   const seen = new Set();
   const appendCandidates = (entries, budget = entries.length) => {
     let remaining = Math.max(0, normalizePositiveInteger(budget, 0) || 0);
@@ -878,7 +878,7 @@ function buildCandidateResolutionPlan(candidates, request) {
   };
 }
 
-function buildSearchCandidates(signature = {}) {
+function buildSearchCandidates(signature = /** @type {any} */ ({})) {
   const pageFacts = signature?.pageFacts ?? {};
   const initialState = extractXiaohongshuInitialState(signature?.html);
   const queryText = normalizeText(
@@ -909,7 +909,7 @@ function buildSearchCandidates(signature = {}) {
   );
 }
 
-function buildAuthorCandidates(signature = {}, { queryText = null } = {}) {
+function buildAuthorCandidates(signature = /** @type {any} */ ({}), { queryText = null } = /** @type {any} */ ({})) {
   const pageFacts = signature?.pageFacts ?? {};
   const initialState = extractXiaohongshuInitialState(signature?.html);
   const fallbackAuthor = {
@@ -1076,13 +1076,13 @@ function normalizeAuthorResumeState(rawState, fallbackAuthorUrl = null) {
   };
 }
 
-function normalizeAuthorResumeStates(request = {}) {
+function normalizeAuthorResumeStates(request = /** @type {any} */ ({})) {
   return toArray(request.download?.authorResumeState ?? request.authorResumeState ?? request.download?.resumeState ?? [])
     .map((entry) => normalizeAuthorResumeState(entry))
     .filter(Boolean);
 }
 
-function resolveMatchingAuthorResumeState(authorUrl, resumeStates = [], { allowSingleFallback = false } = {}) {
+function resolveMatchingAuthorResumeState(authorUrl, resumeStates = /** @type {any[]} */ ([]), { allowSingleFallback = false } = /** @type {any} */ ({})) {
   const normalizedAuthorUrl = normalizeUrl(authorUrl);
   const authorUserId = extractXiaohongshuAuthorUserId(normalizedAuthorUrl);
   for (const resumeState of resumeStates) {
@@ -1105,7 +1105,7 @@ function resolveMatchingAuthorResumeState(authorUrl, resumeStates = [], { allowS
 function readXiaohongshuContinuationState(html = '', {
   authorUrl = null,
   finalUrl = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const initialState = extractXiaohongshuInitialState(html);
   const userState = initialState?.user ?? {};
   const userPageData = userState?.userPageData ?? initialState?.userPageData ?? {};
@@ -1138,12 +1138,12 @@ function readXiaohongshuContinuationState(html = '', {
     extractEmbeddedJsonString(html, ['nextPageUrl', 'nextUrl', 'nextPagePath', 'continuationUrl']) || '',
     finalUrl || authorUrl,
   );
-  let nextPageQuery = {};
+  let nextPageQuery = /** @type {any} */ ({});
   if (nextPageUrl) {
     try {
       nextPageQuery = normalizeStringRecord(Object.fromEntries(new URL(nextPageUrl).searchParams.entries()));
     } catch {
-      nextPageQuery = {};
+      nextPageQuery = /** @type {any} */ ({});
     }
   }
   const combinedQuery = {
@@ -1205,7 +1205,7 @@ function readXiaohongshuContinuationState(html = '', {
   };
 }
 
-function hasXiaohongshuCursorHint(state = {}) {
+function hasXiaohongshuCursorHint(state = /** @type {any} */ ({})) {
   const query = normalizeStringRecord(state?.query);
   return Boolean(
     normalizeText(state?.cursor)
@@ -1214,10 +1214,10 @@ function hasXiaohongshuCursorHint(state = {}) {
   );
 }
 
-function createAuthorContinuationTarget(authorUrl, continuationState = {}, {
+function createAuthorContinuationTarget(authorUrl, continuationState = /** @type {any} */ ({}), {
   baseUrl = undefined,
   strategy = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const canonicalAuthorUrl = normalizeUrl(
     continuationState.authorUrl
     || authorUrl
@@ -1283,7 +1283,7 @@ function createAuthorContinuationTarget(authorUrl, continuationState = {}, {
   } : null;
 }
 
-function buildAuthorContinuationTargetKey(target = {}) {
+function buildAuthorContinuationTargetKey(target = /** @type {any} */ ({})) {
   return dedupeBy([
     normalizeText(target.url),
     normalizeText(target.cursor),
@@ -1292,7 +1292,7 @@ function buildAuthorContinuationTargetKey(target = {}) {
   ].filter(Boolean), (value) => value).join('|');
 }
 
-function buildAuthorResumeStateFromTarget(target = {}, fallback = {}) {
+function buildAuthorResumeStateFromTarget(target = /** @type {any} */ ({}), fallback = /** @type {any} */ ({})) {
   if (!target?.url) {
     return null;
   }
@@ -1317,7 +1317,7 @@ function buildAuthorResumeStateFromTarget(target = {}, fallback = {}) {
   };
 }
 
-function buildAuthorPageFingerprint(signature = {}, candidates = []) {
+function buildAuthorPageFingerprint(signature = /** @type {any} */ ({}), candidates = /** @type {any[]} */ ([])) {
   const pageFacts = signature?.pageFacts ?? {};
   const noteIds = Array.isArray(pageFacts.featuredContentNoteIds) ? pageFacts.featuredContentNoteIds : [];
   const urls = Array.isArray(pageFacts.featuredContentUrls) ? pageFacts.featuredContentUrls : [];
@@ -1352,7 +1352,7 @@ function buildAuthorContinuationTargets(authorUrl, signature, request) {
     authorUrl: normalizedAuthorUrl,
     finalUrl: signature?.finalUrl,
   });
-  const targets = [];
+  const targets = /** @type {any[]} */ ([]);
   const currentPage = Math.max(
     extractAuthorPageNumber(signature?.finalUrl || normalizedAuthorUrl),
     continuationState.currentPage || 0,
@@ -1412,7 +1412,7 @@ function filterAuthorCandidatesByResumeState(candidates, resumeState = null) {
   });
 }
 
-async function collectAuthorCandidates(authorUrl, request, profile, deps = {}) {
+async function collectAuthorCandidates(authorUrl, request, profile, deps = /** @type {any} */ ({})) {
   const startUrl = normalizeUrl(authorUrl);
   if (!startUrl) {
     return {
@@ -1434,10 +1434,10 @@ async function collectAuthorCandidates(authorUrl, request, profile, deps = {}) {
   const seenPageTargets = new Set();
   const seenPageFingerprints = new Set();
   const queuedPageTargets = new Set();
-  const pendingPageTargets = [];
+  const pendingPageTargets = /** @type {any[]} */ ([]);
   const pageLimit = getAuthorPageLimit(request);
   const fetchSignature = deps.fetchPageSignature ?? (async (url) => await fetchPageSignature(url, request, profile, deps));
-  let mergedCandidates = [];
+  let mergedCandidates = /** @type {any[]} */ ([]);
   let firstError = null;
   let attemptedPages = 0;
   let failedTarget = null;
@@ -1448,7 +1448,7 @@ async function collectAuthorCandidates(authorUrl, request, profile, deps = {}) {
   let lastVisitedUrl = null;
   let lastVisitedPage = null;
   let deferredResumeTarget = null;
-  const continuationStrategies = [];
+  const continuationStrategies = /** @type {any[]} */ ([]);
   const enqueueTarget = (target) => {
     const key = buildAuthorContinuationTargetKey(target);
     if (!target?.url || !key || seenPageTargets.has(key) || queuedPageTargets.has(key)) {
@@ -1561,7 +1561,7 @@ async function collectAuthorCandidates(authorUrl, request, profile, deps = {}) {
   };
 }
 
-async function resolveXiaohongshuPassthroughSidecarContext(deps = {}, options = {}) {
+async function resolveXiaohongshuPassthroughSidecarContext(deps = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const env = deps.env ?? process.env;
   const sidecarPath = normalizeText(env?.BWS_XIAOHONGSHU_DOWNLOAD_AUTH_SIDECAR);
   if (!sidecarPath) {
@@ -1612,7 +1612,7 @@ async function resolveXiaohongshuPassthroughSidecarContext(deps = {}, options = 
   }
 }
 
-async function resolveXiaohongshuDownloadSessionContext(request, profile, deps = {}) {
+async function resolveXiaohongshuDownloadSessionContext(request, profile, deps = /** @type {any} */ ({})) {
   if (request.reuseLoginState === false) {
     return {
       requestHeaders: {},
@@ -1796,7 +1796,7 @@ export function classifyXiaohongshuDownloadInput(raw) {
   }
 }
 
-async function readXiaohongshuProfile(request, deps = {}) {
+async function readXiaohongshuProfile(request, deps = /** @type {any} */ ({})) {
   if (deps.siteProfile) {
     return deps.siteProfile;
   }
@@ -1818,7 +1818,7 @@ function stripHtml(value = '') {
     .trim();
 }
 
-async function fetchHtml(url, request, deps = {}) {
+async function fetchHtml(url, request, deps = /** @type {any} */ ({})) {
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') {
     throw new Error('Global fetch is unavailable; pass fetchImpl in deps.');
@@ -1850,7 +1850,7 @@ async function fetchHtml(url, request, deps = {}) {
   };
 }
 
-async function fetchPageSignature(url, request, profile, deps = {}) {
+async function fetchPageSignature(url, request, profile, deps = /** @type {any} */ ({})) {
   const page = await fetchHtml(url, request, deps);
   const pageType = inferPageTypeFromUrl(page.finalUrl, profile);
   const pageFacts = derivePageFacts({
@@ -1868,7 +1868,7 @@ async function fetchPageSignature(url, request, profile, deps = {}) {
   };
 }
 
-function detectRecoverableSessionMiss(signature = {}) {
+function detectRecoverableSessionMiss(signature = /** @type {any} */ ({})) {
   const restriction = detectXiaohongshuRestrictionPage({
     inputUrl: signature?.requestedUrl,
     finalUrl: signature?.finalUrl,
@@ -1882,7 +1882,7 @@ function detectRecoverableSessionMiss(signature = {}) {
   };
 }
 
-function buildDownloadSessionSummary(currentSummary = {}, recovery = {}) {
+function buildDownloadSessionSummary(currentSummary = /** @type {any} */ ({}), recovery = /** @type {any} */ ({})) {
   return {
     ...currentSummary,
     initialStatus: recovery.initialStatus ?? currentSummary.previousSidecarStatus ?? currentSummary.status ?? null,
@@ -1896,7 +1896,7 @@ function buildDownloadSessionSummary(currentSummary = {}, recovery = {}) {
   };
 }
 
-function createResolvedNoteItem(signature, candidate = {}, sessionHeaders = {}) {
+function createResolvedNoteItem(signature, candidate = /** @type {any} */ ({}), sessionHeaders = /** @type {any} */ ({})) {
   const pageFacts = signature?.pageFacts ?? {};
   const contentImages = Array.isArray(pageFacts.contentImages) ? pageFacts.contentImages : [];
   const contentVideos = Array.isArray(pageFacts.contentVideos) ? pageFacts.contentVideos : [];
@@ -2006,13 +2006,13 @@ function createResolvedNoteItem(signature, candidate = {}, sessionHeaders = {}) 
   };
 }
 
-async function resolveCandidateNotes(candidates, request, profile, deps = {}) {
+async function resolveCandidateNotes(candidates, request, profile, deps = /** @type {any} */ ({})) {
   const limit = getRequestedDownloadLimit(request);
   const candidateBudget = Math.min(
     candidates.length,
     Math.max(limit * 6, limit + 6, 12),
   );
-  const resolvedItems = [];
+  const resolvedItems = /** @type {any[]} */ ([]);
   const diagnostics = {
     attemptedNotes: 0,
     resolvedNotes: 0,
@@ -2058,7 +2058,7 @@ async function resolveCandidateNotes(candidates, request, profile, deps = {}) {
   };
 }
 
-function pageFactsFromResolvedNoteItem(item = {}) {
+function pageFactsFromResolvedNoteItem(item = /** @type {any} */ ({})) {
   const assets = toArray(item.downloadBundle?.assets)
     .map((asset) => ({
       assetId: normalizeText(asset?.assetId) || undefined,
@@ -2095,7 +2095,7 @@ function pageFactsFromResolvedNoteItem(item = {}) {
   };
 }
 
-function resourceSeedsFromResolvedNoteItem(item = {}) {
+function resourceSeedsFromResolvedNoteItem(item = /** @type {any} */ ({})) {
   const noteFacts = pageFactsFromResolvedNoteItem(item);
   return [
     ...toArray(noteFacts.contentImages).map((asset) => ({ asset, mediaType: 'image' })),
@@ -2131,7 +2131,7 @@ function resourceSeedsFromResolvedNoteItem(item = {}) {
     .filter((seed) => seed.url);
 }
 
-function sanitizeFreshEvidenceSessionSummary(summary = {}) {
+function sanitizeFreshEvidenceSessionSummary(summary = /** @type {any} */ ({})) {
   return {
     attempted: summary.attempted === true,
     status: normalizeText(summary.status) || undefined,
@@ -2145,7 +2145,7 @@ function sanitizeFreshEvidenceSessionSummary(summary = {}) {
   };
 }
 
-async function browserPageSignature(url, request, profile, deps = {}) {
+async function browserPageSignature(url, request, profile, deps = /** @type {any} */ ({})) {
   const inspectReusableSession = deps.inspectRequestReusableSiteSession ?? inspectRequestReusableSiteSession;
   const inspection = await inspectReusableSession(
     url,
@@ -2220,7 +2220,7 @@ async function browserPageSignature(url, request, profile, deps = {}) {
   }
 }
 
-async function resolveFreshEvidenceViaBrowser(sourceInput, request = {}, deps = {}) {
+async function resolveFreshEvidenceViaBrowser(sourceInput, request = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const classification = classifyXiaohongshuDownloadInput(sourceInput);
   if (classification.inputKind !== 'note-detail') {
     return null;
@@ -2263,7 +2263,7 @@ async function resolveFreshEvidenceViaBrowser(sourceInput, request = {}, deps = 
   };
 }
 
-export async function resolveXiaohongshuFreshEvidence(input, options = {}, deps = {}) {
+export async function resolveXiaohongshuFreshEvidence(input, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const sourceInput = normalizeText(input ?? options.input ?? options.request?.input ?? options.request?.url);
   if (!sourceInput) {
     return {
@@ -2298,7 +2298,7 @@ export async function resolveXiaohongshuFreshEvidence(input, options = {}, deps 
   };
   const resolved = await resolveConcreteDownloadInputs(request, deps);
   let items = toArray(resolved.items);
-  let diagnostics = resolved.resolution ?? {};
+  let diagnostics = /** @type {any} */ (resolved.resolution ?? {});
   let browserEvidence = null;
   if (items.length === 0 && request.reuseLoginState !== false) {
     const browserResolved = await resolveFreshEvidenceViaBrowser(sourceInput, request, deps);
@@ -2355,7 +2355,7 @@ export async function resolveXiaohongshuFreshEvidence(input, options = {}, deps 
   };
 }
 
-async function resolveConcreteDownloadInputs(request, deps = {}) {
+async function resolveConcreteDownloadInputs(request, deps = /** @type {any} */ ({})) {
   const profile = await readXiaohongshuProfile(request, deps);
   const authorResumeStates = normalizeAuthorResumeStates(request);
   let sessionContext = await resolveXiaohongshuDownloadSessionContext(request, profile, deps);
@@ -2426,8 +2426,8 @@ async function resolveConcreteDownloadInputs(request, deps = {}) {
       ...classifyXiaohongshuDownloadInput(item),
     }));
   const effectiveClassifications = [...classifications];
-  const candidateNotes = [];
-  const authorContinuations = [];
+  const candidateNotes = /** @type {any[]} */ ([]);
+  const authorContinuations = /** @type {any[]} */ ([]);
   const resolution = {
     inputKinds: {},
     searchQueries: [],
@@ -2617,7 +2617,7 @@ async function resolveConcreteDownloadInputs(request, deps = {}) {
   };
 }
 
-async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = {}) {
+async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = /** @type {any} */ ({})) {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -2644,7 +2644,7 @@ async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = {}) {
   });
 }
 
-async function invokeDownloadCli(request, resolvedItems, deps = {}) {
+async function invokeDownloadCli(request, resolvedItems, deps = /** @type {any} */ ({})) {
   const pythonPath = request.pythonPath || 'python';
   const scriptPath = XIAOHONGSHU_DOWNLOAD_PYTHON_ENTRY;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'xiaohongshu-download-inputs-'));
@@ -2740,7 +2740,7 @@ export async function planXiaohongshuAction(request) {
   };
 }
 
-async function resolveXiaohongshuUnifiedSessionRequest(plan, request = {}, deps = {}) {
+async function resolveXiaohongshuUnifiedSessionRequest(plan, request = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   if (
     plan.followedUsers !== true
     || request.useUnifiedSessionHealth !== true
@@ -2777,7 +2777,7 @@ async function resolveXiaohongshuUnifiedSessionRequest(plan, request = {}, deps 
   };
 }
 
-export async function runXiaohongshuAction(request, deps = {}) {
+export async function runXiaohongshuAction(request, deps = /** @type {any} */ ({})) {
   const plan = await planXiaohongshuAction(request);
   const effectiveRequest = await resolveXiaohongshuUnifiedSessionRequest(plan, request, deps);
   const sessionGate = buildAuthRequiredSessionBlock(plan, effectiveRequest);

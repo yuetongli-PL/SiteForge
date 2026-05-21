@@ -85,7 +85,7 @@ function loadGraphSource(graph) {
   return loadValidatedPlannerGraphSource({ graph, validationReport });
 }
 
-function createContext(overrides = {}) {
+function createContext(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     graphCompatibility: { validated: true },
@@ -105,7 +105,7 @@ function createContext(overrides = {}) {
   };
 }
 
-function createRequest(overrides = {}) {
+function createRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     taskId: 'task:synthetic-fallback',
@@ -118,7 +118,7 @@ function createRequest(overrides = {}) {
   };
 }
 
-async function createRouteResolution({ withFallback = true } = {}) {
+async function createRouteResolution({ withFallback = true } = /** @type {any} */ ({})) {
   const baseGraph = await readMinimalGraphFixture();
   const graph = withFallback ? addPriorityFallbackRoutes(baseGraph) : baseGraph;
   return resolvePlannerRoute({
@@ -129,7 +129,7 @@ async function createRouteResolution({ withFallback = true } = {}) {
   });
 }
 
-function createRiskBlockedCheck(routeResolution, { degradable = true } = {}) {
+function createRiskBlockedCheck(routeResolution, { degradable = true } = /** @type {any} */ ({})) {
   return checkPlannerContext({
     routeResolution,
     planContext: createContext(),
@@ -158,6 +158,7 @@ test('Planner fallback strategy returns not-required when context is satisfied',
   const decision = selectPlannerFallbackRoute({ routeResolution, contextCheck });
 
   assert.equal(assertPlannerFallbackDecisionCompatible(decision), true);
+  // @ts-ignore
   assert.equal(decision.decisionStatus, 'not_required');
   assert.equal(decision.fallbackRequired, false);
   assert.equal(decision.fallbackSelected, false);
@@ -172,12 +173,18 @@ test('Planner fallback strategy selects only Graph-declared fallback for degrada
   const decision = selectPlannerFallbackRoute({ routeResolution, contextCheck });
 
   assert.equal(assertPlannerFallbackDecisionCompatible(decision), true);
+  // @ts-ignore
   assert.equal(decision.decisionStatus, 'fallback_selected');
   assert.equal(decision.degradationApplied, true);
+  // @ts-ignore
   assert.equal(decision.reasonCode, 'planner.route_forbidden_by_risk');
+  // @ts-ignore
   assert.equal(decision.blockedReasonCode, 'planner.route_forbidden_by_risk');
+  // @ts-ignore
   assert.equal(decision.sourceReasonCode, 'graph-route-forbidden-by-risk');
+  // @ts-ignore
   assert.equal(decision.selectedFallbackRoute.routeId, 'route:synthetic.example:metadata-only');
+  // @ts-ignore
   assert.equal(decision.selectedFallbackRoute.source, 'site-capability-graph');
 });
 
@@ -186,10 +193,15 @@ test('Planner fallback strategy maps degradable missing fallback to planner.fall
   const contextCheck = createRiskBlockedCheck(routeResolution);
   const decision = selectPlannerFallbackRoute({ routeResolution, contextCheck });
 
+  // @ts-ignore
   assert.equal(decision.decisionStatus, 'fallback_not_found');
+  // @ts-ignore
   assert.equal(decision.reasonCode, 'planner.fallback_not_found');
+  // @ts-ignore
   assert.equal(decision.blockedReasonCode, 'planner.route_forbidden_by_risk');
+  // @ts-ignore
   assert.equal(decision.sourceReasonCode, 'graph-route-forbidden-by-risk');
+  // @ts-ignore
   assert.equal(decision.degradationAllowed, true);
   assert.equal(decision.fallbackSelected, false);
 });
@@ -233,8 +245,11 @@ test('Planner fallback strategy supports version and schema degradation decision
 
   const decision = selectPlannerFallbackRoute({ routeResolution, contextCheck });
 
+  // @ts-ignore
   assert.equal(decision.decisionStatus, 'fallback_selected');
+  // @ts-ignore
   assert.equal(decision.reasonCode, 'planner.version_incompatible');
+  // @ts-ignore
   assert.equal(decision.selectedFallbackRoute.source, 'site-capability-graph');
 });
 
@@ -243,8 +258,11 @@ test('Planner fallback strategy does not select fallback for non-degradable bloc
   const contextCheck = createRiskBlockedCheck(routeResolution, { degradable: false });
   const decision = selectPlannerFallbackRoute({ routeResolution, contextCheck });
 
+  // @ts-ignore
   assert.equal(decision.decisionStatus, 'not_degradable');
+  // @ts-ignore
   assert.equal(decision.reasonCode, 'planner.route_forbidden_by_risk');
+  // @ts-ignore
   assert.equal(decision.blockedReasonCode, 'planner.route_forbidden_by_risk');
   assert.equal(decision.fallbackSelected, false);
   assert.equal(decision.degradationApplied, false);
@@ -286,9 +304,12 @@ test('Planner fallback strategy never degrades auth session signer or approval g
 
     const decision = selectPlannerFallbackRoute({ routeResolution, contextCheck });
 
+    // @ts-ignore
     assert.equal(decision.decisionStatus, 'not_degradable', reasonCode);
+    // @ts-ignore
     assert.equal(decision.reasonCode, reasonCode);
     assert.equal(decision.fallbackSelected, false);
+    // @ts-ignore
     assert.equal(decision.fallbackReason, 'context_failure_not_fallback_eligible');
   }
 });
@@ -330,6 +351,7 @@ test('Planner fallback decision rejects runtime payloads execution claims and no
     () => assertPlannerFallbackDecisionCompatible({
       ...decision,
       selectedFallbackRoute: {
+        // @ts-ignore
         ...decision.selectedFallbackRoute,
         source: 'planner-invented',
       },
@@ -340,6 +362,7 @@ test('Planner fallback decision rejects runtime payloads execution claims and no
     () => assertPlannerFallbackDecisionCompatible({
       ...decision,
       selectedFallbackRoute: {
+        // @ts-ignore
         ...decision.selectedFallbackRoute,
         routeId: 'route:synthetic.example:not-a-candidate',
       },
@@ -350,6 +373,7 @@ test('Planner fallback decision rejects runtime payloads execution claims and no
     () => assertPlannerFallbackDecisionCompatible({
       ...decision,
       selectedFallbackRoute: {
+        // @ts-ignore
         ...decision.selectedFallbackRoute,
         graphVersion: 'synthetic-other-graph-v1',
       },
@@ -388,7 +412,9 @@ test('Planner fallback decision rejects runtime payloads execution claims and no
       },
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -481,6 +507,7 @@ test('Planner dry-run uses fallback strategy to produce degraded Graph fallback 
   });
 
   assert.equal(dryRunResult.planStatus, 'degraded');
+  // @ts-ignore
   assert.equal(dryRunResult.fallbackDecision.decisionStatus, 'fallback_selected');
   assert.equal(dryRunResult.capabilityPlan.planStatus, 'degraded');
   assert.equal(

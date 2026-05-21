@@ -38,6 +38,7 @@ export function listCompilerExecutorReasonCodeDefinitions() {
 export function requireCompilerExecutorReasonCodeDefinition(code) {
   const definition = DEFINITIONS[code];
   if (!definition) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Unknown compiler/executor reasonCode');
     error.code = 'compiler.reason_code_unknown';
     throw error;

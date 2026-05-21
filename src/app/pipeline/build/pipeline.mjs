@@ -163,7 +163,7 @@ const clone = jsonClone;
 
 function arrayUniqueBy(values, keyFn) {
   const seen = new Set();
-  const result = [];
+  const result = /** @type {any[]} */ ([]);
   for (const value of values) {
     const key = keyFn(value);
     if (seen.has(key)) {
@@ -231,7 +231,7 @@ function canonicalCapabilitySemanticToken(value) {
   return CAPABILITY_SEMANTIC_ALIASES.get(normalized) ?? normalized;
 }
 
-function capabilitySemanticKey(capability = {}) {
+function capabilitySemanticKey(capability = /** @type {any} */ ({})) {
   const setupToken = canonicalCapabilitySemanticToken(capability.setupCapabilityId);
   if (setupToken) {
     return `setup:${setupToken}`;
@@ -247,7 +247,7 @@ function capabilitySemanticKey(capability = {}) {
   return `id:${capability.id ?? capability.name ?? ''}`;
 }
 
-function capabilityPreferenceTuple(capability = {}) {
+function capabilityPreferenceTuple(capability = /** @type {any} */ ({})) {
   const candidateSupplementalProof = capability.status === 'candidate'
     && capability.capabilityVerified !== true
     && capability.requiresCapabilityEvidence === true
@@ -271,7 +271,7 @@ function capabilityPreferenceTuple(capability = {}) {
   ];
 }
 
-function compareCapabilityPreference(left = {}, right = {}) {
+function compareCapabilityPreference(left = /** @type {any} */ ({}), right = /** @type {any} */ ({})) {
   const leftTuple = capabilityPreferenceTuple(left);
   const rightTuple = capabilityPreferenceTuple(right);
   for (let index = 0; index < leftTuple.length; index += 1) {
@@ -282,7 +282,7 @@ function compareCapabilityPreference(left = {}, right = {}) {
   return String(right.id ?? '').localeCompare(String(left.id ?? ''), 'en');
 }
 
-function dedupeSemanticCapabilities(capabilities = []) {
+function dedupeSemanticCapabilities(capabilities = /** @type {any[]} */ ([])) {
   const byKey = new Map();
   for (const capability of Array.isArray(capabilities) ? capabilities : []) {
     const key = capabilitySemanticKey(capability);
@@ -307,7 +307,7 @@ function sourceToDiscoveredBy(source) {
   return 'html_link';
 }
 
-function capabilityCounts(capabilities = []) {
+function capabilityCounts(capabilities = /** @type {any[]} */ ([])) {
   const enabledStatus = capabilityEnabledStatusCounts(capabilities);
   return sanitizeReportPublicValue({
     active: capabilities.filter((capability) => capability.status === 'active').length,
@@ -353,7 +353,7 @@ function safeBuildMessagesForReport(messages, fallbackReasonCode = 'validation-f
     .filter(Boolean));
 }
 
-function buildStageRecord(name, status, result = {}, startedAt, completedAt) {
+function buildStageRecord(name, status, result = /** @type {any} */ ({}), startedAt, completedAt) {
   const warningReasons = (result.warnings ?? [])
     .map((warning) => classifySiteForgeWarning(warning))
     .filter(Boolean);
@@ -386,11 +386,11 @@ function buildStageRecord(name, status, result = {}, startedAt, completedAt) {
 }
 
 function createBlockedStageError(code, message, {
-  warnings = [],
-  artifactPaths = {},
-  reasonCodes = [],
-  summary = {},
-} = {}) {
+  warnings = /** @type {any[]} */ ([]),
+  artifactPaths = /** @type {any} */ ({}),
+  reasonCodes = /** @type {any[]} */ ([]),
+  summary = /** @type {any} */ ({}),
+} = /** @type {any} */ ({})) {
   const warningReasons = warnings
     .map((warning) => classifySiteForgeWarning(warning))
     .filter(Boolean)
@@ -411,7 +411,7 @@ function createBlockedStageError(code, message, {
               ? warningReason
               : normalizeSiteForgeReason('empty-crawl'))
             : warningReason;
-  const error = new Error(reason?.reasonCode ? `${message} [reasonCode=${reason.reasonCode}]` : message);
+  const error = /** @type {Error & Record<string, any>} */ (new Error(reason?.reasonCode ? `${message} [reasonCode=${reason.reasonCode}]` : message));
   error.code = code;
   error.failureClass = reason?.failureClass ?? 'discovery';
   error.reasonCode = reason?.reasonCode ?? 'empty-crawl';
@@ -756,11 +756,11 @@ function toYaml(value, indent = 0) {
 
 const SENSITIVE_BUILD_PROFILE_KEY_PATTERN = /^(?:cookie|cookies|csrf|authorization|authHeader|authHeaders|header|headers|accessToken|access_token|refreshToken|refresh_token|sessdata|sessionId|session_id|sid|token|tokens|profilePath|browserProfile|browserProfileRoot|userDataDir|user_data_dir)$/iu;
 
-function findSensitiveBuildProfileKeys(value, pathParts = []) {
+function findSensitiveBuildProfileKeys(value, pathParts = /** @type {any[]} */ ([])) {
   if (!value || typeof value !== 'object') {
     return [];
   }
-  const hits = [];
+  const hits = /** @type {any[]} */ ([]);
   for (const [key, item] of Object.entries(value)) {
     const nextPath = [...pathParts, key];
     if (SENSITIVE_BUILD_PROFILE_KEY_PATTERN.test(key)) {
@@ -779,7 +779,7 @@ function assertBuildProfileSafe(profile) {
   }
 }
 
-function policyFromSetupProfile(profile = {}) {
+function policyFromSetupProfile(profile = /** @type {any} */ ({})) {
   const scope = profile.scope ?? {};
   const safety = profile.safety ?? {};
   return {
@@ -871,7 +871,7 @@ function collectionReviewBucketSummary(review = null) {
 }
 
 function collectionReviewMissingRecords(review = null) {
-  const records = [];
+  const records = /** @type {any[]} */ ([]);
   for (const kind of ['capabilities', 'intents']) {
     for (const item of review?.[kind]?.missing ?? []) {
       records.push({
@@ -1060,7 +1060,7 @@ function userAuthorizedEvidencePages(context) {
   });
 }
 
-function createInitialContext(inputUrl, options = {}) {
+function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
   const now = options.now instanceof Date ? options.now : new Date();
   const startedAt = now.toISOString();
   const site = createSiteRecord(inputUrl, startedAt);
@@ -1213,7 +1213,7 @@ function updateWebInteractionBuildState(context, stageRecords, stageResults, {
   phase = 'build',
   status = 'running',
   result = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const session = context.options?.webInteractionSession;
   if (!session || typeof session.update !== 'function') {
     return;
@@ -1247,13 +1247,13 @@ function sourceAdapterIdentity(context) {
 
 function normalizedAdapterRouteTemplate(urlValue, rootUrl) {
   try {
-    return routePatternForUrl(urlValue, rootUrl);
+    return routePatternForUrl(urlValue);
   } catch {
     return '/';
   }
 }
 
-function routeSeedPlanFromSeeds(context, seeds = []) {
+function routeSeedPlanFromSeeds(context, seeds = /** @type {any[]} */ ([])) {
   const groups = new Map();
   for (const seed of seeds) {
     const normalizedUrl = normalizeUrl(seed.normalizedUrl ?? seed.url ?? context.site.rootUrl, context.site.rootUrl);
@@ -1441,10 +1441,10 @@ function buildGeneratedAdapterContractTests(profile) {
 }
 
 function buildGeneratedSiteAdapterProfile(context, {
-  seeds = [],
+  seeds = /** @type {any[]} */ ([]),
   status = 'initialized',
   stage = 'registerSite',
-} = {}) {
+} = /** @type {any} */ ({})) {
   const routeSeedPlan = routeSeedPlanFromSeeds(context, seeds);
   const pageTypeMap = pageTypeMapFromAdapterProfile(context, routeSeedPlan);
   const capabilityTemplate = capabilityTemplateFromAdapterProfile(context, routeSeedPlan);
@@ -1490,7 +1490,7 @@ function buildGeneratedSiteAdapterProfile(context, {
   return profile;
 }
 
-function siteAdapterSummaryForReport(context, { includeSource = false } = {}) {
+function siteAdapterSummaryForReport(context, { includeSource = false } = /** @type {any} */ ({})) {
   const profile = context.siteAdapterProfile ?? buildGeneratedSiteAdapterProfile(context);
   const summary = {
     adapter_id: profile.adapterId,
@@ -1519,7 +1519,7 @@ function siteAdapterSummaryForReport(context, { includeSource = false } = {}) {
   return summary;
 }
 
-async function writeGeneratedSiteAdapterProfile(context, args = {}) {
+async function writeGeneratedSiteAdapterProfile(context, args = /** @type {any} */ ({})) {
   const profile = buildGeneratedSiteAdapterProfile(context, args);
   const contractTests = buildGeneratedAdapterContractTests(profile);
   const generatedAdapterPath = await writeArtifactJson(context, 'generated_adapter.json', profile);
@@ -1595,17 +1595,17 @@ async function writeGeneratedSiteAdapterProfile(context, args = {}) {
 async function writeCrawlCheckpoint(context, {
   status = 'running',
   mode = 'seed_inventory',
-  seeds = [],
-  pages = [],
-  failures = [],
+  seeds = /** @type {any[]} */ ([]),
+  pages = /** @type {any[]} */ ([]),
+  failures = /** @type {any[]} */ ([]),
   queueLength = 0,
   queueIndex = 0,
   visitedCount = 0,
   effectiveMaxPages = 0,
   coveragePlan = null,
-  summary = {},
-  warnings = [],
-} = {}) {
+  summary = /** @type {any} */ ({}),
+  warnings = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
   const routeFamilies = (coveragePlan?.seeds ?? seeds).map((seed) => ({
     familyKey: routeFamilyKeyForSeed(seed.normalizedUrl ?? seed.url ?? context.site.rootUrl, context.site.rootUrl),
     routeTemplate: normalizedAdapterRouteTemplate(seed.normalizedUrl ?? seed.url ?? context.site.rootUrl, context.site.rootUrl),
@@ -1763,10 +1763,10 @@ async function discoverSeedsStage(context) {
       },
     };
   }
-  const seeds = [];
-  const warnings = [];
+  const seeds = /** @type {any[]} */ ([]);
+  const warnings = /** @type {any[]} */ ([]);
   const reasonCodes = new Set();
-  const robotsExcludedUrls = [];
+  const robotsExcludedUrls = /** @type {any[]} */ ([]);
   let robotsPolicy = null;
   let robotsStatus = 'unavailable';
   let robotsUnavailableReason = null;
@@ -2163,7 +2163,7 @@ function planRepresentativeCrawlCoverage(context, seeds, { maxPages }) {
     ),
   );
   const countsByFamily = new Map();
-  const selected = [];
+  const selected = /** @type {any[]} */ ([]);
   for (const seed of seedList) {
     if (selected.length >= maxRepresentativePages) {
       break;
@@ -2290,11 +2290,11 @@ async function crawlStaticStage(context, stageResults) {
     : maxPages;
   const visited = new Set();
   const queued = new Set(queue.map((entry) => entry.url));
-  const pages = [];
-  const failures = [];
+  const pages = /** @type {any[]} */ ([]);
+  const failures = /** @type {any[]} */ ([]);
   const warnings = [...coveragePlan.warnings];
   const reasonCodes = new Set();
-  const robotsExcludedUrls = [];
+  const robotsExcludedUrls = /** @type {any[]} */ ([]);
   const canCrawl = (urlValue, collection = { robotsExcludedUrls, reasonCodes }) => {
     if (!robotsPolicy) {
       return true;
@@ -2308,9 +2308,9 @@ async function crawlStaticStage(context, stageResults) {
   };
 
   const crawlEntry = async (entry) => {
-    const entryWarnings = [];
+    const entryWarnings = /** @type {any[]} */ ([]);
     const entryReasonCodes = new Set();
-    const entryRobotsExcludedUrls = [];
+    const entryRobotsExcludedUrls = /** @type {any[]} */ ([]);
     try {
       const pageSource = await context.source.read(entry.url);
       const parsed = parseHtmlDocument(pageSource.body, entry.url);
@@ -2383,7 +2383,7 @@ async function crawlStaticStage(context, stageResults) {
 
   let index = 0;
   while (index < queue.length && visited.size < effectiveMaxPages) {
-    const batch = [];
+    const batch = /** @type {any[]} */ ([]);
     while (index < queue.length && batch.length < STATIC_CRAWL_COLLECTION_CONCURRENCY && visited.size < effectiveMaxPages) {
       const entry = queue[index];
       index += 1;
@@ -2557,7 +2557,7 @@ async function crawlRenderedStage(context) {
 
 async function discoverInteractionsStage(context, stageResults) {
   const { pages } = requireStage(stageResults, 'crawlStatic');
-  const interactions = [];
+  const interactions = /** @type {any[]} */ ([]);
   for (const page of pages) {
     for (const form of page.forms) {
       interactions.push({
@@ -2666,8 +2666,8 @@ async function captureNetworkTracesStage(context) {
 
 async function buildSiteGraphStage(context, stageResults) {
   const { pages } = requireStage(stageResults, 'crawlStatic');
-  const nodes = [];
-  const edges = [];
+  const nodes = /** @type {any[]} */ ([]);
+  const edges = /** @type {any[]} */ ([]);
   const nodeByPageKey = new Map();
   const routeNodes = new Map();
 
@@ -3001,7 +3001,7 @@ async function extractAffordancesStage(context, stageResults) {
     node.stateKey ? `${node.normalizedUrl}#state:${node.stateKey}` : node.normalizedUrl,
     node,
   ]));
-  const affordances = [];
+  const affordances = /** @type {any[]} */ ([]);
 
   for (const page of pages) {
     const pageNode = pageNodeByKey.get(pageIdentity(page));
@@ -3147,6 +3147,10 @@ async function extractAffordancesStage(context, stageResults) {
   };
 }
 
+/**
+ * @param {any} context
+ * @param {Record<string, any>} definition
+ */
 function makeCapability(context, {
   name,
   description,
@@ -3154,9 +3158,9 @@ function makeCapability(context, {
   object,
   userValue,
   entryNodeIds,
-  requiredNodeIds = [],
-  inputs = [],
-  outputs = [],
+  requiredNodeIds = /** @type {any[]} */ ([]),
+  inputs = /** @type {any[]} */ ([]),
+  outputs = /** @type {any[]} */ ([]),
   safetyLevel = 'read_only',
   executionPlan,
   evidence,
@@ -3199,11 +3203,11 @@ function makeCapability(context, {
 
 function buildExecutionPlan(capabilityId, {
   mode = 'read_only',
-  steps = [],
+  steps = /** @type {any[]} */ ([]),
   dryRunOnly = false,
   requiresConfirmation = false,
   autoExecute = false,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     id: executionPlanId(capabilityId),
@@ -3265,7 +3269,7 @@ function blockedActionDisplayLabel(action) {
   return labels[action] ?? String(action ?? '高风险操作').replace(/_/gu, ' ');
 }
 
-function addDisabledRiskCapabilities(context, capabilities, affordances = []) {
+function addDisabledRiskCapabilities(context, capabilities, affordances = /** @type {any[]} */ ([])) {
   const seen = new Set(capabilities.map((capability) => capability.id));
   for (const affordance of affordances) {
     const blockedActions = disabledActionForAffordance(affordance);
@@ -3392,7 +3396,7 @@ function userAuthorizedBrowserSeedCapabilityIds(context) {
   return ids;
 }
 
-function isCatalogCoverageSite(context, pageNodes = [], routeNodes = []) {
+function isCatalogCoverageSite(context, pageNodes = /** @type {any[]} */ ([]), routeNodes = /** @type {any[]} */ ([])) {
   const policy = context.setupProfile?.knownSitePolicy ?? {};
   const pageTypes = knownPolicyPageTypes(context);
   const families = knownPolicyCapabilityFamilies(context);
@@ -3409,7 +3413,7 @@ function isCatalogCoverageSite(context, pageNodes = [], routeNodes = []) {
   return [...pageNodes, ...routeNodes].some((node) => /^catalog_|product_/u.test(node.classification ?? ''));
 }
 
-function catalogCoverageNodes(pageNodes = [], routeNodes = [], classifications = []) {
+function catalogCoverageNodes(pageNodes = /** @type {any[]} */ ([]), routeNodes = /** @type {any[]} */ ([]), classifications = /** @type {any[]} */ ([])) {
   const wanted = new Set(classifications);
   return [...pageNodes, ...routeNodes]
     .filter((node) => wanted.has(node.classification))
@@ -3419,7 +3423,7 @@ function catalogCoverageNodes(pageNodes = [], routeNodes = [], classifications =
     ));
 }
 
-function catalogCoverageEvidence(context, nodes = [], label = 'catalog coverage') {
+function catalogCoverageEvidence(context, nodes = /** @type {any[]} */ ([]), label = 'catalog coverage') {
   const evidence = nodes.flatMap((node) => Array.isArray(node.evidence) ? node.evidence : []).slice(0, 8);
   if (evidence.length) {
     return evidence;
@@ -3434,7 +3438,7 @@ function catalogCoverageEvidence(context, nodes = [], label = 'catalog coverage'
   ];
 }
 
-function catalogCoverageSteps(nodes = []) {
+function catalogCoverageSteps(nodes = /** @type {any[]} */ ([])) {
   return nodes.slice(0, 12).map((node) => {
     if (node.normalizedUrl) {
       return { kind: 'navigate', url: node.normalizedUrl, nodeId: node.id };
@@ -3447,7 +3451,7 @@ function catalogCoverageSteps(nodes = []) {
   });
 }
 
-function catalogCoverageRouteState(nodes = []) {
+function catalogCoverageRouteState(nodes = /** @type {any[]} */ ([])) {
   const candidates = (Array.isArray(nodes) ? nodes : [])
     .map((node, index) => {
       const routeTemplate = node.routeTemplate ?? node.routePattern ?? null;
@@ -3839,7 +3843,7 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
     userValue,
     intentAction,
     setupCapabilityId,
-    inputs = [],
+    inputs = /** @type {any[]} */ ([]),
     outputs = [{ name: 'items', type: 'list' }],
     safetyLevel = 'read_only',
   }) => {
@@ -4016,7 +4020,7 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
 async function discoverCapabilitiesStage(context, stageResults) {
   const graph = requireStage(stageResults, 'classifyNodes').graph;
   const { affordances } = requireStage(stageResults, 'extractAffordances');
-  const capabilities = [];
+  const capabilities = /** @type {any[]} */ ([]);
   const pageNodes = graph.nodes.filter((node) => node.type === 'page');
   const homepage = pageNodes.find((node) => node.classification === 'homepage') ?? pageNodes[0];
   const newsChannels = pageNodes.filter((node) => node.classification === 'news_channel');
@@ -4477,7 +4481,7 @@ async function generateIntentsStage(context, stageResults) {
   };
 }
 
-function selectInvocationProbe(context, capabilities = [], intents = []) {
+function selectInvocationProbe(context, capabilities = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
   const priorityNames = [
     'list followed users',
     'list followed updates',
@@ -4679,7 +4683,7 @@ async function verifySkillStage(context, stageResults) {
   const warnings = report.warnings ?? [];
   const verificationPath = await writeArtifactJson(context, 'verification_report.json', report);
   if (report.status !== 'passed') {
-    const error = new Error(`Skill verification failed [${report.reasonCode ?? 'validation-failed'}]: ${report.errors?.[0] ?? 'unknown error'}`);
+    const error = /** @type {Error & Record<string, any>} */ (new Error(`Skill verification failed [${report.reasonCode ?? 'validation-failed'}]: ${report.errors?.[0] ?? 'unknown error'}`));
     error.code = 'skill-verification-failed';
     error.failureClass = report.failureClass ?? 'validation';
     error.reasonCode = report.reasonCode ?? 'validation-failed';
@@ -4715,7 +4719,7 @@ function siteForgeWriteMode(context) {
     ?? 'promote_verified';
 }
 
-async function writeNonRegisteredRegistryReport(context, status, reasonCode, extra = {}) {
+async function writeNonRegisteredRegistryReport(context, status, reasonCode, extra = /** @type {any} */ ({})) {
   const registryReport = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -4933,7 +4937,7 @@ function compareCollectionOutcomes(left, right) {
 }
 
 function collectUnsuccessfulCollections(stageResults, stageRecords, status = 'success', error = null) {
-  const outcomes = [];
+  const outcomes = /** @type {any[]} */ ([]);
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   for (const capability of capabilities) {
     if (capability.status === 'active') {
@@ -4998,7 +5002,7 @@ function normalizeStatusToken(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
-function isDebugOnlyCapability(capability = {}) {
+function isDebugOnlyCapability(capability = /** @type {any} */ ({})) {
   if (capability.debug_only === true || capability.debugOnly === true || capability.candidate_debug_only === true) {
     return true;
   }
@@ -5029,7 +5033,7 @@ function isDebugOnlyCapability(capability = {}) {
   return normalizeStatusToken(capability.status) === 'candidate';
 }
 
-function capabilitySortText(capability = {}) {
+function capabilitySortText(capability = /** @type {any} */ ({})) {
   return [
     capability.category,
     capability.name,
@@ -5043,7 +5047,7 @@ function capabilitySortText(capability = {}) {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-function capabilityUserSortRank(capability = {}) {
+function capabilityUserSortRank(capability = /** @type {any} */ ({})) {
   const text = capabilitySortText(capability);
   const riskLevel = normalizeStatusToken(capability.risk_level ?? capability.riskPolicy?.riskLevel);
   const defaultPolicy = normalizeStatusToken(capability.default_policy);
@@ -5082,7 +5086,7 @@ function capabilityUserSortRank(capability = {}) {
   return 55;
 }
 
-function sortCapabilitiesForUser(capabilities = []) {
+function sortCapabilitiesForUser(capabilities = /** @type {any[]} */ ([])) {
   return [...(Array.isArray(capabilities) ? capabilities : [])]
     .sort((left, right) => (
       capabilityUserSortRank(left) - capabilityUserSortRank(right)
@@ -5138,7 +5142,7 @@ function relativeReportPath(cwd, value) {
     : String(value).replace(/\\/gu, '/');
 }
 
-function userReportGroupForCapability(capability = {}) {
+function userReportGroupForCapability(capability = /** @type {any} */ ({})) {
   const status = normalizeCapabilityEnablementStatus(capability);
   if (status === 'enabled') return 'enabled';
   if (status === 'limited_enabled') return 'limited_enabled';
@@ -5146,7 +5150,7 @@ function userReportGroupForCapability(capability = {}) {
   return 'disabled';
 }
 
-function userCapabilityReason(capability = {}) {
+function userCapabilityReason(capability = /** @type {any} */ ({})) {
   if (capability.user_reason) {
     return capability.user_reason;
   }
@@ -5175,7 +5179,7 @@ function userCapabilityReason(capability = {}) {
   return '只保存脱敏结构摘要，不保存正文或账号私密材料。';
 }
 
-function userCapabilityStrategy(capability = {}) {
+function userCapabilityStrategy(capability = /** @type {any} */ ({})) {
   if (capability.user_strategy) {
     return capability.user_strategy;
   }
@@ -5240,7 +5244,7 @@ function executionPlanCard(plan = null) {
   };
 }
 
-function buildCapabilityCard(capability = {}) {
+function buildCapabilityCard(capability = /** @type {any} */ ({})) {
   const enabledStatus = normalizeCapabilityEnablementStatus(capability);
   const evidenceStatus = normalizeCapabilityEvidenceStatus(capability, enabledStatus);
   const safeRemediation = capability.safe_remediation
@@ -5272,7 +5276,7 @@ function buildCapabilityCard(capability = {}) {
   };
 }
 
-function buildCapabilityStateModel(capabilities = []) {
+function buildCapabilityStateModel(capabilities = /** @type {any[]} */ ([])) {
   const groups = {
     enabled: [],
     limited_enabled: [],
@@ -5290,7 +5294,7 @@ function buildCapabilityStateModel(capabilities = []) {
   };
 }
 
-function isHighRiskOrAccountDisabled(card = {}) {
+function isHighRiskOrAccountDisabled(card = /** @type {any} */ ({})) {
   return card.report_group === 'disabled'
     && (
       ['write_high', 'account_security_critical'].includes(card.risk_level)
@@ -5344,10 +5348,10 @@ function buildPartialSuccessReasons({
   report,
   setupCollectionReview,
   capabilityState,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const groups = capabilityState?.groups ?? {};
   const evidenceSummary = capabilityState?.evidence_status_summary ?? {};
-  const reasons = [];
+  const reasons = /** @type {any[]} */ ([]);
   const reportReasonCode = safePublicReasonCode(report?.reasonCode);
   if (reportReasonCode) {
     const publicReason = partialSuccessReasonFromWarning(reportReasonCode);
@@ -5413,12 +5417,12 @@ function resultStatusFromBuild({
   }).length ? 'partial_success' : 'success';
 }
 
-function summarizeNodes(stageResults = {}) {
+function summarizeNodes(stageResults = /** @type {any} */ ({})) {
   const nodes = stageResults.classifyNodes?.graph?.nodes
     ?? stageResults.buildSiteGraph?.graph?.nodes
     ?? [];
-  const byType = {};
-  const byClassification = {};
+  const byType = /** @type {any} */ ({});
+  const byClassification = /** @type {any} */ ({});
   let authRequired = 0;
   for (const node of nodes) {
     const type = node.type ?? 'unknown';
@@ -5463,7 +5467,7 @@ function summarizePrivacy(context, report) {
   };
 }
 
-function buildUserFacingWarnings(report, resultStatus, context = null, partialSuccessReasons = []) {
+function buildUserFacingWarnings(report, resultStatus, context = null, partialSuccessReasons = /** @type {any[]} */ ([])) {
   const warnings = uniqueSortedStrings((report.warnings ?? []).map((warning) => displayBuildWarning(warning)));
   if (resultStatus === 'partial_success') {
     warnings.push(...partialSuccessReasons);
@@ -5484,7 +5488,7 @@ function buildUserFacingWarnings(report, resultStatus, context = null, partialSu
 }
 
 function buildNextSteps({ resultStatus, context, report, confirmationRequired, disabledCapabilities, confirmationPaths }) {
-  const steps = [];
+  const steps = /** @type {any[]} */ ([]);
   if (resultStatus === 'success') {
     steps.push('Use the generated skill for the enabled read-only capabilities.');
   } else if (resultStatus === 'partial_success') {
@@ -5686,7 +5690,7 @@ function buildUserReport(context, stageResults, report) {
   };
 }
 
-function summarizeStageRecords(stageRecords = {}) {
+function summarizeStageRecords(stageRecords = /** @type {any} */ ({})) {
   return Object.fromEntries(Object.entries(stageRecords).map(([name, record]) => [name, {
     status: record.status ?? null,
     reasonCode: record.reasonCode ?? null,
@@ -5697,7 +5701,7 @@ function summarizeStageRecords(stageRecords = {}) {
   }]));
 }
 
-function sanitizedNetworkSummary(context, stageResults = {}) {
+function sanitizedNetworkSummary(context, stageResults = /** @type {any} */ ({})) {
   const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
   const networkStage = stageResults.captureNetworkTraces ?? null;
   return {
@@ -5717,7 +5721,7 @@ function sanitizedNetworkSummary(context, stageResults = {}) {
   };
 }
 
-function buildRouteStateGraph(stageResults = {}) {
+function buildRouteStateGraph(stageResults = /** @type {any} */ ({})) {
   const nodes = stageResults.classifyNodes?.graph?.nodes
     ?? stageResults.buildSiteGraph?.graph?.nodes
     ?? [];
@@ -5851,11 +5855,11 @@ async function writeRedactedArtifactJson(context, fileName, payload) {
   };
 }
 
-function renderLegacySiteForgeBuildSummary(result, options = {}) {
+function renderLegacySiteForgeBuildSummary(result, options = /** @type {any} */ ({})) {
   return renderSiteForgeBuildDebugSummary(result, options);
 }
 
-function renderBuildUserMarkdown(userReport, report, options = {}) {
+function renderBuildUserMarkdown(userReport, report, options = /** @type {any} */ ({})) {
   return renderFriendlySiteForgeUserBuildSummary({
     ...report,
     user_report: userReport,
@@ -6088,13 +6092,13 @@ const STAGE_IMPLS = Object.freeze({
   writeBuildReport: writeBuildReportStage,
 });
 
-export async function runSiteForgeBuild(inputUrl, options = {}) {
+export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ ({})) {
   const context = createInitialContext(inputUrl, options);
   await hydrateBuildProfile(context);
   await ensureSiteWorkspace(context.workspace, context.site, { nowIso: context.startedAt });
   await ensureBuildDirectories(context);
-  const stageResults = {};
-  const stageRecords = {};
+  const stageResults = /** @type {any} */ ({});
+  const stageRecords = /** @type {any} */ ({});
   const setupBlock = setupProfileBuildBlock(context.setupProfile);
   if (setupBlock) {
     const startedAt = new Date().toISOString();
@@ -6202,7 +6206,7 @@ export async function runSiteForgeBuild(inputUrl, options = {}) {
   return result;
 }
 
-function buildReportPayloadForMode(result, options = {}) {
+function buildReportPayloadForMode(result, options = /** @type {any} */ ({})) {
   const mode = normalizeReportMode(options.reportMode ?? options.report);
   if (mode === 'user') {
     return result.user_report ?? result.userReport ?? result;
@@ -6220,7 +6224,7 @@ function buildReportPayloadForMode(result, options = {}) {
   };
 }
 
-export function siteForgeBuildCliJson(result, options = {}) {
+export function siteForgeBuildCliJson(result, options = /** @type {any} */ ({})) {
   return `${prepareRedactedArtifactJsonWithAudit(buildReportPayloadForMode(result, options)).json}\n`;
 }
 
@@ -6389,7 +6393,7 @@ function markdownTableCell(value, maxLength = 72) {
   return `${text.slice(0, Math.max(1, maxLength - 1))}…`;
 }
 
-function renderCollectionOutcomeTable(outcomes = []) {
+function renderCollectionOutcomeTable(outcomes = /** @type {any[]} */ ([])) {
   const rows = [
     '  | 类型 | 对象 | 状态 | 原因 |',
     '  | --- | --- | --- | --- |',
@@ -6425,11 +6429,11 @@ function renderSetupCollectionReviewLines(review = null) {
   return lines;
 }
 
-function renderSiteForgeUserBuildSummary(result, options = {}) {
+function renderSiteForgeUserBuildSummary(result, options = /** @type {any} */ ({})) {
   return renderFriendlySiteForgeUserBuildSummary(result, options);
 }
 
-export function renderSiteForgeBuildSummary(result, options = {}) {
+export function renderSiteForgeBuildSummary(result, options = /** @type {any} */ ({})) {
   const mode = normalizeReportMode(
     options.reportMode ?? options.report ?? (options.debug || options.verbose ? 'debug' : 'user'),
   );
@@ -6444,7 +6448,7 @@ export function renderSiteForgeBuildSummary(result, options = {}) {
   return `${userSummary}\n开发者详情报告\n  - Debug JSON: ${displayPath(debugPath, options.cwd)}\n  - 报告索引: ${displayPath(indexPath, options.cwd)}\n`;
 }
 
-export function renderSiteForgeBuildDebugSummary(result, options = {}) {
+export function renderSiteForgeBuildDebugSummary(result, options = /** @type {any} */ ({})) {
   const counts = result.summary ?? {};
   const capabilityCountsSummary = counts.capabilities ?? {};
   const lines = [

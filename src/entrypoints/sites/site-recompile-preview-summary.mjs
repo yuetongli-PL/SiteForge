@@ -23,7 +23,7 @@ does not open websites, run captures, generate skills, overwrite repo skills,
 invoke downloader, or materialize browser/session state.
 `;
 
-export function parseArgs(argv = []) {
+export function parseArgs(argv = /** @type {any[]} */ ([])) {
   const options = {
     outDir: DEFAULT_OUT_DIR,
     json: false,
@@ -78,7 +78,7 @@ async function readJson(filePath) {
 
 async function readRepoLocalSkillSites(cwd) {
   const registry = await readJson(path.join(cwd, 'config', 'site-registry.json'));
-  const sites = [];
+  const sites = /** @type {any[]} */ ([]);
   for (const [host, record] of Object.entries(registry.sites ?? {})) {
     const repoSkillDir = normalizeRepoPath(record?.repoSkillDir);
     if (!repoSkillDir || !repoSkillDir.startsWith('skills/')) {
@@ -225,13 +225,13 @@ async function writeSummaryArtifact(summary, outDir) {
   };
 }
 
-export async function runSiteRecompilePreviewSummary(options = {}, deps = {}) {
+export async function runSiteRecompilePreviewSummary(options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const cwd = path.resolve(deps.cwd ?? process.cwd());
   const outDir = path.resolve(cwd, options.outDir ?? DEFAULT_OUT_DIR);
   const compileSite = deps.runSiteCapabilityCompile ?? runSiteCapabilityCompile;
   const generatedAt = new Date().toISOString();
   const sites = await readRepoLocalSkillSites(cwd);
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
 
   for (const site of sites) {
     if (site.missingSkill) {

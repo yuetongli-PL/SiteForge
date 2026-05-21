@@ -50,6 +50,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code = 'planner.layer_handoff_unavailable') {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -200,6 +201,7 @@ export function assertPlannerLayerHandoffDescriptorCompatible(descriptor) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function createPlannerLayerHandoffDescriptor({
   dryRunResult,
   capabilityPlan = dryRunResult?.capabilityPlan,

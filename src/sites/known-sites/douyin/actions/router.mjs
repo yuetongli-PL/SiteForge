@@ -90,7 +90,7 @@ function isTransientDouyinResolverError(error) {
   return /CDP timeout for Runtime\.evaluate|CDP socket closed|Target closed|Session closed|Execution context was destroyed|Browser exited before DevTools became ready/iu.test(text);
 }
 
-function buildResolvedMediaLookupItem(item = {}) {
+function buildResolvedMediaLookupItem(item = /** @type {any} */ ({})) {
   const requestedUrl = normalizeText(item?.requestedUrl);
   if (!requestedUrl) {
     return null;
@@ -99,7 +99,7 @@ function buildResolvedMediaLookupItem(item = {}) {
 }
 
 function mergeDownloadHeaders(...values) {
-  const merged = {};
+  const merged = /** @type {any} */ ({});
   for (const value of values) {
     if (!value || typeof value !== 'object') {
       continue;
@@ -186,12 +186,12 @@ function buildResolvedDownloadSpec(spec, media = null) {
   });
 }
 
-async function preResolveDouyinDownloadSpecs(inputs, request, deps = {}) {
+async function preResolveDouyinDownloadSpecs(inputs, request, deps = /** @type {any} */ ({})) {
   const startedAt = Date.now();
   const normalizedInputs = (Array.isArray(inputs) ? inputs : [])
     .map((item) => normalizeDouyinDownloadSpec(item))
     .filter(Boolean);
-  const pathStats = {};
+  const pathStats = /** @type {any} */ ({});
   for (const item of normalizedInputs) {
     incrementCount(pathStats, item?.resolutionPathway);
   }
@@ -346,7 +346,7 @@ function normalizeSessionStatus(value) {
     : null;
 }
 
-function resolveRequestSessionStatus(request = {}) {
+function resolveRequestSessionStatus(request = /** @type {any} */ ({})) {
   return normalizeSessionStatus(
     request.sessionStatus
     ?? request.sessionHealthManifest?.healthStatus
@@ -356,7 +356,7 @@ function resolveRequestSessionStatus(request = {}) {
   );
 }
 
-function buildDownloadSessionGateBlock(request = {}) {
+function buildDownloadSessionGateBlock(request = /** @type {any} */ ({})) {
   if ((normalizeText(request.action) || 'download') !== 'download') {
     return null;
   }
@@ -380,7 +380,7 @@ function buildDownloadSessionGateBlock(request = {}) {
   };
 }
 
-export async function planDouyinAction(request, deps = {}) {
+export async function planDouyinAction(request, deps = /** @type {any} */ ({})) {
   const action = normalizeText(request?.action) || 'download';
   const reuseLoginState = request?.reuseLoginState !== false;
   if (action === 'download') {
@@ -438,7 +438,7 @@ export async function planDouyinAction(request, deps = {}) {
   throw new Error(`Unsupported Douyin action: ${action}`);
 }
 
-async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = {}) {
+async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = /** @type {any} */ ({})) {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -465,8 +465,8 @@ async function spawnJsonCommand(command, args, { cwd = REPO_ROOT } = {}) {
   });
 }
 
-async function resolveConcreteDownloadInputs(request, deps = {}) {
-  const resolved = [];
+async function resolveConcreteDownloadInputs(request, deps = /** @type {any} */ ({})) {
+  const resolved = /** @type {any[]} */ ([]);
   const seen = new Set();
   const addItem = (value) => {
     const normalized = normalizeDouyinDownloadSpec(value);
@@ -562,7 +562,7 @@ async function resolveConcreteDownloadInputs(request, deps = {}) {
   return await preResolveDouyinDownloadSpecs(resolved, request, deps);
 }
 
-async function invokeDownloadCli(request, inputs, deps = {}) {
+async function invokeDownloadCli(request, inputs, deps = /** @type {any} */ ({})) {
   const pythonPath = request.pythonPath || 'python';
   const scriptPath = DOUYIN_DOWNLOAD_PYTHON_ENTRY;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'douyin-download-inputs-'));
@@ -689,7 +689,7 @@ function buildDownloadActionMarkdown(download = null, mediaResolution = null) {
   return `${lines.join('\n')}\n`;
 }
 
-async function resolveDouyinUnifiedSessionRequest(request = {}, deps = {}) {
+async function resolveDouyinUnifiedSessionRequest(request = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   const action = normalizeText(request?.action) || 'download';
   if (action !== 'download' || request.useUnifiedSessionHealth !== true || request.sessionManifest) {
     return request;
@@ -723,7 +723,7 @@ async function resolveDouyinUnifiedSessionRequest(request = {}, deps = {}) {
   };
 }
 
-export async function runDouyinAction(request, deps = {}) {
+export async function runDouyinAction(request, deps = /** @type {any} */ ({})) {
   const effectiveRequest = await resolveDouyinUnifiedSessionRequest(request, deps);
   const sessionGate = buildDownloadSessionGateBlock(effectiveRequest);
   if (sessionGate) {

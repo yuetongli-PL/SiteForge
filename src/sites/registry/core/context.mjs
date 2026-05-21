@@ -17,27 +17,27 @@ function resolveHostValue(input) {
   return null;
 }
 
-export async function readSiteContext(workspaceRoot = process.cwd(), hostOrUrl, pathOptions = {}) {
+export async function readSiteContext(workspaceRoot = process.cwd(), hostOrUrl, pathOptions = /** @type {any} */ ({})) {
   const resolvedHost = resolveHostValue(hostOrUrl);
   return readSiteContextCanonical(workspaceRoot, resolvedHost ?? hostOrUrl, pathOptions);
 }
 
-export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = []) {
+export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolvePrimaryArchetypeFromSiteContextCanonical(siteContext, fallbacks);
 }
 
-export function resolveCapabilityFamiliesFromSiteContext(siteContext, fallbacks = []) {
+export function resolveCapabilityFamiliesFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolveCapabilityFamiliesFromSiteContextCanonical(siteContext, fallbacks);
 }
 
-export function resolveSupportedIntentsFromSiteContext(siteContext, fallbacks = []) {
+export function resolveSupportedIntentsFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolveSupportedIntentsFromSiteContextCanonical(siteContext, fallbacks);
 }
 
-export function resolveSafeActionKindsFromSiteContext(siteContext, fallbacks = []) {
+export function resolveSafeActionKindsFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolveSafeActionKindsFromSiteContextCanonical(siteContext, fallbacks);
 }
 
-export function resolvePageTypesFromSiteContext(siteContext, fallbacks = []) {
+export function resolvePageTypesFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {
   return resolvePageTypesFromSiteContextCanonical(siteContext, fallbacks);
 }

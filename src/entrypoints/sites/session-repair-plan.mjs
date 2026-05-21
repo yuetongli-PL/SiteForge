@@ -108,7 +108,7 @@ export function parseArgs(argv) {
   return options;
 }
 
-function siteUrl(options = {}, health = {}) {
+function siteUrl(options = /** @type {any} */ ({}), health = /** @type {any} */ ({})) {
   const host = health.host ?? options.host;
   if (host) {
     return `https://${host}/`;
@@ -116,7 +116,7 @@ function siteUrl(options = {}, health = {}) {
   return options.site ? `https://${options.site}/` : '';
 }
 
-function repairCommandForPlan(repairPlan = {}, options = {}, health = {}) {
+function repairCommandForPlan(repairPlan = /** @type {any} */ ({}), options = /** @type {any} */ ({}), health = /** @type {any} */ ({})) {
   const command = repairPlan.command;
   const url = siteUrl(options, health);
   if (!command || !url) {
@@ -162,7 +162,7 @@ const SESSION_REPAIR_PLAN_PROFILE_KEYS = Object.freeze(new Set([
   'userDataDir',
 ]));
 
-function executionAudit(options = {}, repairPlan = {}, health = {}) {
+function executionAudit(options = /** @type {any} */ ({}), repairPlan = /** @type {any} */ ({}), health = /** @type {any} */ ({})) {
   if (!options.execute) {
     return {
       status: 'not-run',
@@ -203,7 +203,7 @@ function executionAudit(options = {}, repairPlan = {}, health = {}) {
   };
 }
 
-function injectedHealth(options = {}) {
+function injectedHealth(options = /** @type {any} */ ({})) {
   const gateReason = options.sessionGateReason;
   const riskSignals = Array.isArray(options.riskSignals) ? options.riskSignals : [];
   if (!options.status && !options.reason && !gateReason && riskSignals.length === 0) {
@@ -222,7 +222,7 @@ function injectedHealth(options = {}) {
   };
 }
 
-async function auditHealth(options = {}) {
+async function auditHealth(options = /** @type {any} */ ({})) {
   if (!options.auditManifest) {
     return null;
   }
@@ -268,7 +268,7 @@ function auditPath(pathParts) {
   return pathParts.join('.');
 }
 
-function redactSessionRepairPlanProfileRefs(value, pathParts = [], audit = {
+function redactSessionRepairPlanProfileRefs(value, pathParts = /** @type {any[]} */ ([]), audit = {
   schemaVersion: SECURITY_GUARD_SCHEMA_VERSION,
   redactedPaths: [],
   findings: [],
@@ -284,7 +284,7 @@ function redactSessionRepairPlanProfileRefs(value, pathParts = [], audit = {
   if (!isPlainObject(value)) {
     return { value, audit };
   }
-  const output = {};
+  const output = /** @type {any} */ ({});
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...pathParts, key];
     if (SESSION_REPAIR_PLAN_PROFILE_KEYS.has(key)) {
@@ -298,8 +298,8 @@ function redactSessionRepairPlanProfileRefs(value, pathParts = [], audit = {
 }
 
 function mergeRedactionAudits(...audits) {
-  const redactedPaths = [];
-  const findings = [];
+  const redactedPaths = /** @type {any[]} */ ([]);
+  const findings = /** @type {any[]} */ ([]);
   for (const audit of audits) {
     if (!audit || typeof audit !== 'object') {
       continue;
@@ -327,7 +327,7 @@ function prepareSessionRepairPlanArtifactPayload(result) {
 
 function toSessionRepairPlanRedactionFailure(error) {
   const recovery = reasonCodeSummary('redaction-failed');
-  const failure = new Error('Session repair plan artifact redaction failed');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Session repair plan artifact redaction failed'));
   failure.name = 'SessionRepairPlanRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -347,7 +347,7 @@ function toSessionRepairPlanRedactionFailure(error) {
 
 function toSessionRepairPlanCliSummaryRedactionFailure(error) {
   const recovery = reasonCodeSummary('redaction-failed');
-  const failure = new Error('Session repair plan CLI summary redaction failed');
+  const failure = /** @type {Error & Record<string, any>} */ (new Error('Session repair plan CLI summary redaction failed'));
   failure.name = 'SessionRepairPlanCliSummaryRedactionFailure';
   failure.code = 'redaction-failed';
   failure.reasonCode = 'redaction-failed';
@@ -402,7 +402,7 @@ export async function writeSessionRepairPlanResult(outFile, result) {
   };
 }
 
-export async function buildSessionRepairPlanResult(options = {}, deps = {}) {
+export async function buildSessionRepairPlanResult(options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
   if (options.help) {
     return { help: HELP };
   }
@@ -463,7 +463,7 @@ function render(result) {
   return lines.join('\n') + '\n';
 }
 
-export async function main(argv = process.argv.slice(2), deps = {}) {
+export async function main(argv = process.argv.slice(2), deps = /** @type {any} */ ({})) {
   const options = parseArgs(argv);
   const progress = createCliProgressRenderer(options);
   const task = progress.task({

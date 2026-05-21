@@ -26,7 +26,7 @@ export function displayIntentName(intentType, siteContext, inputUrl) {
   });
 }
 
-export function normalizeDisplayLabel(value, options = {}) {
+export function normalizeDisplayLabel(value, options = /** @type {any} */ ({})) {
   const adapter = resolveAdapter(options.siteContext, options.inputUrl, options.url);
   return adapter.normalizeDisplayLabel({
     value,

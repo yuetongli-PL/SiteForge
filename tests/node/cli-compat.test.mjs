@@ -32,7 +32,7 @@ const LEGACY_PUBLIC_ROUTES = [
   ['doctor', 'https://example.com/'],
 ];
 
-function runNodeCli(scriptName, args, options = {}) {
+function runNodeCli(scriptName, args, options = /** @type {any} */ ({})) {
   return spawnSync(process.execPath, [path.join(repoRoot, scriptName), ...args], {
     cwd: options.cwd ?? repoRoot,
     encoding: 'utf8',
@@ -195,7 +195,7 @@ test('public documentation and user-facing copy do not advertise internal CLI su
     path.join('src', 'infra', 'cli', 'build-progress.mjs'),
     path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'),
   ];
-  const failures = [];
+  const failures = /** @type {any[]} */ ([]);
   for (const file of files) {
     const text = await readFile(path.join(repoRoot, file), 'utf8');
     const lines = text.split(/\r?\n/u);

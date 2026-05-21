@@ -362,6 +362,9 @@ export async function main(argv) {
     },
     successMessage: (stageResult) => `rows=${stageResult?.dashboard?.report?.totalRows ?? 0}`,
     artifacts: (stageResult) => stageResult?.outputs?.htmlPath ? [{ label: 'HTML', path: stageResult.outputs.htmlPath }] : [],
+    isFailureResult: undefined,
+    failureReason: undefined,
+    warningResult: undefined,
     failureTitle: 'Social live dashboard safely stopped',
     nextStep: 'Check the runs root and rerun after social live manifests exist.',
   });

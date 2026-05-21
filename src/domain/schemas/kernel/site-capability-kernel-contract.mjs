@@ -108,6 +108,7 @@ const FORBIDDEN_KERNEL_RESPONSIBILITY_CHECKS = Object.freeze([
   }),
 ]);
 
+/** @param {Record<string, any>} options */
 function responsibility({
   id,
   label,
@@ -124,6 +125,7 @@ function responsibility({
   });
 }
 
+/** @param {Record<string, any>} options */
 function forbiddenCheck({
   category,
   owner,

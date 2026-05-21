@@ -19,6 +19,7 @@ function isPlainObject(value) {
 }
 
 function fail(message, code) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
   throw error;
@@ -68,6 +69,10 @@ function assertGraphSourceMatches(graph, graphSource) {
   return graphVersion;
 }
 
+/**
+ * @param {Record<string, any>} graph
+ * @param {Record<string, any>} options
+ */
 function findSiteNode(graph, { siteId, siteKey } = {}) {
   const sites = graphNodes(graph, 'SiteNode');
   if (siteId) {
@@ -90,6 +95,10 @@ function capabilityMatchesIntent(capability, normalizedIntent) {
       && capability.supportedTaskTypes.includes(normalizedIntent));
 }
 
+/**
+ * @param {Record<string, any>} graph
+ * @param {Record<string, any>} options
+ */
 function findCapabilityNode(graph, {
   site,
   capabilityId,
@@ -154,6 +163,7 @@ export function assertPlannerRouteResolutionCompatible(resolution) {
   return true;
 }
 
+/** @param {Record<string, any>} options */
 export function resolvePlannerRoute({
   graph,
   graphSource,

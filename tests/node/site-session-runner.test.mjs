@@ -113,6 +113,7 @@ test('session manifest normalizer redacts profile paths and auth material', () =
 });
 
 test('session manifest reasons consume the reasonCode catalog while preserving unknown legacy reasons', () => {
+  // @ts-ignore
   const known = requireReasonCodeDefinition('session-invalid', { family: 'session' }).code;
   const manifest = normalizeSessionRunManifest({
     plan: {
@@ -156,7 +157,7 @@ test('session manifest reasons consume the reasonCode catalog while preserving u
 });
 
 test('lifecycle dispatcher passes normalized events to subscribers', async () => {
-  const seen = [];
+  const seen = /** @type {any[]} */ ([]);
   const result = await dispatchLifecycleEvent({
     eventType: 'session.run.completed',
     taskId: 'synthetic-task',
@@ -189,7 +190,7 @@ test('lifecycle dispatcher passes normalized events to subscribers', async () =>
 });
 
 test('lifecycle subscriber composition preserves order and accepts function groups', async () => {
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
   const subscribers = composeLifecycleSubscribers(
     null,
     async () => {
@@ -229,7 +230,7 @@ test('lifecycle subscriber composition rejects non-function subscribers', () => 
 });
 
 test('lifecycle dispatcher rejects composed subscriber failures without running later subscribers', async () => {
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
   const subscribers = composeLifecycleSubscribers(
     async () => {
       calls.push('first');
@@ -279,7 +280,7 @@ test('session runner writes a ready health manifest without executing repair pro
   const runRoot = await mkdtemp(path.join(os.tmpdir(), 'bwk-session-runner-'));
   t.after(() => rm(runRoot, { recursive: true, force: true }));
   const secretProfileRoot = 'C:/secret/browser-root';
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
 
   const result = await runSessionTask({
     action: 'health',
@@ -437,24 +438,40 @@ test('session runner fails closed for unknown or revoked materialization revocat
       revocationHandleRef: 'rvk-unknown-handle',
     }),
     (error) => {
+      // @ts-ignore
       assert.match(error.message, /revocation handle is not registered/u);
+      // @ts-ignore
       assert.equal(error.cause?.message, 'SessionView revocation handle is not registered');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'session-revocation-invalid');
+      // @ts-ignore
       assert.deepEqual(error.reasonRecovery, expectedRecovery);
+      // @ts-ignore
       assert.equal(error.retryable, false);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, true);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
+      // @ts-ignore
       assert.equal(error.riskState.schemaVersion, 1);
+      // @ts-ignore
       assert.equal(error.riskState.state, 'manual_recovery_required');
+      // @ts-ignore
       assert.equal(error.riskState.reasonCode, 'session-revocation-invalid');
+      // @ts-ignore
       assert.equal(error.riskState.scope, 'session-materialization');
+      // @ts-ignore
       assert.equal(error.riskState.siteKey, 'douyin');
+      // @ts-ignore
       assert.match(error.riskState.taskId, /^session-run-douyin-download-/u);
+      // @ts-ignore
       assert.deepEqual(error.riskState.transition, {
         from: 'normal',
         to: 'manual_recovery_required',
+        // @ts-ignore
         observedAt: error.riskState.transition.observedAt,
       });
+      // @ts-ignore
       assert.deepEqual(error.riskState.recovery, {
         retryable: false,
         cooldownNeeded: false,
@@ -466,6 +483,7 @@ test('session runner fails closed for unknown or revoked materialization revocat
         discardCatalog: false,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         JSON.stringify(error.riskState),
         /rvk-unknown-handle|cookie|authorization|csrf|Bearer|profilePath|browserProfileRoot|userDataDir/iu,
       );
@@ -510,24 +528,40 @@ test('session runner fails closed for unknown or revoked materialization revocat
       revocationHandleRef: 'rvk-revoked-handle',
     }),
     (error) => {
+      // @ts-ignore
       assert.match(error.message, /revocation handle is revoked/u);
+      // @ts-ignore
       assert.equal(error.cause?.message, 'SessionView revocation handle is revoked');
+      // @ts-ignore
       assert.equal(error.reasonCode, 'session-revocation-invalid');
+      // @ts-ignore
       assert.deepEqual(error.reasonRecovery, expectedRecovery);
+      // @ts-ignore
       assert.equal(error.retryable, false);
+      // @ts-ignore
       assert.equal(error.manualRecoveryNeeded, true);
+      // @ts-ignore
       assert.equal(error.artifactWriteAllowed, false);
+      // @ts-ignore
       assert.equal(error.riskState.schemaVersion, 1);
+      // @ts-ignore
       assert.equal(error.riskState.state, 'manual_recovery_required');
+      // @ts-ignore
       assert.equal(error.riskState.reasonCode, 'session-revocation-invalid');
+      // @ts-ignore
       assert.equal(error.riskState.scope, 'session-materialization');
+      // @ts-ignore
       assert.equal(error.riskState.siteKey, 'douyin');
+      // @ts-ignore
       assert.match(error.riskState.taskId, /^session-run-douyin-download-/u);
+      // @ts-ignore
       assert.deepEqual(error.riskState.transition, {
         from: 'normal',
         to: 'manual_recovery_required',
+        // @ts-ignore
         observedAt: error.riskState.transition.observedAt,
       });
+      // @ts-ignore
       assert.deepEqual(error.riskState.recovery, {
         retryable: false,
         cooldownNeeded: false,
@@ -539,6 +573,7 @@ test('session runner fails closed for unknown or revoked materialization revocat
         discardCatalog: false,
       });
       assert.doesNotMatch(
+        // @ts-ignore
         JSON.stringify(error.riskState),
         /rvk-revoked-handle|cookie|authorization|csrf|Bearer|profilePath|browserProfileRoot|userDataDir/iu,
       );

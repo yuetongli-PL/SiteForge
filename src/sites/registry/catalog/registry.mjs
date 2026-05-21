@@ -32,14 +32,14 @@ const REGISTRY_STABLE_PATH_KEYS = Object.freeze([
   'crawlerScriptsDir',
 ]);
 
-function normalizeRegistryPathOptions(pathOptions = {}) {
+function normalizeRegistryPathOptions(pathOptions = /** @type {any} */ ({})) {
   return {
     configDir: pathOptions?.configDir ?? pathOptions?.siteMetadataConfigDir ?? null,
     documentPath: pathOptions?.registryPath ?? pathOptions?.siteRegistryPath ?? null,
   };
 }
 
-function normalizeRuntimeRegistryPathOptions(pathOptions = {}) {
+function normalizeRuntimeRegistryPathOptions(pathOptions = /** @type {any} */ ({})) {
   return {
     configDir: pathOptions?.runtimeDir ?? pathOptions?.siteMetadataRuntimeDir ?? null,
     documentPath: pathOptions?.runtimeRegistryPath ?? pathOptions?.siteRuntimeRegistryPath ?? null,
@@ -72,7 +72,7 @@ function resolveRepoRelativePath(workspaceRoot, value) {
   return path.resolve(workspaceRoot, text.split('/').join(path.sep));
 }
 
-function normalizeStableRegistryPatch(workspaceRoot, patch = {}) {
+function normalizeStableRegistryPatch(workspaceRoot, patch = /** @type {any} */ ({})) {
   const normalizedPatch = { ...patch };
   for (const key of REGISTRY_STABLE_PATH_KEYS) {
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, key)) {
@@ -82,7 +82,7 @@ function normalizeStableRegistryPatch(workspaceRoot, patch = {}) {
   return normalizedPatch;
 }
 
-function resolveRegistryRecordPaths(workspaceRoot, record = {}) {
+function resolveRegistryRecordPaths(workspaceRoot, record = /** @type {any} */ ({})) {
   const resolvedRecord = { ...record };
   for (const key of REGISTRY_STABLE_PATH_KEYS) {
     if (Object.prototype.hasOwnProperty.call(resolvedRecord, key)) {
@@ -93,7 +93,7 @@ function resolveRegistryRecordPaths(workspaceRoot, record = {}) {
 }
 
 function mergeSiteDocuments(stableDocument, runtimeDocument, workspaceRoot = process.cwd()) {
-  const mergedSites = {};
+  const mergedSites = /** @type {any} */ ({});
   const siteKeys = new Set([
     ...Object.keys(stableDocument?.sites ?? {}),
     ...Object.keys(runtimeDocument?.sites ?? {}),
@@ -112,7 +112,7 @@ function mergeSiteDocuments(stableDocument, runtimeDocument, workspaceRoot = pro
   };
 }
 
-function splitRegistryPatch(patch = {}) {
+function splitRegistryPatch(patch = /** @type {any} */ ({})) {
   const stableKeys = new Set([
     'canonicalBaseUrl',
     'siteKey',
@@ -132,8 +132,8 @@ function splitRegistryPatch(patch = {}) {
     'crawlerScriptsDir',
     'capabilityFamilies',
   ]);
-  const stablePatch = {};
-  const runtimePatch = {};
+  const stablePatch = /** @type {any} */ ({});
+  const runtimePatch = /** @type {any} */ ({});
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (stableKeys.has(key)) {
       stablePatch[key] = value;
@@ -144,15 +144,15 @@ function splitRegistryPatch(patch = {}) {
   return { stablePatch, runtimePatch };
 }
 
-export function buildSiteRegistryPath(workspaceRoot = process.cwd(), pathOptions = {}) {
+export function buildSiteRegistryPath(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
   return siteRegistryStore.buildPath(workspaceRoot, normalizeRegistryPathOptions(pathOptions));
 }
 
-export function buildSiteRuntimeRegistryPath(workspaceRoot = process.cwd(), pathOptions = {}) {
+export function buildSiteRuntimeRegistryPath(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
   return siteRuntimeRegistryStore.buildPath(workspaceRoot, normalizeRuntimeRegistryPathOptions(pathOptions));
 }
 
-export async function readSiteRegistry(workspaceRoot = process.cwd(), pathOptions = {}) {
+export async function readSiteRegistry(workspaceRoot = process.cwd(), pathOptions = /** @type {any} */ ({})) {
   const [stableDocument, runtimeDocument] = await Promise.all([
     siteRegistryStore.read(workspaceRoot, normalizeRegistryPathOptions(pathOptions)),
     siteRuntimeRegistryStore.read(workspaceRoot, normalizeRuntimeRegistryPathOptions(pathOptions)),
@@ -160,7 +160,7 @@ export async function readSiteRegistry(workspaceRoot = process.cwd(), pathOption
   return mergeSiteDocuments(stableDocument, runtimeDocument, workspaceRoot);
 }
 
-export async function upsertSiteRegistryRecord(workspaceRoot, host, patch, pathOptions = {}) {
+export async function upsertSiteRegistryRecord(workspaceRoot, host, patch, pathOptions = /** @type {any} */ ({})) {
   const { stablePatch, runtimePatch } = splitRegistryPatch(patch);
   const normalizedStablePatch = normalizeStableRegistryPatch(workspaceRoot, stablePatch);
   const stableResult = Object.keys(normalizedStablePatch).length > 0

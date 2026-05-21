@@ -36,8 +36,8 @@ const execFile = promisify(execFileCallback);
 
 export function parseArgs(argv) {
   const args = [...argv];
-  const positionals = [];
-  const flags = {};
+  const positionals = /** @type {any[]} */ ([]);
+  const flags = /** @type {any} */ ({});
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
     if (!token.startsWith('--')) {
@@ -175,8 +175,8 @@ async function fetchHtml(url) {
   }
 }
 
-async function fetchTagResults(targetUrl, sortMode, limit, maxPages, options = {}) {
-  const rows = [];
+async function fetchTagResults(targetUrl, sortMode, limit, maxPages, options = /** @type {any} */ ({})) {
+  const rows = /** @type {any[]} */ ([]);
   const visited = new Set();
   const htmlFetcher = options.fetchHtml ?? fetchHtml;
   for (let pageNumber = 1; pageNumber <= maxPages && rows.length < limit; pageNumber += 1) {
@@ -316,7 +316,7 @@ function normalizeQueryIntent(queryText, taxonomyIndex) {
   };
 }
 
-export async function queryJableRanking(url, options = {}) {
+export async function queryJableRanking(url, options = /** @type {any} */ ({})) {
   const runtimeOptions = {
     ...DEFAULT_OPTIONS,
     ...options,

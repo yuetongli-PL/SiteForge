@@ -9,7 +9,7 @@ import {
   extractSiteCapabilityGraphMatrixSections,
 } from '../../src/domain/capabilities/site-capability-graph-final-validation.mjs';
 
-function completeSections(overrides = {}) {
+function completeSections(overrides = /** @type {any} */ ({})) {
   return Array.from({ length: SITE_CAPABILITY_GRAPH_FINAL_SECTION_COUNT }, (_, index) => {
     const number = index + 1;
     return {
@@ -26,7 +26,7 @@ function completeSections(overrides = {}) {
   });
 }
 
-function passingInput(overrides = {}) {
+function passingInput(overrides = /** @type {any} */ ({})) {
   return {
     graphVersion: 'site-capability-graph-v1',
     sections: completeSections(overrides.sections),
@@ -215,7 +215,9 @@ test('final validation rejects runtime products and sensitive material without e
       },
     })),
     (error) => {
+      // @ts-ignore
       assert.match(error.message, /runtime or sensitive field/u);
+      // @ts-ignore
       assert.doesNotMatch(error.message, /true/u);
       return true;
     },

@@ -58,6 +58,7 @@ const SAFE_CAPABILITY_FIELDS = Object.freeze([
   'supportedIntents',
 ]);
 
+/** @param {Record<string, any>} [value] */
 function pick(value = {}, keys = []) {
   return Object.fromEntries(
     keys
@@ -83,6 +84,7 @@ function normalizeSiteKey(value) {
 }
 
 function createCompilerSourceError(message) {
+  /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = 'compiler.source_unavailable';
   return error;
@@ -107,6 +109,10 @@ function resolveRepoLocalConfigPath(repoRoot, inputPath, name) {
   };
 }
 
+/**
+ * @param {Record<string, any>} [sites]
+ * @param {Record<string, any>} options
+ */
 function findSiteEntry(sites = {}, {
   siteKey,
   host,
@@ -163,6 +169,7 @@ function capabilityFamilyForIntent(intent, families = []) {
   return families[0] ?? intent;
 }
 
+/** @param {Record<string, any>} [capabilitySite] */
 function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
   const supportedIntents = Array.isArray(capabilitySite.supportedIntents)
     ? capabilitySite.supportedIntents
@@ -213,6 +220,7 @@ function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
   });
 }
 
+/** @param {Record<string, any>} options */
 export async function loadCompilerConfigSources({
   repoRoot = REPO_ROOT,
   siteKey,
@@ -232,12 +240,15 @@ export async function loadCompilerConfigSources({
     url,
   });
   if (!registryMatch && !capabilityMatch) {
+    /** @type {Error & Record<string, any>} */
     const error = new Error('Site compile config source not found');
     error.code = 'compiler.source_unavailable';
     throw error;
   }
 
+  // @ts-ignore
   const registrySite = pick(registryMatch?.site ?? {}, SAFE_REGISTRY_FIELDS);
+  // @ts-ignore
   const capabilityConfig = pick(capabilityMatch?.site ?? {}, SAFE_CAPABILITY_FIELDS);
   const resolvedSiteKey = registrySite.siteKey
     ?? capabilityConfig.siteKey
@@ -286,6 +297,7 @@ export async function loadCompilerConfigSources({
   return result;
 }
 
+/** @param {Record<string, any>} options */
 export async function createStaticSiteCompileManifestFromConfig({
   request,
   repoRoot = REPO_ROOT,

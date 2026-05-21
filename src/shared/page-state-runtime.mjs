@@ -8,7 +8,7 @@ function createPageStateRuntimeWithFactories({
   createPageStateCore,
   createPageStateFactsRuntime,
   createBrowserPageStateRuntime,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const core = createPageStateCore();
   const factsRuntime = createPageStateFactsRuntime(core);
 
@@ -17,15 +17,15 @@ function createPageStateRuntimeWithFactories({
     title = '',
     pageType = 'unknown-page',
     pageFacts = null,
-    detailsOpen = [],
-    expandedTrue = [],
-    activeTabs = [],
-    controlledVisible = [],
-    openDialogs = [],
-    openMenus = [],
-    openListboxes = [],
-    openPopovers = [],
-  } = {}) {
+    detailsOpen = /** @type {any[]} */ ([]),
+    expandedTrue = /** @type {any[]} */ ([]),
+    activeTabs = /** @type {any[]} */ ([]),
+    controlledVisible = /** @type {any[]} */ ([]),
+    openDialogs = /** @type {any[]} */ ([]),
+    openMenus = /** @type {any[]} */ ([]),
+    openListboxes = /** @type {any[]} */ ([]),
+    openPopovers = /** @type {any[]} */ ([]),
+  } = /** @type {any} */ ({})) {
     return {
       finalUrl,
       title,
@@ -42,7 +42,7 @@ function createPageStateRuntimeWithFactories({
     };
   }
 
-  function computePageStateSignature(input = {}, siteProfile = null, options = {}) {
+  function computePageStateSignature(input = /** @type {any} */ ({}), siteProfile = null, options = /** @type {any} */ ({})) {
     const finalUrl = core.normalizeUrlNoFragment(input.finalUrl ?? '');
     const title = String(input.title ?? '');
     const pageType = input.pageType

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { siteKeepalive } from '../../src/entrypoints/sites/site-keepalive.mjs';
 
 test('siteKeepalive delegates to siteLogin with non-interactive defaults and surfaces keepalive status', async () => {
-  const calls = [];
+  const calls = /** @type {any[]} */ ([]);
 
   const report = await siteKeepalive('https://www.douyin.com/?recommend=1', {
     profilePath: 'profiles/www.douyin.com.json',
@@ -89,7 +89,7 @@ test('siteKeepalive delegates to siteLogin with non-interactive defaults and sur
 });
 
 test('siteKeepalive can trigger Douyin follow-cache prewarm after a successful keepalive', async () => {
-  const followCalls = [];
+  const followCalls = /** @type {any[]} */ ([]);
 
   const report = await siteKeepalive('https://www.douyin.com/?recommend=1', {
     profilePath: 'profiles/www.douyin.com.json',

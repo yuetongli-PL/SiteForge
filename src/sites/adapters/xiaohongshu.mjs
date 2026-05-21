@@ -56,7 +56,7 @@ function parseUrl(input) {
   }
 }
 
-function endpointParts(candidate = {}) {
+function endpointParts(candidate = /** @type {any} */ ({})) {
   const parsed = parseUrl(candidate?.endpoint?.url);
   return {
     host: parsed?.hostname.toLowerCase() ?? '',
@@ -64,7 +64,7 @@ function endpointParts(candidate = {}) {
   };
 }
 
-function isXiaohongshuApiCandidate(candidate = {}) {
+function isXiaohongshuApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'xiaohongshu'
@@ -78,7 +78,7 @@ function stripXiaohongshuSuffix(value) {
     .trim();
 }
 
-function normalizeXiaohongshuDisplayLabel(rawValue, { url, pageType, queryText } = {}) {
+function normalizeXiaohongshuDisplayLabel(rawValue, { url, pageType, queryText } = /** @type {any} */ ({})) {
   const parsed = parseUrl(url);
   const pathname = parsed?.pathname ?? '';
   const searchQuery = cleanText(queryText || parsed?.searchParams.get('keyword') || '');
@@ -119,7 +119,7 @@ function normalizeXiaohongshuDisplayLabel(rawValue, { url, pageType, queryText }
   return stripped || null;
 }
 
-function inferXiaohongshuPageType({ pathname = '' } = {}) {
+function inferXiaohongshuPageType({ pathname = '' } = /** @type {any} */ ({})) {
   const normalizedPath = cleanText(pathname).replace(/\/+$/u, '') || '/';
   if (normalizedPath === '/website-login/error') {
     return 'auth-page';
@@ -133,11 +133,11 @@ function normalizeRestrictionPageResult(result = null) {
   }
   const reasonCode = cleanText(result.reasonCode ?? result.antiCrawlReasonCode ?? 'anti-crawl-verify')
     || 'anti-crawl-verify';
-  requireReasonCodeDefinition(reasonCode, { family: 'risk' });
+  requireReasonCodeDefinition(/** @type {any} */ (reasonCode), { family: 'risk' });
 
   const riskCauseCode = cleanText(result.riskCauseCode ?? '') || null;
   if (riskCauseCode) {
-    requireReasonCodeDefinition(riskCauseCode, { family: 'risk' });
+    requireReasonCodeDefinition(/** @type {any} */ (riskCauseCode), { family: 'risk' });
   }
 
   const { value } = redactValue({
@@ -206,7 +206,7 @@ const XIAOHONGSHU_HEALTH_SIGNAL_MAP = Object.freeze({
   }),
 });
 
-function normalizeXiaohongshuHealthSignal(rawSignal = {}) {
+function normalizeXiaohongshuHealthSignal(rawSignal = /** @type {any} */ ({})) {
   const signal = typeof rawSignal === 'string'
     ? rawSignal
     : String(rawSignal?.rawSignal ?? rawSignal?.signal ?? rawSignal?.reasonCode ?? 'unknown-health-risk');
@@ -230,7 +230,7 @@ export const xiaohongshuAdapter = createCatalogAdapter({
   terminology: XIAOHONGSHU_TERMINOLOGY,
   intentLabels: INTENT_LABELS,
   inferPageType: inferXiaohongshuPageType,
-  detectRestrictionPage(input = {}) {
+  detectRestrictionPage(input = /** @type {any} */ ({})) {
     return normalizeRestrictionPageResult(detectXiaohongshuRestrictionPage(input));
   },
   normalizeDisplayLabel({ value, ...options }) {
@@ -238,10 +238,10 @@ export const xiaohongshuAdapter = createCatalogAdapter({
   },
   validateApiCandidate({
     candidate,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     validatedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = isXiaohongshuApiCandidate(candidate);
     return normalizeSiteAdapterCandidateDecision({
@@ -261,10 +261,10 @@ export const xiaohongshuAdapter = createCatalogAdapter({
   getApiCatalogUpgradePolicy({
     candidate,
     siteAdapterDecision,
-    evidence = {},
-    scope = {},
+    evidence = /** @type {any} */ ({}),
+    scope = /** @type {any} */ ({}),
     decidedAt,
-  } = {}) {
+  } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
     const accepted = siteAdapterDecision?.decision === 'accepted' && isXiaohongshuApiCandidate(candidate);
     return normalizeSiteAdapterCatalogUpgradePolicy({

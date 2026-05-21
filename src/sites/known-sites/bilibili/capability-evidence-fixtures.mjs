@@ -173,7 +173,7 @@ export function createBilibiliApiVerificationFixtures() {
   };
 }
 
-export async function writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProducerEvidence(paths = {}) {
+export async function writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProducerEvidence(paths = /** @type {any} */ ({})) {
   const observedRequest = createBilibiliObservedVideoViewRequest();
   const candidate = apiCandidateFromObservedRequest(observedRequest);
   const siteAdapterDecision = bilibiliAdapter.validateApiCandidate({
@@ -217,7 +217,7 @@ export async function writeBilibiliVerifiedApiCatalogArtifactsFromGovernedProduc
 export function createBilibiliExecutableCapabilityEvidenceFixture({
   apiCatalogRef = 'artifact:api-catalog:bilibili-video-view-api',
   verifiedAt = BILIBILI_EVIDENCE_TIMESTAMP,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return createExecutableCapabilityEvidenceFixture({
     capability: 'navigate-to-content',
     id: 'executable-evidence:bilibili:navigate-to-content',
@@ -246,7 +246,7 @@ function createBilibiliEvidenceAdapter(capabilityEvidenceFixture) {
 
 export function createBilibiliSiteSpecificDiscoveryArtifacts({
   apiCatalogRef,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const producerFixture = createBilibiliGovernedProducerFixture();
   const discoveryInput = createSiteOnboardingDiscoveryInputFromCaptureExpand(producerFixture);
   const capabilityEvidenceFixture = createBilibiliExecutableCapabilityEvidenceFixture({

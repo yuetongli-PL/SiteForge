@@ -29,7 +29,7 @@ export function listSiteAdapters() {
   return [...ADAPTERS];
 }
 
-function resolveHost({ host, inputUrl, siteContext, profile } = {}) {
+function resolveHost({ host, inputUrl, siteContext, profile } = /** @type {any} */ ({})) {
   return String(
     host
       ?? siteContext?.host
@@ -39,7 +39,7 @@ function resolveHost({ host, inputUrl, siteContext, profile } = {}) {
   ).toLowerCase();
 }
 
-function firstNonEmptyString(values = []) {
+function firstNonEmptyString(values = /** @type {any[]} */ ([])) {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) {
       return value.trim();
@@ -48,7 +48,7 @@ function firstNonEmptyString(values = []) {
   return null;
 }
 
-export function resolveSiteAdapter({ host, inputUrl, siteContext = null, profile = null } = {}) {
+export function resolveSiteAdapter({ host, inputUrl, siteContext = null, profile = null } = /** @type {any} */ ({})) {
   const resolvedHost = resolveHost({ host, inputUrl, siteContext, profile });
   return ADAPTERS.find((adapter) => adapter.matches({
     host: resolvedHost,
@@ -72,7 +72,7 @@ export function resolveSiteIdentity({
   siteContext = null,
   profile = null,
   adapter = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const resolvedHost = resolveHost({ host, inputUrl, siteContext, profile });
   const resolvedAdapter = adapter ?? resolveSiteAdapter({
     host: resolvedHost,
@@ -122,7 +122,7 @@ export async function resolveSite({
   profilePath = null,
   siteContext = null,
   siteMetadataOptions = null,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const resolvedHost = resolveHost({ host, inputUrl, siteContext, profile });
   const loadedProfile = profile
     ? { json: profile, filePath: profilePath ?? null }

@@ -44,7 +44,7 @@ const REQUIRED_SCHEMA_NAMES = [
   'PlannerCompatibilityDeclaration',
 ];
 
-function createPlanRequest(overrides = {}) {
+function createPlanRequest(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     taskId: 'task:synthetic-planner-1',
@@ -56,7 +56,7 @@ function createPlanRequest(overrides = {}) {
   };
 }
 
-function createPlanContext(overrides = {}) {
+function createPlanContext(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     capabilityState: {
@@ -84,7 +84,7 @@ function createPlanContext(overrides = {}) {
   };
 }
 
-function createCapabilityPlan(overrides = {}) {
+function createCapabilityPlan(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: SITE_CAPABILITY_PLANNER_SCHEMA_VERSION,
     plannerVersion: SITE_CAPABILITY_PLANNER_VERSION,
@@ -191,7 +191,9 @@ test('Planner validators reject raw sensitive fields and values without echoing 
       cookie: 'SESSDATA=synthetic-secret-value',
     })),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },
@@ -202,7 +204,9 @@ test('Planner validators reject raw sensitive fields and values without echoing 
       evidence: 'https://example.test/?access_token=synthetic-secret-value',
     }),
     (error) => {
+      // @ts-ignore
       assert.equal(error.code, 'planner.sensitive_material_forbidden');
+      // @ts-ignore
       assert.doesNotMatch(error.message, /synthetic-secret-value/u);
       return true;
     },

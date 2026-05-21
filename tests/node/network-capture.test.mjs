@@ -25,7 +25,7 @@ import {
   assertNoForbiddenPatterns,
 } from '../../src/domain/sessions/security-guard.mjs';
 
-function createRequestWillBeSentEvent(overrides = {}) {
+function createRequestWillBeSentEvent(overrides = /** @type {any} */ ({})) {
   return {
     method: 'Network.requestWillBeSent',
     params: {
@@ -55,7 +55,7 @@ function createRequestWillBeSentEvent(overrides = {}) {
   };
 }
 
-function createResponseReceivedEvent({ params: overrideParams = {}, ...overrides } = {}) {
+function createResponseReceivedEvent({ params: overrideParams = /** @type {any} */ ({}), ...overrides } = /** @type {any} */ ({})) {
   return {
     method: 'Network.responseReceived',
     params: {
@@ -76,7 +76,7 @@ function createResponseReceivedEvent({ params: overrideParams = {}, ...overrides
   };
 }
 
-function createCandidate(overrides = {}) {
+function createCandidate(overrides = /** @type {any} */ ({})) {
   return {
     schemaVersion: API_CANDIDATE_SCHEMA_VERSION,
     id: 'synthetic-response-candidate',
@@ -683,6 +683,7 @@ test('NetworkCapture response summaries fail closed for unsafe synthetic respons
     /statusCode must be an HTTP status code/u,
   );
   assert.throws(
+    // @ts-ignore
     () => responseSummariesFromNetworkCaptureEvents('not-an-array', {
       candidate: createCandidate(),
     }),
@@ -692,6 +693,7 @@ test('NetworkCapture response summaries fail closed for unsafe synthetic respons
 
 test('NetworkCapture rejects unsupported event shapes before producing request lists', () => {
   assert.throws(
+    // @ts-ignore
     () => observedRequestsFromNetworkCaptureEvents('not-an-array', { siteKey: 'example' }),
     /events must be an array/u,
   );

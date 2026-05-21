@@ -20,6 +20,7 @@ test('cleanupUserDataDir retries transient lock errors and does not throw', asyn
     attempts += 1;
     if (attempts < 3) {
       const error = new Error('resource busy');
+      // @ts-ignore
       error.code = 'EBUSY';
       throw error;
     }
@@ -34,6 +35,7 @@ test('cleanupUserDataDir ignores persistent transient cleanup errors', async () 
   await cleanupUserDataDir('C:\\temp\\browser-runtime-stuck', async () => {
     attempts += 1;
     const error = new Error('permission denied');
+    // @ts-ignore
     error.code = 'EPERM';
     throw error;
   });
@@ -47,11 +49,17 @@ test('shutdownBrowser gives persistent profiles enough time for graceful Chrome 
 
 function createFakeBrowserProcess() {
   const emitter = new EventEmitter();
+  // @ts-ignore
   emitter.exitCode = null;
-  emitter.killCalls = [];
+  // @ts-ignore
+  emitter.killCalls = /** @type {any[]} */ ([]);
+  // @ts-ignore
   emitter.kill = (signal) => {
+    // @ts-ignore
     emitter.killCalls.push(signal ?? 'SIGTERM');
+    // @ts-ignore
     emitter.exitCode = signal === 'SIGKILL' ? 137 : 0;
+    // @ts-ignore
     queueMicrotask(() => emitter.emit('exit', emitter.exitCode));
   };
   return emitter;
@@ -64,12 +72,14 @@ test('shutdownBrowser prefers graceful Browser.close exit before forcing kill', 
     cleanupUserDataDirOnShutdown: false,
     waitForProfileFlushOnShutdown: false,
     gracefulClose: async () => {
+      // @ts-ignore
       browserProcess.exitCode = 0;
       queueMicrotask(() => browserProcess.emit('exit', 0));
     },
   });
 
   assert.equal(result.shutdownMode, 'graceful');
+  // @ts-ignore
   assert.deepEqual(browserProcess.killCalls, []);
 });
 
@@ -85,6 +95,7 @@ test('shutdownBrowser falls back to forced termination when graceful close stall
   });
 
   assert.equal(result.shutdownMode, 'forced');
+  // @ts-ignore
   assert.deepEqual(browserProcess.killCalls, ['SIGTERM']);
 });
 

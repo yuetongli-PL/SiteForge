@@ -30,7 +30,7 @@ const DEFAULT_OPTIONS = {
 };
 const HELP = 'Usage:\n  node src/entrypoints/pipeline/generate-crawler-script.mjs <url> [--crawler-scripts-dir <dir>] [--knowledge-base-dir <dir>] [--profile-path <path>] [--json] [--quiet] [--progress auto|interactive|plain]';
 
-function mergeOptions(inputUrl, options = {}) {
+function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   const parsed = new URL(inputUrl);
   const merged = { ...DEFAULT_OPTIONS, ...options };
   merged.host = parsed.host;
@@ -160,7 +160,7 @@ function deriveSupportedIntents(profile, host) {
     return ['download-book'];
   }
 
-  const intents = [];
+  const intents = /** @type {any[]} */ ([]);
   if (normalizedHost === 'www.bilibili.com' || normalizedHost === 'search.bilibili.com' || normalizedHost === 'space.bilibili.com') {
     intents.push('search-video', 'open-video', 'open-author');
   } else if (normalizedHost === 'www.douyin.com') {
@@ -208,7 +208,7 @@ function deriveApprovalActionKinds(profile) {
   return Array.isArray(profile?.search?.formSelectors) && profile.search.formSelectors.length ? ['search-submit'] : [];
 }
 
-export async function ensureCrawlerScript(inputUrl, options = {}) {
+export async function ensureCrawlerScript(inputUrl, options = /** @type {any} */ ({})) {
   const settings = mergeOptions(inputUrl, options);
   const profile = await loadValidatedProfileForUrl(inputUrl, {
     profilePath: settings.profilePath,
@@ -373,7 +373,7 @@ export function parseCliArgs(argv) {
     return { help: true };
   }
   const [inputUrl, ...rest] = argv;
-  const options = {};
+  const options = /** @type {any} */ ({});
   const readValue = (index) => {
     if (index + 1 >= rest.length) {
       throw new Error(`Missing value for ${rest[index]}`);

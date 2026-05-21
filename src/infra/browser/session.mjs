@@ -80,7 +80,7 @@ function incrementCounter(target, key, amount = 1) {
 
 const cloneJson = jsonClone;
 
-function shouldTrackRequestForNetworkIdle(event = {}) {
+function shouldTrackRequestForNetworkIdle(event = /** @type {any} */ ({})) {
   const params = event.params ?? event;
   const request = params.request ?? {};
   const resourceType = String(params.type ?? '').trim().toLowerCase();
@@ -94,7 +94,7 @@ function shouldTrackRequestForNetworkIdle(event = {}) {
   return true;
 }
 
-function isLikelyApiResourceHint(entry = {}) {
+function isLikelyApiResourceHint(entry = /** @type {any} */ ({})) {
   const url = String(entry.name ?? entry.url ?? '').trim();
   const initiatorType = String(entry.initiatorType ?? entry.resourceType ?? '').trim().toLowerCase();
   return Boolean(url) && (
@@ -142,7 +142,7 @@ function boundedRouteHintText(value) {
   if (!text) {
     return undefined;
   }
-  const redacted = String(redactPublicIdentifierText(text, {
+  const redacted = String(redactPublicIdentifierText(/** @type {any} */ (text), {
     path: ['routeHint'],
     maxLength: 500,
   }).value ?? '').trim();
@@ -152,11 +152,11 @@ function boundedRouteHintText(value) {
 export function createNetworkTracker(client, sessionId, {
   maxObservedRequests = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT,
   maxObservedResponseSummaries = maxObservedRequests,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const inflight = new Set();
-  const observedRequests = [];
+  const observedRequests = /** @type {any[]} */ ([]);
   const observedRequestsById = new Map();
-  const observedResponseSummaries = [];
+  const observedResponseSummaries = /** @type {any[]} */ ([]);
   let lastActivityAt = Date.now();
   const observedRequestLimit = Math.max(0, Number(maxObservedRequests) || 0);
   const observedResponseSummaryLimit = Math.max(0, Number(maxObservedResponseSummaries) || 0);
@@ -279,7 +279,7 @@ export function createNetworkTracker(client, sessionId, {
       }
       throw new Error(`Timed out waiting for network idle (${inflight.size} inflight requests remained)`);
     },
-    getObservedRequests({ siteKey, limit } = {}) {
+    getObservedRequests({ siteKey, limit } = /** @type {any} */ ({})) {
       const normalizedSiteKey = String(siteKey ?? '').trim();
       if (!normalizedSiteKey) {
         throw new Error('Network tracker observed request siteKey is required');
@@ -293,7 +293,7 @@ export function createNetworkTracker(client, sessionId, {
         siteKey: normalizedSiteKey,
       }));
     },
-    getObservedResponseSummaries({ siteKey, limit } = {}) {
+    getObservedResponseSummaries({ siteKey, limit } = /** @type {any} */ ({})) {
       const normalizedSiteKey = String(siteKey ?? '').trim();
       if (!normalizedSiteKey) {
         throw new Error('Network tracker observed response summary siteKey is required');
@@ -401,15 +401,15 @@ export class BrowserSession {
     this.metrics = createEmptyMetrics();
   }
 
-  getObservedNetworkRequests(options = {}) {
+  getObservedNetworkRequests(options = /** @type {any} */ ({})) {
     return this.networkTracker?.getObservedRequests?.(options) ?? [];
   }
 
-  getObservedNetworkResponseSummaries(options = {}) {
+  getObservedNetworkResponseSummaries(options = /** @type {any} */ ({})) {
     return this.networkTracker?.getObservedResponseSummaries?.(options) ?? [];
   }
 
-  async getObservedPageResourceApiHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = {}) {
+  async getObservedPageResourceApiHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = /** @type {any} */ ({})) {
     const normalizedSiteKey = String(siteKey ?? '').trim();
     if (!normalizedSiteKey) {
       throw new Error('Page resource API hints siteKey is required');
@@ -419,7 +419,7 @@ export class BrowserSession {
       return [];
     }
 
-    let resourceHints = [];
+    let resourceHints = /** @type {any[]} */ ([]);
     try {
       resourceHints = await this.callPageFunction((maxHints) => {
         const attr = (node, name) => node?.getAttribute?.(name) || '';
@@ -436,25 +436,25 @@ export class BrowserSession {
         const resourceEntries = typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
           ? performance.getEntriesByType('resource')
           : [];
-        const linkEntries = typeof document !== 'undefined'
+        const linkEntries = /** @type {any[]} */ (typeof document !== 'undefined'
           ? [...document.querySelectorAll('link[href][rel], script[src]')]
           .map((node) => ({
-            name: node.href || node.src,
-            initiatorType: node.tagName === 'SCRIPT' ? 'script' : String(node.rel || 'link'),
+            name: /** @type {any} */ (node).href || /** @type {any} */ (node).src,
+            initiatorType: node.tagName === 'SCRIPT' ? 'script' : String(/** @type {any} */ (node).rel || 'link'),
           }))
-          : [];
-        const domEndpointEntries = typeof document !== 'undefined'
+          : []);
+        const domEndpointEntries = /** @type {any[]} */ (typeof document !== 'undefined'
           ? [...document.querySelectorAll('form[action], [data-api], [data-api-url], [data-endpoint], [data-endpoint-url], [data-request-url], [data-fetch-url], [data-url]')]
           .flatMap((node) => endpointAttrs
             .map((name) => ({
               name: attr(node, name),
               initiatorType: 'dom-endpoint',
-              method: node.tagName === 'FORM' ? String(node.method || 'GET') : 'GET',
+              method: node.tagName === 'FORM' ? String(/** @type {any} */ (node).method || 'GET') : 'GET',
               source: 'browser.dom.api-hint',
               descriptorSource: name,
             })))
-          : [];
-        return [...resourceEntries, ...linkEntries, ...domEndpointEntries]
+          : []);
+        return /** @type {any[]} */ ([...resourceEntries, ...linkEntries, ...domEndpointEntries])
           .map((entry) => ({
             name: String(entry.name || ''),
             initiatorType: String(entry.initiatorType || ''),
@@ -496,7 +496,7 @@ export class BrowserSession {
       }));
   }
 
-  async getObservedPageDomRouteHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = {}) {
+  async getObservedPageDomRouteHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = /** @type {any} */ ({})) {
     const normalizedSiteKey = String(siteKey ?? '').trim();
     if (!normalizedSiteKey) {
       throw new Error('Page DOM route hints siteKey is required');
@@ -509,7 +509,7 @@ export class BrowserSession {
       };
     }
 
-    let routeHints = {};
+    let routeHints = /** @type {any} */ ({});
     try {
       routeHints = await this.callPageFunction((maxHints) => {
         const attr = (node, name) => node?.getAttribute?.(name) || '';
@@ -522,9 +522,9 @@ export class BrowserSession {
           'data-url',
           'to',
         ];
-        const jsRoutes = [];
-        const scriptRoutes = [];
-        const pushRoute = (raw, source, node, { nodeKind = 'js-route', label } = {}) => {
+        const jsRoutes = /** @type {any[]} */ ([]);
+        const scriptRoutes = /** @type {any[]} */ ([]);
+        const pushRoute = (raw, source, node, { nodeKind = 'js-route', label } = /** @type {any} */ ({})) => {
           if (jsRoutes.length >= maxHints) {
             return;
           }
@@ -570,7 +570,7 @@ export class BrowserSession {
           }
         };
         for (const node of [...document.querySelectorAll('a[href], area[href]')]) {
-          pushRoute(node.href || attr(node, 'href'), 'href', node);
+          pushRoute(/** @type {any} */ (node).href || attr(node, 'href'), 'href', node);
         }
         for (const node of [...document.querySelectorAll(routeAttrs.map((name) => `[${name}]`).join(','))]) {
           for (const name of routeAttrs) {
@@ -580,11 +580,11 @@ export class BrowserSession {
         for (const node of [...document.querySelectorAll('link[href][rel]')]) {
           const rel = String(attr(node, 'rel')).toLowerCase();
           if (/\\b(?:modulepreload|prefetch|preload|prerender)\\b/u.test(rel)) {
-            pushRoute(node.href || attr(node, 'href'), `link.${rel}`, node);
+            pushRoute(/** @type {any} */ (node).href || attr(node, 'href'), `link.${rel}`, node);
           }
         }
         for (const node of [...document.querySelectorAll('script[src]')]) {
-          const src = node.src || attr(node, 'src');
+          const src = /** @type {any} */ (node).src || attr(node, 'src');
           if (src) {
             scriptRoutes.push({
               routePath: src,
@@ -599,11 +599,11 @@ export class BrowserSession {
           pushRuntimeRoute(window.location.hash, 'window.location.hash');
         }
         const nextPage = typeof window !== 'undefined'
-          ? window.__NEXT_DATA__?.page
+          ? /** @type {any} */ (window).__NEXT_DATA__?.page
           : '';
         pushRuntimeRoute(nextPage, 'window.__NEXT_DATA__.page');
         const remixPath = typeof window !== 'undefined'
-          ? window.__remixContext?.state?.location?.pathname
+          ? /** @type {any} */ (window).__remixContext?.state?.location?.pathname
           : '';
         pushRuntimeRoute(remixPath, 'window.__remixContext.state.location.pathname');
         const historyState = typeof window !== 'undefined'
@@ -657,7 +657,7 @@ export class BrowserSession {
     }).value;
   }
 
-  async send(method, params = {}, timeoutMs = this.timeoutMs) {
+  async send(method, params = /** @type {any} */ ({}), timeoutMs = this.timeoutMs) {
     incrementCounter(this.metrics.counts, 'send');
     incrementCounter(this.metrics.protocol, 'total');
     incrementCounter(this.metrics.protocol.byMethod, method);
@@ -676,7 +676,7 @@ export class BrowserSession {
     }
   }
 
-  async evaluate(expression, { returnByValue = true, awaitPromise = true } = {}) {
+  async evaluate(expression, { returnByValue = true, awaitPromise = true } = /** @type {any} */ ({})) {
     incrementCounter(this.metrics.counts, 'evaluate');
     const result = await this.#sendRuntimeEvaluateWithRetry({ expression, returnByValue, awaitPromise });
     if (result.exceptionDetails) {
@@ -807,7 +807,7 @@ export class BrowserSession {
     }
   }
 
-  async navigateAndWait(url, waitPolicy, navigationOptions = {}) {
+  async navigateAndWait(url, waitPolicy, navigationOptions = /** @type {any} */ ({})) {
     incrementCounter(this.metrics.counts, 'navigateAndWait');
     const request = {
       url,
@@ -838,7 +838,7 @@ export class BrowserSession {
     });
   }
 
-  async captureScreenshot({ fullPage = this.defaultFullPage, allowViewportFallback = true } = {}) {
+  async captureScreenshot({ fullPage = this.defaultFullPage, allowViewportFallback = true } = /** @type {any} */ ({})) {
     incrementCounter(this.metrics.counts, 'captureScreenshot');
     try {
       const primary = await this.send('Page.captureScreenshot', {
@@ -870,8 +870,8 @@ export class BrowserSession {
     }
   }
 
-  async captureEvidence({ html = true, snapshot = true, screenshot = true, fullPage = this.defaultFullPage } = {}) {
-    const evidence = {};
+  async captureEvidence({ html = true, snapshot = true, screenshot = true, fullPage = this.defaultFullPage } = /** @type {any} */ ({})) {
+    const evidence = /** @type {any} */ ({});
     if (html) {
       evidence.html = await this.captureHtml();
     }
@@ -907,7 +907,7 @@ export class BrowserSession {
     };
   }
 
-  async ensureHelperBundle(bundleSource, { namespace } = {}) {
+  async ensureHelperBundle(bundleSource, { namespace } = /** @type {any} */ ({})) {
     if (!bundleSource) {
       return;
     }
@@ -920,7 +920,7 @@ export class BrowserSession {
     this.helperReady.add(namespaceKey);
   }
 
-  async invokeHelperMethod(methodName, args = [], { namespace = '__BWS_EXPAND__', bundleSource, fallbackFn } = {}) {
+  async invokeHelperMethod(methodName, args = /** @type {any[]} */ ([]), { namespace = '__BWS_EXPAND__', bundleSource, fallbackFn } = /** @type {any} */ ({})) {
     incrementCounter(this.metrics.counts, 'helperInvoke');
     incrementCounter(this.metrics.helperMethods, methodName);
     const attemptInvoke = async () => {
@@ -1068,7 +1068,7 @@ function selectInitialPageTarget(targetInfos, startupUrl) {
 async function waitForInitialPageTarget(client, {
   startupUrl,
   timeoutMs,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const result = await client.send('Target.getTargets');
@@ -1079,7 +1079,7 @@ async function waitForInitialPageTarget(client, {
     await delay(TARGET_POLL_INTERVAL_MS);
   }
 
-  const error = new Error('Timed out waiting for initial page target');
+  const error = /** @type {Error & Record<string, any>} */ (new Error('Timed out waiting for initial page target'));
   error.code = 'BROWSER_ATTACH_TIMEOUT';
   throw error;
 }
@@ -1091,8 +1091,8 @@ async function openBrowserSessionOnce(
     userDataDirPrefix = 'browser-runtime-',
     userDataDir = settings.userDataDir,
     cleanupUserDataDirOnShutdown = settings.cleanupUserDataDirOnShutdown ?? !userDataDir,
-  } = {},
-  deps = {},
+  } = /** @type {any} */ ({}),
+  deps = /** @type {any} */ ({}),
 ) {
   const detectBrowserPathImpl = deps.detectBrowserPath ?? detectBrowserPath;
   const launchBrowserImpl = deps.launchBrowser ?? launchBrowser;
@@ -1100,7 +1100,7 @@ async function openBrowserSessionOnce(
   const CdpClientImpl = deps.CdpClient ?? CdpClient;
   const resolvedBrowserPath = browserPath ? path.resolve(browserPath) : await detectBrowserPathImpl();
   if (!resolvedBrowserPath) {
-    const error = new Error('No Chromium/Chrome executable found. Pass browserPath or --browser-path explicitly.');
+    const error = /** @type {Error & Record<string, any>} */ (new Error('No Chromium/Chrome executable found. Pass browserPath or --browser-path explicitly.'));
     error.code = 'BROWSER_NOT_FOUND';
     throw error;
   }
@@ -1243,8 +1243,8 @@ async function openBrowserSessionOnce(
 
 export async function openBrowserSession(
   settings,
-  runtimeOptions = {},
-  deps = {},
+  runtimeOptions = /** @type {any} */ ({}),
+  deps = /** @type {any} */ ({}),
 ) {
   const maxSessionOpenRetries = Math.max(
     0,

@@ -89,6 +89,7 @@ test('site index writer redacts sensitive patch fields and can write an audit si
       redactionAuditPath: auditPath,
     });
 
+    // @ts-ignore
     const persistedText = await readFile(result.indexPath, 'utf8');
     const auditText = await readFile(result.redactionAuditPath, 'utf8');
     const persisted = JSON.parse(persistedText);
@@ -146,6 +147,7 @@ test('site index writer preserves the existing document when audit sidecar write
     }, {
       redactionAuditPath: auditPath,
     });
+    // @ts-ignore
     const originalText = await readFile(result.indexPath, 'utf8');
 
     await rm(auditPath, { force: true });
@@ -160,8 +162,10 @@ test('site index writer preserves the existing document when audit sidecar write
       /output path must not be a directory/u,
     );
 
+    // @ts-ignore
     assert.equal(await readFile(result.indexPath, 'utf8'), originalText);
     assert.equal(
+      // @ts-ignore
       JSON.parse(await readFile(result.indexPath, 'utf8')).sites['example.test'].stableValue,
       'original',
     );

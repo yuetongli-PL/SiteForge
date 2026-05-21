@@ -22,7 +22,7 @@ export function decodeHtmlEntities(value) {
 }
 
 export function parseAttributes(rawAttributes = '') {
-  const attributes = {};
+  const attributes = /** @type {any} */ ({});
   const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gu;
   let match;
   while ((match = pattern.exec(rawAttributes)) !== null) {
@@ -62,7 +62,7 @@ const SAFE_ATTRIBUTE_NAMES = new Set([
 function sanitizeArtifactText(value, maxLength = 360) {
   const text = stripHtml(value)
     .replace(SENSITIVE_TEXT_TOKEN_PATTERN, REDACTION_PLACEHOLDER);
-  return redactPublicIdentifierText(text, { maxLength }).value
+  return redactPublicIdentifierText(/** @type {any} */ (text), { maxLength }).value
     .replace(SENSITIVE_TEXT_TOKEN_PATTERN, REDACTION_PLACEHOLDER);
 }
 
@@ -81,7 +81,7 @@ function staticHtmlDiagnostics(html, {
   links,
   forms,
   controls,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const raw = String(html ?? '');
   const visibleText = stripHtml(raw);
   const scriptCount = countMatches(raw, /<script\b/giu);
@@ -90,7 +90,7 @@ function staticHtmlDiagnostics(html, {
     .map((match) => stripHtml(match[1]))
     .filter(Boolean)
     .join(' ');
-  const dynamicSignals = [];
+  const dynamicSignals = /** @type {any[]} */ ([]);
   if (scriptCount > 0) {
     dynamicSignals.push('scripts-present');
   }
@@ -114,7 +114,7 @@ function staticHtmlDiagnostics(html, {
     : staticSignalCount === 0
       ? 'empty'
       : 'present';
-  const warnings = [];
+  const warnings = /** @type {any[]} */ ([]);
   if (staticEvidenceStatus === 'dynamic_shell') {
     warnings.push('Static parser found only weak shell evidence and dynamic-site signals; browser-rendered crawl may be required.');
   }
@@ -164,8 +164,8 @@ function sanitizeUrlMaybe(value, baseUrl) {
   }
 }
 
-function sanitizeAttributes(attrs = {}, baseUrl = undefined, tagName = '') {
-  const sanitized = {};
+function sanitizeAttributes(attrs = /** @type {any} */ ({}), baseUrl = undefined, tagName = '') {
+  const sanitized = /** @type {any} */ ({});
   const normalizedTag = String(tagName ?? '').toLowerCase();
   for (const [key, value] of Object.entries(attrs ?? {})) {
     const normalizedKey = String(key ?? '').toLowerCase();
@@ -235,7 +235,7 @@ export function extractCanonicalUrl(html, baseUrl) {
 }
 
 export function extractLinks(html, baseUrl) {
-  const links = [];
+  const links = /** @type {any[]} */ ([]);
   const pattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/giu;
   let match;
   let index = 0;
@@ -260,7 +260,7 @@ export function extractLinks(html, baseUrl) {
 }
 
 export function extractControls(html, baseUrl) {
-  const controls = [];
+  const controls = /** @type {any[]} */ ([]);
   const pattern = /<(button|input|select|textarea)\b([^>]*)>([\s\S]*?)(?:<\/\1>)?/giu;
   let match;
   let index = 0;
@@ -284,7 +284,7 @@ export function extractControls(html, baseUrl) {
 }
 
 export function extractForms(html, baseUrl) {
-  const forms = [];
+  const forms = /** @type {any[]} */ ([]);
   const pattern = /<form\b([^>]*)>([\s\S]*?)<\/form>/giu;
   let match;
   let index = 0;
@@ -355,7 +355,7 @@ export function parseHtmlDocument(html, baseUrl) {
 }
 
 export function parseRobotsSitemaps(robotsText, baseUrl) {
-  const urls = [];
+  const urls = /** @type {any[]} */ ([]);
   for (const line of String(robotsText ?? '').split(/\r?\n/u)) {
     const match = line.match(/^\s*Sitemap\s*:\s*(\S+)\s*$/iu);
     if (!match) {
@@ -386,8 +386,8 @@ function parseRobotsDirective(line) {
 }
 
 export function parseRobotsPolicy(robotsText, baseUrl, userAgent = 'SiteForgeBuildStaticCrawler') {
-  const groups = [];
-  const sitemaps = [];
+  const groups = /** @type {any[]} */ ([]);
+  const sitemaps = /** @type {any[]} */ ([]);
   let currentGroup = null;
   let currentGroupHasRules = false;
 
@@ -486,7 +486,7 @@ export function isUrlAllowedByRobots(urlValue, policy, userAgent = undefined) {
 }
 
 export function parseSitemapUrls(sitemapText, baseUrl) {
-  const urls = [];
+  const urls = /** @type {any[]} */ ([]);
   const pattern = /<loc\b[^>]*>([\s\S]*?)<\/loc>/giu;
   let match;
   while ((match = pattern.exec(String(sitemapText ?? ''))) !== null) {

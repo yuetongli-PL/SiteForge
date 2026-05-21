@@ -146,7 +146,7 @@ function renderJableFlowsReference(input) {
   const intents = [...(context.intentsDocument.intents ?? [])].sort((left, right) => String(left.intentId).localeCompare(String(right.intentId), 'en'));
   const entries = intents.map((intent) => {
     const label = helpers.displayIntentLabel(context, intent.intentType);
-    const bodyLines = [];
+    const bodyLines = /** @type {any[]} */ ([]);
     if (label === '搜索影片') {
       const queries = samples.searchQueries.length ? samples.searchQueries : samples.videos.slice(0, 3);
       bodyLines.push(`- Example user requests: ${queries.map((query) => `\`搜索${query}\``).join(', ') || '`搜索影片`'}`);
@@ -224,7 +224,7 @@ function renderJableNlIntentsReference(input) {
   const videoExamples = samples.videos.slice(0, 4);
   const modelExamples = samples.models.slice(0, 4);
   const searchExamples = samples.searchQueries.slice(0, 4);
-  const entries = [];
+  const entries = /** @type {any[]} */ ([]);
   if (intentTypes.has('search-video') || intentTypes.has('search-book')) {
     entries.push({
       title: '搜索影片',

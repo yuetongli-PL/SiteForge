@@ -27,7 +27,7 @@ import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-function collectFiles(dir, predicate, collected = []) {
+function collectFiles(dir, predicate, collected = /** @type {any[]} */ ([])) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -147,8 +147,8 @@ test('LifecycleEvent preserves optional trace and correlation identifiers', () =
 test('LifecycleEvent subscriber registry dispatches normalized events only to matching in-memory subscribers', async () => {
   const { create } = loadLifecycleEventSubscriberRegistryApi();
   const registry = create();
-  const received = [];
-  const nonMatchingReceived = [];
+  const received = /** @type {any[]} */ ([]);
+  const nonMatchingReceived = /** @type {any[]} */ ([]);
 
   registerLifecycleSubscriber(registry, {
     subscriberId: 'synthetic-in-memory-subscriber',
@@ -746,6 +746,7 @@ test('LifecycleEvent producer observability profile fails closed for social risk
           riskState,
         },
       }),
+      // @ts-ignore
       new RegExp(field.replace('.', '\\.'), 'u'),
     );
   }
@@ -949,7 +950,7 @@ test('LifecycleEvent artifact writer persists redacted event and audit with obse
 });
 
 test('LifecycleEvent dispatch sends normalized observability identifiers to subscribers', async () => {
-  const received = [];
+  const received = /** @type {any[]} */ ([]);
   const result = await dispatchLifecycleEvent({
     eventType: 'test.lifecycle.dispatch',
     traceId: 'trace-synthetic-dispatch',

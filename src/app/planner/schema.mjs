@@ -55,6 +55,7 @@ export function listSiteCapabilityPlannerSchemaDefinitions() {
   }));
 }
 
+/** @param {Record<string, any>} options */
 export function createPlannerCompatibilityDeclaration({
   graphSchemaVersion,
   graphVersion,

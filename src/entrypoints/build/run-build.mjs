@@ -273,7 +273,7 @@ export function parseCliArgs(argv) {
 
 function printHelp() {
   process.stdout.write(`用法:
-  node src/entrypoints/pipeline/run-pipeline.mjs <url> [build options]
+  node src/entrypoints/build/run-build.mjs <url> [build options]
 
 公开命令:
   siteforge build <url>

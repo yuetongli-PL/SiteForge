@@ -946,7 +946,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'build-failed',
     family: 'schema',
-    source: 'src/entrypoints/pipeline/run-pipeline.mjs',
+    source: 'src/entrypoints/build/run-build.mjs',
     retryable: true,
     degradable: true,
     artifactWriteAllowed: true,

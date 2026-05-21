@@ -6230,7 +6230,7 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
         || context.setupProfile.userAuthorizedEvidence.autoDiscovery.networkEnabled !== true
       )
     ) {
-      steps.push('Internal operator deep mode: node src/entrypoints/pipeline/run-pipeline.mjs <url> --auto --deep --network.');
+      steps.push('Internal operator deep mode: node src/entrypoints/build/run-build.mjs <url> --auto --deep --network.');
     }
     if (disabledCapabilities.length) {
       steps.push('For disabled capabilities, write a safe remediation plan: immediate entries use limited summaries or draft previews; adapter entries need explicit site adapter validation before use.');
@@ -7883,7 +7883,7 @@ export function renderSiteForgeBuildDebugSummary(result, options = /** @type {an
     );
     if (!counts.autoDiscoveryDynamicEnabled || !counts.autoDiscoveryNetworkEnabled) {
       lines.push('  Impact: SPA route/state structure was modeled from sanitized summaries; browser-rendered crawl and raw network trace capture are not enabled.');
-      lines.push('  Internal sanitized check: node src/entrypoints/pipeline/run-pipeline.mjs <url> --auto --deep --network');
+      lines.push('  Internal sanitized check: node src/entrypoints/build/run-build.mjs <url> --auto --deep --network');
     }
   }
   const warnings = result.warnings ?? [];

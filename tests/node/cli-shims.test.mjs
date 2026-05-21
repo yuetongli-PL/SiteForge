@@ -10,7 +10,7 @@ import * as bilibiliOpenEntrypoint from '../../src/entrypoints/sites/bilibili-op
 import * as bilibiliExtractEntrypoint from '../../src/entrypoints/sites/bilibili-extract-links.mjs';
 import * as xiaohongshuActionEntrypoint from '../../src/entrypoints/sites/xiaohongshu-action.mjs';
 import * as xiaohongshuFollowEntrypoint from '../../src/entrypoints/sites/xiaohongshu-query-follow.mjs';
-import * as buildEntrypoint from '../../src/entrypoints/pipeline/run-pipeline.mjs';
+import * as buildEntrypoint from '../../src/entrypoints/build/run-build.mjs';
 
 test('canonical site CLI entrypoints expose the expected Douyin handlers', () => {
   assert.equal(typeof douyinActionEntrypoint.runDouyinActionCli, 'function');

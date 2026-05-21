@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 
 import { parseCliArgs as parseDoctorArgs } from '../../src/entrypoints/sites/site-doctor.mjs';
 import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
-import { parseCliArgs as parseBuildArgs } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
+import { parseCliArgs as parseBuildArgs } from '../../src/entrypoints/build/run-build.mjs';
 import { parseCliArgs as parseSiteLoginArgs } from '../../src/entrypoints/sites/site-login.mjs';
 import { parseCliArgs as parseSiteKeepaliveArgs } from '../../src/entrypoints/sites/site-keepalive.mjs';
 import { parseCliArgs as parseNlSiteLoginArgs } from '../../src/entrypoints/sites/nl-site-login.mjs';
@@ -313,11 +313,11 @@ test('auxiliary site CLIs accept shared progress flags without exposing sensitiv
 
 test('unified CLI facade only routes build commands', () => {
   const build = resolveCliDispatch(['build', 'https://example.com']);
-  assert.equal(path.basename(build.script), 'run-pipeline.mjs');
+  assert.equal(path.basename(build.script), 'run-build.mjs');
   assert.deepEqual(build.args, ['https://example.com']);
   for (const flag of ['--auto', '--manual', '--deep', '--network', '--verbose', '--debug']) {
     const routed = resolveCliDispatch(['build', 'https://example.com', flag]);
-    assert.equal(path.basename(routed.script), 'run-pipeline.mjs');
+    assert.equal(path.basename(routed.script), 'run-build.mjs');
     assert.deepEqual(routed.args, ['https://example.com', flag]);
   }
   const report = resolveCliDispatch(['build', 'https://example.com', '--report', 'debug']);
@@ -342,7 +342,7 @@ test('unified CLI facade rejects domain command tree', () => {
 
 test('unified CLI command map exposes only build as public command', () => {
   assert.deepEqual(
-    unifiedCliArgsForScript('src/entrypoints/pipeline/run-pipeline.mjs'),
+    unifiedCliArgsForScript('src/entrypoints/build/run-build.mjs'),
     ['build'],
   );
   assert.equal(

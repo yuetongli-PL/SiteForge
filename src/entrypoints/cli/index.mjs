@@ -161,7 +161,7 @@ export function resolveCliDispatch(argv) {
     if (validation.help) {
       return { help: HELP };
     }
-    return dispatchForRoute({ fromEntrypointsRoot: true, script: ['pipeline', 'run-pipeline.mjs'] }, rest);
+    return dispatchForRoute({ fromEntrypointsRoot: true, script: ['build', 'run-build.mjs'] }, rest);
   }
   throw new Error(`Unknown command: ${command}\n\n${HELP}`);
 }

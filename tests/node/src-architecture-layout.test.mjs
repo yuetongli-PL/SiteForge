@@ -222,7 +222,6 @@ test('canonical src modules own profile validation and infra implementations', a
 
 test('retired root compatibility entrypoints stay removed', async () => {
   await Promise.all([
-    expectPathMissing('run-pipeline.mjs'),
     expectPathMissing('generate-skill.mjs'),
     expectPathMissing('capture.mjs'),
     expectPathMissing('expand-states.mjs'),

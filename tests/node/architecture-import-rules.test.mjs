@@ -222,7 +222,7 @@ const ARTIFACT_WRITE_SINK_PATTERN =
 const DYNAMIC_FS_IMPORT_PATTERN = /\bimport\(\s*['"](?:node:fs|node:fs\/promises|fs|fs\/promises)['"]\s*\)/gu;
 
 const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
-  'src/entrypoints/pipeline/run-pipeline.mjs',
+  'src/entrypoints/build/run-build.mjs',
   'src/entrypoints/sites/site-recompile-preview-summary.mjs',
   'src/entrypoints/sites/session-repair-plan.mjs',
   'src/entrypoints/sites/site-capability-compile.mjs',
@@ -264,7 +264,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
 
 const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/entrypoints/operator/capabilities.mjs', 2],
-  ['src/entrypoints/pipeline/run-pipeline.mjs', 3],
+  ['src/entrypoints/build/run-build.mjs', 3],
   ['src/entrypoints/sites/site-recompile-preview-summary.mjs', 3],
   ['src/entrypoints/pipeline/generate-crawler-script.mjs', 6],
   ['src/entrypoints/sites/douyin-export-cookies.mjs', 5],
@@ -682,19 +682,19 @@ test('site modules do not depend on scripts or root shims', async () => {
   );
 });
 
-test('pipeline entrypoints do not import raw credential tools or concrete site risk helpers', async () => {
-  const imports = await collectResolvedImports('src/entrypoints/pipeline');
+test('build entrypoints do not import raw credential tools or concrete site risk helpers', async () => {
+  const imports = await collectResolvedImports('src/entrypoints/build');
   assertNoResolvedPaths(imports, [
     'src/shared/xiaohongshu-risk.mjs',
     'src/entrypoints/sites/social-auth-import.mjs',
     'src/entrypoints/sites/douyin-export-cookies.mjs',
     'src/infra/auth/windows-credential-manager.mjs',
     'src/infra/browser/profile-store.mjs',
-  ], 'pipeline entrypoints should not import raw credential/profile tooling or concrete site risk helpers directly');
+  ], 'build entrypoints should not import raw credential/profile tooling or concrete site risk helpers directly');
 });
 
-test('pipeline entrypoint delegates to SiteForge build setup and runner', async () => {
-  const buildEntrypointSource = await readFile(path.join(REPO_ROOT, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), 'utf8');
+test('build entrypoint delegates to SiteForge build setup and runner', async () => {
+  const buildEntrypointSource = await readFile(path.join(REPO_ROOT, 'src', 'entrypoints', 'build', 'run-build.mjs'), 'utf8');
   assert.match(buildEntrypointSource, /prepareSiteForgeBuildSetup/u);
   assert.match(buildEntrypointSource, /runSiteForgeBuild/u);
   assert.match(buildEntrypointSource, /parseCliArgs/u);
@@ -711,9 +711,9 @@ test('pipeline application layer only exposes the SiteForge build implementation
   );
 });
 
-test('pipeline entrypoint imports stay behind registries or capability services', async () => {
+test('build entrypoint imports stay behind registries or capability services', async () => {
   const imports = [
-    ...await collectResolvedImports('src/entrypoints/pipeline'),
+    ...await collectResolvedImports('src/entrypoints/build'),
   ];
   const allowedAdapterRegistryPaths = new Set([
     'src/sites/adapters/factory.mjs',
@@ -727,7 +727,7 @@ test('pipeline entrypoint imports stay behind registries or capability services'
   assert.deepEqual(
     concreteAdapterHits.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
     [],
-    'pipeline entrypoints should reach SiteAdapter implementations only through the adapter factory/resolver',
+    'build entrypoints should reach SiteAdapter implementations only through the adapter factory/resolver',
   );
 
   for (const forbiddenPrefix of [
@@ -736,7 +736,7 @@ test('pipeline entrypoint imports stay behind registries or capability services'
     assertNoResolvedPrefix(
       imports,
       forbiddenPrefix,
-      'pipeline entrypoints should not import downloader site-specific resolver semantics directly',
+      'build entrypoints should not import downloader site-specific resolver semantics directly',
     );
   }
   assertNoResolvedPaths(imports, [
@@ -750,7 +750,7 @@ test('pipeline entrypoint imports stay behind registries or capability services'
     'src/sites/downloads/runner.mjs',
     'src/sites/downloads/session-manager.mjs',
     'src/sites/downloads/session-report.mjs',
-  ], 'pipeline entrypoints should delegate downloader behavior through runtime/capability boundaries');
+  ], 'build entrypoints should delegate downloader behavior through runtime/capability boundaries');
 });
 
 test('domain services do not depend on concrete sites or runtime orchestration layers', async () => {

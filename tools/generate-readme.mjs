@@ -184,7 +184,8 @@ The repository is one package and one public CLI. Dependency direction stays ent
 | --- | --- |
 | \`src/entrypoints/cli/\` | Public CLI facade; only \`siteforge build <url>\` is public. |
 | \`src/entrypoints/operator/\` | Internal operator entrypoints that are not routed through \`siteforge\`. |
-| \`src/entrypoints/pipeline/\` | Internal build and crawler-support entrypoint wiring used by operator flows. |
+| \`src/entrypoints/build/\` | Internal SiteForge build CLI entrypoint wiring used by the public \`siteforge build\` facade. |
+| \`src/entrypoints/pipeline/\` | Crawler-support entrypoint wiring used by operator flows. |
 | \`src/app/pipeline/build/\` | SiteForge build orchestration, lifecycle, recovery, and validation. |
 | \`src/app/compiler/\` | Evidence and capability compilation. |
 | \`src/app/planner/\` | Descriptor-only plans and policy handoff. |

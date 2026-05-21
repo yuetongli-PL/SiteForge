@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
-const SCRIPT = path.join(process.cwd(), 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs');
+const SCRIPT = path.join(process.cwd(), 'src', 'entrypoints', 'build', 'run-build.mjs');
 
 function runBuildCli(args) {
   return spawnSync(process.execPath, [SCRIPT, ...args], {

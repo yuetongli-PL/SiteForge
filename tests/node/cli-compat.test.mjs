@@ -42,7 +42,7 @@ function runNodeCli(scriptName, args, options = /** @type {any} */ ({})) {
 
 function assertBuildDispatch(args) {
   const dispatch = resolveCliDispatch(args);
-  assert.equal(dispatch.script, path.resolve(repoRoot, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'));
+  assert.equal(dispatch.script, path.resolve(repoRoot, 'src', 'entrypoints', 'build', 'run-build.mjs'));
   assert.deepEqual(dispatch.args, args.slice(1));
   return dispatch;
 }
@@ -192,7 +192,7 @@ test('public documentation and user-facing copy do not advertise internal CLI su
   const files = [
     'README.md',
     path.join('src', 'entrypoints', 'cli', 'index.mjs'),
-    path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'),
+    path.join('src', 'entrypoints', 'build', 'run-build.mjs'),
   ];
   const failures = /** @type {any[]} */ ([]);
   for (const file of files) {

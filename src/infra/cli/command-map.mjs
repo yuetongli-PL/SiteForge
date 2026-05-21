@@ -92,7 +92,7 @@ function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
 
 export function unifiedCliArgsForScript(scriptPath) {
   const normalized = normalizeScriptPath(scriptPath);
-  if (normalized === 'src/entrypoints/pipeline/run-pipeline.mjs') {
+  if (normalized === 'src/entrypoints/build/run-build.mjs') {
     return ['build'];
   }
   return null;

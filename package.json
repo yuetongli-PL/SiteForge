@@ -26,7 +26,7 @@
     "test:unit": "node --test tests/node/architecture-import-rules.test.mjs tests/node/generate-skill.test.mjs tests/node/skill-coverage-regression-gate.test.mjs",
     "test:integration": "node --test tests/node/progress-cli-integration.test.mjs tests/node/run-pipeline.test.mjs tests/node/site-capability-compiler-executor/compile-entrypoint.test.mjs tests/node/site-capability-compiler-executor/planner-integration.test.mjs",
     "test:e2e": "node --test tests/node/siteforge-build.test.mjs",
-    "test:python": "python -m unittest discover -s tests/python -p \"test_*.py\"",
+    "test:python": "node tools/run-python-tests.mjs",
     "build": "npm run build:ci",
     "build:ci": "node --test tests/node/siteforge-build.test.mjs"
   },

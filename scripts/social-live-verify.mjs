@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
+import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
+import { formatTimestampForDir as timestampForDir } from '../src/shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -32,15 +34,11 @@ Options:
   --case <id>                       Run one matrix case. Can be repeated.
   --site <x|instagram|all>          Filter site-specific cases. Required.
   --account <handle>                Account used by both sites when site-specific account is omitted.
-  --x-account <handle>              X archive/media account. Required for selected X cases unless --account is set.
-  --ig-account <handle>             Instagram archive/media account. Required for selected Instagram cases unless --account is set.
+  --x-account <handle>              X archive account. Required for selected X cases unless --account is set.
+  --ig-account <handle>             Instagram archive account. Required for selected Instagram cases unless --account is set.
   --date <YYYY-MM-DD>               Date for followed-date verification. Required when that case is selected.
   --max-items <n>                   Per-command item limit. Required.
   --max-users <n>                   Followed-date user scan limit. Required when that case is selected.
-  --max-media-downloads <n>         Media download cap for download cases. Required when media cases are selected.
-  --media-download-concurrency <n>  Forwarded media download concurrency. Default: action default.
-  --media-download-retries <n>      Forwarded media download retry count. Default: action default.
-  --media-download-backoff-ms <ms>  Forwarded media download retry backoff. Default: action default.
   --risk-backoff-ms <ms>            Forwarded social runtime risk backoff. Default: action default.
   --risk-retries <n>                Forwarded social runtime risk retry count. Default: action default.
   --api-retries <n>                 Forwarded API cursor retry count. Default: action default.
@@ -62,8 +60,8 @@ Matrix ids:
   x-full-archive
   instagram-full-archive
   instagram-followed-date
-  x-media-download
-  instagram-media-download
+  x-media-download-blocked-boundary
+  instagram-media-download-blocked-boundary
   x-session-health
   instagram-session-health
   x-auth-doctor
@@ -76,19 +74,8 @@ function todayUtcDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function timestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/u, '$1Z');
-}
-
 function normalizeHandle(value) {
   return String(value ?? '').trim().replace(/^@/u, '');
-}
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
 }
 
 export function parseArgs(argv) {
@@ -106,10 +93,6 @@ export function parseArgs(argv) {
     date: null,
     maxItems: null,
     maxUsers: null,
-    maxMediaDownloads: null,
-    mediaDownloadConcurrency: null,
-    mediaDownloadRetries: null,
-    mediaDownloadBackoffMs: null,
     riskBackoffMs: null,
     riskRetries: null,
     apiRetries: null,
@@ -234,10 +217,6 @@ export function parseArgs(argv) {
       case '--date':
       case '--max-items':
       case '--max-users':
-      case '--max-media-downloads':
-      case '--media-download-concurrency':
-      case '--media-download-retries':
-      case '--media-download-backoff-ms':
       case '--risk-backoff-ms':
       case '--risk-retries':
       case '--api-retries':
@@ -280,7 +259,6 @@ export function parseArgs(argv) {
   for (const [name, value] of [
     ['max-items', options.maxItems],
     ['max-users', options.maxUsers],
-    ['max-media-downloads', options.maxMediaDownloads],
     ['timeout', options.timeout],
     ['case-timeout', options.caseTimeout],
   ]) {
@@ -310,8 +288,8 @@ function knownCaseIds() {
     'x-full-archive',
     'instagram-full-archive',
     'instagram-followed-date',
-    'x-media-download',
-    'instagram-media-download',
+    'x-media-download-blocked-boundary',
+    'instagram-media-download-blocked-boundary',
     'x-session-health',
     'instagram-session-health',
     'x-auth-doctor',
@@ -359,7 +337,6 @@ export function evaluateLiveSmokeBoundary(options) {
   const needsX = caseScoped ? selectedCases.some((id) => id.startsWith('x-')) : selectedSites.includes('x');
   const needsInstagram = caseScoped ? selectedCases.some((id) => id.startsWith('instagram-')) : selectedSites.includes('instagram');
   const needsFollowedDate = selectedCases.includes('instagram-followed-date');
-  const needsMedia = selectedCases.includes('x-media-download') || selectedCases.includes('instagram-media-download');
 
   if (!explicit.has('live') || options.live !== true) missing.push('live');
   if (!explicit.has('site') || !options.site) missing.push('site');
@@ -368,7 +345,6 @@ export function evaluateLiveSmokeBoundary(options) {
   if (!explicit.has('maxItems') || options.maxItems === null) missing.push('max-items');
   if (needsFollowedDate && (!explicit.has('date') || options.date === null)) missing.push('date');
   if (needsFollowedDate && (!explicit.has('maxUsers') || options.maxUsers === null)) missing.push('max-users');
-  if (needsMedia && (!explicit.has('maxMediaDownloads') || options.maxMediaDownloads === null)) missing.push('max-media-downloads');
   if (!explicit.has('timeout') || options.timeout === null) missing.push('timeout');
   if (!explicit.has('caseTimeout') || options.caseTimeout === null) missing.push('case-timeout');
   if (!explicit.has('runRoot') || options.runRoot === null) missing.push('run-root');
@@ -421,17 +397,6 @@ function socialCommonArgs(options, runDir) {
   addOptional(args, '--risk-backoff-ms', options.riskBackoffMs);
   addOptional(args, '--risk-retries', options.riskRetries);
   addOptional(args, '--api-retries', options.apiRetries);
-  return args;
-}
-
-function mediaDownloadArgs(options) {
-  const args = [
-    '--max-media-downloads',
-    String(options.maxMediaDownloads),
-  ];
-  addOptional(args, '--media-download-concurrency', options.mediaDownloadConcurrency);
-  addOptional(args, '--media-download-retries', options.mediaDownloadRetries);
-  addOptional(args, '--media-download-backoff-ms', options.mediaDownloadBackoffMs);
   return args;
 }
 
@@ -566,37 +531,35 @@ export function buildMatrix(options, runId) {
       ]),
     },
     {
-      id: 'x-media-download',
+      id: 'x-media-download-blocked-boundary',
       site: 'x',
-      category: 'media download',
-      purpose: 'Verify X media enumeration and binary download path from profile media content.',
+      category: 'media download blocked boundary',
+      purpose: 'Confirm X media download requests remain blocked and only write a blocked report.',
       artifactType: 'social-action',
-      artifactRoot: caseRoot('x-media-download'),
+      artifactRoot: caseRoot('x-media-download-blocked-boundary'),
       ...nodeCommand(xAction, [
         'profile-content',
         xAccount,
         '--content-type',
         'media',
         '--download-media',
-        ...mediaDownloadArgs(options),
-        ...socialCommonArgs(options, caseRoot('x-media-download')),
+        ...socialCommonArgs(options, caseRoot('x-media-download-blocked-boundary')),
       ]),
     },
     {
-      id: 'instagram-media-download',
+      id: 'instagram-media-download-blocked-boundary',
       site: 'instagram',
-      category: 'media download',
-      purpose: 'Verify Instagram media enumeration and binary download path from profile media content.',
+      category: 'media download blocked boundary',
+      purpose: 'Confirm Instagram media download requests remain blocked and only write a blocked report.',
       artifactType: 'social-action',
-      artifactRoot: caseRoot('instagram-media-download'),
+      artifactRoot: caseRoot('instagram-media-download-blocked-boundary'),
       ...nodeCommand(igAction, [
         'profile-content',
         igAccount,
         '--content-type',
         'media',
         '--download-media',
-        ...mediaDownloadArgs(options),
-        ...socialCommonArgs(options, caseRoot('instagram-media-download')),
+        ...socialCommonArgs(options, caseRoot('instagram-media-download-blocked-boundary')),
       ]),
     },
     {
@@ -729,7 +692,6 @@ export function buildPlanJson(entries, options, runId) {
       date: options.date,
       maxItems: options.maxItems,
       maxUsers: options.maxUsers,
-      maxMediaDownloads: options.maxMediaDownloads,
       timeout: options.timeout,
       caseTimeout: options.caseTimeout,
       approvalId: options.approvalId,
@@ -1343,10 +1305,6 @@ async function executePlan(entries, options, runId) {
       date: options.date,
       maxItems: options.maxItems,
       maxUsers: options.maxUsers,
-      maxMediaDownloads: options.maxMediaDownloads,
-      mediaDownloadConcurrency: options.mediaDownloadConcurrency,
-      mediaDownloadRetries: options.mediaDownloadRetries,
-      mediaDownloadBackoffMs: options.mediaDownloadBackoffMs,
       timeout: options.timeout,
       caseTimeout: options.caseTimeout,
       riskBackoffMs: options.riskBackoffMs,

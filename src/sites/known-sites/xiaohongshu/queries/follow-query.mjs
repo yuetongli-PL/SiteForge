@@ -2,7 +2,6 @@
 
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { openBrowserSession } from '../../../../infra/browser/session.mjs';
 import { initializeCliUtf8, writeJsonStdout } from '../../../../infra/cli.mjs';
@@ -19,12 +18,10 @@ import {
 import { cleanText } from '../../../../shared/normalize.mjs';
 import { normalizeRiskTransition } from '../../../../domain/risks/risk-state.mjs';
 import { resolveProfilePathForUrl } from '../../../registry/core/profiles.mjs';
+import { resolveRepoPath } from '../../../../infra/paths/repo-root.mjs';
 
 const DEFAULT_INPUT_URL = 'https://www.xiaohongshu.com/notification';
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-const MODULE_DIR = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
 
 const HELP = `Internal script usage:
   node src/sites/known-sites/xiaohongshu/queries/follow-query.mjs [url] [options]
@@ -229,7 +226,7 @@ function dedupeUsers(users = []) {
   return ordered.sort((left, right) => (left.name || '').localeCompare(right.name || '', 'zh-Hans-CN'));
 }
 
-function mergeOptions(inputUrl, options = {}) {
+export function mergeOptions(inputUrl, options = {}) {
   const merged = {
     intent: 'list-followed-users',
     format: 'json',
@@ -268,7 +265,7 @@ function mergeOptions(inputUrl, options = {}) {
   merged.profilePath = merged.profilePath
     ? path.resolve(merged.profilePath)
     : resolveProfilePathForUrl(merged.inputUrl, {
-      profilesDir: path.join(REPO_ROOT, 'profiles'),
+      profilesDir: resolveRepoPath('profiles'),
     });
   merged.browserProfileRoot = merged.browserProfileRoot ? path.resolve(merged.browserProfileRoot) : undefined;
   merged.userDataDir = merged.userDataDir ? path.resolve(merged.userDataDir) : undefined;

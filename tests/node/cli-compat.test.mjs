@@ -7,16 +7,14 @@ import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
+import {
+  PUBLIC_BOOLEAN_BUILD_FLAGS,
+  PUBLIC_BUILD_HELP_FLAGS,
+} from '../../src/entrypoints/cli/public-build-contract.mjs';
 import { buildExampleStageSpec, compileFixtureKnowledgeBase } from './kb-test-fixtures.mjs';
 import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
 
 const repoRoot = process.cwd();
-const PUBLIC_BOOLEAN_BUILD_FLAGS = ['--auto', '--manual', '--deep', '--network', '--explain', '--verbose', '--debug'];
-const PUBLIC_HELP_FLAGS = [
-  ...PUBLIC_BOOLEAN_BUILD_FLAGS,
-  '--privacy limited|strict',
-  '--report user|debug|both',
-];
 const INTERNAL_BUILD_FLAGS = [
   '--browser-path',
   '--user-data-dir',
@@ -29,6 +27,7 @@ const INTERNAL_BUILD_FLAGS = [
   '--capability',
 ];
 const LEGACY_PUBLIC_ROUTES = [
+  ['capabilities', 'list', 'x-com-authorized-browser-surface'],
   ['site', 'doctor', 'https://example.com/'],
   ['download', 'plan', 'https://example.com/'],
   ['social', 'templates'],
@@ -145,7 +144,7 @@ test('public SiteForge CLI exposes only build help', () => {
   const help = runNodeCli(path.join('src', 'entrypoints', 'cli', 'index.mjs'), ['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /siteforge build <url>/u);
-  for (const flag of PUBLIC_HELP_FLAGS) {
+  for (const flag of PUBLIC_BUILD_HELP_FLAGS) {
     assert.match(help.stdout, new RegExp(flag.replace(/[|]/gu, '\\$&'), 'u'));
   }
   for (const flag of INTERNAL_BUILD_FLAGS) {

@@ -12,10 +12,9 @@ import {
   assertNoCompilerSensitiveMaterial,
   assertSiteCompileManifestCompatible,
 } from './validator.mjs';
+import { jsonClone } from '../../shared/clone.mjs';
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+const clone = jsonClone;
 
 function graphVersionFromManifest(manifest) {
   const digest = String(manifest.manifestDigest ?? manifest.sourceDigest ?? manifest.compilerVersion)

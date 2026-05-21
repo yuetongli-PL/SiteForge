@@ -2,7 +2,10 @@
 
 import path from 'node:path';
 import process from 'node:process';
+import { displayPath } from '../../../infra/cli/path-display.mjs';
+import { buildStatusLabel, collectionStatusLabel, verificationStatusLabel } from '../../../infra/cli/status-labels.mjs';
 import { pathExists } from '../../../infra/io.mjs';
+import { jsonClone } from '../../../shared/clone.mjs';
 import { slugifyAscii, uniqueSortedStrings } from '../../../shared/normalize.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../../domain/sessions/security-guard.mjs';
 import {
@@ -173,9 +176,7 @@ const COLLECTION_OUTCOME_STAGE_KINDS = Object.freeze({
 });
 const SETUP_COLLECTION_REVIEW_KINDS = Object.freeze(['seeds', 'nodes', 'affordances', 'capabilities', 'intents']);
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+const clone = jsonClone;
 
 function arrayUniqueBy(values, keyFn) {
   const seen = new Set();
@@ -360,9 +361,9 @@ function capabilityCounts(capabilities = []) {
 const SAFE_BUILD_WARNING_PATTERNS = Object.freeze([
   /^generic crawler skipped; using bounded user-authorized browser evidence summary\.$/u,
   /^using sanitized user-authorized browser evidence; unredacted page structure and session material were not persisted\.$/u,
-  /^Browser-rendered crawl is unavailable in the deterministic static build path\.$/u,
-  /^Network instrumentation is unavailable in the static fixture build path\.$/u,
-  /^Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary\.$/u,
+  /^Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only\.$/u,
+  /^Network summary was not requested; raw network tracing is not part of the public build path\.$/u,
+  /^Network summary requested; raw network traces were not captured or persisted\.$/u,
   /^robots excluded all planned seed URLs before crawl\.$/u,
   /^seed discovery truncated at maxSeeds=\d+; \d+ seeds were left out\.$/u,
   /^sitemap discovery truncated at maxSitemaps=\d+; \d+ sitemap URLs were left out\.$/u,
@@ -2576,7 +2577,7 @@ async function crawlRenderedStage(context) {
     buildId: context.buildId,
     siteId: context.site.id,
     status: 'skipped',
-    reason: 'Browser-rendered crawl is unavailable for this deterministic static build path.',
+    reason: 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.',
     pages: [],
   };
   const crawlRenderedPath = await writeArtifactJson(context, 'crawl_rendered.json', payload);
@@ -2680,8 +2681,8 @@ async function captureNetworkTracesStage(context) {
     siteId: context.site.id,
     status: 'skipped',
     reason: networkRequested
-      ? 'Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary.'
-      : 'Network instrumentation is unavailable in the static fixture build path.',
+      ? 'Network summary requested; raw network traces were not captured or persisted.'
+      : 'Network summary was not requested; raw network tracing is not part of the public build path.',
     traces: [],
     sanitizedSummary,
   };
@@ -4909,10 +4910,10 @@ function collectionOutcomeReason(value, stageName = '') {
     return 'Collection stage was blocked before producing verified output.';
   }
   if (reason === 'dynamic-unsupported' && stage === 'crawlRendered') {
-    return 'Browser-rendered crawl is unavailable for this deterministic static build path.';
+    return 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.';
   }
   if (reason === 'dynamic-unsupported' && stage === 'captureNetworkTraces') {
-    return 'Network instrumentation is unavailable in the static fixture build path.';
+    return 'Network summary was not requested; raw network tracing is not part of the public build path.';
   }
   if (reason === 'build-failed') {
     return 'Build failed before producing verified output.';
@@ -5510,7 +5511,7 @@ function buildUserFacingWarnings(report, resultStatus, context = null, partialSu
       || context.setupProfile.userAuthorizedEvidence.autoDiscovery.networkEnabled !== true
     )
   ) {
-    warnings.push('Auto-discovery used sanitized SPA route/state summaries; rendered DOM or redacted network observations were not fully enabled.');
+    warnings.push('Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.');
   }
   if (resultStatus === 'failed' && report.reason) {
     warnings.push(report.reason);
@@ -5536,10 +5537,10 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
       }
     }
     if (context.options?.deep !== true) {
-      steps.push('Run with --deep when you need broader rendered or deeper discovery.');
+      steps.push('Run with --deep when you need broader static and sanitized structure discovery; this does not enable browser-rendered crawling.');
     }
     if (context.policy?.captureNetwork !== true) {
-      steps.push('Run with --network only when a redacted network summary is needed.');
+      steps.push('Run with --network only when a sanitized network summary is needed; raw traces are not saved.');
     }
     if (
       context.setupProfile?.userAuthorizedEvidence?.autoDiscovery?.status === 'modeled'
@@ -5551,7 +5552,7 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
       steps.push('Internal operator deep mode: node src/entrypoints/pipeline/run-pipeline.mjs <url> --auto --deep --network.');
     }
     if (disabledCapabilities.length) {
-      steps.push('For disabled capabilities, write a safe remediation plan: immediate entries use limited summaries or draft previews; adapter entries need explicit SiteAdapter validation before use.');
+      steps.push('For disabled capabilities, write a safe remediation plan: immediate entries use limited summaries or draft previews; adapter entries need explicit site adapter validation before use.');
       if (confirmationPaths?.disabled?.review_command) {
         steps.push(`Review disabled capabilities: ${confirmationPaths.disabled.review_command}.`);
       }
@@ -6257,39 +6258,28 @@ export function siteForgeBuildCliJson(result, options = {}) {
   return `${prepareRedactedArtifactJsonWithAudit(buildReportPayloadForMode(result, options)).json}\n`;
 }
 
-function displayPath(value, cwd = process.cwd()) {
-  if (!value) {
-    return '-';
-  }
-  const relative = path.relative(cwd, value);
-  return relative && !relative.startsWith('..') ? relative.replace(/\\/gu, '/') : String(value).replace(/\\/gu, '/');
-}
-
-function displayBuildStatus(value) {
-  if (value === 'success') return '成功';
-  if (value === 'blocked') return '已阻止';
-  if (value === 'failed') return '失败';
-  return value ?? '-';
-}
-
-function displayVerificationStatus(value) {
-  if (value === 'passed') return '通过';
-  if (value === 'failed') return '失败';
-  if (value === 'registered') return '已注册';
-  if (value === 'skipped') return '已跳过';
-  return value ?? '-';
-}
-
 function displayBuildWarning(value) {
   const text = String(value ?? '');
   if (text === 'Browser-rendered crawl is unavailable for this deterministic static build path.') {
     return '确定性静态构建路径中无法使用浏览器渲染采集。';
   }
+  if (text === 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.') {
+    return '本次使用静态和脱敏设置证据；公开构建路径不进行浏览器渲染采集。';
+  }
   if (text === 'Network instrumentation is unavailable in the static fixture build path.') {
     return '静态 fixture 构建路径中无法使用网络监听。';
   }
+  if (text === 'Network summary was not requested; raw network tracing is not part of the public build path.') {
+    return '未请求脱敏网络摘要；公开构建路径不保存原始网络 trace。';
+  }
   if (text === 'Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary.') {
     return 'Network capture requested; only a sanitized network summary was saved.';
+  }
+  if (text === 'Network summary requested; raw network traces were not captured or persisted.') {
+    return '已请求脱敏网络摘要；未捕获或保存原始网络 trace。';
+  }
+  if (text === 'Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.') {
+    return '自动探索使用脱敏 SPA 路由/状态摘要；公开构建路径不启用浏览器渲染采集或原始网络 trace。';
   }
   if (text === 'generic crawler skipped; using bounded user-authorized browser evidence summary.') {
     return '已跳过通用采集器，改用受限的用户授权浏览器证据摘要。';
@@ -6321,7 +6311,7 @@ function displayBuildWarning(value) {
   }
   const skipped = text.match(/^Skipped because ([A-Za-z][A-Za-z0-9]*) ([a-z_]+)\.$/u);
   if (skipped) {
-    return `已跳过，因为阶段 ${skipped[1]} 状态为 ${displayCollectionStatus(skipped[2])}。`;
+    return `已跳过，因为阶段 ${skipped[1]} 状态为 ${collectionStatusLabel(skipped[2])}。`;
   }
   const crawlFailed = text.match(/^crawl failed: (.+)$/u);
   if (crawlFailed) {
@@ -6339,16 +6329,6 @@ function displayCollectionKind(value) {
   return String(value ?? '-');
 }
 
-function displayCollectionStatus(value) {
-  if (value === 'candidate') return '候选';
-  if (value === 'discarded') return '丢弃';
-  if (value === 'skipped') return '已跳过';
-  if (value === 'failed') return '失败';
-  if (value === 'blocked') return '已阻止';
-  if (value === 'error') return '错误';
-  return String(value ?? '-');
-}
-
 function displayCollectionTarget(value) {
   const text = String(value ?? '');
   if (text === 'list followed users') return '读取关注列表';
@@ -6360,7 +6340,7 @@ function displayCollectionTarget(value) {
   if (text === 'list bookmarks') return '读取书签摘要';
   if (text === 'list lists') return '读取列表摘要';
   if (text === 'list direct messages') return '读取私信会话摘要';
-  if (text === 'capture network APIs') return '捕获网络 API';
+  if (text === 'capture network APIs') return '脱敏网络摘要候选';
   if (text === 'registerSite') return '站点注册';
   if (text === 'discoverSeeds') return '种子发现';
   if (text === 'crawlStatic') return '静态页面采集';
@@ -6396,8 +6376,14 @@ function displayCollectionReason(item) {
   if (String(item?.reason ?? '') === 'Browser-rendered crawl is unavailable for this deterministic static build path.') {
     return '当前确定性构建路径不能进行浏览器渲染采集。';
   }
+  if (String(item?.reason ?? '') === 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.') {
+    return '当前公开构建路径不进行浏览器渲染采集。';
+  }
   if (String(item?.reason ?? '') === 'Network instrumentation is unavailable in the static fixture build path.') {
     return '当前静态构建路径不能进行网络监听。';
+  }
+  if (String(item?.reason ?? '') === 'Network summary requested; raw network traces were not captured or persisted.') {
+    return '只保存脱敏网络摘要；未捕获或保存原始网络 trace。';
   }
   if (reasonCode === 'stage-skipped') {
     return '上游阶段未完成，已跳过本阶段。';
@@ -6443,7 +6429,7 @@ function renderCollectionOutcomeTable(outcomes = []) {
     '  | --- | --- | --- | --- |',
   ];
   for (const item of outcomes) {
-    rows.push(`  | ${markdownTableCell(displayCollectionKind(item.kind), 12)} | ${markdownTableCell(displayCollectionTarget(item.target), 30)} | ${markdownTableCell(displayCollectionStatus(item.status), 12)} | ${markdownTableCell(displayCollectionReason(item), 88)} |`);
+    rows.push(`  | ${markdownTableCell(displayCollectionKind(item.kind), 12)} | ${markdownTableCell(displayCollectionTarget(item.target), 30)} | ${markdownTableCell(collectionStatusLabel(item.status), 12)} | ${markdownTableCell(displayCollectionReason(item), 88)} |`);
   }
   return rows;
 }
@@ -6489,14 +6475,14 @@ export function renderSiteForgeBuildSummary(result, options = {}) {
     ?? result.artifacts?.[DEBUG_REPORT_JSON_ALIAS]
     ?? DEBUG_REPORT_FILE;
   const indexPath = result.artifacts?.[INDEX_REPORT_FILE] ?? INDEX_REPORT_FILE;
-  return `${userSummary}\n调试报告\n  - Debug JSON: ${displayPath(debugPath, options.cwd)}\n  - 报告索引: ${displayPath(indexPath, options.cwd)}\n`;
+  return `${userSummary}\n开发者详情报告\n  - Debug JSON: ${displayPath(debugPath, options.cwd)}\n  - 报告索引: ${displayPath(indexPath, options.cwd)}\n`;
 }
 
 export function renderSiteForgeBuildDebugSummary(result, options = {}) {
   const counts = result.summary ?? {};
   const capabilityCountsSummary = counts.capabilities ?? {};
   const lines = [
-    `SiteForge 构建${displayBuildStatus(result.status)}`,
+    `SiteForge 构建${buildStatusLabel(result.status)}`,
     '',
     `站点 ID：${result.siteId}`,
     `构建 ID：${result.buildId}`,
@@ -6506,8 +6492,8 @@ export function renderSiteForgeBuildDebugSummary(result, options = {}) {
     `能力：活跃=${capabilityCountsSummary.active ?? 0} 候选=${capabilityCountsSummary.candidate ?? 0} 丢弃=${capabilityCountsSummary.discarded ?? 0}`,
     `意图：${counts.intents ?? 0}`,
     `Skill ID：${result.skillId ?? '-'}`,
-    `验证：${displayVerificationStatus(counts.verificationStatus)}`,
-    `注册表：${displayVerificationStatus(counts.registryStatus)}`,
+    `验证：${verificationStatusLabel(counts.verificationStatus)}`,
+    `注册表：${verificationStatusLabel(counts.registryStatus)}`,
     '',
     '产物：',
     `  构建：${displayPath(result.artifactDir, options.cwd)}`,
@@ -6522,8 +6508,8 @@ export function renderSiteForgeBuildDebugSummary(result, options = {}) {
       `  dynamic=${counts.autoDiscoveryDynamicEnabled ? 'enabled' : 'not-enabled'} network=${counts.autoDiscoveryNetworkEnabled ? 'enabled' : 'not-enabled'}`,
     );
     if (!counts.autoDiscoveryDynamicEnabled || !counts.autoDiscoveryNetworkEnabled) {
-      lines.push('  Impact: SPA route/state structure was modeled from sanitized summaries; rendered DOM or redacted network observations were not fully available.');
-      lines.push('  Internal deep check: node src/entrypoints/pipeline/run-pipeline.mjs <url> --auto --deep --network');
+      lines.push('  Impact: SPA route/state structure was modeled from sanitized summaries; browser-rendered crawl and raw network trace capture are not enabled.');
+      lines.push('  Internal sanitized check: node src/entrypoints/pipeline/run-pipeline.mjs <url> --auto --deep --network');
     }
   }
   const warnings = result.warnings ?? [];

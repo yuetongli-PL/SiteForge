@@ -12,6 +12,7 @@ import {
   assertNoForbiddenPatterns,
   redactValue,
 } from '../sessions/security-guard.mjs';
+import { jsonClone } from '../../shared/clone.mjs';
 
 export const CAPABILITY_HOOK_SCHEMA_VERSION = 1;
 export const CAPABILITY_HOOK_EVENT_TYPE_REGISTRY_SCHEMA_VERSION = 1;
@@ -592,9 +593,7 @@ export function normalizeCapabilityHook(raw = {}, defaults = {}) {
   });
 }
 
-function cloneHookDescriptor(hook) {
-  return JSON.parse(JSON.stringify(hook));
-}
+const cloneHookDescriptor = jsonClone;
 
 function listRegistryHooks(hooksOrRegistry = []) {
   if (hooksOrRegistry && typeof hooksOrRegistry.list === 'function') {

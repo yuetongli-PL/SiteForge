@@ -8,6 +8,10 @@ import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
 } from '../../../infra/cli/progress-cli.mjs';
+import {
+  parseNonNegativeNumberOption as normalizeNumber,
+  parseStrictBooleanOption as normalizeBoolean,
+} from '../../../infra/cli/parse-values.mjs';
 import { pipelineStageTitle } from '../../../infra/cli/progress-copy.mjs';
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import {
@@ -23,6 +27,8 @@ import {
   derivePageFacts as deriveSharedPageFacts,
   mergePageStateEvidence,
 } from '../../../shared/page-state-runtime.mjs';
+import { sanitizeHost } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import { inferPageTypeFromUrl, isContentDetailPageType as isSharedContentDetailPageType } from '../../../sites/registry/core/page-types.mjs';
 import { resolveSiteAdapter } from '../../../sites/adapters/resolver.mjs';
 import {
@@ -166,30 +172,6 @@ function mergeStringArrays(...values) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizeBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase();
-    if (lower === 'true') {
-      return true;
-    }
-    if (lower === 'false') {
-      return false;
-    }
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
-}
-
-function normalizeNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid number for ${flagName}: ${value}`);
-  }
-  return parsed;
 }
 
 export const derivePageFacts = deriveSharedPageFacts;
@@ -789,14 +771,6 @@ async function loadSiteProfile(baseUrl, explicitProfilePath = null, explicitSite
   } catch {
     return null;
   }
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function slugify(value, fallback = 'state') {

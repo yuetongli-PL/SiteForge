@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { siteCredentials } from '../../src/entrypoints/sites/site-credentials.mjs';
+import { runCli, siteCredentials } from '../../src/entrypoints/sites/site-credentials.mjs';
 
 function createDouyinProfile() {
   return {
@@ -24,6 +24,7 @@ test('siteCredentials set stores WinCred secrets using the profile target', asyn
     username: 'douyin-user',
     password: 'douyin-pass',
   }, {
+    isWindowsCredentialManagerSupported: () => true,
     resolveSiteAuthProfile: async () => createDouyinProfile(),
     setWindowsCredential: async (target, payload) => {
       calls.push({ target, payload });
@@ -45,6 +46,7 @@ test('siteCredentials show and delete surface WinCred metadata without leaking t
   const shown = await siteCredentials('show', 'https://www.douyin.com/', {
     profilePath: path.resolve('profiles/www.douyin.com.json'),
   }, {
+    isWindowsCredentialManagerSupported: () => true,
     resolveSiteAuthProfile: async () => createDouyinProfile(),
     getWindowsCredential: async () => ({
       found: true,
@@ -56,6 +58,7 @@ test('siteCredentials show and delete surface WinCred metadata without leaking t
   const removed = await siteCredentials('delete', 'https://www.douyin.com/', {
     profilePath: path.resolve('profiles/www.douyin.com.json'),
   }, {
+    isWindowsCredentialManagerSupported: () => true,
     resolveSiteAuthProfile: async () => createDouyinProfile(),
     deleteWindowsCredential: async () => ({
       deleted: true,
@@ -68,4 +71,39 @@ test('siteCredentials show and delete surface WinCred metadata without leaking t
   assert.equal(Object.prototype.hasOwnProperty.call(shown, 'password'), false);
   assert.equal(removed.deleted, true);
   assert.equal(removed.target, 'BrowserWikiSkill:douyin.com');
+});
+
+test('site-credentials CLI progress receives the target URL, not the action name', async () => {
+  const calls = [];
+  const writes = [];
+  await runCli([
+    'show',
+    'https://www.douyin.com/user/MS4wLjABAAAA/',
+    '--profile-path',
+    path.resolve('profiles/www.douyin.com.json'),
+  ], {
+    initializeCliUtf8: () => {},
+    siteCredentials: async (action, inputUrl, options) => {
+      calls.push({ action, inputUrl, options });
+      return {
+        action,
+        inputUrl,
+        found: false,
+      };
+    },
+    runSingleStageCliWithProgress: async (options) => {
+      assert.equal(options.inputUrl, 'https://www.douyin.com/user/MS4wLjABAAAA/');
+      assert.equal(options.stageTitle, 'Credential show');
+      return await options.run(options.options);
+    },
+    writeJsonStdout: (payload) => {
+      writes.push(payload);
+    },
+  });
+
+  assert.deepEqual(calls.map((call) => [call.action, call.inputUrl]), [
+    ['show', 'https://www.douyin.com/user/MS4wLjABAAAA/'],
+  ]);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].action, 'show');
 });

@@ -2,12 +2,12 @@
 
 import path from 'node:path';
 import process, { stdin as defaultStdin, stderr as defaultStderr, stdout as defaultStdout } from 'node:process';
-import { createServer } from 'node:http';
 import { createInterface as createReadlineInterface } from 'node:readline/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { ensureDir, pathExists, readJsonFile, writeJsonFile } from '../../../infra/io.mjs';
+import { jsonClone } from '../../../shared/clone.mjs';
 import { uniqueSortedStrings } from '../../../shared/normalize.mjs';
 import {
   BUILD_SCHEMA_VERSION,
@@ -82,9 +82,7 @@ const USER_AUTHORIZED_SETUP_GUIDANCE = Object.freeze([
   'SiteForge 只保存受限证据摘要；不会保存凭据值、浏览器 profile、页面正文或完整页面源码。',
 ]);
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+const clone = jsonClone;
 
 function compactText(value, fallback = '') {
   return String(value ?? fallback).replace(/\s+/gu, ' ').trim();
@@ -192,16 +190,6 @@ function setupDisplayText(value) {
   return SETUP_DISPLAY_TEXT_ZH.get(text) ?? text;
 }
 
-function setupStatusText(value) {
-  if (value === 'success') return '成功';
-  if (value === 'created') return '已创建';
-  if (value === 'updated') return '已更新';
-  if (value === 'reused') return '已复用';
-  if (value === 'failed') return '失败';
-  if (value === 'blocked') return '已阻止';
-  return setupDisplayText(value);
-}
-
 function spawnDetached(command, args = []) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -234,165 +222,6 @@ export async function launchExternalBrowserUrl(url, options = {}) {
   return await spawnDetached('xdg-open', [targetUrl]);
 }
 
-function shouldUseInlineSetupWebForm(options = {}) {
-  void options;
-  return false;
-}
-
-function htmlEscape(value) {
-  return String(value ?? '')
-    .replace(/&/gu, '&amp;')
-    .replace(/</gu, '&lt;')
-    .replace(/>/gu, '&gt;')
-    .replace(/"/gu, '&quot;')
-    .replace(/'/gu, '&#39;');
-}
-
-function setupWebDocument(title, bodyHtml) {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${htmlEscape(title)}</title>
-  <style>
-    :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; background: Canvas; color: CanvasText; }
-    main { max-width: 880px; margin: 32px auto; padding: 0 20px 40px; }
-    h1 { font-size: 1.45rem; margin: 0 0 16px; }
-    h2 { font-size: 1rem; margin: 24px 0 8px; }
-    p { line-height: 1.5; }
-    form { display: grid; gap: 16px; }
-    fieldset { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 8px; padding: 14px 16px; }
-    label { display: grid; gap: 6px; margin: 10px 0; }
-    select, input[type="text"] { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); background: Canvas; color: CanvasText; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-    button { font: inherit; padding: 9px 13px; border-radius: 7px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); cursor: pointer; }
-    button.primary { background: #14532d; border-color: #14532d; color: white; }
-    button.danger { background: #7f1d1d; border-color: #7f1d1d; color: white; }
-    code { overflow-wrap: anywhere; }
-    .note { color: color-mix(in srgb, CanvasText 72%, transparent); }
-  </style>
-</head>
-<body>
-  <main>
-    ${bodyHtml}
-  </main>
-</body>
-</html>`;
-}
-
-function readRequestBody(request, maxBytes = 64 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    request.on('data', (chunk) => {
-      total += chunk.length;
-      if (total > maxBytes) {
-        reject(new Error('request-body-too-large'));
-        request.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    request.on('error', reject);
-  });
-}
-
-function sendSetupWebHtml(response, statusCode, html) {
-  response.writeHead(statusCode, {
-    'content-type': 'text/html; charset=utf-8',
-    'cache-control': 'no-store',
-  });
-  response.end(html);
-}
-
-function listenLocalWebServer(server) {
-  return new Promise((resolve, reject) => {
-    const onError = (error) => {
-      server.off('listening', onListening);
-      reject(error);
-    };
-    const onListening = () => {
-      server.off('error', onError);
-      resolve(server.address());
-    };
-    server.once('error', onError);
-    server.once('listening', onListening);
-    server.listen(0, '127.0.0.1');
-  });
-}
-
-async function closeServerQuietly(server) {
-  await new Promise((resolve) => {
-    server.close(() => resolve());
-  }).catch(() => {});
-}
-
-async function runSetupWebForm({
-  options = {},
-  title,
-  waitingText,
-  renderForm,
-  handleForm,
-}) {
-  if (!shouldUseInlineSetupWebForm(options)) {
-    return null;
-  }
-  const output = options.setupOutput ?? defaultStdout;
-  if (typeof output?.write !== 'function') {
-    return null;
-  }
-  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  let resolveResult;
-  let rejectResult;
-  const resultPromise = new Promise((resolve, reject) => {
-    resolveResult = resolve;
-    rejectResult = reject;
-  });
-  const server = createServer(async (request, response) => {
-    try {
-      const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-      if (request.method === 'GET' && requestUrl.pathname === '/') {
-        sendSetupWebHtml(response, 200, setupWebDocument(title, renderForm({ token })));
-        return;
-      }
-      if (request.method === 'POST' && requestUrl.pathname === '/submit') {
-        const body = await readRequestBody(request);
-        const form = new URLSearchParams(body);
-        if (form.get('token') !== token) {
-          sendSetupWebHtml(response, 403, setupWebDocument('Rejected', '<h1>Rejected</h1><p>Invalid interaction token.</p>'));
-          return;
-        }
-        const result = await handleForm(form);
-        sendSetupWebHtml(response, 200, setupWebDocument('Saved', '<h1>Saved</h1><p>You can return to SiteForge.</p>'));
-        resolveResult(result);
-        setTimeout(() => closeServerQuietly(server), 25);
-        return;
-      }
-      sendSetupWebHtml(response, 404, setupWebDocument('Not found', '<h1>Not found</h1>'));
-    } catch (error) {
-      sendSetupWebHtml(response, 500, setupWebDocument('Error', `<h1>Error</h1><p>${htmlEscape(error?.message ?? String(error))}</p>`));
-      rejectResult(error);
-      setTimeout(() => closeServerQuietly(server), 25);
-    }
-  });
-
-  let address;
-  try {
-    address = await listenLocalWebServer(server);
-  } catch {
-    await closeServerQuietly(server);
-    return null;
-  }
-  const url = `http://127.0.0.1:${address.port}/`;
-  output.write(`${title}: ${url}\n`);
-  output.write(`${waitingText}\n`);
-  await launchExternalBrowserUrl(url, options).catch(() => {});
-  return await resultPromise;
-}
-
 function parseBrowserAuthorizationConfirmationChoice(answer) {
   const text = compactText(answer).toLowerCase();
   if (!text || ['1', 'y', 'yes', 'ok', 'done', '完成', '已完成', '我已完成登录', '登录完成', '可以访问', '是'].includes(text)) {
@@ -405,36 +234,6 @@ function parseBrowserAuthorizationConfirmationChoice(answer) {
     return { status: 'cancel' };
   }
   return { status: 'cancel', reasonCode: 'unrecognized-terminal-confirmation' };
-}
-
-async function promptBrowserAuthorizationConfirmationWeb({ targetUrl, options = {} }) {
-  try {
-    return await runSetupWebForm({
-      options,
-      title: 'SiteForge Web access confirmation',
-      waitingText: 'Waiting for access confirmation in the browser...',
-      renderForm: ({ token }) => `
-        <h1>Access Confirmation</h1>
-        <p class="note">Use the browser tab for the target site, then confirm the result here. SiteForge will not receive passwords, cookies, tokens, raw page text, or browser profiles.</p>
-        <p>Target site: <a href="${htmlEscape(targetUrl)}" target="_blank" rel="noreferrer"><code>${htmlEscape(targetUrl)}</code></a></p>
-        <form method="post" action="/submit">
-          <input type="hidden" name="token" value="${htmlEscape(token)}">
-          <div class="actions">
-            <button class="primary" type="submit" name="action" value="authorized">I can access the target page</button>
-            <button type="submit" name="action" value="blocked">Access was blocked</button>
-            <button class="danger" type="submit" name="action" value="cancel">Cancel build</button>
-          </div>
-        </form>`,
-      handleForm: (form) => {
-        const action = String(form.get('action') ?? '').trim();
-        if (action === 'authorized') return { status: 'authorized' };
-        if (action === 'blocked') return { status: 'blocked' };
-        return { status: 'cancel' };
-      },
-    });
-  } catch {
-    return null;
-  }
 }
 
 function browserAuthRows(ui, targetUrl) {
@@ -539,10 +338,6 @@ async function promptBrowserAuthorizationConfirmationTui({ targetUrl, options = 
 async function waitForBrowserAuthorizationConfirmation({ targetUrl, options = {} }) {
   if (typeof options.browserAuthorizationConfirmationProvider === 'function') {
     return await options.browserAuthorizationConfirmationProvider({ targetUrl, options });
-  }
-  const webChoice = await promptBrowserAuthorizationConfirmationWeb({ targetUrl, options });
-  if (webChoice) {
-    return webChoice;
   }
   const tuiChoice = await promptBrowserAuthorizationConfirmationTui({ targetUrl, options });
   if (tuiChoice) {
@@ -1710,14 +1505,7 @@ async function externalBrowserUserAuthorizedEvidenceProvider({ inputUrl, setupPl
     const answer = await askSetupQuestion('请粘贴最终授权 URL；如果登录被拒绝，请输入“被拒绝”：', options);
     authState = detectManualUserAuthorizedAuthState(answer, paths.site);
   } else {
-    const webSession = await getSetupWebInteractionSession({
-      inputUrl,
-      setupPlan,
-      paths,
-      options,
-      phase: 'access',
-    });
-    if (!webSession && !canUseSetupTui(options)) {
+    if (!canUseSetupTui(options)) {
       writeSetupLine(options, '访问确认');
       writeSetupLine(options, '');
       writeSetupTreeRow(options, '▼ 授权范围', `目标站点：${paths.site.rootUrl}`);
@@ -1730,30 +1518,18 @@ async function externalBrowserUserAuthorizedEvidenceProvider({ inputUrl, setupPl
       writeSetupLine(options, '');
     }
     await launchExternalBrowserUrl(inputUrl, options);
-    const confirmation = webSession
-      ? await webSession.waitForAccessConfirmation({
-        inputUrl,
-        targetUrl: inputUrl,
-        setupPlan,
-        site: paths.site,
-        cwd: paths.cwd,
-      })
-      : await waitForBrowserAuthorizationConfirmation({ targetUrl: inputUrl, options });
+    const confirmation = await waitForBrowserAuthorizationConfirmation({ targetUrl: inputUrl, options });
     if (confirmation.status === 'authorized') {
-      if (!webSession) {
       writeSetupLine(options, '✓ 浏览器确认已收到');
       writeSetupLine(options, '  正在验证访问状态...');
-      }
       authState = {
         status: 'authorized',
         finalUrl: defaultKnownSiteAuthorizedFinalUrl(paths.site),
         finalPath: new URL(defaultKnownSiteAuthorizedFinalUrl(paths.site)).pathname,
         riskSignals: [],
       };
-      if (!webSession) {
       writeSetupLine(options, '✓ 访问确认完成');
       writeSetupLine(options, '');
-      }
     } else {
       authState = {
         status: 'incomplete',
@@ -3592,46 +3368,6 @@ function canUseSetupTui(options = {}) {
   return Boolean(input?.isTTY && output?.isTTY && typeof input.setRawMode === 'function');
 }
 
-function shouldUseSetupWebInteraction(options = {}) {
-  void options;
-  return false;
-}
-
-async function getSetupWebInteractionSession({ inputUrl, setupPlan, paths, options, phase = 'access' }) {
-  if (!shouldUseSetupWebInteraction(options)) {
-    return null;
-  }
-  if (options.webInteractionSession) {
-    options.webInteractionSession.update?.({
-      inputUrl,
-      targetUrl: inputUrl,
-      setupPlan,
-      site: paths?.site,
-      cwd: paths?.cwd,
-      phase,
-    });
-    return options.webInteractionSession;
-  }
-  const session = await options.startWebInteractionSession?.({
-    inputUrl,
-    targetUrl: inputUrl,
-    setupPlan,
-    site: paths?.site,
-    cwd: paths?.cwd,
-    phase,
-  }, {
-    cwd: paths?.cwd ?? options.cwd ?? process.cwd(),
-  });
-  options.webInteractionSession = session;
-  await session.open();
-  writeSetupLine(options, '');
-  writeSetupLine(options, `SiteForge 已打开本地交互页面：${session.url}`);
-  writeSetupLine(options, '请在页面完成访问确认、构建配置和后续能力选择；终端将等待页面操作。');
-  writeSetupLine(options, '按 Ctrl+C 可取消。');
-  writeSetupLine(options, '');
-  return session;
-}
-
 function countAuthorizedActionableElements(evidence) {
   const autoCount = Number(evidence?.autoDiscovery?.summary?.actionable_elements ?? 0) || 0;
   const pageControlCount = (evidence?.pages ?? []).reduce((sum, page) => (
@@ -4261,113 +3997,6 @@ function setupTuiFieldDefinitions() {
       ],
     },
   ];
-}
-
-function setupWebFieldTitle(field) {
-  const titles = {
-    1: 'Exploration mode',
-    2: 'Sensitive capability strategy',
-    3: 'Scan scope',
-    4: 'Generation strategy',
-    5: 'Write mode',
-  };
-  return titles[field.section] ?? `Setting ${field.section}`;
-}
-
-function setupWebOptionLabel(value) {
-  return String(value ?? '').replace(/_/gu, ' ');
-}
-
-function renderSetupConfigurationWebForm(configuration, token) {
-  const normalized = normalizeSetupConfiguration(configuration);
-  const fieldsHtml = setupTuiFieldDefinitions().map((field) => {
-    const current = field.get(normalized);
-    const optionsHtml = field.choices.map(([value]) => (
-      `<option value="${htmlEscape(value)}"${value === current ? ' selected' : ''}>${htmlEscape(setupWebOptionLabel(value))}</option>`
-    )).join('');
-    return `
-      <label>
-        <span>${htmlEscape(setupWebFieldTitle(field))}</span>
-        <select name="field-${htmlEscape(field.section)}">${optionsHtml}</select>
-      </label>`;
-  }).join('');
-  return `
-    <h1>Setup Configuration</h1>
-    <p class="note">Choose the build setup here. The terminal is waiting for this page and will not ask for the same choices there.</p>
-    <form method="post" action="/submit">
-      <input type="hidden" name="token" value="${htmlEscape(token)}">
-      <fieldset>
-        <legend>Build setup</legend>
-        ${fieldsHtml}
-      </fieldset>
-      <fieldset>
-        <legend>Optional hints</legend>
-        <label>
-          <span>Custom scan scope hint</span>
-          <input type="text" name="customScopeHint" autocomplete="off" placeholder="Only used when scan scope is custom">
-        </label>
-        <label>
-          <span>Custom generation hint</span>
-          <input type="text" name="customGenerationHint" autocomplete="off" placeholder="Only used when generation strategy is custom">
-        </label>
-        <label>
-          <span>Capability or scope hint</span>
-          <input type="text" name="capabilityHint" autocomplete="off" placeholder="Optional one-line build focus">
-        </label>
-      </fieldset>
-      <div class="actions">
-        <button class="primary" type="submit" name="action" value="start">Start build</button>
-        <button class="danger" type="submit" name="action" value="cancel">Cancel build</button>
-      </div>
-    </form>`;
-}
-
-function applySetupConfigurationWebForm(form, configuration) {
-  if (String(form.get('action') ?? '') === 'cancel') {
-    throw setupCancelledError();
-  }
-  const before = normalizeSetupConfiguration(configuration);
-  let next = before;
-  for (const field of setupTuiFieldDefinitions()) {
-    const value = String(form.get(`field-${field.section}`) ?? '');
-    if (field.choices.some(([candidate]) => candidate === value)) {
-      next = normalizeSetupConfiguration(field.set(next, value));
-    }
-  }
-  const customScopeHint = compactText(form.get('customScopeHint'));
-  if (next.scanScope === 'custom' && customScopeHint) {
-    next.customScopeHint = sanitizedSetupHint(customScopeHint, requestedCapabilityFromHint(customScopeHint));
-  }
-  const customGenerationHint = compactText(form.get('customGenerationHint'));
-  if (setupGenerationPreset(next) === 'custom' && customGenerationHint) {
-    next.generationStrategy = {
-      ...next.generationStrategy,
-      customGenerationHint: sanitizedSetupHint(customGenerationHint, requestedCapabilityFromHint(customGenerationHint)),
-    };
-  }
-  const hint = compactText(form.get('capabilityHint'));
-  return {
-    configuration: normalizeSetupConfiguration(next),
-    hint,
-    changed: hint.length > 0 || JSON.stringify(before) !== JSON.stringify(normalizeSetupConfiguration(next)),
-  };
-}
-
-async function promptSetupConfigurationWeb(options = {}, configuration = defaultSetupConfiguration()) {
-  try {
-    return await runSetupWebForm({
-      options,
-      title: 'SiteForge Web setup configuration',
-      waitingText: 'Waiting for setup configuration in the browser...',
-      renderForm: ({ token }) => renderSetupConfigurationWebForm(configuration, token),
-      handleForm: (form) => applySetupConfigurationWebForm(form, configuration),
-    });
-  } catch (error) {
-    if (error?.code === 'setup-cancelled') {
-      throw error;
-    }
-    return null;
-  }
 }
 
 function setupTuiFieldValueLabel(field, configuration) {
@@ -5163,26 +4792,7 @@ function renderUpdatedSetupConfiguration(configuration, options = {}) {
 
 async function promptAutomaticSetupConfiguration(options, choices, initialAnswer = null) {
   let nextChoices = applySetupConfigurationToChoices(choices);
-  if (initialAnswer === null && options.webInteractionSession && shouldUseSetupWebInteraction(options)) {
-    options.webInteractionSession.update?.({
-      setupConfiguration: nextChoices.setupConfiguration,
-      phase: 'build',
-      status: 'setup_configured',
-    });
-    nextChoices.setupConfiguration = normalizeSetupConfiguration(nextChoices.setupConfiguration);
-    nextChoices.acceptedDefaultRecommendation = true;
-    return applySetupConfigurationToChoices(nextChoices);
-  }
   if (initialAnswer === null) {
-    const webResult = await promptSetupConfigurationWeb(options, nextChoices.setupConfiguration);
-    if (webResult) {
-      if (webResult.hint) {
-        nextChoices = applyHintToChoices(webResult.hint, nextChoices);
-      }
-      nextChoices.setupConfiguration = await completeSetupConfigurationCustomPrompts(webResult.configuration, options);
-      nextChoices.acceptedDefaultRecommendation = webResult.changed !== true;
-      return applySetupConfigurationToChoices(nextChoices);
-    }
     const tuiResult = await promptSetupConfigurationTui(options, nextChoices.setupConfiguration);
     if (tuiResult) {
       nextChoices.setupConfiguration = await completeSetupConfigurationCustomPrompts(tuiResult.configuration, options);
@@ -5367,10 +4977,8 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = {}) {
       if (interactive && shouldAttemptUserAuthorizedSetup(setupPlan, options)) {
         const userAuthorizedEvidence = await collectUserAuthorizedEvidence({ inputUrl, setupPlan, paths, options });
         setupPlan = applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidence, paths);
-        if (!options.webInteractionSession) {
-          renderSetupPlan(setupPlan, options);
-          setupPlanRendered = true;
-        }
+        renderSetupPlan(setupPlan, options);
+        setupPlanRendered = true;
         setupReview = await promptUserAuthorizedCollectionReview(setupPlan, options);
         setupPlan = setupReview.setupPlan;
         await writeJsonFile(paths.setupPlanPath, setupPlan);
@@ -5407,15 +5015,8 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = {}) {
         buildOptions: buildOptionsFromProfile(options, paths, persisted.profile),
       };
     }
-    await getSetupWebInteractionSession({
-      inputUrl,
-      setupPlan,
-      paths,
-      options,
-      phase: 'setup',
-    });
     let userChoices = await promptFirstRunChoices(setupPlan, options, 'first-run', setupReview.nextChoiceHint, {
-      renderPlan: !setupPlanRendered && !options.webInteractionSession,
+      renderPlan: !setupPlanRendered,
     });
     userChoices = applyBuildModeChoiceOverrides(userChoices, options);
     setupPlan = await collectSelectedCapabilityProofs(setupPlan, userChoices, {

@@ -202,7 +202,7 @@ const LAYER_BOUNDARY_REGISTRY = Object.freeze({
     ],
     siteSemanticsPolicy: 'forbidden',
     evidence: {
-      retiredRuntime: 'download runtime layer physically removed',
+      retiredRuntime: 'public download facade removed; retained site-specific paths remain policy-gated',
       policyPath: 'src/domain/policies/download-policy.mjs',
     },
   }),

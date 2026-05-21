@@ -1239,7 +1239,7 @@ test('public SiteForge CLI reuses saved setup profile and then builds the simple
     assert.match(result.stdout, /输出结果/u);
     assert.match(result.stdout, /自动探索/u);
     assert.match(result.stdout, /能力统计|能力摘要/u);
-    assert.match(result.stdout, /Skill ID:\s*simple-shop/u);
+    assert.match(result.stdout, /Skill 标识:\s*simple-shop/u);
     assert.doesNotMatch(result.stdout, /Setup collection review/u);
     assert.doesNotMatch(result.stdout, /采集复核|未成功采集|请粘贴最终 URL|输入可见条数|逐项补采/u);
 
@@ -1286,7 +1286,7 @@ test('public SiteForge CLI builds the controlled Tencent News fixture without ex
     assert.match(result.stdout, /构建完成|构建结果/u);
     assert.match(result.stdout, /自动探索/u);
     assert.match(result.stdout, /能力统计|能力摘要/u);
-    assert.match(result.stdout, /Skill ID:\s*tencent-news/u);
+    assert.match(result.stdout, /Skill 标识:\s*tencent-news/u);
     assert.doesNotMatch(result.stdout, /采集复核|未成功采集|请粘贴最终 URL|输入可见条数|逐项补采/u);
 
     const buildDirs = await listBuildDirs(siteBuildsDir(workspace, 'https://news.qq.com/'));

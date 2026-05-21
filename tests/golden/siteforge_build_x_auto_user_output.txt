@@ -87,8 +87,8 @@
     鐢ㄩ€旓細鍦ㄥ厑璁告椂鍙繚瀛樿劚鏁忕綉缁滄憳瑕侊紝鐢ㄤ簬鏍稿 API 鍊欓€夈€?  siteforge build https://x.com/ --report debug
     鐢ㄩ€旓細鏌ョ湅 debug 鎶ュ憡銆侀棬绂佸師鍥犲拰琚檺鍒堕」銆?
 缁熶竴纭娴佺▼
-  node src/entrypoints/cli/capabilities.mjs list x-com-authorized-browser-surface --status confirmation_required
-  node src/entrypoints/cli/capabilities.mjs confirm x-com-authorized-browser-surface --group sensitive-read --limited
-  node src/entrypoints/cli/capabilities.mjs confirm x-com-authorized-browser-surface --group draft-write --draft-only
-  node src/entrypoints/cli/capabilities.mjs list x-com-authorized-browser-surface --status disabled
+  node src/entrypoints/operator/capabilities.mjs list x-com-authorized-browser-surface --status confirmation_required
+  node src/entrypoints/operator/capabilities.mjs confirm x-com-authorized-browser-surface --group sensitive-read --limited
+  node src/entrypoints/operator/capabilities.mjs confirm x-com-authorized-browser-surface --group draft-write --draft-only
+  node src/entrypoints/operator/capabilities.mjs list x-com-authorized-browser-surface --status disabled
   淇濇寔绂佺敤鏃犻渶鎿嶄綔锛涚淇¤鎯呫€佸彂閫佺淇″拰璐﹀彿鍐欏叆涓嶈兘閫氳繃鏅€氱‘璁ゅ惎鐢ㄣ€?

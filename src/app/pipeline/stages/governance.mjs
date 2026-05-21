@@ -22,6 +22,8 @@ import {
   getManifestArtifactDir,
   getManifestRunContext,
 } from '../engine/run-manifest.mjs';
+import { normalizeText, normalizeWhitespace, sanitizeHost } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import { resolveMaybeRelative } from '../../../shared/wiki.mjs';
 
 const DEFAULT_OPTIONS = {
@@ -171,14 +173,6 @@ const RISK_TAXONOMY = [
   },
 ];
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
 function cleanText(value) {
   return normalizeText(value)
     .replace(/^[\s"'“”‘’`~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?！？。，“”‘’【】（）《》]+/gu, '')
@@ -230,14 +224,6 @@ function uniqueSortedPaths(values) {
       .filter(Boolean)
       .map((value) => path.resolve(String(value))),
   )].sort(compareNullableStrings);
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function normalizeUrlNoFragment(input) {

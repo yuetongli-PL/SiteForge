@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createCliProgressRenderer, parseProgressCliOption } from '../src/infra/cli/progress-cli.mjs';
 import { unifiedCliCommandForScript } from '../src/infra/cli/command-map.mjs';
+import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -16,7 +17,7 @@ const HELP = `Internal script usage:
 Public command:
   siteforge build <url>
 
-Prints reusable X/Instagram production, resume, cooldown, health, and KB refresh command templates.
+Prints reusable X/Instagram archive, resume, cooldown, health, and KB refresh command templates.
 
 Options:
   --site <x|instagram|all>          Template site filter. Default: all.
@@ -26,7 +27,6 @@ Options:
   --date <YYYY-MM-DD>               Followed-date placeholder/default. Default: <YYYY-MM-DD>.
   --max-items <n>                   Default max items. Default: 25.
   --max-users <n>                   Default max followed users. Default: 25.
-  --max-media-downloads <n>         Default max media downloads. Default: 25.
   --timeout <ms>                    Live smoke timeout. Default: 120000.
   --case-timeout <ms>               Live smoke outer timeout. Default: 600000.
   --run-root <dir>                  Live smoke run root. Default: runs/social-live-verify.
@@ -39,13 +39,6 @@ Options:
   --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 function normalizeHandle(value) {
   return String(value ?? '').trim().replace(/^@/u, '');
@@ -60,7 +53,6 @@ export function parseArgs(argv) {
     date: '<YYYY-MM-DD>',
     maxItems: '25',
     maxUsers: '25',
-    maxMediaDownloads: '25',
     timeout: '120000',
     caseTimeout: '600000',
     runRoot: path.join('runs', 'social-live-verify'),
@@ -92,7 +84,6 @@ export function parseArgs(argv) {
       case '--date':
       case '--max-items':
       case '--max-users':
-      case '--max-media-downloads':
       case '--timeout':
       case '--case-timeout':
       case '--run-root':
@@ -134,20 +125,18 @@ function siteEntries(options) {
     sites.push({
       site: 'x',
       account: normalizeHandle(options.xAccount),
-      verifyCases: ['x-auth-doctor', 'x-full-archive', 'x-media-download'],
+      verifyCases: ['x-auth-doctor', 'x-full-archive', 'x-media-download-blocked-boundary'],
       action: path.join('src', 'entrypoints', 'sites', 'x-action.mjs'),
       fullArchive: ['full-archive', normalizeHandle(options.xAccount)],
-      media: ['profile-content', normalizeHandle(options.xAccount), '--content-type', 'media', '--download-media'],
     });
   }
   if (options.site === 'instagram' || options.site === 'all') {
     sites.push({
       site: 'instagram',
       account: normalizeHandle(options.igAccount),
-      verifyCases: ['instagram-auth-doctor', 'instagram-full-archive', 'instagram-media-download', 'instagram-followed-date'],
+      verifyCases: ['instagram-auth-doctor', 'instagram-full-archive', 'instagram-media-download-blocked-boundary', 'instagram-followed-date'],
       action: path.join('src', 'entrypoints', 'sites', 'instagram-action.mjs'),
       fullArchive: ['full-archive', normalizeHandle(options.igAccount)],
-      media: ['profile-content', normalizeHandle(options.igAccount), '--content-type', 'media', '--download-media'],
       followedDate: ['followed-posts-by-date', '--date', options.date, '--max-users', options.maxUsers],
     });
   }
@@ -174,8 +163,6 @@ export function buildTemplates(options) {
         options.maxItems,
         '--max-users',
         options.maxUsers,
-        '--max-media-downloads',
-        options.maxMediaDownloads,
         '--timeout',
         options.timeout,
         '--case-timeout',
@@ -185,7 +172,6 @@ export function buildTemplates(options) {
       ];
       const productionCommands = [
         nodeLine(site.action, [...site.fullArchive, ...common, '--run-dir', `runs/social-production/${site.site}/full-archive`]),
-        nodeLine(site.action, [...site.media, ...common, '--run-dir', `runs/social-production/${site.site}/media`]),
       ];
       if (site.followedDate) {
         productionCommands.push(nodeLine(site.action, [...site.followedDate, ...common, '--run-dir', `runs/social-production/${site.site}/followed-date`]));

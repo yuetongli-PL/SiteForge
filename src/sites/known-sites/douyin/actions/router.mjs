@@ -5,7 +5,6 @@ import path from 'node:path';
 import process from 'node:process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 import { enumerateDouyinAuthorVideos } from '../download/enumerator.mjs';
 import { queryDouyinFollow } from '../queries/follow-query.mjs';
@@ -16,10 +15,9 @@ import {
 } from '../../../../infra/auth/site-login-service.mjs';
 import { summarizeSessionRunManifest } from '../../../../domain/sessions/manifest-bridge.mjs';
 import { runSessionTask } from '../../../../domain/sessions/runner.mjs';
+import { REPO_ROOT } from '../../../../infra/paths/repo-root.mjs';
+import { DOUYIN_DOWNLOAD_PYTHON_ENTRY } from '../../paths.mjs';
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
-const DOUYIN_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'douyin', 'download', 'python', 'douyin.py');
 const DOUYIN_HOME_URL = 'https://www.douyin.com/';
 const VIDEO_ID_PATTERN = /^\d{10,20}$/u;
 

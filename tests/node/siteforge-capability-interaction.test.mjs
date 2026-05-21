@@ -15,6 +15,9 @@ import {
   writeCapabilityRemediationPlan,
 } from '../../src/app/pipeline/build/capability-interaction.mjs';
 import {
+  buildCapabilityConfirmationDecisionRecord,
+} from '../../src/app/pipeline/build/capability-decision-records.mjs';
+import {
   parseTerminalInputKeys,
 } from '../../src/app/pipeline/build/terminal-tui.mjs';
 
@@ -305,6 +308,16 @@ test('capability interaction offers only evidence-backed safe confirmations', as
   assert.equal(decisions.decisions.every((entry) => entry.privateContentAllowed === false), true);
   assert.equal(decisions.decisions.some((entry) => entry.mode === 'draft_only'), true);
   assert.equal(decisions.decisions.some((entry) => entry.mode === 'limited'), true);
+  const limitedDecision = decisions.decisions.find((entry) => entry.mode === 'limited');
+  const limitedCapability = state.safeConfirmable.find((entry) => entry.id === limitedDecision.capabilityId);
+  assert.deepEqual(limitedDecision, buildCapabilityConfirmationDecisionRecord({
+    capability: limitedCapability,
+    mode: 'limited',
+    command: 'siteforge build interactive capability selection',
+    source: 'post_build_terminal_interaction',
+    sourceBuildId: 'build-test',
+    updatedAt: limitedDecision.updatedAt,
+  }));
 });
 
 test('capability interaction writes remediation plans without enabling disabled capabilities', async (t) => {
@@ -394,7 +407,7 @@ test('capability interaction prompt generates remediation plan from terminal opt
   assert.equal(recorded.count, 2);
   assert.match(terminalOutput, /自动补的是安全路径和验证计划/u);
   assert.match(terminalOutput, /真实可用前仍需(?:实现对应路径、补证据并重新验证通过|补实现、跑验证，并由报告显示通过后才算可用)/u);
-  assert.match(terminalOutput, /需要站点适配器验证后使用/u);
+  assert.match(terminalOutput, /需要站点专用适配器验证后使用/u);
 
   const plan = JSON.parse(await readFile(path.join(siteDir, 'capability_remediation_plan.json'), 'utf8'));
   assert.deepEqual(

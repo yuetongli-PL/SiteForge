@@ -5,6 +5,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
 import {
   ensureDir,
   writeTextFile,
@@ -39,13 +40,6 @@ This entrypoint compiles repo-local registry/config descriptors only. It does no
 open websites, run captures, invoke SiteAdapter runtime, call downloader, or
 materialize session/browser profile data.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseArgs(argv) {
   const options = {

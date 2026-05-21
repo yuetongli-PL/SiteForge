@@ -1,7 +1,8 @@
 import path from 'node:path';
 import process from 'node:process';
 import { isXiaohongshuUrl } from '../../../shared/xiaohongshu-risk.mjs';
-import { hostFromUrl, sanitizeHost } from '../../../shared/normalize.mjs';
+import { parseBoolean } from '../../../shared/boolean.mjs';
+import { hostFromUrl, normalizeWhitespace, sanitizeHost, slugifyAscii } from '../../../shared/normalize.mjs';
 import { isDouyinSiteProfile, resolveDouyinHeadlessDefault } from '../../../sites/known-sites/douyin/model/site.mjs';
 
 const DEFAULT_PIPELINE_OPTIONS = {
@@ -43,33 +44,13 @@ const DEFAULT_PIPELINE_OPTIONS = {
   strict: true,
 };
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function slugifyAscii(value, fallback = '') {
-  const normalized = normalizeWhitespace(value)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-  return normalized || fallback;
-}
-
 export function toBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  const normalized = normalizeWhitespace(value).toLowerCase();
-  if (['true', '1', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['false', '0', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
+  return parseBoolean(value, {
+    mode: 'strict',
+    onInvalid: () => {
+      throw new Error(`Invalid boolean for ${flagName}: ${value}`);
+    },
+  });
 }
 
 export function resolveSkillName(inputUrl, explicitSkillName) {

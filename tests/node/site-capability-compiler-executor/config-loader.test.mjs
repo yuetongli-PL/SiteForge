@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -42,6 +43,20 @@ test('config-backed loader emits sanitized registry and capability descriptors',
   assert.doesNotMatch(serialized, /profilePath|browserProfilePath|userDataDir|SESSDATA|Authorization/u);
 });
 
+test('config-backed loader default repoRoot resolves to the repository root', async () => {
+  const sources = await loadCompilerConfigSources({
+    siteKey: 'bz888',
+  });
+
+  assert.deepEqual(
+    sources.sourceRefs.map((sourceRef) => sourceRef.ref),
+    [
+      'config/site-registry.json',
+      'config/site-capabilities.json',
+    ],
+  );
+});
+
 test('config-backed loader rejects absolute or escaped config paths', async () => {
   await assert.rejects(
     () => loadCompilerConfigSources({
@@ -79,6 +94,31 @@ test('config-backed static compiler records digest and incremental summary', asy
   assert.equal(second.incrementalCompile.changed, false);
   assert.deepEqual(second.incrementalCompile.changedSourceRefs, []);
   assert.equal(second.inventories.capabilities.length > 0, true);
+});
+
+test('config-backed static compiler default repoRoot resolves to the repository root', async () => {
+  const manifest = await createStaticSiteCompileManifestFromConfig({
+    request: createRequest({ siteKey: 'bz888' }),
+  });
+
+  assert.deepEqual(
+    manifest.sourceRefs.map((sourceRef) => sourceRef.ref),
+    [
+      'config/site-registry.json',
+      'config/site-capabilities.json',
+    ],
+  );
+  assert.equal(manifest.inventories.capabilities.length > 0, true);
+});
+
+test('config-backed loader rejects repoRoot values that are not the repository root', async () => {
+  await assert.rejects(
+    () => loadCompilerConfigSources({
+      repoRoot: path.join(root, 'src'),
+      siteKey: 'bz888',
+    }),
+    /Invalid repository root: .* is missing package\.json/u,
+  );
 });
 
 test('config-backed compiler maps download capability requirements and blocked risk', async () => {

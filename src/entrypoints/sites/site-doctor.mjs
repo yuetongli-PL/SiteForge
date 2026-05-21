@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue } from '../../infra/cli/internal-options.mjs';
+import {
+  parseNonNegativeNumberOption as normalizeNumber,
+  parseStrictBooleanOption as normalizeBoolean,
+} from '../../infra/cli/parse-values.mjs';
 import { createProgressRenderer } from '../../infra/cli/progress.mjs';
 import { doctorStageTitle } from '../../infra/cli/progress-copy.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
@@ -60,20 +65,17 @@ import {
 import {
   runSiteCapabilityCompile,
 } from './site-capability-compile.mjs';
+import { reportProfileKeySet, SESSION_REPORT_PROFILE_KEYS } from '../../domain/sessions/report-redaction-fields.mjs';
+import { formatTimestampForDir } from '../../shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
-const SITE_DOCTOR_REPORT_PROFILE_KEYS = Object.freeze(new Set([
-  'profilePath',
-  'browserProfileRoot',
-  'userDataDir',
+const SITE_DOCTOR_REPORT_PROFILE_KEYS = reportProfileKeySet([
+  ...SESSION_REPORT_PROFILE_KEYS,
   'cookieFile',
   'sidecarPath',
-  'networkIdentityFingerprint',
-  'sessionLeaseId',
-  'fingerprint',
-]));
+]);
 const BILIBILI_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'known-sites', 'bilibili', 'download', 'python', 'bilibili.py');
 const BOOK_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'known-sites', 'chapter-content', 'download', 'python', 'book.py');
 const XIAOHONGSHU_ACTION_ENTRY = path.join(REPO_ROOT, 'src', 'entrypoints', 'sites', 'xiaohongshu-action.mjs');
@@ -115,34 +117,6 @@ const AUTH_PROBE_WAIT_POLICY = {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function normalizeBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase();
-    if (lower === 'true') {
-      return true;
-    }
-    if (lower === 'false') {
-      return false;
-    }
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
-}
-
-function normalizeNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid number for ${flagName}: ${value}`);
-  }
-  return parsed;
 }
 
 function mergeOptions(inputUrl, options = {}) {
@@ -3111,12 +3085,7 @@ export function parseCliArgs(argv) {
 
   const [inputUrl, ...rest] = argv;
   const options = {};
-  const readValue = (index) => {
-    if (index + 1 >= rest.length) {
-      throw new Error(`Missing value for ${rest[index]}`);
-    }
-    return { value: rest[index + 1], nextIndex: index + 1 };
-  };
+  const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];

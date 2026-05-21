@@ -5,6 +5,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue } from '../../infra/cli/internal-options.mjs';
+import {
+  parseNonNegativeNumberOption as normalizeNumber,
+  parseStrictBooleanOption as normalizeBoolean,
+} from '../../infra/cli/parse-values.mjs';
 import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
@@ -37,19 +42,14 @@ import {
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
 } from '../../domain/sessions/security-guard.mjs';
+import { reportProfileKeySet, SESSION_REPORT_PROFILE_KEYS } from '../../domain/sessions/report-redaction-fields.mjs';
 import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
+import { formatTimestampForDir } from '../../shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
-const SITE_LOGIN_REPORT_PROFILE_KEYS = Object.freeze(new Set([
-  'profilePath',
-  'browserProfileRoot',
-  'userDataDir',
-  'networkIdentityFingerprint',
-  'sessionLeaseId',
-  'fingerprint',
-]));
+const SITE_LOGIN_REPORT_PROFILE_KEYS = reportProfileKeySet(SESSION_REPORT_PROFILE_KEYS);
 
 const DEFAULT_OPTIONS = {
   outDir: path.join(REPO_ROOT, 'runs', 'sites', 'site-login'),
@@ -91,34 +91,6 @@ function createWaitPolicy(timeoutMs) {
     domQuietMs: 400,
     idleMs: 250,
   };
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function normalizeBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase();
-    if (lower === 'true') {
-      return true;
-    }
-    if (lower === 'false') {
-      return false;
-    }
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
-}
-
-function normalizeNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid number for ${flagName}: ${value}`);
-  }
-  return parsed;
 }
 
 function mergeOptions(inputUrl, options = {}) {
@@ -567,12 +539,7 @@ export function parseCliArgs(argv) {
 
   const [inputUrl, ...rest] = argv;
   const options = {};
-  const readValue = (index) => {
-    if (index + 1 >= rest.length) {
-      throw new Error(`Missing value for ${rest[index]}`);
-    }
-    return { value: rest[index + 1], nextIndex: index + 1 };
-  };
+  const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];

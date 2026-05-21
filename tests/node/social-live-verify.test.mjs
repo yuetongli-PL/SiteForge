@@ -60,8 +60,6 @@ function boundedArgs(extra = []) {
     '10',
     '--max-users',
     '5',
-    '--max-media-downloads',
-    '3',
     '--timeout',
     '120000',
     '--case-timeout',
@@ -204,8 +202,8 @@ test('social-live-verify adds unified session health plan to social action cases
     'x-full-archive',
     'instagram-full-archive',
     'instagram-followed-date',
-    'x-media-download',
-    'instagram-media-download',
+    'x-media-download-blocked-boundary',
+    'instagram-media-download-blocked-boundary',
   ];
 
   for (const id of actionCaseIds) {
@@ -215,23 +213,16 @@ test('social-live-verify adds unified session health plan to social action cases
   }
 });
 
-test('social-live-verify forwards media download tuning into media cases', () => {
-  const options = parseArgs([
-    ...boundedArgs(['--case', 'x-media-download']),
-    '--media-download-concurrency',
-    '9',
-    '--media-download-retries',
-    '4',
-    '--media-download-backoff-ms',
-    '2500',
-  ]);
+test('social-live-verify media cases are blocked-boundary checks, not download tuning paths', () => {
+  const options = parseArgs(boundedArgs(['--case', 'x-media-download-blocked-boundary']));
   const matrix = buildMatrix(options, 'run-1');
-  const mediaCase = matrix.find((entry) => entry.id === 'x-media-download');
+  const mediaCase = matrix.find((entry) => entry.id === 'x-media-download-blocked-boundary');
 
   assert.ok(mediaCase);
-  assert.equal(mediaCase.args[mediaCase.args.indexOf('--media-download-concurrency') + 1], '9');
-  assert.equal(mediaCase.args[mediaCase.args.indexOf('--media-download-retries') + 1], '4');
-  assert.equal(mediaCase.args[mediaCase.args.indexOf('--media-download-backoff-ms') + 1], '2500');
+  assert.equal(mediaCase.args.includes('--download-media'), true);
+  assert.equal(mediaCase.args.includes('--max-media-downloads'), false);
+  assert.equal(mediaCase.args.includes('--media-download-concurrency'), false);
+  assert.equal(mediaCase.purpose.includes('remain blocked'), true);
 });
 
 test('social-live-verify classifies site-doctor fail statuses as failed', () => {
@@ -343,7 +334,7 @@ test('social-live-verify classifies Instagram auth recovery needs as blocked', (
   });
 });
 
-test('social-live-verify classifies Instagram media download skipped by login as skipped', () => {
+test('social-live-verify classifies media blocked-boundary skipped by login as skipped', () => {
   assert.deepEqual(classifySocialActionManifest({
     status: 'completed',
     downloads: {

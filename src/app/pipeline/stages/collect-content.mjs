@@ -12,6 +12,8 @@ import { pipelineStageTitle } from '../../../infra/cli/progress-copy.mjs';
 import { ensureDir, firstExistingPath, pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../../infra/io.mjs';
 import { reasonCodeSummary } from '../../../domain/risks/reason-codes.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../../domain/sessions/security-guard.mjs';
+import { normalizeText, normalizeUrlNoFragment, normalizeWhitespace, sanitizeHost, slugifyAscii } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
@@ -33,27 +35,6 @@ const DEFAULT_OPTIONS = {
 
 const EXPANDED_MANIFEST_NAMES = ['states-manifest.json', 'state-manifest.json', 'expanded-states-manifest.json'];
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
-function normalizeUrlNoFragment(input) {
-  if (!input) {
-    return null;
-  }
-  try {
-    const parsed = new URL(String(input));
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return String(input).split('#')[0];
-  }
-}
-
 function sameOriginUrl(left, right) {
   try {
     const leftUrl = new URL(String(left));
@@ -64,29 +45,10 @@ function sameOriginUrl(left, right) {
   }
 }
 
-function slugifyAscii(value, fallback = 'item') {
-  const slug = normalizeText(value)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-  return slug || fallback;
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
-}
-
 function hostBookContentRoot(rootDir, host) {
   const resolved = path.resolve(rootDir);
   const hostSlug = sanitizeHost(host);
   return path.basename(resolved) === hostSlug ? resolved : path.join(resolved, hostSlug);
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
 }
 
 function toArray(value) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -30,6 +30,64 @@ import {
   buildResumePlan,
   parseArgs as parseResumeArgs,
 } from '../../scripts/social-live-resume.mjs';
+import { SOCIAL_OPERATOR_SCRIPT_STATUS } from '../../scripts/social-script-status.mjs';
+import { buildRecoveryRunbook } from '../../src/sites/known-sites/social/actions/router.mjs';
+
+test('social operator scripts are classified as internal-only maintained scripts', async () => {
+  const scriptDir = path.resolve('scripts');
+  const entries = await readdir(scriptDir);
+  const socialScripts = entries
+    .filter((entry) => /^social-[\w-]+\.mjs$/u.test(entry) && entry !== 'social-script-status.mjs')
+    .map((entry) => `scripts/${entry}`)
+    .sort();
+
+  assert.deepEqual(Object.keys(SOCIAL_OPERATOR_SCRIPT_STATUS).sort(), socialScripts);
+  for (const [script, status] of Object.entries(SOCIAL_OPERATOR_SCRIPT_STATUS)) {
+    assert.equal(status.visibility, 'internal-operator-only', script);
+    assert.match(status.status, /^(active-tested|stale|archived|removed)$/u, script);
+  }
+  assert.equal(SOCIAL_OPERATOR_SCRIPT_STATUS['scripts/social-live-verify.mjs'].downloadBoundary, 'blocked-report-only');
+});
+
+test('social recovery runbook does not suggest media resume when download layer is blocked', () => {
+  const runbook = buildRecoveryRunbook({
+    siteKey: 'x',
+    plan: {
+      siteKey: 'x',
+      action: 'profile-content',
+      account: 'openai',
+      contentType: 'media',
+    },
+    settings: {
+      downloadMedia: true,
+      maxItems: 10,
+      timeoutMs: 30_000,
+    },
+    download: {
+      blocked: true,
+      supported: false,
+      status: 'blocked',
+      reason: 'download-layer-removed',
+    },
+    outcome: {
+      reason: 'media-download-incomplete',
+    },
+    completeness: {
+      download: {
+        failedCount: 1,
+        contentTypeMismatchCount: 0,
+      },
+    },
+  }, {
+    runDir: 'runs/social-action/x-media',
+    manifestPath: 'runs/social-action/x-media/manifest.json',
+    apiCapturePath: 'runs/social-action/x-media/api-capture.json',
+    apiDriftSamplesPath: 'runs/social-action/x-media/api-drift.json',
+  });
+
+  assert.equal(runbook.commands.some((command) => command.id === 'resume-media-downloads'), false);
+  assert.equal(runbook.commands.some((command) => command.command.includes('--download-media')), false);
+});
 
 test('social-command-templates emits unified X and Instagram commands', () => {
   const templates = buildTemplates(parseTemplateArgs([
@@ -54,7 +112,9 @@ test('social-command-templates emits unified X and Instagram commands', () => {
     assert.match(site.kbExecuteCommand, /scripts\/social-kb-refresh\.mjs --execute/u);
     for (const command of site.productionCommands) {
       assert.match(command, /--session-health-plan/u);
+      assert.doesNotMatch(command, /--download-media/u);
     }
+    assert.doesNotMatch(site.verifyCommand, /--max-media-downloads/u);
   }
 });
 
@@ -163,7 +223,7 @@ test('social-live-report classifies live smoke rows from artifact verdicts, not 
       { id: 'x-auth-doctor', site: 'x', status: 'failed', artifactSummary: { verdict: 'blocked', reason: 'rate-limited' }, finishedAt: '2026-04-26T00:00:00.000Z' },
       { id: 'x-full-archive', site: 'x', status: 'passed', artifactSummary: { verdict: 'failed', reason: 'archive-incomplete' }, finishedAt: '2026-04-26T00:01:00.000Z' },
       { id: 'instagram-full-archive', site: 'instagram', status: 'failed', artifactSummary: { verdict: 'skipped', reason: 'not-logged-in' }, finishedAt: '2026-04-26T00:02:00.000Z' },
-      { id: 'instagram-media-download', site: 'instagram', status: 'passed', artifactSummary: { verdict: 'passed', reason: null }, finishedAt: '2026-04-26T00:03:00.000Z' },
+      { id: 'instagram-media-download-blocked-boundary', site: 'instagram', status: 'passed', artifactSummary: { verdict: 'passed', reason: null }, finishedAt: '2026-04-26T00:03:00.000Z' },
       { id: 'instagram-kb-refresh', site: 'instagram', status: 'passed', artifactSummary: { verdict: 'unexpected-live-status', reason: 'drift' }, finishedAt: '2026-04-26T00:04:00.000Z' },
     ],
   }, null, 2)}\n`, 'utf8');
@@ -175,7 +235,7 @@ test('social-live-report classifies live smoke rows from artifact verdicts, not 
     ['x-auth-doctor', 'blocked'],
     ['x-full-archive', 'failed'],
     ['instagram-full-archive', 'skipped'],
-    ['instagram-media-download', 'passed'],
+    ['instagram-media-download-blocked-boundary', 'passed'],
     ['instagram-kb-refresh', 'unknown'],
   ]);
   assert.equal(report.summary.x.statuses.blocked, 1);

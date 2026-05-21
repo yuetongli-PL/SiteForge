@@ -5,12 +5,14 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue } from '../../infra/cli/internal-options.mjs';
 import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
 } from '../../infra/cli/progress-cli.mjs';
-import { pathExists, readJsonFile, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
+import { pathExists, writeJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost, uniqueSortedStrings } from '../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../shared/time.mjs';
 import { PROFILE_ARCHETYPES, resolveProfilePrimaryArchetype } from '../../sites/registry/core/archetypes.mjs';
 import { validateProfileObject } from '../../sites/registry/core/profile-validation.mjs';
 import {
@@ -21,16 +23,13 @@ import {
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
 } from '../../domain/sessions/security-guard.mjs';
+import { reportProfileKeySet } from '../../domain/sessions/report-redaction-fields.mjs';
 import { reasonCodeSummary } from '../../domain/risks/reason-codes.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..');
 
-const SITE_SCAFFOLD_REPORT_PROFILE_KEYS = Object.freeze(new Set([
-  'profilePath',
-  'browserProfileRoot',
-  'userDataDir',
-]));
+const SITE_SCAFFOLD_REPORT_PROFILE_KEYS = reportProfileKeySet();
 const DEFAULT_OPTIONS = {
   archetype: null,
   outDir: path.join(REPO_ROOT, 'runs', 'sites', 'site-scaffold'),
@@ -46,12 +45,7 @@ Public command:
   siteforge build <url>
 `;
 
-const TEMPLATE_BY_ARCHETYPE = Object.freeze({
-  [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: path.join(REPO_ROOT, 'profiles', 'template.navigation-catalog.json'),
-  [PROFILE_ARCHETYPES.CHAPTER_CONTENT]: path.join(REPO_ROOT, 'profiles', 'template.chapter-content.json'),
-});
-
-const DEFAULT_TEMPLATE_BY_ARCHETYPE = Object.freeze({
+const BUILT_IN_TEMPLATE_BY_ARCHETYPE = Object.freeze({
   [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: Object.freeze({
     host: 'example.com',
     archetype: PROFILE_ARCHETYPES.NAVIGATION_CATALOG,
@@ -147,20 +141,11 @@ const DEFAULT_TEMPLATE_BY_ARCHETYPE = Object.freeze({
 });
 
 async function readProfileTemplate(archetype) {
-  const templatePath = TEMPLATE_BY_ARCHETYPE[archetype];
-  if (templatePath && await pathExists(templatePath)) {
-    return await readJsonFile(templatePath);
-  }
-
-  const fallback = DEFAULT_TEMPLATE_BY_ARCHETYPE[archetype];
-  if (!fallback) {
+  const template = BUILT_IN_TEMPLATE_BY_ARCHETYPE[archetype];
+  if (!template) {
     throw new Error(`Unsupported profile archetype template: ${archetype}`);
   }
-  return structuredClone(fallback);
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
+  return structuredClone(template);
 }
 
 function normalizeArchetype(value) {
@@ -760,12 +745,7 @@ export function parseCliArgs(argv) {
 
   const [inputUrl, ...rest] = argv;
   const options = {};
-  const readValue = (index) => {
-    if (index + 1 >= rest.length) {
-      throw new Error(`Missing value for ${rest[index]}`);
-    }
-    return { value: rest[index + 1], nextIndex: index + 1 };
-  };
+  const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];

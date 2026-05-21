@@ -1,6 +1,5 @@
 // @ts-check
 
-import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline';
 import {
@@ -12,6 +11,7 @@ import {
   visibleWidth,
 } from './progress.mjs';
 import { pipelineStageTitle, progressText, SAFETY_STOP_COPY } from './progress-copy.mjs';
+import { relativeOrCompactPath } from './path-display.mjs';
 
 const STATUS_ORDER = ['pending', 'running', 'completed', 'warning', 'failed', 'skipped'];
 
@@ -74,33 +74,6 @@ function basenameSkillFromUrl(inputUrl) {
   } catch {
     return 'site';
   }
-}
-
-function relativeOrCompactPath(value, {
-  cwd = process.cwd(),
-  verbose = false,
-  maxWidth = 70,
-} = {}) {
-  if (!value) return null;
-  const text = String(value);
-  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(text)) {
-    return truncateText(text, maxWidth);
-  }
-  const normalized = text.replace(/\\/gu, path.sep);
-  const resolved = path.isAbsolute(normalized) ? normalized : path.resolve(cwd, normalized);
-  if (verbose) return resolved;
-  let relative = path.relative(cwd, resolved);
-  if (!relative || relative.startsWith('..')) {
-    relative = resolved;
-  }
-  const display = relative.replace(/\\/gu, '/');
-  if (visibleWidth(display) <= maxWidth) return display;
-  const parts = display.split(/[\\/]/u);
-  if (parts.length >= 4) {
-    const compact = `${parts[0]}/.../${parts.slice(-2).join('/')}`;
-    if (visibleWidth(compact) <= maxWidth) return compact;
-  }
-  return truncateText(display, maxWidth);
 }
 
 function padRight(value, width) {

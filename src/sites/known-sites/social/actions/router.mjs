@@ -13,10 +13,10 @@ import {
   formatCommand,
   siteLoginCommand,
 } from '../../../../infra/cli/command-map.mjs';
+import { parseBoolean } from '../../../../infra/cli/parse-values.mjs';
 import { runSingleStageCliWithProgress } from '../../../../infra/cli/progress-cli.mjs';
 import {
   ensureAuthenticatedSession,
-  exportDownloadSessionPassthrough,
   resolveSiteBrowserSessionOptions,
 } from '../../../../infra/auth/site-auth.mjs';
 import {
@@ -25,6 +25,7 @@ import {
   writeAuthSessionState,
 } from '../../../../infra/auth/site-session-governance.mjs';
 import { ensureDir, readJsonFile, readTextFile, writeJsonFile, writeJsonLines, writeTextFile } from '../../../../infra/io.mjs';
+import { htmlEscape } from '../../../../shared/html-escape.mjs';
 import { cleanText, compactSlug, normalizeText } from '../../../../shared/normalize.mjs';
 import {
   actionSessionMetadataFromOptions,
@@ -60,10 +61,6 @@ const DEFAULT_FULL_ARCHIVE_MAX_SCROLLS = 250;
 const DEFAULT_MAX_API_PAGES = 25;
 const DEFAULT_MAX_USERS = 25;
 const DEFAULT_MAX_DETAIL_PAGES = 60;
-const DEFAULT_MAX_MEDIA_DOWNLOADS = 500;
-const DEFAULT_MEDIA_DOWNLOAD_CONCURRENCY = 6;
-const DEFAULT_MEDIA_DOWNLOAD_RETRIES = 2;
-const DEFAULT_MEDIA_DOWNLOAD_BACKOFF_MS = 2_000;
 const DEFAULT_RISK_BACKOFF_MS = 10_000;
 const DEFAULT_RISK_RETRIES = 2;
 const DEFAULT_API_RETRIES = 2;
@@ -72,7 +69,7 @@ const API_CAPTURE_SAMPLE_LIMIT = 8;
 const API_CAPTURE_SHAPE_PATH_LIMIT = 80;
 const API_CAPTURE_PAYLOAD_SAMPLE_LIMIT = 12_000;
 
-async function executeMediaDownloads() {
+async function createBlockedMediaDownloadReport() {
   return {
     downloads: [],
     queue: [],
@@ -80,11 +77,8 @@ async function executeMediaDownloads() {
     expectedMedia: 0,
     skippedMedia: 0,
     skippedCandidates: 0,
-    concurrency: 0,
-    requestedConcurrency: 0,
-    adaptiveConcurrency: false,
-    retries: 0,
-    retryBackoffMs: 0,
+    status: 'blocked',
+    supported: false,
     blocked: true,
     reason: 'download-layer-removed',
   };
@@ -255,20 +249,7 @@ const CONTENT_TYPE_ALIASES = Object.freeze({
 });
 
 function toBoolean(value, defaultValue = false) {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
-    return false;
-  }
-  return defaultValue;
+  return parseBoolean(value, { defaultValue });
 }
 
 function toNumber(value, defaultValue) {
@@ -572,12 +553,6 @@ function initialSocialStateReady(config, state = {}) {
   return !isLikelyXBlankShell(state);
 }
 
-function shouldPrimeXVideoResources(config = {}, plan = {}, settings = {}) {
-  return config?.siteKey === 'x'
-    && settings?.downloadMedia === true
-    && ['profile-content', 'search', 'followed-posts-by-date'].includes(plan?.action);
-}
-
 async function readInitialSocialState(session, config, plan, settings) {
   const request = {
     account: plan.account,
@@ -595,13 +570,6 @@ async function readInitialSocialState(session, config, plan, settings) {
   let state = null;
   while (true) {
     attempts += 1;
-    if (shouldPrimeXVideoResources(config, plan, settings)) {
-      try {
-        await session.callPageFunction(pagePrimeXVideoResources);
-      } catch {
-        // Video resource priming is best-effort; extraction below remains authoritative.
-      }
-    }
     state = await session.callPageFunction(pageExtractSocialState, config, request);
     if (initialSocialStateReady(config, state)) {
       return {
@@ -626,39 +594,6 @@ async function readInitialSocialState(session, config, plan, settings) {
     }
     await sleep(pollMs);
   }
-}
-
-async function pagePrimeXVideoResources() {
-  const videos = [...document.querySelectorAll('video')].slice(0, 8);
-  const attempts = [];
-  for (const video of videos) {
-    try {
-      video.muted = true;
-      video.playsInline = true;
-      if (typeof video.play === 'function') {
-        attempts.push(Promise.resolve(video.play()).catch(() => null));
-      }
-    } catch {
-      // Ignore individual video failures; this helper only warms resource entries.
-    }
-  }
-  if (attempts.length) {
-    await Promise.allSettled(attempts);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    for (const video of videos) {
-      try {
-        if (typeof video.pause === 'function') {
-          video.pause();
-        }
-      } catch {
-        // Ignore pause failures.
-      }
-    }
-  }
-  return {
-    videoCount: videos.length,
-    attempted: attempts.length,
-  };
 }
 
 function pageExtractSocialState(config, request) {
@@ -1307,13 +1242,6 @@ async function collectSocialPage(session, config, plan, settings) {
   }
 
   for (let round = 0; round <= maxScrolls; round += 1) {
-    if (round > 0 && shouldPrimeXVideoResources(config, plan, settings)) {
-      try {
-        await session.callPageFunction(pagePrimeXVideoResources);
-      } catch {
-        // Keep scroll extraction resilient when browser video playback is blocked.
-      }
-    }
     const state = round === 0 && initialRead.state
       ? initialRead.state
       : await session.callPageFunction(pageExtractSocialState, config, {
@@ -1879,49 +1807,6 @@ function dedupeMediaEntries(media = []) {
     (entry) => `${entry.type}:${entry.url}`,
     Number.MAX_SAFE_INTEGER,
   );
-}
-
-function urlHostname(value) {
-  try {
-    return new URL(String(value ?? '')).hostname.toLowerCase();
-  } catch {
-    return '';
-  }
-}
-
-function urlPathname(value) {
-  try {
-    return new URL(String(value ?? '')).pathname.toLowerCase();
-  } catch {
-    return '';
-  }
-}
-
-function isXResponsiveWebStaticMedia(entry = {}) {
-  return urlHostname(entry.url) === 'abs.twimg.com'
-    && /\/responsive-web\//u.test(urlPathname(entry.url));
-}
-
-function hasSocialMediaItemContext(entry = {}) {
-  return Boolean(String(entry.itemId ?? '').trim() || String(entry.pageUrl ?? '').trim());
-}
-
-function shouldFilterXDownloadMedia(plan = {}) {
-  return plan.siteKey === 'x'
-    && ['profile-content', 'search', 'followed-posts-by-date'].includes(plan.action);
-}
-
-function filterSocialDownloadMediaCandidates(media = [], plan = {}) {
-  const candidates = Array.isArray(media) ? media : [];
-  if (!shouldFilterXDownloadMedia(plan)) {
-    return candidates;
-  }
-  return candidates.filter((entry) => {
-    if (isXResponsiveWebStaticMedia(entry)) {
-      return false;
-    }
-    return hasSocialMediaItemContext(entry);
-  });
 }
 
 function normalizeXImageUrl(value) {
@@ -2493,7 +2378,7 @@ function boundedReasonFromArchiveReason(reason) {
   if (normalized === 'max-items-from-resume') {
     return 'max-items';
   }
-  return ['max-items', 'max-api-pages', 'max-users', 'max-detail-pages', 'max-media-downloads'].includes(normalized)
+  return ['max-items', 'max-api-pages', 'max-users', 'max-detail-pages'].includes(normalized)
     ? normalized
     : null;
 }
@@ -4130,14 +4015,12 @@ async function collectProfileDateScanAttempt(session, config, profilePlan, setti
     maxScrolls: options.maxScrolls ?? settings.maxScrolls,
     maxItems: Math.min(settings.perUserMaxItems, settings.maxItems),
   });
-  const shouldCollectProfileApiSeed = config?.siteKey === 'x'
-    && settings.downloadMedia === true;
-  const apiProfileArchive = (settings.apiCursor || shouldCollectProfileApiSeed) && !profileApiDisabledAfterRateLimit
+  const apiProfileArchive = settings.apiCursor && !profileApiDisabledAfterRateLimit
     ? await collectSocialApiArchive(session, config, profilePlan, {
       ...settings,
       maxItems: Math.min(settings.perUserMaxItems, settings.maxItems),
     }, apiCapture, null, {
-      seedOnly: !settings.apiCursor && shouldCollectProfileApiSeed,
+      seedOnly: false,
       captureStartIndex: apiCaptureStartIndex,
       includeCheckpointItems: false,
     })
@@ -4638,18 +4521,6 @@ function summarizeSocialAuthHealth(plan, settings, authContext = {}, authResult 
   };
 }
 
-async function readPassthroughHeaders(passthrough) {
-  if (!passthrough?.sidecarPath) {
-    return {};
-  }
-  try {
-    const sidecar = await readJsonFile(passthrough.sidecarPath);
-    return sidecar?.headers && typeof sidecar.headers === 'object' ? sidecar.headers : {};
-  } catch {
-    return {};
-  }
-}
-
 function renderMarkdownReport(result) {
   const lines = [
     `# ${result.siteKey} ${result.plan.action}`,
@@ -4863,15 +4734,6 @@ function buildSocialSessionRepairCommand(result = {}, gate = {}) {
 function csvCell(value) {
   const text = Array.isArray(value) ? value.join('|') : String(value ?? '');
   return `"${text.replace(/"/gu, '""')}"`;
-}
-
-function htmlEscape(value) {
-  return String(value ?? '')
-    .replace(/&/gu, '&amp;')
-    .replace(/</gu, '&lt;')
-    .replace(/>/gu, '&gt;')
-    .replace(/"/gu, '&quot;')
-    .replace(/'/gu, '&#39;');
 }
 
 function relativeIndexHref(filePath, layout) {
@@ -5113,11 +4975,6 @@ function safeSettingsForArtifact(settings) {
     maxUsers: settings.maxUsers,
     maxDetailPages: settings.maxDetailPages,
     perUserMaxItems: settings.perUserMaxItems,
-    maxMediaDownloads: settings.maxMediaDownloads,
-    mediaDownloadConcurrency: settings.mediaDownloadConcurrency,
-    mediaDownloadRetries: settings.mediaDownloadRetries,
-    mediaDownloadBackoffMs: settings.mediaDownloadBackoffMs,
-    skipExistingDownloads: settings.skipExistingDownloads,
     riskBackoffMs: settings.riskBackoffMs,
     riskRetries: settings.riskRetries,
     apiRetries: settings.apiRetries,
@@ -5209,7 +5066,7 @@ function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
     args.push('--max-api-pages', String(settings.maxApiPages));
   }
   if (settings.downloadMedia) {
-    args.push('--download-media', '--max-media-downloads', String(settings.maxMediaDownloads ?? DEFAULT_MAX_MEDIA_DOWNLOADS));
+    args.push('--download-media');
   }
   if (settings.riskBackoffMs !== undefined) {
     args.push('--risk-backoff-ms', String(settings.riskBackoffMs));
@@ -5221,7 +5078,7 @@ function buildSocialActionRecoveryCommand(result, layout, extraArgs = []) {
   return actionCliCommand(site, args);
 }
 
-function buildRecoveryRunbook(result, layout) {
+export function buildRecoveryRunbook(result, layout) {
   const commands = [];
   const addCommand = (id, reason, command, explanation) => {
     if (!command || commands.some((entry) => entry.id === id && entry.command === command)) {
@@ -5262,8 +5119,13 @@ function buildRecoveryRunbook(result, layout) {
     );
   }
   const downloadSummary = result.completeness?.download;
+  const downloadExecutable = result.download
+    && result.download.blocked !== true
+    && result.download.supported !== false
+    && result.download.status !== 'blocked'
+    && result.download.reason !== 'download-layer-removed';
   if (
-    result.download
+    downloadExecutable
     && (
       result.outcome?.reason === 'media-download-incomplete'
       || result.outcome?.reason === 'media-content-type-mismatch'
@@ -5540,7 +5402,6 @@ function summarizeCompleteness(result) {
   const archiveBoundedBy = archive?.boundedBy || boundedReasonFromArchiveReason(archiveReason);
   const boundedReasons = [
     archiveBoundedBy,
-    result?.download?.skippedMedia ? 'max-media-downloads' : null,
   ].filter(Boolean);
   const driftReasons = [
     archiveReason,
@@ -6039,12 +5900,6 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter, hookO
       skippedMedia: finalResult.download.skippedMedia ?? 0,
       physicalCandidates: finalResult.download.downloadCandidates?.length ?? finalResult.download.downloads?.length ?? 0,
       skippedPhysicalCandidates: finalResult.download.skippedDownloadCandidates ?? 0,
-      maxMediaDownloads: finalResult.download.maxMediaDownloads ?? null,
-      concurrency: finalResult.download.concurrency ?? null,
-      requestedConcurrency: finalResult.download.requestedConcurrency ?? null,
-      adaptiveConcurrency: finalResult.download.adaptiveConcurrency ?? null,
-      retries: finalResult.download.retries ?? null,
-      retryBackoffMs: finalResult.download.retryBackoffMs ?? null,
       skippedExisting: finalResult.download.downloads?.filter((entry) => entry.skipped).length ?? 0,
       highestVariantHit: finalResult.completeness?.download?.highestVariantHit ?? null,
       qualityScore: finalResult.completeness?.download?.qualityScore ?? null,
@@ -6204,12 +6059,7 @@ function normalizeRunSettings(plan, options = {}) {
     maxUsers: Math.max(1, toNumber(options.maxUsers, DEFAULT_MAX_USERS)),
     maxDetailPages: Math.max(0, toNumber(options.maxDetailPages, DEFAULT_MAX_DETAIL_PAGES)),
     perUserMaxItems: Math.max(1, toNumber(options.perUserMaxItems, DEFAULT_MAX_ITEMS)),
-    maxMediaDownloads: Math.max(1, toNumber(options.maxMediaDownloads, DEFAULT_MAX_MEDIA_DOWNLOADS)),
     followedUsersFile: options.followedUsersFile ? path.resolve(String(options.followedUsersFile)) : null,
-    mediaDownloadConcurrency: Math.max(1, Math.min(32, toNumber(options.mediaDownloadConcurrency, DEFAULT_MEDIA_DOWNLOAD_CONCURRENCY))),
-    mediaDownloadRetries: Math.max(0, Math.min(10, toNumber(options.mediaDownloadRetries, DEFAULT_MEDIA_DOWNLOAD_RETRIES))),
-    mediaDownloadBackoffMs: Math.max(0, toNumber(options.mediaDownloadBackoffMs, DEFAULT_MEDIA_DOWNLOAD_BACKOFF_MS)),
-    skipExistingDownloads: toBoolean(options.skipExistingDownloads, true),
     riskBackoffMs: Math.max(0, toNumber(options.riskBackoffMs, DEFAULT_RISK_BACKOFF_MS)),
     riskRetries: Math.max(0, toNumber(options.riskRetries, DEFAULT_RISK_RETRIES)),
     apiRetries: Math.max(0, toNumber(options.apiRetries, options.riskRetries ?? DEFAULT_API_RETRIES)),
@@ -6276,11 +6126,6 @@ export async function runSocialAction(options = {}, deps = {}) {
         maxApiPages: settings.maxApiPages,
         maxUsers: settings.maxUsers,
         downloadMedia: settings.downloadMedia,
-        maxMediaDownloads: settings.maxMediaDownloads,
-        mediaDownloadConcurrency: settings.mediaDownloadConcurrency,
-        mediaDownloadRetries: settings.mediaDownloadRetries,
-        mediaDownloadBackoffMs: settings.mediaDownloadBackoffMs,
-        skipExistingDownloads: settings.skipExistingDownloads,
         riskBackoffMs: settings.riskBackoffMs,
         riskRetries: settings.riskRetries,
         apiRetries: settings.apiRetries,
@@ -6337,7 +6182,6 @@ export async function runSocialAction(options = {}, deps = {}) {
     openBrowserSession,
     resolveSiteBrowserSessionOptions,
     ensureAuthenticatedSession,
-    exportDownloadSessionPassthrough,
     ...deps,
   };
   const authContext = await runtime.resolveSiteBrowserSessionOptions(plan.url, settings, {
@@ -6365,12 +6209,7 @@ export async function runSocialAction(options = {}, deps = {}) {
       },
     });
     const shouldCaptureApi = (settings.apiCursor && !(config.siteKey === 'instagram' && isSocialRelationAction(plan.action)))
-      || (config.siteKey === 'x' && isSocialRelationAction(plan.action))
-      || (
-        config.siteKey === 'x'
-        && settings.downloadMedia
-        && ['profile-content', 'search', 'followed-posts-by-date'].includes(plan.action)
-      );
+      || (config.siteKey === 'x' && isSocialRelationAction(plan.action));
     await checkpoint.write({
       status: 'running',
       phase: 'browser-opening',
@@ -6495,7 +6334,7 @@ export async function runSocialAction(options = {}, deps = {}) {
       const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action));
       let apiArchive = shouldCollectContentApiArchive
         ? await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint, {
-          seedOnly: !settings.apiCursor && settings.downloadMedia && config.siteKey === 'x',
+          seedOnly: false,
         })
         : null;
       if (shouldCollectContentApiArchive && isInstagramFeedUserArchivePlan(config, executionPlan, settings)) {
@@ -6573,59 +6412,24 @@ export async function runSocialAction(options = {}, deps = {}) {
       settings,
     );
 
-    let passthrough = null;
     let download = null;
     if (settings.downloadMedia) {
-      passthrough = await runtime.exportDownloadSessionPassthrough(session, executionPlan.url, authContext, {
-        siteKey: executionPlan.siteKey,
-        envToken: executionPlan.siteKey,
-        loginState: authResult?.loginState ?? authResult ?? null,
-      });
-      const headers = await readPassthroughHeaders(passthrough);
-      const itemMedia = (resultPayload.items || []).flatMap((item) => (item.media || []).map((mediaEntry, mediaIndex) => ({
-        ...mediaEntry,
-        itemId: mediaEntry.itemId ?? item.id ?? item.url ?? null,
-        pageUrl: mediaEntry.pageUrl ?? item.url ?? null,
-        mediaIndex: mediaEntry.mediaIndex ?? mediaIndex,
-      })));
-      const media = filterSocialDownloadMediaCandidates(
-        itemMedia.length ? itemMedia : (resultPayload.media || pageResult.media || []),
-        executionPlan,
-      );
       const mediaOutDir = artifactLayout.mediaDir;
-      const maxMediaDownloads = Math.min(media.length || settings.maxItems, settings.maxMediaDownloads);
-      const downloadResult = await executeMediaDownloads({
-        media,
-        headers,
-        outDir: mediaOutDir,
-        siteKey: executionPlan.siteKey,
-        account: executionPlan.account,
-        maxItems: maxMediaDownloads,
-        concurrency: settings.mediaDownloadConcurrency,
-        retries: settings.mediaDownloadRetries,
-        retryBackoffMs: settings.mediaDownloadBackoffMs,
-        skipExisting: settings.skipExistingDownloads,
-        previousDownloads: loadedCheckpoint.previousDownloads,
-        previousQueue: loadedCheckpoint.previousDownloadQueue,
-        queuePath: artifactLayout.mediaQueuePath,
-      });
+      const downloadResult = await createBlockedMediaDownloadReport();
       download = {
         outDir: mediaOutDir,
         downloads: downloadResult.downloads,
         queue: downloadResult.queue,
         downloadCandidates: downloadResult.candidates,
         expectedMedia: downloadResult.expectedMedia,
+        status: downloadResult.status,
+        supported: downloadResult.supported,
+        blocked: downloadResult.blocked,
+        reason: downloadResult.reason,
         skippedMedia: downloadResult.skippedMedia,
         skippedDownloadCandidates: downloadResult.skippedCandidates,
-        maxMediaDownloads,
         bounded: downloadResult.skippedMedia > 0 || downloadResult.skippedCandidates > 0,
-        boundedBy: downloadResult.skippedMedia > 0 || downloadResult.skippedCandidates > 0 ? 'max-media-downloads' : null,
-        concurrency: downloadResult.concurrency,
-        requestedConcurrency: downloadResult.requestedConcurrency,
-        adaptiveConcurrency: downloadResult.adaptiveConcurrency,
-        retries: downloadResult.retries,
-        retryBackoffMs: downloadResult.retryBackoffMs,
-        passthrough,
+        boundedBy: null,
       };
     }
 
@@ -6724,9 +6528,8 @@ Options:
   --account <handle>                Target account or profile handle.
   --query <value>                   Search query.
   --content-type <type>             posts, replies, media, likes, or site-specific tab.
-  --download-media                  Download media candidates discovered by the action.
+  --download-media                  Record a blocked media-download report; execution is disabled.
   --max-items <n>                   Limit archive or content items.
-  --max-media-downloads <n>         Limit downloaded media files.
   --max-users <n>                   Limit relation/followed scans.
   --followed-users-file <path>      Reuse a verified followed-users items.jsonl as the relation seed.
   --run-dir <dir>                   Exact artifact run directory.
@@ -6819,11 +6622,6 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {
     followedUsersFile: lastFlagValue(flags, 'followed-users-file', lastFlagValue(flags, 'following-file')),
     maxDetailPages: lastFlagValue(flags, 'max-detail-pages'),
     perUserMaxItems: lastFlagValue(flags, 'per-user-max-items'),
-    maxMediaDownloads: lastFlagValue(flags, 'max-media-downloads'),
-    mediaDownloadConcurrency: lastFlagValue(flags, 'media-download-concurrency', lastFlagValue(flags, 'download-concurrency')),
-    mediaDownloadRetries: lastFlagValue(flags, 'media-download-retries', lastFlagValue(flags, 'download-retries')),
-    mediaDownloadBackoffMs: lastFlagValue(flags, 'media-download-backoff-ms', lastFlagValue(flags, 'download-backoff-ms')),
-    skipExistingDownloads: flags['no-skip-existing-downloads'] === true ? false : flags['skip-existing-downloads'] === true ? true : undefined,
     riskBackoffMs: flags['no-risk-backoff'] === true ? 0 : lastFlagValue(flags, 'risk-backoff-ms'),
     riskRetries: lastFlagValue(flags, 'risk-retries'),
     apiRetries: lastFlagValue(flags, 'api-retries'),

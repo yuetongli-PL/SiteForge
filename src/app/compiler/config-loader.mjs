@@ -1,11 +1,11 @@
 // @ts-check
 
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
   readJsonFile,
 } from '../../infra/io.mjs';
+import { REPO_ROOT, assertRepoRoot } from '../../infra/paths/repo-root.mjs';
 import {
   SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
 } from './schema.mjs';
@@ -19,9 +19,6 @@ import {
 import {
   createCompilerSourceDigest,
 } from './digest.mjs';
-
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
 
 const SAFE_REGISTRY_FIELDS = Object.freeze([
   'adapterId',
@@ -93,7 +90,7 @@ function resolveRepoLocalConfigPath(repoRoot, inputPath, name) {
   if (path.isAbsolute(inputPath)) {
     throw createCompilerSourceError(`${name} must not be an absolute path`);
   }
-  const root = path.resolve(repoRoot);
+  const root = assertRepoRoot(repoRoot);
   const resolved = path.resolve(root, inputPath);
   const relative = path.relative(root, resolved);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {

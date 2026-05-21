@@ -10,6 +10,7 @@ import {
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
 import { sessionRepairPlanCommand } from '../../infra/cli/command-map.mjs';
+import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
 import { runSessionTask } from '../../domain/sessions/runner.mjs';
 
 const HELP = `Internal script usage:
@@ -44,13 +45,6 @@ Options:
   --no-tty                          Force plain progress.
   -h, --help                        Show this help.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseArgs(argv = []) {
   const options = {

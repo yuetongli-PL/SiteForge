@@ -5,6 +5,7 @@ import process from 'node:process';
 import { stat } from 'node:fs/promises';
 import { relativeToKb } from '../../../../shared/wiki.mjs';
 import { hostFromUrl, sanitizeHost } from '../../../../shared/normalize.mjs';
+import { formatTimestampForDir as sharedFormatTimestampForDir } from '../../../../shared/time.mjs';
 
 export const ROOT_DIRS = Object.freeze({
   captures: 'captures',
@@ -110,7 +111,7 @@ export const REQUIRED_FILES = Object.freeze([
 ]);
 
 export function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
+  return sharedFormatTimestampForDir(date);
 }
 
 export async function candidateSortKey(dirPath, generatedAt) {

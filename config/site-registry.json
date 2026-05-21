@@ -43,7 +43,6 @@
       "adapterId": "chapter-content",
       "siteArchetype": "chapter-content",
       "repoSkillDir": "skills/bz888",
-      "profilePath": "[REDACTED]",
       "downloadEntrypoint": "src/sites/known-sites/chapter-content/download/python/book.py",
       "downloadSessionRequirement": "none",
       "downloadTaskTypes": [
@@ -102,9 +101,24 @@
         "video",
         "media-bundle"
       ],
+      "declaredDownloadTaskTypes": [
+        "video",
+        "media-bundle"
+      ],
+      "availableDownloadTaskTypes": [],
+      "blockedDownloadTaskTypes": [
+        "video",
+        "media-bundle"
+      ],
       "downloadSupport": {
         "status": "blocked",
+        "supported": false,
         "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
           "video",
           "media-bundle"
         ],

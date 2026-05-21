@@ -176,6 +176,8 @@ test('pipeline CLI JSON stdout fails closed without raw cause exposure', () => {
 test('pipeline CLI closes the active web interaction bridge object', async () => {
   const source = await readFile(path.resolve('src/entrypoints/pipeline/run-pipeline.mjs'), 'utf8');
 
+  assert.match(source, /const session = options\.webInteractionSession;/u);
+  assert.match(source, /await session\.close\(\);/u);
   assert.match(source, /await closeSiteForgeWebInteraction\(interactionOptions\);/u);
   assert.match(source, /const followupInteractionOptions = \{\s+\.\.\.interactionOptions,\s+treeUi: false,\s+\};/u);
   assert.match(source, /await closeSiteForgeWebInteraction\(followupInteractionOptions\);/u);

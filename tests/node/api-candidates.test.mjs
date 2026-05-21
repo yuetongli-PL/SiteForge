@@ -181,7 +181,7 @@ function withoutSchemaVersion(candidate) {
 
 async function assertMissingFiles(filePaths) {
   for (const filePath of filePaths) {
-    await assert.rejects(access(filePath), /ENOENT/u);
+    await assert.rejects(access(filePath), /ENOENT|ENOTDIR/u);
   }
 }
 

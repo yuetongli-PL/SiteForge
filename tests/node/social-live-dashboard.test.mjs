@@ -33,14 +33,14 @@ test('social-live-dashboard renders summary, drift classes, and manifest rows', 
         finishedAt: '2026-04-26T00:00:00.000Z',
       },
       {
-        id: 'instagram-media-download',
+        id: 'instagram-media-download-blocked-boundary',
         site: 'instagram',
-        category: 'media download',
+        category: 'media download blocked boundary',
         status: 'passed',
         artifactSummary: {
           verdict: 'passed',
           reason: 'max-items',
-          manifestPath: path.join(runDir, 'instagram-media-download', 'manifest.json'),
+          manifestPath: path.join(runDir, 'instagram-media-download-blocked-boundary', 'manifest.json'),
         },
         finishedAt: '2026-04-26T00:01:00.000Z',
       },
@@ -70,7 +70,7 @@ test('social-live-dashboard renders summary, drift classes, and manifest rows', 
   assert.match(html, /Rate-limit/u);
   assert.match(html, /Download quality/u);
   assert.match(html, /x-auth-doctor/u);
-  assert.match(html, /instagram-media-download/u);
+  assert.match(html, /instagram-media-download-blocked-boundary/u);
   assert.match(html, /x-kb-refresh/u);
   assert.match(html, /rate-limit/u);
   assert.match(html, /download-ok/u);

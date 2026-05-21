@@ -10,6 +10,7 @@ import {
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
 import { formatCommand } from '../../infra/cli/command-map.mjs';
+import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
 import { readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import {
   REDACTION_PLACEHOLDER,
@@ -51,13 +52,6 @@ Options:
   --execute                         Build an approved repair command; never spawns child commands.
   -h, --help                        Show this help.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseArgs(argv) {
   const options = {

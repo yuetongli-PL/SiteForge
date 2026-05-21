@@ -31,7 +31,7 @@ function commandArg(value) {
 }
 
 export function formatCapabilityCommand(args = []) {
-  return ['node', 'src/entrypoints/cli/capabilities.mjs', ...args.map(commandArg)].join(' ');
+  return ['node', 'src/entrypoints/operator/capabilities.mjs', ...args.map(commandArg)].join(' ');
 }
 
 export function isSensitiveReadCapability(capability = {}) {
@@ -119,8 +119,8 @@ export function capabilityNextStep(skillId, capability = {}) {
   if (blocked) {
     const review = skillId
       ? formatCapabilityCommand(['list', skillId, '--status', 'disabled'])
-      : 'node src/entrypoints/cli/capabilities.mjs list <skill-id> --status disabled';
-    return `Generate a safe remediation plan after reviewing disabled capabilities with: ${review}. Immediate alternatives may be limited summary or draft preview; otherwise implement an explicit site-adapter path and rerun validation. Ordinary confirmation cannot enable private-message detail, message sending, account mutation, or other forced-disabled actions.`;
+      : 'node src/entrypoints/operator/capabilities.mjs list <skill-id> --status disabled';
+    return `Generate a safe remediation plan after reviewing disabled capabilities with: ${review}. Immediate alternatives may be limited summary or draft preview; otherwise implement a site-specific adapter path and rerun validation. Ordinary confirmation cannot enable private-message detail, message sending, account mutation, or other forced-disabled actions.`;
   }
   if (isSensitiveReadCapability(capability)) {
     return `Confirm limited sanitized structure scanning with: ${capabilityConfirmCommand(skillId, capability)}`;
@@ -227,7 +227,7 @@ export function buildConfirmationPaths({
       review_command: skillId
         ? formatCapabilityCommand(['list', skillId, '--status', 'disabled'])
         : null,
-      next_step: 'Select disabled capabilities in the post-build interaction to write capability_remediation_plan.json. Immediate entries can run only as limited summary or draft preview; adapter entries require explicit SiteAdapter validation before use.',
+      next_step: 'Select disabled capabilities in the post-build interaction to write capability_remediation_plan.json. Immediate entries can run only as limited summary or draft preview; adapter entries require explicit site-specific adapter validation before use.',
     },
     commands: uniqueCommands([
       skillId ? formatCapabilityCommand(['list', skillId, '--status', 'confirmation_required']) : null,

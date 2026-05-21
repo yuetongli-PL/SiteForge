@@ -14,11 +14,18 @@ import {
   formatCapabilityCommand,
   isOrdinaryConfirmationBlocked,
 } from '../../app/pipeline/build/confirmation-flow.mjs';
+import {
+  CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
+  buildCapabilityConfirmationDecisionRecord,
+  confirmationDecisionForMode,
+  createConfirmationLoginStateReuseSummary,
+  mergeCapabilityDecisionRecords,
+} from '../../app/pipeline/build/capability-decision-records.mjs';
 
 const HELP = `Usage:
-  node src/entrypoints/cli/capabilities.mjs list <skill-id> [--status confirmation_required|disabled|enabled|all] [--report <path>] [--json]
-  node src/entrypoints/cli/capabilities.mjs confirm <skill-id> (--group sensitive-read --limited | --group draft-write --draft-only | --capability <id>) [--report <path>] [--json]
-  node src/entrypoints/cli/capabilities.mjs disable <skill-id> (--group <group> | --capability <id>) [--report <path>] [--json]
+  node src/entrypoints/operator/capabilities.mjs list <skill-id> [--status confirmation_required|disabled|enabled|all] [--report <path>] [--json]
+  node src/entrypoints/operator/capabilities.mjs confirm <skill-id> (--group sensitive-read --limited | --group draft-write --draft-only | --capability <id>) [--report <path>] [--json]
+  node src/entrypoints/operator/capabilities.mjs disable <skill-id> (--group <group> | --capability <id>) [--report <path>] [--json]
 
 Notes:
   This is an internal operator entrypoint; the public CLI is siteforge build <url>.
@@ -265,95 +272,32 @@ function validateConfirmationSelection(capabilities, options) {
   }
 }
 
-function confirmationUsablePathForMode(mode) {
-  const loginStateReuse = {
-    strategy: 'reuse_existing_system_browser_login_state',
-    status: 'ready_for_sanitized_authorized_recheck',
-    reusesExistingLoginState: true,
-    requiresNewLogin: false,
-    userMustRemainSignedIn: true,
-    browser: 'system_default_browser',
-    evidenceToCollect: 'sanitized_structure_summary_only',
-    cookiesPersisted: false,
-    tokensPersisted: false,
-    credentialsPersisted: false,
-    browserProfilePersisted: false,
-    rawDomPersisted: false,
-    rawHtmlPersisted: false,
-    rawContentPersisted: false,
-    privateContentPersisted: false,
-  };
-  if (mode === 'limited') {
-    return {
-      type: 'limited_sanitized_summary_path',
-      readiness: 'immediate_limited_sanitized_summary',
-      resultingStatus: 'limited_enabled',
-      loginStateReuse,
-    };
-  }
-  if (mode === 'draft_only') {
-    return {
-      type: 'draft_only_preview_path',
-      readiness: 'immediate_draft_only_preview',
-      resultingStatus: 'draft_only',
-      loginStateReuse,
-    };
-  }
-  return {
-    type: 'safe_confirmed_capability_path',
-    readiness: 'immediate_confirmed_capability',
-    resultingStatus: mode === 'disabled' ? 'disabled' : 'enabled',
-    loginStateReuse,
-  };
-}
-
 async function writeDecisionRecord({ loaded, skillId, command, capabilities, decision, mode }) {
   if (!loaded.siteDir) {
     return null;
   }
   const filePath = path.join(loaded.siteDir, 'capability_confirmations.json');
   const existing = await readJson(filePath, {
-    schemaVersion: 1,
+    schemaVersion: CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
     skillId,
     decisions: [],
   });
   const now = new Date().toISOString();
-  const decisionByKey = new Map((existing.decisions ?? []).map((entry) => [
-    `${entry.capabilityId}:${entry.decision}`,
-    entry,
-  ]));
-  const usablePath = confirmationUsablePathForMode(mode);
-  for (const capability of capabilities) {
-    decisionByKey.set(`${capability.id}:${decision}`, {
-      capabilityId: capability.id,
-      capabilityName: capability.name ?? null,
-      group: capabilityConfirmationGroup(capability),
+  const decisions = capabilities.map((capability) => (
+    buildCapabilityConfirmationDecisionRecord({
+      capability,
       decision,
       mode,
-      usableAfterSelection: decision !== 'disabled',
-      usablePathType: usablePath.type,
-      usablePath,
-      loginStateReuse: usablePath.loginStateReuse,
-      completedBy: decision !== 'disabled' ? 'reused_user_login_state' : 'disabled_by_user_choice',
-      immediateLimitedUse: decision !== 'disabled' && usablePath.readiness.startsWith('immediate_'),
-      requiresSiteAdapterVerificationBeforeUse: false,
       command,
-      writeActionsEnabled: false,
-      finalActionsAllowed: false,
-      rawMaterialAllowed: false,
-      privateContentAllowed: false,
       sourceBuildId: loaded.report.build_id ?? loaded.report.buildId ?? null,
       updatedAt: now,
-    });
-  }
+    })
+  ));
   const next = {
-    schemaVersion: 1,
+    schemaVersion: CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
     skillId,
     updatedAt: now,
-    decisions: [...decisionByKey.values()].sort((left, right) => (
-      String(left.capabilityId).localeCompare(String(right.capabilityId), 'en')
-      || String(left.decision).localeCompare(String(right.decision), 'en')
-    )),
+    decisions: mergeCapabilityDecisionRecords(existing.decisions ?? [], decisions),
   };
   await writeJsonFile(filePath, next);
   return filePath;
@@ -429,7 +373,7 @@ export async function main(argv = process.argv.slice(2)) {
     skillId,
     command,
     capabilities,
-    decision: options.command === 'disable' ? 'disabled' : 'confirmed',
+    decision: options.command === 'disable' ? 'disabled' : confirmationDecisionForMode(mode),
     mode,
   });
   output({
@@ -439,16 +383,7 @@ export async function main(argv = process.argv.slice(2)) {
     count: capabilities.length,
     mode,
     login_state_reuse: options.command === 'confirm'
-      ? {
-        strategy: 'reuse_existing_system_browser_login_state',
-        status: 'ready_for_sanitized_authorized_recheck',
-        reuses_existing_login_state: true,
-        requires_new_login: false,
-        cookies_persisted: false,
-        tokens_persisted: false,
-        browser_profile_persisted: false,
-        raw_content_persisted: false,
-      }
+      ? createConfirmationLoginStateReuseSummary()
       : null,
     report_path: loaded.reportPath,
     record_path: recordPath,

@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../domain/sessions/security-guard.mjs';
 import { runSiteCapabilityCompile } from './site-capability-compile.mjs';
 
@@ -21,13 +22,6 @@ Build a descriptor-only recompile preview summary for repo-local skills. This
 does not open websites, run captures, generate skills, overwrite repo skills,
 invoke downloader, or materialize browser/session state.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseArgs(argv = []) {
   const options = {

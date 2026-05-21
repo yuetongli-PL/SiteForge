@@ -3,7 +3,7 @@
 操作：↑↓ 移动  Enter 展开/折叠  Space 确认  / 搜索  q 退出
 搜索：-
 
-▶ 能力统计                               │ 已启用 20 / 有限 8 / 待确认 12 / 已禁用 22
+▶ 能力统计                               │ 可用 20 / 有限脱敏 8 / 待确认 12 / 禁用阻止 22
 ▶ 自动探索                               │ 页面/区域 50 / 内容节点 103 / 操作节点 41 / 元素 706
 ▼ 待确认能力 (12)                         │ Space 标记确认；只写入安全确认记录
     [ ] 读取关注列表                       │ 只记录脱敏结构和数量，不保存正文
@@ -16,9 +16,9 @@
     [ ] 读取书签摘要                       │ 只记录脱敏结构和数量，不保存正文
     … 另有 4 项                         │ 详见报告
 ▶ 已禁用能力 (22)                         │ 仅展示安全补路径；不能直接强行启用
-▶ 输出结果                               │ 验证 通过；current/ 已更新；registry.json 已注册；Skill ID: x-com-authorized-browser-surface
-▶ 建议                                 │ siteforge build https://x.com/ --auto --deep；siteforge build https://x.com/ --auto --deep --network；siteforge build https://x.com/ --report debug
-▶ 调试信息                               │ 报告 .siteforge/sites/x.com-326a6450/builds/<BUILD_ID>/build_report.user.json；debug 候选 3
+▶ 输出结果                               │ 验证 通过；当前输出 已更新；本地索引 已注册；Skill 标识: x-com-authorized-browser-surface
+▶ 建议                                 │ siteforge build https://x.com/ --auto --deep；siteforge build https://x.com/ --auto --deep --network（仅脱敏摘要）；siteforge build https://x.com/ --report debug
+▶ 调试信息                               │ 用户报告 .siteforge/sites/x.com-326a6450/builds/<BUILD_ID>/build_report.user.json；开发者候选 3
 ▶ 手动模式                               │ 逐项手动补采；允许最终 URL 或可见条数输入
 
 提示：非交互终端显示为树形快照；交互终端会动态刷新并支持键盘操作。

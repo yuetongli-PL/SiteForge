@@ -31,7 +31,7 @@ export function unifiedCliCommand(args = []) {
 }
 
 export function capabilitiesCliCommand(args = []) {
-  return formatCommand(['node', 'src/entrypoints/cli/capabilities.mjs', ...args.map((arg) => String(arg))]);
+  return formatCommand(['node', 'src/entrypoints/operator/capabilities.mjs', ...args.map((arg) => String(arg))]);
 }
 
 export function capabilityConfirmCommand(skillId, args = []) {

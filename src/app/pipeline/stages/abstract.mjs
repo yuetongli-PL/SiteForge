@@ -25,6 +25,8 @@ import {
   getManifestRunContext,
 } from '../engine/run-manifest.mjs';
 import { displayIntentName } from '../../../sites/registry/core/terminology.mjs';
+import { normalizeText, normalizeUrlNoFragment, normalizeWhitespace, sanitizeHost } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import { firstExistingPath } from '../../../shared/wiki.mjs';
 
 const DEFAULT_OPTIONS = {
@@ -218,14 +220,6 @@ function createSha256(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex');
 }
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
 function normalizeLabel(value) {
   return normalizeText(value).toLowerCase();
 }
@@ -246,28 +240,6 @@ function isMoodyzSite(siteProfileDocument, baseUrl) {
 function isJableSite(siteProfileDocument, baseUrl) {
   const host = hostFromUrl(baseUrl);
   return host === 'jable.tv' || host === 'www.jable.tv' || String(siteProfileDocument?.host ?? '').toLowerCase() === 'jable.tv';
-}
-
-function normalizeUrlNoFragment(input) {
-  if (!input) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(input);
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return String(input).split('#')[0];
-  }
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function compareNullableStrings(left, right) {

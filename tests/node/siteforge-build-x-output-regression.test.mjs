@@ -36,8 +36,8 @@ const DEFAULT_REQUIRED_TERMS = [
   '[ ]',
   '已禁用能力',
   '输出结果',
-  'current/',
-  'registry.json',
+  '当前输出',
+  '本地索引',
   '建议',
   '调试信息',
 ];
@@ -313,7 +313,7 @@ test('siteforge build x.com keeps tree sections and final result status consiste
   assert.equal(discoveryIndex < pendingIndex, true, 'discovery should render before pending capabilities');
   assert.equal(pendingIndex < outputIndex, true, 'pending capabilities should render before output status');
 
-  assert.match(result.stdout, /▶ 输出结果\s+│ 验证 通过；current\/ 已更新；registry\.json 已注册/u);
+  assert.match(result.stdout, /▶ 输出结果\s+│ 验证 通过；当前输出 已更新；本地索引 已注册/u);
 });
 
 test('siteforge build x.com --manual is the only mode that shows supplemental collection copy', async (t) => {
@@ -414,7 +414,7 @@ test('siteforge build x.com keeps debug-only candidates out of user capability l
     || capability.name === 'capture network APIs'
   )), true);
   assert.equal(Number(userReport.debug_candidate_summary?.count) > 0, true);
-  assert.match(result.stdout, /▶ 调试信息\s+│ .*debug 候选 \d+/u);
+  assert.match(result.stdout, /▶ 调试信息\s+│ .*开发者候选 \d+/u);
   assert.doesNotMatch(result.stdout, /capture network APIs|candidate_debug_only/u);
   assert.doesNotMatch(userReportText, /capture network APIs/u);
   assert.doesNotMatch(userMarkdownText, /capture network APIs|candidate_debug_only/u);
@@ -493,10 +493,10 @@ test('rendered user summary caps lists, sorts by user-facing priority, and hides
 
   assertExcludesAll(text, ABSOLUTE_USER_PATH_PATTERNS, 'synthetic terminal output');
   assert.doesNotMatch(text, /@private_handle|token=secret|Hidden Debug Candidate|candidate_debug_only|debug_only/u);
-  assert.match(text, /▶ 调试信息\s+│ .*debug 候选 2/u);
+  assert.match(text, /▶ 调试信息\s+│ .*开发者候选 2/u);
   assert.equal(text.includes('build_report.user.json'), true);
 
-  assert.match(text, /▶ 能力统计\s+│ 已启用 14 \/ 有限 9 \/ 待确认 10 \/ 已禁用 10/u);
+  assert.match(text, /▶ 能力统计\s+│ 可用 14 \/ 有限脱敏 9 \/ 待确认 10 \/ 禁用阻止 10/u);
   assert.match(text, /▼ 待确认能力 \(10\)/u);
   assert.equal(countOccurrences(text, /^\s+\[ \] Confirm /gmu), 8);
   assert.match(text, /… 另有 2 项\s+│ 详见报告/u);
@@ -540,7 +540,7 @@ test('siteforge build x.com remediation paths keep safe alternatives bounded', a
     assert.equal(card?.ordinary_confirmation_allowed, false, `${name} cannot be enabled by ordinary confirmation`);
     assert.equal(card?.confirm_command, null, `${name} must not expose a confirm command`);
     assert.match(card?.next_step ?? '', /safe remediation plan/u);
-    assert.match(card?.next_step ?? '', /explicit site-adapter path/u);
+    assert.match(card?.next_step ?? '', /site-specific adapter path/u);
     assert.doesNotMatch(card?.next_step ?? '', /Keep disabled/u);
   }
 
@@ -580,7 +580,7 @@ test('siteforge build x.com remediation paths keep safe alternatives bounded', a
   assert.match(userReport.confirmation_paths.sensitive_read.description, /unsanitized\/private material remains unsaved/u);
   assert.match(userReport.confirmation_paths.draft_write.description, /final submit\/send actions remain disabled/u);
   assert.match(userReport.confirmation_paths.disabled.next_step, /capability_remediation_plan\.json/u);
-  assert.match(userReport.confirmation_paths.disabled.next_step, /SiteAdapter validation/u);
+  assert.match(userReport.confirmation_paths.disabled.next_step, /site-specific adapter validation/u);
 });
 
 test('siteforge build x.com reports confirmation commands without making manual the default path', async (t) => {
@@ -596,9 +596,9 @@ test('siteforge build x.com reports confirmation commands without making manual 
   assert.equal(confirmation.every((capability) => capability.confirm_command || capability.next_step), true);
   assert.equal(confirmation.every((capability) => !/--manual/u.test(`${capability.confirm_command ?? ''} ${capability.next_step ?? ''}`)), true);
   assert.equal(userReport.next_steps.every((step) => !/--manual/u.test(step)), true);
-  assert.match(userReport.confirmation_paths.view_confirmation_required_command, /node src\/entrypoints\/cli\/capabilities\.mjs list/u);
-  assert.match(userReport.confirmation_paths.sensitive_read.command, /node src\/entrypoints\/cli\/capabilities\.mjs confirm .+ --group sensitive-read --limited/u);
-  assert.match(userReport.confirmation_paths.disabled.review_command, /node src\/entrypoints\/cli\/capabilities\.mjs list .+ --status disabled/u);
+  assert.match(userReport.confirmation_paths.view_confirmation_required_command, /node src\/entrypoints\/operator\/capabilities\.mjs list/u);
+  assert.match(userReport.confirmation_paths.sensitive_read.command, /node src\/entrypoints\/operator\/capabilities\.mjs confirm .+ --group sensitive-read --limited/u);
+  assert.match(userReport.confirmation_paths.disabled.review_command, /node src\/entrypoints\/operator\/capabilities\.mjs list .+ --status disabled/u);
 });
 
 test('siteforge build x.com terminal output and reports do not expose private material', async (t) => {

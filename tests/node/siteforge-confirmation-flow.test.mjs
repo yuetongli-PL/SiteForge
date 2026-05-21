@@ -11,11 +11,11 @@ import {
   buildConfirmationPaths,
   decorateCapabilityConfirmation,
 } from '../../src/app/pipeline/build/confirmation-flow.mjs';
-import { parseCapabilitiesArgs } from '../../src/entrypoints/cli/capabilities.mjs';
+import { parseCapabilitiesArgs } from '../../src/entrypoints/operator/capabilities.mjs';
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TEST_DIR, '..', '..');
-const CLI_PATH = path.join(REPO_ROOT, 'src', 'entrypoints', 'cli', 'capabilities.mjs');
+const CLI_PATH = path.join(REPO_ROOT, 'src', 'entrypoints', 'operator', 'capabilities.mjs');
 
 function sensitiveReadCapability(overrides = {}) {
   return {
@@ -115,12 +115,12 @@ test('confirmation-required capabilities carry an explicit non-manual confirmati
 
   assert.equal(sensitive.confirmation_group, 'sensitive-read');
   assert.equal(sensitive.confirmation_mode, 'limited');
-  assert.match(sensitive.confirm_command, /^node src\/entrypoints\/cli\/capabilities\.mjs confirm .+ --group sensitive-read --limited$/u);
+  assert.match(sensitive.confirm_command, /^node src\/entrypoints\/operator\/capabilities\.mjs confirm .+ --group sensitive-read --limited$/u);
   assert.doesNotMatch(sensitive.next_step, /--manual/u);
 
   assert.equal(draft.confirmation_group, 'draft-write');
   assert.equal(draft.confirmation_mode, 'draft_only');
-  assert.match(draft.confirm_command, /^node src\/entrypoints\/cli\/capabilities\.mjs confirm .+ --group draft-write --draft-only$/u);
+  assert.match(draft.confirm_command, /^node src\/entrypoints\/operator\/capabilities\.mjs confirm .+ --group draft-write --draft-only$/u);
   assert.equal(draft.write_actions_enabled, false);
 });
 
@@ -131,7 +131,7 @@ test('confirmation paths separate sensitive-read, draft-write, disabled review, 
     disabledCapabilities: [disabledDirectMessageCapability()],
   });
 
-  assert.match(paths.view_confirmation_required_command, /node src\/entrypoints\/cli\/capabilities\.mjs list/u);
+  assert.match(paths.view_confirmation_required_command, /node src\/entrypoints\/operator\/capabilities\.mjs list/u);
   assert.match(paths.sensitive_read.command, /--group sensitive-read --limited/u);
   assert.match(paths.draft_write.command, /--group draft-write --draft-only/u);
   assert.match(paths.disabled.review_command, /--status disabled/u);
@@ -152,7 +152,7 @@ test('disabled high-risk confirmation path is remediation review only', () => {
   assert.equal(disabled.write_actions_enabled, false);
   assert.equal(disabled.confirm_command, null);
   assert.match(disabled.next_step, /safe remediation plan/u);
-  assert.match(disabled.next_step, /explicit site-adapter path/u);
+  assert.match(disabled.next_step, /site-specific adapter path/u);
   assert.doesNotMatch(disabled.next_step, /Keep disabled/u);
   assert.equal(disabled.safe_remediation_path, 'requires_explicit_external_adapter');
   assert.equal(disabled.safe_remediation.canAutoPrepare, false);
@@ -163,9 +163,9 @@ test('disabled high-risk confirmation path is remediation review only', () => {
   assert.equal(paths.disabled.blocked_by_ordinary_confirmation, 1);
   assert.equal(paths.disabled.safe_remediation.requires_explicit_external_adapter, 1);
   assert.equal(paths.disabled.safe_remediation.canAutoPrepare, 0);
-  assert.match(paths.disabled.review_command, /node src\/entrypoints\/cli\/capabilities\.mjs list .+ --status disabled/u);
+  assert.match(paths.disabled.review_command, /node src\/entrypoints\/operator\/capabilities\.mjs list .+ --status disabled/u);
   assert.match(paths.disabled.next_step, /capability_remediation_plan\.json/u);
-  assert.match(paths.disabled.next_step, /SiteAdapter validation/u);
+  assert.match(paths.disabled.next_step, /site-specific adapter validation/u);
   assert.equal(paths.commands.some((command) => /confirm .+send-direct-message/u.test(command)), false);
 });
 

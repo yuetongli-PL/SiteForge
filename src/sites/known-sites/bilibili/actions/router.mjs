@@ -1,20 +1,19 @@
 // @ts-check
 
-import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 import {
   bootstrapReusableSiteSession,
   inspectRequestReusableSiteSession,
 } from '../../../../infra/auth/site-login-service.mjs';
+import { REPO_ROOT } from '../../../../infra/paths/repo-root.mjs';
 import { openBilibiliPageInLocalBrowser, resolveBilibiliOpenDecision } from '../navigation/open.mjs';
+import {
+  BILIBILI_DOWNLOAD_PYTHON_ENTRY,
+  BILIBILI_DOWNLOAD_PYTHON_ENTRY_LABEL,
+} from '../../paths.mjs';
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
-const BILIBILI_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'bilibili', 'download', 'python', 'bilibili.py');
-const BILIBILI_DOWNLOAD_PYTHON_ENTRY_LABEL = 'src/sites/known-sites/bilibili/download/python/bilibili.py';
 const BILIBILI_HOME_URL = 'https://www.bilibili.com/';
 const BV_PATTERN = /^BV[0-9A-Za-z]+$/u;
 

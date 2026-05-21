@@ -30,6 +30,8 @@ import {
   siteIntentTypeName as siteIntentTypeNameImpl,
   siteTerminology as siteTerminologyImpl,
 } from '../../../sites/registry/core/site-semantics.mjs';
+import { normalizeText, normalizeWhitespace, sanitizeHost } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import { resolveMaybeRelative } from '../../../shared/wiki.mjs';
 
 const DEFAULT_OPTIONS = {
@@ -112,10 +114,6 @@ Object.assign(INTENT_TITLE_PREFIX, {
 });
 
 INTENT_TITLE_PREFIX['download-book'] = '下载书籍';
-
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
 
 /* moodyz helpers (replaced below)
 function isMoodyzContext(context) {
@@ -247,10 +245,6 @@ function collectSearchQueries(records, limit = 6) {
   return uniqueSortedStrings(values).slice(0, limit);
 }
 
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
 function cleanText(value) {
   return normalizeText(value)
     .replace(/^[\s"'“”‘’`~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?！？。，“”‘’【】（）《》]+/gu, '')
@@ -277,14 +271,6 @@ function toArray(value) {
 
 function compareNullableStrings(left, right) {
   return String(left ?? '').localeCompare(String(right ?? ''), 'en');
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function normalizeUrlNoFragment(input) {

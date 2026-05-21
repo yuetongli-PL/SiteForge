@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
+import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
+import { formatTimestampForDir as timestampForDir } from '../src/shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -86,10 +88,6 @@ Case ids:
   instagram-empty-dom
 `;
 
-function timestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/u, '$1Z');
-}
-
 function normalizeHandle(value) {
   return String(value ?? '').trim().replace(/^@/u, '').replace(/^\/+|\/+$/gu, '');
 }
@@ -107,13 +105,6 @@ function buildSearchUrl(site, query) {
     return `https://x.com/search?${params.toString()}`;
   }
   return `https://www.instagram.com/explore/search/?${params.toString()}`;
-}
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
 }
 
 export function parseArgs(argv) {

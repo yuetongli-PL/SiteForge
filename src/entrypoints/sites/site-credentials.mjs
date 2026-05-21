@@ -92,7 +92,7 @@ export function parseCliArgs(argv) {
 }
 
 export async function siteCredentials(action, inputUrl, options = {}, deps = {}) {
-  if (!isWindowsCredentialManagerSupported()) {
+  if (!(deps.isWindowsCredentialManagerSupported ?? isWindowsCredentialManagerSupported)()) {
     throw new Error('Windows Credential Manager is only supported on Windows.');
   }
 
@@ -165,21 +165,21 @@ export async function siteCredentials(action, inputUrl, options = {}, deps = {})
   };
 }
 
-async function runCli() {
-  initializeCliUtf8();
-  const parsed = parseCliArgs(process.argv.slice(2));
+export async function runCli(argv = process.argv.slice(2), deps = {}) {
+  (deps.initializeCliUtf8 ?? initializeCliUtf8)();
+  const parsed = parseCliArgs(argv);
   if (parsed.help) {
-    process.stdout.write(`${HELP}\n`);
+    (deps.stdout ?? process.stdout).write(`${HELP}\n`);
     return;
   }
-  const report = await runSingleStageCliWithProgress({
-    inputUrl: parsed.action,
+  const report = await (deps.runSingleStageCliWithProgress ?? runSingleStageCliWithProgress)({
+    inputUrl: parsed.inputUrl,
     options: parsed.options,
     taskId: 'siteCredentials',
     title: 'Site credentials',
     stageId: 'siteCredentials',
     stageTitle: `Credential ${parsed.action}`,
-    run: (stageOptions) => siteCredentials(parsed.action, parsed.inputUrl, stageOptions),
+    run: (stageOptions) => (deps.siteCredentials ?? siteCredentials)(parsed.action, parsed.inputUrl, stageOptions),
     successMessage: (result) => result?.action,
     isFailureResult: (result) => (
       parsed.action === 'set' && result?.stored !== true
@@ -189,10 +189,11 @@ async function runCli() {
     failureReason: (result) => result?.action ?? 'credential action failed',
     failureTitle: 'Site credential action failed',
   });
-  writeJsonStdout(report);
+  (deps.writeJsonStdout ?? writeJsonStdout)(report);
   if ((parsed.action === 'set' && report.stored !== true) || (parsed.action === 'delete' && report.deleted !== true && report.found !== false)) {
     process.exitCode = 1;
   }
+  return report;
 }
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;

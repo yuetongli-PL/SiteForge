@@ -9,7 +9,9 @@ import {
   buildReport,
   parseArgs as parseReportArgs,
 } from '../tools/social-live-report-core.mjs';
+import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
+import { escapeHtmlText as htmlEscape } from '../src/shared/html-escape.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -36,11 +38,6 @@ Options:
   --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) throw new Error(`Missing value for ${flag}`);
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseArgs(argv) {
   const options = {
@@ -102,15 +99,6 @@ export function parseArgs(argv) {
   const limit = Number(options.limit);
   if (!Number.isFinite(limit) || limit < 1) throw new Error(`Invalid --limit: ${options.limit}`);
   return options;
-}
-
-function htmlEscape(value) {
-  return String(value ?? '')
-    .replace(/&/gu, '&amp;')
-    .replace(/</gu, '&lt;')
-    .replace(/>/gu, '&gt;')
-    .replace(/"/gu, '&quot;')
-    .replace(/'/gu, '&#39;');
 }
 
 function slug(value) {

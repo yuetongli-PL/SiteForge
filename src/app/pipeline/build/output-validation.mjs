@@ -79,12 +79,12 @@ export const SITEFORGE_REASON_PROFILES = Object.freeze({
   'dynamic-unsupported': Object.freeze({
     failureClass: 'unsupported',
     reasonCode: 'dynamic-unsupported',
-    action: 'Use static crawl artifacts or add a supported rendered/network capture path.',
+    action: 'Use static crawl artifacts or a supported sanitized evidence path; browser-rendered crawl and raw network tracing are not enabled here.',
   }),
   'capability-evidence-required': Object.freeze({
     failureClass: 'validation',
     reasonCode: 'capability-evidence-required',
-    action: 'Capture capability-specific rendered, network, adapter, or fixture evidence before activating the requested capability.',
+    action: 'Capture capability-specific sanitized, adapter, or fixture evidence before activating the requested capability.',
   }),
   'user-intent-unresolved': Object.freeze({
     failureClass: 'validation',
@@ -131,7 +131,7 @@ export function classifySiteForgeWarning(message) {
   if (/Static fetch failed|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|AbortError|network/iu.test(text)) {
     return normalizeSiteForgeReason('network-fetch-failed');
   }
-  if (/Browser-rendered crawl is unavailable|Network instrumentation is unavailable|dynamic.*unsupported|rendered.*unavailable/iu.test(text)) {
+  if (/Browser-rendered crawl is unavailable|Browser-rendered crawl is not part|Network instrumentation is unavailable|raw network tracing is not part|dynamic.*unsupported|rendered.*unavailable/iu.test(text)) {
     return normalizeSiteForgeReason('dynamic-unsupported');
   }
   return null;

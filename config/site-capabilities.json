@@ -215,8 +215,18 @@
       ],
       "categoryTaxonomySupported": true,
       "downloader": {
-        "status": "experimental",
+        "status": "blocked",
+        "supported": false,
         "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
           "video",
           "media-bundle"
         ],

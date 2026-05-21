@@ -10,7 +10,8 @@ import {
   runSingleStageCliWithProgress,
 } from '../../../infra/cli/progress-cli.mjs';
 import { pipelineStageTitle } from '../../../infra/cli/progress-copy.mjs';
-import { cleanText } from '../../../shared/normalize.mjs';
+import { cleanText, normalizeText, normalizeWhitespace, sanitizeHost, slugifyAscii } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import { buildRunManifest } from '../engine/run-manifest.mjs';
 import { inferPageTypeFromUrl, isContentDetailPageType, toSemanticPageType } from '../../../sites/registry/core/page-types.mjs';
 import { normalizeDisplayLabel } from '../../../sites/registry/core/terminology.mjs';
@@ -56,26 +57,8 @@ function createSha256(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex');
 }
 
-function normalizeWhitespace(value) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
 function normalizeLabel(value) {
   return normalizeText(value).toLowerCase();
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function compareNullableStrings(left, right) {
@@ -2191,16 +2174,6 @@ function buildTransitionsDocument(inputUrl, baseUrl, generatedAt, nodes, edges) 
     nodes,
     edges,
   };
-}
-
-function slugifyAscii(value, fallback = 'item') {
-  return normalizeText(value)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase() || fallback;
 }
 
 function buildSyntheticStateId(prefix, value) {

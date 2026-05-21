@@ -1,5 +1,6 @@
 // @ts-check
 
+import { jsonClone } from '../../shared/clone.mjs';
 import { assertNoForbiddenPatterns } from '../sessions/security-guard.mjs';
 import {
   assertLifecycleEventObservabilityFields,
@@ -504,9 +505,7 @@ function findGraphNode(nodeById, id, expectedType) {
   return node;
 }
 
-function cloneDescriptor(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+const cloneDescriptor = jsonClone;
 
 function hasGraphEdge(edges, type, from, to) {
   return edges.some((edge) => edge.type === type && edge.from === from && edge.to === to);

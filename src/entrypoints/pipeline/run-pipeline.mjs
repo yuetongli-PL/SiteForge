@@ -25,6 +25,7 @@ import {
   siteForgeBuildCliJson,
 } from '../../app/pipeline/build/index.mjs';
 import { prepareSiteForgeBuildSetup } from '../../app/pipeline/build/setup-assistant.mjs';
+import { sanitizePublicUrl } from '../../shared/url-safety.mjs';
 
 const PARTIAL_PREVIEW_SCHEMA_VERSION = 1;
 const PARTIAL_PREVIEW_RESULT_FILE = 'partial-preview-result.json';
@@ -680,29 +681,13 @@ function printHelp() {
 `);
 }
 
-function safeBuildInputUrl(value) {
-  try {
-    const parsed = new URL(String(value));
-    parsed.username = '';
-    parsed.password = '';
-    parsed.search = '';
-    parsed.hash = '';
-    if (!parsed.pathname) {
-      parsed.pathname = '/';
-    }
-    return parsed.toString();
-  } catch {
-    return '<url>';
-  }
-}
-
 function buildSiteForgeCliFailureResult(inputUrl, error) {
   const report = error?.buildReport && typeof error.buildReport === 'object'
     ? error.buildReport
     : {};
   return {
     ...report,
-    inputUrl: report.inputUrl ?? safeBuildInputUrl(inputUrl),
+    inputUrl: report.inputUrl ?? sanitizePublicUrl(inputUrl, { fallback: '<url>', keepPath: true }),
     status: report.status ?? 'failed',
     result_status: report.result_status ?? 'failed',
     legacy_status: report.legacy_status ?? report.status ?? 'failed',
@@ -796,7 +781,11 @@ function applySiteForgeCliDefaults(options) {
 }
 
 async function closeSiteForgeWebInteraction(options = {}) {
+  const session = options.webInteractionSession;
   delete options.webInteractionSession;
+  if (typeof session?.close === 'function') {
+    await session.close();
+  }
 }
 
 export function parseCliArgs(argv) {

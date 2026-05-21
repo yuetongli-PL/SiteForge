@@ -13,6 +13,7 @@ import {
   responseSummaryFromNetworkCaptureEvent,
 } from '../../domain/artifacts/network-capture.mjs';
 import { redactPublicIdentifierText, redactValue } from '../../domain/sessions/security-guard.mjs';
+import { jsonClone } from '../../shared/clone.mjs';
 
 export const SNAPSHOT_STYLES = ['display', 'visibility', 'opacity', 'position', 'z-index'];
 export const NETWORK_IDLE_QUIET_MS = 500;
@@ -77,9 +78,7 @@ function incrementCounter(target, key, amount = 1) {
   target[key] = (target[key] ?? 0) + amount;
 }
 
-function cloneJson(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+const cloneJson = jsonClone;
 
 function shouldTrackRequestForNetworkIdle(event = {}) {
   const params = event.params ?? event;

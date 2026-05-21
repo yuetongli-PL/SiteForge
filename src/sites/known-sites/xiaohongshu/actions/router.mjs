@@ -5,7 +5,6 @@ import path from 'node:path';
 import process from 'node:process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 import {
   createPageStateHelperFallbackFunction,
@@ -19,12 +18,16 @@ import { inspectRequestReusableSiteSession } from '../../../../infra/auth/site-l
 import { queryXiaohongshuFollow } from '../queries/follow-query.mjs';
 import { summarizeSessionRunManifest } from '../../../../domain/sessions/manifest-bridge.mjs';
 import { runSessionTask } from '../../../../domain/sessions/runner.mjs';
+import {
+  freshEvidenceSafeHeaderNamesFromMaps as safeHeaderNamesFromMaps,
+  redactFreshEvidenceUrlTokens as redactXiaohongshuUrlTokens,
+  sanitizeFreshEvidenceHeaders,
+} from '../../../../domain/sessions/fresh-evidence-redaction.mjs';
+import { REPO_ROOT, resolveRepoPath } from '../../../../infra/paths/repo-root.mjs';
+import { XIAOHONGSHU_DOWNLOAD_PYTHON_ENTRY } from '../../paths.mjs';
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
-const XIAOHONGSHU_DOWNLOAD_PYTHON_ENTRY = path.join(REPO_ROOT, 'src', 'sites', 'xiaohongshu', 'download', 'python', 'xiaohongshu.py');
 const XIAOHONGSHU_HOME_URL = 'https://www.xiaohongshu.com/explore';
-const DEFAULT_PROFILE_PATH = path.join(REPO_ROOT, 'profiles', 'www.xiaohongshu.com.json');
+const DEFAULT_PROFILE_PATH = resolveRepoPath('profiles', 'www.xiaohongshu.com.json');
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_SIDE_CAR_MAX_AGE_MS = 30 * 60_000;
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0 Safari/537.36';
@@ -460,61 +463,6 @@ function mergeResolvedDownloadHeaders(baseHeaders, sessionHeaders, finalUrl) {
       Origin: 'https://www.xiaohongshu.com',
     },
   );
-}
-
-const FRESH_EVIDENCE_FORBIDDEN_HEADER_NAMES = new Set([
-  'authorization',
-  'cookie',
-  'proxy-authorization',
-  'set-cookie',
-  'x-access-token',
-  'x-auth-token',
-  'x-csrf-token',
-  'x-refresh-token',
-  'x-session-id',
-  'x-xsrf-token',
-  'session-id',
-  'sessdata',
-]);
-
-function isFreshEvidenceForbiddenHeaderName(name) {
-  const normalizedName = normalizeText(name).toLowerCase();
-  return FRESH_EVIDENCE_FORBIDDEN_HEADER_NAMES.has(normalizedName)
-    || normalizedName.includes('csrf')
-    || normalizedName.includes('xsrf')
-    || normalizedName.includes('token')
-    || normalizedName.includes('sessdata');
-}
-
-function redactXiaohongshuUrlTokens(value) {
-  const normalizedValue = normalizeText(value);
-  if (!normalizedValue) {
-    return '';
-  }
-  try {
-    const parsed = new URL(normalizedValue);
-    if (parsed.searchParams.has('xsec_token')) {
-      parsed.searchParams.set('xsec_token', '[REDACTED]');
-    }
-    return parsed.toString();
-  } catch {
-    return normalizedValue.replace(/xsec_token=(?!\[REDACTED\]|%5BREDACTED%5D)[^&\s;]+/giu, 'xsec_token=[REDACTED]');
-  }
-}
-
-function sanitizeFreshEvidenceHeaders(headers = {}) {
-  return Object.fromEntries(
-    Object.entries(normalizeHeaderEntries(headers))
-      .filter(([name]) => !isFreshEvidenceForbiddenHeaderName(name))
-      .map(([name, value]) => [name, redactXiaohongshuUrlTokens(value)]),
-  );
-}
-
-function safeHeaderNamesFromMaps(...maps) {
-  return [...new Set(maps
-    .flatMap((map) => Object.keys(sanitizeFreshEvidenceHeaders(map)))
-    .filter(Boolean))]
-    .sort();
 }
 
 function preferText(...values) {

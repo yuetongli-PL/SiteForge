@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { stat } from 'node:fs/promises';
 
 import { planBilibiliAction, runBilibiliAction } from '../../src/sites/known-sites/bilibili/actions/router.mjs';
 
@@ -120,5 +121,6 @@ test('runBilibiliAction triggers site-login before authenticated downloads', asy
   assert.equal(result.plan.route, 'download-after-login');
   assert.equal(result.reasonCode, 'download-started');
   assert.equal(result.loginReport.auth.status, 'session-reused');
-  assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/bilibili\/download\/python\/bilibili\.py$/u);
+  assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/known-sites\/bilibili\/download\/python\/bilibili\.py$/u);
+  assert.equal((await stat(String(capturedArgs?.[0] ?? ''))).isFile(), true);
 });

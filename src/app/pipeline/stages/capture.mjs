@@ -8,6 +8,10 @@ import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
 } from '../../../infra/cli/progress-cli.mjs';
+import {
+  parseNonNegativeNumberOption as normalizeNumber,
+  parseStrictBooleanOption as normalizeBoolean,
+} from '../../../infra/cli/parse-values.mjs';
 import { pipelineStageTitle } from '../../../infra/cli/progress-copy.mjs';
 import { NETWORK_IDLE_QUIET_MS, openBrowserSession } from '../../../infra/browser/session.mjs';
 import {
@@ -21,6 +25,8 @@ import {
   createPageStateHelperBundleSource,
   createPageStateHelperFallbackFunction,
 } from '../../../shared/page-state-runtime.mjs';
+import { sanitizeHost } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import {
   normalizeReasonCode,
   reasonCodeSummary,
@@ -228,38 +234,6 @@ function normalizeWaitUntil(value) {
     throw new Error(`Unsupported waitUntil value: ${value}`);
   }
   return value;
-}
-
-function normalizeBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase();
-    if (lower === 'true') {
-      return true;
-    }
-    if (lower === 'false') {
-      return false;
-    }
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
-}
-
-function normalizeNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid number for ${flagName}: ${value}`);
-  }
-  return parsed;
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function summarizeForStdout(manifest) {

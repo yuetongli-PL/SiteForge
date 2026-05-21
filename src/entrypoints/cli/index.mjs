@@ -7,42 +7,18 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
+import {
+  PUBLIC_BUILD_COMMAND,
+  PUBLIC_BUILD_HELP,
+  publicBooleanBuildFlagSet,
+  publicValueBuildFlagMap,
+} from './public-build-contract.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-const HELP = `Usage:
-  siteforge build <url> [flags]
-
-Examples:
-  siteforge build https://example.com/
-  siteforge build https://example.com/ --auto --privacy limited --report user
-
-Flags:
-  --auto
-  --manual
-  --deep
-  --network
-  --privacy limited|strict
-  --explain
-  --report user|debug|both
-  --verbose
-  --debug
-`;
-
-const PUBLIC_BOOLEAN_BUILD_FLAGS = new Set([
-  '--auto',
-  '--manual',
-  '--deep',
-  '--network',
-  '--explain',
-  '--verbose',
-  '--debug',
-]);
-
-const PUBLIC_VALUE_BUILD_FLAGS = new Map([
-  ['--privacy', ['limited', 'strict']],
-  ['--report', ['user', 'debug', 'both']],
-]);
+const HELP = PUBLIC_BUILD_HELP;
+const PUBLIC_BOOLEAN_BUILD_FLAGS = publicBooleanBuildFlagSet();
+const PUBLIC_VALUE_BUILD_FLAGS = publicValueBuildFlagMap();
 
 function scriptPath(...segments) {
   return path.resolve(MODULE_DIR, ...segments);
@@ -180,7 +156,7 @@ export function resolveCliDispatch(argv) {
   if (!command || isHelpToken(command)) {
     return { help: HELP };
   }
-  if (command === 'build') {
+  if (command === PUBLIC_BUILD_COMMAND) {
     const validation = validateBuildArgs(rest);
     if (validation.help) {
       return { help: HELP };

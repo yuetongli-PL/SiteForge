@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import { actionCliCommand } from '../src/infra/cli/command-map.mjs';
 
@@ -38,11 +39,6 @@ Options:
   --no-tty                          Force plain progress rendering.
   -h, --help                        Show this help.
 `;
-
-function readValue(argv, index, flag) {
-  if (index + 1 >= argv.length) throw new Error(`Missing value for ${flag}`);
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseArgs(argv) {
   const options = {

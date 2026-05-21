@@ -48,14 +48,14 @@ test('social-auth-recover filters verification cases by selected site', () => {
     '--verify-case',
     'x-auth-doctor',
     '--verify-case',
-    'instagram-media-download',
+    'instagram-media-download-blocked-boundary',
   ]);
   const plan = buildRecoveryPlan(options, 'run-2');
 
   assert.deepEqual(plan.sites.map((site) => site.site), ['instagram']);
   assert.deepEqual(plan.sites[0].commandLines.verify.map((entry) => entry.caseId), [
     'instagram-auth-doctor',
-    'instagram-media-download',
+    'instagram-media-download-blocked-boundary',
   ]);
 });
 

@@ -43,7 +43,7 @@ class DownloadBookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "book-content"
             scoped = download_book.host_book_content_root(root, "www.22biqu.com")
-            self.assertEqual(scoped, root / "www.22biqu.com")
+            self.assertEqual(scoped, root.resolve() / "www.22biqu.com")
 
     def test_load_json_accepts_utf8_bom(self):
         with tempfile.TemporaryDirectory() as tmp:

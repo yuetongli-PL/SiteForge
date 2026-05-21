@@ -17,6 +17,8 @@ import {
   resolveStageInput,
 } from '../artifacts/index.mjs';
 import { buildRunManifest, getManifestArtifactDir } from '../engine/run-manifest.mjs';
+import { normalizeText, normalizeWhitespace, sanitizeHost } from '../../../shared/normalize.mjs';
+import { formatTimestampForDir } from '../../../shared/time.mjs';
 import { resolveMaybeRelative } from '../../../shared/wiki.mjs';
 import { resolveSiteNlSemantics } from '../../../sites/registry/core/nl-site-semantics.mjs';
 
@@ -514,14 +516,6 @@ function createSha256(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex');
 }
 
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeWhitespace(String(value ?? '').normalize('NFKC'));
-}
-
 function cleanDisplayText(value) {
   return normalizeText(value)
     .replace(/^[\s"'“”‘’`~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?！？。，“”‘’【】（）《》]+/gu, '')
@@ -673,14 +667,6 @@ function normalizeUrlNoFragment(input) {
   } catch {
     return String(input).split('#')[0];
   }
-}
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
-
-function sanitizeHost(host) {
-  return (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'unknown-host';
 }
 
 function compareNullableStrings(left, right) {

@@ -1,13 +1,14 @@
 // @ts-check
 
 import path from 'node:path';
-import process from 'node:process';
-
-function statusText(status) {
-  if (status === 'success') return '成功';
-  if (status === 'failed') return '失败';
-  return '部分成功';
-}
+import { displayReportPath } from '../../../infra/cli/path-display.mjs';
+import {
+  completionCurrentOutputLabel,
+  completionRegistryLabel,
+  completionVerificationLabel,
+  resultStatusLabel,
+} from '../../../infra/cli/status-labels.mjs';
+import { sanitizePublicUrl } from '../../../shared/url-safety.mjs';
 
 function siteUrl(report, result) {
   return report.site?.root_url ?? report.site?.input_url ?? result?.inputUrl ?? 'https://example.invalid/';
@@ -344,32 +345,6 @@ function nextStepForBlockedCapability(capability = {}) {
   return '保持禁用；如确需支持，先实现站点专用安全路径和验证计划，再重新运行构建';
 }
 
-function displayReportPath(value, options = {}) {
-  const reportPath = String(value ?? '').trim();
-  if (!reportPath) {
-    return '-';
-  }
-  if (path.win32.isAbsolute(reportPath)) {
-    const cwd = String(options.cwd ?? process.cwd());
-    if (path.win32.isAbsolute(cwd)) {
-      const relative = path.win32.relative(cwd, reportPath);
-      if (relative && !relative.startsWith('..') && !path.win32.isAbsolute(relative)) {
-        return relative.replace(/\\/gu, '/');
-      }
-    }
-    return path.win32.basename(reportPath);
-  }
-  if (!path.isAbsolute(reportPath)) {
-    return reportPath.replace(/\\/gu, '/');
-  }
-  const cwd = options.cwd ?? process.cwd();
-  const relative = path.relative(cwd, reportPath);
-  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
-    return relative.replace(/\\/gu, '/');
-  }
-  return path.basename(reportPath);
-}
-
 function compactCell(value, maxLength = 48) {
   const text = String(value ?? '-')
     .replace(/\r?\n/gu, ' ')
@@ -434,69 +409,21 @@ function appendTreeCapabilityRows(lines, capabilities, options = {}) {
   }
 }
 
-function safeCommandUrl(value) {
-  try {
-    const parsed = new URL(String(value ?? 'https://example.invalid/'));
-    parsed.username = '';
-    parsed.password = '';
-    parsed.pathname = '/';
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return 'https://example.invalid/';
-  }
-}
-
 function appendCapabilityList(lines, title, capabilities, marker, limit) {
   lines.push('', title);
   appendCapabilityTableRows(lines, capabilities, marker, limit);
-  return;
-  const items = filterAndSortUserCapabilities(capabilities);
-  const displayItems = [];
-  const seenNames = new Set();
-  for (const capability of items) {
-    const name = capabilityName(capability);
-    const key = `${marker}:${name}`;
-    if (seenNames.has(key)) continue;
-    seenNames.add(key);
-    displayItems.push({ capability, name });
-  }
-  if (!items.length) {
-    lines.push('  - 无');
-    return;
-  }
-  if (marker === '×') {
-    lines.push('  说明：自动补的是安全路径和验证计划，不是绕过禁用直接启用。');
-  }
-  for (const { capability, name } of displayItems.slice(0, limit)) {
-    lines.push(`  ${marker} ${name}`);
-    if (marker !== '✓') {
-      lines.push(`    原因：${capabilityReason(capability)}`);
-      lines.push(`    策略：${capabilityStrategy(capability)}`);
-      if (marker === '×' || isBlockedUserCapability(capability)) {
-        lines.push(`    可补安全路径：${safePathForCapability(capability)}`);
-        lines.push(`    不可补原因：${nonRepairableReasonForCapability(capability)}`);
-        lines.push(`    下一步：${nextStepForBlockedCapability(capability)}`);
-      }
-    }
-  }
-  const remainingCount = Math.max(0, displayItems.length - limit);
-  if (remainingCount > 0) {
-    lines.push(`  ... 另有 ${remainingCount} 项已写入报告`);
-  }
 }
 
 function capabilityStatusLabel(statusKey) {
   switch (statusKey) {
     case 'enabled':
-      return '启用';
+      return '可用';
     case 'limited':
-      return '有限';
+      return '有限/脱敏';
     case 'confirmation':
-      return '确认';
+      return '需确认';
     case 'disabled':
-      return '禁用';
+      return '禁用/阻止';
     default:
       return String(statusKey ?? '-');
   }
@@ -572,9 +499,9 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
 
   const report = result.user_report;
   const url = siteUrl(report, result);
-  const commandUrl = safeCommandUrl(url);
+  const commandUrl = sanitizePublicUrl(url, { fallback: 'https://example.invalid/', keepPath: false });
   const host = siteHost(report, result);
-  const buildStatus = statusText(report.result_status);
+  const buildStatus = resultStatusLabel(report.result_status);
   const skillId = report.skill_id ?? result.summary?.skillId ?? result.skillId ?? '-';
   const nodes = report.discovered_nodes_summary ?? {};
   const counts = report.counts ?? {};
@@ -615,7 +542,7 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
     appendTreeLine(
       lines,
       '▶ 能力统计',
-      `已启用 ${enabled.length} / 有限 ${limited.length} / 待确认 ${confirmation.length} / 已禁用 ${disabled.length}`,
+      `可用 ${enabled.length} / 有限脱敏 ${limited.length} / 待确认 ${confirmation.length} / 禁用阻止 ${disabled.length}`,
     );
     appendTreeLine(
       lines,
@@ -628,7 +555,7 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
     appendTreeLine(
       lines,
       '▶ 输出结果',
-      `验证 ${completion.verification_status === 'passed' ? '通过' : '未通过'}；current/ ${completion.current_updated === true ? '已更新' : '未更新'}；registry.json ${completion.registry_registered === true ? '已注册' : '未注册'}；Skill ID: ${skillId}`,
+      `验证 ${completionVerificationLabel(completion.verification_status)}；当前输出 ${completionCurrentOutputLabel(completion.current_updated)}；本地索引 ${completionRegistryLabel(completion.registry_registered)}；Skill 标识: ${skillId}`,
     );
     if (report.result_status === 'failed' && failureReasons.length) {
       appendTreeLine(lines, '▶ 失败原因', failureReasons.join('；'));
@@ -636,12 +563,12 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
     appendTreeLine(
       lines,
       '▶ 建议',
-      `siteforge build ${commandUrl} --auto --deep；siteforge build ${commandUrl} --auto --deep --network；siteforge build ${commandUrl} --report debug`,
+      `siteforge build ${commandUrl} --auto --deep；siteforge build ${commandUrl} --auto --deep --network（仅脱敏摘要）；siteforge build ${commandUrl} --report debug`,
     );
     appendTreeLine(
       lines,
       '▶ 调试信息',
-      `报告 ${userReportPath}；debug 候选 ${debugCandidateCount}`,
+      `用户报告 ${userReportPath}；开发者候选 ${debugCandidateCount}`,
     );
     if (options.manual === true) {
       appendTreeLine(lines, '▶ 手动模式', '逐项手动补采；允许最终 URL 或可见条数输入');
@@ -673,10 +600,10 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
       { key: 'count', label: '数量', maxLength: 12 },
       { key: 'meaning', label: '说明', maxLength: 56 },
     ], [
-      { item: '已启用', count: enabled.length, meaning: '可直接使用的低风险能力' },
-      { item: '有限启用', count: limited.length, meaning: '只保存脱敏结构摘要' },
-      { item: '需确认', count: confirmation.length, meaning: '通过统一确认流程处理' },
-      { item: '已禁用', count: disabled.length, meaning: '高风险或受限能力保持禁用' },
+      { item: '可用', count: enabled.length, meaning: '现在可用的低风险能力' },
+      { item: '有限/脱敏', count: limited.length, meaning: '只保存脱敏结构摘要' },
+      { item: '需确认', count: confirmation.length, meaning: '使用前需要明确确认' },
+      { item: '禁用/阻止', count: disabled.length, meaning: '高风险或受限能力保持关闭' },
     ]);
 
     lines.push('', '原因摘要');
@@ -710,8 +637,8 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
       { metric: '弹窗节点', value: nodes.modal_nodes ?? 0, note: '弹窗或浮层' },
       { metric: '路由模板', value: nodes.route_templates ?? 0, note: 'SPA/路由状态' },
       { metric: '可操作元素', value: counts.actionable_elements ?? nodes.actionable_elements ?? 0, note: '按钮、链接、输入等' },
-      { metric: '用户可见能力', value: report.capability_summary?.user_visible ?? (enabled.length + limited.length + confirmation.length + disabled.length), note: '不含 debug-only 候选' },
-      ...(debugCandidateCount > 0 ? [{ metric: '调试候选', value: debugCandidateCount, note: '详见 debug 报告' }] : []),
+      { metric: '用户可见能力', value: report.capability_summary?.user_visible ?? (enabled.length + limited.length + confirmation.length + disabled.length), note: '不含开发者候选' },
+      ...(debugCandidateCount > 0 ? [{ metric: '开发者候选', value: debugCandidateCount, note: '详见开发者详情报告' }] : []),
     ]);
 
     lines.push('', '能力证据');
@@ -727,12 +654,12 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
     ]);
 
     lines.push('', '能力摘要');
-    appendCapabilityList(lines, '已启用', enabled, 'enabled', 12);
+    appendCapabilityList(lines, '可用能力', enabled, 'enabled', 12);
     if (limited.length || Array.isArray(report.limited_capabilities) || Array.isArray(report.limited_enabled_capabilities)) {
-      appendCapabilityList(lines, '有限启用', limited, 'limited', 8);
+      appendCapabilityList(lines, '有限/脱敏能力', limited, 'limited', 8);
     }
-    appendCapabilityList(lines, '需确认', confirmation, 'confirmation', 8);
-    appendCapabilityList(lines, '已禁用', disabled, 'disabled', 8);
+    appendCapabilityList(lines, '需确认能力', confirmation, 'confirmation', 8);
+    appendCapabilityList(lines, '禁用/阻止能力', disabled, 'disabled', 8);
 
     lines.push('', '结果');
     appendTable(lines, [
@@ -740,11 +667,11 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
       { key: 'value', label: '状态', maxLength: 112 },
     ], [
       { item: '构建完成', value: buildStatus },
-      { item: '验证', value: completion.verification_status === 'passed' ? '通过' : '未通过' },
-      { item: 'current/', value: completion.current_updated === true ? '已更新' : '未更新' },
-      { item: 'registry.json', value: completion.registry_registered === true ? '已注册' : '未注册' },
-      { item: 'Skill ID', value: report.skill_id ?? result.skillId ?? '-' },
-      { item: '报告', value: displayReportPath(completion.report_path ?? userReportPath, options) },
+      { item: '验证', value: completionVerificationLabel(completion.verification_status) },
+      { item: '当前输出', value: `${completionCurrentOutputLabel(completion.current_updated)} current/` },
+      { item: '本地索引', value: `${completionRegistryLabel(completion.registry_registered)} registry.json` },
+      { item: 'Skill 标识', value: report.skill_id ?? result.skillId ?? '-' },
+      { item: '用户报告', value: displayReportPath(completion.report_path ?? userReportPath, options) },
     ]);
 
     lines.push('', '建议');
@@ -752,8 +679,8 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
       { key: 'purpose', label: '用途', maxLength: 28 },
       { key: 'command', label: '命令', maxLength: 72 },
     ], [
-      { purpose: '更完整页面探索', command: `siteforge build ${commandUrl} --auto --deep` },
-      { purpose: '脱敏网络摘要探索', command: `siteforge build ${commandUrl} --auto --deep --network` },
+      { purpose: '更多静态/结构探索', command: `siteforge build ${commandUrl} --auto --deep` },
+      { purpose: '脱敏网络摘要', command: `siteforge build ${commandUrl} --auto --deep --network` },
       { purpose: '查看开发者详情', command: `siteforge build ${commandUrl} --report debug` },
     ]);
 
@@ -797,10 +724,10 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
     '',
     `构建结果：${buildStatus}`,
     '',
-    `已启用 ${enabled.length} 个能力。`,
-    `${limited.length} 个敏感只读能力有限启用。`,
-    `另有 ${confirmation.length} 个能力需要确认或只生成草稿，可通过统一确认流程启用。`,
-    `${disabled.length} 个高风险或受限能力已禁用。`,
+    `${enabled.length} 个能力现在可用。`,
+    `${limited.length} 个能力只提供有限脱敏摘要。`,
+    `另有 ${confirmation.length} 个能力需要确认或只生成草稿。`,
+    `${disabled.length} 个高风险或受限能力保持禁用。`,
     '',
     '原因：',
     ...partialReasons.map((reason) => `  - ${reason}`),
@@ -829,33 +756,33 @@ export function renderSiteForgeUserBuildSummary(result, options = {}) {
   ];
 
   if (debugCandidateCount > 0) {
-    lines.splice(Math.max(0, lines.length - 2), 0, `  i 调试候选：${debugCandidateCount} 项，详见 debug 报告`);
+    lines.splice(Math.max(0, lines.length - 2), 0, `  i 开发者候选：${debugCandidateCount} 项，详见开发者详情报告`);
   }
 
-  appendCapabilityList(lines, '已启用', enabled, '✓', 12);
+  appendCapabilityList(lines, '可用能力', enabled, '✓', 12);
   if (limited.length || Array.isArray(report.limited_capabilities) || Array.isArray(report.limited_enabled_capabilities)) {
-    appendCapabilityList(lines, '有限启用', limited, '~', 8);
+    appendCapabilityList(lines, '有限/脱敏能力', limited, '~', 8);
   }
-  appendCapabilityList(lines, '需确认', confirmation, '!', 8);
-  appendCapabilityList(lines, '已禁用', disabled, '×', 8);
+  appendCapabilityList(lines, '需确认能力', confirmation, '!', 8);
+  appendCapabilityList(lines, '禁用/阻止能力', disabled, '×', 8);
 
   lines.push(
     '',
     '结果',
     `  ✓ 构建完成：${buildStatus}`,
-    `  ✓ 验证：${completion.verification_status === 'passed' ? '通过' : '未通过'}`,
-    `  ✓ current/: ${completion.current_updated === true ? '已更新' : '未更新'}`,
-    `  ✓ registry.json: ${completion.registry_registered === true ? '已注册' : '未注册'}`,
-    `  Skill ID: ${report.skill_id ?? result.skillId ?? '-'}`,
-    `  报告: ${displayReportPath(completion.report_path ?? userReportPath, options)}`,
+    `  ✓ 验证：${completionVerificationLabel(completion.verification_status)}`,
+    `  ✓ 当前输出 current/: ${completionCurrentOutputLabel(completion.current_updated)}`,
+    `  ✓ 本地索引 registry.json: ${completionRegistryLabel(completion.registry_registered)}`,
+    `  Skill 标识: ${report.skill_id ?? result.skillId ?? '-'}`,
+    `  用户报告: ${displayReportPath(completion.report_path ?? userReportPath, options)}`,
     '',
     '建议',
     `  siteforge build ${commandUrl} --auto --deep`,
-    '    用途：扩大只读预扫描深度，补齐可验证结构摘要。',
+    '    用途：扩大静态和已授权结构探索；不会启用浏览器渲染采集。',
     `  siteforge build ${commandUrl} --auto --deep --network`,
-    '    用途：在允许时只保存脱敏网络摘要，用于核对 API 候选。',
+    '    用途：只保存脱敏网络摘要；不会保存原始网络 trace。',
     `  siteforge build ${commandUrl} --report debug`,
-    '    用途：查看 debug 报告、门禁原因和被限制项。',
+    '    用途：查看开发者详情报告、门禁原因和被限制项。',
   );
 
   const confirmationPaths = report.confirmation_paths ?? {};

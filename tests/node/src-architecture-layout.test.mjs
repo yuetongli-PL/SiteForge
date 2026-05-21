@@ -26,10 +26,27 @@ async function trackedPathsUnder(relativePath) {
   return stdout.split(/\r?\n/u).filter(Boolean);
 }
 
+function knownDownloaderPath(siteKey, fileName) {
+  return path.posix.join('src', 'sites', 'known-sites', siteKey, 'download', 'python', fileName);
+}
+
+function legacyDownloaderPath(siteKey, fileName) {
+  return path.posix.join('src', 'sites', siteKey, 'download', 'python', fileName);
+}
+
+function legacyDownloaderDir(siteKey) {
+  return path.posix.join('src', 'sites', siteKey, 'download');
+}
+
+function legacySitePath(siteKey, ...segments) {
+  return path.posix.join('src', 'sites', siteKey, ...segments);
+}
+
 test('src-first code layout exists', async () => {
   await Promise.all([
     expectPathExists('src/entrypoints'),
     expectPathExists('src/entrypoints/cli'),
+    expectPathExists('src/entrypoints/operator'),
     expectPathExists('src/app'),
     expectPathExists('src/app/pipeline'),
     expectPathExists('src/app/compiler'),
@@ -75,6 +92,17 @@ test('root truth and output boundaries stay outside src', async () => {
   ]);
 });
 
+test('test-derived repo root resolves to project root, not src or its parent', async () => {
+  assert.equal(path.basename(REPO_ROOT), 'SiteForge');
+  assert.equal(path.basename(path.join(REPO_ROOT, 'src')), 'src');
+  assert.notEqual(REPO_ROOT, path.join(REPO_ROOT, 'src'));
+  assert.notEqual(REPO_ROOT, path.resolve(REPO_ROOT, '..'));
+  await Promise.all([
+    expectPathExists('src'),
+    expectPathExists('package.json'),
+  ]);
+});
+
 test('root-level site data directories stay out of the tracked pure code tree', async () => {
   for (const relativePath of [
     '.playwright-mcp',
@@ -115,6 +143,7 @@ test('root only keeps approved project metadata regular files', async () => {
     'README.md',
     'SECURITY.md',
     'package.json',
+    'requirements.txt',
     ...rootDesignDocs,
   ].sort());
 });
@@ -205,6 +234,8 @@ test('retired root compatibility entrypoints stay removed', async () => {
     expectPathMissing('scripts/site-scaffold.mjs'),
     expectPathMissing('scripts/social-auth-import.mjs'),
     expectPathMissing('scripts/xiaohongshu-action.mjs'),
+    expectPathMissing('src/entrypoints/cli/capabilities.mjs'),
+    expectPathExists('src/entrypoints/operator/capabilities.mjs'),
     expectPathExists('src/entrypoints/sites/bilibili-action.mjs'),
     expectPathExists('src/entrypoints/sites/douyin-action.mjs'),
     expectPathExists('src/entrypoints/sites/douyin-export-cookies.mjs'),
@@ -227,7 +258,7 @@ test('retired root compatibility entrypoints stay removed', async () => {
 test('flat site aliases and old microdirectories stay removed', async () => {
   await Promise.all([
     expectPathMissing('src/sites/douyin/action-router.mjs'),
-    expectPathMissing('src/sites/douyin/download-enumerator.mjs'),
+    expectPathMissing(legacySitePath('douyin', 'download-enumerator.mjs')),
     expectPathMissing('src/sites/douyin/follow-query.mjs'),
     expectPathMissing('src/sites/douyin/live-export.mjs'),
     expectPathMissing('src/sites/douyin/media-resolver.mjs'),
@@ -241,4 +272,44 @@ test('flat site aliases and old microdirectories stay removed', async () => {
     expectPathMissing('src/infra/fs'),
     expectPathMissing('src/entrypoints/compat'),
   ]);
+});
+
+test('known-site downloader paths stay under known-sites layout', async () => {
+  await Promise.all([
+    expectPathMissing(legacyDownloaderPath('bilibili', 'bilibili.py')),
+    expectPathMissing(legacyDownloaderPath('douyin', 'douyin.py')),
+    expectPathMissing(legacyDownloaderPath('xiaohongshu', 'xiaohongshu.py')),
+    expectPathExists(knownDownloaderPath('bilibili', 'bilibili.py')),
+    expectPathExists(knownDownloaderPath('douyin', 'douyin.py')),
+    expectPathExists(knownDownloaderPath('xiaohongshu', 'xiaohongshu.py')),
+  ]);
+});
+
+test('source does not retain old flat downloader path literals', async () => {
+  const forbiddenTexts = [
+    legacyDownloaderDir('bilibili'),
+    legacyDownloaderDir('douyin'),
+    legacyDownloaderDir('xiaohongshu'),
+  ];
+  const sourcePaths = (await trackedPathsUnder('src'))
+    .filter((relativePath) => /\.(?:mjs|js|json|py)$/u.test(relativePath));
+
+  for (const relativePath of sourcePaths) {
+    let source = '';
+    try {
+      source = await readFile(path.join(REPO_ROOT, relativePath), 'utf8');
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
+    for (const forbiddenText of forbiddenTexts) {
+      assert.equal(
+        source.includes(forbiddenText),
+        false,
+        `${relativePath} should not reference ${forbiddenText}`,
+      );
+    }
+  }
 });

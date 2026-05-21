@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   cleanText,
@@ -33,7 +34,20 @@ test('slugifyAscii keeps ASCII slugs with fallback', () => {
 
 test('cleanText trims punctuation and compactSlug clamps length', () => {
   assert.equal(cleanText('  《玄鉴仙族》  '), '玄鉴仙族');
+  assert.equal(cleanText('  “保留正常中文文本”  '), '保留正常中文文本');
+  assert.equal(cleanText('...Hello world!...'), 'Hello world');
+  assert.equal(cleanText('，正常中文，'), '正常中文');
   assert.equal(compactSlug('A'.repeat(140), 'item', 16), 'aaaaaaaaaaaaaaaa');
+});
+
+test('cleanText does not depend on corrupted mojibake punctuation', () => {
+  const mojibakeText = '\u95ff\u6d9a\u88ab正文';
+  assert.equal(cleanText(mojibakeText), mojibakeText);
+});
+
+test('normalize punctuation table does not include legacy mojibake data', async () => {
+  const source = await readFile(new URL('../../src/shared/normalize.mjs', import.meta.url), 'utf8');
+  assert.equal(source.includes('\u95ff\u6d9a\u88ab'), false);
 });
 
 test('firstNonEmpty and uniqueSortedStrings stay deterministic', () => {

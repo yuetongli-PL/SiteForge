@@ -1,7 +1,5 @@
 // @ts-check
 
-import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
@@ -10,6 +8,11 @@ import {
   decorateCapabilityConfirmation,
   isOrdinaryConfirmationBlocked,
 } from './confirmation-flow.mjs';
+import {
+  CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
+  buildCapabilityConfirmationDecisionRecord,
+  mergeCapabilityDecisionRecords,
+} from './capability-decision-records.mjs';
 import {
   pathExists,
   readJsonFile,
@@ -21,6 +24,12 @@ import {
   findUnsafeExecutionPlanMaterialFlags,
   publicSafeRemediation,
 } from './risk-policy.mjs';
+import {
+  completionCurrentOutputLabel,
+  completionRegistryLabel,
+  completionVerificationLabel,
+  resultBuildStatusLabel,
+} from '../../../infra/cli/status-labels.mjs';
 import {
   enterTerminalTui,
   isTerminalCharacterKey,
@@ -72,193 +81,6 @@ const FORCED_DISABLED_REMEDIATION_ACTIONS = Object.freeze([
   'repost',
   'send_dm',
 ]);
-
-function shouldUseCapabilityWebInteraction(options = {}) {
-  void options;
-  return false;
-}
-
-function htmlEscape(value) {
-  return String(value ?? '')
-    .replace(/&/gu, '&amp;')
-    .replace(/</gu, '&lt;')
-    .replace(/>/gu, '&gt;')
-    .replace(/"/gu, '&quot;')
-    .replace(/'/gu, '&#39;');
-}
-
-function capabilityWebDocument(title, bodyHtml) {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${htmlEscape(title)}</title>
-  <style>
-    :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; background: Canvas; color: CanvasText; }
-    main { max-width: 980px; margin: 32px auto; padding: 0 20px 40px; }
-    h1 { font-size: 1.45rem; margin: 0 0 16px; }
-    h2 { font-size: 1rem; margin: 24px 0 8px; }
-    p { line-height: 1.5; }
-    form { display: grid; gap: 16px; }
-    fieldset { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 8px; padding: 14px 16px; }
-    label.option { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 7px 0; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-    button { font: inherit; padding: 9px 13px; border-radius: 7px; border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); cursor: pointer; }
-    button.primary { background: #14532d; border-color: #14532d; color: white; }
-    button.danger { background: #7f1d1d; border-color: #7f1d1d; color: white; }
-    code { overflow-wrap: anywhere; }
-    .note { color: color-mix(in srgb, CanvasText 72%, transparent); }
-    .empty { color: color-mix(in srgb, CanvasText 62%, transparent); font-style: italic; }
-  </style>
-</head>
-<body>
-  <main>
-    ${bodyHtml}
-  </main>
-</body>
-</html>`;
-}
-
-function readRequestBody(request, maxBytes = 64 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    request.on('data', (chunk) => {
-      total += chunk.length;
-      if (total > maxBytes) {
-        reject(new Error('request-body-too-large'));
-        request.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    request.on('error', reject);
-  });
-}
-
-function sendCapabilityWebHtml(response, statusCode, html) {
-  response.writeHead(statusCode, {
-    'content-type': 'text/html; charset=utf-8',
-    'cache-control': 'no-store',
-  });
-  response.end(html);
-}
-
-function listenLocalWebServer(server) {
-  return new Promise((resolve, reject) => {
-    const onError = (error) => {
-      server.off('listening', onListening);
-      reject(error);
-    };
-    const onListening = () => {
-      server.off('error', onError);
-      resolve(server.address());
-    };
-    server.once('error', onError);
-    server.once('listening', onListening);
-    server.listen(0, '127.0.0.1');
-  });
-}
-
-async function closeServerQuietly(server) {
-  await new Promise((resolve) => {
-    server.close(() => resolve());
-  }).catch(() => {});
-}
-
-function spawnDetached(command, args = []) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    child.once('error', reject);
-    child.once('spawn', () => {
-      child.unref();
-      resolve({ command, args });
-    });
-  });
-}
-
-async function launchWebInteractionUrl(url, options = {}) {
-  if (typeof options.webInteractionLauncher === 'function') {
-    return await options.webInteractionLauncher(url);
-  }
-  if (process.platform === 'win32') {
-    return await spawnDetached('rundll32.exe', ['url.dll,FileProtocolHandler', url]);
-  }
-  if (process.platform === 'darwin') {
-    return await spawnDetached('open', [url]);
-  }
-  return await spawnDetached('xdg-open', [url]);
-}
-
-async function runCapabilityWebForm({
-  options = {},
-  title,
-  waitingText,
-  renderForm,
-  handleForm,
-}) {
-  if (!shouldUseCapabilityWebInteraction(options)) {
-    return null;
-  }
-  const output = options.output;
-  if (typeof output?.write !== 'function') {
-    return null;
-  }
-  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  let resolveResult;
-  let rejectResult;
-  const resultPromise = new Promise((resolve, reject) => {
-    resolveResult = resolve;
-    rejectResult = reject;
-  });
-  const server = createServer(async (request, response) => {
-    try {
-      const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-      if (request.method === 'GET' && requestUrl.pathname === '/') {
-        sendCapabilityWebHtml(response, 200, capabilityWebDocument(title, renderForm({ token })));
-        return;
-      }
-      if (request.method === 'POST' && requestUrl.pathname === '/submit') {
-        const body = await readRequestBody(request);
-        const form = new URLSearchParams(body);
-        if (form.get('token') !== token) {
-          sendCapabilityWebHtml(response, 403, capabilityWebDocument('Rejected', '<h1>Rejected</h1><p>Invalid interaction token.</p>'));
-          return;
-        }
-        const result = await handleForm(form);
-        sendCapabilityWebHtml(response, 200, capabilityWebDocument('Saved', '<h1>Saved</h1><p>You can return to SiteForge.</p>'));
-        resolveResult(result);
-        setTimeout(() => closeServerQuietly(server), 25);
-        return;
-      }
-      sendCapabilityWebHtml(response, 404, capabilityWebDocument('Not found', '<h1>Not found</h1>'));
-    } catch (error) {
-      sendCapabilityWebHtml(response, 500, capabilityWebDocument('Error', `<h1>Error</h1><p>${htmlEscape(error?.message ?? String(error))}</p>`));
-      rejectResult(error);
-      setTimeout(() => closeServerQuietly(server), 25);
-    }
-  });
-
-  let address;
-  try {
-    address = await listenLocalWebServer(server);
-  } catch {
-    await closeServerQuietly(server);
-    return null;
-  }
-  const url = `http://127.0.0.1:${address.port}/`;
-  output.write(`${title}: ${url}\n`);
-  output.write(`${waitingText}\n`);
-  await launchWebInteractionUrl(url, options).catch(() => {});
-  return await resultPromise;
-}
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -603,7 +425,7 @@ function remediationReason(capability = {}) {
 
 function remediationNextStep(pathType) {
   if (pathType === 'limited_sanitized_summary_path') {
-    return '下一步：准备 limited sanitized summary 计划；只记录数量、类型、入口和结构 hash，然后重新验证。';
+    return '下一步：准备受限脱敏摘要计划；只记录数量、类型、入口和结构 hash，然后重新验证。';
   }
   if (pathType === 'draft_only_preview_path') {
     return '下一步：准备 draft-only preview 计划；只生成草稿预览，最终提交、发送、上传、删除和关注仍保持关闭。';
@@ -912,7 +734,7 @@ export function renderCapabilityInteractionPrompt(result = {}, options = {}) {
     '  - 有限只读只保存脱敏结构摘要，不保存正文或身份材料。',
     '  - 草稿能力只允许生成草稿，不会提交、发送、删除、支付或上传。',
     '  - 高风险写入、私信正文、账号安全操作不会通过这里启用。',
-    '  - 自动补安全路径只生成计划和安全替代路径，不会直接更新 current/ 或 registry.json。',
+    '  - 自动补安全路径只生成计划和安全替代路径，不会直接更新当前输出或本地索引。',
     '  - 真实可用前仍需补实现、跑验证，并由报告显示通过后才算可用。',
   ];
 
@@ -932,186 +754,6 @@ export function renderCapabilityInteractionPrompt(result = {}, options = {}) {
     '',
   );
   return `${lines.join('\n')}`;
-}
-
-function capabilityWebOptionRows(capabilities, fieldName, extraText = () => '') {
-  if (!capabilities.length) {
-    return '<p class="empty">No items in this group.</p>';
-  }
-  return capabilities.map((capability) => {
-    const id = capabilityId(capability);
-    const name = capabilityName(capability) || id;
-    const detail = extraText(capability);
-    return `
-      <label class="option">
-        <input type="checkbox" name="${htmlEscape(fieldName)}" value="${htmlEscape(id)}">
-        <span><strong>${htmlEscape(name)}</strong>${detail ? `<br><span class="note">${htmlEscape(detail)}</span>` : ''}</span>
-      </label>`;
-  }).join('');
-}
-
-function renderCapabilityInteractionWebForm(result = {}, state = capabilityInteractionState(result), token) {
-  const report = resultReport(result);
-  const skillId = state.skillId || resultSkillId(result) || '-';
-  const buildId = state.buildId || resultBuildId(result) || '-';
-  const remediationDetail = (capability) => {
-    const terminalRemediation = capability.terminal_remediation ?? remediationTerminalFields(
-      capability.safe_remediation ?? buildCapabilityRemediationPath(capability),
-    );
-    return terminalRemediation.safe_path ?? capability.safe_remediation_path ?? capability.default_policy ?? '';
-  };
-  return `
-    <h1>Capability Interaction</h1>
-    <p class="note">Review post-build capability decisions here. SiteForge will only write confirmation records or safe remediation plans; it will not enable high-risk final actions from this page.</p>
-    <p>Skill: <code>${htmlEscape(skillId)}</code><br>Build: <code>${htmlEscape(buildId)}</code><br>Status: <code>${htmlEscape(report.result_status ?? result.status ?? '-')}</code></p>
-    <form method="post" action="/submit">
-      <input type="hidden" name="token" value="${htmlEscape(token)}">
-      <fieldset>
-        <legend>Safe confirmations (${state.safeConfirmable.length})</legend>
-        ${capabilityWebOptionRows(state.safeConfirmable, 'confirm', (capability) => modeLabel(capability))}
-      </fieldset>
-      <fieldset>
-        <legend>Safe remediation plans (${state.remediationCandidates.length})</legend>
-        ${capabilityWebOptionRows(state.remediationCandidates, 'remediate', remediationDetail)}
-      </fieldset>
-      <div class="actions">
-        <button class="primary" type="submit" name="action" value="save_selected">Save selected</button>
-        <button type="submit" name="action" value="confirm_all">Confirm all safe</button>
-        <button type="submit" name="action" value="remediate_all">Prepare all remediation plans</button>
-        <button type="submit" name="action" value="keep">Keep current strategy</button>
-        <button class="danger" type="submit" name="action" value="cancel">Cancel interaction</button>
-      </div>
-    </form>`;
-}
-
-async function applyCapabilityInteractionWebForm(result, options, state, form) {
-  const action = String(form.get('action') ?? '').trim();
-  if (action === 'cancel') {
-    return { status: 'cancelled', count: 0 };
-  }
-  if (action === 'keep') {
-    return { status: 'kept', count: 0 };
-  }
-  const selectedConfirmationIds = new Set(form.getAll('confirm').map(String));
-  const selectedRemediationIds = new Set(form.getAll('remediate').map(String));
-  const selectedConfirmations = action === 'confirm_all'
-    ? state.safeConfirmable
-    : state.safeConfirmable.filter((capability) => selectedConfirmationIds.has(capabilityId(capability)));
-  const selectedRemediations = action === 'remediate_all'
-    ? state.remediationCandidates
-    : state.remediationCandidates.filter((capability) => selectedRemediationIds.has(capabilityId(capability)));
-  if (!selectedConfirmations.length && !selectedRemediations.length) {
-    return { status: 'kept', count: 0 };
-  }
-  const webOptions = {
-    ...options,
-    interactionCommand: 'siteforge build web capability selection',
-    interactionSource: 'post_build_web_interaction',
-  };
-  const results = [];
-  if (selectedConfirmations.length) {
-    results.push(await writeCapabilityInteractionDecisions(result, selectedConfirmations, webOptions));
-  }
-  if (selectedRemediations.length) {
-    results.push(await writeCapabilityRemediationPlan(result, selectedRemediations, webOptions));
-  }
-  return {
-    status: results.some((entry) => entry.status === 'recorded') ? 'recorded' : 'skipped',
-    count: results.reduce((sum, entry) => sum + (entry.count ?? 0), 0),
-    results,
-  };
-}
-
-async function promptCapabilityWebInteraction(result = {}, options = {}, state = capabilityInteractionState(result)) {
-  try {
-    return await runCapabilityWebForm({
-      options,
-      title: 'SiteForge Web capability interaction',
-      waitingText: 'Waiting for post-build capability interaction in the browser...',
-      renderForm: ({ token }) => renderCapabilityInteractionWebForm(result, state, token),
-      handleForm: (form) => applyCapabilityInteractionWebForm(result, options, state, form),
-    });
-  } catch {
-    return null;
-  }
-}
-
-async function applyCapabilityWebDecision(result = {}, options = {}, state = capabilityInteractionState(result), decision = {}) {
-  if (decision?.status === 'cancelled') {
-    return { status: 'cancelled', count: 0 };
-  }
-  const confirmIds = new Set(asArray(decision.confirmCapabilityIds).map(asText).filter(Boolean));
-  const remediationIds = new Set(asArray(decision.remediationCapabilityIds).map(asText).filter(Boolean));
-  const selectedConfirmations = state.safeConfirmable.filter((capability) => confirmIds.has(capabilityId(capability)));
-  const selectedRemediations = state.remediationCandidates.filter((capability) => remediationIds.has(capabilityId(capability)));
-  if (!selectedConfirmations.length && !selectedRemediations.length) {
-    return { status: 'kept', count: 0 };
-  }
-  const webOptions = {
-    ...options,
-    interactionCommand: 'siteforge build web capability selection',
-    interactionSource: 'post_build_web_interaction',
-  };
-  const results = [];
-  if (selectedConfirmations.length) {
-    results.push(await writeCapabilityInteractionDecisions(result, selectedConfirmations, webOptions));
-  }
-  if (selectedRemediations.length) {
-    results.push(await writeCapabilityRemediationPlan(result, selectedRemediations, webOptions));
-  }
-  return {
-    status: results.some((entry) => entry.status === 'recorded') ? 'recorded' : 'skipped',
-    count: results.reduce((sum, entry) => sum + (entry.count ?? 0), 0),
-    results,
-  };
-}
-
-async function promptCapabilityUnifiedWebInteraction(result = {}, options = {}, state = capabilityInteractionState(result)) {
-  if (!shouldUseCapabilityWebInteraction(options)) {
-    return null;
-  }
-  try {
-    let session = options.webInteractionSession;
-    if (!session) {
-      session = await options.startWebInteractionSession?.({
-        result,
-        cwd: options.cwd ?? process.cwd(),
-        phase: 'capabilities',
-        status: 'waiting_for_capability_decisions',
-      }, {
-        cwd: options.cwd ?? process.cwd(),
-      });
-      options.webInteractionSession = session;
-      await session.open();
-      options.output?.write?.(`\nSiteForge 已打开本地交互页面：${session.url}\n`);
-      options.output?.write?.('请在页面查看能力、意图、执行链路，并保存能力选择。\n');
-    } else {
-      session.update?.({
-        result,
-        cwd: options.cwd ?? process.cwd(),
-        phase: 'capabilities',
-        status: 'waiting_for_capability_decisions',
-      });
-    }
-    session.update?.({
-      result,
-      cwd: options.cwd ?? process.cwd(),
-      phase: 'capabilities',
-      status: 'capability_decisions_kept',
-    });
-    const decision = {
-      status: 'kept_continue',
-      capabilityIds: [],
-      confirmCapabilityIds: [],
-      remediationCapabilityIds: [],
-      safePathCapabilityIds: [],
-      directActivationBlockedCapabilityIds: [],
-      remediationActions: [],
-    };
-    return await applyCapabilityWebDecision(result, options, state, decision);
-  } catch {
-    return null;
-  }
 }
 
 export function parseCapabilitySelection(input, count) {
@@ -1145,7 +787,7 @@ export function parseCapabilitySelection(input, count) {
 async function readExistingDecisionFile(filePath, skillId) {
   if (!await pathExists(filePath)) {
     return {
-      schemaVersion: CAPABILITY_INTERACTION_SCHEMA_VERSION,
+      schemaVersion: CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
       skillId,
       decisions: [],
     };
@@ -1154,62 +796,11 @@ async function readExistingDecisionFile(filePath, skillId) {
     return await readJsonFile(filePath);
   } catch {
     return {
-      schemaVersion: CAPABILITY_INTERACTION_SCHEMA_VERSION,
+      schemaVersion: CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
       skillId,
       decisions: [],
     };
   }
-}
-
-function confirmationDecisionForMode(mode) {
-  if (mode === 'draft_only') return 'confirmed_draft_only';
-  if (mode === 'limited') return 'confirmed_limited';
-  return 'confirmed_safe_capability';
-}
-
-function confirmationUsablePathRecord(capability = {}, result = {}) {
-  const mode = modeForCapability(capability);
-  const routeTemplate = routeTemplateFromCapability(capability, result);
-  const loginStateReuse = {
-    strategy: 'reuse_existing_system_browser_login_state',
-    status: 'ready_for_sanitized_authorized_recheck',
-    reusesExistingLoginState: true,
-    requiresNewLogin: false,
-    userMustRemainSignedIn: true,
-    targetRoute: routeTemplate,
-    browser: 'system_default_browser',
-    evidenceToCollect: 'sanitized_structure_summary_only',
-    cookiesPersisted: false,
-    tokensPersisted: false,
-    credentialsPersisted: false,
-    browserProfilePersisted: false,
-    rawDomPersisted: false,
-    rawHtmlPersisted: false,
-    rawContentPersisted: false,
-    privateContentPersisted: false,
-  };
-  if (mode === 'limited') {
-    return {
-      type: 'limited_sanitized_summary_path',
-      readiness: 'immediate_limited_sanitized_summary',
-      resultingStatus: 'limited_enabled',
-      loginStateReuse,
-    };
-  }
-  if (mode === 'draft_only') {
-    return {
-      type: 'draft_only_preview_path',
-      readiness: 'immediate_draft_only_preview',
-      resultingStatus: 'draft_only',
-      loginStateReuse,
-    };
-  }
-  return {
-    type: 'safe_confirmed_capability_path',
-    readiness: 'immediate_confirmed_capability',
-    resultingStatus: 'enabled',
-    loginStateReuse,
-  };
 }
 
 export async function writeCapabilityInteractionDecisions(result = {}, capabilities = [], options = {}) {
@@ -1241,49 +832,23 @@ export async function writeCapabilityInteractionDecisions(result = {}, capabilit
   const filePath = path.join(siteDir, 'capability_confirmations.json');
   const existing = await readExistingDecisionFile(filePath, state.skillId);
   const now = new Date().toISOString();
-  const decisionByKey = new Map(asArray(existing.decisions).map((entry) => [
-    `${entry.capabilityId}:${entry.decision}:${entry.mode}`,
-    entry,
-  ]));
   const decisions = selected.map((capability) => {
-    const group = capabilityConfirmationGroup(capability);
     const mode = modeForCapability(capability);
-    const usablePath = confirmationUsablePathRecord(capability, result);
-    return {
-      capabilityId: capability.id,
-      capabilityName: capability.name ?? capability.user_facing_name ?? null,
-      group,
-      decision: confirmationDecisionForMode(mode),
+    return buildCapabilityConfirmationDecisionRecord({
+      capability,
       mode,
-      usableAfterSelection: true,
-      usablePathType: usablePath.type,
-      usablePath,
-      loginStateReuse: usablePath.loginStateReuse,
-      completedBy: 'reused_user_login_state',
-      immediateLimitedUse: usablePath.readiness.startsWith('immediate_'),
-      requiresSiteAdapterVerificationBeforeUse: false,
       command: options.interactionCommand ?? 'siteforge build interactive capability selection',
       source: options.interactionSource ?? 'post_build_terminal_interaction',
-      evidenceStatus: capability.evidence_status ?? capability.evidenceStatus ?? null,
       sourceBuildId: state.buildId || null,
-      writeActionsEnabled: false,
-      finalActionsAllowed: false,
-      rawMaterialAllowed: false,
-      privateContentAllowed: false,
+      targetRoute: routeTemplateFromCapability(capability, result),
       updatedAt: now,
-    };
+    });
   });
-  for (const decision of decisions) {
-    decisionByKey.set(`${decision.capabilityId}:${decision.decision}:${decision.mode}`, decision);
-  }
   const next = {
-    schemaVersion: CAPABILITY_INTERACTION_SCHEMA_VERSION,
+    schemaVersion: CAPABILITY_DECISION_RECORDS_SCHEMA_VERSION,
     skillId: state.skillId,
     updatedAt: now,
-    decisions: [...decisionByKey.values()].sort((left, right) => (
-      String(left.capabilityId).localeCompare(String(right.capabilityId), 'en')
-      || String(left.decision).localeCompare(String(right.decision), 'en')
-    )),
+    decisions: mergeCapabilityDecisionRecords(asArray(existing.decisions), decisions),
   };
   await writeJsonFile(filePath, next);
   return {
@@ -1436,7 +1001,7 @@ function renderRemediationResult(result, cwd = process.cwd()) {
   return [
     '',
     `已生成 ${result.count} 项安全补路径。`,
-    `其中 ${result.summary?.immediateLimitedUse ?? result.summary?.autoPreparable ?? 0} 项可立即准备为受限可用路径；${result.summary?.requiresSiteAdapterVerification ?? 0} 项需要站点适配器验证后使用。`,
+    `其中 ${result.summary?.immediateLimitedUse ?? result.summary?.autoPreparable ?? 0} 项可立即准备为受限可用路径；${result.summary?.requiresSiteAdapterVerification ?? 0} 项需要站点专用适配器验证后使用。`,
     '安全边界：不会自动执行高风险最终动作，不保存正文或私密材料；删除、上传、关注、发帖、发送私信、账号修改等必须由用户最终确认。',
     '这些能力会以安全替代方式进入可用路径：受限读取、草稿预览、用户介入安全路径，或显式站点适配器补路径。',
     `补路径计划：${displayInteractionPath(result.filePath, cwd)}`,
@@ -1510,10 +1075,7 @@ function resultUserReport(result = {}) {
 }
 
 function treeBuildStatus(result = {}) {
-  const report = resultUserReport(result);
-  if (report.result_status === 'success' || result.status === 'success') return '成功';
-  if (report.result_status === 'failed' || result.status === 'failed') return '失败';
-  return '部分成功';
+  return resultBuildStatusLabel(result);
 }
 
 function capabilityTreeRightText(capability = {}, state = {}) {
@@ -1564,20 +1126,20 @@ function treeSections(result, state, ui) {
       id: 'stats',
       title: '能力统计',
       count: null,
-      right: `全部 ${allCapabilities.length} / 已启用 ${state.enabled.length} / 有限 ${state.limited.length} / 待确认 ${pending.length} / 已禁用 ${disabled.length}`,
+      right: `全部 ${allCapabilities.length} / 可用 ${state.enabled.length} / 有限脱敏 ${state.limited.length} / 待确认 ${pending.length} / 禁用阻止 ${disabled.length}`,
       children: [
         { left: '    全部用户能力', right: `${allCapabilities.length} 项` },
-        { left: '    已启用', right: `${state.enabled.length} 项` },
-        { left: '    有限启用', right: `${state.limited.length} 项` },
+        { left: '    可用', right: `${state.enabled.length} 项` },
+        { left: '    有限/脱敏', right: `${state.limited.length} 项` },
         { left: '    待确认', right: `${pending.length} 项` },
-        { left: '    已禁用', right: `${disabled.length} 项` },
+        { left: '    禁用/阻止', right: `${disabled.length} 项` },
         { left: '    可安全确认', right: `${state.safeConfirmable.length} 项` },
         { left: '    可补安全路径', right: `${state.remediationCandidates.length} 项` },
       ],
     },
     {
       id: 'enabled',
-      title: '已启用能力',
+      title: '可用能力',
       count: state.enabled.length,
       right: '已进入当前 Skill',
       capabilities: state.enabled,
@@ -1585,7 +1147,7 @@ function treeSections(result, state, ui) {
     },
     {
       id: 'limited',
-      title: '有限启用能力',
+      title: '有限/脱敏能力',
       count: state.limited.length,
       right: 'Space 选择确认边界；只保存脱敏结构摘要',
       capabilities: state.limited,
@@ -1611,7 +1173,7 @@ function treeSections(result, state, ui) {
     },
     {
       id: 'disabled',
-      title: '已禁用能力',
+      title: '禁用/阻止能力',
       count: disabled.length,
       right: 'Space 勾选补安全路径；不会强行启用高风险动作',
       capabilities: disabled,
@@ -1621,20 +1183,20 @@ function treeSections(result, state, ui) {
       id: 'output',
       title: '输出结果',
       count: null,
-      right: `验证 ${completion.verification_status === 'passed' ? '通过' : '未通过'}`,
+      right: `验证 ${completionVerificationLabel(completion.verification_status)}`,
       children: [
-        { left: '    current/', right: completion.current_updated === true ? '已更新' : '未更新' },
-        { left: '    registry.json', right: completion.registry_registered === true ? '已注册' : '未注册' },
-        { left: '    Skill ID', right: report.skill_id ?? result.skillId ?? '-' },
+        { left: '    当前输出 current/', right: completionCurrentOutputLabel(completion.current_updated) },
+        { left: '    本地索引 registry.json', right: completionRegistryLabel(completion.registry_registered) },
+        { left: '    Skill 标识', right: report.skill_id ?? result.skillId ?? '-' },
       ],
     },
     {
       id: 'debug',
       title: '调试信息',
       count: null,
-      right: `${debugCount} 项 debug 候选`,
+      right: `${debugCount} 项开发者候选`,
       children: [
-        { left: '    debug 候选', right: `${debugCount}` },
+        { left: '    开发者候选', right: `${debugCount}` },
         { left: '    build 报告', right: result.artifacts?.['build_report.json'] ?? 'build_report.json' },
       ],
     },
@@ -1845,12 +1407,6 @@ export async function promptForCapabilityInteraction(result = {}, options = {}) 
   if (!input || !output) return null;
 
   const state = capabilityInteractionState(result);
-  const unifiedWebResult = await promptCapabilityUnifiedWebInteraction(result, options, state);
-  if (unifiedWebResult) return unifiedWebResult;
-  const webResult = options.webInteractionSession
-    ? null
-    : await promptCapabilityWebInteraction(result, options, state);
-  if (webResult) return webResult;
   if (options.treeUi !== false) {
     const treeResult = await promptCapabilityTreeInteraction(result, options, state);
     if (treeResult) return treeResult;

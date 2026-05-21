@@ -5,6 +5,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue } from '../../infra/cli/internal-options.mjs';
+import {
+  parseNonNegativeNumberOption as normalizeNumber,
+  parseStrictBooleanOption as normalizeBoolean,
+} from '../../infra/cli/parse-values.mjs';
 import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
@@ -44,30 +49,6 @@ Notes:
   - If the authenticated page needs login bootstrap and --auto-login-bootstrap is enabled, this helper automatically runs site-login first.
 `;
 
-function normalizeBoolean(value, flagName) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase();
-    if (lower === 'true') {
-      return true;
-    }
-    if (lower === 'false') {
-      return false;
-    }
-  }
-  throw new Error(`Invalid boolean for ${flagName}: ${value}`);
-}
-
-function normalizeNumber(value, flagName) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid number for ${flagName}: ${value}`);
-  }
-  return parsed;
-}
-
 function mergeOptions(options = {}) {
   return {
     ...DEFAULT_OPTIONS,
@@ -97,12 +78,7 @@ export function parseCliArgs(argv) {
 
   const [targetUrl, ...rest] = argv;
   const options = {};
-  const readValue = (index) => {
-    if (index + 1 >= rest.length) {
-      throw new Error(`Missing value for ${rest[index]}`);
-    }
-    return { value: rest[index + 1], nextIndex: index + 1 };
-  };
+  const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];

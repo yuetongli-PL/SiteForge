@@ -2,6 +2,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 import { ensureDir, writeTextFile } from '../../../../infra/io.mjs';
+import { formatTimestampForDir } from '../../../../shared/time.mjs';
 import { CdpClient } from '../../../../infra/browser/cdp-client.mjs';
 import { delay, detectBrowserPath, readExistingBrowserDevTools } from '../../../../infra/browser/launcher.mjs';
 import { resolveSiteAuthProfile, resolveSiteBrowserSessionOptions } from '../../../../infra/auth/site-auth.mjs';
@@ -31,10 +32,6 @@ const BILIBILI_OPEN_REPORT_PROFILE_KEYS = Object.freeze(new Set([
   'userDataDir',
   'usedProfileDir',
 ]));
-
-function formatTimestampForDir(date = new Date()) {
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.(\d{3})Z$/, '$1Z');
-}
 
 function isPlainObject(value) {
   return value !== null

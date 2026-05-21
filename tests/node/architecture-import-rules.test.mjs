@@ -206,7 +206,7 @@ const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
 ]);
 
 const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
-  ['src/entrypoints/cli/capabilities.mjs', 'site-local capability confirmation decision metadata without raw material'],
+  ['src/entrypoints/operator/capabilities.mjs', 'site-local capability confirmation decision metadata without raw material'],
   ['src/entrypoints/pipeline/generate-crawler-script.mjs', 'crawler script and registry generation'],
   ['src/entrypoints/sites/douyin-export-cookies.mjs', 'explicit credential export command'],
   ['src/infra/auth/site-auth.mjs', 'explicit session export sidecar and cookie-file writer'],
@@ -232,7 +232,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
 ]);
 
 const ARTIFACT_WRITE_SINK_BASELINE = new Map([
-  ['src/entrypoints/cli/capabilities.mjs', 2],
+  ['src/entrypoints/operator/capabilities.mjs', 2],
   ['src/entrypoints/pipeline/run-pipeline.mjs', 3],
   ['src/entrypoints/sites/site-recompile-preview-summary.mjs', 3],
   ['src/entrypoints/pipeline/generate-crawler-script.mjs', 6],
@@ -615,12 +615,12 @@ test('runtime artifact writes are explicitly classified and redaction guarded', 
   assert.deepEqual(failures, []);
 });
 
-test('retired download runtime code remains physically removed', async () => {
+test('retired public download facade remains physically removed', async () => {
   assert.equal(await pathExists('src/sites/downloads'), false);
   assert.equal(await pathExists('src/entrypoints/sites/download.mjs'), false);
 });
 
-test('stable config does not point at retired web or download runtime layers', async () => {
+test('stable config does not point at retired web or public download facade layers', async () => {
   const configFiles = [
     'config/site-registry.json',
     'config/site-capabilities.json',
@@ -796,7 +796,7 @@ test('domain services do not depend on concrete sites or runtime orchestration l
   assertNoResolvedPrefix(
     imports,
     'src/sites/downloads/',
-    'domain services should not import retired download runtime modules',
+    'domain services should not import the retired public download facade',
   );
   const allowedDomainSessionImports = new Set([
     'src/domain/sessions/contracts.mjs',
@@ -1009,7 +1009,7 @@ test('skills generation modules do not depend on browser/auth runtime internals'
   );
 });
 
-test('script shims only target src entrypoints or tools', async () => {
+test('script shims only target entrypoints, CLI/shared helpers, or tools', async () => {
   const imports = await collectResolvedImports('scripts');
   const invalid = imports.filter((entry) => {
     const resolved = entry.resolvedRelativePath;
@@ -1018,12 +1018,13 @@ test('script shims only target src entrypoints or tools', async () => {
     }
     return !resolved.startsWith('src/entrypoints/')
       && !resolved.startsWith('src/infra/cli/')
+      && !resolved.startsWith('src/shared/')
       && !resolved.startsWith('tools/');
   });
   assert.deepEqual(
     invalid.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
     [],
-    'scripts should remain thin shims over src entrypoints or tools',
+    'scripts should remain thin shims over src entrypoints, CLI/shared helpers, or tools',
   );
 });
 

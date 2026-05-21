@@ -2,10 +2,33 @@
 
 import { parseBoolean as parseSharedBoolean } from '../../shared/boolean.mjs';
 
+/**
+ * @typedef {{
+ *   min?: number;
+ *   max?: number;
+ *   integer?: boolean;
+ *   defaultValue?: number;
+ *   onInvalid?: (value: unknown) => number | undefined;
+ * }} ParseNumberOptions
+ *
+ * @typedef {{
+ *   allowDashValue?: boolean;
+ * }} ReadCliValueOptions
+ *
+ * @typedef {{
+ *   min?: number;
+ *   max?: number;
+ * }} NumericRangeOptions
+ */
+
 export function parseBoolean(value, options = {}) {
   return parseSharedBoolean(value, options);
 }
 
+/**
+ * @param {unknown} value
+ * @param {ParseNumberOptions} [options]
+ */
 export function parseNumber(value, {
   min,
   max,
@@ -30,6 +53,10 @@ export function parseNumber(value, {
   return parsed;
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} flagName
+ */
 export function parseStrictBooleanOption(value, flagName) {
   if (value === undefined || value === null) {
     throw new Error(`Invalid boolean for ${flagName}: ${value}`);
@@ -42,6 +69,10 @@ export function parseStrictBooleanOption(value, flagName) {
   });
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} flagName
+ */
 export function parseNonNegativeNumberOption(value, flagName) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) {
@@ -50,6 +81,12 @@ export function parseNonNegativeNumberOption(value, flagName) {
   return parsed;
 }
 
+/**
+ * @param {string[]} args
+ * @param {string} current
+ * @param {number} index
+ * @param {ReadCliValueOptions} [options]
+ */
 export function readCliValue(args, current, index, {
   allowDashValue = false,
 } = {}) {
@@ -73,6 +110,11 @@ export function readCliValue(args, current, index, {
   return { value, nextIndex: index + 1 };
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} flagName
+ * @param {NumericRangeOptions} [options]
+ */
 export function parseIntegerOption(value, flagName, {
   min,
   max,
@@ -90,6 +132,11 @@ export function parseIntegerOption(value, flagName, {
   return parsed;
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} flagName
+ * @param {NumericRangeOptions} [options]
+ */
 export function parseFiniteNumberOption(value, flagName, {
   min,
   max,

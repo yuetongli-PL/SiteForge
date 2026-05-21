@@ -1,5 +1,12 @@
 // @ts-check
 
+/**
+ * @template T, U
+ * @param {T[]} values
+ * @param {number} limit
+ * @param {(value: T, index: number) => U | Promise<U>} mapper
+ * @returns {Promise<U[]>}
+ */
 export async function mapWithConcurrency(values, limit, mapper) {
   const items = Array.isArray(values) ? values : [];
   if (items.length === 0) {

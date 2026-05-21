@@ -67,6 +67,7 @@ Useful local checks:
 
 ```bash
 npm run readme:check
+npm run typecheck
 npm run check:syntax
 npm run test:node:focused
 npm run test:node:all
@@ -77,7 +78,7 @@ git diff --check
 
 Focused groups are available as `npm run test:cli`, `npm run test:pipeline`, `npm run test:capability`, and `npm run test:core`. Use `npm run clean:outputs` to remove local generated site data before staging.
 
-`npm run check:syntax` auto-discovers repository `.mjs` files and is a syntax gate, not a full TypeScript typecheck.
+`npm run typecheck` runs TypeScript `--checkJs` on the staged typed boundary listed in `tools/typecheck-scope.json`; deferred legacy scopes carry migration reasons there. `npm run check:syntax` separately auto-discovers repository `.mjs` files and is a syntax gate.
 
 ## Safety
 

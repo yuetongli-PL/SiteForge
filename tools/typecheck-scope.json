@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "mode": "staged-js-checkjs",
+  "checkedFiles": [
+    "src/app/pipeline/build/artifact-contract.mjs",
+    "src/domain/status/status-vocabulary.mjs",
+    "src/infra/cli/parse-values.mjs",
+    "src/infra/cli/public-build-contract.mjs",
+    "src/shared/concurrency.mjs",
+    "src/sites/availability.mjs",
+    "src/sites/known-sites/social/actions/download-boundary.mjs"
+  ],
+  "deferredScopes": [
+    {
+      "pattern": "schema/**/*.mjs",
+      "reason": "Profile schema DSL currently relies on dynamic validator shapes; migrate after schema helper typedefs are introduced."
+    },
+    {
+      "pattern": "scripts/**/*.mjs",
+      "reason": "Operational helper scripts share dynamic progress-task and report objects that need JSDoc contracts before checkJs can be enabled."
+    },
+    {
+      "pattern": "src/app/compiler/**/*.mjs",
+      "reason": "Compiler manifests and inventories use dynamic descriptor builders; staged migration requires shared typedefs for compile manifests."
+    },
+    {
+      "pattern": "src/app/pipeline/build/**/*.mjs",
+      "reason": "The build pipeline has large dynamic artifact and report objects; the extracted artifact contract is checked first."
+    },
+    {
+      "pattern": "src/domain/**/*.mjs",
+      "reason": "Domain graph, lifecycle, schema, and session modules need shared error/result typedefs before full checkJs."
+    },
+    {
+      "pattern": "src/entrypoints/**/*.mjs",
+      "reason": "CLI entrypoints parse heterogeneous argv and runtime dependency objects; value-parser and public-contract helpers are checked first."
+    },
+    {
+      "pattern": "src/infra/**/*.mjs",
+      "reason": "Infra browser/auth modules wrap process and platform APIs; CLI parser helpers are checked first."
+    },
+    {
+      "pattern": "src/sites/**/*.mjs",
+      "reason": "Known-site routers and registries use dynamic profile/action records; availability and blocked-download boundary are checked first."
+    },
+    {
+      "pattern": "src/skills/**/*.mjs",
+      "reason": "Skill generation renderers build open-ended document models and need renderer typedefs before checkJs."
+    },
+    {
+      "pattern": "tests/node/**/*.mjs",
+      "reason": "Node tests intentionally construct malformed objects and need fixture helper typedefs before checkJs."
+    },
+    {
+      "pattern": "tools/**/*.mjs",
+      "reason": "Tooling scripts share dynamic report manifests; this scope validator is checked by syntax and runtime tests first."
+    }
+  ]
+}

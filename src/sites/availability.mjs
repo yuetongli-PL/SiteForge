@@ -1,5 +1,47 @@
 // @ts-check
 
+/**
+ * @typedef {{
+ *   status?: string;
+ *   supported?: boolean;
+ *   taskTypes?: string[];
+ *   declaredTaskTypes?: string[];
+ *   availableTaskTypes?: string[];
+ *   blockedTaskTypes?: string[];
+ *   reasonCode?: string;
+ *   reason?: string;
+ *   unsupportedLiveReasonCode?: string;
+ *   unsupportedLiveReason?: string;
+ *   interpreterRequired?: string;
+ *   ocrRequired?: boolean;
+ *   ocrEngine?: string;
+ * }} DownloadSupport
+ *
+ * @typedef {{
+ *   status?: string;
+ *   reasonCode?: string;
+ *   reason?: string;
+ * }} GenericLiveBuild
+ *
+ * @typedef {{
+ *   declaredDownloadTaskTypes?: string[];
+ *   downloadTaskTypes?: string[];
+ *   availableDownloadTaskTypes?: string[];
+ *   blockedDownloadTaskTypes?: string[];
+ *   downloadSupport?: DownloadSupport;
+ *   downloadSessionRequirement?: string;
+ *   genericLiveBuild?: GenericLiveBuild;
+ *   siteAccessStatus?: string;
+ *   interpreterRequired?: string;
+ * }} RegistryAvailabilityInput
+ *
+ * @typedef {{
+ *   downloader?: DownloadSupport & { requiresLogin?: boolean };
+ *   genericLiveBuild?: GenericLiveBuild;
+ *   siteAccessStatus?: string;
+ * }} CapabilityAvailabilityInput
+ */
+
 function stringList(values) {
   if (Array.isArray(values)) {
     return values.map((value) => String(value ?? '').trim()).filter(Boolean);
@@ -35,6 +77,10 @@ export function isDownloadIntent(intent) {
     || /(?:^|-)archive$/iu.test(String(intent ?? ''));
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function isGenericLiveBuildBlocked(registry = {}, capabilities = {}) {
   return isBlockedAvailabilityStatus(registry.genericLiveBuild?.status)
     || isBlockedAvailabilityStatus(capabilities.genericLiveBuild?.status)
@@ -42,6 +88,10 @@ export function isGenericLiveBuildBlocked(registry = {}, capabilities = {}) {
     || isBlockedAvailabilityStatus(capabilities.siteAccessStatus);
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function declaredDownloadTaskTypes(registry = {}, capabilities = {}) {
   return uniqueStrings(
     registry.declaredDownloadTaskTypes,
@@ -53,6 +103,10 @@ export function declaredDownloadTaskTypes(registry = {}, capabilities = {}) {
   );
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function availableDownloadTaskTypes(registry = {}, capabilities = {}) {
   const registrySupport = registry.downloadSupport ?? {};
   const capabilitySupport = capabilities.downloader ?? {};
@@ -80,6 +134,10 @@ export function availableDownloadTaskTypes(registry = {}, capabilities = {}) {
   );
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function blockedDownloadTaskTypes(registry = {}, capabilities = {}) {
   const declared = declaredDownloadTaskTypes(registry, capabilities);
   const explicitBlocked = uniqueStrings(
@@ -98,6 +156,10 @@ export function blockedDownloadTaskTypes(registry = {}, capabilities = {}) {
   return blocked ? declared : [];
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function downloadRuntimeDependencies(registry = {}, capabilities = {}) {
   return uniqueStrings(
     registry.interpreterRequired,
@@ -108,6 +170,10 @@ export function downloadRuntimeDependencies(registry = {}, capabilities = {}) {
   );
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function downloadDependencyReasonCodes(registry = {}, capabilities = {}) {
   const dependencies = downloadRuntimeDependencies(registry, capabilities);
   return uniqueStrings(
@@ -116,6 +182,10 @@ export function downloadDependencyReasonCodes(registry = {}, capabilities = {}) 
   );
 }
 
+/**
+ * @param {RegistryAvailabilityInput} [registry]
+ * @param {CapabilityAvailabilityInput} [capabilities]
+ */
 export function normalizeDownloadAvailability(registry = {}, capabilities = {}) {
   const declaredTaskTypes = declaredDownloadTaskTypes(registry, capabilities);
   const availableTaskTypes = availableDownloadTaskTypes(registry, capabilities);

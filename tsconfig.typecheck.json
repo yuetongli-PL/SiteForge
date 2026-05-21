@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "noResolve": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "target": "ES2022"
+  },
+  "files": [
+    "src/app/pipeline/build/artifact-contract.mjs",
+    "src/domain/status/status-vocabulary.mjs",
+    "src/infra/cli/parse-values.mjs",
+    "src/infra/cli/public-build-contract.mjs",
+    "src/shared/concurrency.mjs",
+    "src/sites/availability.mjs",
+    "src/sites/known-sites/social/actions/download-boundary.mjs"
+  ]
+}

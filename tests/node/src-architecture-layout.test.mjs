@@ -144,6 +144,7 @@ test('root only keeps approved project metadata regular files', async () => {
     'SECURITY.md',
     'package.json',
     'requirements.txt',
+    'tsconfig.typecheck.json',
     ...rootDesignDocs,
   ].sort());
 });

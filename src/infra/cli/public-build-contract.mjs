@@ -7,6 +7,8 @@ export const PUBLIC_BOOLEAN_BUILD_FLAGS = Object.freeze([
   '--manual',
   '--deep',
   '--network',
+  '--login-enhanced',
+  '--public-only',
   '--explain',
   '--verbose',
   '--debug',
@@ -35,6 +37,8 @@ Flags:
   --manual
   --deep                 Broaden static and sanitized structure discovery.
   --network              Save only a sanitized network summary where available; raw traces are not persisted.
+  --login-enhanced       Explicitly request the default-browser login enhancement flow.
+  --public-only          Skip login enhancement and build public-only coverage.
   --privacy limited|strict
   --explain
   --report user|debug|both

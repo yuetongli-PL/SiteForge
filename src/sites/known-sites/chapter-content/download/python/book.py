@@ -1844,7 +1844,7 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
         registry_record.get("crawlerScriptsDir") or (REPO_ROOT / "crawler-scripts")
     ).resolve()
     out_dir = host_book_content_root(Path(args.out_dir).resolve(), host) if args.out_dir else host_book_content_root(
-        Path(registry_record.get("bookContentRoot")).resolve() if registry_record.get("bookContentRoot") else (REPO_ROOT / "book-content"),
+        Path(registry_record.get("contentRoot")).resolve() if registry_record.get("contentRoot") else (REPO_ROOT / "book-content"),
         host,
     )
     profile_path = resolve_profile_path(args.profile_path or registry_record.get("profilePath"), parsed.hostname)
@@ -1887,7 +1887,7 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
             upsert_site_registry_record(host, {
                 "canonicalBaseUrl": context["baseUrl"],
                 "siteArchetype": resolved_primary_archetype,
-                "bookContentRoot": str(out_dir),
+                "contentRoot": str(out_dir),
                 "knowledgeBaseDir": str(knowledge_base_dir),
                 "latestDownloadMode": artifact.get("mode"),
                 "latestDownloadFile": artifact.get("downloadFile"),
@@ -1930,7 +1930,7 @@ def public_entry(args: argparse.Namespace) -> dict[str, Any]:
     upsert_site_registry_record(host, {
         "canonicalBaseUrl": context["baseUrl"],
         "siteArchetype": resolved_primary_archetype,
-        "bookContentRoot": str(out_dir),
+        "contentRoot": str(out_dir),
         "knowledgeBaseDir": str(knowledge_base_dir),
         "crawlerScriptPath": crawler["scriptPath"],
         "crawlerRegistryPath": crawler["registryPath"],

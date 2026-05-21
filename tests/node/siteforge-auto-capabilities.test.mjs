@@ -10,6 +10,12 @@ import {
 import {
   prepareSiteForgeBuildSetup,
 } from '../../src/app/pipeline/build/setup-assistant.mjs';
+import {
+  testHtmlPage,
+  testRobotsTxt,
+  testSitemapXml,
+  withTestSite,
+} from './helpers/test-site-server.mjs';
 
 const X_URL = 'https://x.com/';
 
@@ -22,7 +28,7 @@ const ENABLED_STATUSES = new Set([
   'debug_only',
   'candidate_debug_only',
 ]);
-const EVIDENCE_STATUSES = new Set(['verified', 'inferred', 'confirmation_required', 'debug_only', 'disabled']);
+const EVIDENCE_STATUSES = new Set(['verified', 'inferred', 'confirmation_required', 'debug_only', 'disabled', 'candidate']);
 const RISK_LEVELS = new Set([
   'read_public_low',
   'read_personal_medium',
@@ -37,15 +43,16 @@ async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));
 }
 
-async function writeKnownXPolicyConfig(workspace) {
+async function writeKnownXPolicyConfig(workspace, baseUrl = X_URL) {
+  const host = new URL(baseUrl).hostname;
   const configDir = path.join(workspace, 'config');
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, 'site-registry.json'), `${JSON.stringify({
     version: 1,
     sites: {
-      'x.com': {
-        canonicalBaseUrl: X_URL,
-        host: 'x.com',
+      [host]: {
+        canonicalBaseUrl: baseUrl,
+        host,
         siteKey: 'x',
         adapterId: 'x',
         repoSkillDir: 'skills/x',
@@ -58,7 +65,7 @@ async function writeKnownXPolicyConfig(workspace) {
           alternativeAccessPaths: [
             'official/API or platform-authorized integration',
             'user-authorized bounded X SiteAdapter workflow',
-            'fixture-only validation',
+            'sanitized local validation',
           ],
         },
         downloadSessionRequirement: 'optional',
@@ -74,9 +81,9 @@ async function writeKnownXPolicyConfig(workspace) {
   await writeFile(path.join(configDir, 'site-capabilities.json'), `${JSON.stringify({
     version: 1,
     sites: {
-      'x.com': {
-        baseUrl: X_URL,
-        host: 'x.com',
+      [host]: {
+        baseUrl,
+        host,
         siteKey: 'x',
         adapterId: 'x',
         primaryArchetype: 'social-content',
@@ -102,7 +109,7 @@ async function writeKnownXPolicyConfig(workspace) {
           alternativeAccessPaths: [
             'official/API or platform-authorized integration',
             'user-authorized bounded X SiteAdapter workflow',
-            'fixture-only validation',
+            'sanitized local validation',
           ],
         },
       },
@@ -110,33 +117,120 @@ async function writeKnownXPolicyConfig(workspace) {
   }, null, 2)}\n`, 'utf8');
 }
 
-test('x.com auto capability generation covers social intents, disabled writes, and draft-only writes', async () => {
+function xPublicRoutes(rootUrl) {
+  const indexHtml = testHtmlPage('X public social surface', `
+    <nav>
+      <a href="/search">Search</a>
+      <a href="/home">Home</a>
+      <a href="/notifications">Notifications</a>
+      <a href="/i/bookmarks">Bookmarks</a>
+      <a href="/i/lists">Lists</a>
+      <a href="/messages">Messages</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <form action="/search" method="get"><input name="q" type="search"></form>
+  `);
+  return {
+    '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl) },
+    '/sitemap.xml': { contentType: 'application/xml; charset=utf-8', body: testSitemapXml(rootUrl, ['/', '/search']) },
+    '/': indexHtml,
+    '/home': indexHtml,
+    '/search': indexHtml,
+    '/notifications': indexHtml,
+    '/i/bookmarks': indexHtml,
+    '/i/lists': indexHtml,
+    '/messages': indexHtml,
+    '/settings': indexHtml,
+  };
+}
+
+function xAuthenticatedStructureSummary(rootUrl = X_URL) {
+  const url = (route) => new URL(route, rootUrl).toString();
+  const page = (url, routeTemplate, pageType, tabState, visibleItemCount = 3) => ({
+    url,
+    routeTemplate,
+    pageType,
+    tabState,
+    visibleItemCount,
+    listPresent: true,
+    emptyStatePresent: false,
+    evidenceLevel: 'capability_verified',
+    structureHash: `${routeTemplate}:${tabState}:summary`,
+  });
+  return {
+    authenticatedPages: [
+      page(url('/home'), '/home', 'home', 'for_you', 8),
+      page(url('/home?tab=following'), '/home', 'home', 'following', 6),
+      page(url('/search?q=siteforge&f=top'), '/search', 'search', 'top', 5),
+      page(url('/search?q=siteforge&f=live'), '/search', 'search', 'latest', 5),
+      page(url('/search?q=siteforge&f=user'), '/search', 'search', 'people', 5),
+      page(url('/search?q=siteforge&f=media'), '/search', 'search', 'media', 5),
+      page(url('/example'), '/:handle', 'profile', 'posts', 4),
+      page(url('/example/with_replies'), '/:handle/with_replies', 'profile', 'replies', 4),
+      page(url('/example/media'), '/:handle/media', 'profile', 'media', 4),
+      page(url('/example/status/123'), '/:handle/status/:postId', 'post_detail', 'detail', 4),
+      page(url('/notifications'), '/notifications', 'notifications', 'all', 4),
+      page(url('/notifications/mentions'), '/notifications/mentions', 'notifications', 'mentions', 2),
+      page(url('/notifications/verified'), '/notifications/verified', 'notifications', 'verified', 2),
+      page(url('/i/bookmarks'), '/i/bookmarks', 'bookmarks', 'saved', 3),
+      page(url('/i/lists'), '/i/lists', 'lists', 'index', 3),
+      page(url('/i/lists/123'), '/i/lists/:listId', 'lists', 'list_detail', 3),
+      page(url('/messages'), '/messages', 'messages', 'inbox', 3),
+      page(url('/settings'), '/settings', 'settings', 'entry', 1),
+    ],
+    authenticatedOverlayPages: [
+      {
+        url: rootUrl,
+        publicUrl: rootUrl,
+        routeTemplate: '/',
+        pageType: 'auth_overlay_control',
+        tabState: 'authenticated',
+        visibleItemCount: 2,
+        listPresent: true,
+        emptyStatePresent: false,
+        evidenceLevel: 'login_page_verified',
+        structureHash: 'root:authenticated:overlay',
+      },
+    ],
+  };
+}
+
+test('x.com enhanced login capability generation covers social intents, disabled writes, and draft-only writes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-auto-capabilities-'));
   try {
-    await writeKnownXPolicyConfig(workspace);
-    const setup = await prepareSiteForgeBuildSetup(X_URL, {
+    await withTestSite(xPublicRoutes, async (rootUrl) => {
+    await writeKnownXPolicyConfig(workspace, rootUrl);
+    const setup = await prepareSiteForgeBuildSetup(rootUrl, {
       cwd: workspace,
       buildId: 'x-auto-capability-profile',
       now: new Date('2026-05-16T09:00:00.000Z'),
       setupInteractive: true,
       interactive: true,
       fetchDelayMs: 0,
+      loginEnhanced: true,
       setupPrompt: async () => '',
       setupOutput: { write() {} },
-      userAuthorizedEvidenceProvider: async () => ({
-        capturedAt: '2026-05-16T09:00:01.000Z',
-        finalUrl: 'https://x.com/home',
-        title: 'X home',
-        pages: [{ url: 'https://x.com/home', title: 'X home' }],
+      authStateProvider: async () => ({
+        crawlMode: 'enhanced_with_login',
+        authChoice: 'verified',
+        authLevel: 'L3',
+        verified: true,
+        source: 'test_sanitized_default_browser_summary',
+        finalUrl: new URL('/home', rootUrl).toString(),
+        positiveSignals: ['test_verified_sanitized_bridge', 'same_site_final_url', 'not_login_route'],
+        blockingSignals: [],
+        verifiedRoutes: ['/home'],
       }),
+      authenticatedStructureProvider: async () => xAuthenticatedStructureSummary(rootUrl),
     });
 
-    const result = await runSiteForgeBuild(X_URL, {
+    const result = await runSiteForgeBuild(rootUrl, {
       ...setup.buildOptions,
       cwd: workspace,
       buildId: 'x-auto-capability-build',
       now: new Date('2026-05-16T09:00:10.000Z'),
       fetchDelayMs: 0,
+      authenticatedStructureProvider: async () => xAuthenticatedStructureSummary(rootUrl),
     });
 
     assert.equal(result.status, 'success');
@@ -349,6 +443,7 @@ test('x.com auto capability generation covers social intents, disabled writes, a
       assert.equal(Object.hasOwn(card, 'reason_code'), false, `${card.name} should not expose reason_code`);
       assert.doesNotMatch(String(card.reason ?? ''), /forced-action-disabled|default-disabled|disabled-by-policy|confirm_or_limited|draft_only/u);
     }
+    });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

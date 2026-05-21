@@ -64,7 +64,7 @@ function createStream({ isTTY = false, columns = 80 } = /** @type {any} */ ({}))
   };
 }
 
-test('internal run-pipeline parser keeps operator human-output flags', () => {
+test('build parser keeps human-output flags', () => {
   const parsed = parseBuildArgs([
     'https://weread.qq.com/',
     '--verbose',
@@ -100,7 +100,7 @@ test('site-doctor parser accepts progress flags while keeping JSON-compatible de
   assert.equal(parsed.options.quiet, true);
   assert.equal(parsed.options.json, true);
   assert.equal(parsed.options.noTty, true);
-  assert.equal(parsed.options.capabilityCompileDryRun, true);
+  assert.equal(parsed.options.capabilityDryRun, true);
 });
 
 test('single-stage progress helper strips UI flags before running stage logic', async () => {

@@ -1,134 +1,16 @@
 // @ts-check
 
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
 import tls from 'node:tls';
-import { pathExists } from '../../../infra/io.mjs';
 import { normalizeUrl } from './models.mjs';
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
-const DEFAULT_FIXTURE_ROOT = path.join(REPO_ROOT, 'tests', 'fixtures', 'sites');
 const STATIC_FETCH_HEADERS = Object.freeze({
   accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1',
   'accept-encoding': 'identity',
   'user-agent': 'SiteForgeBuildStaticCrawler/1.0',
 });
 const MAX_PROXY_REDIRECTS = 5;
-
-function slugFixtureName(value) {
-  return String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, '-')
-    .replace(/-+/gu, '-')
-    .replace(/^-|-$/gu, '');
-}
-
-function readFixtureAliases(fixtureRoot = DEFAULT_FIXTURE_ROOT) {
-  const aliasesPath = path.join(fixtureRoot, 'fixtures.json');
-  if (!existsSync(aliasesPath)) {
-    return new Map();
-  }
-  const parsed = JSON.parse(readFileSync(aliasesPath, 'utf8'));
-  return new Map(Object.entries(parsed.hosts ?? {}).map(([host, fixtureName]) => [
-    String(host).toLowerCase(),
-    String(fixtureName),
-  ]));
-}
-
-function fixtureNameForHost(hostname, fixtureRoot = DEFAULT_FIXTURE_ROOT) {
-  const normalizedHost = String(hostname ?? '').toLowerCase();
-  const aliases = readFixtureAliases(fixtureRoot);
-  const aliased = aliases.get(normalizedHost);
-  if (aliased) {
-    return aliased;
-  }
-  const candidate = slugFixtureName(normalizedHost);
-  return candidate && existsSync(path.join(fixtureRoot, candidate)) ? candidate : null;
-}
-
-function candidateFixtureFiles(fixtureDir, urlValue) {
-  const rawPathMatch = String(urlValue).match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*(\/[^?#]*)?/iu);
-  const rawPath = rawPathMatch?.[1] ?? '';
-  if (/(?:^|\/)(?:\.|%2e){2}(?:\/|$)|%2f|%5c/iu.test(rawPath)) {
-    const error = /** @type {Error & Record<string, any>} */ (new Error(`Fixture path traversal is not allowed for ${urlValue}`));
-    error.code = 'fixture-path-traversal';
-    throw error;
-  }
-  const parsed = new URL(urlValue);
-  const pathname = decodeURIComponent(parsed.pathname || '/');
-  if (pathname === '/' || pathname === '') {
-    return [path.join(fixtureDir, 'index.html')];
-  }
-  const segments = pathname.replace(/^\/+/u, '').replace(/\/+$/u, '').split('/').filter(Boolean);
-  if (segments.some((segment) => segment === '.' || segment === '..')) {
-    const error = /** @type {Error & Record<string, any>} */ (new Error(`Fixture path traversal is not allowed for ${urlValue}`));
-    error.code = 'fixture-path-traversal';
-    throw error;
-  }
-  const clean = segments.join(path.sep);
-  const candidates = [path.join(fixtureDir, ...segments)];
-  if (!path.extname(clean)) {
-    candidates.push(path.join(fixtureDir, ...segments.slice(0, -1), `${segments.at(-1)}.html`));
-    candidates.push(path.join(fixtureDir, ...segments, 'index.html'));
-  }
-  if (clean.endsWith('/')) {
-    candidates.push(path.join(fixtureDir, ...segments, 'index.html'));
-  }
-  return candidates;
-}
-
-export function resolveFixtureForUrl(inputUrl, options = /** @type {any} */ ({})) {
-  const parsed = new URL(inputUrl);
-  const explicitFixture = options.fixturePath
-    ? path.resolve(options.fixturePath)
-    : options.fixture
-      ? path.join(DEFAULT_FIXTURE_ROOT, options.fixture)
-      : null;
-  const fixtureRoot = path.resolve(options.fixtureRoot ?? DEFAULT_FIXTURE_ROOT);
-  const fixtureName = explicitFixture || options.fixture === false
-    ? null
-    : fixtureNameForHost(parsed.hostname.toLowerCase(), fixtureRoot);
-  const fixtureDir = explicitFixture ?? (fixtureName ? path.join(fixtureRoot, fixtureName) : null);
-  if (!fixtureDir) {
-    return null;
-  }
-  return {
-    name: fixtureName ?? path.basename(fixtureDir),
-    fixtureDir,
-    rootUrl: `${parsed.protocol}//${parsed.host}/`,
-  };
-}
-
-export async function readFixtureUrl(urlValue, fixture) {
-  for (const candidate of candidateFixtureFiles(fixture.fixtureDir, urlValue)) {
-    if ((await pathExists(candidate)) && (await stat(candidate)).isFile()) {
-      return {
-        body: await readFile(candidate, 'utf8'),
-        sourcePath: candidate,
-        fixtureName: fixture.name,
-      };
-    }
-  }
-  const parsed = new URL(urlValue);
-  if (parsed.pathname === '/robots.txt' || parsed.pathname === '/sitemap.xml') {
-    const candidate = path.join(fixture.fixtureDir, path.basename(parsed.pathname));
-    if (await pathExists(candidate)) {
-      return {
-        body: await readFile(candidate, 'utf8'),
-        sourcePath: candidate,
-        fixtureName: fixture.name,
-      };
-    }
-  }
-  const error = /** @type {Error & Record<string, any>} */ (new Error(`Fixture resource not found for ${urlValue}`));
-  error.code = 'fixture-resource-not-found';
-  throw error;
-}
 
 function reasonedError(message, code, details = /** @type {any} */ ({})) {
   const error = /** @type {Error & Record<string, any>} */ (new Error(message));
@@ -830,6 +712,7 @@ function wrapStaticFetchFailure(error, urlValue, proxyUrl = null) {
 async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
   const timeoutMs = Math.max(1, Number(options.fetchTimeoutMs ?? 10000));
   const proxyUrls = resolveLiveFetchProxies(urlValue, options.env ?? process.env);
+  const fetchedAt = new Date().toISOString();
   if (proxyUrls.length) {
     let lastError = null;
     for (const proxyUrl of proxyUrls) {
@@ -843,7 +726,10 @@ async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
         return {
           body: response.text,
           sourcePath: response.url,
-          fixtureName: null,
+          sourceType: 'live_website',
+          requestedUrl: urlValue,
+          finalUrl: response.url,
+          fetchedAt,
           request: requestDiagnostic({ statusCode: response.status, proxyUrl }),
         };
       } catch (error) {
@@ -874,29 +760,29 @@ async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
   } finally {
     clearTimeout(timeout);
   }
-      if (!response.ok) {
+  if (!response.ok) {
     const error = /** @type {Error & Record<string, any>} */ (new Error(`Static fetch failed for ${urlValue}: HTTP ${response.status}`));
     error.code = 'static-fetch-failed';
     throw error;
-      }
+  }
   return {
     body: await response.text(),
     sourcePath: response.url,
-    fixtureName: null,
+    sourceType: 'live_website',
+    requestedUrl: urlValue,
+    finalUrl: response.url,
+    fetchedAt,
     request: requestDiagnostic({ statusCode: response.status }),
   };
 }
 
 export function createBuildSource(inputUrl, options = /** @type {any} */ ({})) {
-  const fixture = resolveFixtureForUrl(inputUrl, options);
   let lastLiveReadAt = 0;
   return {
-    fixture,
+    type: 'live_website',
+    requestedUrl: normalizeUrl(inputUrl),
     async read(urlValue) {
       const normalized = normalizeUrl(urlValue);
-      if (fixture) {
-        return await readFixtureUrl(normalized, fixture);
-      }
       const delayMs = Math.max(0, Number(options.fetchDelayMs ?? 100));
       const elapsedMs = Date.now() - lastLiveReadAt;
       if (delayMs > elapsedMs) {

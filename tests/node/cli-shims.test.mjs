@@ -71,7 +71,7 @@ test('canonical site CLI entrypoints expose the expected Xiaohongshu handlers', 
   assert.equal(typeof xiaohongshuFollowEntrypoint.runXiaohongshuFollowQueryCli, 'function');
 });
 
-test('build CLI entrypoint does not expose the retired pipeline helper', () => {
+test('build CLI entrypoint exposes only the supported parser export', () => {
+  assert.deepEqual(Object.keys(buildEntrypoint).sort(), ['parseCliArgs']);
   assert.equal(typeof buildEntrypoint.parseCliArgs, 'function');
-  assert.equal(Object.hasOwn(buildEntrypoint, 'runPipeline'), false);
 });

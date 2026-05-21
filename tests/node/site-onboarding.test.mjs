@@ -224,7 +224,7 @@ test('site-doctor validates a generic navigation host with stubbed runtime steps
     const report = await siteDoctor('https://example.com/', {
       profilePath,
       outDir: path.join(workspace, 'doctor'),
-      capabilityCompileDryRun: true,
+      capabilityDryRun: true,
     }, {
       resolveSite: async () => ({ adapter: { id: 'generic-navigation' } }),
       runSiteCapabilityCompile: async (options) => {
@@ -343,9 +343,9 @@ test('site-doctor validates a generic navigation host with stubbed runtime steps
     assert.equal(compileCalls.length, 1);
     assert.equal(compileCalls[0].site, 'generic-navigation');
     assert.equal(compileCalls[0].writeArtifacts, false);
-    assert.equal(report.capabilityCompile?.valid, true);
-    assert.equal(report.capabilityCompile?.details?.descriptorOnly, true);
-    assert.equal(report.capabilityCompile?.details?.downloaderInvocationAllowed, false);
+    assert.equal(report.capabilityDryRun?.valid, true);
+    assert.equal(report.capabilityDryRun?.details?.descriptorOnly, true);
+    assert.equal(report.capabilityDryRun?.details?.downloaderInvocationAllowed, false);
     assert.equal(report.adapterRecommendation, 'reuse-generic');
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.NODE_INVENTORY_JSON), true);
     assert.equal(await pathExists(report.reports.siteOnboardingDiscovery.SITE_CAPABILITY_REPORT_JSON), true);

@@ -27,6 +27,10 @@ import {
   SITEFORGE_REQUIRED_FINAL_ARTIFACTS,
   SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS,
 } from './artifact-contract.mjs';
+import {
+  canRunAuthenticatedLayer,
+  evidenceLevelRank,
+} from './auth-state.mjs';
 
 export {
   SITEFORGE_REQUIRED_FINAL_ARTIFACTS,
@@ -92,7 +96,7 @@ export function classifySiteForgeWarning(message) {
   if (/Static fetch failed|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|AbortError|network/iu.test(text)) {
     return normalizeSiteForgeReason('network-fetch-failed');
   }
-  if (/Browser-rendered crawl is unavailable|Browser-rendered crawl is not part|Network instrumentation is unavailable|raw network tracing is not part|dynamic.*unsupported|rendered.*unavailable/iu.test(text)) {
+  if (/Browser-rendered crawl is unavailable|Browser-rendered crawl is not part|Controlled-browser rendered crawl is not used|Network instrumentation is unavailable|Network summary was not requested|raw network tracing is not part|dynamic.*unsupported|rendered.*unavailable/iu.test(text)) {
     return normalizeSiteForgeReason('dynamic-unsupported');
   }
   return null;
@@ -413,6 +417,22 @@ function validateSetupIntentCoverage({
       continue;
     }
     const candidate = matchingCapabilities.find((capability) => capability.status === 'candidate');
+    if (
+      context?.crawlContract?.crawlMode === 'public_only'
+      && candidate
+      && (
+        candidate.authRequired === true
+        || ['missing_auth_evidence', 'requires_login'].includes(candidate.activationBlockedReason)
+        || candidate.evidenceMatrix?.activationDecision === 'requires_login'
+      )
+    ) {
+      acc.warn('capabilities', 'capability.selected_requires_login_candidate', `Selected setup capability ${selected.id ?? selected.name} requires login evidence and remains a public-only candidate.`, {
+        setupCapabilityId: selected.id ?? null,
+        candidateCapabilityId: candidate.id ?? null,
+        activationBlockedReason: candidate.activationBlockedReason ?? 'missing_auth_evidence',
+      });
+      continue;
+    }
     acc.fail('capabilities', 'capability.selected_not_active', `Selected setup capability ${selected.id ?? selected.name} is not active because it lacks capability-specific evidence.`, {
       ...normalizeSiteForgeReason('capability-evidence-required'),
       setupCapabilityId: selected.id ?? null,
@@ -451,6 +471,7 @@ function validateCapabilityMap({
   executionPlans,
   nodeIds,
   successfulBuild,
+  context,
   acc,
 }) {
   const executionPlanIds = new Set(executionPlans.map((plan) => plan.id).filter(Boolean));
@@ -502,6 +523,37 @@ function validateCapabilityMap({
       acc.fail('capabilities', 'capability.disabled_active', `Disabled capability ${capability.id} must not be active.`, {
         capabilityId: capability.id,
       });
+    }
+    const matrix = capability?.evidenceMatrix ?? capability?.activationEvidence ?? null;
+    if (capability?.status === 'active') {
+      if (!matrix || typeof matrix !== 'object') {
+        acc.fail('capabilities', 'capability.matrix_missing', `Active capability ${capability.id} lacks an evidence matrix.`, {
+          capabilityId: capability.id,
+        });
+      } else {
+        const missingEvidence = arrayOf(matrix.missingEvidence);
+        if (missingEvidence.length > 0) {
+          acc.fail('capabilities', 'capability.matrix_incomplete', `Active capability ${capability.id} has incomplete evidence matrix.`, {
+            capabilityId: capability.id,
+            missingEvidence,
+          });
+        }
+        if (matrix.authRequired === true || capability.authRequired === true) {
+          if (!canRunAuthenticatedLayer(context?.authStateReport)) {
+            acc.fail('capabilities', 'capability.active_missing_auth_state', `Login capability ${capability.id} is active without verified auth state.`, {
+              capabilityId: capability.id,
+              authLevel: context?.authStateReport?.authLevel ?? null,
+            });
+          }
+          if (evidenceLevelRank(matrix.observedAuthLevel) < evidenceLevelRank(matrix.requiredAuthLevel)) {
+            acc.fail('capabilities', 'capability.auth_evidence_too_low', `Login capability ${capability.id} lacks required capability evidence level.`, {
+              capabilityId: capability.id,
+              requiredAuthLevel: matrix.requiredAuthLevel ?? null,
+              observedAuthLevel: matrix.observedAuthLevel ?? null,
+            });
+          }
+        }
+      }
     }
     for (const evidenceError of validateCapabilityEvidenceList(capability?.evidence)) {
       acc.fail('safety', 'capability.evidence_privacy_policy_invalid', `Capability ${capability?.id ?? '<unknown>'} evidence must be sanitized summary only.`, {
@@ -800,7 +852,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
   const homepageReachable = arrayOf(crawlStatic.pages).some((page) => page.normalizedUrl === context.site.rootUrl);
   const robotsPolicy = discoverSeeds.robotsPolicy ?? null;
   const robotsStatus = discoverSeeds.robots?.status ?? (robotsPolicy ? 'parsed' : 'unknown');
-  const liveRobotsRequired = Boolean(context?.source) && !context.source.fixture;
+  const liveRobotsRequired = Boolean(context?.source);
   if (liveRobotsRequired && robotsStatus !== 'parsed') {
     acc.fail('nodes', 'robots.unavailable', `Live build requires fetched robots.txt before validation; status was ${robotsStatus}.`, {
       status: robotsStatus,
@@ -861,6 +913,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
     executionPlans,
     nodeIds: classifiedGraphGate.nodeIds.size ? classifiedGraphGate.nodeIds : graphGate.nodeIds,
     successfulBuild,
+    context,
     acc,
   });
 
@@ -937,6 +990,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
           'build_report.user.md',
           'build_report.debug.json',
           'build_report.json',
+          'capability_intent_summary.html',
         ],
       },
       nodeCompleteness: {

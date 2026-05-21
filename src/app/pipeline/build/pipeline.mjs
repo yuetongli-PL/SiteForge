@@ -96,6 +96,7 @@ import {
   writeLastSuccessfulBuild,
 } from './workspace.mjs';
 import {
+  SITEFORGE_CAPABILITY_INTENT_SUMMARY_HTML_FILE as CAPABILITY_INTENT_SUMMARY_HTML_FILE,
   SITEFORGE_DEBUG_REPORT_FILE as DEBUG_REPORT_FILE,
   SITEFORGE_DEBUG_REPORT_JSON_ALIAS as DEBUG_REPORT_JSON_ALIAS,
   SITEFORGE_INDEX_REPORT_FILE as INDEX_REPORT_FILE,
@@ -106,11 +107,24 @@ import {
   SITEFORGE_USER_REPORT_MARKDOWN_FILE as USER_REPORT_MARKDOWN_FILE,
   siteForgeReportModeSet,
 } from './artifact-contract.mjs';
+import {
+  AUTH_STATE_REPORT_FILE,
+  CRAWL_AUTHENTICATED_FILE,
+  authLevelRank,
+  authSummaryForReport,
+  canRunAuthenticatedLayer,
+  createCrawlContract,
+  createPublicOnlyAuthStateReport,
+  evidenceLevelRank,
+  normalizeAuthStateReport,
+} from './auth-state.mjs';
 
 export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
   'registerSite',
   'discoverSeeds',
   'crawlStatic',
+  'authStateCheck',
+  'crawlAuthenticated',
   'crawlRendered',
   'discoverInteractions',
   'captureNetworkTraces',
@@ -129,10 +143,12 @@ const STAGE_DEPENDENCIES = Object.freeze({
   registerSite: [],
   discoverSeeds: ['registerSite'],
   crawlStatic: ['discoverSeeds'],
-  crawlRendered: ['crawlStatic'],
-  discoverInteractions: ['crawlStatic'],
+  authStateCheck: ['crawlStatic'],
+  crawlAuthenticated: ['authStateCheck'],
+  crawlRendered: ['crawlAuthenticated'],
+  discoverInteractions: ['crawlStatic', 'crawlAuthenticated'],
   captureNetworkTraces: ['crawlRendered'],
-  buildSiteGraph: ['crawlStatic', 'discoverInteractions', 'captureNetworkTraces'],
+  buildSiteGraph: ['crawlStatic', 'crawlAuthenticated', 'discoverInteractions', 'captureNetworkTraces'],
   classifyNodes: ['buildSiteGraph'],
   extractAffordances: ['classifyNodes', 'discoverInteractions'],
   discoverCapabilities: ['extractAffordances'],
@@ -295,7 +311,7 @@ function dedupeSemanticCapabilities(capabilities = /** @type {any[]} */ ([])) {
 }
 
 function sourceToDiscoveredBy(source) {
-  if (source === 'sitemap' || source === 'robots' || source === 'form' || source === 'fixture') {
+  if (source === 'sitemap' || source === 'robots' || source === 'form') {
     return source;
   }
   if (source === 'user_authorized_browser') {
@@ -452,11 +468,60 @@ function pageNodeId(urlValue) {
 
 function pageIdentity(page) {
   const normalizedUrl = normalizeUrl(page?.normalizedUrl ?? page?.url);
-  return page?.stateKey ? `${normalizedUrl}#state:${page.stateKey}` : normalizedUrl;
+  const stateSuffix = page?.stateKey ? `#state:${page.stateKey}` : '';
+  const sourceLayer = pageSourceLayer(page);
+  const layerSuffix = sourceLayer && sourceLayer !== 'public' ? `#layer:${sourceLayer}` : '';
+  return `${normalizedUrl}${stateSuffix}${layerSuffix}`;
 }
 
 function pageNodeIdForPage(page) {
   return stableNodeId('node:page', pageIdentity(page));
+}
+
+function pageSourceLayer(page = /** @type {any} */ ({})) {
+  const layer = String(page?.sourceLayer ?? '').trim();
+  if (layer === 'authenticated' || layer === 'authenticated_overlay' || layer === 'public') {
+    return layer;
+  }
+  return page?.authRequired === true ? 'authenticated' : 'public';
+}
+
+function nodeSourceLayer(node = /** @type {any} */ ({})) {
+  const layer = String(node?.sourceLayer ?? '').trim();
+  if (layer === 'authenticated' || layer === 'authenticated_overlay' || layer === 'public') {
+    return layer;
+  }
+  return node?.authRequired === true ? 'authenticated' : 'public';
+}
+
+function pageEvidenceLevel(page = /** @type {any} */ ({})) {
+  if (page?.evidenceLevel) {
+    return page.evidenceLevel;
+  }
+  const layer = pageSourceLayer(page);
+  if (layer === 'authenticated_overlay') {
+    return 'login_page_verified';
+  }
+  if (layer === 'authenticated') {
+    return 'login_route_verified';
+  }
+  return 'public_verified';
+}
+
+function pagesFromStageResults(stageResults = /** @type {any} */ ({})) {
+  return [
+    ...(stageResults.crawlStatic?.pages ?? []),
+    ...(stageResults.crawlAuthenticated?.authenticatedPages ?? []),
+    ...(stageResults.crawlAuthenticated?.authenticatedOverlayPages ?? []),
+  ];
+}
+
+function countBy(values = /** @type {any[]} */ ([]), selector = (value) => value) {
+  return Object.fromEntries(Object.entries(values.reduce((counts, value) => {
+    const key = selector(value) ?? 'unknown';
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {})).sort(([left], [right]) => left.localeCompare(right, 'en')));
 }
 
 function formNodeId(pageId, form) {
@@ -550,13 +615,26 @@ function catalogRouteClassification(pathname = '', haystack = '') {
   if (/\/(?:videos?|video|watch|items?|item|details?|detail|works?|work)(?:\/|$)/u.test(pathText)) {
     return 'catalog_detail';
   }
-  if (/catalog|directory|collection|listing|browse|AV在線看|AV online|video list|content list/iu.test(text)) {
+  if (/catalog|directory|collection|listing|browse|AV鍦ㄧ窔鐪媩AV online|video list|content list/iu.test(text)) {
     return 'catalog_collection';
   }
   return null;
 }
 
 function classifyPage(page) {
+  const sourceLayer = pageSourceLayer(page);
+  if (sourceLayer !== 'public') {
+    const authText = `${page.routeTemplate ?? ''} ${page.routePattern ?? ''} ${page.pageType ?? ''} ${page.title ?? ''} ${page.textSummary ?? ''}`.toLowerCase();
+    if (/notification|mention/u.test(authText)) return 'notification_list';
+    if (/bookmark|saved/u.test(authText)) return 'bookmark_list';
+    if (/following|followers|followed/u.test(authText)) return 'following_list';
+    if (/direct message|\bdm\b|message/u.test(authText)) return 'direct_message_list_summary';
+    if (/account|settings|profile|security/u.test(authText)) return 'account_navigation';
+    if (/timeline|feed|home/u.test(authText)) return 'authenticated_timeline';
+    if (sourceLayer === 'authenticated_overlay') return 'auth_overlay_control';
+    if (/private|sensitive/u.test(authText)) return 'sensitive_read_surface';
+    return 'authenticated_home';
+  }
   if (page.pageType === 'home') {
     return 'homepage';
   }
@@ -571,14 +649,14 @@ function classifyPage(page) {
   if (/\/(?:ch|ch2|mobile|channel|news|feed)(?:\/|$)/u.test(parsed.pathname) || /^\/rain\/?$/u.test(parsed.pathname)) {
     return 'news_channel';
   }
-  if (/\/(?:omn|d|article|story|a)\//u.test(parsed.pathname) || /\/rain\/a\//u.test(parsed.pathname) || /article|story|news detail|正文|新闻详情|稿件/iu.test(haystack)) {
+  if (/\/(?:omn|d|article|story|a)\//u.test(parsed.pathname) || /\/rain\/a\//u.test(parsed.pathname) || /article|story|news detail|姝ｆ枃|鏂伴椈璇︽儏|绋夸欢/iu.test(haystack)) {
     return 'article_detail';
   }
   const earlyCatalogClassification = catalogRouteClassification(parsed.pathname, '');
   if (earlyCatalogClassification) {
     return earlyCatalogClassification;
   }
-  if (/channel|feed|list|频道|要闻|新闻列表|资讯/iu.test(haystack)) {
+  if (/channel|feed|list|棰戦亾|瑕侀椈|鏂伴椈鍒楄〃|璧勮/iu.test(haystack)) {
     return 'news_channel';
   }
   const pathCatalogClassification = catalogRouteClassification(parsed.pathname, '');
@@ -829,6 +907,24 @@ function setupProfileSummary(profile = null) {
     source: profile.source ?? null,
     knownSitePolicy,
     evidenceQuality,
+    crawlContract: profile.crawlContract ? {
+      crawlMode: profile.crawlContract.crawlMode ?? null,
+      sourceMode: profile.crawlContract.sourceMode ?? null,
+      authChoice: profile.crawlContract.authChoice ?? null,
+      authLevel: profile.crawlContract.authLevel ?? null,
+      coverageTargets: clone(profile.crawlContract.coverageTargets ?? {}),
+      evidencePolicy: clone(profile.crawlContract.evidencePolicy ?? {}),
+    } : null,
+    authState: profile.authStateReport ? {
+      crawlMode: profile.authStateReport.crawlMode ?? null,
+      authChoice: profile.authStateReport.authChoice ?? null,
+      authLevel: profile.authStateReport.authLevel ?? null,
+      verified: profile.authStateReport.verified === true,
+      source: profile.authStateReport.source ?? null,
+      rawMaterialPersisted: profile.authStateReport.rawMaterialPersisted === true,
+      sessionMaterialPersisted: profile.authStateReport.sessionMaterialPersisted === true,
+      browserProfilePersisted: profile.authStateReport.browserProfilePersisted === true,
+    } : null,
     userAuthorizedEvidence: profile.userAuthorizedEvidence ? {
       status: profile.userAuthorizedEvidence.status ?? null,
       source: profile.userAuthorizedEvidence.source ?? null,
@@ -1108,6 +1204,9 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     workspace,
     artifactDir,
     setupProfile: options.setupProfile ?? null,
+    crawlContract: options.crawlContract ?? options.setupProfile?.crawlContract ?? null,
+    authStateReport: options.authStateReport ?? options.setupProfile?.authStateReport ?? null,
+    authStateReportPath: options.authStateReportPath ?? null,
     siteAdapterProfile: null,
     siteAdapterPaths: null,
     setupCollectionReview: options.setupCollectionReview ?? null,
@@ -1184,6 +1283,22 @@ async function hydrateBuildProfile(context) {
   assertBuildProfileSafe(profile);
   context.setupProfile = profile;
   context.buildProfilePath = profilePath;
+  context.authStateReport = context.options.authStateReport ?? profile.authStateReport ?? context.authStateReport;
+  context.crawlContract = context.options.crawlContract ?? profile.crawlContract ?? context.crawlContract;
+  if (!context.authStateReport) {
+    context.authStateReport = createPublicOnlyAuthStateReport({
+      site: context.site,
+      authChoice: context.crawlContract?.authChoice ?? 'declined',
+    });
+  }
+  if (!context.crawlContract) {
+    context.crawlContract = createCrawlContract({
+      site: context.site,
+      authChoice: context.authStateReport?.authChoice ?? 'declined',
+      authStateReport: context.authStateReport,
+      coverageTargets: {},
+    });
+  }
   await hydrateSetupCollectionReview(context);
   context.policy = mergeBuildPolicy({
     ...policyFromSetupProfile(profile),
@@ -1667,6 +1782,8 @@ async function registerSiteStage(context) {
     buildId: context.buildId,
     siteId: context.site.id,
     policy: context.policy,
+    crawlContract: context.crawlContract ?? null,
+    authState: authSummaryForReport(context.crawlContract, context.authStateReport),
     riskPolicy: {
       schemaVersion: 1,
       savedMaterial: SANITIZED_SUMMARY_ONLY,
@@ -1709,60 +1826,121 @@ async function registerSiteStage(context) {
   };
 }
 
-async function discoverSeedsStage(context) {
-  const authorizedPages = userAuthorizedEvidencePages(context);
-  if (authorizedPages.length) {
-    const seeds = arrayUniqueBy(authorizedPages.map((page) => ({
-      url: page.url,
-      normalizedUrl: page.normalizedUrl,
-      source: 'user_authorized_browser',
-      confidence: 0.86,
-      evidence: page.evidence,
-    })), (seed) => seed.normalizedUrl)
-      .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
-    const payload = {
-      schemaVersion: BUILD_SCHEMA_VERSION,
-      buildId: context.buildId,
-      siteId: context.site.id,
-      status: 'success',
-      mode: 'user_authorized_browser',
-      seeds,
-      robots: {
-        status: 'not_applicable_user_authorized',
-        reason: 'Seed evidence came from a user-authorized browser surface, not the generic crawler.',
-        sitemaps: [],
-        processedSitemaps: [],
-        disallowPaths: [],
-        excludedUrls: [],
-      },
-      warnings: ['generic crawler skipped; using bounded user-authorized browser evidence summary.'],
-    };
-    const seedsPath = await writeArtifactJson(context, 'seeds.json', payload);
-    const generatedAdapter = await writeGeneratedSiteAdapterProfile(context, {
-      seeds,
-      status: 'route_seeded',
-      stage: 'discoverSeeds',
-    });
-    return {
-      seeds,
-      robots: payload.robots,
-      robotsPolicy: null,
-      robotsExcludedUrls: [],
-      warnings: payload.warnings,
-      generatedAdapter: generatedAdapter.profile,
-      artifactPaths: {
-        seeds: seedsPath,
-        generatedAdapter: generatedAdapter.artifactPaths.generatedAdapter,
-        siteGeneratedAdapter: generatedAdapter.artifactPaths.siteGeneratedAdapter,
-      },
-      reasonCodes: ['user-authorized-browser-evidence'],
-      summary: {
-        seeds: seeds.length,
-        mode: payload.mode,
-        generatedAdapter: generatedAdapter.summary,
-      },
-    };
+function routeTargetToUrl(context, routeTarget) {
+  const value = String(routeTarget ?? '').trim();
+  if (!value) {
+    return null;
   }
+  try {
+    return normalizeUrl(value, context.site.rootUrl);
+  } catch {
+    return null;
+  }
+}
+
+function seedFromRouteTarget(context, routeTarget, {
+  source = 'auth_route',
+  confidence = 0.62,
+  reasonCode = null,
+  sourceLayer = 'authenticated',
+  authRequired = true,
+} = /** @type {any} */ ({})) {
+  const normalizedUrl = routeTargetToUrl(context, routeTarget);
+  if (!normalizedUrl || !isInternalUrl(normalizedUrl, context.site.allowedDomains)) {
+    return null;
+  }
+  return {
+    url: normalizedUrl,
+    normalizedUrl,
+    source,
+    sourceLayer,
+    authRequired,
+    confidence,
+    reasonCode,
+    evidence: [
+      buildEvidence({
+        type: 'text',
+        source: context.site.rootUrl,
+        text: `${source} seed ${new URL(normalizedUrl).pathname}; session material was not persisted.`,
+        confidence,
+      }),
+    ],
+  };
+}
+
+function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([]), robotsExcludedUrls = /** @type {any[]} */ ([])) {
+  const contract = context.crawlContract ?? createCrawlContract({
+    site: context.site,
+    authChoice: context.authStateReport?.authChoice ?? 'declined',
+    authStateReport: context.authStateReport,
+  });
+  const targets = contract.coverageTargets ?? {};
+  const publicSeedsLayer = publicSeeds.map((seed) => ({
+    ...seed,
+    sourceLayer: 'public',
+    authRequired: false,
+  }));
+  const authRouteSeeds = (targets.authRoutes ?? [])
+    .map((route) => seedFromRouteTarget(context, route, {
+      source: 'auth_route',
+      sourceLayer: 'authenticated',
+      authRequired: true,
+      confidence: 0.62,
+      reasonCode: contract.crawlMode === 'enhanced_with_login' ? null : 'requires_login',
+    }))
+    .filter(Boolean);
+  const revisitRouteSeeds = (targets.publicRevisitRoutes ?? [])
+    .map((route) => seedFromRouteTarget(context, route, {
+      source: 'authenticated_revisit',
+      sourceLayer: 'authenticated_overlay',
+      authRequired: true,
+      confidence: 0.66,
+    }))
+    .filter(Boolean);
+  const authSeeds = contract.crawlMode === 'enhanced_with_login'
+    ? authRouteSeeds
+    : [];
+  const revisitSeeds = contract.crawlMode === 'enhanced_with_login'
+    ? revisitRouteSeeds
+    : [];
+  const requiresLoginSeeds = contract.crawlMode === 'enhanced_with_login'
+    ? []
+    : authRouteSeeds.map((seed) => ({
+      ...seed,
+      sourceLayer: 'authenticated',
+      reasonCode: 'missing_auth_evidence',
+      activationDecision: 'requires_login',
+    }));
+  const blockedSeeds = uniqueSortedStrings(robotsExcludedUrls).map((urlValue) => ({
+    url: urlValue,
+    normalizedUrl: normalizeUrl(urlValue, context.site.rootUrl),
+    source: 'robots',
+    sourceLayer: 'public',
+    authRequired: false,
+    reasonCode: 'robots-disallowed',
+  }));
+  const uniqueByUrl = (items) => arrayUniqueBy(items, (item) => item.normalizedUrl)
+    .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
+  return {
+    publicSeeds: uniqueByUrl(publicSeedsLayer),
+    authSeeds: uniqueByUrl(authSeeds),
+    revisitSeeds: uniqueByUrl(revisitSeeds),
+    blockedSeeds: uniqueByUrl(blockedSeeds),
+    requiresLoginSeeds: uniqueByUrl(requiresLoginSeeds),
+  };
+}
+
+function layeredSeedsSummary(layeredSeeds) {
+  return {
+    publicSeeds: layeredSeeds.publicSeeds?.length ?? 0,
+    authSeeds: layeredSeeds.authSeeds?.length ?? 0,
+    revisitSeeds: layeredSeeds.revisitSeeds?.length ?? 0,
+    blockedSeeds: layeredSeeds.blockedSeeds?.length ?? 0,
+    requiresLoginSeeds: layeredSeeds.requiresLoginSeeds?.length ?? 0,
+  };
+}
+
+async function discoverSeedsStage(context) {
   const seeds = /** @type {any[]} */ ([]);
   const warnings = /** @type {any[]} */ ([]);
   const reasonCodes = new Set();
@@ -1802,12 +1980,14 @@ async function discoverSeedsStage(context) {
   const writeBlockedSeedsAndThrow = async (code, message) => {
     const deduped = arrayUniqueBy(seeds, (seed) => seed.normalizedUrl)
       .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
+    const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls);
     const payload = {
       schemaVersion: BUILD_SCHEMA_VERSION,
       buildId: context.buildId,
       siteId: context.site.id,
       status: 'blocked',
       seeds: deduped,
+      ...layeredSeeds,
       robots: {
         status: robotsStatus,
         reason: robotsUnavailableReason,
@@ -1816,6 +1996,7 @@ async function discoverSeedsStage(context) {
         disallowPaths: robotsPolicy?.disallowPaths ?? [],
         excludedUrls: uniqueSortedStrings(robotsExcludedUrls),
       },
+      summary: layeredSeedsSummary(layeredSeeds),
       warnings,
     };
     const seedsPath = await writeArtifactJson(context, 'seeds.json', payload);
@@ -1834,6 +2015,7 @@ async function discoverSeedsStage(context) {
       reasonCodes: uniqueSortedStrings([...reasonCodes]),
       summary: {
         seeds: deduped.length,
+        layeredSeeds: layeredSeedsSummary(layeredSeeds),
         generatedAdapter: generatedAdapter.summary,
       },
     });
@@ -1851,23 +2033,21 @@ async function discoverSeedsStage(context) {
     const warning = `robots.txt unavailable: ${robotsUnavailableReason}`;
     warnings.push(warning);
     reasonCodes.add('robots-unavailable');
-    if (!context.source.fixture) {
-      await writeBlockedSeedsAndThrow(
-        'robots-unavailable',
-        `robots.txt unavailable for live SiteForge build: ${robotsUnavailableReason}`,
-      );
-    }
+    await writeBlockedSeedsAndThrow(
+      'robots-unavailable',
+      `robots.txt unavailable for live SiteForge build: ${robotsUnavailableReason}`,
+    );
   }
 
   const homepageEvidence = [
     buildEvidence({
-      type: context.source.fixture ? 'fixture' : 'url',
-      source: context.source.fixture?.fixtureDir ?? context.site.rootUrl,
+      type: 'url',
+      source: context.site.rootUrl,
       confidence: 1,
     }),
   ];
-  addSeed(context.site.rootUrl, context.source.fixture ? 'fixture' : 'input', 1, homepageEvidence);
-  if (!context.source.fixture && robotsPolicy && !seeds.length && robotsExcludedUrls.length) {
+  addSeed(context.site.rootUrl, 'input', 1, homepageEvidence);
+  if (robotsPolicy && !seeds.length && robotsExcludedUrls.length) {
     warnings.push('robots excluded all planned seed URLs before crawl.');
     await writeBlockedSeedsAndThrow(
       'robots-disallowed',
@@ -1906,7 +2086,7 @@ async function discoverSeedsStage(context) {
       for (const loc of locs) {
         addSeed(loc, 'sitemap', 0.95, [
           buildEvidence({
-            type: context.source.fixture ? 'fixture' : 'url',
+            type: 'url',
             source: sitemap.sourcePath ?? sitemapUrl,
             text: loc,
             confidence: 0.95,
@@ -1968,12 +2148,14 @@ async function discoverSeedsStage(context) {
   if (deduped.length < dedupedAll.length) {
     warnings.push(`seed discovery truncated at maxSeeds=${maxSeeds}; ${dedupedAll.length - deduped.length} seeds were left out.`);
   }
+  const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls);
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
     status: deduped.length ? 'success' : 'blocked',
     seeds: deduped,
+    ...layeredSeeds,
     robots: {
       status: robotsStatus,
       reason: robotsUnavailableReason,
@@ -1982,6 +2164,7 @@ async function discoverSeedsStage(context) {
       disallowPaths: robotsPolicy?.disallowPaths ?? [],
       excludedUrls: uniqueSortedStrings(robotsExcludedUrls),
     },
+    summary: layeredSeedsSummary(layeredSeeds),
     warnings,
   };
   const seedsPath = await writeArtifactJson(context, 'seeds.json', payload);
@@ -2010,6 +2193,7 @@ async function discoverSeedsStage(context) {
         reasonCodes: uniqueSortedStrings([...reasonCodes]),
         summary: {
           seeds: 0,
+          layeredSeeds: layeredSeedsSummary(layeredSeeds),
           generatedAdapter: generatedAdapter.summary,
         },
       },
@@ -2017,6 +2201,7 @@ async function discoverSeedsStage(context) {
   }
   return {
     seeds: deduped,
+    ...layeredSeeds,
     robots: payload.robots,
     robotsPolicy,
     robotsExcludedUrls: uniqueSortedStrings(robotsExcludedUrls),
@@ -2030,6 +2215,7 @@ async function discoverSeedsStage(context) {
     reasonCodes: uniqueSortedStrings([...reasonCodes]),
     summary: {
       seeds: deduped.length,
+      layeredSeeds: layeredSeedsSummary(layeredSeeds),
       generatedAdapter: generatedAdapter.summary,
     },
   };
@@ -2140,10 +2326,7 @@ function representativeLimitForRouteFamily(familyKey) {
 
 function planRepresentativeCrawlCoverage(context, seeds, { maxPages }) {
   const seedList = Array.isArray(seeds) ? seeds : [];
-  const isFixtureSource = Boolean(context.source?.fixture);
-  const routeFamilyThreshold = isFixtureSource
-    ? Math.max(REPRESENTATIVE_ROUTE_FAMILY_MIN_SEEDS, maxPages * 2)
-    : REPRESENTATIVE_ROUTE_FAMILY_LIVE_MIN_SEEDS;
+  const routeFamilyThreshold = REPRESENTATIVE_ROUTE_FAMILY_LIVE_MIN_SEEDS;
   if (seedList.length <= routeFamilyThreshold) {
     return {
       mode: 'seed_inventory',
@@ -2158,7 +2341,7 @@ function planRepresentativeCrawlCoverage(context, seeds, { maxPages }) {
     Math.min(
       maxPages,
       Number(context.policy.maxRepresentativePages ?? (
-        isFixtureSource ? REPRESENTATIVE_ROUTE_FAMILY_MAX_PAGES : REPRESENTATIVE_ROUTE_FAMILY_LIVE_MAX_PAGES
+        REPRESENTATIVE_ROUTE_FAMILY_LIVE_MAX_PAGES
       )),
     ),
   );
@@ -2191,90 +2374,6 @@ function planRepresentativeCrawlCoverage(context, seeds, { maxPages }) {
 }
 
 async function crawlStaticStage(context, stageResults) {
-  const authorizedPages = userAuthorizedEvidencePages(context);
-  if (authorizedPages.length) {
-    const collectedPages = await mapWithConcurrency(
-      authorizedPages,
-      USER_AUTHORIZED_COLLECTION_CONCURRENCY,
-      async (page) => ({
-        ...page,
-        collection: {
-          status: 'success',
-          source: 'user_authorized_browser',
-          concurrent: true,
-        },
-      }),
-    );
-    const pages = arrayUniqueBy(collectedPages, (page) => pageIdentity(page))
-      .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
-    const payload = {
-      schemaVersion: BUILD_SCHEMA_VERSION,
-      buildId: context.buildId,
-      siteId: context.site.id,
-      status: 'success',
-      mode: 'user_authorized_browser',
-      pages,
-      errors: [],
-      diagnostics: {
-        staticEvidence: {
-          empty: 0,
-          dynamicShell: 0,
-          present: pages.length,
-        },
-      },
-      summary: {
-        pages: pages.length,
-        duplicateUrls: 0,
-        duplicateRatio: 0,
-        maxDepth: 0,
-        maxPages: pages.length,
-        collectionConcurrency: Math.min(USER_AUTHORIZED_COLLECTION_CONCURRENCY, authorizedPages.length),
-        robotsExcludedUrls: [],
-        blockedReason: null,
-        mode: 'user_authorized_browser',
-      },
-      warnings: ['using sanitized user-authorized browser evidence; unredacted page structure and session material were not persisted.'],
-    };
-    const autoDiscovery = context.setupProfile?.userAuthorizedEvidence?.autoDiscovery ?? null;
-    const autoDiscoveryPath = autoDiscovery
-      ? await writeArtifactJson(context, path.join('discovery', 'auto_discovery.json'), {
-        ...autoDiscovery,
-        buildId: context.buildId,
-        siteId: context.site.id,
-      })
-      : null;
-    const crawlStaticPath = await writeArtifactJson(context, 'crawl_static.json', payload);
-    const crawlCheckpointPath = await writeCrawlCheckpoint(context, {
-      status: 'completed',
-      mode: 'user_authorized_browser',
-      seeds: authorizedPages.map((page) => ({
-        url: page.url,
-        normalizedUrl: page.normalizedUrl,
-        source: 'user_authorized_browser',
-      })),
-      pages,
-      queueLength: authorizedPages.length,
-      queueIndex: authorizedPages.length,
-      visitedCount: pages.length,
-      effectiveMaxPages: pages.length,
-      summary: payload.summary,
-      warnings: payload.warnings,
-    });
-    return {
-      pages,
-      warnings: payload.warnings,
-      artifactPaths: {
-        crawlStatic: crawlStaticPath,
-        crawlCheckpoint: crawlCheckpointPath,
-        ...(autoDiscoveryPath ? { autoDiscovery: autoDiscoveryPath } : {}),
-      },
-      reasonCodes: ['user-authorized-browser-evidence'],
-      summary: {
-        ...payload.summary,
-        autoDiscovery: autoDiscovery?.summary ?? null,
-      },
-    };
-  }
   const { seeds, robotsPolicy = null } = requireStage(stageResults, 'discoverSeeds');
   const maxDepth = Number(context.policy.maxDepth ?? 2);
   const maxPages = Math.max(1, Number(context.policy.maxPages ?? 50));
@@ -2321,6 +2420,10 @@ async function crawlStaticStage(context, stageResults) {
         normalizedUrl,
         depth: entry.depth,
         discoveredBy: entry.discoveredBy,
+        sourceLayer: 'public',
+        authRequired: false,
+        authLevel: null,
+        evidenceLevel: 'public_verified',
         sourcePath: pageSource.sourcePath,
         title: parsed.title,
         textSummary: parsed.textSummary,
@@ -2339,12 +2442,12 @@ async function crawlStaticStage(context, stageResults) {
         diagnostics: parsed.diagnostics,
         collection: {
           status: 'success',
-          source: pageSource.fixtureName ? 'fixture' : 'url',
+          source: 'url',
           concurrent: true,
         },
         evidence: [
           buildEvidence({
-            type: pageSource.fixtureName ? 'fixture' : 'url',
+            type: 'url',
             source: pageSource.sourcePath ?? entry.url,
             confidence: 1,
           }),
@@ -2473,6 +2576,7 @@ async function crawlStaticStage(context, stageResults) {
     },
     summary: {
       pages: dedupedPages.length,
+      sourceLayer: 'public',
       duplicateUrls,
       duplicateRatio,
       maxDepth,
@@ -2535,13 +2639,329 @@ async function crawlStaticStage(context, stageResults) {
   };
 }
 
+async function authStateCheckStage(context) {
+  const normalizedReport = normalizeAuthStateReport(
+    context.authStateReport ?? createPublicOnlyAuthStateReport({ site: context.site, authChoice: 'declined' }),
+    {
+      site: context.site,
+      crawlMode: context.authStateReport?.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
+      authChoice: context.authStateReport?.authChoice ?? context.crawlContract?.authChoice ?? 'declined',
+    },
+  );
+  const nextContract = createCrawlContract({
+    site: context.site,
+    authChoice: normalizedReport.authChoice,
+    authStateReport: normalizedReport,
+    coverageTargets: context.crawlContract?.coverageTargets ?? {},
+  });
+  context.authStateReport = normalizedReport;
+  context.crawlContract = nextContract;
+  const authStateReportPath = await writeArtifactJson(context, AUTH_STATE_REPORT_FILE, normalizedReport);
+  return {
+    authStateReport: normalizedReport,
+    crawlContract: nextContract,
+    artifactPaths: { authStateReport: authStateReportPath },
+    reasonCodes: normalizedReport.verified === true ? [] : uniqueSortedStrings(normalizedReport.blockingSignals ?? []),
+    warnings: normalizedReport.verified === true
+      ? []
+      : ['Login enhancement did not reach verified sanitized structure access; authenticated crawl remains disabled for this build.'],
+    summary: authSummaryForReport(nextContract, normalizedReport),
+  };
+}
+
+function sanitizedControl(control = /** @type {any} */ ({}), index = 0) {
+  return {
+    kind: String(control.kind ?? control.controlType ?? 'button').slice(0, 40),
+    type: control.type ? String(control.type).slice(0, 40) : null,
+    label: control.label ? String(control.label).slice(0, 80) : null,
+    name: control.name ? String(control.name).slice(0, 80) : null,
+    selector: control.selector ? String(control.selector).slice(0, 120) : `auth-control-${index}`,
+    attrs: control.attrs && typeof control.attrs === 'object'
+      ? {
+        role: control.attrs.role ? String(control.attrs.role).slice(0, 40) : null,
+      }
+      : {},
+  };
+}
+
+function sanitizedForm(form = /** @type {any} */ ({}), index = 0) {
+  const method = String(form.method ?? 'GET').toUpperCase();
+  return {
+    label: form.label ? String(form.label).slice(0, 80) : `auth-form-${index}`,
+    selector: form.selector ? String(form.selector).slice(0, 120) : `auth-form-${index}`,
+    method,
+    action: form.action ? String(form.action).slice(0, 200) : null,
+    textSummary: 'sanitized form structure only',
+    inputs: Array.isArray(form.inputs)
+      ? form.inputs.slice(0, 20).map((input, inputIndex) => ({
+        name: input?.name ? String(input.name).slice(0, 80) : null,
+        type: input?.type ? String(input.type).slice(0, 40) : null,
+        selector: input?.selector ? String(input.selector).slice(0, 120) : `auth-input-${inputIndex}`,
+        label: input?.label ? String(input.label).slice(0, 80) : null,
+        tagName: input?.tagName ? String(input.tagName).slice(0, 20) : null,
+      }))
+      : [],
+  };
+}
+
+function normalizeAuthenticatedStructurePage(context, page = /** @type {any} */ ({}), {
+  sourceLayer = 'authenticated',
+  authStateReport = context.authStateReport,
+  fallbackUrl = context.site.rootUrl,
+  overlayFor = null,
+} = /** @type {any} */ ({})) {
+  const normalizedUrl = normalizeUrl(page.normalizedUrl ?? page.url ?? fallbackUrl, context.site.rootUrl);
+  if (!isInternalUrl(normalizedUrl, context.site.allowedDomains)) {
+    return null;
+  }
+  const routeTemplate = page.routeTemplate ?? routePatternForUrl(normalizedUrl);
+  const visibleItemCount = Math.max(0, Number(page.visibleItemCount ?? 0) || 0);
+  const listPresent = page.listPresent === true || page.listPresence === true;
+  const emptyStatePresent = page.emptyStatePresent === true || page.empty_state_present === true;
+  const unreadMarkerPresent = page.unreadMarkerPresent === true || page.unread_marker_present === true;
+  const pageType = page.pageType ?? page.page_type ?? 'authenticated_summary';
+  const structureHash = String(page.structureHash ?? page.structure_hash ?? stableNodeId('auth-structure', `${routeTemplate}:${pageType}:${visibleItemCount}:${listPresent}:${emptyStatePresent}:${unreadMarkerPresent}`));
+  return {
+    url: normalizedUrl,
+    normalizedUrl,
+    depth: 0,
+    discoveredBy: 'rendered_link',
+    sourceLayer,
+    authRequired: true,
+    authLevel: authStateReport?.authLevel ?? null,
+    evidenceLevel: page.evidenceLevel ?? (visibleItemCount > 0 || listPresent || emptyStatePresent ? 'login_page_verified' : 'login_route_verified'),
+    sourcePath: normalizedUrl,
+    title: page.title ? String(page.title).slice(0, 120) : `${sourceLayer} route ${routeTemplate}`,
+    textSummary: 'sanitized authenticated structure summary; no page body persisted',
+    canonicalUrl: normalizedUrl,
+    routeTemplate,
+    routePath: new URL(normalizedUrl).pathname,
+    tabState: page.tabState ?? page.tab_state ?? null,
+    pageType,
+    routeState: {
+      source: sourceLayer === 'authenticated_overlay' ? 'authenticated-overlay-summary' : 'authenticated-structure-summary',
+      stateId: page.stateKey ?? page.stateId ?? `${sourceLayer}:${routeTemplate}:${page.tabState ?? 'default'}`,
+      routeTemplate,
+      routePath: new URL(normalizedUrl).pathname,
+      tabState: page.tabState ?? page.tab_state ?? null,
+      pageType,
+    },
+    stateKey: page.stateKey ?? page.stateId ?? `${sourceLayer}:${routeTemplate}:${page.tabState ?? 'default'}`,
+    visibleItemCount,
+    listPresent,
+    emptyStatePresent,
+    unreadMarkerPresent,
+    modalPresence: page.modalPresence === true || page.modal_present === true,
+    structureHash,
+    evidenceStatus: page.evidenceStatus ?? (visibleItemCount > 0 || listPresent || emptyStatePresent ? 'structure_summary_present' : 'route_seed_only'),
+    riskLevel: page.riskLevel ?? 'read_personal_medium',
+    links: [],
+    forms: Array.isArray(page.forms) ? page.forms.slice(0, 12).map(sanitizedForm) : [],
+    controls: Array.isArray(page.controls) ? page.controls.slice(0, 40).map(sanitizedControl) : [],
+    structureItems: [
+      {
+        id: stableNodeId('auth-structure-item', `${sourceLayer}:${routeTemplate}:${structureHash}`),
+        nodeType: page.modalPresence === true ? 'modal' : 'content',
+        structureType: page.structureType ?? pageType,
+        labelSummary: page.structureLabel ?? `${pageType} sanitized structure`,
+        structureHash,
+        visibleItemCount,
+        listPresent,
+        emptyStatePresent,
+        unreadMarkerPresent,
+        evidenceStatus: page.evidenceStatus ?? (visibleItemCount > 0 || listPresent || emptyStatePresent ? 'structure_summary_present' : 'route_seed_only'),
+        riskLevel: page.riskLevel ?? 'read_personal_medium',
+      },
+    ],
+    overlayFor,
+    diagnostics: {
+      staticEvidenceStatus: 'present',
+      dynamicSignals: ['default-browser-login-sanitized-summary'],
+      warnings: [],
+    },
+    collection: {
+      status: 'success',
+      source: 'default_browser_login_sanitized_summary',
+      concurrent: false,
+    },
+    evidence: [
+      buildEvidence({
+        type: 'text',
+        source: normalizedUrl,
+        text: `${sourceLayer} sanitized route and structure summary; no cookie, token, raw DOM, HTML, body, profile, or private content persisted.`,
+        confidence: page.evidenceLevel === 'capability_verified' ? 0.88 : 0.74,
+      }),
+    ],
+  };
+}
+
+async function crawlAuthenticatedStage(context, stageResults) {
+  const authStateReport = context.authStateReport ?? requireStage(stageResults, 'authStateCheck').authStateReport;
+  const crawlContract = context.crawlContract ?? requireStage(stageResults, 'authStateCheck').crawlContract;
+  const canRunAuth = crawlContract?.crawlMode === 'enhanced_with_login' && canRunAuthenticatedLayer(authStateReport);
+  const warnings = /** @type {string[]} */ ([]);
+  if (!canRunAuth) {
+    const reason = 'Authenticated crawl skipped because login enhancement was declined, failed, or did not reach verified sanitized structure access.';
+    warnings.push(reason);
+    const payload = {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      buildId: context.buildId,
+      siteId: context.site.id,
+      status: 'skipped',
+      reason,
+      reasonCode: 'missing_auth_evidence',
+      authenticatedPages: [],
+      authenticatedOverlayPages: [],
+      authCoverageSummary: {
+        authenticatedPages: 0,
+        authenticatedOverlayPages: 0,
+        authLevel: authStateReport?.authLevel ?? null,
+        verified: authStateReport?.verified === true,
+      },
+      privacy: {
+        rawDomSaved: false,
+        rawHtmlSaved: false,
+        rawContentSaved: false,
+        privateContentSaved: false,
+        cookiesSaved: false,
+        tokensSaved: false,
+        browserProfileSaved: false,
+      },
+    };
+    const crawlAuthenticatedPath = await writeArtifactJson(context, CRAWL_AUTHENTICATED_FILE, payload);
+    return {
+      status: 'skipped',
+      authenticatedPages: [],
+      authenticatedOverlayPages: [],
+      authCoverageSummary: payload.authCoverageSummary,
+      warnings,
+      reasonCode: 'missing_auth_evidence',
+      reasonCodes: ['missing_auth_evidence'],
+      artifactPaths: { crawlAuthenticated: crawlAuthenticatedPath },
+      summary: payload.authCoverageSummary,
+    };
+  }
+
+  let provided = null;
+  if (typeof context.options.authenticatedStructureProvider === 'function') {
+    provided = await context.options.authenticatedStructureProvider({
+      context,
+      site: context.site,
+      authStateReport,
+      crawlContract,
+      seeds: stageResults.discoverSeeds,
+    });
+  } else if (context.options.authenticatedStructureSummary) {
+    provided = context.options.authenticatedStructureSummary;
+  }
+  if (!provided) {
+    const reason = 'Authenticated crawl skipped because no sanitized default-browser structure summary provider was configured.';
+    warnings.push(reason);
+    const payload = {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      buildId: context.buildId,
+      siteId: context.site.id,
+      status: 'skipped',
+      reason,
+      reasonCode: 'auth-structure-provider-missing',
+      authenticatedPages: [],
+      authenticatedOverlayPages: [],
+      authCoverageSummary: {
+        authenticatedPages: 0,
+        authenticatedOverlayPages: 0,
+        authLevel: authStateReport.authLevel,
+        verified: authStateReport.verified === true,
+      },
+      privacy: {
+        rawDomSaved: false,
+        rawHtmlSaved: false,
+        rawContentSaved: false,
+        privateContentSaved: false,
+        cookiesSaved: false,
+        tokensSaved: false,
+        browserProfileSaved: false,
+      },
+    };
+    const crawlAuthenticatedPath = await writeArtifactJson(context, CRAWL_AUTHENTICATED_FILE, payload);
+    return {
+      status: 'skipped',
+      authenticatedPages: [],
+      authenticatedOverlayPages: [],
+      authCoverageSummary: payload.authCoverageSummary,
+      warnings,
+      reasonCode: 'auth-structure-provider-missing',
+      reasonCodes: ['auth-structure-provider-missing'],
+      artifactPaths: { crawlAuthenticated: crawlAuthenticatedPath },
+      summary: payload.authCoverageSummary,
+    };
+  }
+
+  const authSeeds = stageResults.discoverSeeds?.authSeeds ?? [];
+  const revisitSeeds = stageResults.discoverSeeds?.revisitSeeds ?? [];
+  const authenticatedPages = arrayUniqueBy((provided.authenticatedPages ?? provided.pages ?? [])
+    .map((page, index) => normalizeAuthenticatedStructurePage(context, page, {
+      sourceLayer: 'authenticated',
+      authStateReport,
+      fallbackUrl: authSeeds[index]?.normalizedUrl ?? context.site.rootUrl,
+    }))
+    .filter(Boolean), (page) => pageIdentity(page))
+    .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
+  const authenticatedOverlayPages = arrayUniqueBy((provided.authenticatedOverlayPages ?? provided.overlayPages ?? [])
+    .map((page, index) => normalizeAuthenticatedStructurePage(context, page, {
+      sourceLayer: 'authenticated_overlay',
+      authStateReport,
+      fallbackUrl: revisitSeeds[index]?.normalizedUrl ?? context.site.rootUrl,
+      overlayFor: page.overlayFor ?? page.publicUrl ?? revisitSeeds[index]?.normalizedUrl ?? null,
+    }))
+    .filter(Boolean), (page) => pageIdentity(page))
+    .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
+  warnings.push(...(Array.isArray(provided.warnings) ? provided.warnings.map(String) : []));
+  const authCoverageSummary = {
+    authenticatedPages: authenticatedPages.length,
+    authenticatedOverlayPages: authenticatedOverlayPages.length,
+    authLevel: authStateReport.authLevel,
+    verified: authStateReport.verified === true,
+    rawMaterialPersisted: false,
+    sessionMaterialPersisted: false,
+    browserProfilePersisted: false,
+  };
+  const payload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    buildId: context.buildId,
+    siteId: context.site.id,
+    status: 'success',
+    authenticatedPages,
+    authenticatedOverlayPages,
+    authCoverageSummary,
+    warnings,
+    privacy: {
+      rawDomSaved: false,
+      rawHtmlSaved: false,
+      rawContentSaved: false,
+      privateContentSaved: false,
+      cookiesSaved: false,
+      tokensSaved: false,
+      browserProfileSaved: false,
+    },
+  };
+  const crawlAuthenticatedPath = await writeArtifactJson(context, CRAWL_AUTHENTICATED_FILE, payload);
+  return {
+    authenticatedPages,
+    authenticatedOverlayPages,
+    authCoverageSummary,
+    warnings,
+    artifactPaths: { crawlAuthenticated: crawlAuthenticatedPath },
+    summary: authCoverageSummary,
+  };
+}
+
 async function crawlRenderedStage(context) {
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
     status: 'skipped',
-    reason: 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.',
+    reason: 'Controlled-browser rendered crawl is not used for login enhancement; authenticated structure evidence must come from the default-browser login flow or a sanitized bridge.',
     pages: [],
   };
   const crawlRenderedPath = await writeArtifactJson(context, 'crawl_rendered.json', payload);
@@ -2556,10 +2976,11 @@ async function crawlRenderedStage(context) {
 }
 
 async function discoverInteractionsStage(context, stageResults) {
-  const { pages } = requireStage(stageResults, 'crawlStatic');
+  const pages = pagesFromStageResults(stageResults);
   const interactions = /** @type {any[]} */ ([]);
   for (const page of pages) {
     for (const form of page.forms) {
+      const safety = formSafety(form);
       interactions.push({
         id: stableNodeId('interaction:form', `${pageIdentity(page)}:${form.selector}`),
         pageUrl: page.normalizedUrl,
@@ -2568,7 +2989,12 @@ async function discoverInteractionsStage(context, stageResults) {
         selector: form.selector,
         method: form.method,
         endpoint: form.action,
-        safety: formSafety(form),
+        safety,
+        sourceLayer: pageSourceLayer(page),
+        authRequired: page.authRequired === true,
+        authLevel: page.authLevel ?? null,
+        evidenceLevel: pageEvidenceLevel(page),
+        riskLevel: safety === 'read_only' ? page.riskLevel ?? 'read_public_low' : 'write_low',
         evidence: [
           buildEvidence({
             type: 'form',
@@ -2595,6 +3021,11 @@ async function discoverInteractionsStage(context, stageResults) {
         label: control.label,
         selector: control.selector,
         safety: ['tab', 'menu', 'button'].includes(kind) ? 'safe' : 'requires_input',
+        sourceLayer: pageSourceLayer(page),
+        authRequired: page.authRequired === true,
+        authLevel: page.authLevel ?? null,
+        evidenceLevel: pageEvidenceLevel(page),
+        riskLevel: ['tab', 'menu', 'button'].includes(kind) ? page.riskLevel ?? 'read_public_low' : 'write_low',
         evidence: [
           buildEvidence({
             type: 'dom',
@@ -2665,13 +3096,16 @@ async function captureNetworkTracesStage(context) {
 }
 
 async function buildSiteGraphStage(context, stageResults) {
-  const { pages } = requireStage(stageResults, 'crawlStatic');
+  const pages = pagesFromStageResults(stageResults);
   const nodes = /** @type {any[]} */ ([]);
   const edges = /** @type {any[]} */ ([]);
   const nodeByPageKey = new Map();
   const routeNodes = new Map();
 
   for (const page of pages) {
+    const sourceLayer = pageSourceLayer(page);
+    const authRequired = page.authRequired === true || sourceLayer !== 'public';
+    const evidenceLevel = pageEvidenceLevel(page);
     const id = pageNodeIdForPage(page);
     const node = {
       schemaVersion: BUILD_SCHEMA_VERSION,
@@ -2698,13 +3132,17 @@ async function buildSiteGraphStage(context, stageResults) {
       structureHash: page.structureHash ?? null,
       evidenceStatus: page.evidenceStatus ?? null,
       riskLevel: page.riskLevel ?? null,
+      sourceLayer,
+      authLevel: page.authLevel ?? null,
+      evidenceLevel,
       title: page.title,
       textSummary: page.textSummary,
       domFingerprint: stableNodeId('dom', `${page.title}:${page.textSummary}:${page.links.length}:${page.forms.length}:${page.stateKey ?? ''}:${page.structureHash ?? ''}`),
       discoveredBy: page.discoveredBy,
       parentNodeIds: [],
       childNodeIds: [],
-      authRequired: page.authRequired === true,
+      authRequired,
+      overlayFor: page.overlayFor ?? null,
       confidence: 0.9,
       evidence: page.evidence,
     };
@@ -2741,9 +3179,15 @@ async function buildSiteGraphStage(context, stageResults) {
       });
     }
     const pattern = page.routeTemplate ?? routePatternForUrl(page.normalizedUrl);
-    const routeKey = page.tabState ? `${pattern}:${page.tabState}` : pattern;
+    const sourceLayer = pageSourceLayer(page);
+    const authRequired = page.authRequired === true || sourceLayer !== 'public';
+    const evidenceLevel = pageEvidenceLevel(page);
+    const routeKeyBase = page.tabState ? `${pattern}:${page.tabState}` : pattern;
+    const routeKey = sourceLayer === 'public' ? routeKeyBase : `${routeKeyBase}:${sourceLayer}`;
     if (!routeNodes.has(routeKey)) {
-      const routeId = page.routeTemplate ? routeTemplateNodeId(pattern, page.tabState) : routeNodeId(pattern);
+      const routeId = sourceLayer === 'public'
+        ? (page.routeTemplate ? routeTemplateNodeId(pattern, page.tabState) : routeNodeId(pattern))
+        : stableNodeId(page.routeTemplate ? 'node:route-template' : 'node:route', `${pattern}:${page.tabState ?? ''}:${sourceLayer}`);
       routeNodes.set(routeKey, {
         schemaVersion: BUILD_SCHEMA_VERSION,
         id: routeId,
@@ -2759,9 +3203,12 @@ async function buildSiteGraphStage(context, stageResults) {
           ? `Route template ${pattern} with SPA state ${page.tabState}`
           : `Route pattern discovered from ${page.normalizedUrl}`,
         discoveredBy: page.discoveredBy,
+        sourceLayer,
+        authLevel: page.authLevel ?? null,
+        evidenceLevel,
         parentNodeIds: [],
         childNodeIds: [],
-        authRequired: false,
+        authRequired,
         confidence: 0.8,
         evidence: [
           buildEvidence({
@@ -2796,9 +3243,12 @@ async function buildSiteGraphStage(context, stageResults) {
         title: form.label,
         textSummary: form.textSummary,
         discoveredBy: 'form',
+        sourceLayer,
+        authLevel: page.authLevel ?? null,
+        evidenceLevel,
         parentNodeIds: [from.id],
         childNodeIds: [],
-        authRequired: false,
+        authRequired,
         confidence: 0.9,
         evidence: [
           buildEvidence({
@@ -2835,9 +3285,12 @@ async function buildSiteGraphStage(context, stageResults) {
         title: control.label || control.name || titleCase(control.kind),
         textSummary: `${control.kind}${control.type ? ` ${control.type}` : ''} ${control.label ?? control.name ?? ''}`.trim(),
         discoveredBy: 'interaction',
+        sourceLayer,
+        authLevel: page.authLevel ?? null,
+        evidenceLevel,
         parentNodeIds: [from.id],
         childNodeIds: [],
-        authRequired: false,
+        authRequired,
         confidence: 0.78,
         evidence: [
           buildEvidence({
@@ -2883,9 +3336,12 @@ async function buildSiteGraphStage(context, stageResults) {
         evidenceStatus: item.evidenceStatus ?? page.evidenceStatus ?? null,
         riskLevel: item.riskLevel ?? page.riskLevel ?? null,
         discoveredBy: 'interaction',
+        sourceLayer,
+        authLevel: page.authLevel ?? null,
+        evidenceLevel: item.evidenceLevel ?? evidenceLevel,
         parentNodeIds: [from.id],
         childNodeIds: [],
-        authRequired: page.authRequired === true,
+        authRequired,
         confidence: item.evidenceStatus === 'route_seed_only' ? 0.56 : 0.72,
         evidence: [
           buildEvidence({
@@ -2909,6 +3365,31 @@ async function buildSiteGraphStage(context, stageResults) {
     }
   }
 
+  for (const page of pages.filter((candidate) => pageSourceLayer(candidate) === 'authenticated_overlay')) {
+    const overlayNode = nodeByPageKey.get(pageIdentity(page));
+    if (!overlayNode) {
+      continue;
+    }
+    const overlayTargetUrl = page.overlayFor ? normalizeUrl(page.overlayFor, context.site.rootUrl) : page.normalizedUrl;
+    const publicNode = [...nodeByPageKey.values()].find((node) => (
+      node.sourceLayer === 'public'
+      && node.normalizedUrl === overlayTargetUrl
+    ));
+    if (!publicNode) {
+      continue;
+    }
+    overlayNode.parentNodeIds.push(publicNode.id);
+    publicNode.childNodeIds.push(overlayNode.id);
+    overlayNode.overlayForNodeId = publicNode.id;
+    edges.push({
+      id: stableNodeId('edge:auth-overlay', `${publicNode.id}:${overlayNode.id}`),
+      type: 'auth_overlay_for',
+      from: publicNode.id,
+      to: overlayNode.id,
+      evidence: overlayNode.evidence,
+    });
+  }
+
   nodes.push(...routeNodes.values());
   for (const node of nodes) {
     node.parentNodeIds = uniqueSortedStrings(node.parentNodeIds);
@@ -2927,6 +3408,7 @@ async function buildSiteGraphStage(context, stageResults) {
       nodes: nodes.length,
       edges: edges.length,
       pages: pages.length,
+      bySourceLayer: countBy(nodes, (node) => nodeSourceLayer(node)),
       blockedReason: nodes.length ? null : 'siteforge-site-graph-empty',
     },
   };
@@ -2966,10 +3448,14 @@ async function classifyNodesStage(context, stageResults) {
     } else if (node.type === 'modal') {
       node.classification = `modal_${node.structureType ?? node.pageType ?? 'summary'}`;
     } else if (node.type === 'route_template') {
-      node.classification = catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
+      node.classification = nodeSourceLayer(node) !== 'public'
+        ? classifyPage(node)
+        : catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
         ?? 'route_template';
     } else if (node.type === 'route') {
-      node.classification = catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
+      node.classification = nodeSourceLayer(node) !== 'public'
+        ? classifyPage(node)
+        : catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
         ?? (/product-\d+|:id/u.test(node.routePattern ?? '') ? 'entity_route' : 'route');
     }
   }
@@ -2995,13 +3481,32 @@ async function classifyNodesStage(context, stageResults) {
 }
 
 async function extractAffordancesStage(context, stageResults) {
-  const { pages } = requireStage(stageResults, 'crawlStatic');
+  const pages = pagesFromStageResults(stageResults);
   const graph = requireStage(stageResults, 'classifyNodes').graph;
   const pageNodeByKey = new Map(graph.nodes.filter((node) => node.type === 'page').map((node) => [
-    node.stateKey ? `${node.normalizedUrl}#state:${node.stateKey}` : node.normalizedUrl,
+    pageIdentity(node),
     node,
   ]));
   const affordances = /** @type {any[]} */ ([]);
+  const commonAffordanceMetadata = (page, safety = 'read_only') => {
+    const highRisk = ['state_changing', 'destructive', 'payment'].includes(safety);
+    return {
+      sourceLayer: pageSourceLayer(page),
+      authRequired: page.authRequired === true || pageSourceLayer(page) !== 'public',
+      authLevel: page.authLevel ?? null,
+      evidenceLevel: pageEvidenceLevel(page),
+      riskLevel: safety === 'payment'
+        ? 'write_high'
+        : safety === 'destructive'
+          ? 'write_high'
+          : safety === 'state_changing'
+            ? 'write_low'
+            : page.riskLevel ?? 'read_public_low',
+      activationDecision: highRisk
+        ? (safety === 'state_changing' ? 'confirmation_required' : 'disabled')
+        : 'candidate_evidence',
+    };
+  };
 
   for (const page of pages) {
     const pageNode = pageNodeByKey.get(pageIdentity(page));
@@ -3018,6 +3523,7 @@ async function extractAffordancesStage(context, stageResults) {
         selector: link.selector,
         href: link.normalizedHref,
         safety: 'read_only',
+        ...commonAffordanceMetadata(page, 'read_only'),
         evidence: [
           buildEvidence({
             type: 'dom',
@@ -3041,6 +3547,7 @@ async function extractAffordancesStage(context, stageResults) {
         method: form.method,
         endpoint: form.action,
         safety,
+        ...commonAffordanceMetadata(page, safety),
         evidence: [
           buildEvidence({
             type: 'form',
@@ -3069,6 +3576,7 @@ async function extractAffordancesStage(context, stageResults) {
           label: input.label || input.name,
           selector: input.selector,
           safety: 'requires_input',
+          ...commonAffordanceMetadata(page, 'requires_input'),
           evidence: [
             buildEvidence({
               type: 'dom',
@@ -3092,6 +3600,7 @@ async function extractAffordancesStage(context, stageResults) {
         label: control.label || control.name || titleCase(control.kind),
         selector: control.selector,
         safety,
+        ...commonAffordanceMetadata(page, safety),
         evidence: [
           buildEvidence({
             type: 'dom',
@@ -3118,6 +3627,12 @@ async function extractAffordancesStage(context, stageResults) {
       confidence: routeNode.confidence,
       routeTemplate: routeNode.routeTemplate ?? null,
       tabState: routeNode.tabState ?? null,
+      sourceLayer: nodeSourceLayer(routeNode),
+      authRequired: routeNode.authRequired === true,
+      authLevel: routeNode.authLevel ?? null,
+      evidenceLevel: routeNode.evidenceLevel ?? 'public_verified',
+      riskLevel: routeNode.riskLevel ?? 'read_public_low',
+      activationDecision: 'candidate_evidence',
     });
   }
 
@@ -3254,19 +3769,19 @@ function capabilityActionForBlockedAction(action) {
 
 function blockedActionDisplayLabel(action) {
   const labels = {
-    checkout: '结账',
-    change_2fa: '修改两步验证',
-    change_email: '修改账号邮箱',
-    change_password: '修改账号密码',
-    change_payment: '修改付款设置',
-    delete: '删除内容',
-    pay: '支付',
-    send: '发送内容',
-    send_dm: '发送私信',
-    submit: '提交表单',
-    upload: '上传文件',
+    checkout: 'checkout',
+    change_2fa: 'change 2FA',
+    change_email: 'change email',
+    change_password: 'change password',
+    change_payment: 'change payment',
+    delete: 'delete',
+    pay: 'pay',
+    send: 'send',
+    send_dm: 'send direct message',
+    submit: 'submit form',
+    upload: 'upload',
   };
-  return labels[action] ?? String(action ?? '高风险操作').replace(/_/gu, ' ');
+  return labels[action] ?? String(action ?? 'high risk action').replace(/_/gu, ' ');
 }
 
 function addDisabledRiskCapabilities(context, capabilities, affordances = /** @type {any[]} */ ([])) {
@@ -3286,7 +3801,7 @@ function addDisabledRiskCapabilities(context, capabilities, affordances = /** @t
         description: 'Risk policy keeps this high-risk action visible as disabled and non-executable.',
         action: capabilityActionForBlockedAction(blockedAction),
         object: 'high-risk action',
-        userValue: `已禁用${blockedLabel}操作`,
+        userValue: `Disabled high-risk action: ${blockedLabel}`,
         entryNodeIds: affordance?.nodeId ? [affordance.nodeId] : [],
         requiredNodeIds: affordance?.nodeId ? [affordance.nodeId] : [],
         inputs: affordance?.inputs ?? [],
@@ -3303,9 +3818,9 @@ function addDisabledRiskCapabilities(context, capabilities, affordances = /** @t
         blockedAction,
         activationBlockedReason: 'forced-action-disabled',
         intents: [
-          `查看为什么不能${blockedLabel}`,
-          `查看${blockedLabel}的安全边界`,
-          `保留${blockedLabel}为禁用状态`,
+          `why ${blockedLabel} is disabled`,
+          `${blockedLabel} safety boundary`,
+          `keep ${blockedLabel} disabled`,
         ],
       }));
     }
@@ -3571,7 +4086,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
   const topicCategoryNodes = topicLists.filter((node) => /\/topics\/(?:column|media|event|release|talent-info)(?:\/|$)/iu.test(`${node.normalizedUrl ?? ''} ${node.routePattern ?? ''}`));
   const topicCategoryEvidenceNodes = topicCategoryNodes.length
     ? topicCategoryNodes
-    : topicLists.filter((node) => /コラム|メディア|イベント|リリース|タレント情報|TOPICS|更新情報/iu.test(`${node.title ?? ''} ${node.textSummary ?? ''}`));
+    : topicLists.filter((node) => /銈炽儵銉爘銉°儑銈ｃ偄|銈ゃ儥銉炽儓|銉儶銉笺偣|銈裤儸銉炽儓鎯呭牨|TOPICS|鏇存柊鎯呭牨/iu.test(`${node.title ?? ''} ${node.textSummary ?? ''}`));
   const authors = catalogCoverageNodes(pageNodes, routeNodes, ['catalog_author']);
   const rankings = catalogCoverageNodes(pageNodes, routeNodes, ['catalog_collection']).filter((node) => /hot|popular|ranking|rank|top|latest|recent|trending/iu.test(`${node.normalizedUrl ?? ''} ${node.routePattern ?? ''} ${node.title ?? ''}`));
   const details = catalogCoverageNodes(pageNodes, routeNodes, ['product_detail', 'catalog_detail', 'entity_route']);
@@ -3594,28 +4109,28 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse topic updates',
     description: 'Browse discovered public TOPICS update routes using site-visible labels.',
     object: 'topic updates',
-    userValue: '查看更新信息列表（TOPICS 更新情報）',
+    userValue: 'Browse TOPICS update lists.',
     nodes: topicLists,
     outputs: [{ name: 'topic_updates', type: 'list' }],
     intents: [
-      '查看 TOPICS 更新情報',
-      '查看更新信息列表',
-      '查看 ALL 更新情報',
+      'browse topic updates',
+      'view TOPICS updates',
+      'open all update lists',
     ],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'filter topic updates by category',
-    description: 'Browse discovered TOPICS category routes such as コラム, メディア, イベント, リリース, and タレント情報.',
+    description: 'Browse discovered TOPICS category routes such as column, media, release, and talent information.',
     object: 'topic update categories',
-    userValue: '按分类查看更新信息（コラム/メディア/イベント/リリース/タレント情報）',
+    userValue: 'Filter topic updates by category.',
     nodes: topicCategoryEvidenceNodes,
     outputs: [{ name: 'topic_categories', type: 'list' }],
     intents: [
-      '按 コラム 分类查看更新信息',
-      '查看 メディア 更新情報',
-      '查看 イベント 更新情報',
-      '查看 リリース 和 タレント情報',
+      'filter topic updates by category',
+      'browse media topic updates',
+      'browse release topic updates',
+      'browse talent topic updates',
     ],
   });
 
@@ -3623,14 +4138,14 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse topic update archive',
     description: 'Browse discovered TOPICS ARCHIVE month routes.',
     object: 'topic archive routes',
-    userValue: '按月份查看更新归档（ARCHIVE）',
+    userValue: 'Browse update archives by month.',
     nodes: topicArchives,
     outputs: [{ name: 'topic_archive_months', type: 'list' }],
     intents: [
-      '查看 ARCHIVE 更新归档',
-      '按月份查看 TOPICS',
-      '查看某个月的更新情報',
-      '浏览更新信息归档',
+      'browse update archive',
+      'view TOPICS by month',
+      'open monthly update archive',
+      'browse archived updates',
     ],
   });
 
@@ -3638,14 +4153,14 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'open topic update detail',
     description: 'Open discovered public TOPICS update detail pages.',
     object: 'topic update detail',
-    userValue: '查看更新信息详情（更新情報詳細）',
+    userValue: '鏌ョ湅鏇存柊淇℃伅璇︽儏锛堟洿鏂版儏鍫辫┏绱帮級',
     nodes: topicDetails,
     outputs: [{ name: 'topic_update_detail', type: 'entity' }],
     intents: [
-      '打开更新情報詳細',
-      '查看某条更新信息详情',
-      '打开 TOPICS 详情',
-      '查看活动或公告详情',
+      'open topic update detail',
+      'view update detail',
+      'open TOPICS detail',
+      'view event or announcement detail',
     ],
   });
 
@@ -3653,14 +4168,14 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse event and media updates',
     description: 'Browse discovered public EVENT / MEDIA routes surfaced by the site.',
     object: 'event and media updates',
-    userValue: '查看活动/媒体更新入口（EVENT / MEDIA イベント・メディア情報）',
+    userValue: '鏌ョ湅娲诲姩/濯掍綋鏇存柊鍏ュ彛锛圗VENT / MEDIA 銈ゃ儥銉炽儓銉汇儭銉囥偅銈㈡儏鍫憋級',
     nodes: eventMedia,
     outputs: [{ name: 'event_media_entries', type: 'list' }],
     intents: [
-      '查看 EVENT / MEDIA',
-      '查看イベント・メディア情報',
-      '浏览活动媒体信息',
-      '打开活动或媒体更新入口',
+      'browse event and media updates',
+      'view EVENT and MEDIA',
+      'open event media entries',
+      'browse activity media information',
     ],
   });
 
@@ -3668,14 +4183,14 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse release updates',
     description: 'Browse discovered public RELEASE routes surfaced by the site.',
     object: 'release updates',
-    userValue: '查看リリース信息列表（RELEASE リリース一覧）',
+    userValue: '鏌ョ湅銉儶銉笺偣淇℃伅鍒楄〃锛圧ELEASE 銉儶銉笺偣涓€瑕э級',
     nodes: releaseLists,
     outputs: [{ name: 'release_entries', type: 'list' }],
     intents: [
-      '查看 RELEASE リリース一覧',
-      '浏览リリース信息',
-      '查看发布更新列表',
-      '打开リリース页面',
+      'browse release updates',
+      'view RELEASE list',
+      'open release information',
+      'view release page',
     ],
   });
 
@@ -3683,80 +4198,80 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse catalog collections',
     description: 'Browse all discovered public catalog, list, latest, and collection routes.',
     object: 'catalog collections',
-    userValue: '浏览目录列表',
+    userValue: '娴忚鐩綍鍒楄〃',
     nodes: collections.length ? collections : fallbackCollections,
     outputs: [{ name: 'catalog_entries', type: 'list' }],
-    intents: ['浏览目录列表', '查看全部内容列表', '打开站点内容目录', '查看最新内容'],
+    intents: ['browse catalog collections', 'view all content lists', 'open site catalog', 'view latest content'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog categories',
     description: 'Browse every discovered public category route.',
     object: 'catalog categories',
-    userValue: '浏览分类',
+    userValue: '娴忚鍒嗙被',
     nodes: categories,
     outputs: [{ name: 'categories', type: 'list' }],
-    intents: ['浏览分类', '查看所有分类', '打开分类页面', '按分类查看内容'],
+    intents: ['browse catalog categories', 'view all categories', 'open category page', 'view content by category'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog tags',
     description: 'Browse every discovered public tag or topic route.',
     object: 'catalog tags',
-    userValue: '浏览标签',
+    userValue: '娴忚鏍囩',
     nodes: tags,
     outputs: [{ name: 'tags', type: 'list' }],
-    intents: ['浏览标签', '查看标签内容', '按标签筛选内容', '打开标签页面'],
+    intents: ['browse catalog tags', 'view tag content', 'filter content by tag', 'open tag page'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog rankings',
     description: 'Browse discovered public ranking, hot, popular, and latest routes.',
     object: 'catalog ranking routes',
-    userValue: '浏览排行和最新内容',
+    userValue: 'Browse ranking and latest content routes.',
     nodes: rankings,
     outputs: [{ name: 'ranked_entries', type: 'list' }],
-    intents: ['浏览排行', '查看热门内容', '查看最近更新', '打开最新内容列表'],
+    intents: ['browse catalog rankings', 'view popular content', 'view recent updates', 'open latest content list'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'open catalog detail',
     description: 'Open discovered public detail pages from catalog evidence.',
     object: 'catalog detail pages',
-    userValue: '打开目录详情',
+    userValue: '鎵撳紑鐩綍璇︽儏',
     nodes: details,
     outputs: [{ name: 'detail', type: 'entity' }],
-    intents: ['打开内容详情', '查看公开详情页', '打开条目详情', '查看站点公开详情'],
+    intents: ['open catalog detail', 'view public detail page', 'open item detail', 'view site public detail'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'open catalog author profile',
     description: 'Open discovered public author, model, actor, performer, or profile routes.',
     object: 'catalog author profiles',
-    userValue: '打开作者或演员页面',
+    userValue: '鎵撳紑浣滆€呮垨婕斿憳椤甸潰',
     nodes: authors,
     outputs: [{ name: 'profile', type: 'entity' }],
-    intents: ['打开作者页面', '查看演员页面', '查看作者资料', '按作者浏览内容'],
+    intents: ['open author profile', 'view performer profile', 'view author information', 'browse content by author'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog pagination',
     description: 'Follow discovered read-only pagination routes inside the catalog.',
     object: 'catalog pagination',
-    userValue: '浏览分页',
+    userValue: '娴忚鍒嗛〉',
     nodes: pagination,
     outputs: [{ name: 'page', type: 'list' }],
-    intents: ['浏览下一页', '查看分页内容', '继续翻页', '打开更多列表页'],
+    intents: ['browse next page', 'view paginated content', 'continue pagination', 'open more list pages'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'read public catalog metadata',
     description: 'Read public metadata structure from discovered catalog routes without storing raw page bodies.',
     object: 'public catalog metadata',
-    userValue: '读取公开目录元数据',
+    userValue: 'Read public catalog metadata.',
     nodes: publicMetadataNodes,
     outputs: [{ name: 'metadata', type: 'sanitized_summary' }],
-    intents: ['读取公开内容元数据', '汇总目录元数据', '查看公开条目信息', '提取公开列表摘要'],
+    intents: ['read public catalog metadata', 'summarize catalog metadata', 'view public item information', 'extract public list summary'],
   });
 
   if (searchForm && !capabilities.some((capability) => capability.name === 'search catalog content')) {
@@ -3779,7 +4294,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
       enabled_status: 'enabled',
       evidence_status: 'verified',
       default_policy: 'read_only',
-      intents: ['搜索站内内容', '搜索视频或作品', '按关键词查找内容', '查找目录条目'],
+      intents: ['search catalog content', 'search videos or works', 'find content by keyword', 'find catalog item'],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
@@ -3802,10 +4317,10 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
       description: 'Keep discovered download-capable content visible, but disabled until a safety-reviewed site adapter exists.',
       action: 'download',
       object: 'catalog content',
-      userValue: '下载内容（需安全适配器）',
+      userValue: 'Download content is disabled until a reviewed site adapter exists.',
       nodes: details.length ? details : publicMetadataNodes,
       outputs: [{ name: 'download_task', type: 'disabled_safety_boundary' }],
-      intents: ['下载内容', '下载视频', '保存目录条目', '下载作品'],
+      intents: ['download catalog content', 'download video', 'save catalog item', 'download work'],
       confidence: 0.5,
       status: 'disabled',
       riskLevel: 'download_high',
@@ -4017,6 +4532,196 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
   }
 }
 
+function capabilityRequiresLogin(context, capability = /** @type {any} */ ({}), nodesById = new Map()) {
+  if (capability.authRequired === true) {
+    return true;
+  }
+  const nodes = [
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+  ].map((id) => nodesById.get(id)).filter(Boolean);
+  if (nodes.some((node) => node.authRequired === true || nodeSourceLayer(node) !== 'public')) {
+    return true;
+  }
+  const text = [
+    capability.name,
+    capability.object,
+    capability.description,
+    capability.category,
+    capability.setupCapabilityId,
+    capability.intentAction,
+  ].join(' ').toLowerCase();
+  if (/notification|bookmark|\blists?\b|direct message|\bdm\b|following timeline|followed updates|followed users|recommended timeline|account followers/u.test(text)) {
+    return true;
+  }
+  const requiredLoginIds = new Set(context.crawlContract?.coverageTargets?.requiresLoginCapabilities ?? []);
+  return requiredLoginIds.has(canonicalCapabilitySemanticToken(capability.setupCapabilityId))
+    || requiredLoginIds.has(canonicalCapabilitySemanticToken(capability.name));
+}
+
+function sourceLayerForCapability(capability = /** @type {any} */ ({}), nodesById = new Map()) {
+  const nodes = [
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+  ].map((id) => nodesById.get(id)).filter(Boolean);
+  if (nodes.some((node) => nodeSourceLayer(node) === 'authenticated_overlay')) {
+    return 'authenticated_overlay';
+  }
+  if (nodes.some((node) => nodeSourceLayer(node) === 'authenticated')) {
+    return 'authenticated';
+  }
+  return capability.authRequired === true ? 'authenticated' : 'public';
+}
+
+function observedCapabilityEvidenceLevel(capability = /** @type {any} */ ({}), nodesById = new Map(), authStateReport = null) {
+  const nodes = [
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+  ].map((id) => nodesById.get(id)).filter(Boolean);
+  const levels = nodes.map((node) => node.evidenceLevel ?? (node.authRequired ? 'login_route_verified' : 'public_verified'));
+  if (
+    canRunAuthenticatedLayer(authStateReport)
+    && nodes.some((node) => node.authRequired === true || nodeSourceLayer(node) !== 'public')
+    && nodes.some((node) => node.listPresent === true || Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true)
+  ) {
+    levels.push('capability_verified');
+  }
+  if (capability.capabilityVerified === true || (authStateReport?.capabilityProofs ?? []).some((proof) => {
+    const capabilityId = normalizeSetupCapabilityId(proof.capabilityId);
+    return capabilityId && [
+      capability.setupCapabilityId,
+      capability.name,
+      capability.id,
+    ].map(normalizeSetupCapabilityId).includes(capabilityId);
+  })) {
+    levels.push('capability_verified');
+  }
+  return levels.sort((left, right) => evidenceLevelRank(right) - evidenceLevelRank(left))[0] ?? 'candidate';
+}
+
+function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ ({}), nodesById = new Map()) {
+  const authRequired = capabilityRequiresLogin(context, capability, nodesById);
+  const sourceLayer = sourceLayerForCapability({ ...capability, authRequired }, nodesById);
+  const nodes = [
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+  ].map((id) => nodesById.get(id)).filter(Boolean);
+  const observedEvidence = new Set();
+  if (nodes.length > 0) observedEvidence.add('source_node_present');
+  if (Array.isArray(capability.evidence) && capability.evidence.length > 0) observedEvidence.add('sanitized_evidence_present');
+  if (capability.executionPlan?.autoExecute !== true) observedEvidence.add('risk_policy_passed');
+  if (!authRequired) {
+    observedEvidence.add('public_route_accessible');
+  }
+  const hasAuthNode = nodes.some((node) => node.authRequired === true || nodeSourceLayer(node) !== 'public');
+  if (authRequired && hasAuthNode) observedEvidence.add('route_accessible');
+  if (authRequired && canRunAuthenticatedLayer(context.authStateReport)) observedEvidence.add('not_login_wall');
+  const hasListContainer = nodes.some((node) => (
+    node.listPresent === true
+    || /list|timeline|notification|bookmark|direct_message|following/u.test(String(node.classification ?? node.pageType ?? node.structureType ?? ''))
+  ));
+  if (authRequired && hasListContainer) observedEvidence.add('list_container_present');
+  const hasVisibleItemsOrEmptyState = nodes.some((node) => Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true);
+  if (authRequired && hasVisibleItemsOrEmptyState) observedEvidence.add('visible_item_count_or_empty_state');
+  const requiredEvidence = authRequired
+    ? ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
+    : ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'risk_policy_passed'];
+  const observed = uniqueSortedStrings([...observedEvidence]);
+  const missingEvidence = requiredEvidence.filter((item) => !observedEvidence.has(item));
+  const observedAuthLevel = observedCapabilityEvidenceLevel(capability, nodesById, context.authStateReport);
+  const requiredAuthLevel = authRequired ? 'capability_verified' : 'public_verified';
+  return {
+    capabilityId: capability.id,
+    authRequired,
+    requiredAuthLevel,
+    observedAuthLevel,
+    sourceLayer,
+    requiredEvidence,
+    observedEvidence: observed,
+    missingEvidence,
+    activationDecision: missingEvidence.length === 0 ? (authRequired ? 'limited_enabled' : 'active') : 'candidate',
+  };
+}
+
+function applyCapabilityEvidenceMatrix(context, capability = /** @type {any} */ ({}), graph) {
+  const nodesById = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
+  const matrix = buildCapabilityEvidenceMatrix(context, capability, nodesById);
+  const next = {
+    ...capability,
+    authRequired: matrix.authRequired,
+    sourceLayer: matrix.sourceLayer,
+    requiredAuthLevel: matrix.requiredAuthLevel,
+    observedAuthLevel: matrix.observedAuthLevel,
+    evidenceMatrix: matrix,
+    activationEvidence: matrix,
+  };
+  const forcedRiskDisabled = ['write_high', 'account_security_critical'].includes(next.risk_level)
+    || ['payment', 'destructive'].includes(next.safetyLevel)
+    || findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).length > 0;
+  const confirmationRisk = isHighRiskCapability(next) || next.risk_level === 'write_low';
+  if (forcedRiskDisabled) {
+    delete next.executionPlan;
+    next.status = 'disabled';
+    next.enabled_status = 'disabled';
+    next.default_policy = next.enabled_status;
+    next.evidence_status = 'disabled';
+    next.activationBlockedReason = next.activationBlockedReason ?? 'forced-action-disabled';
+    next.evidenceMatrix = {
+      ...matrix,
+      activationDecision: next.enabled_status,
+    };
+    next.activationEvidence = next.evidenceMatrix;
+    return next;
+  }
+  if (confirmationRisk && next.status === 'active') {
+    if (next.executionPlan) {
+      next.executionPlan = {
+        ...next.executionPlan,
+        mode: next.executionPlan.mode === 'read_only' ? 'dry_run' : next.executionPlan.mode,
+        dryRunOnly: true,
+        requiresConfirmation: true,
+        autoExecute: false,
+      };
+    }
+    next.enabled_status = next.enabled_status === 'draft_only' ? 'draft_only' : 'confirmation_required';
+    next.default_policy = next.enabled_status;
+    next.evidenceMatrix = {
+      ...matrix,
+      activationDecision: next.enabled_status,
+    };
+    next.activationEvidence = next.evidenceMatrix;
+  }
+  if (matrix.authRequired && !canRunAuthenticatedLayer(context.authStateReport)) {
+    delete next.executionPlan;
+    next.status = 'candidate';
+    next.enabled_status = 'candidate_debug_only';
+    next.default_policy = 'candidate_debug_only';
+    next.evidence_status = 'candidate';
+    next.activationBlockedReason = 'missing_auth_evidence';
+    next.evidenceMatrix = {
+      ...matrix,
+      activationDecision: 'requires_login',
+    };
+    next.activationEvidence = next.evidenceMatrix;
+    return next;
+  }
+  if (matrix.missingEvidence.length > 0) {
+    delete next.executionPlan;
+    next.status = next.status === 'disabled' ? 'disabled' : 'candidate';
+    next.enabled_status = next.enabled_status === 'disabled' ? 'disabled' : 'candidate_debug_only';
+    next.default_policy = next.enabled_status;
+    next.evidence_status = 'candidate';
+    next.activationBlockedReason = next.activationBlockedReason ?? 'capability-evidence-matrix-incomplete';
+    return next;
+  }
+  if (matrix.authRequired && next.status === 'active') {
+    next.enabled_status = next.enabled_status === 'enabled' ? 'limited_enabled' : (next.enabled_status ?? 'limited_enabled');
+    next.default_policy = next.default_policy === 'read_only' ? 'limited_enabled' : (next.default_policy ?? 'limited_enabled');
+    next.evidence_status = 'verified';
+  }
+  return next;
+}
+
 async function discoverCapabilitiesStage(context, stageResults) {
   const graph = requireStage(stageResults, 'classifyNodes').graph;
   const { affordances } = requireStage(stageResults, 'extractAffordances');
@@ -4025,7 +4730,7 @@ async function discoverCapabilitiesStage(context, stageResults) {
   const homepage = pageNodes.find((node) => node.classification === 'homepage') ?? pageNodes[0];
   const newsChannels = pageNodes.filter((node) => node.classification === 'news_channel');
   const newsArticle = pageNodes.find((node) => node.classification === 'article_detail');
-  const isNewsSite = Boolean(newsChannels.length || newsArticle || /news|新闻/iu.test(`${context.site.rootUrl} ${homepage?.title ?? ''} ${homepage?.textSummary ?? ''}`));
+  const isNewsSite = Boolean(newsChannels.length || newsArticle || /news|鏂伴椈/iu.test(`${context.site.rootUrl} ${homepage?.title ?? ''} ${homepage?.textSummary ?? ''}`));
   const productList = pageNodes.find((node) => node.classification === 'product_list');
   const productDetail = pageNodes.find((node) => node.classification === 'product_detail');
   const searchForm = affordances.find((affordance) => affordance.kind === 'form' && affordance.safety === 'read_only' && /search/iu.test(`${affordance.label ?? ''} ${affordance.endpoint ?? ''}`));
@@ -4173,7 +4878,7 @@ async function discoverCapabilitiesStage(context, stageResults) {
       description: 'Prepare a contact-support form submission as confirmation-required dry-run only.',
       action: 'contact',
       object: 'support',
-      userValue: '创建联系表单草稿（不自动提交）',
+      userValue: 'Prepare a contact form draft without submitting it.',
       entryNodeIds: [contactForm.nodeId],
       requiredNodeIds: [contactForm.nodeId],
       inputs: contactForm.inputs ?? [],
@@ -4182,9 +4887,9 @@ async function discoverCapabilitiesStage(context, stageResults) {
       evidence: contactForm.evidence,
       confidence: 0.75,
       intents: [
-        '创建联系表单草稿',
-        '预览 CONTACT / FAN LETTER 表单',
-        '准备客服消息但不提交',
+        'create contact form draft',
+        'preview contact form',
+        'prepare support message without submitting',
       ],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
@@ -4229,7 +4934,8 @@ async function discoverCapabilitiesStage(context, stageResults) {
 
   const policyApplied = dedupeSemanticCapabilities(arrayUniqueBy(capabilities, (capability) => capability.id)
     .map((capability) => enrichAutoCapability(context, capability))
-    .map((capability) => applyCapabilityRiskPolicy(capability)))
+    .map((capability) => applyCapabilityRiskPolicy(capability))
+    .map((capability) => applyCapabilityEvidenceMatrix(context, capability, graph)))
     .sort((left, right) => left.id.localeCompare(right.id, 'en'));
   const privacyMode = context.options?.privacyMode ?? context.options?.privacy ?? 'limited';
   const merged = privacyMode === 'strict'
@@ -4293,7 +4999,7 @@ function intentTemplates(capability) {
   if (capability.name === 'view news homepage') {
     return {
       canonicalUtterance: 'view news homepage',
-      utteranceExamples: ['帮我看新闻首页', 'open the news homepage', 'show the news homepage'],
+      utteranceExamples: ['view news homepage', 'open the news homepage', 'show the news homepage'],
       negativeExamples: ['submit a comment', 'log in to my account'],
       slots: [],
       invocationScore: 0.96,
@@ -4302,7 +5008,7 @@ function intentTemplates(capability) {
   if (capability.name === 'browse news channels') {
     return {
       canonicalUtterance: 'browse news channels',
-      utteranceExamples: ['帮我浏览新闻频道', 'browse news channels', 'show news channel pages'],
+      utteranceExamples: ['甯垜娴忚鏂伴椈棰戦亾', 'browse news channels', 'show news channel pages'],
       negativeExamples: ['post a comment', 'upload a video'],
       slots: [],
       invocationScore: 0.9,
@@ -4379,8 +5085,8 @@ function intentTemplates(capability) {
     return {
       canonicalUtterance: 'list recommended timeline posts',
       utteranceExamples: [
-        '读取时间线上被推荐的帖子',
-        '读取推荐时间线帖子',
+        'read recommended timeline posts',
+        'show recommended timeline summaries',
         'show recommended timeline posts',
         'show For You timeline posts',
       ],
@@ -4455,7 +5161,7 @@ function intentTemplates(capability) {
 async function generateIntentsStage(context, stageResults) {
   const { capabilities } = requireStage(stageResults, 'discoverCapabilities');
   const activeCapabilities = capabilities.filter((capability) => capability.status === 'active');
-  const intents = generateAutoIntentRecords(context, capabilities, { includeCandidateDebug: false });
+  const intents = generateAutoIntentRecords(context, capabilities, { includeCandidateDebug: true });
   const capabilityIds = new Set(capabilities.map((capability) => capability.id));
   for (const intent of intents) {
     assertUserIntent(intent, capabilityIds);
@@ -4818,10 +5524,13 @@ async function registerSkillStage(context, stageResults) {
 }
 
 function classifyBuildFailure(error, stageRecords) {
+  const explicitErrorReason = error?.reasonCode ? normalizeSiteForgeReason(error.reasonCode) : null;
+  if (explicitErrorReason) {
+    return explicitErrorReason;
+  }
   const reasonEntries = [
-    ...Object.values(stageRecords ?? {}).flatMap((stage) => (stage.reasonCodes ?? []).map((reasonCode) => ({ reasonCode }))),
-    ...(error?.reasonCode ? [{ reasonCode: error.reasonCode }] : []),
     ...(error?.verificationReport?.reasonCode ? [{ reasonCode: error.verificationReport.reasonCode }] : []),
+    ...Object.values(stageRecords ?? {}).flatMap((stage) => (stage.reasonCodes ?? []).map((reasonCode) => ({ reasonCode }))),
   ];
   if (reasonEntries.length) {
     return selectSiteForgePrimaryReason(reasonEntries, error?.reasonCode ?? 'validation-failed');
@@ -5156,27 +5865,27 @@ function userCapabilityReason(capability = /** @type {any} */ ({})) {
   }
   const text = `${capability.name ?? ''} ${capability.object ?? ''}`.toLowerCase();
   if (isDebugOnlyCapability(capability)) {
-    return '只是候选能力，证据还不够，默认不会启用。';
+    return 'Candidate capability only; evidence is incomplete, so it is not enabled by default.';
   }
   if (capability.risk_level === 'account_security_critical') {
-    return '涉及账号安全或付款设置，默认禁用。';
+    return 'Account security or payment settings are involved, so the capability is disabled by default.';
   }
   if (capability.risk_level === 'write_high') {
     if (/direct message|dm/u.test(text)) {
-      return '涉及私信、收件人或发送动作，默认禁用。';
+      return 'Direct messages, recipients, or sending actions are involved, so the capability is disabled by default.';
     }
-    return '涉及发布、互动、删除、上传或关注等写入动作，默认禁用。';
+    return 'Publishing, interaction, deletion, upload, or follow-style write actions are involved, so the capability is disabled by default.';
   }
   if (capability.risk_level === 'read_private_high') {
-    return '可能包含私密正文或私人会话内容，默认禁用。';
+    return 'Private body text or personal conversations may be involved, so the capability is disabled by default.';
   }
   if (capability.risk_level === 'read_personal_medium') {
-    return '属于个人化或登录后可见的信息，需要受限摘要或确认。';
+    return 'Personalized or login-only information requires limited summaries or explicit confirmation.';
   }
   if (capability.risk_level === 'write_low') {
-    return '只允许生成草稿预览，不会提交。';
+    return 'Only draft preview is allowed; SiteForge will not submit the action.';
   }
-  return '只保存脱敏结构摘要，不保存正文或账号私密材料。';
+  return 'Only sanitized structural summaries are retained; body text and account-private material are not saved.';
 }
 
 function userCapabilityStrategy(capability = /** @type {any} */ ({})) {
@@ -5185,18 +5894,18 @@ function userCapabilityStrategy(capability = /** @type {any} */ ({})) {
   }
   const status = normalizeCapabilityEnablementStatus(capability);
   if (status === 'limited_enabled') {
-    return '仅返回受限脱敏摘要。';
+    return 'Return only limited sanitized summaries.';
   }
   if (status === 'confirmation_required') {
-    return '执行前需要用户确认。';
+    return 'Require user confirmation before execution.';
   }
   if (status === 'draft_only' || capability.default_policy === 'draft_only') {
-    return '只生成草稿，不提交、不上传、不选择敏感收件人。';
+    return 'Generate drafts only; do not submit, upload, or select sensitive recipients.';
   }
   if (status === 'disabled' || capability.default_policy === 'disabled' || capability.status !== 'active') {
-    return '默认禁用，不会自动执行。';
+    return 'Disabled by default and never auto-executed.';
   }
-  return '默认只读，输出保持脱敏。';
+  return 'Read-only by default with sanitized output.';
 }
 
 function safeExecutionPlanRoute(value) {
@@ -5309,31 +6018,31 @@ function partialSuccessReasonFromWarning(warning) {
   }
   const reasonCode = (classifySiteForgeWarning(text) ?? normalizeSiteForgeReason(text))?.reasonCode ?? text;
   if (reasonCode === 'robots-unavailable') {
-    return '无法取得 robots.txt，实时构建已安全停止';
+    return 'robots.txt could not be fetched, so the live build stopped safely.';
   }
   if (reasonCode === 'robots-disallowed') {
-    return 'robots.txt 阻止了本次候选采集范围';
+    return 'robots.txt blocked the candidate crawl scope.';
   }
   if (reasonCode === 'network-fetch-failed') {
-    return '网络抓取失败，未保存原始错误详情';
+    return 'Network fetch failed; raw error details were not saved.';
   }
   if (reasonCode === 'dynamic-unsupported') {
-    return '当前路径需要动态采集能力，本次未启用';
+    return 'The route appears to require dynamic collection, which was not enabled for this build.';
   }
   if (reasonCode === 'validation-failed') {
-    return '验证未通过，详细门禁结果见 verification_report.json';
+    return 'Verification did not pass; see verification_report.json for gate details.';
   }
   if (/maxSeeds=/u.test(text)) {
-    return '种子发现达到上限，剩余入口未采集';
+    return 'Seed discovery reached its configured limit; remaining entry points were not collected.';
   }
   if (/maxSitemaps=/u.test(text)) {
-    return '站点地图发现达到上限，剩余 sitemap 未采集';
+    return 'Sitemap discovery reached its configured limit; remaining sitemaps were not collected.';
   }
   if (/maxPages=/u.test(text)) {
-    return '静态抓取达到页面上限，剩余页面未采集';
+    return 'Static crawl reached its configured page limit; remaining pages were not collected.';
   }
   if (/user-authorized browser evidence|sanitized user-authorized browser evidence/iu.test(text)) {
-    return '只使用受限的用户授权浏览器证据摘要';
+    return 'Only limited sanitized user-authorized browser evidence summaries were used.';
   }
   return null;
 }
@@ -5360,33 +6069,33 @@ function buildPartialSuccessReasons({
     }
   }
   if ((groups.confirmation_required ?? []).length > 0) {
-    reasons.push(`${groups.confirmation_required.length} 个能力需要用户确认后才能启用或只能生成草稿`);
+    reasons.push(`${groups.confirmation_required.length} capabilities require user confirmation or draft-only handling.`);
   }
   const highRiskDisabled = (groups.disabled ?? []).filter(isHighRiskOrAccountDisabled).length;
   if (highRiskDisabled > 0) {
-    reasons.push(`${highRiskDisabled} 个高风险写入、私密或账号能力已默认禁用`);
+    reasons.push(`${highRiskDisabled} high-risk write, private, or account capabilities are disabled by default.`);
   }
   if (context?.options?.deep !== true) {
-    reasons.push('本次未启用深度浏览器探索');
+    reasons.push('Deep browser exploration was not enabled for this build.');
   }
   if (context?.policy?.captureNetwork !== true) {
-    reasons.push('本次未启用脱敏网络摘要探索');
+    reasons.push('Sanitized network summary discovery was not enabled for this build.');
   }
   const privacyMode = String(context?.options?.privacyMode ?? context?.options?.privacy ?? '').toLowerCase();
   if (privacyMode === 'strict') {
-    reasons.push('strict privacy 会跳过敏感个人能力');
+    reasons.push('Strict privacy mode skips sensitive personal capabilities.');
   }
   if (Number(evidenceSummary.inferred ?? 0) > 0) {
-    reasons.push(`${Number(evidenceSummary.inferred ?? 0)} 个能力仍是推断证据`);
+    reasons.push(`${Number(evidenceSummary.inferred ?? 0)} capabilities still rely on inferred evidence.`);
   }
   if ((groups.limited_enabled ?? []).length > 0) {
-    reasons.push(`${groups.limited_enabled.length} 个敏感只读能力仅以脱敏结构摘要方式有限启用`);
+    reasons.push(`${groups.limited_enabled.length} sensitive read-only capabilities are limited to sanitized structural summaries.`);
   }
   const missingSetupEvidence = Number(setupCollectionReview?.missingRecordCount ?? 0) > 0
     || Number(setupCollectionReview?.summary?.capabilities?.missing ?? 0) > 0
     || Number(setupCollectionReview?.summary?.intents?.missing ?? 0) > 0;
   if (missingSetupEvidence) {
-    reasons.push('有能力还缺少确认或能力级证据');
+    reasons.push('Some capabilities still lack confirmation or capability-level evidence.');
   }
   const warningReasons = uniqueSortedStrings((report?.warnings ?? [])
     .map((warning) => partialSuccessReasonFromWarning(warning))
@@ -5394,7 +6103,7 @@ function buildPartialSuccessReasons({
   if (warningReasons.length) {
     reasons.push(...warningReasons);
   } else if ((report?.warnings ?? []).some((warning) => String(warning).trim() && !/debug/iu.test(String(warning)))) {
-    reasons.push('构建存在已脱敏的采集或验证警告');
+    reasons.push('The build has sanitized collection or verification warnings.');
   }
   return uniqueSortedStrings(reasons);
 }
@@ -5423,12 +6132,15 @@ function summarizeNodes(stageResults = /** @type {any} */ ({})) {
     ?? [];
   const byType = /** @type {any} */ ({});
   const byClassification = /** @type {any} */ ({});
+  const bySourceLayer = /** @type {any} */ ({});
   let authRequired = 0;
   for (const node of nodes) {
     const type = node.type ?? 'unknown';
     const classification = node.classification ?? 'unclassified';
+    const sourceLayer = nodeSourceLayer(node);
     byType[type] = (byType[type] ?? 0) + 1;
     byClassification[classification] = (byClassification[classification] ?? 0) + 1;
+    bySourceLayer[sourceLayer] = (bySourceLayer[sourceLayer] ?? 0) + 1;
     if (node.authRequired === true) {
       authRequired += 1;
     }
@@ -5446,6 +6158,7 @@ function summarizeNodes(stageResults = /** @type {any} */ ({})) {
       ?? 0,
     by_type: byType,
     by_classification: byClassification,
+    by_source_layer: bySourceLayer,
     auth_required: authRequired,
   };
 }
@@ -5531,6 +6244,67 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
   return uniqueSortedStrings(steps);
 }
 
+function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), capabilities = /** @type {any[]} */ ([])) {
+  const nodes = stageResults.classifyNodes?.graph?.nodes
+    ?? stageResults.buildSiteGraph?.graph?.nodes
+    ?? [];
+  const publicNodes = nodes.filter((node) => nodeSourceLayer(node) === 'public');
+  const authNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authenticated');
+  const overlayNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authenticated_overlay');
+  const publicCapabilities = capabilities.filter((capability) => capability.authRequired !== true);
+  const authCapabilities = capabilities.filter((capability) => capability.authRequired === true);
+  const requiresLoginButMissing = authCapabilities
+    .filter((capability) => capability.status !== 'active' && capability.activationBlockedReason === 'missing_auth_evidence')
+    .map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      missingEvidence: capability.evidenceMatrix?.missingEvidence ?? [],
+    }));
+  const blockedByRisk = capabilities
+    .filter((capability) => capability.status === 'disabled' || ['disabled', 'draft_only', 'confirmation_required'].includes(normalizeStatusToken(capability.enabled_status)))
+    .filter((capability) => isHighRiskCapability(capability) || ['write_low', 'write_high', 'account_security_critical'].includes(capability.risk_level))
+    .map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      riskLevel: capability.risk_level ?? null,
+      enabledStatus: capability.enabled_status ?? null,
+      reason: capability.activationBlockedReason ?? capability.disabledReason ?? null,
+    }));
+  const blockedByAuth = authCapabilities
+    .filter((capability) => capability.status !== 'active')
+    .map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      authRequired: true,
+      missingEvidence: capability.evidenceMatrix?.missingEvidence ?? [],
+      reason: capability.activationBlockedReason ?? null,
+    }));
+  return {
+    crawlMode: context.crawlContract?.crawlMode ?? 'public_only',
+    authChoice: context.crawlContract?.authChoice ?? context.authStateReport?.authChoice ?? 'declined',
+    authLevel: context.crawlContract?.authLevel ?? context.authStateReport?.authLevel ?? null,
+    public: {
+      pages: stageResults.crawlStatic?.pages?.length ?? 0,
+      nodes: publicNodes.length,
+      capabilities: publicCapabilities.filter((capability) => capability.status === 'active').length,
+    },
+    authenticated: {
+      pages: stageResults.crawlAuthenticated?.authenticatedPages?.length ?? 0,
+      nodes: authNodes.length,
+      capabilities: authCapabilities.filter((capability) => capability.status === 'active').length,
+    },
+    overlay: {
+      pagesRevisited: stageResults.crawlAuthenticated?.authenticatedOverlayPages?.length ?? 0,
+      newNodes: overlayNodes.length,
+      newAffordances: (stageResults.extractAffordances?.affordances ?? [])
+        .filter((affordance) => affordance.sourceLayer === 'authenticated_overlay').length,
+    },
+    requiresLoginButMissing,
+    blockedByRisk,
+    blockedByAuth,
+  };
+}
+
 function buildUserReport(context, stageResults, report) {
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   const userVisibleCapabilities = capabilities.filter((capability) => !isDebugOnlyCapability(capability));
@@ -5607,6 +6381,12 @@ function buildUserReport(context, stageResults, report) {
     capabilities_total: capabilities.length,
     intents_total: intents.length,
   };
+  const authSummary = authSummaryForReport(context.crawlContract, context.authStateReport);
+  const coverage = buildCoverageReport(context, stageResults, capabilities);
+  const htmlReportPath = relativeReportPath(
+    context.cwd,
+    report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? capabilityIntentSummaryHtmlPath(context),
+  );
   return {
     // Migration: status remains the legacy stage/build field; result_status is the stable user-facing outcome.
     result_status: resultStatus,
@@ -5624,6 +6404,14 @@ function buildUserReport(context, stageResults, report) {
     site_adapter: siteAdapterSummaryForReport(context),
     skill_id: skillId,
     build_id: report.buildId ?? context.buildId,
+    crawlMode: authSummary.crawlMode,
+    authChoice: authSummary.authChoice,
+    authLevel: authSummary.authLevel,
+    auth_summary: authSummary,
+    coverage,
+    requires_login_candidates: coverage.requiresLoginButMissing,
+    blocked_by_risk: coverage.blockedByRisk,
+    blocked_by_auth: coverage.blockedByAuth,
     counts,
     enabled_capabilities: enabledCapabilities,
     limited_enabled_capabilities: limitedEnabledCapabilities,
@@ -5653,6 +6441,21 @@ function buildUserReport(context, stageResults, report) {
       network_enabled: context.setupProfile.userAuthorizedEvidence.autoDiscovery.networkEnabled === true,
       summary: context.setupProfile.userAuthorizedEvidence.autoDiscovery.summary ?? null,
     } : null,
+    auth_explanation_zh: [
+      authSummary.crawlMode === 'enhanced_with_login'
+        ? `Login-enhanced crawl was used; auth level is ${authSummary.authLevel}.`
+        : 'Login-enhanced crawl was not used; only public pages and public capabilities were built.',
+      coverage.requiresLoginButMissing.length
+        ? `${coverage.requiresLoginButMissing.length} login-related capabilities remain candidates because auth evidence is missing.`
+        : 'No login-evidence candidate capabilities were found.',
+      coverage.authenticated.capabilities
+        ? `${coverage.authenticated.capabilities} authenticated capabilities were limited-enabled.`
+        : 'No authenticated capabilities were limited-enabled.',
+      coverage.blockedByRisk.length
+        ? `${coverage.blockedByRisk.length} capabilities were disabled or limited by risk policy.`
+        : 'No additional high-risk capabilities were enabled.',
+      'No cookies, tokens, Authorization headers, browser profiles, full DOM, full HTML, body text, or private content were saved.',
+    ],
     debug_candidate_summary: {
       count: debugOnlyCapabilities.length,
       report: 'debug',
@@ -5668,6 +6471,10 @@ function buildUserReport(context, stageResults, report) {
       registry_path: relativeReportPath(context.cwd, report.summary?.registryPath ?? context.registryPath),
       skill_id: skillId,
       report_path: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_FILE] ?? path.join(context.artifactDir, USER_REPORT_FILE)),
+      capability_intent_summary_html: htmlReportPath,
+    },
+    reports: {
+      capability_intent_summary_html: htmlReportPath,
     },
     privacy_summary: summarizePrivacy(context, report),
     saved_material: SANITIZED_SUMMARY_ONLY,
@@ -5751,6 +6558,9 @@ function buildDebugReport(context, stageResults, stageRecords, report, userRepor
     skill_id: report.skillId,
     site_adapter: siteAdapterSummaryForReport(context, { includeSource: true }),
     site_adapter_profile: context.siteAdapterProfile ?? null,
+    crawl_contract: context.crawlContract ?? null,
+    auth_state_report: context.authStateReport ?? null,
+    coverage: buildCoverageReport(context, stageResults, stageResults.discoverCapabilities?.capabilities ?? []),
     seeds: stageResults.discoverSeeds?.seeds ?? [],
     nodes: stageResults.classifyNodes?.graph?.nodes ?? stageResults.buildSiteGraph?.graph?.nodes ?? [],
     actions: stageResults.extractAffordances?.affordances ?? stageResults.discoverInteractions?.interactions ?? [],
@@ -5797,6 +6607,7 @@ function buildDebugReport(context, stageResults, stageRecords, report, userRepor
 }
 
 function buildReportIndex(report, userReport, debugReport) {
+  const htmlReportPath = report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? null;
   return {
     ...report,
     artifactFamily: 'siteforge-build-report-index',
@@ -5809,6 +6620,7 @@ function buildReportIndex(report, userReport, debugReport) {
       user: {
         json: report.artifacts?.[USER_REPORT_FILE] ?? null,
         markdown: report.artifacts?.[USER_REPORT_MARKDOWN_FILE] ?? null,
+        html_capability_intent_summary: htmlReportPath,
         alias_json: report.artifacts?.[USER_REPORT_JSON_ALIAS] ?? null,
         alias_markdown: report.artifacts?.[USER_REPORT_MARKDOWN_ALIAS] ?? null,
       },
@@ -5819,12 +6631,14 @@ function buildReportIndex(report, userReport, debugReport) {
       index: {
         json: report.artifacts?.[INDEX_REPORT_FILE] ?? null,
       },
+      capability_intent_summary_html: htmlReportPath,
     },
     report_index: {
       default_report: 'user',
-      available_reports: ['user', 'debug'],
+      available_reports: ['user', 'debug', 'capability_intent_summary_html'],
       user_report: USER_REPORT_FILE,
       user_markdown: USER_REPORT_MARKDOWN_FILE,
+      capability_intent_summary_html: CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH,
       debug_report: DEBUG_REPORT_FILE,
       user_report_alias: USER_REPORT_JSON_ALIAS,
       user_markdown_alias: USER_REPORT_MARKDOWN_ALIAS,
@@ -5864,6 +6678,636 @@ function renderBuildUserMarkdown(userReport, report, options = /** @type {any} *
     ...report,
     user_report: userReport,
   }, options);
+}
+
+const CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH = `reports/${CAPABILITY_INTENT_SUMMARY_HTML_FILE}`;
+const HTML_REPORT_MAX_EXAMPLES = 3;
+const HTML_REPORT_FORBIDDEN_PATTERNS = Object.freeze([
+  { code: 'cookie', pattern: /\bcookie\b/iu },
+  { code: 'token', pattern: /\btoken\b/iu },
+  { code: 'authorization', pattern: /\bauthorization\b/iu },
+  { code: 'bearer', pattern: /\bbearer\b/iu },
+  { code: 'local-storage', pattern: /\blocalStorage\b/u },
+  { code: 'session-storage', pattern: /\bsessionStorage\b/u },
+  { code: 'user-data-dir', pattern: /\buserDataDir\b/u },
+  { code: 'browser-profile', pattern: /\bbrowser profile\b/iu },
+  { code: 'secret-fixture', pattern: /synthetic-secret/iu },
+  { code: 'session-id', pattern: /sessionid\s*=/iu },
+  { code: 'script-tag', pattern: /<script\b/iu },
+]);
+
+function capabilityIntentSummaryHtmlPath(context) {
+  return path.join(context.artifactDir, CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH);
+}
+
+function sanitizeHtmlReportUrl(value) {
+  const text = String(value ?? '');
+  try {
+    const parsed = new URL(text);
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return text;
+  }
+}
+
+function sanitizeHtmlReportString(value) {
+  let text = sanitizeReportString(value);
+  text = text.replace(/https?:\/\/[^\s<>"')]+/giu, (match) => sanitizeHtmlReportUrl(match));
+  text = text
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu, '[REDACTED_AUTH]')
+    .replace(/\bauthorization\s*[:=]\s*[^\r\n]+/giu, '[REDACTED_AUTH_HEADER]')
+    .replace(/\bauthorization\b/giu, '[REDACTED_AUTH_HEADER]')
+    .replace(/\bcookies?\s*[:=]\s*[^;\s&'",]+/giu, '[REDACTED_BROWSER_SESSION]')
+    .replace(/\bcookies?\b/giu, '[REDACTED_BROWSER_SESSION]')
+    .replace(/\b(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret|password|session[_-]?id|sid)\s*[:=]\s*[^&\s;'",]+/giu, '[REDACTED_SECRET]')
+    .replace(/\btoken\b/giu, '[REDACTED_SECRET]')
+    .replace(/\bBearer\b/giu, '[REDACTED_AUTH]')
+    .replace(/\blocalStorage\b/gu, '[REDACTED_BROWSER_STORAGE]')
+    .replace(/\bsessionStorage\b/gu, '[REDACTED_BROWSER_STORAGE]')
+    .replace(/\buserDataDir\b/gu, '[REDACTED_BROWSER_STATE]')
+    .replace(/\bbrowser\s+profile\b/giu, '[REDACTED_BROWSER_STATE]')
+    .replace(/raw[-_\s]*(?:dom|html|body)/giu, '[REDACTED_PAGE_SOURCE]')
+    .replace(/<\/?html(?:\s[^>]*)?>/giu, '[REDACTED_PAGE_SOURCE]');
+  return text;
+}
+
+function sanitizeHtmlReportValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeHtmlReportValue(item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !/^(?:cookies?|headers?|authorization|token|tokens|profile|userDataDir|localStorage|sessionStorage)$/iu.test(key))
+      .map(([key, item]) => [sanitizeHtmlReportString(key), sanitizeHtmlReportValue(item)]));
+  }
+  return typeof value === 'string' ? sanitizeHtmlReportString(value) : value;
+}
+
+function sanitizeCapabilityIntentHtmlPayload(payload) {
+  return sanitizeHtmlReportValue(sanitizeReportPublicValue(payload));
+}
+
+function escapeHtml(value) {
+  const text = value === null || value === undefined || value === '' ? '-' : sanitizeHtmlReportString(value);
+  return String(text)
+    .replace(/&/gu, '&amp;')
+    .replace(/</gu, '&lt;')
+    .replace(/>/gu, '&gt;')
+    .replace(/"/gu, '&quot;')
+    .replace(/'/gu, '&#39;');
+}
+
+function htmlCell(value, { code = false } = /** @type {any} */ ({})) {
+  const escaped = escapeHtml(value);
+  return code ? `<code>${escaped}</code>` : escaped;
+}
+
+function htmlList(values = /** @type {any[]} */ ([]), { code = true, limit = 8 } = /** @type {any} */ ({})) {
+  const items = Array.isArray(values) ? values.filter((item) => item !== null && item !== undefined && item !== '') : [];
+  if (!items.length) {
+    return '<span class="muted">-</span>';
+  }
+  const rendered = items.slice(0, limit).map((item) => (
+    code ? `<code>${escapeHtml(item)}</code>` : `<span>${escapeHtml(item)}</span>`
+  ));
+  if (items.length > limit) {
+    rendered.push(`<span class="muted">+${items.length - limit}</span>`);
+  }
+  return rendered.join(' ');
+}
+
+function htmlBadge(value, kind = 'muted') {
+  const safeKind = /^[a-z0-9_-]+$/u.test(String(kind ?? '')) ? kind : 'muted';
+  return `<span class="badge badge-${safeKind}">${escapeHtml(value ?? '-')}</span>`;
+}
+
+function htmlStatusBadge(value) {
+  const status = normalizeStatusToken(value);
+  if (['active', 'enabled', 'success', 'passed'].includes(status)) return htmlBadge(value, 'success');
+  if (['limited_enabled'].includes(status)) return htmlBadge(value, 'limited');
+  if (['confirmation_required', 'draft_only', 'candidate', 'candidate_debug_only', 'partial_success'].includes(status)) return htmlBadge(value, 'warning');
+  if (['disabled', 'failed', 'blocked'].includes(status)) return htmlBadge(value, 'danger');
+  return htmlBadge(value ?? '-', 'muted');
+}
+
+function htmlRiskBadge(value) {
+  const risk = normalizeStatusToken(value);
+  if (['write_high', 'account_security_critical', 'read_private_high'].includes(risk)) return htmlBadge(value, 'risk');
+  if (['write_low', 'read_personal_medium'].includes(risk)) return htmlBadge(value, 'warning');
+  if (['read_public_low'].includes(risk)) return htmlBadge(value, 'success');
+  return htmlBadge(value ?? '-', 'muted');
+}
+
+function htmlAuthBadge(value) {
+  return htmlBadge(value ?? '-', 'auth');
+}
+
+function capabilityHtmlGroup(capability = /** @type {any} */ ({})) {
+  const enabled = normalizeStatusToken(capability.enabled_status ?? capability.enabledStatus ?? capability.default_policy);
+  const normalized = enabled || normalizeStatusToken(normalizeCapabilityEnablementStatus(capability));
+  const status = normalizeStatusToken(capability.status);
+  if (['candidate_debug_only', 'debug_only'].includes(normalized)) return normalized;
+  if (status === 'candidate') return 'candidate';
+  if (status === 'disabled' || normalized === 'disabled') return 'disabled';
+  if (normalized === 'limited_enabled') return 'limited_enabled';
+  if (normalized === 'confirmation_required') return 'confirmation_required';
+  if (normalized === 'draft_only') return 'draft_only';
+  if (status === 'active' || normalized === 'enabled') return 'enabled';
+  return normalized || status || 'unknown';
+}
+
+function capabilityHtmlReason(capability = /** @type {any} */ ({})) {
+  if (capability.activationBlockedReason === 'missing_auth_evidence') {
+    return 'This capability needs authenticated structural evidence; this build did not satisfy the required auth evidence, so it remains a candidate.';
+  }
+  if (capability.activationBlockedReason === 'capability-evidence-matrix-incomplete') {
+    return 'The capability evidence matrix is incomplete, so it is not enabled as a callable capability.';
+  }
+  if (capability.status === 'disabled' || normalizeStatusToken(capability.enabled_status) === 'disabled') {
+    return 'This capability involves a high-risk or restricted action, so it is disabled by default and will not auto-execute.';
+  }
+  if (normalizeStatusToken(capability.enabled_status) === 'draft_only') {
+    return 'This capability can only generate a draft or preview; it will not submit anything.';
+  }
+  if (normalizeStatusToken(capability.enabled_status) === 'confirmation_required') {
+    return 'This capability requires explicit confirmation before execution.';
+  }
+  if (capability.authRequired === true) {
+    return 'This capability may only return sanitized structural summaries; body text and account material are not saved.';
+  }
+  return capability.reason ?? capability.activationBlockedReason ?? capability.disabledReason ?? capability.reason_code ?? '-';
+}
+
+function capabilityHtmlStrategy(capability = /** @type {any} */ ({})) {
+  return capability.user_strategy
+    ?? capability.strategy
+    ?? capability.default_policy
+    ?? capability.enabled_status
+    ?? capability.status
+    ?? '-';
+}
+
+function intentCallableLabel(intent = /** @type {any} */ ({}), capability = /** @type {any} */ ({})) {
+  if (intent.callable === false || capability.status !== 'active') {
+    return 'non-callable';
+  }
+  return 'callable';
+}
+
+function summarizeHtmlCoverage(context, stageResults, capabilities, userReport = null, report = null) {
+  return userReport?.coverage
+    ?? report?.summary?.coverage
+    ?? buildCoverageReport(context, stageResults, capabilities);
+}
+
+function buildCapabilityIntentHtmlPayload(context, stageResults, report, userReport) {
+  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
+  const intents = stageResults.generateIntents?.intents ?? [];
+  const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? { nodes: [] };
+  const verification = stageResults.verifySkill?.verificationReport ?? null;
+  const registry = stageResults.registerSkill?.registryReport ?? null;
+  const coverage = summarizeHtmlCoverage(context, stageResults, capabilities, userReport, report);
+  const capabilityById = new Map(capabilities.map((capability) => [capability.id, capability]));
+  const intentsByCapability = new Map();
+  for (const intent of intents) {
+    const key = intent.capabilityId ?? 'unknown';
+    intentsByCapability.set(key, [...(intentsByCapability.get(key) ?? []), intent]);
+  }
+  const capabilityRows = capabilities.map((capability) => {
+    const mappedIntents = intentsByCapability.get(capability.id) ?? [];
+    const matrix = capability.evidenceMatrix ?? capability.activationEvidence ?? null;
+    return {
+      id: capability.id,
+      name: capability.name,
+      userFacingName: capability.user_facing_name ?? capability.userFacingName ?? null,
+      userValue: capability.userValue ?? null,
+      action: capability.action ?? null,
+      object: capability.object ?? null,
+      status: capability.status ?? null,
+      enabledStatus: capability.enabled_status ?? capability.enabledStatus ?? normalizeCapabilityEnablementStatus(capability),
+      evidenceStatus: capability.evidence_status ?? capability.evidenceStatus ?? null,
+      riskLevel: capability.risk_level ?? capability.riskLevel ?? null,
+      safetyLevel: capability.safetyLevel ?? capability.safety_level ?? null,
+      authRequired: capability.authRequired === true,
+      requiredAuthLevel: capability.requiredAuthLevel ?? matrix?.requiredAuthLevel ?? null,
+      observedAuthLevel: capability.observedAuthLevel ?? matrix?.observedAuthLevel ?? null,
+      sourceLayer: capability.sourceLayer ?? matrix?.sourceLayer ?? 'public',
+      activationDecision: matrix?.activationDecision ?? capability.enabled_status ?? capability.status ?? null,
+      reason: capabilityHtmlReason(capability),
+      strategy: capabilityHtmlStrategy(capability),
+      mappedIntentCount: mappedIntents.length,
+      group: capabilityHtmlGroup(capability),
+      evidenceMatrix: matrix ? {
+        requiredEvidence: matrix.requiredEvidence ?? [],
+        observedEvidence: matrix.observedEvidence ?? [],
+        missingEvidence: matrix.missingEvidence ?? [],
+        activationDecision: matrix.activationDecision ?? null,
+      } : null,
+    };
+  });
+  const intentRows = intents.map((intent) => {
+    const capability = capabilityById.get(intent.capabilityId) ?? {};
+    return {
+      id: intent.id,
+      capabilityId: intent.capabilityId,
+      capabilityName: capability.name ?? intent.name ?? null,
+      canonicalUtterance: intent.canonicalUtterance ?? intent.name ?? null,
+      callable: intentCallableLabel(intent, capability),
+      safetyLevel: intent.safetyLevel ?? capability.safetyLevel ?? null,
+      enabledStatus: intent.enabled_status ?? capability.enabled_status ?? normalizeCapabilityEnablementStatus(capability),
+      utteranceExamples: (intent.utteranceExamples ?? []).slice(0, HTML_REPORT_MAX_EXAMPLES),
+      negativeExamples: (intent.negativeExamples ?? []).slice(0, HTML_REPORT_MAX_EXAMPLES),
+      reason: intent.reason ?? capabilityHtmlReason(capability),
+      safeRemediation: intent.safe_remediation ?? capability.safe_remediation ?? capability.safe_remediation_path ?? null,
+    };
+  });
+  const mappingRows = capabilityRows.map((capability) => {
+    const mappedIntents = intentRows.filter((intent) => intent.capabilityId === capability.id);
+    return {
+      capabilityName: capability.name,
+      capabilityId: capability.id,
+      capabilityStatus: capability.status,
+      enabledStatus: capability.enabledStatus,
+      intentCount: mappedIntents.length,
+      canonicalUtterances: mappedIntents.map((intent) => intent.canonicalUtterance).filter(Boolean),
+      callable: mappedIntents.filter((intent) => intent.callable === 'callable').length,
+      nonCallable: mappedIntents.filter((intent) => intent.callable !== 'callable').length,
+      riskLevel: capability.riskLevel,
+      authLevel: capability.observedAuthLevel ?? capability.requiredAuthLevel ?? '-',
+    };
+  });
+  const blocked = {
+    disabledHighRisk: capabilityRows.filter((capability) => (
+      capability.status === 'disabled'
+      || ['write_high', 'account_security_critical', 'read_private_high'].includes(normalizeStatusToken(capability.riskLevel))
+    )),
+    blockedByAuth: coverage.blockedByAuth ?? [],
+    requiresLogin: coverage.requiresLoginButMissing ?? [],
+    missingEvidence: capabilityRows.filter((capability) => (capability.evidenceMatrix?.missingEvidence ?? []).length > 0),
+    candidateOnly: capabilityRows.filter((capability) => ['candidate', 'candidate_debug_only', 'debug_only'].includes(capability.group)),
+  };
+  const paths = {
+    userReport: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_FILE] ?? path.join(context.artifactDir, USER_REPORT_FILE)),
+    markdownReport: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_MARKDOWN_FILE] ?? path.join(context.artifactDir, USER_REPORT_MARKDOWN_FILE)),
+    debugReport: relativeReportPath(context.cwd, report.artifacts?.[DEBUG_REPORT_FILE] ?? path.join(context.artifactDir, DEBUG_REPORT_FILE)),
+    indexReport: relativeReportPath(context.cwd, report.artifacts?.[INDEX_REPORT_FILE] ?? path.join(context.artifactDir, INDEX_REPORT_FILE)),
+    htmlReport: relativeReportPath(context.cwd, report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? capabilityIntentSummaryHtmlPath(context)),
+  };
+  return sanitizeCapabilityIntentHtmlPayload({
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-capability-intent-html-summary',
+    generatedAt: new Date().toISOString(),
+    meta: {
+      title: 'SiteForge Build Summary',
+      siteUrl: context.site.rootUrl,
+      siteId: report.siteId ?? context.site.id,
+      buildId: report.buildId ?? context.buildId,
+      skillId: report.skillId ?? context.skillId ?? null,
+      crawlMode: userReport.crawlMode ?? report.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
+      authChoice: userReport.authChoice ?? report.authChoice ?? context.crawlContract?.authChoice ?? 'declined',
+      authLevel: userReport.authLevel ?? report.authLevel ?? context.authStateReport?.authLevel ?? 'L0',
+      resultStatus: userReport.result_status ?? report.result_status ?? null,
+      legacyStatus: userReport.legacy_status ?? report.legacy_status ?? report.status ?? null,
+      verificationStatus: verification?.status ?? report.summary?.verificationStatus ?? null,
+      registryStatus: registry?.status ?? report.summary?.registryStatus ?? null,
+      generatedAt: new Date().toISOString(),
+      completedAt: report.completedAt ?? null,
+      paths,
+    },
+    coverage,
+    counts: {
+      capabilities: capabilityRows.length,
+      intents: intentRows.length,
+      nodes: graph.nodes?.length ?? 0,
+      riskBlocked: blocked.disabledHighRisk.length,
+    },
+    capabilities: capabilityRows,
+    intents: intentRows,
+    mappings: mappingRows,
+    blocked,
+  });
+}
+
+function renderCapabilityRows(rows = /** @type {any[]} */ ([]), emptyMessage = 'No capabilities available.') {
+  if (!rows.length) {
+    return `<p class="empty">${escapeHtml(emptyMessage)}</p>`;
+  }
+  return `<div class="table-wrapper"><table>
+    <thead><tr>
+      <th>Capability</th><th>ID</th><th>Action</th><th>Status</th><th>Risk</th><th>Auth</th><th>Evidence matrix</th><th>Reason / strategy</th><th>Intent count</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map((capability) => `<tr>
+        <td><strong>${htmlCell(capability.name)}</strong><br><span class="muted">${htmlCell(capability.userValue ?? capability.userFacingName)}</span></td>
+        <td>${htmlCell(capability.id, { code: true })}</td>
+        <td>${htmlCell(capability.action)}<br><span class="muted">${htmlCell(capability.object)}</span></td>
+        <td>${htmlStatusBadge(capability.status)} ${htmlStatusBadge(capability.enabledStatus)}<br><span class="muted">${htmlCell(capability.evidenceStatus)}</span></td>
+        <td>${htmlRiskBadge(capability.riskLevel)}<br><span class="muted">${htmlCell(capability.safetyLevel)}</span></td>
+        <td>${htmlAuthBadge(capability.authRequired ? 'required' : 'public')}<br><code>${escapeHtml(capability.sourceLayer)}</code><br><span class="muted">${htmlCell(capability.requiredAuthLevel)} / ${htmlCell(capability.observedAuthLevel)}</span></td>
+        <td><div class="matrix-line"><span>requiredEvidence</span>${htmlList(capability.evidenceMatrix?.requiredEvidence ?? [])}</div><div class="matrix-line"><span>observedEvidence</span>${htmlList(capability.evidenceMatrix?.observedEvidence ?? [])}</div><div class="matrix-line"><span>missingEvidence</span>${htmlList(capability.evidenceMatrix?.missingEvidence ?? [])}</div><div>${htmlStatusBadge(capability.activationDecision)}</div></td>
+        <td>${htmlCell(capability.reason)}<br><span class="muted">${htmlCell(capability.strategy)}</span></td>
+        <td>${htmlCell(capability.mappedIntentCount)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function renderIntentRows(rows = /** @type {any[]} */ ([])) {
+  if (!rows.length) {
+    return '<p class="empty">No intents are available; the build may have failed before intent generation.</p>';
+  }
+  return `<div class="table-wrapper"><table>
+    <thead><tr>
+      <th>Intent</th><th>Capability</th><th>Callable</th><th>Examples</th><th>Negative examples</th><th>Reason</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map((intent) => `<tr>
+        <td><strong>${htmlCell(intent.canonicalUtterance)}</strong><br>${htmlCell(intent.id, { code: true })}</td>
+        <td>${htmlCell(intent.capabilityName)}<br>${htmlCell(intent.capabilityId, { code: true })}</td>
+        <td>${htmlStatusBadge(intent.callable)}<br><span class="muted">${htmlCell(intent.safetyLevel)} / ${htmlCell(intent.enabledStatus)}</span></td>
+        <td>${htmlList(intent.utteranceExamples, { code: false, limit: HTML_REPORT_MAX_EXAMPLES })}</td>
+        <td>${htmlList(intent.negativeExamples, { code: false, limit: HTML_REPORT_MAX_EXAMPLES })}</td>
+        <td>${htmlCell(intent.reason)}${intent.safeRemediation ? `<br><span class="muted">${htmlCell(JSON.stringify(intent.safeRemediation))}</span>` : ''}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function renderMappingRows(rows = /** @type {any[]} */ ([])) {
+  if (!rows.length) {
+    return '<p class="empty">No capability-intent mappings are available.</p>';
+  }
+  return `<div class="table-wrapper"><table>
+    <thead><tr>
+      <th>Capability</th><th>Status</th><th>Intent count</th><th>Canonical utterances</th><th>Callable</th><th>Risk</th><th>Auth level</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map((row) => `<tr>
+        <td><strong>${htmlCell(row.capabilityName)}</strong><br>${htmlCell(row.capabilityId, { code: true })}</td>
+        <td>${htmlStatusBadge(row.capabilityStatus)} ${htmlStatusBadge(row.enabledStatus)}</td>
+        <td>${htmlCell(row.intentCount)}</td>
+        <td>${htmlList(row.canonicalUtterances, { code: false, limit: 6 })}</td>
+        <td>${htmlStatusBadge(`${row.callable} callable`)} ${htmlStatusBadge(`${row.nonCallable} non-callable`)}</td>
+        <td>${htmlRiskBadge(row.riskLevel)}</td>
+        <td>${htmlAuthBadge(row.authLevel)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function renderCoverageTable(coverage = /** @type {any} */ ({})) {
+  const rows = [
+    ['public pages', coverage.public?.pages ?? 0],
+    ['public nodes', coverage.public?.nodes ?? 0],
+    ['public capabilities', coverage.public?.capabilities ?? 0],
+    ['authenticated pages', coverage.authenticated?.pages ?? 0],
+    ['authenticated nodes', coverage.authenticated?.nodes ?? 0],
+    ['authenticated capabilities', coverage.authenticated?.capabilities ?? 0],
+    ['overlay pages revisited', coverage.overlay?.pagesRevisited ?? 0],
+    ['overlay new nodes', coverage.overlay?.newNodes ?? 0],
+    ['overlay new affordances', coverage.overlay?.newAffordances ?? 0],
+    ['requires-login candidates', coverage.requiresLoginButMissing?.length ?? 0],
+    ['blocked by risk', coverage.blockedByRisk?.length ?? 0],
+    ['blocked by auth', coverage.blockedByAuth?.length ?? 0],
+  ];
+  return `<div class="table-wrapper compact"><table>
+    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+    <tbody>${rows.map(([metric, value]) => `<tr><td>${htmlCell(metric)}</td><td>${htmlCell(value)}</td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderBlockedList(payload) {
+  const blocked = payload.blocked ?? {};
+  const items = [
+    ...(blocked.requiresLogin ?? []).map((item) => ({
+      title: item.name ?? item.id,
+      text: 'This capability requires authenticated structural evidence. It remains a candidate because login was not used or not verified.',
+    })),
+    ...(blocked.disabledHighRisk ?? []).map((item) => ({
+      title: item.name ?? item.id,
+      text: 'This capability involves write actions, account changes, or high-sensitivity reads. It is disabled by default and will not auto-execute.',
+    })),
+    ...(blocked.missingEvidence ?? []).map((item) => ({
+      title: item.name ?? item.id,
+      text: 'The evidence matrix still has gaps, so this is not a callable capability.',
+    })),
+    ...(blocked.candidateOnly ?? []).map((item) => ({
+      title: item.name ?? item.id,
+      text: 'This capability is shown only as a candidate or debug summary and was not promoted into a callable Skill.',
+    })),
+  ];
+  if (!items.length) {
+    return '<p class="empty">No risk blocks or missing-evidence items were reported.</p>';
+  }
+  return `<div class="notice-list">${items.slice(0, 40).map((item) => `<div class="notice">
+    <strong>${htmlCell(item.title)}</strong>
+    <p>${htmlCell(item.text)}</p>
+  </div>`).join('')}</div>`;
+}
+
+export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {any} */ ({})) {
+  const safe = sanitizeCapabilityIntentHtmlPayload(payload);
+  const grouped = new Map();
+  for (const capability of safe.capabilities ?? []) {
+    const group = capability.group ?? 'unknown';
+    grouped.set(group, [...(grouped.get(group) ?? []), capability]);
+  }
+  const groupOrder = [
+    ['enabled', 'enabled'],
+    ['limited_enabled', 'limited_enabled'],
+    ['confirmation_required', 'confirmation_required'],
+    ['draft_only', 'draft_only'],
+    ['candidate', 'candidate'],
+    ['disabled', 'disabled'],
+    ['candidate_debug_only', 'debug_only / candidate_debug_only'],
+    ['debug_only', 'debug_only'],
+    ['unknown', 'other'],
+  ];
+  const meta = safe.meta ?? {};
+  const capabilities = safe.capabilities ?? [];
+  const intents = safe.intents ?? [];
+  const noCapabilityIntent = capabilities.length === 0 && intents.length === 0;
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(meta.title ?? 'SiteForge Build Summary')}</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --text: #182230;
+      --muted: #667085;
+      --border: #d9e2ec;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      --success: #0f766e;
+      --limited: #2563eb;
+      --warning: #b45309;
+      --danger: #b91c1c;
+      --auth: #6d28d9;
+      --risk: #be123c;
+      --code-bg: #eef2f7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
+    header { background: linear-gradient(135deg, #111827, #1f3a5f); color: #fff; padding: 28px 20px; }
+    .container { max-width: 1180px; margin: 0 auto; padding: 0 20px 32px; }
+    header .container { padding-bottom: 0; }
+    h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: 0; }
+    h2 { margin: 0 0 14px; font-size: 20px; letter-spacing: 0; }
+    h3 { margin: 20px 0 10px; font-size: 16px; letter-spacing: 0; }
+    .subtitle { margin: 0; color: rgba(255,255,255,0.78); }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+    nav a { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,0.28); border-radius: 8px; padding: 6px 10px; }
+    section { margin-top: 22px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 18px; }
+    section > h2 { position: sticky; top: 0; background: var(--panel); padding: 4px 0 10px; z-index: 1; }
+    .summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .summary-card { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 12px; }
+    .summary-card span { display: block; color: rgba(255,255,255,0.72); font-size: 12px; }
+    .summary-card strong { display: block; margin-top: 4px; font-size: 18px; word-break: break-word; }
+    .meta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .meta-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: #fbfdff; }
+    .meta-item span { display: block; color: var(--muted); font-size: 12px; }
+    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 8px; margin: 1px 2px 1px 0; font-size: 12px; font-weight: 650; background: #eef2f7; color: #344054; }
+    .badge-success { background: #ccfbf1; color: var(--success); }
+    .badge-limited { background: #dbeafe; color: var(--limited); }
+    .badge-warning { background: #fef3c7; color: var(--warning); }
+    .badge-danger { background: #fee2e2; color: var(--danger); }
+    .badge-muted { background: #eef2f7; color: #475467; }
+    .badge-auth { background: #ede9fe; color: var(--auth); }
+    .badge-risk { background: #ffe4e6; color: var(--risk); }
+    .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+    .table-wrapper.compact { max-width: 720px; }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; background: #fff; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); padding: 10px; word-break: break-word; }
+    th { background: #f2f6fb; color: #344054; font-size: 12px; text-transform: uppercase; letter-spacing: 0; }
+    tbody tr:nth-child(even) { background: #fbfdff; }
+    tbody tr:hover { background: #f8fafc; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); margin: 8px 0; }
+    .matrix-line { margin: 2px 0; }
+    .matrix-line > span:first-child { display: inline-block; min-width: 64px; color: var(--muted); }
+    .notice-list { display: grid; gap: 10px; }
+    .notice { border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 8px; padding: 10px 12px; background: #fffdf7; }
+    .notice p { margin: 4px 0 0; color: var(--muted); }
+    @media (max-width: 860px) {
+      .summary-grid, .meta-grid { grid-template-columns: 1fr; }
+      header { padding: 22px 0; }
+      .container { padding-left: 12px; padding-right: 12px; }
+      section { padding: 14px; }
+      h1 { font-size: 24px; }
+    }
+    @media print {
+      body { background: #fff; }
+      header { background: #fff; color: #000; border-bottom: 1px solid #ccc; }
+      nav { display: none; }
+      section { box-shadow: none; break-inside: avoid; }
+      .summary-card { color: #000; border-color: #ccc; }
+      .summary-card span { color: #444; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>${escapeHtml(meta.title ?? 'SiteForge Build Summary')}</h1>
+      <p class="subtitle">${escapeHtml(meta.siteUrl)} 路 ${escapeHtml(meta.buildId)}</p>
+      <nav>
+        <a href="#overview">Overview</a>
+        <a href="#coverage">Coverage</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#intents">Intents</a>
+        <a href="#mapping">Mapping</a>
+        <a href="#blocked">Risk and gaps</a>
+      </nav>
+      <div class="summary-grid">
+        <div class="summary-card"><span>result_status</span><strong>${escapeHtml(meta.resultStatus)}</strong></div>
+        <div class="summary-card"><span>capabilities</span><strong>${escapeHtml(safe.counts?.capabilities ?? 0)}</strong></div>
+        <div class="summary-card"><span>intents</span><strong>${escapeHtml(safe.counts?.intents ?? 0)}</strong></div>
+        <div class="summary-card"><span>auth level</span><strong>${escapeHtml(meta.authLevel)}</strong></div>
+        <div class="summary-card"><span>risk blocked</span><strong>${escapeHtml(safe.counts?.riskBlocked ?? 0)}</strong></div>
+      </div>
+    </div>
+  </header>
+  <main class="container">
+    <section id="overview">
+      <h2>构建概览</h2>
+      <div class="meta-grid">
+        ${[
+          ['站点 URL', meta.siteUrl],
+          ['siteId', meta.siteId],
+          ['buildId', meta.buildId],
+          ['skillId', meta.skillId],
+          ['crawlMode', meta.crawlMode],
+          ['authChoice', meta.authChoice],
+          ['authLevel', meta.authLevel],
+          ['result_status', meta.resultStatus],
+          ['legacy_status', meta.legacyStatus],
+          ['verification status', meta.verificationStatus],
+          ['generatedAt', meta.generatedAt],
+          ['completedAt', meta.completedAt],
+          ['user report', meta.paths?.userReport],
+          ['debug report', meta.paths?.debugReport],
+          ['index report', meta.paths?.indexReport],
+          ['HTML report', meta.paths?.htmlReport],
+        ].map(([label, value]) => `<div class="meta-item"><span>${escapeHtml(label)}</span><strong>${htmlCell(value)}</strong></div>`).join('')}
+      </div>
+    </section>
+    <section id="coverage">
+      <h2>覆盖率概览</h2>
+      ${renderCoverageTable(safe.coverage ?? {})}
+    </section>
+    <section id="capabilities">
+      <h2>能力汇总</h2>
+      ${noCapabilityIntent ? '<p class="empty">暂无能力和意图，构建在上游阶段失败。</p>' : ''}
+      ${groupOrder.map(([group, label]) => {
+        const rows = grouped.get(group) ?? [];
+        if (!rows.length) return '';
+        return `<h3>${escapeHtml(label)} (${rows.length})</h3>${renderCapabilityRows(rows)}`;
+      }).join('')}
+    </section>
+    <section id="intents">
+      <h2>意图汇总</h2>
+      ${renderIntentRows(intents)}
+    </section>
+    <section id="mapping">
+      <h2>Capability -> Intents</h2>
+      ${renderMappingRows(safe.mappings ?? [])}
+    </section>
+    <section id="blocked">
+      <h2>风险与阻断说明</h2>
+      <p class="muted">本页只展示脱敏结构摘要。涉及写入、账号变更或证据不足的能力不会自动执行。</p>
+      ${renderBlockedList(safe)}
+    </section>
+  </main>
+</body>
+</html>`;
+  assertCapabilityIntentHtmlSafe(html, options);
+  return html;
+}
+
+function assertCapabilityIntentHtmlSafe(html, options = /** @type {any} */ ({})) {
+  if (options.skipSafetyScan === true) {
+    return;
+  }
+  for (const { code, pattern } of HTML_REPORT_FORBIDDEN_PATTERNS) {
+    if (pattern.test(html)) {
+      const error = /** @type {Error & Record<string, any>} */ (new Error(`capability-intent-html-report-unsafe: forbidden pattern ${code}`));
+      error.code = 'capability-intent-html-report-unsafe';
+      error.reasonCode = code;
+      throw error;
+    }
+  }
+}
+
+async function writeCapabilityIntentHtmlReport(context, stageResults, report, userReport) {
+  const payload = buildCapabilityIntentHtmlPayload(context, stageResults, report, userReport);
+  const html = renderCapabilityIntentSummaryHtml(payload);
+  return await writeArtifactText(context, CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH, html);
 }
 
 function buildBuildReport(context, stageResults, stageRecords, status = 'success', error = null) {
@@ -5912,6 +7356,8 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
   });
   const registryReport = stageResults.registerSkill?.registryReport ?? null;
   const promotion = stageResults.registerSkill?.promotion ?? registryReport?.promotion ?? null;
+  const coverage = buildCoverageReport(context, stageResults, capabilities);
+  const authSummary = authSummaryForReport(context.crawlContract, context.authStateReport);
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -5933,6 +7379,11 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
     },
     buildProfilePath: context.buildProfilePath,
     setupProfile: setupProfileSummary(context.setupProfile),
+    crawlContract: context.crawlContract ?? null,
+    authStateReport: context.authStateReport ?? null,
+    crawlMode: authSummary.crawlMode,
+    authChoice: authSummary.authChoice,
+    authLevel: authSummary.authLevel,
     siteAdapter: siteAdapterSummaryForReport(context, { includeSource: true }),
     setupCollectionReview,
     artifactStore: context.artifactStore,
@@ -5955,6 +7406,8 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       nodes: stageResults.classifyNodes?.graph?.nodes?.length ?? 0,
       affordances: stageResults.extractAffordances?.affordances?.length ?? 0,
       capabilities: capabilityCounts(capabilities),
+      coverage,
+      auth: authSummary,
       activeCapabilities: activeCapabilities.length,
       intents: intents.length,
       verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
@@ -5991,6 +7444,7 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
 
 async function writeBuildReportStage(context, stageResults, stageRecords) {
   const report = buildBuildReport(context, stageResults, stageRecords, 'success');
+  report.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = capabilityIntentSummaryHtmlPath(context);
   const userReport = buildUserReport(context, stageResults, report);
   report.result_status = userReport.result_status;
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
@@ -6012,6 +7466,8 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
   report.artifacts[DEBUG_REPORT_FILE] = debugReportWrite.artifactPath;
   const debugReportAliasWrite = await writeRedactedArtifactJson(context, DEBUG_REPORT_JSON_ALIAS, debugReportWrite.value);
   report.artifacts[DEBUG_REPORT_JSON_ALIAS] = debugReportAliasWrite.artifactPath;
+  const htmlReportPath = await writeCapabilityIntentHtmlReport(context, stageResults, report, userReportWrite.value);
+  report.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = htmlReportPath;
   report.artifacts[INDEX_REPORT_FILE] = path.join(context.artifactDir, INDEX_REPORT_FILE);
   const indexReport = buildReportIndex(report, userReportWrite.value, debugReportWrite.value);
   const buildReportWrite = await writeRedactedArtifactJson(context, INDEX_REPORT_FILE, indexReport);
@@ -6028,6 +7484,7 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
       userReport: userReportWrite.artifactPath,
       userMarkdown: userMarkdownPath,
       debugReport: debugReportWrite.artifactPath,
+      capabilityIntentSummaryHtml: htmlReportPath,
       userReportAlias: userReportAliasWrite.artifactPath,
       userMarkdownAlias: userMarkdownAliasPath,
       debugReportAlias: debugReportAliasWrite.artifactPath,
@@ -6038,6 +7495,7 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
 
 async function writeFailedBuildReport(context, stageResults, stageRecords, status, error) {
   const failedReport = buildBuildReport(context, stageResults, stageRecords, status, error);
+  failedReport.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = capabilityIntentSummaryHtmlPath(context);
   const userReport = buildUserReport(context, stageResults, failedReport);
   failedReport.result_status = userReport.result_status;
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
@@ -6059,6 +7517,16 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
   failedReport.artifacts[DEBUG_REPORT_FILE] = debugReportWrite.artifactPath;
   const debugReportAliasWrite = await writeRedactedArtifactJson(context, DEBUG_REPORT_JSON_ALIAS, debugReportWrite.value);
   failedReport.artifacts[DEBUG_REPORT_JSON_ALIAS] = debugReportAliasWrite.artifactPath;
+  try {
+    const htmlReportPath = await writeCapabilityIntentHtmlReport(context, stageResults, failedReport, userReportWrite.value);
+    failedReport.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = htmlReportPath;
+  } catch (htmlError) {
+    failedReport.warnings = uniqueSortedStrings([
+      ...(failedReport.warnings ?? []),
+      `capability-intent-html-report-skipped:${htmlError?.reasonCode ?? htmlError?.code ?? 'report-generation-failed'}`,
+    ]);
+    delete failedReport.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE];
+  }
   failedReport.artifacts[INDEX_REPORT_FILE] = path.join(context.artifactDir, INDEX_REPORT_FILE);
   const indexReport = buildReportIndex(failedReport, userReportWrite.value, debugReportWrite.value);
   const buildReportWrite = await writeRedactedArtifactJson(context, INDEX_REPORT_FILE, indexReport);
@@ -6078,6 +7546,8 @@ const STAGE_IMPLS = Object.freeze({
   registerSite: registerSiteStage,
   discoverSeeds: discoverSeedsStage,
   crawlStatic: crawlStaticStage,
+  authStateCheck: authStateCheckStage,
+  crawlAuthenticated: crawlAuthenticatedStage,
   crawlRendered: crawlRenderedStage,
   discoverInteractions: discoverInteractionsStage,
   captureNetworkTraces: captureNetworkTracesStage,
@@ -6095,6 +7565,19 @@ const STAGE_IMPLS = Object.freeze({
 export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ ({})) {
   const context = createInitialContext(inputUrl, options);
   await hydrateBuildProfile(context);
+  if (!context.authStateReport) {
+    context.authStateReport = createPublicOnlyAuthStateReport({
+      site: context.site,
+      authChoice: context.crawlContract?.authChoice ?? 'declined',
+    });
+  }
+  if (!context.crawlContract) {
+    context.crawlContract = createCrawlContract({
+      site: context.site,
+      authChoice: context.authStateReport.authChoice ?? 'declined',
+      authStateReport: context.authStateReport,
+    });
+  }
   await ensureSiteWorkspace(context.workspace, context.site, { nowIso: context.startedAt });
   await ensureBuildDirectories(context);
   const stageResults = /** @type {any} */ ({});
@@ -6230,155 +7713,56 @@ export function siteForgeBuildCliJson(result, options = /** @type {any} */ ({}))
 
 function displayBuildWarning(value) {
   const text = String(value ?? '');
-  if (text === 'Browser-rendered crawl is unavailable for this deterministic static build path.') {
-    return '确定性静态构建路径中无法使用浏览器渲染采集。';
-  }
-  if (text === 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.') {
-    return '本次使用静态和脱敏设置证据；公开构建路径不进行浏览器渲染采集。';
-  }
-  if (text === 'Network instrumentation is unavailable in the static fixture build path.') {
-    return '静态 fixture 构建路径中无法使用网络监听。';
-  }
-  if (text === 'Network summary was not requested; raw network tracing is not part of the public build path.') {
-    return '未请求脱敏网络摘要；公开构建路径不保存原始网络 trace。';
-  }
-  if (text === 'Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary.') {
-    return 'Network capture requested; only a sanitized network summary was saved.';
-  }
-  if (text === 'Network summary requested; raw network traces were not captured or persisted.') {
-    return '已请求脱敏网络摘要；未捕获或保存原始网络 trace。';
-  }
-  if (text === 'Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.') {
-    return '自动探索使用脱敏 SPA 路由/状态摘要；公开构建路径不启用浏览器渲染采集或原始网络 trace。';
-  }
-  if (text === 'generic crawler skipped; using bounded user-authorized browser evidence summary.') {
-    return '已跳过通用采集器，改用受限的用户授权浏览器证据摘要。';
-  }
-  if (text === 'using sanitized user-authorized browser evidence; unredacted page structure and session material were not persisted.') {
-    return '正在使用已清洗的用户授权浏览器证据；未保存页面结构原文或会话材料。';
-  }
-  if (text === 'network-fetch-failed') {
-    return '网络抓取失败；未保存原始错误详情。';
-  }
-  if (text === 'validation-failed') {
-    return '验证未通过；详细门禁结果见 verification_report.json。';
-  }
-  if (text === 'robots-unavailable') {
-    return '无法取得 robots.txt，实时构建已安全停止。';
-  }
-  if (text === 'robots-disallowed') {
-    return 'robots.txt 阻止了本次候选采集范围。';
-  }
-  if (text === 'dynamic-unsupported') {
-    return '当前路径需要动态采集能力，本次未启用。';
-  }
-  const setupProfile = text.match(/^setup profile marked unusable; build skipped before activating capabilities \(reasonCode=([^)]+)\)\.$/u);
-  if (setupProfile) {
-    return `设置资料标记为不可用，已在激活能力前跳过构建（reasonCode=${setupProfile[1]}）。`;
-  }
-  if (text === 'Skipped because setup profile is not buildable.') {
-    return '已跳过，因为设置资料当前不可用于构建。';
+  const translations = new Map([
+    ['Browser-rendered crawl is unavailable for this deterministic static build path.', 'Browser-rendered crawl is unavailable for this deterministic static build path.'],
+    ['Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.', 'This build used static and sanitized setup evidence only; browser-rendered crawl is not part of the public build path.'],
+    ['Network summary was not requested; raw network tracing is not part of the public build path.', 'Network summary was not requested; raw network tracing is not part of the public build path.'],
+    ['Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary.', 'Network capture requested; only a sanitized network summary was saved.'],
+    ['Network summary requested; raw network traces were not captured or persisted.', 'Network summary requested; raw network traces were not captured or persisted.'],
+    ['network-fetch-failed', 'Network fetch failed; raw error details were not saved.'],
+    ['validation-failed', 'Verification did not pass; see verification_report.json.'],
+    ['robots-unavailable', 'robots.txt could not be fetched, so the live build stopped safely.'],
+    ['robots-disallowed', 'robots.txt blocked the candidate crawl scope.'],
+    ['dynamic-unsupported', 'The route appears to require dynamic collection, which was not enabled.'],
+    ['Skipped because setup profile is not buildable.', 'Skipped because the setup profile is not buildable.'],
+  ]);
+  if (translations.has(text)) {
+    return translations.get(text);
   }
   const skipped = text.match(/^Skipped because ([A-Za-z][A-Za-z0-9]*) ([a-z_]+)\.$/u);
-  if (skipped) {
-    return `已跳过，因为阶段 ${skipped[1]} 状态为 ${collectionStatusLabel(skipped[2])}。`;
-  }
+  if (skipped) return `Skipped because stage ${skipped[1]} status is ${collectionStatusLabel(skipped[2])}.`;
   const crawlFailed = text.match(/^crawl failed: (.+)$/u);
-  if (crawlFailed) {
-    return `采集失败：${crawlFailed[1]}`;
-  }
+  if (crawlFailed) return `Crawl failed: ${crawlFailed[1]}`;
   return text;
 }
 
 function displayCollectionKind(value) {
-  if (value === 'capability') return '能力';
-  if (value === 'node') return '节点';
-  if (value === 'affordance') return '可操作元素';
-  if (value === 'stage') return '阶段';
-  if (value === 'build') return '构建';
+  if (value === 'capability') return 'capability';
+  if (value === 'node') return 'node';
+  if (value === 'affordance') return 'affordance';
+  if (value === 'stage') return 'stage';
+  if (value === 'build') return 'build';
   return String(value ?? '-');
 }
 
 function displayCollectionTarget(value) {
-  const text = String(value ?? '');
-  if (text === 'list followed users') return '读取关注列表';
-  if (text === 'list followed updates') return '读取关注动态';
-  if (text === 'list recommended timeline posts') return '读取推荐时间线帖子';
-  if (text === 'list profile content') return '读取个人主页内容';
-  if (text === 'search posts') return '搜索帖子';
-  if (text === 'list notifications') return '读取通知摘要';
-  if (text === 'list bookmarks') return '读取书签摘要';
-  if (text === 'list lists') return '读取列表摘要';
-  if (text === 'list direct messages') return '读取私信会话摘要';
-  if (text === 'capture network APIs') return '脱敏网络摘要候选';
-  if (text === 'registerSite') return '站点注册';
-  if (text === 'discoverSeeds') return '种子发现';
-  if (text === 'crawlStatic') return '静态页面采集';
-  if (text === 'captureNetworkTraces') return '网络监听采集';
-  if (text === 'crawlRendered') return '浏览器渲染采集';
-  if (text === 'discoverInteractions') return '交互发现';
-  if (text === 'buildSiteGraph') return '站点图谱构建';
-  if (text === 'classifyNodes') return '节点分类';
-  if (text === 'extractAffordances') return '可操作元素提取';
-  if (text === 'discoverCapabilities') return '能力发现';
-  if (text === 'generateIntents') return '意图生成';
-  if (text === 'generateSkill') return 'Skill 生成';
-  if (text === 'verifySkill') return 'Skill 验证';
-  if (text === 'registerSkill') return 'Skill 注册';
-  if (text === 'writeBuildReport') return '构建报告写入';
-  return text || '-';
+  return String(value ?? '') || '-';
 }
 
 function displayCollectionReason(item) {
   const reasonCode = String(item?.reasonCode ?? '');
-  if (reasonCode === 'capability-specific-evidence-required') {
-    return '已识别，但缺少该能力的内容级证据。';
-  }
-  if (reasonCode === 'authorized-route-seed-only') {
-    return '只采集到授权路由种子，尚未验证该页面内容。';
-  }
-  if (reasonCode === 'not-selected-by-setup') {
-    return '本次设置未选择，保留为候选能力。';
-  }
-  if (reasonCode === 'capability-candidate') {
-    return '候选能力尚未满足激活条件。';
-  }
-  if (String(item?.reason ?? '') === 'Browser-rendered crawl is unavailable for this deterministic static build path.') {
-    return '当前确定性构建路径不能进行浏览器渲染采集。';
-  }
-  if (String(item?.reason ?? '') === 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.') {
-    return '当前公开构建路径不进行浏览器渲染采集。';
-  }
-  if (String(item?.reason ?? '') === 'Network instrumentation is unavailable in the static fixture build path.') {
-    return '当前静态构建路径不能进行网络监听。';
-  }
-  if (String(item?.reason ?? '') === 'Network summary requested; raw network traces were not captured or persisted.') {
-    return '只保存脱敏网络摘要；未捕获或保存原始网络 trace。';
-  }
-  if (reasonCode === 'stage-skipped') {
-    return '上游阶段未完成，已跳过本阶段。';
-  }
-  if (reasonCode === 'stage-failed') {
-    return '本阶段失败，未产出可验证结果。';
-  }
-  if (reasonCode === 'stage-blocked') {
-    return '本阶段被安全或证据门禁阻止，未产出可验证结果。';
-  }
-  if (reasonCode === 'empty-crawl') {
-    return '静态采集没有获得可验证页面证据。';
-  }
-  if (reasonCode === 'robots-disallowed') {
-    return 'robots.txt 阻止了本次候选采集范围。';
-  }
-  if (reasonCode === 'robots-unavailable') {
-    return '无法取得 robots.txt，实时构建已安全停止。';
-  }
-  if (reasonCode === 'dynamic-unsupported') {
-    return displayBuildWarning(item?.reason ?? '当前路径需要动态采集能力，本次未激活。');
-  }
-  if (reasonCode === 'network-fetch-failed') {
-    return '网络抓取失败，未获得可验证页面证据。';
-  }
+  if (reasonCode === 'capability-specific-evidence-required') return 'Capability-specific evidence is missing.';
+  if (reasonCode === 'authorized-route-seed-only') return 'Only an authorized route seed was collected; page content is not verified.';
+  if (reasonCode === 'not-selected-by-setup') return 'Not selected during setup; kept as a candidate capability.';
+  if (reasonCode === 'capability-candidate') return 'Candidate capability does not yet meet activation criteria.';
+  if (reasonCode === 'stage-skipped') return 'Upstream stage did not complete; this stage was skipped.';
+  if (reasonCode === 'stage-failed') return 'This stage failed and did not produce a verifiable result.';
+  if (reasonCode === 'stage-blocked') return 'This stage was blocked by a safety or evidence gate.';
+  if (reasonCode === 'empty-crawl') return 'Static crawl did not collect verifiable page evidence.';
+  if (reasonCode === 'robots-disallowed') return 'robots.txt blocked the candidate crawl scope.';
+  if (reasonCode === 'robots-unavailable') return 'robots.txt could not be fetched, so the live build stopped safely.';
+  if (reasonCode === 'dynamic-unsupported') return 'The route appears to require dynamic collection, which was not enabled.';
+  if (reasonCode === 'network-fetch-failed') return 'Network fetch failed; no verifiable page evidence was collected.';
   return displayBuildWarning(item?.reason ?? reasonCode);
 }
 
@@ -6390,12 +7774,12 @@ function markdownTableCell(value, maxLength = 72) {
   if (text.length <= maxLength) {
     return text || '-';
   }
-  return `${text.slice(0, Math.max(1, maxLength - 1))}…`;
+  return `${text.slice(0, Math.max(1, maxLength - 1))}...`;
 }
 
 function renderCollectionOutcomeTable(outcomes = /** @type {any[]} */ ([])) {
   const rows = [
-    '  | 类型 | 对象 | 状态 | 原因 |',
+    '  | Type | Target | Status | Reason |',
     '  | --- | --- | --- | --- |',
   ];
   for (const item of outcomes) {
@@ -6412,18 +7796,18 @@ function renderSetupCollectionReviewLines(review = null) {
   const capabilityMissing = summary.capabilities?.missing ?? 0;
   const intentMissing = summary.intents?.missing ?? 0;
   const lines = [
-    '采集复核：',
-    `  已采集：种子=${summary.seeds?.collected ?? 0} 节点=${summary.nodes?.collected ?? 0} 可操作元素=${summary.affordances?.collected ?? 0} 能力=${summary.capabilities?.collected ?? 0} 意图=${summary.intents?.collected ?? 0}`,
-    `  需要补采：能力=${capabilityMissing} 意图=${intentMissing}`,
+    'Collection review:',
+    `  Collected: seeds=${summary.seeds?.collected ?? 0} nodes=${summary.nodes?.collected ?? 0} affordances=${summary.affordances?.collected ?? 0} capabilities=${summary.capabilities?.collected ?? 0} intents=${summary.intents?.collected ?? 0}`,
+    `  Needs more evidence: capabilities=${capabilityMissing} intents=${intentMissing}`,
   ];
   const missingRecords = review.missingRecords ?? [];
   if (missingRecords.length) {
-    lines.push('  未采集证据：');
+    lines.push('  Missing evidence:');
     for (const record of missingRecords.slice(0, 5)) {
       lines.push(`    - ${record.kind}:${record.label ?? record.id ?? '-'} (${record.reasonCode ?? 'missing-evidence'})`);
     }
     if (review.truncated || missingRecords.length > 5) {
-      lines.push('    - 完整采集复核见 build_report.json。');
+      lines.push('    - See build_report.json for the full collection review.');
     }
   }
   return lines;
@@ -6433,42 +7817,62 @@ function renderSiteForgeUserBuildSummary(result, options = /** @type {any} */ ({
   return renderFriendlySiteForgeUserBuildSummary(result, options);
 }
 
+function capabilityIntentHtmlResultPath(result = /** @type {any} */ ({})) {
+  return result.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE]
+    ?? result.reports?.capability_intent_summary_html
+    ?? result.reports?.user?.html_capability_intent_summary
+    ?? result.user_report?.reports?.capability_intent_summary_html
+    ?? result.user_report?.build_completion?.capability_intent_summary_html
+    ?? result.userReport?.reports?.capability_intent_summary_html
+    ?? result.userReport?.build_completion?.capability_intent_summary_html
+    ?? result.build_completion?.capability_intent_summary_html
+    ?? null;
+}
+
+function appendCapabilityIntentHtmlSummaryLine(summary, result, options = /** @type {any} */ ({})) {
+  const htmlPath = capabilityIntentHtmlResultPath(result);
+  if (!htmlPath) {
+    return summary;
+  }
+  return `${String(summary ?? '').trimEnd()}\nCapability and intent HTML summary: ${displayPath(htmlPath, options.cwd)}\n`;
+}
+
 export function renderSiteForgeBuildSummary(result, options = /** @type {any} */ ({})) {
   const mode = normalizeReportMode(
     options.reportMode ?? options.report ?? (options.debug || options.verbose ? 'debug' : 'user'),
   );
   const userSummary = renderSiteForgeUserBuildSummary(result, options);
   if (mode === 'user') {
-    return userSummary;
+    return appendCapabilityIntentHtmlSummaryLine(userSummary, result, options);
   }
   const debugPath = result.artifacts?.[DEBUG_REPORT_FILE]
     ?? result.artifacts?.[DEBUG_REPORT_JSON_ALIAS]
     ?? DEBUG_REPORT_FILE;
   const indexPath = result.artifacts?.[INDEX_REPORT_FILE] ?? INDEX_REPORT_FILE;
-  return `${userSummary}\n开发者详情报告\n  - Debug JSON: ${displayPath(debugPath, options.cwd)}\n  - 报告索引: ${displayPath(indexPath, options.cwd)}\n`;
+  return `${userSummary}\nDeveloper report:\n  - Debug JSON: ${displayPath(debugPath, options.cwd)}\n  - Report index: ${displayPath(indexPath, options.cwd)}\n`;
 }
 
 export function renderSiteForgeBuildDebugSummary(result, options = /** @type {any} */ ({})) {
   const counts = result.summary ?? {};
   const capabilityCountsSummary = counts.capabilities ?? {};
   const lines = [
-    `SiteForge 构建${buildStatusLabel(result.status)}`,
+    `SiteForge build ${buildStatusLabel(result.status)}`,
     '',
-    `站点 ID：${result.siteId}`,
-    `构建 ID：${result.buildId}`,
-    `种子：${counts.seeds ?? 0}`,
-    `节点：${counts.nodes ?? 0}`,
-    `可操作元素：${counts.affordances ?? 0}`,
-    `能力：活跃=${capabilityCountsSummary.active ?? 0} 候选=${capabilityCountsSummary.candidate ?? 0} 丢弃=${capabilityCountsSummary.discarded ?? 0}`,
-    `意图：${counts.intents ?? 0}`,
-    `Skill ID：${result.skillId ?? '-'}`,
-    `验证：${verificationStatusLabel(counts.verificationStatus)}`,
-    `注册表：${verificationStatusLabel(counts.registryStatus)}`,
+    `Site ID: ${result.siteId}`,
+    `Build ID: ${result.buildId}`,
+    `Seeds: ${counts.seeds ?? 0}`,
+    `Nodes: ${counts.nodes ?? 0}`,
+    `Affordances: ${counts.affordances ?? 0}`,
+    `Capabilities: active=${capabilityCountsSummary.active ?? 0} candidate=${capabilityCountsSummary.candidate ?? 0} discarded=${capabilityCountsSummary.discarded ?? 0}`,
+    `Intents: ${counts.intents ?? 0}`,
+    `Skill ID: ${result.skillId ?? '-'}`,
+    `Verification: ${verificationStatusLabel(counts.verificationStatus)}`,
+    `Registry: ${verificationStatusLabel(counts.registryStatus)}`,
     '',
-    '产物：',
-    `  构建：${displayPath(result.artifactDir, options.cwd)}`,
-    `  Skill：${displayPath(result.skillDir, options.cwd)}`,
-    `  报告：${displayPath(result.artifacts?.['build_report.json'], options.cwd)}`,
+    'Artifacts:',
+    `  Build: ${displayPath(result.artifactDir, options.cwd)}`,
+    `  Skill: ${displayPath(result.skillDir, options.cwd)}`,
+    `  Report: ${displayPath(result.artifacts?.['build_report.json'], options.cwd)}`,
   ];
   if (counts.autoDiscovery) {
     lines.push(
@@ -6484,7 +7888,7 @@ export function renderSiteForgeBuildDebugSummary(result, options = /** @type {an
   }
   const warnings = result.warnings ?? [];
   if (warnings.length) {
-    lines.push('', '警告：');
+    lines.push('', 'Warnings:');
     for (const warning of warnings) {
       lines.push(`  - ${displayBuildWarning(warning)}`);
     }
@@ -6495,9 +7899,9 @@ export function renderSiteForgeBuildDebugSummary(result, options = /** @type {an
   }
   const unsuccessful = result.collectionOutcomes?.unsuccessful ?? [];
   if (unsuccessful.length) {
-    lines.push('', '未成功采集：', ...renderCollectionOutcomeTable(unsuccessful));
+    lines.push('', 'Unsuccessful collection:', ...renderCollectionOutcomeTable(unsuccessful));
     if (result.collectionOutcomes?.truncated) {
-      lines.push(`  （仅显示前 ${result.collectionOutcomes.limit ?? unsuccessful.length} 项，完整列表见 build_report.json）`);
+      lines.push(`  (Showing first ${result.collectionOutcomes.limit ?? unsuccessful.length} items; see build_report.json for the full list.)`);
     }
   }
   return `${lines.join('\n')}\n`;

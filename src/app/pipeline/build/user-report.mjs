@@ -550,6 +550,14 @@ export function renderSiteForgeUserBuildSummary(result, options = /** @type {any
       `页面/区域 ${nodes.page_nodes ?? 0} / 内容节点 ${nodes.content_nodes ?? 0} / 操作节点 ${nodes.operation_nodes ?? 0} / 元素 ${counts.actionable_elements ?? nodes.actionable_elements ?? 0}`,
     );
     appendTreeLine(lines, `▼ 待确认能力 (${confirmation.length})`, 'Space 标记确认；只写入安全确认记录');
+    appendTreeLine(
+      lines,
+      '登录态覆盖',
+      `模式 ${report.crawlMode ?? 'public_only'} / 等级 ${report.authLevel ?? 'L0'} / 公开 ${report.coverage?.public?.pages ?? 0} 页 / 登录后 ${report.coverage?.authenticated?.pages ?? 0} 页 / overlay ${report.coverage?.overlay?.pagesRevisited ?? 0} 页`,
+    );
+    for (const line of report.auth_explanation_zh ?? []) {
+      lines.push(`  - ${line}`);
+    }
     appendTreeCapabilityRows(lines, confirmation, { limit: 8, checkbox: '[ ]' });
     appendTreeLine(lines, `▶ 已禁用能力 (${disabled.length})`, '仅展示安全补路径；不能直接强行启用');
     appendTreeLine(

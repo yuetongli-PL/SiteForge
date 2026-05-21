@@ -134,12 +134,12 @@ export async function createSiteKnowledgeBaseFixture(rootDir, {
   docs = /** @type {any[]} */ ([]),
   wikiReadme = '# Fixture Wiki',
   interactionModelMd = '# Interaction Model',
-  nlEntryMd = '# NL Entry',
+  languageEntryMd = '# NL Entry',
   recoveryMd = '# Recovery\n',
   approvalMd = '# Approval\n',
   capture = null,
   expandedStates = null,
-  bookContent = null,
+  contentSamples = null,
 } = /** @type {any} */ ({})) {
   const kbDir = path.join(rootDir, 'knowledge-base', host);
   const sources = /** @type {any[]} */ ([]);
@@ -292,7 +292,7 @@ export async function createSiteKnowledgeBaseFixture(rootDir, {
     rawDir: path.relative(kbDir, step7Dir),
   });
 
-  if (bookContent) {
+  if (contentSamples) {
     const stepBookDir = rawDirFor('step-book-content');
     await writeJson(path.join(stepBookDir, 'book-content-manifest.json'), {
       inputUrl,
@@ -305,9 +305,9 @@ export async function createSiteKnowledgeBaseFixture(rootDir, {
         manifest: 'book-content-manifest.json',
       },
     });
-    await writeJson(path.join(stepBookDir, 'books.json'), bookContent.books ?? []);
-    await writeJson(path.join(stepBookDir, 'authors.json'), bookContent.authors ?? []);
-    await writeJson(path.join(stepBookDir, 'search-results.json'), bookContent.searchResults ?? []);
+    await writeJson(path.join(stepBookDir, 'books.json'), contentSamples.books ?? []);
+    await writeJson(path.join(stepBookDir, 'authors.json'), contentSamples.authors ?? []);
+    await writeJson(path.join(stepBookDir, 'search-results.json'), contentSamples.searchResults ?? []);
     sources.push({
       step: 'step-book-content',
       runId: 'run',
@@ -326,7 +326,7 @@ export async function createSiteKnowledgeBaseFixture(rootDir, {
   });
   await writeText(path.join(kbDir, 'wiki', 'README.md'), wikiReadme);
   await writeText(path.join(kbDir, 'wiki', 'concepts', 'interaction-model.md'), interactionModelMd);
-  await writeText(path.join(kbDir, 'wiki', 'concepts', 'nl-entry.md'), nlEntryMd);
+  await writeText(path.join(kbDir, 'wiki', 'concepts', 'nl-entry.md'), languageEntryMd);
   await writeText(path.join(kbDir, 'schema', 'AGENTS.md'), '# Agents');
   await writeJson(path.join(kbDir, 'schema', 'naming-rules.json'), { rules: [] });
   await writeJson(path.join(kbDir, 'schema', 'evidence-rules.json'), { rules: [] });

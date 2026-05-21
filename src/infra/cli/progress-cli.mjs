@@ -1,7 +1,7 @@
 // @ts-check
 
 import { createProgressRenderer } from './progress.mjs';
-import { pipelineStageTitle } from './progress-copy.mjs';
+import { siteForgeBuildStageTitle } from './progress-copy.mjs';
 
 const PROGRESS_OPTION_KEYS = new Set([
   'json',
@@ -84,7 +84,7 @@ export async function runSingleStageCliWithProgress({
   nextStep,
 }) {
   const progress = createCliProgressRenderer(options);
-  const resolvedStageTitle = stageTitle ?? pipelineStageTitle(stageId);
+  const resolvedStageTitle = stageTitle ?? siteForgeBuildStageTitle(stageId);
   const taskTitle = title ?? resolvedStageTitle;
   const task = progress.task({
     id: taskId,

@@ -5,8 +5,8 @@ import { stdin as defaultStdin } from 'node:process';
 import {
   DEFAULT_PROGRESS_LANGUAGE,
   SAFETY_STOP_COPY,
-  pipelineStageTitle,
   progressText,
+  siteForgeBuildStageTitle,
   statusTitle,
 } from './progress-copy.mjs';
 
@@ -510,7 +510,7 @@ class ProgressRenderer {
   }
 
   _createStage(task, input = /** @type {any} */ ({})) {
-    const title = input.title ?? pipelineStageTitle(input.id ?? input.name, this.language);
+    const title = input.title ?? siteForgeBuildStageTitle(input.id ?? input.name, this.language);
     const stage = new ProgressNode(this, task, 'stage', { ...input, title });
     task.currentStage = stage;
     this._emitPlain(stage, 'stage');

@@ -483,16 +483,16 @@
       "genericLiveBuild": {
         "status": "blocked",
         "reasonCode": "robots-disallowed",
-        "reason": "x.com robots.txt disallows the generic SiteForge live crawler from root-level public collection. Social capabilities require an authorized or fixture-only path before any live support claim.",
+        "reason": "x.com robots.txt disallows the generic SiteForge live crawler from root-level public collection. Social capabilities require an authorized or deterministic local HTTP validation path before any live support claim.",
         "alternativeAccessPaths": [
           "Use an official/API or platform-authorized integration with terms-compatible access and documented rate, permission, and data-use boundaries.",
           "Use a user-authorized bounded X SiteAdapter workflow with explicit consent, minimal redacted SessionView material, and no raw credential, cookie, or browser profile persistence.",
-          "Use deterministic fixture-only validation for CI or documentation, clearly labeled as not live X support."
+          "Use deterministic local HTTP validation for CI or documentation, clearly labeled as not live X support."
         ]
       },
       "routingNotes": [
         "Generic live URL-to-Skill collection is blocked for x.com by robots; do not promote profile, timeline, search, media, archive, account, or API capabilities from generic public crawl evidence.",
-        "Future X capability claims require official/API, platform-authorized, user-authorized bounded SiteAdapter, or fixture-only validation evidence."
+        "Future X capability claims require official/API, platform-authorized, user-authorized bounded SiteAdapter, or deterministic local HTTP validation evidence."
       ],
       "accessSignals": {
         "restrictionSignals": [
@@ -501,7 +501,7 @@
           "login and risk-control surfaces"
         ],
         "notes": [
-          "Treat generic x.com live build as uncollectable; blocked fixture coverage is not live support."
+          "Treat generic x.com live build as uncollectable; deterministic local coverage is not live support."
         ]
       }
     },

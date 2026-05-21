@@ -1,6 +1,0 @@
-User-agent: *
-Disallow: /qqfile/
-Disallow: /sv1/
-Disallow: /answer/
-Allow: /
-Sitemap: https://news.qq.com/sitemap.xml

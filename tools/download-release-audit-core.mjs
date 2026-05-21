@@ -261,7 +261,7 @@ function unavailableCapabilityCompileCoverage(site, error) {
   };
 }
 
-async function buildCapabilityCompileCoverage(rows = [], deps = {}) {
+async function buildCapabilityDryRunCoverage(rows = [], deps = {}) {
   const compile = deps.runSiteCapabilityCompile ?? runSiteCapabilityCompile;
   const sites = [...new Set(rows.map((row) => normalizeSite(row.site)).filter((site) => site && site !== 'unknown'))].sort();
   const coverage = new Map();
@@ -278,11 +278,11 @@ async function buildCapabilityCompileCoverage(rows = [], deps = {}) {
   return coverage;
 }
 
-function attachCapabilityCompileCoverage(rows = [], coverage = new Map()) {
+function attachCapabilityDryRunCoverage(rows = [], coverage = new Map()) {
   return rows.map((row) => {
     const site = normalizeSite(row.site);
-    const capabilityCompile = coverage.get(site);
-    return capabilityCompile ? { ...row, capabilityCompile } : row;
+    const capabilityDryRun = coverage.get(site);
+    return capabilityDryRun ? { ...row, capabilityDryRun } : row;
   });
 }
 
@@ -299,13 +299,13 @@ export async function buildAudit(options = {}, deps = {}) {
       skipped.push({ manifestPath, reason: error?.message ?? String(error) });
     }
   }
-  const capabilityCompileCoverage = await buildCapabilityCompileCoverage(rows, deps);
-  const guidedRows = addRepairGuidance(attachCapabilityCompileCoverage(rows, capabilityCompileCoverage), options);
+  const capabilityDryRunCoverage = await buildCapabilityDryRunCoverage(rows, deps);
+  const guidedRows = addRepairGuidance(attachCapabilityDryRunCoverage(rows, capabilityDryRunCoverage), options);
   return {
     generatedAt: new Date().toISOString(),
     manifests: explicit.length,
     summary: summarize(guidedRows),
-    capabilityCompileCoverage: Object.fromEntries(capabilityCompileCoverage.entries()),
+    capabilityDryRunCoverage: Object.fromEntries(capabilityDryRunCoverage.entries()),
     rows: guidedRows,
     skipped,
   };
@@ -324,11 +324,11 @@ function renderMarkdown(audit = {}) {
   ];
   for (const row of audit.rows ?? []) {
     const nativeResolver = [row.nativeResolverAdapter, row.nativeResolverMethod].filter(Boolean).join('/');
-    const compileCoverage = row.capabilityCompile
-      ? [row.capabilityCompile.status, row.capabilityCompile.coverageCompleteness].filter(Boolean).join('/')
+    const compileCoverage = row.capabilityDryRun
+      ? [row.capabilityDryRun.status, row.capabilityDryRun.coverageCompleteness].filter(Boolean).join('/')
       : '';
-    const compilePlan = row.capabilityCompile
-      ? [row.capabilityCompile.graphValidationResult, row.capabilityCompile.planStatus].filter(Boolean).join('/')
+    const compilePlan = row.capabilityDryRun
+      ? [row.capabilityDryRun.graphValidationResult, row.capabilityDryRun.planStatus].filter(Boolean).join('/')
       : '';
     lines.push(`| ${row.site} | ${row.id} | ${row.kind} | ${row.status} | ${row.reason ?? ''} | ${row.provider ?? ''} | ${row.nativeFallbackReason ?? ''} | ${nativeResolver} | ${compileCoverage} | ${compilePlan} | ${row.manifestPath} | ${row.repairPlan?.commandText ?? ''} |`);
   }

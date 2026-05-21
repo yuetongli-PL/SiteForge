@@ -12,12 +12,7 @@ import {
   truncateText,
   visibleWidth,
 } from '../../src/infra/cli/progress.mjs';
-import { pipelineStageTitle } from '../../src/infra/cli/progress-copy.mjs';
-import {
-  BuildProgressController,
-  renderBuildFailure,
-  renderBuildSummary,
-} from '../../src/infra/cli/build-progress.mjs';
+import { siteForgeBuildStageTitle } from '../../src/infra/cli/progress-copy.mjs';
 
 function createStream({ isTTY = false, columns = 80 } = /** @type {any} */ ({})) {
   let output = '';
@@ -49,17 +44,17 @@ test('progress renderer detects TTY, CI, JSON, quiet, and explicit modes', () =>
 test('plain mode renders stable lines without ANSI cursor control or spinner frames', () => {
   const stderr = createStream();
   const progress = createProgressRenderer({ stdout: stderr, stderr, mode: 'plain', color: 'never', unicode: 'never', env: {} });
-  const task = progress.task({ id: 'build', title: 'Build site skill' });
-  const stage = task.stage({ id: 'capture', index: 1, total: 10, item: 'https://example.com/page' });
-  stage.update({ current: 3, total: 10, message: 'Capturing page facts' });
-  stage.succeed({ message: 'Captured page facts' });
-  task.succeed({ message: 'Skill generated', artifacts: [{ label: 'skill', path: 'skills/example/SKILL.md' }] });
+  const task = progress.task({ id: 'build', title: 'Build SiteForge Skill' });
+  const stage = task.stage({ id: 'crawlStatic', index: 1, total: 10, item: 'https://example.com/page' });
+  stage.update({ current: 3, total: 10, message: 'Crawling static pages' });
+  stage.succeed({ message: 'Crawled static pages' });
+  task.succeed({ message: 'SiteForge Skill generated', artifacts: [{ label: 'skill', path: 'skills/example/SKILL.md' }] });
 
   const output = stderr.output();
   assert.match(output, /\[build\] start status=pending/u);
-  assert.match(output, /stage=1\/10 name=capture status=running/u);
+  assert.match(output, /stage=1\/10 name=crawlStatic status=running/u);
   assert.match(output, /percent="30%"/u);
-  assert.match(output, /status=success message="Captured page facts"/u);
+  assert.match(output, /status=success message="Crawled static pages"/u);
   assert.match(output, /skill=skills\/example\/SKILL\.md/u);
   assert.equal(hasCursorControl(output), false);
   assert.doesNotMatch(output, /[\u280b\u2819\u2839]\r/u);
@@ -69,7 +64,7 @@ test('interactive mode refreshes in place and avoids extra newline while running
   const stderr = createStream({ isTTY: true, columns: 90 });
   const progress = createProgressRenderer({ stdout: stderr, stderr, mode: 'interactive', color: 'never', unicode: 'never', env: {} });
   const task = progress.task({ id: 'build', title: 'Build' });
-  const stage = task.stage({ id: 'capture', index: 1, total: 10 });
+  const stage = task.stage({ id: 'crawlStatic', index: 1, total: 10 });
   stage.update({ current: 1, total: 10, message: 'running' });
   const output = stderr.output();
   assert.match(output, /\r/u);
@@ -80,7 +75,7 @@ test('stage progress falls back to stage index when no inner progress is reporte
   const stderr = createStream({ isTTY: true, columns: 90 });
   const progress = createProgressRenderer({ stdout: stderr, stderr, mode: 'interactive', color: 'never', unicode: 'never', env: {} });
   const task = progress.task({ id: 'build', title: 'Build' });
-  const stage = task.stage({ id: 'docs', index: 7, total: 10, title: 'Docs' });
+  const stage = task.stage({ id: 'writeBuildReport', index: 7, total: 10, title: 'Writing build report' });
   stage.succeed({ message: 'done' });
   const output = stripAnsi(stderr.output());
   assert.match(output, /70%/u);
@@ -102,8 +97,8 @@ test('format helpers cover percent, ETA, speed, truncation, and Chinese width', 
   assert.equal(formatPercent(3, 10), '30%');
   assert.equal(formatEta(65), '1m05s');
   assert.equal(formatSpeed(2048), '2.0 KB/s');
-  assert.equal(visibleWidth('\u89c2\u5bdfabc'), 7);
-  assert.equal(truncateText('https://example.com/a/very/long/path', 14), 'https://examp\u2026');
+  assert.equal(visibleWidth('观察abc'), 7);
+  assert.equal(truncateText('https://example.com/a/very/long/path', 14), 'https://examp…');
 });
 
 test('unicode disabled and color disabled degrade output', () => {
@@ -132,12 +127,12 @@ test('confirm/select/multiSelect do not block in non-TTY mode', async () => {
 test('failure renderer includes stage, reason, safety, next step, and report', () => {
   const output = renderFailureSummary({
     taskId: 'build',
-    stage: 'capture',
+    stage: 'crawlStatic',
     reason: 'verification or access-control page',
     nextStep: 'siteforge build https://example.com',
     report: 'runs/sites/site-doctor/example/report.md',
   });
-  assert.match(output, /\[build\] status=failed stage=capture reason="verification or access-control page"/u);
+  assert.match(output, /\[build\] status=failed stage=crawlStatic reason="verification or access-control page"/u);
   assert.match(output, /CAPTCHA.*MFA/u);
   assert.match(output, /next=/u);
   assert.match(output, /report=runs\/sites\/site-doctor\/example\/report\.md/u);
@@ -147,10 +142,10 @@ test('download progress summary renders bytes, speed, ETA, resume, skip, verify,
   const stderr = createStream();
   const progress = createProgressRenderer({ stdout: stderr, stderr, mode: 'plain', env: {} });
   const task = progress.download({ id: 'download', title: 'Download' });
-  const item = task.stage({ id: 'file-1', index: 1, total: 2, title: '\u4e0b\u8f7d\u8d44\u6e90', totalBytes: 4096 });
+  const item = task.stage({ id: 'file-1', index: 1, total: 2, title: 'Download resource', totalBytes: 4096 });
   item.update({ downloadedBytes: 2048, totalBytes: 4096, item: 'video.mp4', retryCount: 1 });
   item.succeed({ downloadedBytes: 4096, totalBytes: 4096, completedItems: 1, verified: 1, message: 'Downloaded and verified' });
-  const skipped = task.stage({ id: 'file-2', index: 2, total: 2, title: '\u4e0b\u8f7d\u8d44\u6e90' });
+  const skipped = task.stage({ id: 'file-2', index: 2, total: 2, title: 'Download resource' });
   skipped.skip({ message: 'Skipped existing file', skippedExisting: 1 });
   task.warn({ message: 'partial', completedItems: 1, failedItems: 1, skippedExisting: 1 });
   const output = stderr.output();
@@ -163,18 +158,13 @@ test('download progress summary renders bytes, speed, ETA, resume, skip, verify,
   assert.match(output, /failed=1/u);
 });
 
-test('pipeline stage mapping is centralized and defaults to Chinese', () => {
-  assert.equal(pipelineStageTitle('capture'), '\u89c2\u5bdf\u7f51\u7ad9\u7ed3\u6784');
-  assert.equal(pipelineStageTitle('expanded', 'en'), 'Exploring page states');
-  assert.equal(pipelineStageTitle('bookContent'), '\u91c7\u96c6\u5185\u5bb9\u6837\u672c');
-  assert.equal(pipelineStageTitle('analysis'), '\u5206\u6790\u9875\u9762\u7c7b\u578b');
-  assert.equal(pipelineStageTitle('abstraction'), '\u6574\u7406\u4ea4\u4e92\u6a21\u578b');
-  assert.equal(pipelineStageTitle('nlEntry'), '\u751f\u6210\u81ea\u7136\u8bed\u8a00\u5165\u53e3');
-  assert.equal(pipelineStageTitle('docs'), '\u751f\u6210\u8bf4\u660e\u6587\u6863');
-  assert.equal(pipelineStageTitle('governance'), '\u751f\u6210\u5b89\u5168\u8fb9\u754c\u4e0e\u6062\u590d\u7b56\u7565');
-  assert.equal(pipelineStageTitle('knowledgeBase'), '\u7f16\u8bd1\u7ad9\u70b9\u77e5\u8bc6\u5e93');
-  assert.equal(pipelineStageTitle('capabilityCompile'), '\u7f16\u8bd1 Graph \u4e0e Planner Layer');
-  assert.equal(pipelineStageTitle('skill'), '\u751f\u6210 Agent Skill');
+test('SiteForge build stage mapping is centralized and defaults to Chinese', () => {
+  assert.equal(siteForgeBuildStageTitle('registerSite'), '注册站点');
+  assert.equal(siteForgeBuildStageTitle('discoverSeeds'), '发现种子页面');
+  assert.equal(siteForgeBuildStageTitle('crawlStatic'), '采集静态页面');
+  assert.equal(siteForgeBuildStageTitle('writeBuildReport'), '写入构建报告');
+  assert.equal(siteForgeBuildStageTitle('registerSite', 'en'), 'Registering site');
+  assert.equal(siteForgeBuildStageTitle('unknownStage'), 'unknownStage');
 });
 
 test('progress output redacts sensitive keys and values', () => {
@@ -189,147 +179,4 @@ test('progress output redacts sensitive keys and values', () => {
   const output = stderr.output();
   assert.doesNotMatch(output, /synthetic-token|synthetic-session|Authorization: Bearer|access_token=/u);
   assert.match(output, /\[REDACTED\]/u);
-});
-
-test('build progress TTY panel keeps pending stages distinct and uses cursor refresh', () => {
-  const stderr = createStream({ isTTY: true, columns: 100 });
-  const stages = [
-    { name: 'capture' },
-    { name: 'expanded' },
-    { name: 'analysis' },
-  ];
-  const progress = new BuildProgressController({
-    inputUrl: 'https://weread.qq.com/',
-    stageSpecs: stages,
-    stderr,
-    stdout: createStream({ isTTY: true }),
-    options: { forceTty: true, noColor: true },
-  });
-  const capture = progress.stage({ id: 'capture', index: 1, total: 3, item: 'https://weread.qq.com/' });
-  capture.succeed({ message: 'runs/pipeline/captures/weread' });
-  progress.stage({ id: 'expanded', index: 2, total: 3, item: 'trigger:nav' });
-  const output = stripAnsi(stderr.output());
-  assert.match(stderr.output(), /\x1b\[/u);
-  assert.match(output, /SiteForge/u);
-  assert.match(output, /1\/3 个阶段|0\/3 个阶段/u);
-  assert.match(output, /✓\s+1\. 观察网站结构/u);
-  assert.match(output, /2\. 探索页面状态\s+运行中/u);
-  assert.match(output, /3\. 分析页面类型\s+等待中/u);
-});
-
-test('build progress plain mode emits stable stage lines and final compact result', () => {
-  const stderr = createStream();
-  const stages = [{ name: 'capture' }, { name: 'knowledgeBase' }];
-  const progress = new BuildProgressController({
-    inputUrl: 'https://example.com/',
-    stageSpecs: stages,
-    stderr,
-    stdout: createStream(),
-    options: { progressMode: 'plain', ascii: true },
-  });
-  const capture = progress.stage({ id: 'capture', index: 1, total: 2 });
-  capture.succeed({ message: 'runs/pipeline/captures/example' });
-  const kb = progress.stage({ id: 'knowledgeBase', index: 2, total: 2 });
-  kb.warn({ message: '20 warnings' });
-  progress.complete({
-    inputUrl: 'https://example.com/',
-    skillName: 'example',
-    skillDir: 'skills/example',
-    kbDir: 'knowledge-base/example.com',
-    stages: {
-      knowledgeBase: {
-        pages: 12,
-        lintSummary: { errorCount: 0, warningCount: 20, orphanPageCount: 3 },
-        gapGroups: { pendingRiskConfirmations: 2, evidenceGaps: 0 },
-      },
-      skill: { warnings: [] },
-    },
-  });
-  const output = stderr.output();
-  assert.equal(hasCursorControl(output), false);
-  assert.match(output, /\[1\/2\] 观察网站结构\.\.\. 运行中/u);
-  assert.match(output, /\[1\/2\] 观察网站结构\.\.\. 完成/u);
-  assert.match(output, /\[2\/2\] 编译站点知识库\.\.\. 警告：20 warnings/u);
-  assert.match(output, /站点 Skill 已生成，但存在警告。/u);
-  assert.match(output, /Skill：skills\/example/u);
-});
-
-test('build summary renders table, artifacts, quality, next commands, and path compaction', () => {
-  const summary = renderBuildSummary({
-    inputUrl: 'https://weread.qq.com/',
-    skillName: 'weread',
-    skillDir: 'C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\skills\\weread',
-    kbDir: 'C:\\Users\\lyt-p\\Desktop\\Browser-Wiki-Skill\\knowledge-base\\weread.qq.com',
-    stages: {
-      analysis: { summary: { inputStates: 13 } },
-      abstraction: { summary: { actions: 8 } },
-      docs: { summary: { documents: 8 } },
-      knowledgeBase: {
-        pages: 38,
-        lintSummary: { errorCount: 0, warningCount: 20, orphanPageCount: 13 },
-        gapGroups: { pendingRiskConfirmations: 7, evidenceGaps: 0 },
-      },
-      skill: {
-        references: ['references/index.md', 'references/flows.md'],
-        warnings: [],
-      },
-    },
-  }, {
-    durationMs: 141000,
-    columns: 90,
-  });
-  assert.match(summary, /站点 Skill 已生成，但存在警告/u);
-  assert.match(summary, /摘要/u);
-  assert.match(summary, /产物/u);
-  assert.match(summary, /质量/u);
-  assert.match(summary, /下一步/u);
-  assert.match(summary, /警告\s+20/u);
-  assert.match(summary, /skills\/weread/u);
-  assert.match(summary, /siteforge build https:\/\/weread\.qq\.com\//u);
-  assert.doesNotMatch(summary, /"inputUrl"/u);
-});
-
-test('build summary and failure support ASCII and debug-oriented failure text', () => {
-  const summary = renderBuildSummary({
-    inputUrl: 'https://example.com/',
-    skillName: 'example',
-    stages: { knowledgeBase: { lintSummary: { errorCount: 0, warningCount: 0 } }, skill: { warnings: [] } },
-  }, { ascii: true });
-  assert.match(summary, /^OK 站点 Skill 已生成/u);
-  assert.doesNotMatch(summary, /✓|⚠|✗/u);
-  const failure = renderBuildFailure(new Error('Failed to read captured state file'), {
-    inputUrl: 'https://example.com/',
-    stages: [{ index: 4, title: '分析页面类型', status: 'failed' }],
-    currentStage: { index: 4, title: '分析页面类型' },
-  }, { ascii: true });
-  assert.match(failure, /^X 构建失败，阶段 4\/1：分析页面类型/u);
-  assert.match(failure, /原因\s+Failed to read captured state file/su);
-  assert.match(failure, /siteforge build https:\/\/example\.com\//u);
-  assert.doesNotMatch(failure, /--(?:json|verbose|debug|quiet|progress)\b/u);
-});
-
-test('build progress respects quiet mode and narrow terminal truncation', () => {
-  const quietStderr = createStream({ isTTY: true, columns: 40 });
-  const quiet = new BuildProgressController({
-    inputUrl: 'https://example.com/a/very/long/path',
-    stageSpecs: [{ name: 'capture' }],
-    stderr: quietStderr,
-    stdout: createStream({ isTTY: true }),
-    options: { quiet: true, forceTty: true },
-  });
-  quiet.stage({ id: 'capture', index: 1, total: 1 });
-  quiet.complete({ inputUrl: 'https://example.com/', stages: {} });
-  assert.equal(quietStderr.output(), '');
-
-  const narrowStderr = createStream({ isTTY: true, columns: 42 });
-  const narrow = new BuildProgressController({
-    inputUrl: 'https://example.com/a/very/long/path/that/should/truncate',
-    stageSpecs: [{ name: 'capture' }, { name: 'expanded' }],
-    stderr: narrowStderr,
-    stdout: createStream({ isTTY: true }),
-    options: { forceTty: true, noColor: true },
-  });
-  narrow.stage({ id: 'capture', index: 1, total: 2, item: 'https://example.com/a/very/long/path/that/should/truncate' });
-  const visible = stripAnsi(narrowStderr.output());
-  assert.match(visible, /…/u);
 });

@@ -2,51 +2,22 @@
 
 export const DEFAULT_PROGRESS_LANGUAGE = 'zh';
 
-export const PROGRESS_STAGE_COPY = Object.freeze({
-  capture: {
-    zh: '\u89c2\u5bdf\u7f51\u7ad9\u7ed3\u6784',
-    en: 'Observing website structure',
-  },
-  expanded: {
-    zh: '\u63a2\u7d22\u9875\u9762\u72b6\u6001',
-    en: 'Exploring page states',
-  },
-  bookContent: {
-    zh: '\u91c7\u96c6\u5185\u5bb9\u6837\u672c',
-    en: 'Collecting content samples',
-  },
-  analysis: {
-    zh: '\u5206\u6790\u9875\u9762\u7c7b\u578b',
-    en: 'Analyzing page types',
-  },
-  abstraction: {
-    zh: '\u6574\u7406\u4ea4\u4e92\u6a21\u578b',
-    en: 'Building interaction model',
-  },
-  nlEntry: {
-    zh: '\u751f\u6210\u81ea\u7136\u8bed\u8a00\u5165\u53e3',
-    en: 'Building natural-language entry points',
-  },
-  docs: {
-    zh: '\u751f\u6210\u8bf4\u660e\u6587\u6863',
-    en: 'Generating documentation',
-  },
-  governance: {
-    zh: '\u751f\u6210\u5b89\u5168\u8fb9\u754c\u4e0e\u6062\u590d\u7b56\u7565',
-    en: 'Building safety and recovery rules',
-  },
-  knowledgeBase: {
-    zh: '\u7f16\u8bd1\u7ad9\u70b9\u77e5\u8bc6\u5e93',
-    en: 'Compiling site knowledge base',
-  },
-  capabilityCompile: {
-    zh: '\u7f16\u8bd1 Graph \u4e0e Planner Layer',
-    en: 'Compiling Graph and Planner Layer',
-  },
-  skill: {
-    zh: '\u751f\u6210 Agent Skill',
-    en: 'Generating Agent Skill',
-  },
+export const SITEFORGE_BUILD_STAGE_COPY = Object.freeze({
+  registerSite: { zh: '注册站点', en: 'Registering site' },
+  discoverSeeds: { zh: '发现种子页面', en: 'Discovering seed pages' },
+  crawlStatic: { zh: '采集静态页面', en: 'Crawling static pages' },
+  crawlRendered: { zh: '处理渲染页面采集', en: 'Handling rendered-page crawl' },
+  discoverInteractions: { zh: '发现页面交互', en: 'Discovering interactions' },
+  captureNetworkTraces: { zh: '处理网络摘要', en: 'Handling network summary' },
+  buildSiteGraph: { zh: '构建站点图谱', en: 'Building site graph' },
+  classifyNodes: { zh: '分类站点节点', en: 'Classifying site nodes' },
+  extractAffordances: { zh: '提取可操作项', en: 'Extracting affordances' },
+  discoverCapabilities: { zh: '发现站点能力', en: 'Discovering capabilities' },
+  generateIntents: { zh: '生成意图入口', en: 'Generating intents' },
+  generateSkill: { zh: '生成 SiteForge Skill', en: 'Generating SiteForge Skill' },
+  verifySkill: { zh: '验证 Skill', en: 'Verifying Skill' },
+  registerSkill: { zh: '注册 Skill', en: 'Registering Skill' },
+  writeBuildReport: { zh: '写入构建报告', en: 'Writing build report' },
 });
 
 export const DOCTOR_STAGE_COPY = Object.freeze({
@@ -55,7 +26,7 @@ export const DOCTOR_STAGE_COPY = Object.freeze({
   crawler: { zh: '\u68c0\u67e5\u91c7\u96c6\u811a\u672c', en: 'Checking crawler script' },
   capture: { zh: '\u68c0\u67e5\u9875\u9762\u91c7\u96c6', en: 'Checking capture' },
   expand: { zh: '\u68c0\u67e5\u72b6\u6001\u63a2\u7d22', en: 'Checking expansion' },
-  capabilityCompile: { zh: '\u7f16\u8bd1 Capability \u5e72\u8dd1\u8bc1\u636e', en: 'Compiling capability dry-run evidence' },
+  capabilityDryRun: { zh: '\u7f16\u8bd1 Capability \u5e72\u8dd1\u8bc1\u636e', en: 'Compiling capability dry-run evidence' },
   session: { zh: '\u68c0\u67e5 session \u5065\u5eb7', en: 'Checking session health' },
   risk: { zh: '\u68c0\u67e5\u98ce\u9669\u4fe1\u53f7', en: 'Checking risk signals' },
   download: { zh: '\u68c0\u67e5\u4e0b\u8f7d\u5c31\u7eea\u5ea6', en: 'Checking download readiness' },
@@ -86,8 +57,8 @@ export function progressText(entry, language = DEFAULT_PROGRESS_LANGUAGE) {
   return entry[language] ?? entry.en ?? entry.zh ?? '';
 }
 
-export function pipelineStageTitle(stageId, language = DEFAULT_PROGRESS_LANGUAGE) {
-  return progressText(PROGRESS_STAGE_COPY[stageId], language) || String(stageId ?? '');
+export function siteForgeBuildStageTitle(stageId, language = DEFAULT_PROGRESS_LANGUAGE) {
+  return progressText(SITEFORGE_BUILD_STAGE_COPY[stageId], language) || String(stageId ?? '');
 }
 
 export function doctorStageTitle(stageId, language = DEFAULT_PROGRESS_LANGUAGE) {

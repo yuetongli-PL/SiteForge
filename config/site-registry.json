@@ -270,7 +270,7 @@
         "alternativeAccessPaths": [
           "Use an official/API or platform-authorized integration with terms-compatible access and documented rate, permission, and data-use boundaries.",
           "Use a user-authorized bounded X SiteAdapter workflow with explicit consent, minimal redacted SessionView material, and no raw credential, cookie, or browser profile persistence.",
-          "Use deterministic fixture-only validation for CI or documentation, clearly labeled as not live X support."
+          "Use deterministic local HTTP validation for CI or documentation, clearly labeled as not live X support."
         ]
       },
       "downloadEntrypoint": "src/entrypoints/sites/x-action.mjs",
@@ -319,7 +319,7 @@
       ],
       "routingNotes": [
         "Do not route x.com through generic live URL-to-Skill collection; root-level public collection is blocked by robots for the generic crawler.",
-        "Keep any future X enablement on official/API, platform-authorized, user-authorized bounded SiteAdapter, or fixture-only validation paths."
+        "Keep any future X enablement on official/API, platform-authorized, user-authorized bounded SiteAdapter, or deterministic local HTTP validation paths."
       ],
       "accessSignals": {
         "restrictionSignals": [

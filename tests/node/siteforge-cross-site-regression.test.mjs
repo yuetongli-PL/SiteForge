@@ -40,9 +40,9 @@ function safeLimitedReadPlan(capabilityId) {
   };
 }
 
-function evidence(source = 'tests/fixtures/sites/simple-shop/index.html') {
+function evidence(source = 'http://127.0.0.1/simple-shop') {
   return [{
-    type: 'fixture',
+    type: 'url',
     source,
     confidence: 1,
   }];

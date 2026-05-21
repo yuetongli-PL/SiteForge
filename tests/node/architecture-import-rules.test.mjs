@@ -278,7 +278,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/infra/io.mjs', 12],
   ['src/app/pipeline/build/artifact-store.mjs', 2],
   ['src/app/pipeline/build/capability-interaction.mjs', 3],
-  ['src/app/pipeline/build/setup-assistant.mjs', 13],
+  ['src/app/pipeline/build/setup-assistant.mjs', 14],
   ['src/app/pipeline/build/workspace.mjs', 2],
   ['src/sites/known-sites/bilibili/navigation/open.mjs', 5],
   ['src/domain/capabilities/api-candidates.mjs', 8],
@@ -693,26 +693,22 @@ test('pipeline entrypoints do not import raw credential tools or concrete site r
   ], 'pipeline entrypoints should not import raw credential/profile tooling or concrete site risk helpers directly');
 });
 
-test('retired pipeline execution chain stays physically removed and unreferenced', async () => {
-  for (const retiredPath of [
-    'src/app/pipeline/engine',
-    'src/app/pipeline/runtime',
-    'src/app/pipeline/artifacts',
-    'src/app/pipeline/stages',
-  ]) {
-    assert.equal(await pathExists(retiredPath), false, `${retiredPath} should stay removed`);
-  }
-
+test('pipeline entrypoint delegates to SiteForge build setup and runner', async () => {
   const buildEntrypointSource = await readFile(path.join(REPO_ROOT, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), 'utf8');
-  assert.equal(/\bexport\s+async\s+function\s+runPipeline\b/u.test(buildEntrypointSource), false);
+  assert.match(buildEntrypointSource, /prepareSiteForgeBuildSetup/u);
+  assert.match(buildEntrypointSource, /runSiteForgeBuild/u);
+  assert.match(buildEntrypointSource, /parseCliArgs/u);
+});
 
-  const forbiddenPattern = /\b(?:runPipeline|executePipeline|executePipelineStage|PIPELINE_STAGE_SPECS|summarizePipelineStages|DEFAULT_PIPELINE_RUNTIME|PIPELINE_STAGE_IMPLS|resolvePipelineRuntime)\b|src\/app\/pipeline\/(?:engine|runtime)\b|partial-preview/gu;
-  const matches = await collectRepositoryTextPatternMatches(forbiddenPattern, new Set([
-    'tests/node/architecture-import-rules.test.mjs',
-    'tests/node/cli-shims.test.mjs',
-    'tests/node/src-architecture-layout.test.mjs',
-  ]));
-  assert.deepEqual(matches, []);
+test('pipeline application layer only exposes the SiteForge build implementation', async () => {
+  const entries = await readdir(path.join(REPO_ROOT, 'src', 'app', 'pipeline'), { withFileTypes: true });
+  assert.deepEqual(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort(),
+    ['build'],
+  );
 });
 
 test('pipeline entrypoint imports stay behind registries or capability services', async () => {

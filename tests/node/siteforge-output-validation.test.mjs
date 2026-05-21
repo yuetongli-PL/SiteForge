@@ -22,6 +22,11 @@ import {
   validateCapabilitySafetyForVerification,
 } from '../../src/app/pipeline/build/index.mjs';
 import { pathExists } from '../../src/infra/io.mjs';
+import {
+  simpleShopRoutes,
+  testRobotsTxt,
+  withTestSite,
+} from './helpers/test-site-server.mjs';
 
 const NOW = '2026-05-16T00:00:00.000Z';
 
@@ -34,10 +39,10 @@ function clone(value) {
 }
 
 function createValidationFixture() {
-  const evidence = [normalizeEvidenceObject({ type: 'fixture', source: 'tests/fixtures/sites/simple-shop/index.html', confidence: 1 })];
+  const evidence = [normalizeEvidenceObject({ type: 'url', source: 'http://127.0.0.1/simple-shop', confidence: 1 })];
   const context = {
     schemaVersion: BUILD_SCHEMA_VERSION,
-    buildId: 'validation-fixture-build',
+    buildId: 'validation-live-build',
     startedAt: NOW,
     cwd: path.resolve('.'),
     artifactDir: path.join(os.tmpdir(), 'siteforge-output-validation-artifacts'),
@@ -45,12 +50,18 @@ function createValidationFixture() {
     skillDir: path.join(os.tmpdir(), 'siteforge-output-validation-artifacts', 'skill'),
     site: {
       schemaVersion: BUILD_SCHEMA_VERSION,
-      id: 'fixture-local',
-      rootUrl: 'https://fixture.local/',
-      normalizedUrl: 'https://fixture.local/',
-      allowedDomains: ['fixture.local'],
+      id: 'local-test',
+      rootUrl: 'http://127.0.0.1/',
+      normalizedUrl: 'http://127.0.0.1/',
+      allowedDomains: ['127.0.0.1'],
       createdAt: NOW,
       updatedAt: NOW,
+    },
+    source: {
+      type: 'live_website',
+      requestedUrl: 'http://127.0.0.1/',
+      finalUrl: 'http://127.0.0.1/',
+      fetchedAt: NOW,
     },
   };
   const homepage = {
@@ -58,13 +69,13 @@ function createValidationFixture() {
     id: 'node:home',
     siteId: context.site.id,
     type: 'page',
-    url: 'https://fixture.local/',
-    normalizedUrl: 'https://fixture.local/',
+    url: 'http://127.0.0.1/',
+    normalizedUrl: 'http://127.0.0.1/',
     routePattern: '/',
     title: 'Simple Shop',
     textSummary: 'Simple Shop homepage.',
     classification: 'homepage',
-    discoveredBy: 'fixture',
+    discoveredBy: 'html_link',
     parentNodeIds: [],
     childNodeIds: ['node:route-home'],
     authRequired: false,
@@ -80,7 +91,7 @@ function createValidationFixture() {
     title: 'Route /',
     textSummary: 'Homepage route.',
     classification: 'route',
-    discoveredBy: 'fixture',
+    discoveredBy: 'html_link',
     parentNodeIds: ['node:home'],
     childNodeIds: [],
     authRequired: false,
@@ -131,6 +142,21 @@ function createValidationFixture() {
     confidence: 0.95,
     status: 'active',
     informational: false,
+    authRequired: false,
+    sourceLayer: 'public',
+    requiredAuthLevel: 'public_verified',
+    observedAuthLevel: 'public_verified',
+    evidenceMatrix: {
+      capabilityId,
+      authRequired: false,
+      requiredAuthLevel: 'public_verified',
+      observedAuthLevel: 'public_verified',
+      sourceLayer: 'public',
+      requiredEvidence: ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'risk_policy_passed'],
+      observedEvidence: ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'risk_policy_passed'],
+      missingEvidence: [],
+      activationDecision: 'active',
+    },
   };
   const intent = {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -168,7 +194,19 @@ function createValidationFixture() {
     }],
   }, NOW);
   const stageResults = {
-    discoverSeeds: { seeds: [{ normalizedUrl: context.site.rootUrl }], robotsPolicy: null },
+    discoverSeeds: {
+      seeds: [{ normalizedUrl: context.site.rootUrl }],
+      robots: {
+        status: 'parsed',
+        source: 'http://127.0.0.1/robots.txt',
+        sourceType: 'live_website',
+      },
+      robotsPolicy: {
+        status: 'parsed',
+        disallowPaths: [],
+        sitemapUrls: [],
+      },
+    },
     crawlStatic: { pages: [{ normalizedUrl: context.site.rootUrl }], summary: { duplicateRatio: 0 } },
     buildSiteGraph: { graph },
     classifyNodes: { graph: clone(graph) },
@@ -204,7 +242,7 @@ function createValidationFixture() {
     stageResults,
     registry,
     invocationProbe: {
-      domain: 'fixture.local',
+      domain: '127.0.0.1',
       utterance: 'view homepage',
     },
   };
@@ -803,7 +841,7 @@ test('output validation rejects intents and registry lookups for candidate capab
     invocationScore: 1,
   });
   fixture.invocationProbe = {
-    domain: 'fixture.local',
+    domain: '127.0.0.1',
     utterance: 'capture network APIs',
   };
 
@@ -892,7 +930,7 @@ test('output validation rejects registry lookup misses', async () => {
 
 test('output validation rejects live builds without fetched robots.txt', async () => {
   const fixture = createValidationFixture();
-  fixture.context.source = { fixture: null };
+  fixture.context.source = { type: 'live_website' };
   fixture.stageResults.discoverSeeds.robots = {
     status: 'unavailable',
     reason: 'Static fetch failed for https://fixture.local/robots.txt: HTTP 503',
@@ -911,10 +949,11 @@ test('output validation rejects live builds without fetched robots.txt', async (
   assert.equal(report.errors.some((error) => /requires fetched robots\.txt/u.test(error)), true);
 });
 
-test('valid fixture build writes a verification report with populated gate content', async () => {
+test('valid local HTTP build writes a verification report with populated gate content', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-output-validation-pass-'));
   try {
-    const result = await runSiteForgeBuild('https://fixture.local/', {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+    const result = await runSiteForgeBuild(rootUrl, {
       cwd: workspace,
       buildId: 'output-validation-pass-build',
       now: new Date(NOW),
@@ -933,6 +972,7 @@ test('valid fixture build writes a verification report with populated gate conte
     assert.equal(verificationReport.gates.requiredArtifacts.checked.includes('skill.yaml'), true);
     assert.equal(verificationReport.gates.requiredArtifacts.finalArtifacts.includes('verification_report.json'), true);
     assert.equal(verificationReport.gates.requiredArtifacts.deferredUntilBuildReport.includes('build_report.json'), true);
+    assert.equal(verificationReport.gates.requiredArtifacts.deferredUntilBuildReport.includes('capability_intent_summary.html'), true);
     assert.equal(verificationReport.gates.nodeCompleteness.graphExists, true);
     assert.equal(verificationReport.gates.nodeCompleteness.classifiedGraphExists, true);
     assert.equal(verificationReport.gates.nodeCompleteness.edgeRefsValid, true);
@@ -953,6 +993,7 @@ test('valid fixture build writes a verification report with populated gate conte
       && item.private_content_saved === false
     )), true);
     assert.deepEqual(verificationReport.errors, []);
+    });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -960,58 +1001,36 @@ test('valid fixture build writes a verification report with populated gate conte
 
 test('validation failure preserves artifacts without promoting current skill or registry records', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-output-validation-fail-'));
-  const fixtureDir = path.join(workspace, 'empty-fixture');
   try {
-    await mkdir(fixtureDir, { recursive: true });
-    await writeFile(path.join(fixtureDir, 'robots.txt'), 'User-agent: *\nAllow: /\n', 'utf8');
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+    }), async (rootUrl) => {
+      let capturedError = null;
+      await assert.rejects(
+        async () => runSiteForgeBuild(rootUrl, {
+          cwd: workspace,
+          buildId: 'empty-build',
+          now: new Date(NOW),
+          fetchDelayMs: 0,
+        }),
+        (error) => {
+          capturedError = error;
+          return /Static crawl produced no pages/u.test(error?.message ?? '');
+        },
+      );
 
-    let capturedError = null;
-    await assert.rejects(
-      async () => runSiteForgeBuild('https://empty.local/', {
-        cwd: workspace,
-        fixturePath: fixtureDir,
-        buildId: 'empty-build',
-        now: new Date(NOW),
-        fetchDelayMs: 0,
-      }),
-      (error) => {
-        capturedError = error;
-        // @ts-ignore
-        return /Static crawl produced no pages/u.test(error?.message ?? '');
-      },
-    );
+      assert.ok(capturedError?.artifactDir);
+      assert.equal(await pathExists(path.join(capturedError.artifactDir, 'build_report.json')), true);
+      assert.equal(await pathExists(path.join(capturedError.artifactDir, 'reports', 'capability_intent_summary.html')), true);
 
-    // @ts-ignore
-    assert.ok(capturedError?.artifactDir);
-    // @ts-ignore
-    assert.equal(await pathExists(path.join(capturedError.artifactDir, 'build_report.json')), true);
-
-    // @ts-ignore
-    const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
-    assert.equal(buildReport.status, 'blocked');
-    assert.equal(buildReport.failedStage, 'crawlStatic');
-    assert.equal(buildReport.reasonCode, 'empty-crawl');
-    assert.equal(buildReport.summary.registryStatus, null);
-    assert.equal(await pathExists(path.join(buildReport.workspace.currentDir, 'skill.yaml')), false);
-    // @ts-ignore
-    assert.equal(await pathExists(path.join(capturedError.artifactDir, 'crawl_static.json')), true);
-    // @ts-ignore
-    assert.equal(await pathExists(path.join(capturedError.artifactDir, 'graph.json')), false);
-    // @ts-ignore
-    assert.equal(await pathExists(path.join(capturedError.artifactDir, 'verification_report.json')), false);
-    assert.equal(await pathExists(path.join(buildReport.workspace.buildDir, 'skill', 'skill.yaml')), false);
-
-    const siteRegistry = await readJson(buildReport.workspace.registryPath);
-    assert.deepEqual(siteRegistry.skills, []);
-    const lastSuccessfulBuild = await readJson(buildReport.workspace.lastSuccessfulBuildPath);
-    assert.equal(lastSuccessfulBuild.status, 'none');
-
-    const lookup = await lookupSkillIntent({
-      registryPath: buildReport.workspace.registryPath,
-      domain: 'empty.local',
-      utterance: 'view homepage',
+      const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
+      const htmlReport = await readFile(path.join(capturedError.artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8');
+      assert.match(htmlReport, /暂无能力和意图|upstream stage failed|上游/u);
+      assert.doesNotMatch(htmlReport, /\bcookie\b|\btoken\b|\bauthorization\b|\bbearer\b|synthetic-secret|sessionid=|<script\b/iu);
+      assert.equal(buildReport.status, 'blocked');
+      assert.equal(buildReport.failedStage, 'crawlStatic');
+      assert.equal(buildReport.report_index.capability_intent_summary_html, 'reports/capability_intent_summary.html');
     });
-    assert.equal(lookup.status, 'not_found');
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

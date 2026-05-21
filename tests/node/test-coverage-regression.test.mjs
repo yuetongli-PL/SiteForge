@@ -20,6 +20,10 @@ import {
 import {
   assertNoForbiddenPatterns,
 } from '../../src/domain/sessions/security-guard.mjs';
+import {
+  simpleShopRoutes,
+  withTestSite,
+} from './helpers/test-site-server.mjs';
 
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));
@@ -131,30 +135,34 @@ function verificationFixtures() {
 
 test('SiteForge build artifacts do not persist sensitive input URL material', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-redaction-'));
-  const sensitiveUrl = 'https://fixture.local/?access_token=synthetic-build-token&safe=1&utm_source=x#frag';
   try {
-    const result = await runSiteForgeBuild(sensitiveUrl, {
-      cwd: workspace,
-      buildId: 'redaction-build',
-      now: new Date('2026-05-16T03:00:00.000Z'),
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const sensitiveUrl = `${rootUrl}?access_token=synthetic-build-token&safe=1&utm_source=x#frag`;
+      const expectedSafeUrl = `${rootUrl}?safe=1`;
+      const result = await runSiteForgeBuild(sensitiveUrl, {
+        cwd: workspace,
+        buildId: 'redaction-build',
+        now: new Date('2026-05-16T03:00:00.000Z'),
+        fetchDelayMs: 0,
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(result.inputUrl, expectedSafeUrl);
+
+      const buildReport = await readJson(result.artifacts['build_report.json']);
+      assert.equal(buildReport.inputUrl, expectedSafeUrl);
+      assert.equal(buildReport.siteId, stableSiteIdFromUrl(rootUrl));
+
+      const generatedTexts = [
+        ...await collectTextFiles(path.join(workspace, '.siteforge')),
+      ];
+      assert.equal(generatedTexts.length > 0, true);
+      for (const { filePath, text } of generatedTexts) {
+        assert.equal(text.includes('synthetic-build-token'), false, `${filePath} leaked the raw build token`);
+        assert.equal(text.includes('access_token=synthetic-build-token'), false, `${filePath} leaked the raw query`);
+        assert.equal(assertNoForbiddenPatterns(text), true, `${filePath} should pass forbidden-pattern scan`);
+      }
     });
-
-    assert.equal(result.status, 'success');
-    assert.equal(result.inputUrl, 'https://fixture.local/?safe=1');
-
-    const buildReport = await readJson(result.artifacts['build_report.json']);
-    assert.equal(buildReport.inputUrl, 'https://fixture.local/?safe=1');
-    assert.equal(buildReport.siteId, stableSiteIdFromUrl('https://fixture.local/'));
-
-    const generatedTexts = [
-      ...await collectTextFiles(path.join(workspace, '.siteforge')),
-    ];
-    assert.equal(generatedTexts.length > 0, true);
-    for (const { filePath, text } of generatedTexts) {
-      assert.equal(text.includes('synthetic-build-token'), false, `${filePath} leaked the raw build token`);
-      assert.equal(text.includes('access_token=synthetic-build-token'), false, `${filePath} leaked the raw query`);
-      assert.equal(assertNoForbiddenPatterns(text), true, `${filePath} should pass forbidden-pattern scan`);
-    }
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

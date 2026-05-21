@@ -124,12 +124,12 @@ test('download-release-audit audits download and social matrix session gates off
     { site: 'instagram', writeArtifacts: false },
     { site: 'x', writeArtifacts: false },
   ]);
-  assert.equal(audit.capabilityCompileCoverage.x.status, 'ready');
-  assert.equal(audit.capabilityCompileCoverage.x.coverageCompleteness, 'complete');
+  assert.equal(audit.capabilityDryRunCoverage.x.status, 'ready');
+  assert.equal(audit.capabilityDryRunCoverage.x.coverageCompleteness, 'complete');
   const downloadRow = audit.rows.find((row) => row.id === 'download-run');
   assert.equal(downloadRow.healthManifest, healthManifest);
-  assert.equal(downloadRow.capabilityCompile.status, 'ready');
-  assert.equal(downloadRow.capabilityCompile.executionAttempted, false);
+  assert.equal(downloadRow.capabilityDryRun.status, 'ready');
+  assert.equal(downloadRow.capabilityDryRun.executionAttempted, false);
   assert.equal(downloadRow.nativeFallbackReason, 'bilibili-playurl-evidence-missing');
   assert.equal(downloadRow.nativeResolverMethod, 'native-bilibili-page-seeds');
   assert.equal(downloadRow.nativeResolverAdapter, 'bilibili');

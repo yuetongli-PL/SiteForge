@@ -26,6 +26,17 @@ async function trackedPathsUnder(relativePath) {
   return stdout.split(/\r?\n/u).filter(Boolean);
 }
 
+async function expectOnlyDirectories(relativePath, expectedNames) {
+  const entries = await readdir(path.join(REPO_ROOT, relativePath), { withFileTypes: true });
+  assert.deepEqual(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort(),
+    [...expectedNames].sort(),
+  );
+}
+
 function knownDownloaderPath(siteKey, fileName) {
   return path.posix.join('src', 'sites', 'known-sites', siteKey, 'download', 'python', fileName);
 }
@@ -158,11 +169,11 @@ test('retired compatibility directories stay removed', async () => {
     expectPathMissing('src/sites/core'),
     expectPathMissing('src/sites/catalog'),
     expectPathMissing('src/sites/capability'),
-    expectPathMissing('src/app/pipeline/engine'),
-    expectPathMissing('src/app/pipeline/runtime'),
-    expectPathMissing('src/app/pipeline/artifacts'),
-    expectPathMissing('src/app/pipeline/stages'),
   ]);
+});
+
+test('pipeline app layer only keeps build implementation directory', async () => {
+  await expectOnlyDirectories('src/app/pipeline', ['build']);
 });
 
 test('site modules do not depend directly on entrypoint modules', async () => {

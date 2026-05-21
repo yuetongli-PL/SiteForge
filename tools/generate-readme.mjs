@@ -89,7 +89,7 @@ function publicBuildStatus({ registry, capabilities }) {
 function availableSurface({ registry, capabilities }) {
   const availability = normalizeDownloadAvailability(registry, capabilities);
   if (availability.publicLiveBlocked) {
-    return 'none through generic live build; use only authorized or fixture-only paths';
+    return 'none through generic live build; use only authorized or local HTTP validation paths';
   }
   const readOnlyFamilies = stringList(capabilities.capabilityFamilies ?? registry.capabilityFamilies)
     .filter((family) => family !== 'download-content');
@@ -200,7 +200,7 @@ Retired public Web UI, legacy capability, legacy pipeline engine/runtime/stage, 
 
 ## Known Public Site Records
 
-Stable config currently keeps records for these hosts. The table separates metadata, availability, runtime dependencies, and blocked reasons so blocked, placeholder, fixture-only, authorization-required, or dependency-bound records are not presented as generic live support.
+Stable config currently keeps records for these hosts. The table separates metadata, availability, runtime dependencies, and blocked reasons so blocked, placeholder, local-validation-only, authorization-required, or dependency-bound records are not presented as generic live support.
 
 ${renderSiteTable(context.siteRows)}
 

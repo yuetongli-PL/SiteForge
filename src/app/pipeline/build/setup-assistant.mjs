@@ -19,6 +19,12 @@ import {
   normalizeUrl,
 } from './models.mjs';
 import {
+  AUTH_STATE_REPORT_FILE,
+  createCrawlContract,
+  createPublicOnlyAuthStateReport,
+  runDefaultBrowserAuthStateCheck,
+} from './auth-state.mjs';
+import {
   AUTO_DISCOVERY_SCHEMA_VERSION,
   createSocialSpaAutoDiscoverySummary,
   mergeAutoDiscoveryPages,
@@ -73,7 +79,7 @@ const ROBOTS_DISALLOWED_SETUP_GUIDANCE = Object.freeze([
   '通用采集器被 robots.txt 阻止。',
   'SiteForge 不会基于这次通用采集生成 Skill。',
   'SiteForge 不会基于这次通用采集更新 current/ 或 registry.json。',
-  '只能使用合规的已知站点适配器/API、用户授权浏览器路径，或 fixture 证据路径。',
+  '只能使用合规的已知站点适配器/API、用户授权浏览器路径，或真实网站公开证据路径。',
 ]);
 
 const USER_AUTHORIZED_SETUP_GUIDANCE = Object.freeze([
@@ -343,7 +349,7 @@ async function waitForBrowserAuthorizationConfirmation({ targetUrl, options = /*
   if (tuiChoice) {
     return tuiChoice;
   }
-  const answer = await askSetupQuestion('选择：', options);
+  const answer = await askSetupQuestion('1/2: ', options);
   return parseBrowserAuthorizationConfirmationChoice(answer);
 }
 
@@ -376,6 +382,7 @@ export function buildSetupAssistantPaths(inputUrl, options = /** @type {any} */ 
     setupPlanPath: workspacePaths.setupFiles['setup_plan.json'],
     userChoicesPath: workspacePaths.setupFiles['user_choices.json'],
     capabilityHintsPath: workspacePaths.setupFiles['capability_hints.json'],
+    authStateReportPath: path.join(workspacePaths.buildDir, AUTH_STATE_REPORT_FILE),
     buildProfilePath: path.join(workspacePaths.buildDirs.inputs, 'build_profile.json'),
     savedBuildProfilePath: workspacePaths.setupFiles['build_profile.json'],
   };
@@ -1511,7 +1518,7 @@ async function externalBrowserUserAuthorizedEvidenceProvider({ inputUrl, setupPl
     writeSetupLine(options, '正在打开系统默认浏览器完成授权边界确认。');
     writeSetupLine(options, '请在浏览器中完成登录、MFA 或授权。');
     await launchExternalBrowserUrl(inputUrl, options);
-    const answer = await askSetupQuestion('请粘贴最终授权 URL；如果登录被拒绝，请输入“被拒绝”：', options);
+    const answer = await askSetupQuestion('1/2: ', options);
     authState = detectManualUserAuthorizedAuthState(answer, paths.site);
   } else {
     if (!canUseSetupTui(options)) {
@@ -1924,10 +1931,48 @@ async function readKnownSitePolicy(paths) {
 function isUsableSavedBuildProfile(profile) {
   return profile?.artifactFamily === 'siteforge-build-profile'
     && profile?.site?.rootUrl
+    && profile?.source?.type === 'live_website'
+    && !profileHasRetiredFixtureSource(profile)
     && profile?.scope
     && profile?.safety
     && hasCurrentSetupEvidenceGate(profile)
     && !isProfileMarkedUnusable(profile);
+}
+
+function profileHasRetiredFixtureSource(value) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === 'string') {
+    return /tests[\\/]+fixtures[\\/]+sites/iu.test(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => profileHasRetiredFixtureSource(item));
+  }
+  if (typeof value !== 'object') {
+    return false;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey === 'sourcemode') {
+      if (String(item ?? '').toLowerCase().includes('fixture')) {
+        return true;
+      }
+      continue;
+    }
+    if (normalizedKey.includes('fixture')) {
+      return true;
+    }
+    if (normalizedKey === 'source' || normalizedKey === 'type') {
+      if (String(item ?? '').toLowerCase().includes('fixture')) {
+        return true;
+      }
+    }
+    if (profileHasRetiredFixtureSource(item)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function hasCurrentSetupEvidenceGate(profile) {
@@ -2001,8 +2046,11 @@ function recordSourceDiagnostic(diagnostics, label, result) {
   }
   diagnostics.push({
     label,
+    sourceType: result.sourceType ?? 'live_website',
     sourcePath: result.sourcePath,
-    fixtureName: result.fixtureName,
+    requestedUrl: result.requestedUrl ?? null,
+    finalUrl: result.finalUrl ?? result.sourcePath ?? null,
+    fetchedAt: result.fetchedAt ?? null,
     method: result.request.method,
     statusCode: result.request.statusCode,
     requestHeaders: clone(result.request.requestHeaders ?? {}),
@@ -3008,6 +3056,16 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
     blockedSurfaces,
     warnings,
   };
+  setupPlan.authStateReport = createPublicOnlyAuthStateReport({
+    site: setupPlan.site,
+    authChoice: 'declined',
+  });
+  setupPlan.crawlContract = createCrawlContract({
+    site: setupPlan.site,
+    authChoice: 'declined',
+    authStateReport: setupPlan.authStateReport,
+    coverageTargets: coverageTargetsFromSetupPlan(setupPlan),
+  });
   setupPlan.collectionReview = buildCollectionReviewModel({ setupPlan });
   await ensureDir(paths.artifactDir);
   await ensureDir(path.dirname(paths.setupPlanPath));
@@ -3042,6 +3100,11 @@ function applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidenc
   const nextPlan = {
     ...setupPlan,
     userAuthorizedEvidence,
+    authStateReport: setupPlan.authStateReport ?? createPublicOnlyAuthStateReport({
+      site: setupPlan.site,
+      authChoice: 'selected',
+      reasonCode: 'legacy-user-authorized-evidence-not-auth-verification',
+    }),
     summary: {
       ...setupPlan.summary,
       pageGroups: pageGroups.length,
@@ -3079,6 +3142,12 @@ function applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidenc
       rawHtmlPersisted: false,
     },
   };
+  nextPlan.crawlContract = createCrawlContract({
+    site: nextPlan.site,
+    authChoice: nextPlan.authStateReport?.authChoice ?? 'selected',
+    authStateReport: nextPlan.authStateReport,
+    coverageTargets: coverageTargetsFromSetupPlan(nextPlan),
+  });
   nextPlan.collectionReview = buildCollectionReviewModel({
     setupPlan: nextPlan,
     userAuthorizedEvidence,
@@ -3203,9 +3272,68 @@ function createCapabilityHints(setupPlan, userChoices) {
   };
 }
 
+function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
+  if (!knownSitePolicy) {
+    return [];
+  }
+  const supported = new Set(knownSitePolicy.supportedIntents ?? []);
+  const families = new Set(knownSitePolicy.capabilityFamilies ?? []);
+  const routes = new Set();
+  if (supported.has('recommended-timeline-posts') || supported.has('list-recommended-timeline-posts') || families.has('query-social-content')) {
+    routes.add('/home');
+  }
+  if (supported.has('list-followed-updates') || families.has('query-social-content')) {
+    routes.add('/following');
+  }
+  if (supported.has('search-posts') || supported.has('search-content')) {
+    routes.add('/search');
+  }
+  if (supported.has('list-followed-users') || families.has('query-social-relations')) {
+    routes.add('/following');
+  }
+  if (supported.has('list-notifications')) {
+    routes.add('/notifications');
+  }
+  if (supported.has('list-bookmarks')) {
+    routes.add('/i/bookmarks');
+  }
+  if (supported.has('list-lists')) {
+    routes.add('/i/lists');
+  }
+  if (supported.has('list-direct-messages')) {
+    routes.add('/messages');
+  }
+  return [...routes].sort((left, right) => left.localeCompare(right, 'en'));
+}
+
+function coverageTargetsFromSetupPlan(setupPlan = /** @type {any} */ ({})) {
+  const publicRoutes = uniqueSortedStrings([
+    setupPlan.site?.rootUrl,
+    ...(setupPlan.pageGroups ?? []).flatMap((group) => group.sampleUrls ?? []),
+  ].filter(Boolean));
+  const authRoutes = knownPolicyAuthRouteTargets(setupPlan.knownSitePolicy);
+  const requiresLoginCapabilities = uniqueSortedStrings([
+    ...knownPolicyRecommendedCapabilities(setupPlan.knownSitePolicy, { userAuthorized: true })
+      .map((capability) => capability.id ?? capability.name),
+    ...(setupPlan.knownSitePolicy?.supportedIntents ?? []),
+  ].filter(Boolean));
+  return {
+    publicRoutes,
+    authRoutes,
+    publicRevisitRoutes: publicRoutes.slice(0, 12),
+    candidateCapabilities: uniqueSortedStrings((setupPlan.recommendedCapabilities ?? [])
+      .filter((capability) => capability.recommended !== true)
+      .map((capability) => capability.id ?? capability.name)),
+    requiresLoginCapabilities,
+  };
+}
+
 function createBuildProfile(setupPlan, userChoices, capabilityHints, paths) {
   const selectedCapabilities = capabilityHints.recommendedCapabilities.filter((capability) => capability.selected);
   const buildable = setupPlan.buildReadiness?.buildable !== false;
+  const homepageSource = (setupPlan.sourceDiagnostics ?? []).find((item) => item?.label === 'homepage')
+    ?? (setupPlan.sourceDiagnostics ?? [])[0]
+    ?? null;
   const profile = {
     schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
     artifactFamily: 'siteforge-build-profile',
@@ -3213,13 +3341,27 @@ function createBuildProfile(setupPlan, userChoices, capabilityHints, paths) {
     site: clone(setupPlan.site),
     createdAt: paths.generatedAt,
     updatedAt: new Date().toISOString(),
-    source: 'setup-assistant',
+    source: {
+      type: 'live_website',
+      requestedUrl: setupPlan.site?.inputUrl ?? setupPlan.site?.rootUrl ?? null,
+      finalUrl: homepageSource?.finalUrl ?? homepageSource?.sourcePath ?? setupPlan.site?.rootUrl ?? null,
+      fetchedAt: homepageSource?.fetchedAt ?? paths.generatedAt,
+    },
     setupConfiguration: normalizeSetupConfiguration(userChoices.setupConfiguration),
     scope: clone(userChoices.scope),
     knownSitePolicy: clone(setupPlan.knownSitePolicy ?? null),
     sourceDiagnostics: clone(setupPlan.sourceDiagnostics ?? []),
     evidenceQuality: clone(setupPlan.evidenceQuality ?? null),
     buildReadiness: clone(setupPlan.buildReadiness ?? null),
+    crawlContract: clone(setupPlan.crawlContract ?? createCrawlContract({
+      site: setupPlan.site,
+      authChoice: 'declined',
+      coverageTargets: coverageTargetsFromSetupPlan(setupPlan),
+    })),
+    authStateReport: clone(setupPlan.authStateReport ?? createPublicOnlyAuthStateReport({
+      site: setupPlan.site,
+      authChoice: 'declined',
+    })),
     collectionReview: clone(setupPlan.collectionReview ?? buildCollectionReviewModel({ setupPlan })),
     profileUsability: {
       schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
@@ -3248,6 +3390,7 @@ function createBuildProfile(setupPlan, userChoices, capabilityHints, paths) {
       userChoices: path.relative(paths.cwd, paths.userChoicesPath).replace(/\\/gu, '/'),
       capabilityHints: path.relative(paths.cwd, paths.capabilityHintsPath).replace(/\\/gu, '/'),
     },
+    authStateReportRef: path.relative(paths.cwd, paths.authStateReportPath).replace(/\\/gu, '/'),
     evidenceValidationBoundary: userChoices.evidenceValidationBoundary,
   };
   if (setupPlan.userAuthorizedEvidence) {
@@ -3272,6 +3415,10 @@ async function persistSetupProfile({ paths, setupPlan, userChoices, saveProfile 
   await writeJsonFile(paths.setupPlanPath, setupPlan);
   await writeJsonFile(paths.userChoicesPath, userChoices);
   await writeJsonFile(paths.capabilityHintsPath, capabilityHints);
+  await writeJsonFile(paths.authStateReportPath, profile.authStateReport ?? createPublicOnlyAuthStateReport({
+    site: setupPlan.site,
+    authChoice: setupPlan.crawlContract?.authChoice ?? 'declined',
+  }));
   await writeJsonFile(paths.buildProfilePath, profile);
   if (saveProfile) {
     await writeJsonFile(paths.savedBuildProfilePath, profile);
@@ -3309,6 +3456,21 @@ async function persistProfileSnapshot(paths, profile) {
   const profileSnapshot = {
     ...profile,
     updatedAt: new Date().toISOString(),
+    crawlContract: clone(profile.crawlContract ?? createCrawlContract({
+      site: profile.site ?? paths.site,
+      authChoice: 'declined',
+      coverageTargets: {
+        publicRoutes: [paths.site.rootUrl],
+        authRoutes: [],
+        publicRevisitRoutes: [paths.site.rootUrl],
+        candidateCapabilities: [],
+        requiresLoginCapabilities: [],
+      },
+    })),
+    authStateReport: clone(profile.authStateReport ?? createPublicOnlyAuthStateReport({
+      site: profile.site ?? paths.site,
+      authChoice: 'declined',
+    })),
     collectionReview: clone(profile.collectionReview ?? null),
     setupConfiguration: normalizeSetupConfiguration(profile.setupConfiguration),
     setupRefs: {
@@ -3328,6 +3490,7 @@ async function persistProfileSnapshot(paths, profile) {
   await ensureDir(path.dirname(paths.buildProfilePath));
   await writeJsonFile(paths.userChoicesPath, userChoices);
   await writeJsonFile(paths.capabilityHintsPath, capabilityHints);
+  await writeJsonFile(paths.authStateReportPath, profileSnapshot.authStateReport);
   await writeJsonFile(paths.buildProfilePath, profileSnapshot);
   return { userChoices, capabilityHints, profile: profileSnapshot };
 }
@@ -3578,7 +3741,7 @@ async function promptUserAuthorizedCollectionReview(setupPlan, options = /** @ty
     return { setupPlan: nextSetupPlan, continueUncollected: false, nextChoiceHint: null, reasonCode: 'auto-discovery-default-skip' };
   }
   renderUserAuthorizedCollectionReviewPrompt(review, options);
-  const answer = await askSetupQuestion('是否现在补充确认未完成能力？按 Enter 或输入 no/否 跳过；输入 yes/y/是/继续 开始确认：', options);
+  const answer = await askSetupQuestion('1/2: ', options);
   const decision = parseContinueUncollectedAnswer(answer);
   if (decision.continueUncollected === false && decision.reasonCode === 'unrecognized') {
     writeSetupLine(options, '未识别为 yes/是/继续；已按安全默认值跳过补充确认。');
@@ -4270,6 +4433,11 @@ function renderSavedProfileSummary(profile, options = /** @type {any} */ ({})) {
 }
 
 async function askSetupQuestion(message, options = /** @type {any} */ ({})) {
+  if (options.__siteforgePendingSetupAnswer) {
+    const answer = options.__siteforgePendingSetupAnswer;
+    delete options.__siteforgePendingSetupAnswer;
+    return compactText(answer);
+  }
   if (typeof options.setupPrompt === 'function') {
     return compactText(await options.setupPrompt(message));
   }
@@ -4281,6 +4449,95 @@ async function askSetupQuestion(message, options = /** @type {any} */ ({})) {
   } finally {
     rl.close();
   }
+}
+
+function parseLoginEnhancementChoice(answer) {
+  const text = compactText(answer).toLowerCase();
+  if (!text || /^(?:1|n|no|public|public_only|公开|不使用|不用|否)$/u.test(text)) {
+    return 'declined';
+  }
+  if (/^(?:2|y|yes|login|auth|enhanced|使用|登录|登錄|是)$/u.test(text)) {
+    return 'selected';
+  }
+  return 'declined';
+}
+
+function parseLoginEnhancementChoiceStrict(answer) {
+  const text = compactText(answer).toLowerCase();
+  if (!text) {
+    return 'declined';
+  }
+  if (/^(?:1|n|no|public|public_only)$/u.test(text) || /不使用|不用|公开|否/u.test(text)) {
+    return 'declined';
+  }
+  if (/^(?:2|y|yes|login|auth|enhanced)$/u.test(text) || /使用|登录|是/u.test(text)) {
+    return 'selected';
+  }
+  return null;
+}
+
+function renderLoginEnhancementPrompt(options = /** @type {any} */ ({})) {
+  writeSetupLine(options, 'SiteForge 可以使用登录态增强抓取，以发现登录后页面和能力。');
+  writeSetupLine(options, '');
+  writeSetupLine(options, '请选择：');
+  writeSetupLine(options, '  1. 不使用登录态，只抓公开能力');
+  writeSetupLine(options, '  2. 使用登录态，打开系统默认浏览器，登录后继续增强抓取');
+  writeSetupLine(options, '');
+}
+
+async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive }) {
+  let authChoice = options.loginEnhanced === true || options.authEnhanced === true
+    ? 'selected'
+    : options.publicOnly === true || options.loginEnhanced === false || options.authEnhanced === false
+      ? 'declined'
+      : null;
+  if (!authChoice && interactive) {
+    renderLoginEnhancementPrompt(options);
+    const answer = await askSetupQuestion('1/2: ', options);
+    authChoice = parseLoginEnhancementChoiceStrict(answer);
+    if (!authChoice && compactText(answer)) {
+      options.__siteforgePendingSetupAnswer = answer;
+      authChoice = 'declined';
+    }
+  }
+  if (!authChoice) {
+    authChoice = 'declined';
+  }
+
+  let authStateReport = createPublicOnlyAuthStateReport({
+    site: setupPlan.site,
+    authChoice,
+    reasonCode: interactive ? null : 'non-interactive-public-only-default',
+  });
+  if (authChoice === 'selected') {
+    authStateReport = await runDefaultBrowserAuthStateCheck({
+      inputUrl,
+      site: setupPlan.site,
+      options,
+      ask: (message) => askSetupQuestion(message, options),
+      writeLine: (line) => writeSetupLine(options, line),
+    });
+  }
+  const crawlContract = createCrawlContract({
+    site: setupPlan.site,
+    authChoice,
+    authStateReport,
+    coverageTargets: coverageTargetsFromSetupPlan(setupPlan),
+    sourceMode: authChoice === 'selected' ? 'default_browser_login' : 'live_static',
+  });
+  const nextPlan = {
+    ...setupPlan,
+    authStateReport,
+    crawlContract,
+  };
+  nextPlan.collectionReview = buildCollectionReviewModel({
+    setupPlan: nextPlan,
+    userAuthorizedEvidence: nextPlan.userAuthorizedEvidence ?? null,
+    knownSitePolicy: nextPlan.knownSitePolicy ?? null,
+  });
+  await writeJsonFile(paths.authStateReportPath, authStateReport);
+  await writeJsonFile(paths.setupPlanPath, nextPlan);
+  return nextPlan;
 }
 
 function selectedCapabilityProofTargets(userChoices) {
@@ -4425,7 +4682,7 @@ async function collectProofForCapability(setupPlan, userChoices, capability, opt
     }
   }
   writeSetupLine(options, '只保存能力名称、站内页面地址或数量；不要粘贴正文、账号、cookie、token、验证码、私信内容或其他私密内容。');
-  const answer = await askSetupQuestion(descriptor.prompt, options);
+  const answer = await askSetupQuestion('1/2: ', options);
   const evidenceInput = parseSupplementalCollectionEvidenceInput(answer, setupPlan.site);
   if (!evidenceInput.accepted || evidenceInput.sampleCount < 1) {
     if (evidenceInput.reasonCode !== 'empty') {
@@ -4894,6 +5151,11 @@ function buildOptionsFromProfile(options, paths, profile) {
     buildProfilePath: paths.buildProfilePath,
     savedBuildProfilePath: paths.savedBuildProfilePath,
     setupProfile: profile,
+    crawlContract: clone(profile.crawlContract ?? null),
+    authStateReport: clone(profile.authStateReport ?? null),
+    authStateReportPath: profile.authStateReportRef
+      ? path.resolve(paths.cwd, profile.authStateReportRef)
+      : paths.authStateReportPath,
     maxDepth: options.maxDepth ?? scope.maxDepth,
     maxPages: options.maxPages ?? scope.maxPages,
     maxSeeds: options.maxSeeds ?? scope.maxSeeds,
@@ -4962,36 +5224,12 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
 
   if (!savedProfile) {
     let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
+    setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive });
     let setupReview = { continueUncollected: true, nextChoiceHint: null };
     let setupPlanRendered = false;
-    const canUseKnownSiteAutoDiscovery = shouldAttemptUserAuthorizedSetup(setupPlan, options)
-      && (
-        (options.auto === true && interactive !== true)
-        || (
-          options.manual === true
-          && typeof options.setupPrompt !== 'function'
-          && defaultStdin.isTTY !== true
-        )
-      );
-    if (!isSetupPlanBuildable(setupPlan) && canUseKnownSiteAutoDiscovery) {
-      return await persistAutoAuthorizedKnownSiteProfile({
-        inputUrl,
-        paths,
-        setupPlan,
-        options,
-        mode: options.manual === true ? 'manual-noninteractive-auto-discovery' : 'auto',
-      });
-    }
     if (!isSetupPlanBuildable(setupPlan)) {
-      if (interactive && shouldAttemptUserAuthorizedSetup(setupPlan, options)) {
-        const userAuthorizedEvidence = await collectUserAuthorizedEvidence({ inputUrl, setupPlan, paths, options });
-        setupPlan = applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidence, paths);
-        renderSetupPlan(setupPlan, options);
-        setupPlanRendered = true;
-        setupReview = await promptUserAuthorizedCollectionReview(setupPlan, options);
-        setupPlan = setupReview.setupPlan;
-        await writeJsonFile(paths.setupPlanPath, setupPlan);
-      }
+      // Login enhancement is now governed by crawlContract/auth_state_report.
+      // Synthetic or known-site policy evidence must not make setup buildable.
     }
     if (!isSetupPlanBuildable(setupPlan)) {
       if (interactive) {
@@ -5051,20 +5289,12 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
 
   if (interactive) {
     renderSavedProfileSummary(savedProfile, options);
-    const answer = await askSetupQuestion('按 Enter 复用；输入“编辑”重新编辑；输入“重置”重置推荐：', options);
+    const answer = await askSetupQuestion('1/2: ', options);
     if (/^(?:edit|e|编辑)$/iu.test(answer) || answer.length > 0 && !/^(?:reset|r|重置)$/iu.test(answer)) {
       let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
+      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive });
       let setupReview = { continueUncollected: true, nextChoiceHint: null };
       let setupPlanRendered = false;
-      if (!isSetupPlanBuildable(setupPlan) && shouldAttemptUserAuthorizedSetup(setupPlan, options)) {
-        const userAuthorizedEvidence = await collectUserAuthorizedEvidence({ inputUrl, setupPlan, paths, options });
-        setupPlan = applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidence, paths);
-        renderSetupPlan(setupPlan, options);
-        setupPlanRendered = true;
-        setupReview = await promptUserAuthorizedCollectionReview(setupPlan, options);
-        setupPlan = setupReview.setupPlan;
-        await writeJsonFile(paths.setupPlanPath, setupPlan);
-      }
       if (!isSetupPlanBuildable(setupPlan)) {
         await persistUnbuildableSetupAndThrow({
           paths,
@@ -5101,17 +5331,9 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
     }
     if (/^(?:reset|r|重置)$/iu.test(answer)) {
       let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
+      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive });
       let setupReview = { continueUncollected: true, nextChoiceHint: null };
       let setupPlanRendered = false;
-      if (!isSetupPlanBuildable(setupPlan) && shouldAttemptUserAuthorizedSetup(setupPlan, options)) {
-        const userAuthorizedEvidence = await collectUserAuthorizedEvidence({ inputUrl, setupPlan, paths, options });
-        setupPlan = applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidence, paths);
-        renderSetupPlan(setupPlan, options);
-        setupPlanRendered = true;
-        setupReview = await promptUserAuthorizedCollectionReview(setupPlan, options);
-        setupPlan = setupReview.setupPlan;
-        await writeJsonFile(paths.setupPlanPath, setupPlan);
-      }
       if (!isSetupPlanBuildable(setupPlan)) {
         await persistUnbuildableSetupAndThrow({
           paths,

@@ -192,7 +192,6 @@ test('public documentation and user-facing copy do not advertise internal CLI su
   const files = [
     'README.md',
     path.join('src', 'entrypoints', 'cli', 'index.mjs'),
-    path.join('src', 'infra', 'cli', 'build-progress.mjs'),
     path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'),
   ];
   const failures = /** @type {any[]} */ ([]);

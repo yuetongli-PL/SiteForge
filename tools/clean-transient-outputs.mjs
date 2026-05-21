@@ -11,19 +11,9 @@ const REPO_ROOT = path.resolve(MODULE_DIR, '..');
 export const TRANSIENT_CLEANUP_TARGETS = Object.freeze([
   '.siteforge',
   'archive',
-  'book-content',
-  'captures',
-  'crawler-scripts',
-  'expanded-states',
-  'governance',
-  'interaction-abstraction',
-  'knowledge-base',
-  'nl-entry',
   'note-downloads',
-  'operation-docs',
   'runs',
   'skills',
-  'state-analysis',
   'video-downloads',
 ]);
 

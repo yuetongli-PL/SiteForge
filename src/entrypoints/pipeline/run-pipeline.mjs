@@ -135,13 +135,6 @@ function readValue(args, current, index, options = /** @type {any} */ ({})) {
   return readCliValue(args, current, index, options);
 }
 
-function rejectRetiredNumericFlag(args, current, index, parseOptions = /** @type {any} */ ({})) {
-  const { value, nextIndex } = readValue(args, current, index);
-  const flagName = current.split('=')[0];
-  parseIntegerOption(value, flagName, parseOptions);
-  throw new Error(`${flagName} is retired with the legacy pipeline chain; use siteforge build <url> options instead.`);
-}
-
 export function parseCliArgs(argv) {
   const args = [...argv];
   const options = /** @type {any} */ ({});
@@ -188,22 +181,6 @@ export function parseCliArgs(argv) {
         index = nextIndex;
         break;
       }
-      case '--idle-ms': {
-        rejectRetiredNumericFlag(args, current, index, { min: 0 });
-        break;
-      }
-      case '--max-triggers': {
-        rejectRetiredNumericFlag(args, current, index, { min: 0 });
-        break;
-      }
-      case '--max-captured-states': {
-        rejectRetiredNumericFlag(args, current, index, { min: 1 });
-        break;
-      }
-      case '--chapter-fetch-concurrency': {
-        rejectRetiredNumericFlag(args, current, index, { min: 1 });
-        break;
-      }
       case '--auto':
         options.auto = true;
         options.manual = false;
@@ -220,6 +197,14 @@ export function parseCliArgs(argv) {
       case '--network':
         options.network = true;
         options.captureNetwork = true;
+        break;
+      case '--login-enhanced':
+        options.loginEnhanced = true;
+        options.publicOnly = false;
+        break;
+      case '--public-only':
+        options.publicOnly = true;
+        options.loginEnhanced = false;
         break;
       case '--render-js':
         options.renderJs = true;
@@ -298,6 +283,8 @@ function printHelp() {
   --manual                     Enable interactive setup and supplemental collection
   --deep                       Request broader/deeper discovery
   --network                    Save a sanitized network summary only
+  --login-enhanced             Ask for default-browser login enhancement
+  --public-only                Build public-only coverage without login enhancement
   --privacy <mode>             limited | strict
   --explain                    Include explanatory user-facing output
   --report <mode>              user | debug | both

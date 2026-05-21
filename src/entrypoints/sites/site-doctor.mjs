@@ -94,7 +94,7 @@ const DEFAULT_OPTIONS = {
   crawlerScriptsDir: path.join(REPO_ROOT, 'crawler-scripts'),
   knowledgeBaseDir: undefined,
   checkDownload: false,
-  capabilityCompileDryRun: false,
+  capabilityDryRun: false,
   pythonCommand: 'pypy3',
 };
 
@@ -145,7 +145,7 @@ function mergeOptions(inputUrl, options = /** @type {any} */ ({})) {
   merged.timeoutMs = normalizeNumber(merged.timeoutMs, 'timeoutMs');
   merged.maxTriggers = normalizeNumber(merged.maxTriggers, 'maxTriggers');
   merged.maxCapturedStates = normalizeNumber(merged.maxCapturedStates, 'maxCapturedStates');
-  merged.capabilityCompileDryRun = normalizeBoolean(merged.capabilityCompileDryRun, 'capabilityCompileDryRun');
+  merged.capabilityDryRun = normalizeBoolean(merged.capabilityDryRun, 'capabilityDryRun');
   const hasExplicitHeadless = Object.prototype.hasOwnProperty.call(options, 'headless');
   merged.headless = normalizeBoolean(
     hasExplicitHeadless
@@ -730,7 +730,7 @@ function buildReportMarkdown(report) {
     '',
   ];
 
-  for (const key of ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'capabilityCompile', 'download']) {
+  for (const key of ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'capabilityDryRun', 'download']) {
     const check = report[key];
     if (!check) {
       continue;
@@ -2392,7 +2392,7 @@ export async function siteDoctor(inputUrl, options = /** @type {any} */ ({}), de
     detail: createCheck('detail'),
     author: null,
     chapter: null,
-    capabilityCompile: settings.capabilityCompileDryRun ? createCheck('capabilityCompile') : null,
+    capabilityDryRun: settings.capabilityDryRun ? createCheck('capabilityDryRun') : null,
     download: null,
     adapterRecommendation: null,
     scenarios: [],
@@ -2432,7 +2432,7 @@ export async function siteDoctor(inputUrl, options = /** @type {any} */ ({}), de
   let scenarioSuite = null;
   let downloadSiteKey = null;
   const progress = options.progress ?? null;
-  const progressOffset = settings.capabilityCompileDryRun ? 1 : 0;
+  const progressOffset = settings.capabilityDryRun ? 1 : 0;
   const progressTotal = 7 + progressOffset;
   let profileProgress = null;
 
@@ -2510,17 +2510,17 @@ export async function siteDoctor(inputUrl, options = /** @type {any} */ ({}), de
     if (report.adapterRecommendation.startsWith('site-specific-adapter:')) {
       report.warnings.push(`Using existing site-specific adapter ${siteIdentity.adapterId}.`);
     }
-    if (report.capabilityCompile) {
-      const capabilityCompileProgress = startDoctorProgressStage(progress, 'capabilityCompile', 3, progressTotal, inputUrl);
+    if (report.capabilityDryRun) {
+      const capabilityDryRunProgress = startDoctorProgressStage(progress, 'capabilityDryRun', 3, progressTotal, inputUrl);
       try {
         const compileResult = await runtime.runSiteCapabilityCompile({
           site: siteIdentity?.siteKey ?? downloadSiteKey,
           url: inputUrl,
           writeArtifacts: false,
         });
-        markPass(report.capabilityCompile, summarizeCapabilityCompileDryRun(compileResult));
+        markPass(report.capabilityDryRun, summarizeCapabilityCompileDryRun(compileResult));
       } catch (error) {
-        markFail(report.capabilityCompile, error, {
+        markFail(report.capabilityDryRun, error, {
           descriptorOnly: true,
           executionAttempted: false,
           liveCaptureAttempted: false,
@@ -2532,9 +2532,9 @@ export async function siteDoctor(inputUrl, options = /** @type {any} */ ({}), de
         report.warnings.push(`Site capability compile dry-run failed: ${error?.message ?? String(error)}`);
       }
       finishDoctorProgressStage(
-        capabilityCompileProgress,
-        report.capabilityCompile,
-        report.capabilityCompile.details?.graphValidationResult ?? undefined,
+        capabilityDryRunProgress,
+        report.capabilityDryRun,
+        report.capabilityDryRun.details?.graphValidationResult ?? undefined,
       );
     }
     scenarioSuite = resolveSiteDoctorScenarioSuite({
@@ -2699,8 +2699,8 @@ export async function siteDoctor(inputUrl, options = /** @type {any} */ ({}), de
     }
   } catch (error) {
     markFail(report.profile, error);
-    if (report.capabilityCompile?.status === 'pending') {
-      markSkipped(report.capabilityCompile, 'Profile validation failed before capability compile dry-run could run.');
+    if (report.capabilityDryRun?.status === 'pending') {
+      markSkipped(report.capabilityDryRun, 'Profile validation failed before capability compile dry-run could run.');
     }
     finishDoctorProgressStage(profileProgress, report.profile);
     if (Array.isArray(error?.errors)) {
@@ -3226,7 +3226,7 @@ export function parseCliArgs(argv) {
         options.checkDownload = true;
         break;
       case '--capability-compile-dry-run':
-        options.capabilityCompileDryRun = true;
+        options.capabilityDryRun = true;
         break;
       case '--json':
         options.json = true;
@@ -3310,7 +3310,7 @@ async function runCli() {
     ...doctorOptions
   } = parsed.options;
   const result = await siteDoctor(parsed.inputUrl, { ...doctorOptions, progress: task });
-  const failingChecks = ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'capabilityCompile', 'download']
+  const failingChecks = ['profile', 'crawler', 'capture', 'expand', 'search', 'detail', 'author', 'chapter', 'capabilityDryRun', 'download']
     .map((key) => result[key])
     .filter(Boolean)
     .filter((check) => check.status === 'fail');

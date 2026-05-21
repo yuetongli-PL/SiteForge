@@ -1,8 +1,0 @@
-{
-  "hosts": {
-    "fixture.local": "simple-shop",
-    "simple-shop.local": "simple-shop",
-    "news.qq.com": "news-qq-com",
-    "x.com": "x-com-generic-live-uncollectable"
-  }
-}

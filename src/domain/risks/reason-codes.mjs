@@ -765,7 +765,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'schema-version-incompatible',
     family: 'schema',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: false,
     manualRecoveryNeeded: true,
     artifactWriteAllowed: false,
@@ -774,7 +774,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'redaction-failed',
     family: 'artifact',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: false,
     manualRecoveryNeeded: true,
     artifactWriteAllowed: false,
@@ -991,7 +991,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-candidate-generation-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     artifactWriteAllowed: true,
     description: 'API candidate generation failed before candidate persistence.',
@@ -1008,7 +1008,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-verification-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1017,7 +1017,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-catalog-endpoint-expired',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1026,7 +1026,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-auth-verification-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1035,7 +1035,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-csrf-validation-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1044,7 +1044,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-request-signature-invalid',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1053,7 +1053,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-permission-denied',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: false,
     manualRecoveryNeeded: true,
     catalogAction: 'block',
@@ -1063,7 +1063,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-pagination-verification-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1072,7 +1072,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-risk-verification-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     catalogAction: 'deprecate',
     artifactWriteAllowed: true,
@@ -1081,7 +1081,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-catalog-entry-blocked',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: false,
     catalogAction: 'block',
     artifactWriteAllowed: true,
@@ -1090,7 +1090,7 @@ export const REASON_CODE_CATALOG = Object.freeze([
   defineReasonCode({
     code: 'api-catalog-write-failed',
     family: 'api',
-    source: 'CONTRIBUTING.md',
+    source: 'src/domain/risks/reason-codes.mjs',
     retryable: true,
     manualRecoveryNeeded: true,
     degradable: true,

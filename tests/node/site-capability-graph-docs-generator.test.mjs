@@ -52,7 +52,6 @@ import {
 } from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
-const ARCHITECTURE_DOC_URL = new URL('../../docs/architecture.md', import.meta.url);
 
 async function readMinimalGraphFixture() {
   return JSON.parse(await readFile(MINIMAL_GRAPH_URL, 'utf8'));
@@ -394,39 +393,29 @@ test('docs generator creates descriptor-only redaction-required summaries', asyn
     'route:synthetic.example:public-page',
   ]);
   assert.deepEqual(summary.sections.layerDesignSourceReferences.map((entry) => entry.path), [
-    'docs/architecture.md',
-    'CONTRIBUTING.md',
     'AGENTS.md',
     'README.md',
   ]);
 });
 
-test('docs generator records current architecture source references without retired docs', async () => {
-  await access(ARCHITECTURE_DOC_URL);
-
+test('docs generator records current layer source references without retired docs', async () => {
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const references = summary.sections.layerDesignSourceReferences;
-  const architectureReference = references.find((entry) => entry.path === 'docs/architecture.md');
 
   assert.equal(assertGraphDocsSummaryCompatible(summary), true);
   assert.equal(summary.redactionRequired, true);
-  assert.equal(architectureReference.status, 'present-reference');
-  assert.equal(architectureReference.verified, true);
-  assert.match(architectureReference.note, /template tree|dependency-rule/u);
   assert.deepEqual(
     references.filter((entry) => entry.status === 'present-reference').map((entry) => entry.path),
-    ['docs/architecture.md', 'CONTRIBUTING.md', 'AGENTS.md', 'README.md'],
+    ['AGENTS.md', 'README.md'],
   );
+  assert.equal(references.every((entry) => !entry.path.startsWith('docs/')), true);
 
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   assert.match(markdown, /## Layer Design Sources/u);
-  assert.match(markdown, /docs\/architecture\.md/u);
   assert.match(markdown, /status: present-reference/u);
-  assert.match(markdown, /CONTRIBUTING\.md/u);
   assert.match(markdown, /AGENTS\.md/u);
   assert.match(markdown, /README\.md/u);
-  assert.match(markdown, /verified: true/u);
   assert.equal(assertGraphDerivedArtifactWriteAllowed(summary), true);
 });
 

@@ -8278,32 +8278,18 @@ function graphPlanResult(graph, fields) {
 
 const GRAPH_LAYER_DESIGN_SOURCE_REFERENCES = Object.freeze([
   Object.freeze({
-    path: 'docs/architecture.md',
-    role: 'current-architecture-map',
-    status: 'present-reference',
-    verified: true,
-    note: 'Current clean-architecture template tree and dependency-rule reference.',
-  }),
-  Object.freeze({
-    path: 'CONTRIBUTING.md',
-    role: 'current-layer-design-reference',
-    status: 'present-reference',
-    verified: false,
-    note: 'Current Site Capability Layer design contract and matrix reference.',
-  }),
-  Object.freeze({
     path: 'AGENTS.md',
     role: 'current-layer-boundary-reference',
     status: 'present-reference',
     verified: false,
-    note: 'Current local architecture guardrail reference.',
+    note: 'Local execution and safety guardrail reference.',
   }),
   Object.freeze({
     path: 'README.md',
     role: 'current-project-overview-reference',
     status: 'present-reference',
     verified: false,
-    note: 'Current project overview reference.',
+    note: 'Project overview, CLI surface, layout, and verification command reference.',
   }),
 ]);
 
@@ -14630,10 +14616,7 @@ function assertNoGraphDocsMarkdownConsumerRuntimeProducts(
 function assertGraphDocsMarkdownLayerSourceReferences(markdown = '') {
   for (const requiredText of [
     '## Layer Design Sources',
-    'docs/architecture.md',
     'status: present-reference',
-    'verified: true',
-    'CONTRIBUTING.md',
     'AGENTS.md',
     'README.md',
   ]) {

@@ -20,7 +20,6 @@ const ALLOWED_SYNTHETIC_PATTERNS = [
   /REDACTION_PLACEHOLDER/u,
   /prepublish-secret-scan\.mjs/u,
   /SECURITY\.md/u,
-  /CONTRIBUTING\.md/u,
   /Select-String -Pattern/u,
   /assert\.doesNotMatch/u,
   /Authorization\|Cookie/u,

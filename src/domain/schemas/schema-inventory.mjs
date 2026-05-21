@@ -477,7 +477,7 @@ const SCHEMA_INVENTORY = Object.freeze([
     version: FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION,
     owner: 'Kernel',
     sourcePath: 'src/domain/capabilities/focused-regression-batches.mjs',
-    gap: 'Versioned focused regression batch definition exists for A/B loop verification; full release validation remains deferred by policy.',
+    gap: 'Versioned focused regression batch schema exists for A/B loop verification; full release validation remains deferred by policy.',
   }),
   Object.freeze({
     name: 'ArtifactReferenceSet',

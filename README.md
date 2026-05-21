@@ -52,7 +52,7 @@ flowchart TD
   Infra --> Domain
 ```
 
-The durable map is [docs/architecture.md](docs/architecture.md).
+The source tree keeps a clean dependency direction: entrypoints feed application modules, application modules use domain contracts, site adapters own site-specific interpretation, and infrastructure supplies IO, browser, auth, and process adapters.
 
 ## Repository Layout
 
@@ -121,19 +121,6 @@ Use `npm run clean:outputs` to remove local generated site data and keep the che
 
 ## Release And Versioning
 
-- [x] Add clearer release/versioning policy
-
 Release readiness is evidence-based, not date-based. No tag, package version bump, push, PR, publication, live capability claim, or live authenticated validation is implied by local tests passing.
 
 Contract versions are governed by compatibility evidence in schema inventory and compatibility registry tests. Additive compatible fields keep the current schema or artifact version. Incompatible persisted or public contract changes require an explicit version bump and matching tests.
-
-## Contributing
-
-Use [CONTRIBUTING.md](CONTRIBUTING.md) for working rules, the Site Capability Layer matrix, focused regression batch definition, release boundaries, and operator runbooks. Use [AGENTS.md](AGENTS.md) for Codex-specific execution rules.
-
-## Source Of Truth
-
-- Architecture: [docs/architecture.md](docs/architecture.md)
-- Release hardening: [docs/release-hardening-plan.md](docs/release-hardening-plan.md)
-- Matrix and regression policy: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Active CLI: `package.json` bin -> `src/entrypoints/cli/index.mjs`

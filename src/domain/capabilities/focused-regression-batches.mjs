@@ -88,7 +88,7 @@ export function assertFocusedRegressionBatchDefinitionCompatible(definition = {}
 export function createFocusedRegressionBatchDefinitionFixture(overrides = {}) {
   return {
     schemaVersion: FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION,
-    description: 'Synthetic focused regression batch definition fixture.',
+    description: 'Synthetic focused regression batch schema fixture.',
     layeredValidationPolicy: {
       directTask: 'Run the directly related synthetic focused test first.',
       sameTypeBatch: 'Run a synthetic same-type batch before status upgrade.',

@@ -636,36 +636,6 @@ test('stable config does not point at retired web or download runtime layers', a
   assert.deepEqual(hits, []);
 });
 
-test('architecture docs record the template clean-architecture directory contract', async () => {
-  const sourceText = await readFile(path.join(REPO_ROOT, 'docs', 'architecture.md'), 'utf8');
-  for (const pattern of [
-    /modular monolith/iu,
-    /clean-architecture dependency direction/iu,
-    /Pipeline \/ Compiler \/ Planner/iu,
-    /Template Directory Mapping/iu,
-    /`src\/app\/pipeline\/`/u,
-    /`src\/app\/compiler\/`/u,
-    /`src\/app\/planner\/`/u,
-    /`src\/domain\/`/u,
-  ]) {
-    assert.match(sourceText, pattern);
-  }
-});
-
-test('docs directory only retains durable architecture and release maps', async () => {
-  const entries = await readdir(path.join(REPO_ROOT, 'docs'), { withFileTypes: true });
-  assert.deepEqual(
-    entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .sort(),
-    [
-      'architecture.md',
-      'release-hardening-plan.md',
-    ],
-  );
-});
-
 test('infra auth services do not depend on CLI entrypoints', async () => {
   const imports = await collectResolvedImports('src/infra/auth');
   assertNoResolvedPrefix(

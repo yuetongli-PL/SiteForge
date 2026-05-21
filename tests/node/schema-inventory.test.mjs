@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 import {
   SESSION_RUN_MANIFEST_SCHEMA_VERSION,
@@ -38,7 +37,10 @@ import {
   createCapabilityHookProducerDescriptorRegistry,
 } from '../../src/domain/lifecycle/capability-hook.mjs';
 import { DOWNLOAD_POLICY_SCHEMA_VERSION } from '../../src/domain/policies/download-policy.mjs';
-import { FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION } from '../../src/domain/capabilities/focused-regression-batches.mjs';
+import {
+  FOCUSED_REGRESSION_BATCH_DEFINITION_SCHEMA_VERSION,
+  createFocusedRegressionBatchDefinitionFixture,
+} from '../../src/domain/capabilities/focused-regression-batches.mjs';
 import { LIFECYCLE_EVENT_SCHEMA_VERSION } from '../../src/domain/lifecycle/lifecycle-events.mjs';
 import { REASON_CODE_SCHEMA_VERSION } from '../../src/domain/risks/reason-codes.mjs';
 import { RISK_STATE_SCHEMA_VERSION } from '../../src/domain/risks/risk-state.mjs';
@@ -73,7 +75,6 @@ import {
   listStandardArtifactInventory,
 } from '../../src/domain/schemas/schema-inventory.mjs';
 
-const CONTRIBUTING_URL = new URL('../../CONTRIBUTING.md', import.meta.url);
 const SITE_CAPABILITY_GRAPH_SOURCE_PATH = 'src/domain/capabilities/site-capability-graph.mjs';
 const LAYER_SOURCE_INVENTORY_SUMMARY_NAMES = [
   'LayerSourceRiskPolicyInventorySummary',
@@ -120,15 +121,6 @@ function createSyntheticLayerSourceInputs() {
       },
     },
   };
-}
-
-async function readFocusedRegressionBatchDefinition() {
-  const markdown = await readFile(CONTRIBUTING_URL, 'utf8');
-  const match = markdown.match(
-    /<!-- SCL_FOCUSED_REGRESSION_BATCHES_JSON_BEGIN -->\s*```json[^\n]*\n([\s\S]*?)\n```\s*<!-- SCL_FOCUSED_REGRESSION_BATCHES_JSON_END -->/u,
-  );
-  assert.notEqual(match, null, 'CONTRIBUTING.md must embed focused regression batches JSON');
-  return JSON.parse(match[1]);
 }
 
 test('schema inventory records current versioned schema evidence', () => {
@@ -381,8 +373,8 @@ test('schema inventory records Kernel-governed lifecycle producer inventory evid
   assert.equal(assertSchemaCompatible(entry.name, producerRegistry), true);
 });
 
-test('focused regression batch definition document is governed by schema inventory', async () => {
-  const definition = await readFocusedRegressionBatchDefinition();
+test('focused regression batch schema fixture is governed by schema inventory', () => {
+  const definition = createFocusedRegressionBatchDefinitionFixture();
   const inventoryEntry = getSchemaInventoryEntry('FocusedRegressionBatchDefinition');
   const registryEntry = getCompatibilitySchema('FocusedRegressionBatchDefinition');
 

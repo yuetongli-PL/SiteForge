@@ -1,7 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 
 import {
   SITE_ONBOARDING_DISCOVERY_SCHEMA_VERSION,
@@ -3240,52 +3238,4 @@ test('API inventory preserves redacted request and response shape summaries', ()
   assert.equal(artifacts.markdown.API_INVENTORY.includes('rest-json'), true);
   assertNoSensitiveFixtureMaterial(inputs);
   assertNoSensitiveFixtureMaterial(artifacts);
-});
-
-test('URL-only new-site requests are documented as full onboarding, not skill-only work', async () => {
-  const agentGuidance = await readFile(path.resolve('AGENTS.md'), 'utf8');
-  const contributorGuidance = await readFile(path.resolve('CONTRIBUTING.md'), 'utf8');
-  const onboardingGuidance = `${agentGuidance}\n${contributorGuidance}`;
-
-  assert.match(onboardingGuidance, /URL-Only New-Site Intake Contract/u);
-  assert.match(onboardingGuidance, /full onboarding by default/u);
-  assert.match(onboardingGuidance, /not a request to\s+only draft a skill/u);
-  for (const artifactName of [
-    'NODE_INVENTORY',
-    'API_INVENTORY',
-    'UNKNOWN_NODE_REPORT',
-    'BLOCKED_NODE_REPORT',
-    'UNKNOWN_API_REPORT',
-    'BLOCKED_API_REPORT',
-    'CAPABILITY_TARGETS',
-    'CAPABILITY_GAP_REPORT',
-    'SITE_CAPABILITY_REPORT',
-    'DISCOVERY_AUDIT',
-  ]) {
-    assert.match(onboardingGuidance, new RegExp(artifactName, 'u'));
-  }
-  for (const gateText of [
-    'site-specific onboarding test',
-    'onboarding discovery gate',
-    'site-doctor artifact gate',
-    'SiteAdapter contract test',
-    'matrix test',
-    'Agent B acceptance',
-  ]) {
-    assert.match(onboardingGuidance, new RegExp(gateText, 'u'));
-  }
-  for (const blockedSurface of [
-    'paywall',
-    'VIP access',
-    'CAPTCHA',
-    'risk-control',
-    'paid/VIP chapter reading',
-    'access-control bypass',
-  ]) {
-    assert.match(onboardingGuidance, new RegExp(blockedSurface, 'u'));
-  }
-  assert.match(agentGuidance, /A bare new-site URL is full onboarding by default/u);
-  assert.match(agentGuidance, /Do not stop after only adding\s+a profile, registry row, or skill/u);
-  assert.match(contributorGuidance, /A user-provided new site URL is full onboarding by default/u);
-  assert.match(contributorGuidance, /only draft a skill or profile/u);
 });

@@ -418,23 +418,3 @@ test('site-doctor reports chapter validation failures at the doctor boundary', a
     await rm(workspace, { recursive: true, force: true });
   }
 });
-
-test('X and Instagram social maintenance docs keep operational natural language mappings out of the public CLI', async () => {
-  const socialLiveVerification = await readFile(path.resolve('CONTRIBUTING.md'), 'utf8');
-
-  for (const phrase of [
-    'resume-full-archive',
-    'resume-after-cooldown',
-    'media-fast-download',
-    'health-check',
-    'live-acceptance-report',
-    'kb-refresh',
-  ]) {
-    assert.match(socialLiveVerification, new RegExp(phrase, 'u'));
-  }
-
-  assert.match(socialLiveVerification, /public site onboarding still goes through `siteforge build <url>`/u);
-  assert.doesNotMatch(socialLiveVerification, /node src\/entrypoints\/cli\.mjs (?:x|instagram) action/u);
-  assert.match(socialLiveVerification, /Natural Language Trigger Guide/u);
-  assert.match(socialLiveVerification, /scenario KB refresh/u);
-});

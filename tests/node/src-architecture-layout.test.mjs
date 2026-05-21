@@ -104,7 +104,6 @@ test('root only keeps approved project metadata regular files', async () => {
   assert.ok(rootDesignDocs.length <= 1, 'root should not accumulate duplicate Site Capability Layer design docs');
   await Promise.all([
     expectPathExists('README.md'),
-    expectPathExists('CONTRIBUTING.md'),
     expectPathExists('AGENTS.md'),
     expectPathExists('package.json'),
   ]);
@@ -113,7 +112,6 @@ test('root only keeps approved project metadata regular files', async () => {
     '.gitattributes',
     '.gitignore',
     'AGENTS.md',
-    'CONTRIBUTING.md',
     'README.md',
     'SECURITY.md',
     'package.json',

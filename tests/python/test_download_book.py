@@ -156,6 +156,30 @@ class DownloadBookTests(unittest.TestCase):
         self.assertEqual(text, "public chapter line")
         self.assertEqual(source, "attribute")
 
+    def test_required_ocr_missing_dependency_uses_stable_reason_code(self):
+        class ImageClient:
+            async def get(self, url):
+                request = httpx.Request("GET", url)
+                return httpx.Response(200, request=request, content=b"not-a-real-image")
+
+        async def run_case():
+            return await download_book.normalize_paragraphs_with_ocr(
+                ImageClient(),
+                '<p>before</p><img src="/chapter-body.png">',
+                [],
+                base_url="https://www.bz888888888.com/book/1/",
+                ocr_config={
+                    "enabled": True,
+                    "required": True,
+                    "command": "siteforge-missing-tesseract-for-test",
+                    "imageSourceAttributes": ["src"],
+                    "textAttributes": [],
+                },
+            )
+
+        with self.assertRaisesRegex(RuntimeError, r"ocr-dependency-missing"):
+            asyncio.run(run_case())
+
     def test_fetch_html_reports_cloudflare_challenge_reason(self):
         class ChallengeClient:
             async def request(self, method, url, data=None):

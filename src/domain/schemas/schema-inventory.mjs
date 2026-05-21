@@ -238,7 +238,6 @@ const SCHEMA_INVENTORY = Object.freeze([
       artifactName: 'LifecycleEvent',
       producerPath: 'src/domain/lifecycle/lifecycle-events.mjs',
       consumerPaths: [
-        'src/app/pipeline/stages/capture.mjs',
         'src/domain/sessions/runner.mjs',
       ],
       verificationPaths: [

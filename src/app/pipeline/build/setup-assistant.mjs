@@ -469,24 +469,24 @@ function knownGenericLiveBuildSummary(registryRecord, capabilityRecord) {
     capabilityRecord?.liveAccessStatus,
   );
   const reasonCode = firstPresent(
-    registryDownloadSupport.reasonCode,
-    capabilityDownloader.reasonCode,
     registryGeneric.reasonCode,
     capabilityGeneric.reasonCode,
     registryRecord?.unsupportedLiveReasonCode,
     capabilityRecord?.unsupportedLiveReasonCode,
+    registryDownloadSupport.reasonCode,
+    capabilityDownloader.reasonCode,
     registryDownloadSupport.unsupportedLiveReasonCode,
     capabilityDownloader.liveAccessReasonCode,
     capabilityDownloader.unsupportedLiveReasonCode,
     capabilityRecord?.liveAccessReasonCode,
   );
   const reason = firstPresent(
-    registryDownloadSupport.reason,
-    capabilityDownloader.reason,
     registryGeneric.reason,
     capabilityGeneric.reason,
     registryRecord?.unsupportedLiveReason,
     capabilityRecord?.unsupportedLiveReason,
+    registryDownloadSupport.reason,
+    capabilityDownloader.reason,
     registryDownloadSupport.unsupportedLiveReason,
     capabilityDownloader.liveAccessReason,
     capabilityDownloader.unsupportedLiveReason,

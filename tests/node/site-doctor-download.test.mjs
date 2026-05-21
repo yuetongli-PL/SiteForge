@@ -216,6 +216,68 @@ test('site-doctor enables download preflight for navigation profiles with downlo
   }
 });
 
+test('site-doctor reports missing download runtime dependencies with stable reasonCode', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-doctor-download-runtime-'));
+  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
+  const metadataSandbox = createSiteMetadataSandbox(workspace);
+
+  try {
+    const profilePath = path.join(workspace, 'videos.example.com.json');
+    await writeFile(profilePath, `${JSON.stringify(createDownloadableNavigationProfile(), null, 2)}\n`, 'utf8');
+
+    const report = await siteDoctor('https://videos.example.com/', {
+      profilePath,
+      outDir: path.join(workspace, 'doctor'),
+      checkDownload: true,
+      siteMetadataOptions: metadataSandbox.siteMetadataOptions,
+    }, {
+      resolveSite: async () => ({ adapter: { id: 'generic-navigation' } }),
+      ensureCrawlerScript: async () => ({
+        status: 'generated',
+        scriptPath: path.join(workspace, 'crawler.py'),
+        metaPath: path.join(workspace, 'crawler.meta.json'),
+      }),
+      capture: async () => ({
+        status: 'success',
+        finalUrl: 'https://videos.example.com/',
+        files: {
+          manifest: path.join(workspace, 'capture', 'manifest.json'),
+        },
+      }),
+      expandStates: async () => ({
+        outDir: path.join(workspace, 'expand'),
+        summary: { capturedStates: 1 },
+        warnings: [],
+        states: [
+          {
+            state_id: 's1',
+            status: 'captured',
+            finalUrl: 'https://videos.example.com/video/BV1WjDDBGE3p/',
+            pageType: 'book-detail-page',
+            trigger: { kind: 'content-link' },
+            files: {},
+          },
+        ],
+      }),
+      runProcess: async (command) => ({
+        code: 1,
+        error: `spawn ${command} ENOENT`,
+        stdout: '',
+        stderr: '',
+      }),
+      pathExists: async () => true,
+      readJsonFile: async () => ({}),
+    });
+
+    assert.equal(report.download?.status, 'fail');
+    assert.equal(report.download?.details?.reasonCode, 'runtime-dependency-missing');
+    assert.match(report.download?.error?.message ?? '', /spawn pypy3 ENOENT/u);
+    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('site-doctor report writer fails closed before persistent report writes when redaction cannot complete', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-doctor-redaction-fail-'));
   const reportDir = path.join(workspace, 'report');

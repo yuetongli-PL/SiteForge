@@ -6,6 +6,7 @@ import { displayPath } from '../../../infra/cli/path-display.mjs';
 import { buildStatusLabel, collectionStatusLabel, verificationStatusLabel } from '../../../infra/cli/status-labels.mjs';
 import { pathExists } from '../../../infra/io.mjs';
 import { jsonClone } from '../../../shared/clone.mjs';
+import { mapWithConcurrency } from '../../../shared/concurrency.mjs';
 import { slugifyAscii, uniqueSortedStrings } from '../../../shared/normalize.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../../domain/sessions/security-guard.mjs';
 import {
@@ -94,6 +95,17 @@ import {
   promoteVerifiedBuild,
   writeLastSuccessfulBuild,
 } from './workspace.mjs';
+import {
+  SITEFORGE_DEBUG_REPORT_FILE as DEBUG_REPORT_FILE,
+  SITEFORGE_DEBUG_REPORT_JSON_ALIAS as DEBUG_REPORT_JSON_ALIAS,
+  SITEFORGE_INDEX_REPORT_FILE as INDEX_REPORT_FILE,
+  SITEFORGE_REQUIRED_ARTIFACTS as REQUIRED_ARTIFACTS,
+  SITEFORGE_USER_REPORT_FILE as USER_REPORT_FILE,
+  SITEFORGE_USER_REPORT_JSON_ALIAS as USER_REPORT_JSON_ALIAS,
+  SITEFORGE_USER_REPORT_MARKDOWN_ALIAS as USER_REPORT_MARKDOWN_ALIAS,
+  SITEFORGE_USER_REPORT_MARKDOWN_FILE as USER_REPORT_MARKDOWN_FILE,
+  siteForgeReportModeSet,
+} from './artifact-contract.mjs';
 
 export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
   'registerSite',
@@ -131,36 +143,7 @@ const STAGE_DEPENDENCIES = Object.freeze({
   writeBuildReport: ['registerSkill'],
 });
 
-const REQUIRED_ARTIFACTS = Object.freeze([
-  'site.json',
-  'generated_adapter.json',
-  'adapter_contract_tests.json',
-  'seeds.json',
-  'crawl_static.json',
-  'crawl_checkpoint.json',
-  'graph.json',
-  'classified_graph.json',
-  'affordances.json',
-  'capabilities.json',
-  'intents.json',
-  'skill.yaml',
-  'execution_plans.json',
-  'safety_policy.json',
-  'verification_report.json',
-  'build_report.user.json',
-  'build_report.user.md',
-  'build_report.debug.json',
-  'build_report.json',
-]);
-
-const USER_REPORT_FILE = 'build_report.user.json';
-const USER_REPORT_MARKDOWN_FILE = 'build_report.user.md';
-const DEBUG_REPORT_FILE = 'build_report.debug.json';
-const INDEX_REPORT_FILE = 'build_report.json';
-const USER_REPORT_JSON_ALIAS = 'user.json';
-const USER_REPORT_MARKDOWN_ALIAS = 'user.md';
-const DEBUG_REPORT_JSON_ALIAS = 'debug.json';
-const REPORT_MODES = new Set(['user', 'debug', 'both']);
+const REPORT_MODES = siteForgeReportModeSet();
 
 const USER_AUTHORIZED_COLLECTION_CONCURRENCY = 4;
 const STATIC_CRAWL_COLLECTION_CONCURRENCY = 6;
@@ -309,25 +292,6 @@ function dedupeSemanticCapabilities(capabilities = []) {
     }
   }
   return [...byKey.values()];
-}
-
-async function mapWithConcurrency(values, limit, mapper) {
-  const items = Array.isArray(values) ? values : [];
-  if (items.length === 0) {
-    return [];
-  }
-  const workerCount = Math.max(1, Math.min(Number(limit) || 1, items.length));
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  const workers = Array.from({ length: workerCount }, async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await mapper(items[index], index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
 }
 
 function sourceToDiscoveredBy(source) {
@@ -5640,6 +5604,7 @@ function buildUserReport(context, stageResults, report) {
     intents_total: intents.length,
   };
   return {
+    // Migration: status remains the legacy stage/build field; result_status is the stable user-facing outcome.
     result_status: resultStatus,
     legacy_status: report.status ?? null,
     failure_class: report.failureClass ?? null,
@@ -5968,6 +5933,7 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
     setupCollectionReview,
     artifactStore: context.artifactStore,
     status,
+    // Migration: keep legacy_status during report consumers' transition to result_status.
     result_status,
     partial_success_reasons: partialSuccessReasons,
     legacy_status: status,

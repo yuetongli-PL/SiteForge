@@ -305,8 +305,6 @@ test('artifact JSON helper prepares a redacted audit sidecar', () => {
 
 test('current manifest writers use paired redaction audit serialization', async () => {
   const writerFiles = [
-    ['src/app/pipeline/stages/capture.mjs', 1],
-    ['src/app/pipeline/stages/expand.mjs', 3],
     ['src/domain/sessions/runner.mjs', 2],
     ['src/sites/known-sites/social/actions/router.mjs', 1],
   ];

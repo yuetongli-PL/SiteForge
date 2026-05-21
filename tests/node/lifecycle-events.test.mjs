@@ -397,13 +397,12 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   const summary = summarizeLifecycleEventProducerInventory({ inventory });
   assert.deepEqual(summary, {
     schemaVersion: LIFECYCLE_EVENT_PRODUCER_INVENTORY_SCHEMA_VERSION,
-    eventTypeCount: 15,
+    eventTypeCount: 13,
     producerModuleCounts: {
       'src/domain/capabilities/api-candidates.mjs': 6,
       'src/domain/policies/execution/layer-runtime-consumer.mjs': 1,
       'src/domain/risks/site-health-execution-gate.mjs': 3,
       'src/domain/capabilities/site-capability-graph.mjs': 1,
-      'src/app/pipeline/stages/capture.mjs': 2,
       'src/domain/sessions/runner.mjs': 1,
       'src/sites/known-sites/social/actions/router.mjs': 1,
     },
@@ -413,8 +412,6 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
       'api.catalog.index.written',
       'api.catalog.schema_incompatible',
       'api.catalog.upgrade_decision.written',
-      'capture.api_candidates.written',
-      'capture.manifest.written',
       'execution.layer.consumer.receipt',
       'site.health.recovery.evaluated',
       'site.health.recovery.action.planned',
@@ -459,9 +456,9 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
   assert.throws(
     () => createLifecycleEventProducerInventory({
       producers: [{
-        eventType: 'capture.manifest.written',
+        eventType: 'api.catalog.collection.written',
         producerId: 'unsafe-profile-status',
-        sourceModule: 'src/app/pipeline/stages/capture.mjs',
+        sourceModule: 'src/domain/capabilities/api-candidates.mjs',
         profileStatus: 'inventoried',
       }],
     }),
@@ -478,44 +475,6 @@ test('LifecycleEvent producer inventory is versioned, safe, and aligned with run
       }],
     }),
     /must not include executable functions/u,
-  );
-});
-
-test('LifecycleEvent producer observability profiles fail closed for capture producers', async () => {
-  assert.throws(
-    () => assertLifecycleEventProducerObservability({
-      schemaVersion: LIFECYCLE_EVENT_SCHEMA_VERSION,
-      eventType: 'capture.manifest.written',
-      traceId: 'trace-synthetic-capture-profile',
-      correlationId: 'correlation-synthetic-capture-profile',
-      taskId: 'task-synthetic-capture-profile',
-      taskType: 'capture',
-      adapterVersion: 'capture-adapter-v1',
-      createdAt: '2026-05-03T00:00:00.000Z',
-      details: {
-        status: 'success',
-      },
-    }),
-    /siteKey/u,
-  );
-
-  await assert.rejects(
-    () => dispatchLifecycleEvent({
-      eventType: 'capture.api_candidates.written',
-      traceId: 'trace-synthetic-candidate-profile',
-      correlationId: 'correlation-synthetic-candidate-profile',
-      taskId: 'task-synthetic-candidate-profile',
-      siteKey: 'example',
-      taskType: 'capture',
-      adapterVersion: 'capture-adapter-v1',
-      createdAt: '2026-05-03T00:01:00.000Z',
-      details: {
-        count: 1,
-        apiCandidates: ['api-candidates/candidate-0001.json'],
-        apiCandidateDecisions: ['api-candidate-decisions/candidate-0001.json'],
-      },
-    }),
-    /apiCandidateRedactionAudits/u,
   );
 });
 

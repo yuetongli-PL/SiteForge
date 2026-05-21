@@ -270,7 +270,7 @@ test('schema inventory records Section 19 standard artifact evidence', () => {
       family: 'LifecycleEvents',
       role: 'standard-event-envelope',
       producerPath: 'src/domain/lifecycle/lifecycle-events.mjs',
-      consumerPath: 'src/app/pipeline/stages/capture.mjs',
+      consumerPath: 'src/domain/sessions/runner.mjs',
     }],
     ['ApiCatalogIndex', {
       family: 'api-catalog',

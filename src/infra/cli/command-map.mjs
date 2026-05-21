@@ -1,6 +1,14 @@
 // @ts-check
 
+import {
+  publicBooleanBuildFlagSet,
+  publicValueBuildFlagMap,
+} from './public-build-contract.mjs';
+
 export const UNIFIED_CLI_ENTRYPOINT = 'siteforge';
+
+const PUBLIC_BOOLEAN_BUILD_FLAGS = publicBooleanBuildFlagSet();
+const PUBLIC_VALUE_BUILD_FLAGS = publicValueBuildFlagMap();
 
 function normalizeScriptPath(scriptPath) {
   return String(scriptPath ?? '').replace(/\\/gu, '/').replace(/^\.\//u, '');
@@ -48,6 +56,38 @@ export function capabilityDisableCommand(skillId, args = []) {
 
 export function buildCliCommand(inputUrl) {
   return unifiedCliCommand(['build', inputUrl]);
+}
+
+function validatePublicBuildCommandArgs(args = []) {
+  for (let index = 0; index < args.length; index += 1) {
+    const token = String(args[index]);
+    if (!token.startsWith('--')) {
+      continue;
+    }
+    const flagName = token.split('=')[0];
+    if (PUBLIC_BOOLEAN_BUILD_FLAGS.has(flagName)) {
+      if (token.includes('=')) {
+        throw new Error(`Public build flag does not take a value: ${flagName}`);
+      }
+      continue;
+    }
+    const allowedValues = PUBLIC_VALUE_BUILD_FLAGS.get(flagName);
+    if (allowedValues) {
+      const inlineValue = token.includes('=') ? token.slice(flagName.length + 1) : null;
+      const value = inlineValue ?? args[index + 1];
+      if (!value || String(value).startsWith('--')) {
+        throw new Error(`Missing value for public build flag: ${flagName}`);
+      }
+      if (!allowedValues.includes(String(value))) {
+        throw new Error(`${flagName} must be one of: ${allowedValues.join(', ')}`);
+      }
+      if (inlineValue === null) {
+        index += 1;
+      }
+      continue;
+    }
+    throw new Error(`Command map cannot generate unsupported public build flag: ${flagName}`);
+  }
 }
 
 export function unifiedCliArgsForScript(scriptPath) {
@@ -99,18 +139,24 @@ export function downloadCliCommand({
   site = null,
   args = [],
 } = {}) {
-  const commandArgs = ['siteforge', 'build'];
+  const normalizedArgs = args.map((arg) => String(arg));
+  if (site !== null && site !== undefined && String(site) !== '') {
+    return actionCliCommand(site, [
+      'download',
+      ...(input !== null && input !== undefined && String(input) !== '' ? [String(input)] : []),
+      ...normalizedArgs,
+    ]);
+  }
+  const commandArgs = ['build'];
   if (input !== null && input !== undefined && String(input) !== '') {
     commandArgs.push(String(input));
   }
   if (mode === 'execute') {
     commandArgs.push('--auto');
   }
-  if (site !== null && site !== undefined && String(site) !== '') {
-    commandArgs.push('--site', String(site));
-  }
-  commandArgs.push(...args.map((arg) => String(arg)));
-  return formatCommand(commandArgs);
+  commandArgs.push(...normalizedArgs);
+  validatePublicBuildCommandArgs(commandArgs.slice(1));
+  return unifiedCliCommand(commandArgs);
 }
 
 export function actionCliCommand(site, args = []) {

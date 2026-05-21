@@ -20,7 +20,21 @@
       "templateVersion": 3,
       "capabilityFamilies": [
         "download-content"
-      ]
+      ],
+      "downloadSupport": {
+        "status": "implemented",
+        "supported": true,
+        "taskTypes": [
+          "book"
+        ],
+        "declaredTaskTypes": [
+          "book"
+        ],
+        "availableTaskTypes": [
+          "book"
+        ],
+        "blockedTaskTypes": []
+      }
     },
     "www.qidian.com": {
       "canonicalBaseUrl": "https://www.qidian.com/",
@@ -66,6 +80,13 @@
         "taskTypes": [
           "book"
         ],
+        "declaredTaskTypes": [
+          "book"
+        ],
+        "availableTaskTypes": [
+          "book"
+        ],
+        "blockedTaskTypes": [],
         "ocrRequired": true,
         "ocrEngine": "tesseract",
         "unsupportedLiveReasonCode": "blocked-by-cloudflare-challenge",
@@ -142,6 +163,23 @@
       "capabilityFamilies": [
         "download-content"
       ],
+      "downloadSupport": {
+        "status": "implemented",
+        "supported": true,
+        "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "blockedTaskTypes": []
+      },
       "repoSkillDir": "skills/bilibili"
     },
     "www.douyin.com": {
@@ -159,6 +197,23 @@
       "capabilityFamilies": [
         "download-content"
       ],
+      "downloadSupport": {
+        "status": "implemented",
+        "supported": true,
+        "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "blockedTaskTypes": []
+      },
       "repoSkillDir": "skills/douyin",
       "scriptLanguage": "python",
       "interpreterRequired": "pypy3",
@@ -180,6 +235,23 @@
       "capabilityFamilies": [
         "download-content"
       ],
+      "downloadSupport": {
+        "status": "implemented",
+        "supported": true,
+        "taskTypes": [
+          "image-note",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "image-note",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [
+          "image-note",
+          "media-bundle"
+        ],
+        "blockedTaskTypes": []
+      },
       "siteKey": "xiaohongshu",
       "adapterId": "xiaohongshu",
       "repoSkillDir": "skills/xiaohongshu-explore"
@@ -207,6 +279,34 @@
         "social-archive",
         "media-bundle"
       ],
+      "declaredDownloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "availableDownloadTaskTypes": [],
+      "blockedDownloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "downloadSupport": {
+        "status": "blocked",
+        "supported": false,
+        "taskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "reasonCode": "download-layer-removed",
+        "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
+      },
       "repoSkillDir": "skills/x",
       "scriptLanguage": "python",
       "interpreterRequired": "pypy3",
@@ -244,6 +344,34 @@
         "social-archive",
         "media-bundle"
       ],
+      "declaredDownloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "availableDownloadTaskTypes": [],
+      "blockedDownloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "downloadSupport": {
+        "status": "blocked",
+        "supported": false,
+        "taskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "reasonCode": "download-layer-removed",
+        "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
+      },
       "repoSkillDir": "skills/instagram",
       "scriptLanguage": "python",
       "interpreterRequired": "pypy3",

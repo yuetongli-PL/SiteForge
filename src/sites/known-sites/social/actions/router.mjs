@@ -34,7 +34,6 @@ import {
 import { evaluateAuthenticatedSessionReleaseGate } from '../../../../domain/sessions/release-gate.mjs';
 import { buildSessionRepairPlanCommand } from '../../../../domain/sessions/repair-command.mjs';
 import { runSessionTask } from '../../../../domain/sessions/runner.mjs';
-import { normalizeArtifactReferenceSet } from '../../../../domain/artifacts/schema.mjs';
 import { matchCapabilityHooksForLifecycleEvent } from '../../../../domain/lifecycle/capability-hook.mjs';
 import { assertSchemaCompatible } from '../../../../domain/schemas/compatibility-registry.mjs';
 import {
@@ -48,6 +47,19 @@ import {
   prepareRedactedArtifactJsonWithAudit,
   redactValue,
 } from '../../../../domain/sessions/security-guard.mjs';
+import {
+  artifactPathSummary,
+  buildSocialArtifactLayout,
+  safePlanForArtifact,
+  safeSettingsForArtifact,
+} from './artifacts.mjs';
+import {
+  SOCIAL_ACTION_HELP,
+  parseSocialActionArgs,
+} from './cli.mjs';
+import { createBlockedMediaDownloadReport } from './download-boundary.mjs';
+
+export { SOCIAL_ACTION_HELP, parseSocialActionArgs } from './cli.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
@@ -68,21 +80,6 @@ const ARTIFACT_SCHEMA_VERSION = 1;
 const API_CAPTURE_SAMPLE_LIMIT = 8;
 const API_CAPTURE_SHAPE_PATH_LIMIT = 80;
 const API_CAPTURE_PAYLOAD_SAMPLE_LIMIT = 12_000;
-
-async function createBlockedMediaDownloadReport() {
-  return {
-    downloads: [],
-    queue: [],
-    candidates: [],
-    expectedMedia: 0,
-    skippedMedia: 0,
-    skippedCandidates: 0,
-    status: 'blocked',
-    supported: false,
-    blocked: true,
-    reason: 'download-layer-removed',
-  };
-}
 
 const SOCIAL_SITES = Object.freeze({
   x: {
@@ -4885,107 +4882,6 @@ ${bodyRows}
 `;
 }
 
-function createArtifactSlug(plan) {
-  return compactSlug([
-    plan.action,
-    plan.account || plan.query || 'current',
-    plan.contentType || '',
-    plan.date || plan.fromDate || '',
-  ].filter(Boolean).join('-'), 'social-run');
-}
-
-function artifactPathSummary(layout) {
-  const artifacts = normalizeArtifactReferenceSet({
-    runDir: layout.runDir,
-    manifest: layout.manifestPath,
-    manifestRedactionAudit: layout.manifestRedactionAuditPath,
-    items: layout.itemsJsonlPath,
-    mediaDir: layout.mediaDir,
-    state: layout.statePath,
-    report: layout.reportPath,
-    reportRedactionAudit: layout.reportRedactionAuditPath,
-    apiCapture: layout.apiCapturePath,
-    apiCaptureRedactionAudit: layout.apiCaptureRedactionAuditPath,
-    apiDriftSamples: layout.apiDriftSamplesPath,
-    apiDriftSamplesRedactionAudit: layout.apiDriftSamplesRedactionAuditPath,
-    socialRiskBlockedLifecycleEvent: layout.socialRiskBlockedLifecycleEventPath,
-    socialRiskBlockedLifecycleEventRedactionAudit: layout.socialRiskBlockedLifecycleEventRedactionAuditPath,
-    downloads: layout.downloadsJsonlPath,
-    mediaManifest: layout.mediaHashManifestPath,
-    mediaQueue: layout.mediaQueuePath,
-    indexCsv: layout.indexCsvPath,
-    indexHtml: layout.indexHtmlPath,
-  });
-  assertSchemaCompatible('ArtifactReferenceSet', artifacts);
-  return artifacts;
-}
-
-function buildSocialArtifactLayout(plan, settings) {
-  const runDir = settings.runDir
-    ? path.resolve(settings.runDir)
-    : path.join(settings.outputRoot, `${settings.artifactRunId}-${createArtifactSlug(plan)}`);
-  return {
-    runDir,
-    manifestPath: path.join(runDir, 'manifest.json'),
-    manifestRedactionAuditPath: path.join(runDir, 'manifest.redaction-audit.json'),
-    itemsJsonlPath: path.join(runDir, 'items.jsonl'),
-    mediaDir: path.join(runDir, 'media'),
-    statePath: path.join(runDir, 'state.json'),
-    reportPath: path.join(runDir, 'report.md'),
-    reportRedactionAuditPath: path.join(runDir, 'report.redaction-audit.json'),
-    apiCapturePath: path.join(runDir, 'api-capture-debug.json'),
-    apiCaptureRedactionAuditPath: path.join(runDir, 'api-capture-debug.redaction-audit.json'),
-    apiDriftSamplesPath: path.join(runDir, 'api-drift-samples.json'),
-    apiDriftSamplesRedactionAuditPath: path.join(runDir, 'api-drift-samples.redaction-audit.json'),
-    socialRiskBlockedLifecycleEventPath: path.join(runDir, 'social-action-risk-blocked.lifecycle-event.json'),
-    socialRiskBlockedLifecycleEventRedactionAuditPath: path.join(runDir, 'social-action-risk-blocked.lifecycle-event.redaction-audit.json'),
-    downloadsJsonlPath: path.join(runDir, 'downloads.jsonl'),
-    mediaHashManifestPath: path.join(runDir, 'media-manifest.json'),
-    mediaQueuePath: path.join(runDir, 'media-queue.json'),
-    indexCsvPath: path.join(runDir, 'index.csv'),
-    indexHtmlPath: path.join(runDir, 'index.html'),
-  };
-}
-
-function safePlanForArtifact(plan) {
-  return {
-    siteKey: plan.siteKey,
-    host: plan.host,
-    action: plan.action,
-    contentType: plan.contentType,
-    account: plan.account,
-    query: plan.query,
-    date: plan.date,
-    fromDate: plan.fromDate,
-    toDate: plan.toDate,
-    url: plan.url,
-    plannerNotes: plan.plannerNotes,
-  };
-}
-
-function safeSettingsForArtifact(settings) {
-  return {
-    maxItems: settings.maxItems,
-    maxScrolls: settings.maxScrolls,
-    scrollWaitMs: settings.scrollWaitMs,
-    fullArchive: settings.fullArchive,
-    apiCursor: settings.apiCursor,
-    apiCursorSuppressed: settings.apiCursorSuppressed,
-    maxApiPages: settings.maxApiPages,
-    maxUsers: settings.maxUsers,
-    maxDetailPages: settings.maxDetailPages,
-    perUserMaxItems: settings.perUserMaxItems,
-    riskBackoffMs: settings.riskBackoffMs,
-    riskRetries: settings.riskRetries,
-    apiRetries: settings.apiRetries,
-    followedDateMode: settings.followedDateMode,
-    downloadMedia: settings.downloadMedia,
-    resume: settings.resume,
-    outputRoot: settings.outputRoot,
-    runDir: settings.runDir,
-  };
-}
-
 function extractArtifactRows(result) {
   const payload = result?.result || {};
   if (Array.isArray(payload.items) && payload.items.length) {
@@ -6491,157 +6387,6 @@ export async function runSocialAction(options = {}, deps = {}) {
       }
     }
   }
-}
-
-function appendFlag(flags, key, value) {
-  if (!(key in flags)) {
-    flags[key] = value;
-    return;
-  }
-  if (Array.isArray(flags[key])) {
-    flags[key].push(value);
-    return;
-  }
-  flags[key] = [flags[key], value];
-}
-
-function lastFlagValue(flags, key, fallback = undefined) {
-  const value = flags[key];
-  if (Array.isArray(value)) {
-    return value[value.length - 1] ?? fallback;
-  }
-  return value ?? fallback;
-}
-
-export const SOCIAL_ACTION_HELP = `Internal script usage:
-  node src/entrypoints/sites/x-action.mjs <action> [options]
-  node src/entrypoints/sites/instagram-action.mjs <action> [options]
-
-Public command:
-  siteforge build <url>
-
-Common actions include profile-content, full-archive, search, profile-following,
-profile-followers, followed-posts-by-date, and account-info.
-
-Options:
-  --site <x|instagram>              Override the wrapper default site.
-  --account <handle>                Target account or profile handle.
-  --query <value>                   Search query.
-  --content-type <type>             posts, replies, media, likes, or site-specific tab.
-  --download-media                  Record a blocked media-download report; execution is disabled.
-  --max-items <n>                   Limit archive or content items.
-  --max-users <n>                   Limit relation/followed scans.
-  --followed-users-file <path>      Reuse a verified followed-users items.jsonl as the relation seed.
-  --run-dir <dir>                   Exact artifact run directory.
-  --out-dir <dir>                   Artifact output root.
-  --resume                          Resume from existing checkpoint state.
-  --dry-run                         Plan without performing browser/media work when supported.
-  --session-manifest <path>         Consume a unified runs/session health manifest.
-  --session-health-plan             Generate and consume a unified session health manifest first.
-  --no-session-health-plan          Use the legacy session provider path.
-  --format <json|markdown>          Output format. Default: json.
-  --json                            Force JSON output and suppress human progress.
-  --quiet                           Suppress human progress.
-  --progress <auto|interactive|plain>
-  --force-tty                       Force interactive progress rendering.
-  --no-tty                          Force plain progress rendering.
-  -h, --help                        Show this help.
-`;
-
-export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = {}) {
-  const args = [...argv];
-  const positionals = [];
-  const flags = {};
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (token === '-h') {
-      appendFlag(flags, 'help', true);
-      continue;
-    }
-    if (!token.startsWith('--')) {
-      positionals.push(token);
-      continue;
-    }
-    const [key, inlineValue] = token.split('=', 2);
-    const normalizedKey = key.replace(/^--/u, '');
-    if (inlineValue !== undefined) {
-      appendFlag(flags, normalizedKey, inlineValue);
-      continue;
-    }
-    const next = args[index + 1];
-    if (next && !next.startsWith('--')) {
-      appendFlag(flags, normalizedKey, next);
-      index += 1;
-    } else {
-      appendFlag(flags, normalizedKey, true);
-    }
-  }
-
-  const action = positionals[0] ?? lastFlagValue(flags, 'action', defaults.action ?? 'account-info');
-  const normalizedActionToken = String(action ?? '').trim().toLowerCase().replace(/_/gu, '-');
-  const actionRequestsFullArchive = [
-    'archive',
-    'archive-user-content',
-    'export-all',
-    'full-archive',
-    'full-history',
-  ].includes(normalizedActionToken);
-  const firstItem = positionals[1] ?? null;
-  const site = lastFlagValue(flags, 'site', defaults.site);
-  const apiCursorFlag = lastFlagValue(flags, 'api-cursor');
-  return {
-    help: flags.help === true,
-    site,
-    action,
-    account: lastFlagValue(flags, 'account', lastFlagValue(flags, 'handle', lastFlagValue(flags, 'user', firstItem))),
-    query: lastFlagValue(flags, 'query', lastFlagValue(flags, 'keyword', action === 'search' ? firstItem : undefined)),
-    contentType: lastFlagValue(flags, 'content-type', lastFlagValue(flags, 'tab')),
-    date: lastFlagValue(flags, 'date'),
-    fromDate: lastFlagValue(flags, 'from', lastFlagValue(flags, 'from-date')),
-    toDate: lastFlagValue(flags, 'to', lastFlagValue(flags, 'to-date')),
-    profilePath: lastFlagValue(flags, 'profile-path'),
-    browserPath: lastFlagValue(flags, 'browser-path'),
-    browserProfileRoot: lastFlagValue(flags, 'browser-profile-root'),
-    userDataDir: lastFlagValue(flags, 'user-data-dir'),
-    sessionManifest: lastFlagValue(flags, 'session-manifest'),
-    sessionProvider: lastFlagValue(flags, 'session-provider'),
-    useUnifiedSessionHealth: flags['no-session-health-plan'] === true
-      ? false
-      : flags['session-health-plan'] === true
-        ? true
-        : undefined,
-    outDir: lastFlagValue(flags, 'out-dir'),
-    runDir: lastFlagValue(flags, 'run-dir', lastFlagValue(flags, 'artifacts-dir')),
-    artifactRunId: lastFlagValue(flags, 'artifact-run-id', lastFlagValue(flags, 'run-id')),
-    reportPath: lastFlagValue(flags, 'report-path'),
-    timeoutMs: lastFlagValue(flags, 'timeout'),
-    maxItems: lastFlagValue(flags, 'max-items'),
-    maxScrolls: lastFlagValue(flags, 'max-scrolls'),
-    maxApiPages: lastFlagValue(flags, 'max-api-pages'),
-    maxUsers: lastFlagValue(flags, 'max-users'),
-    followedUsersFile: lastFlagValue(flags, 'followed-users-file', lastFlagValue(flags, 'following-file')),
-    maxDetailPages: lastFlagValue(flags, 'max-detail-pages'),
-    perUserMaxItems: lastFlagValue(flags, 'per-user-max-items'),
-    riskBackoffMs: flags['no-risk-backoff'] === true ? 0 : lastFlagValue(flags, 'risk-backoff-ms'),
-    riskRetries: lastFlagValue(flags, 'risk-retries'),
-    apiRetries: lastFlagValue(flags, 'api-retries'),
-    scrollWaitMs: lastFlagValue(flags, 'scroll-wait'),
-    fullArchive: actionRequestsFullArchive || flags['full-archive'] === true || flags['all-history'] === true,
-    apiCursor: flags['no-api-cursor'] === true ? false : apiCursorFlag === undefined ? undefined : toBoolean(apiCursorFlag, true),
-    followedDateMode: lastFlagValue(flags, 'followed-date-mode', lastFlagValue(flags, 'followed-date-strategy')),
-    headless: flags.headless === true ? true : flags['no-headless'] === true ? false : undefined,
-    reuseLoginState: flags['no-reuse-login-state'] === true ? false : flags['reuse-login-state'] === true ? true : undefined,
-    autoLogin: flags['no-auto-login'] === true ? false : flags['auto-login'] === true ? true : undefined,
-    dryRun: flags['dry-run'] === true,
-    resume: flags['no-resume'] === true ? false : flags.resume === true ? true : undefined,
-    downloadMedia: flags['download-media'] === true || flags.download === true,
-    outputFormat: flags.json === true ? 'json' : lastFlagValue(flags, 'format', 'json'),
-    json: flags.json === true,
-    quiet: flags.quiet === true,
-    progressMode: lastFlagValue(flags, 'progress'),
-    forceTty: flags['force-tty'] === true,
-    noTty: flags['no-tty'] === true,
-  };
 }
 
 function socialProgressSubject(parsed = {}) {

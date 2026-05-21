@@ -140,35 +140,6 @@ export const LIFECYCLE_EVENT_OBSERVABILITY_PROFILES = Object.freeze({
     requiredFields: LIFECYCLE_API_CATALOG_PRODUCER_FIELDS,
     requiredDetailFields: LIFECYCLE_API_CATALOG_UPGRADE_DECISION_DETAIL_FIELDS,
   }),
-  'capture.manifest.written': Object.freeze({
-    requiredFields: Object.freeze([
-      'traceId',
-      'correlationId',
-      'taskId',
-      'siteKey',
-      'taskType',
-      'adapterVersion',
-    ]),
-    requiredDetailFields: Object.freeze([
-      'status',
-    ]),
-  }),
-  'capture.api_candidates.written': Object.freeze({
-    requiredFields: Object.freeze([
-      'traceId',
-      'correlationId',
-      'taskId',
-      'siteKey',
-      'taskType',
-      'adapterVersion',
-    ]),
-    requiredDetailFields: Object.freeze([
-      'count',
-      'apiCandidates',
-      'apiCandidateRedactionAudits',
-      'apiCandidateDecisions',
-    ]),
-  }),
   'execution.layer.consumer.receipt': Object.freeze({
     requiredFields: Object.freeze([
       ...LIFECYCLE_OBSERVABILITY_CORE_FIELDS,
@@ -230,18 +201,6 @@ const LIFECYCLE_EVENT_PRODUCER_DESCRIPTORS = Object.freeze([
     producerId: 'api-candidates.catalog-verification',
     sourceModule: 'src/domain/capabilities/api-candidates.mjs',
     profileStatus: 'inventoried',
-  },
-  {
-    eventType: 'capture.api_candidates.written',
-    producerId: 'capture-stage.api-candidates-write',
-    sourceModule: 'src/app/pipeline/stages/capture.mjs',
-    profileStatus: 'profiled',
-  },
-  {
-    eventType: 'capture.manifest.written',
-    producerId: 'capture-stage.manifest-write',
-    sourceModule: 'src/app/pipeline/stages/capture.mjs',
-    profileStatus: 'profiled',
   },
   {
     eventType: 'graph.docs.summary.generated',

@@ -19,89 +19,40 @@ import {
   validateCapabilityEvidenceList,
   validateExecutionPlanAgainstRiskPolicy,
 } from './risk-policy.mjs';
+import {
+  requireReasonCodeDefinition,
+  reasonCodeSummary,
+} from '../../../domain/risks/reason-codes.mjs';
+import {
+  SITEFORGE_REQUIRED_FINAL_ARTIFACTS,
+  SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS,
+} from './artifact-contract.mjs';
+
+export {
+  SITEFORGE_REQUIRED_FINAL_ARTIFACTS,
+  SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS,
+} from './artifact-contract.mjs';
 
 export const OUTPUT_VALIDATION_DUPLICATE_RATIO_THRESHOLD = 0.25;
 
-export const SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS = Object.freeze([
-  'site.json',
-  'seeds.json',
-  'crawl_static.json',
-  'graph.json',
-  'classified_graph.json',
-  'affordances.json',
-  'capabilities.json',
-  'intents.json',
-  'skill.yaml',
-  'execution_plans.json',
-  'safety_policy.json',
-]);
-
-export const SITEFORGE_REQUIRED_FINAL_ARTIFACTS = Object.freeze([
-  ...SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS,
-  'verification_report.json',
-  'build_report.user.json',
-  'build_report.user.md',
-  'build_report.debug.json',
-  'build_report.json',
-]);
-
-export const SITEFORGE_REASON_PROFILES = Object.freeze({
-  'network-fetch-failed': Object.freeze({
-    failureClass: 'network',
-    reasonCode: 'network-fetch-failed',
-    action: 'Check site reachability, DNS, HTTP status, and fetch timeout before retrying.',
-  }),
-  'robots-unavailable': Object.freeze({
-    failureClass: 'robots',
-    reasonCode: 'robots-unavailable',
-    action: 'Review robots.txt availability; continue only with conservative crawl limits.',
-  }),
-  'robots-disallowed': Object.freeze({
-    failureClass: 'robots',
-    reasonCode: 'robots-disallowed',
-    action: 'Remove robots-disallowed URLs from seeds, crawl output, and graph artifacts.',
-  }),
-  'empty-seed-set': Object.freeze({
-    failureClass: 'discovery',
-    reasonCode: 'empty-seed-set',
-    action: 'Provide at least one crawlable in-scope seed or adjust the discovery profile.',
-  }),
-  'empty-crawl': Object.freeze({
-    failureClass: 'discovery',
-    reasonCode: 'empty-crawl',
-    action: 'Verify seed reachability and fixture/live source content before rebuilding.',
-  }),
-  'empty-graph': Object.freeze({
-    failureClass: 'discovery',
-    reasonCode: 'empty-graph',
-    action: 'Ensure crawl output contains pages that can be converted into graph nodes.',
-  }),
-  'dynamic-unsupported': Object.freeze({
-    failureClass: 'unsupported',
-    reasonCode: 'dynamic-unsupported',
-    action: 'Use static crawl artifacts or a supported sanitized evidence path; browser-rendered crawl and raw network tracing are not enabled here.',
-  }),
-  'capability-evidence-required': Object.freeze({
-    failureClass: 'validation',
-    reasonCode: 'capability-evidence-required',
-    action: 'Capture capability-specific sanitized, adapter, or fixture evidence before activating the requested capability.',
-  }),
-  'user-intent-unresolved': Object.freeze({
-    failureClass: 'validation',
-    reasonCode: 'user-intent-unresolved',
-    action: 'Record unsupported user intent as candidate/unsupported or add evidence-backed capability and intent coverage.',
-  }),
-  'validation-failed': Object.freeze({
-    failureClass: 'validation',
-    reasonCode: 'validation-failed',
-    action: 'Inspect verification_report.errorDetails for the failing gate and artifact.',
-  }),
-  'artifact-missing': Object.freeze({
-    failureClass: 'validation',
-    reasonCode: 'artifact-missing',
-    action: 'Re-run the producing stage or inspect artifact store write failures.',
-  }),
-});
+function failureClassForReasonCode(reasonCode, family) {
+  if (reasonCode === 'network-fetch-failed') {
+    return 'network';
+  }
+  if (reasonCode === 'robots-unavailable' || reasonCode === 'robots-disallowed') {
+    return 'robots';
+  }
+  if (reasonCode === 'dynamic-unsupported') {
+    return 'unsupported';
+  }
+  if (['empty-seed-set', 'empty-crawl', 'empty-graph'].includes(reasonCode)) {
+    return 'discovery';
+  }
+  if (family === 'artifact' || family === 'schema') {
+    return 'validation';
+  }
+  return family ?? 'validation';
+}
 
 function arrayOf(value) {
   return Array.isArray(value) ? value : [];
@@ -117,7 +68,17 @@ function uniqueStrings(values) {
 }
 
 export function normalizeSiteForgeReason(reasonCode) {
-  return SITEFORGE_REASON_PROFILES[reasonCode] ?? null;
+  try {
+    const definition = requireReasonCodeDefinition(reasonCode);
+    return {
+      failureClass: failureClassForReasonCode(definition.code, definition.family),
+      reasonCode: definition.code,
+      action: definition.description,
+      reasonRecovery: reasonCodeSummary(definition.code),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function classifySiteForgeWarning(message) {

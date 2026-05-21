@@ -5,6 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { normalizeDownloadAvailability } from '../src/sites/availability.mjs';
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, '..');
@@ -47,10 +48,6 @@ function stringList(values) {
     : [];
 }
 
-function uniqueStrings(...lists) {
-  return [...new Set(lists.flatMap(stringList))];
-}
-
 function formatList(values, fallback = 'none') {
   const list = stringList(values);
   return list.length ? list.join(', ') : fallback;
@@ -66,79 +63,18 @@ function firstText(...values) {
   return null;
 }
 
-function isBlockedStatus(value) {
-  return /blocked|placeholder|unavailable|disabled/iu.test(String(value ?? ''));
-}
-
-function isGenericLiveBlocked(registry = {}, capabilities = {}) {
-  return isBlockedStatus(registry.genericLiveBuild?.status)
-    || isBlockedStatus(capabilities.genericLiveBuild?.status)
-    || isBlockedStatus(registry.siteAccessStatus)
-    || isBlockedStatus(capabilities.siteAccessStatus);
-}
-
-function declaredDownloadTaskTypes(registry = {}, capabilities = {}) {
-  return uniqueStrings(
-    registry.declaredDownloadTaskTypes,
-    registry.downloadTaskTypes,
-    registry.downloadSupport?.taskTypes,
-    registry.downloadSupport?.declaredTaskTypes,
-    capabilities.downloader?.taskTypes,
-    capabilities.downloader?.declaredTaskTypes,
-  );
-}
-
-function availableDownloadTaskTypes(registry = {}, capabilities = {}) {
-  if (isGenericLiveBlocked(registry, capabilities) || registry.downloadSupport?.unsupportedLiveReasonCode) {
-    return uniqueStrings(
-      registry.availableDownloadTaskTypes,
-      registry.downloadSupport?.availableTaskTypes,
-      capabilities.downloader?.availableTaskTypes,
-    );
-  }
-  if (registry.downloadSupport?.supported === false || capabilities.downloader?.supported === false) {
-    return uniqueStrings(
-      registry.availableDownloadTaskTypes,
-      registry.downloadSupport?.availableTaskTypes,
-      capabilities.downloader?.availableTaskTypes,
-    );
-  }
-  return uniqueStrings(
-    registry.availableDownloadTaskTypes,
-    registry.downloadSupport?.availableTaskTypes,
-    capabilities.downloader?.availableTaskTypes,
-    registry.downloadSupport?.supported === true ? registry.downloadSupport?.taskTypes : [],
-    capabilities.downloader?.supported === true ? capabilities.downloader?.taskTypes : [],
-  );
-}
-
-function blockedDownloadTaskTypes(registry = {}, capabilities = {}) {
-  const declared = declaredDownloadTaskTypes(registry, capabilities);
-  const explicitBlocked = uniqueStrings(
-    registry.blockedDownloadTaskTypes,
-    registry.downloadSupport?.blockedTaskTypes,
-    capabilities.downloader?.blockedTaskTypes,
-  );
-  if (explicitBlocked.length) {
-    return explicitBlocked;
-  }
-  if (isBlockedStatus(registry.downloadSupport?.status) || isBlockedStatus(capabilities.downloader?.status)) {
-    return declared;
-  }
-  return [];
-}
-
 function publicBuildStatus({ registry, capabilities }) {
+  const availability = normalizeDownloadAvailability(registry, capabilities);
   const liveReason = firstText(
     registry.genericLiveBuild?.reasonCode,
     capabilities.genericLiveBuild?.reasonCode,
     registry.siteAccessStatus,
     capabilities.siteAccessStatus,
   );
-  if (isGenericLiveBlocked(registry, capabilities)) {
+  if (availability.publicLiveBlocked) {
     return `generic live build blocked${liveReason ? ` (${liveReason})` : ''}`;
   }
-  if (blockedDownloadTaskTypes(registry, capabilities).length) {
+  if (availability.blockedTaskTypes.length) {
     return 'read-only metadata; download execution blocked';
   }
   if (registry.downloadSessionRequirement === 'required') {
@@ -151,12 +87,12 @@ function publicBuildStatus({ registry, capabilities }) {
 }
 
 function availableSurface({ registry, capabilities }) {
-  if (isGenericLiveBlocked(registry, capabilities)) {
+  const availability = normalizeDownloadAvailability(registry, capabilities);
+  if (availability.publicLiveBlocked) {
     return 'none through generic live build; use only authorized or fixture-only paths';
   }
   const readOnlyFamilies = stringList(capabilities.capabilityFamilies ?? registry.capabilityFamilies)
     .filter((family) => family !== 'download-content');
-  const availableDownloads = availableDownloadTaskTypes(registry, capabilities);
   const parts = [];
   if (readOnlyFamilies.length) {
     parts.push(`read-only: ${formatList(readOnlyFamilies)}`);
@@ -164,35 +100,41 @@ function availableSurface({ registry, capabilities }) {
   if (capabilities.rankingSupported === true) {
     parts.push('ranking query');
   }
-  if (availableDownloads.length) {
-    parts.push(`downloads available: ${formatList(availableDownloads)}`);
+  if (availability.availableTaskTypes.length) {
+    parts.push(`downloads available: ${formatList(availability.availableTaskTypes)}`);
+  }
+  if (availability.runtimeDependencies.length) {
+    parts.push(`requires: ${formatList(availability.runtimeDependencies)}`);
   }
   return parts.length ? parts.join('; ') : 'metadata only';
 }
 
 function blockedOrLimitedSummary({ registry, capabilities }) {
-  const declared = declaredDownloadTaskTypes(registry, capabilities);
-  const available = availableDownloadTaskTypes(registry, capabilities);
-  const blocked = blockedDownloadTaskTypes(registry, capabilities);
-  const reason = firstText(
-    registry.downloadSupport?.reasonCode,
-    capabilities.downloader?.reasonCode,
-    registry.genericLiveBuild?.reasonCode,
-    capabilities.genericLiveBuild?.reasonCode,
-  );
+  const availability = normalizeDownloadAvailability(registry, capabilities);
   const parts = [];
-  if (declared.length) {
-    parts.push(`downloads declared: ${formatList(declared)}`);
-    parts.push(`available: ${formatList(available)}`);
+  if (availability.declaredTaskTypes.length) {
+    parts.push(`downloads declared: ${formatList(availability.declaredTaskTypes)}`);
+    parts.push(`available: ${formatList(availability.availableTaskTypes)}`);
   }
-  if (blocked.length) {
-    parts.push(`blocked: ${formatList(blocked)}`);
+  if (availability.runtimeDependencies.length) {
+    parts.push(`requires: ${formatList(availability.runtimeDependencies)}`);
   }
-  if (isGenericLiveBlocked(registry, capabilities)) {
-    parts.push('generic live collection blocked');
+  if (availability.blockedTaskTypes.length) {
+    parts.push(`blocked: ${formatList(availability.blockedTaskTypes)}`);
   }
-  if (reason) {
-    parts.push(`reason: ${reason}`);
+  if (availability.publicLiveBlocked) {
+    const reason = availability.genericLiveReasonCode
+      ? ` (${availability.genericLiveReasonCode})`
+      : '';
+    parts.push(`generic live collection blocked${reason}`);
+  }
+  if (availability.downloadReasonCode) {
+    parts.push(`download reason: ${availability.downloadReasonCode}`);
+  } else if (availability.reasonCode) {
+    parts.push(`reason: ${availability.reasonCode}`);
+  }
+  if (availability.dependencyReasonCodes.length) {
+    parts.push(`dependency reason: ${formatList(availability.dependencyReasonCodes)}`);
   }
   return parts.length ? parts.join('; ') : 'none recorded';
 }
@@ -227,6 +169,7 @@ Builds crawl within bounded site rules, compile sanitized evidence into capabili
 ## Outputs
 
 - Site workspace: \`.siteforge/sites/<site_id>/\`.
+- Build reports: \`build_report.user.json\`, \`build_report.user.md\`, \`build_report.debug.json\`, and \`build_report.json\`.
 - Capability contracts: pages, risks, sessions, schemas, policies, and supported actions.
 - Descriptor-only plans: allowed, blocked, or remediation paths without privileged execution.
 - Repo-local Skill material backed by verified capability evidence.
@@ -241,8 +184,8 @@ The repository is one package and one public CLI. Dependency direction stays ent
 | --- | --- |
 | \`src/entrypoints/cli/\` | Public CLI facade; only \`siteforge build <url>\` is public. |
 | \`src/entrypoints/operator/\` | Internal operator entrypoints that are not routed through \`siteforge\`. |
-| \`src/entrypoints/pipeline/\` | Internal stage entrypoints and runtime wiring. |
-| \`src/app/pipeline/\` | Build orchestration, lifecycle, recovery, and validation. |
+| \`src/entrypoints/pipeline/\` | Internal build and crawler-support entrypoint wiring used by operator flows. |
+| \`src/app/pipeline/build/\` | SiteForge build orchestration, lifecycle, recovery, and validation. |
 | \`src/app/compiler/\` | Evidence and capability compilation. |
 | \`src/app/planner/\` | Descriptor-only plans and policy handoff. |
 | \`src/domain/\` | Capability, policy, schema, risk, session, artifact, and lifecycle contracts. |
@@ -253,11 +196,11 @@ The repository is one package and one public CLI. Dependency direction stays ent
 | \`tests/\` | Node and Python tests, fixtures, and regression gates. |
 | \`tools/\` | README, release, cleanup, audit, and verification tooling. |
 
-Retired public Web UI, legacy capability, legacy pipeline, and legacy kernel layers stay removed and are guarded by architecture tests. Download declarations remain metadata or site-specific internal paths unless a bounded implementation is explicitly recorded; blocked placeholders do not expose public execution.
+Retired public Web UI, legacy capability, legacy pipeline engine/runtime/stage, and legacy kernel layers stay removed and are guarded by architecture tests. Download declarations remain metadata or site-specific internal paths unless a bounded implementation is explicitly recorded; blocked placeholders do not expose public execution.
 
 ## Known Public Site Records
 
-Stable config currently keeps records for these hosts. The table separates metadata from availability so blocked, placeholder, fixture-only, or authorization-required records are not presented as generic live support.
+Stable config currently keeps records for these hosts. The table separates metadata, availability, runtime dependencies, and blocked reasons so blocked, placeholder, fixture-only, authorization-required, or dependency-bound records are not presented as generic live support.
 
 ${renderSiteTable(context.siteRows)}
 
@@ -278,6 +221,8 @@ git diff --check
 \`\`\`
 
 Focused groups are available as \`npm run test:cli\`, \`npm run test:pipeline\`, \`npm run test:capability\`, and \`npm run test:core\`. Use \`npm run clean:outputs\` to remove local generated site data before staging.
+
+\`npm run check:syntax\` auto-discovers repository \`.mjs\` files and is a syntax gate, not a full TypeScript typecheck.
 
 ## Safety
 

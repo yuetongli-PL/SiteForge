@@ -19,6 +19,11 @@ import {
 import {
   createCompilerSourceDigest,
 } from './digest.mjs';
+import {
+  canExposeDownloadCapability,
+  isDownloadIntent,
+  normalizeDownloadAvailability,
+} from '../../sites/availability.mjs';
 
 const SAFE_REGISTRY_FIELDS = Object.freeze([
   'adapterId',
@@ -167,8 +172,13 @@ function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
     : registrySite.capabilityFamilies ?? [];
   const requiresLogin = capabilitySite.downloader?.requiresLogin === true
     || registrySite.downloadSessionRequirement === 'required';
+  const downloadAvailability = normalizeDownloadAvailability(registrySite, capabilitySite);
   return supportedIntents.map((intent) => {
     const mode = modeForIntent(intent);
+    const downloadIntent = isDownloadIntent(intent);
+    const downloadExecutable = downloadIntent
+      ? canExposeDownloadCapability(downloadAvailability)
+      : true;
     const requiresApproval = mode !== 'readOnly'
       || (/search/iu.test(intent) && Array.isArray(capabilitySite.approvalActionKinds)
         && capabilitySite.approvalActionKinds.length > 0);
@@ -182,14 +192,20 @@ function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
       urlPattern: `${capabilitySite.baseUrl ?? registrySite.canonicalBaseUrl ?? 'https://example.invalid/'}${intent}/:id`,
       pageType: capabilitySite.primaryArchetype ?? registrySite.siteArchetype ?? 'public-detail',
       mode,
-      agentExposed: true,
+      agentExposed: downloadIntent ? downloadExecutable : true,
+      executable: downloadIntent ? downloadExecutable : true,
+      availability: downloadIntent ? downloadAvailability : undefined,
+      enablementStatus: downloadIntent && !downloadExecutable ? 'disabled' : 'enabled',
       requiresApproval,
       requiresAuth: requiresLogin,
       requiresSession: requiresLogin,
       requiresSigner: false,
-      riskReasonCode: capabilitySite.downloader?.liveAccessReasonCode
-        ?? registrySite.downloadSupport?.unsupportedLiveReasonCode,
-      riskState: /blocked/iu.test(String(capabilitySite.downloader?.liveAccessStatus ?? registrySite.siteAccessStatus ?? ''))
+      riskReasonCode: downloadIntent
+        ? downloadAvailability.reasonCode
+        : capabilitySite.downloader?.liveAccessReasonCode
+          ?? registrySite.downloadSupport?.unsupportedLiveReasonCode,
+      riskState: (downloadIntent && !downloadExecutable)
+        || /blocked/iu.test(String(capabilitySite.downloader?.liveAccessStatus ?? registrySite.siteAccessStatus ?? ''))
         ? 'blocked'
         : 'normal',
       priority: mode === 'readOnly' ? 10 : 20,

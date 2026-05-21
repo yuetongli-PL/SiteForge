@@ -46,7 +46,22 @@
       ],
       "primaryArchetype": "catalog-detail",
       "siteKey": "22biqu",
-      "adapterId": "chapter-content"
+      "adapterId": "chapter-content",
+      "downloader": {
+        "status": "implemented",
+        "supported": true,
+        "taskTypes": [
+          "book"
+        ],
+        "declaredTaskTypes": [
+          "book"
+        ],
+        "availableTaskTypes": [
+          "book"
+        ],
+        "blockedTaskTypes": [],
+        "requiresLogin": false
+      }
     },
     "www.qidian.com": {
       "baseUrl": "https://www.qidian.com/",
@@ -98,6 +113,7 @@
         "download-book"
       ],
       "safeActionKinds": [
+        "download-book",
         "navigate"
       ],
       "approvalActionKinds": [
@@ -112,6 +128,13 @@
         "taskTypes": [
           "book"
         ],
+        "declaredTaskTypes": [
+          "book"
+        ],
+        "availableTaskTypes": [
+          "book"
+        ],
+        "blockedTaskTypes": [],
         "requiresLogin": false,
         "ocrRequired": true,
         "ocrEngine": "tesseract",
@@ -190,6 +213,7 @@
         "switch-in-page-state"
       ],
       "supportedIntents": [
+        "download-video",
         "list-category-videos",
         "open-category",
         "open-model",
@@ -314,7 +338,7 @@
         "switch-in-page-state"
       ],
       "supportedIntents": [
-        "download-book",
+        "download-video",
         "open-author",
         "open-category",
         "open-utility-page",
@@ -322,6 +346,7 @@
         "search-video"
       ],
       "safeActionKinds": [
+        "download-media",
         "navigate"
       ],
       "approvalActionKinds": [
@@ -329,7 +354,25 @@
       ],
       "host": "www.douyin.com",
       "siteKey": "douyin",
-      "adapterId": "douyin"
+      "adapterId": "douyin",
+      "downloader": {
+        "status": "implemented",
+        "supported": true,
+        "taskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [
+          "video",
+          "media-bundle"
+        ],
+        "blockedTaskTypes": [],
+        "requiresLogin": false
+      }
     },
     "www.xiaohongshu.com": {
       "baseUrl": "https://www.xiaohongshu.com/explore",
@@ -395,7 +438,7 @@
       ],
       "supportedIntents": [
         "account-info",
-        "download-book",
+        "download-media",
         "full-archive",
         "list-author-following",
         "list-followed-updates",
@@ -417,6 +460,25 @@
       "host": "x.com",
       "siteKey": "x",
       "adapterId": "x",
+      "downloader": {
+        "status": "blocked",
+        "supported": false,
+        "taskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "reasonCode": "download-layer-removed",
+        "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
+      },
       "siteAccessStatus": "blocked_live_robots_disallowed",
       "genericLiveBuild": {
         "status": "blocked",
@@ -470,7 +532,7 @@
       ],
       "supportedIntents": [
         "account-info",
-        "download-book",
+        "download-media",
         "full-archive",
         "list-author-following",
         "list-followed-updates",
@@ -492,7 +554,26 @@
       ],
       "host": "www.instagram.com",
       "siteKey": "instagram",
-      "adapterId": "instagram"
+      "adapterId": "instagram",
+      "downloader": {
+        "status": "blocked",
+        "supported": false,
+        "taskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "reasonCode": "download-layer-removed",
+        "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
+      }
     }
   },
   "schemaVersion": 1

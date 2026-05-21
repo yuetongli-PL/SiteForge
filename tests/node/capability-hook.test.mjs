@@ -1117,7 +1117,6 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
   assert.deepEqual(
     producerFiles.map((filePath) => path.relative(REPO_ROOT, filePath).replaceAll(path.sep, '/')).sort(),
     [
-      'src/app/pipeline/stages/capture.mjs',
       'src/domain/capabilities/api-candidates.mjs',
       'src/domain/capabilities/site-capability-graph.mjs',
       'src/domain/policies/execution/layer-runtime-consumer.mjs',
@@ -1171,6 +1170,10 @@ test('runtime LifecycleEvent producers expose safe CapabilityHook match summarie
 });
 
 test('runtime LifecycleEvent producer inventory is explicit by event type', () => {
+  const retiredProducerEventTypes = new Set([
+    'capture.api_candidates.written',
+    'capture.manifest.written',
+  ]);
   const srcRoot = path.join(REPO_ROOT, 'src');
   const excludedCoreFiles = new Set([
     path.join(srcRoot, 'domain', 'lifecycle', 'capability-hook.mjs'),
@@ -1186,17 +1189,17 @@ test('runtime LifecycleEvent producer inventory is explicit by event type', () =
     const source = fs.readFileSync(filePath, 'utf8');
     return [...source.matchAll(/\beventType:\s*'([^']+)'/gu)].map((match) => match[1]);
   });
+  const activeCapabilityHookEventTypes = CAPABILITY_HOOK_EVENT_TYPES
+    .filter((eventType) => !retiredProducerEventTypes.has(eventType));
 
-  assert.deepEqual([...new Set(eventTypes)].sort(), CAPABILITY_HOOK_EVENT_TYPES);
-  assert.deepEqual(CAPABILITY_HOOK_EVENT_TYPES, [
+  assert.deepEqual([...new Set(eventTypes)].sort(), activeCapabilityHookEventTypes);
+  assert.deepEqual(activeCapabilityHookEventTypes, [
     'api.candidate.verified',
     'api.catalog.collection.written',
     'api.catalog.index.written',
     'api.catalog.schema_incompatible',
     'api.catalog.upgrade_decision.written',
     'api.catalog.verification.written',
-    'capture.api_candidates.written',
-    'capture.manifest.written',
     'execution.layer.consumer.receipt',
     'session.run.completed',
     'site.health.recovery.action.planned',
@@ -1231,47 +1234,6 @@ test('session runner completed LifecycleEvent producer exposes required observab
     );
   }
   assert.match(source, /function sessionLifecycleContext/u);
-  assert.match(source, /\btraceId\b/u);
-  assert.match(source, /\bcorrelationId\b/u);
-  assert.match(source, /\btaskType\b/u);
-  assert.match(source, /\badapterVersion\b/u);
-});
-
-test('capture stage direct LifecycleEvent producers expose required observability fields', () => {
-  const source = fs.readFileSync(
-    path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'capture.mjs'),
-    'utf8',
-  );
-  const commonFields = [
-    'eventType',
-    'taskId',
-    'siteKey',
-    'capabilityHookMatches',
-  ];
-
-  for (const eventType of ['capture.manifest.written', 'capture.api_candidates.written']) {
-    const block = lifecycleEventProducerBlock(source, eventType);
-    assert.match(
-      block,
-      /\.\.\.captureLifecycleContext\(manifest\)/u,
-      `${eventType} producer must attach trace/correlation/task context`,
-    );
-    for (const field of commonFields) {
-      assert.match(
-        block,
-        new RegExp(`\\b${field}\\b`, 'u'),
-        `${eventType} producer must expose ${field}`,
-      );
-    }
-  }
-
-  const manifestBlock = lifecycleEventProducerBlock(source, 'capture.manifest.written');
-  assert.match(manifestBlock, /\breasonCode\b/u);
-  const candidatesBlock = lifecycleEventProducerBlock(source, 'capture.api_candidates.written');
-  assert.match(candidatesBlock, /\bapiCandidateDecisionSummary\b/u);
-  assert.match(candidatesBlock, /\bapiCandidateCatalogUpgradeDecisionSummary\b/u);
-  assert.match(source, /\breasonCodes\b/u);
-  assert.match(source, /function captureLifecycleContext/u);
   assert.match(source, /\btraceId\b/u);
   assert.match(source, /\bcorrelationId\b/u);
   assert.match(source, /\btaskType\b/u);

@@ -9,15 +9,6 @@ import { spawnSync } from 'node:child_process';
 import { parseCliArgs as parseDoctorArgs } from '../../src/entrypoints/sites/site-doctor.mjs';
 import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
 import { parseCliArgs as parseBuildArgs } from '../../src/entrypoints/pipeline/run-pipeline.mjs';
-import { parseCliArgs as parseCaptureArgs } from '../../src/app/pipeline/stages/capture.mjs';
-import { parseCliArgs as parseExpandArgs } from '../../src/app/pipeline/stages/expand.mjs';
-import { parseCliArgs as parseCollectContentArgs } from '../../src/app/pipeline/stages/collect-content.mjs';
-import { parseCliArgs as parseAnalyzeArgs } from '../../src/app/pipeline/stages/analyze.mjs';
-import { parseCliArgs as parseAbstractArgs } from '../../src/app/pipeline/stages/abstract.mjs';
-import { parseCliArgs as parseNlArgs } from '../../src/app/pipeline/stages/nl.mjs';
-import { parseCliArgs as parseDocsArgs } from '../../src/app/pipeline/stages/docs.mjs';
-import { parseCliArgs as parseGovernanceArgs } from '../../src/app/pipeline/stages/governance.mjs';
-import { parseCliArgs as parseKbArgs } from '../../src/app/pipeline/stages/kb/index.mjs';
 import { parseCliArgs as parseSiteLoginArgs } from '../../src/entrypoints/sites/site-login.mjs';
 import { parseCliArgs as parseSiteKeepaliveArgs } from '../../src/entrypoints/sites/site-keepalive.mjs';
 import { parseCliArgs as parseNlSiteLoginArgs } from '../../src/entrypoints/sites/nl-site-login.mjs';
@@ -110,56 +101,6 @@ test('site-doctor parser accepts progress flags while keeping JSON-compatible de
   assert.equal(parsed.options.json, true);
   assert.equal(parsed.options.noTty, true);
   assert.equal(parsed.options.capabilityCompileDryRun, true);
-});
-
-test('single-stage pipeline parsers accept shared progress flags', () => {
-  const capture = parseCaptureArgs([
-    'https://example.com',
-    '--progress',
-    'plain',
-    '--json',
-    '--quiet',
-    '--force-tty',
-    '--no-tty',
-  ]);
-  assert.equal(capture.options.progressMode, 'plain');
-  assert.equal(capture.options.json, true);
-  assert.equal(capture.options.quiet, true);
-  assert.equal(capture.options.forceTty, true);
-  assert.equal(capture.options.noTty, true);
-
-  const expand = parseExpandArgs(['https://example.com', '--initial-manifest', 'capture.json', '--progress=plain']);
-  assert.equal(expand.options.initialManifestPath, 'capture.json');
-  assert.equal(expand.options.progressMode, 'plain');
-
-  const collect = parseCollectContentArgs(['https://example.com', '--expanded-dir', 'expanded', '--quiet']);
-  assert.equal(collect.options.expandedStatesDir, 'expanded');
-  assert.equal(collect.options.quiet, true);
-
-  const analyze = parseAnalyzeArgs(['https://example.com', '--expanded-dir', 'expanded', '--json']);
-  assert.equal(analyze.options.expandedStatesDir, 'expanded');
-  assert.equal(analyze.options.json, true);
-
-  const abstraction = parseAbstractArgs(['https://example.com', '--analysis-dir', 'analysis', '--no-tty']);
-  assert.equal(abstraction.options.analysisDir, 'analysis');
-  assert.equal(abstraction.options.noTty, true);
-
-  const nl = parseNlArgs(['https://example.com', '--abstraction-dir', 'abstraction', '--progress', 'plain']);
-  assert.equal(nl.options.abstractionDir, 'abstraction');
-  assert.equal(nl.options.progressMode, 'plain');
-
-  const docs = parseDocsArgs(['https://example.com', '--nl-entry-dir', 'nl', '--force-tty']);
-  assert.equal(docs.options.nlEntryDir, 'nl');
-  assert.equal(docs.options.forceTty, true);
-
-  const governance = parseGovernanceArgs(['https://example.com', '--docs-dir', 'docs', '--quiet']);
-  assert.equal(governance.options.docsDir, 'docs');
-  assert.equal(governance.options.quiet, true);
-
-  const kb = parseKbArgs(['compile', 'https://example.com', '--kb-dir', 'kb', '--progress', 'plain', '--quiet']);
-  assert.equal(kb.options.kbDir, 'kb');
-  assert.equal(kb.options.progressMode, 'plain');
-  assert.equal(kb.options.quiet, true);
 });
 
 test('single-stage progress helper strips UI flags before running stage logic', async () => {

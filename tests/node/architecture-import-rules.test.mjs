@@ -123,6 +123,50 @@ async function collectFileSourcePatternMatches(fileRelativePath, pattern) {
   return matches;
 }
 
+async function listTextFiles(rootRelativePath) {
+  const rootPath = path.join(REPO_ROOT, rootRelativePath);
+  const results = [];
+  async function walk(currentPath) {
+    const entries = await readdir(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath);
+        continue;
+      }
+      if (/\.(?:mjs|js|json|md)$/iu.test(entry.name)) {
+        results.push(absolutePath);
+      }
+    }
+  }
+  await walk(rootPath);
+  return results.sort();
+}
+
+async function collectRepositoryTextPatternMatches(pattern, skip = new Set()) {
+  const files = [
+    ...await listTextFiles('src'),
+    ...await listTextFiles('tests'),
+    ...await listTextFiles('tools'),
+    path.join(REPO_ROOT, 'package.json'),
+    path.join(REPO_ROOT, 'README.md'),
+  ];
+  const matches = [];
+  for (const filePath of files) {
+    const fileRelativePath = toRepoRelativePath(filePath);
+    if (skip.has(fileRelativePath)) {
+      continue;
+    }
+    const sourceText = await readFile(filePath, 'utf8');
+    pattern.lastIndex = 0;
+    for (const match of sourceText.matchAll(pattern)) {
+      const lineNumber = sourceText.slice(0, match.index).split('\n').length;
+      matches.push(`${fileRelativePath}:${lineNumber}: ${match[0]}`);
+    }
+  }
+  return matches;
+}
+
 function assertNoResolvedPrefix(imports, forbiddenPrefix, messagePrefix) {
   const hits = imports.filter((entry) => entry.resolvedRelativePath?.startsWith(forbiddenPrefix));
   assert.deepEqual(
@@ -187,10 +231,6 @@ const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/entrypoints/sites/site-scaffold.mjs',
   'src/entrypoints/sites/social-auth-import.mjs',
   'src/infra/auth/site-session-governance.mjs',
-  'src/app/pipeline/engine/partial-preview-artifacts.mjs',
-  'src/app/pipeline/stages/capture.mjs',
-  'src/app/pipeline/stages/expand.mjs',
-  'src/app/pipeline/stages/kb/lint-report.mjs',
   'src/sites/known-sites/bilibili/navigation/open.mjs',
   'src/domain/capabilities/api-candidates.mjs',
   'src/domain/capabilities/api-discovery.mjs',
@@ -211,15 +251,6 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
   ['src/entrypoints/sites/douyin-export-cookies.mjs', 'explicit credential export command'],
   ['src/infra/auth/site-auth.mjs', 'explicit session export sidecar and cookie-file writer'],
   ['src/infra/io.mjs', 'central IO primitive definitions'],
-  ['src/app/pipeline/stages/abstract.mjs', 'generated KB abstraction artifacts'],
-  ['src/app/pipeline/stages/analyze.mjs', 'generated KB analysis artifacts'],
-  ['src/app/pipeline/stages/collect-content.mjs', 'collected content and generated KB fixtures'],
-  ['src/app/pipeline/stages/docs.mjs', 'generated KB documentation artifacts'],
-  ['src/app/pipeline/stages/governance.mjs', 'generated KB governance artifacts'],
-  ['src/app/pipeline/stages/kb/index.mjs', 'KB store generation and activity ledger'],
-  ['src/app/pipeline/stages/kb/schema-files.mjs', 'generated KB schema and template files'],
-  ['src/app/pipeline/stages/nl.mjs', 'generated KB natural-language artifacts'],
-  ['src/app/pipeline/stages/skill.mjs', 'generated skill output files'],
   ['src/app/pipeline/build/artifact-store.mjs', 'URL-to-Skill DAG generated artifacts, generated skill files, and generated skill registry'],
   ['src/app/pipeline/build/capability-interaction.mjs', 'site-local capability confirmation decision metadata without raw material'],
   ['src/app/pipeline/build/setup-assistant.mjs', 'first-run setup plan, choices, capability hints, and build profile artifacts'],
@@ -245,19 +276,6 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/infra/auth/site-auth.mjs', 3],
   ['src/infra/auth/site-session-governance.mjs', 8],
   ['src/infra/io.mjs', 12],
-  ['src/app/pipeline/engine/partial-preview-artifacts.mjs', 5],
-  ['src/app/pipeline/stages/abstract.mjs', 6],
-  ['src/app/pipeline/stages/analyze.mjs', 8],
-  ['src/app/pipeline/stages/capture.mjs', 6],
-  ['src/app/pipeline/stages/collect-content.mjs', 11],
-  ['src/app/pipeline/stages/docs.mjs', 9],
-  ['src/app/pipeline/stages/expand.mjs', 15],
-  ['src/app/pipeline/stages/governance.mjs', 7],
-  ['src/app/pipeline/stages/kb/index.mjs', 18],
-  ['src/app/pipeline/stages/kb/lint-report.mjs', 9],
-  ['src/app/pipeline/stages/kb/schema-files.mjs', 11],
-  ['src/app/pipeline/stages/nl.mjs', 7],
-  ['src/app/pipeline/stages/skill.mjs', 2],
   ['src/app/pipeline/build/artifact-store.mjs', 2],
   ['src/app/pipeline/build/capability-interaction.mjs', 3],
   ['src/app/pipeline/build/setup-assistant.mjs', 13],
@@ -645,10 +663,9 @@ test('infra auth services do not depend on CLI entrypoints', async () => {
   );
 });
 
-test('site modules do not depend on scripts, root shims, or pipeline stage implementations', async () => {
+test('site modules do not depend on scripts or root shims', async () => {
   const imports = await collectResolvedImports('src/sites');
   assertNoResolvedPrefix(imports, 'scripts/', 'site module should not import scripts');
-  assertNoResolvedPrefix(imports, 'src/app/pipeline/stages/', 'site module should not import pipeline stages');
 
   const rootShimHits = imports.filter((entry) => {
     const resolved = entry.resolvedRelativePath;
@@ -665,31 +682,6 @@ test('site modules do not depend on scripts, root shims, or pipeline stage imple
   );
 });
 
-test('pipeline entrypoint reaches site risk detectors through SiteAdapter contracts', async () => {
-  const entrypointPath = path.join(REPO_ROOT, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs');
-  const sourceText = await readFile(entrypointPath, 'utf8');
-  const imports = collectImportSpecifiers(sourceText);
-  const resolved = imports
-    .map((specifier) => resolveImportPath(entrypointPath, specifier))
-    .filter(Boolean);
-
-  assert.deepEqual(
-    resolved.filter((entry) => entry === 'src/shared/xiaohongshu-risk.mjs'),
-    [],
-    'pipeline entrypoint should not import concrete site risk detectors directly',
-  );
-  assert.match(
-    sourceText,
-    /resolveSiteAdapter/u,
-    'pipeline entrypoint should reach site-specific risk behavior through SiteAdapter resolution',
-  );
-  assert.match(
-    sourceText,
-    /detectRestrictionPage/u,
-    'pipeline entrypoint should consume the generic SiteAdapter restriction detector contract',
-  );
-});
-
 test('pipeline entrypoints do not import raw credential tools or concrete site risk helpers', async () => {
   const imports = await collectResolvedImports('src/entrypoints/pipeline');
   assertNoResolvedPaths(imports, [
@@ -701,36 +693,31 @@ test('pipeline entrypoints do not import raw credential tools or concrete site r
   ], 'pipeline entrypoints should not import raw credential/profile tooling or concrete site risk helpers directly');
 });
 
-test('pipeline stages do not depend on downloader or raw credential orchestration layers', async () => {
-  const imports = await collectResolvedImports('src/app/pipeline/stages');
-  for (const forbiddenPrefix of [
-    'src/sites/downloads/',
+test('retired pipeline execution chain stays physically removed and unreferenced', async () => {
+  for (const retiredPath of [
+    'src/app/pipeline/engine',
+    'src/app/pipeline/runtime',
+    'src/app/pipeline/artifacts',
+    'src/app/pipeline/stages',
   ]) {
-    assertNoResolvedPrefix(
-      imports,
-      forbiddenPrefix,
-      'pipeline stages should not import downloader or session orchestration layers directly',
-    );
+    assert.equal(await pathExists(retiredPath), false, `${retiredPath} should stay removed`);
   }
-  const forbiddenRuntimePaths = new Set([
-    'src/shared/xiaohongshu-risk.mjs',
-    'src/domain/sessions/manifest-bridge.mjs',
-    'src/domain/sessions/runner.mjs',
-    'src/domain/sessions/session-manager.mjs',
-    'src/domain/sessions/site-modules.mjs',
-    'src/entrypoints/sites/social-auth-import.mjs',
-    'src/entrypoints/sites/douyin-export-cookies.mjs',
-    'src/infra/auth/windows-credential-manager.mjs',
-    'src/infra/browser/profile-store.mjs',
-  ], 'pipeline stages should not import raw credential/profile tooling or concrete site risk helpers directly');
+
+  const buildEntrypointSource = await readFile(path.join(REPO_ROOT, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), 'utf8');
+  assert.equal(/\bexport\s+async\s+function\s+runPipeline\b/u.test(buildEntrypointSource), false);
+
+  const forbiddenPattern = /\b(?:runPipeline|executePipeline|executePipelineStage|PIPELINE_STAGE_SPECS|summarizePipelineStages|DEFAULT_PIPELINE_RUNTIME|PIPELINE_STAGE_IMPLS|resolvePipelineRuntime)\b|src\/app\/pipeline\/(?:engine|runtime)\b|partial-preview/gu;
+  const matches = await collectRepositoryTextPatternMatches(forbiddenPattern, new Set([
+    'tests/node/architecture-import-rules.test.mjs',
+    'tests/node/cli-shims.test.mjs',
+    'tests/node/src-architecture-layout.test.mjs',
+  ]));
+  assert.deepEqual(matches, []);
 });
 
-test('kernel and pipeline boundary imports stay behind registries or capability services', async () => {
+test('pipeline entrypoint imports stay behind registries or capability services', async () => {
   const imports = [
     ...await collectResolvedImports('src/entrypoints/pipeline'),
-    ...await collectResolvedImports('src/app/pipeline/engine'),
-    ...await collectResolvedImports('src/app/pipeline/runtime'),
-    ...await collectResolvedImports('src/app/pipeline/stages'),
   ];
   const allowedAdapterRegistryPaths = new Set([
     'src/sites/adapters/factory.mjs',
@@ -744,7 +731,7 @@ test('kernel and pipeline boundary imports stay behind registries or capability 
   assert.deepEqual(
     concreteAdapterHits.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
     [],
-    'kernel/pipeline entrypoints and stages should reach SiteAdapter implementations only through the adapter factory/resolver',
+    'pipeline entrypoints should reach SiteAdapter implementations only through the adapter factory/resolver',
   );
 
   for (const forbiddenPrefix of [
@@ -753,7 +740,7 @@ test('kernel and pipeline boundary imports stay behind registries or capability 
     assertNoResolvedPrefix(
       imports,
       forbiddenPrefix,
-      'kernel/pipeline entrypoints and stages should not import downloader site-specific resolver semantics directly',
+      'pipeline entrypoints should not import downloader site-specific resolver semantics directly',
     );
   }
   assertNoResolvedPaths(imports, [
@@ -767,7 +754,7 @@ test('kernel and pipeline boundary imports stay behind registries or capability 
     'src/sites/downloads/runner.mjs',
     'src/sites/downloads/session-manager.mjs',
     'src/sites/downloads/session-report.mjs',
-  ], 'kernel/pipeline entrypoints and stages should delegate downloader behavior through runtime/capability boundaries');
+  ], 'pipeline entrypoints should delegate downloader behavior through runtime/capability boundaries');
 });
 
 test('domain services do not depend on concrete sites or runtime orchestration layers', async () => {
@@ -900,102 +887,6 @@ test('core page-types only dispatches through adapter resolution for site-specif
   );
 });
 
-test('expand stage consumes shared page-type inference instead of maintaining a local site-specific copy', async () => {
-  const expandPath = path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'expand.mjs');
-  const sourceText = await readFile(expandPath, 'utf8');
-
-  assert.match(
-    sourceText,
-    /import\s*\{\s*inferPageTypeFromUrl/u,
-    'src/app/pipeline/stages/expand.mjs should import shared inferPageTypeFromUrl from src/sites/registry/core/page-types.mjs',
-  );
-  assert.equal(
-    /^function inferPageTypeFromUrl/mu.test(sourceText),
-    false,
-    'src/app/pipeline/stages/expand.mjs should not redefine inferPageTypeFromUrl locally',
-  );
-  assert.equal(
-    /^function inferProfilePageTypeFromPathname/mu.test(sourceText),
-    false,
-    'src/app/pipeline/stages/expand.mjs should not keep a local profile pathname inference copy',
-  );
-});
-
-test('expand stage reaches Xiaohongshu site identity through SiteAdapter resolution', async () => {
-  const expandPath = path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'expand.mjs');
-  const sourceText = await readFile(expandPath, 'utf8');
-  const imports = collectImportSpecifiers(sourceText);
-  const resolved = imports
-    .map((specifier) => resolveImportPath(expandPath, specifier))
-    .filter(Boolean);
-
-  assert.deepEqual(
-    resolved.filter((entry) => entry === 'src/shared/xiaohongshu-risk.mjs'),
-    [],
-    'expand stage should not import concrete Xiaohongshu URL/risk helpers directly',
-  );
-  assert.match(
-    sourceText,
-    /resolveSiteAdapter/u,
-    'expand stage should resolve Xiaohongshu identity through the SiteAdapter registry',
-  );
-});
-
-test('capture stage reaches Xiaohongshu site identity through SiteAdapter resolution', async () => {
-  const capturePath = path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'capture.mjs');
-  const sourceText = await readFile(capturePath, 'utf8');
-  const imports = collectImportSpecifiers(sourceText);
-  const resolved = imports
-    .map((specifier) => resolveImportPath(capturePath, specifier))
-    .filter(Boolean);
-
-  assert.deepEqual(
-    resolved.filter((entry) => entry === 'src/shared/xiaohongshu-risk.mjs'),
-    [],
-    'capture stage should not import concrete Xiaohongshu URL/risk helpers directly',
-  );
-  assert.match(
-    sourceText,
-    /resolveSiteAdapter/u,
-    'capture stage should resolve Xiaohongshu identity through the SiteAdapter registry',
-  );
-});
-
-test('kb index consumes site augmentation through the core registry instead of importing bilibili directly', async () => {
-  const kbIndexPath = path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'kb', 'index.mjs');
-  const sourceText = await readFile(kbIndexPath, 'utf8');
-  const imports = collectImportSpecifiers(sourceText);
-  const resolved = imports
-    .map((specifier) => resolveImportPath(kbIndexPath, specifier))
-    .filter(Boolean);
-
-  const invalid = resolved.filter((entry) => entry.startsWith('src/sites/known-sites/bilibili/'));
-
-  assert.deepEqual(
-    invalid,
-    [],
-    'src/app/pipeline/stages/kb/index.mjs should consume site-specific KB logic only through src/sites/registry/core/kb-augmentation.mjs',
-  );
-});
-
-test('kb index renders site-specific state sections only through the augmentation hook', async () => {
-  const kbIndexPath = path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'kb', 'index.mjs');
-  const sourceText = await readFile(kbIndexPath, 'utf8');
-  const renderStatePageMatch = sourceText.match(/function renderStatePageEnhanced\(page, context, pagesById\) \{[\s\S]*?\n\}/u);
-  const renderStatePageSource = renderStatePageMatch?.[0] ?? '';
-
-  assert.match(
-    sourceText,
-    /kbAugmentation\?\.\s*renderStateSections\?\./u,
-    'src/app/pipeline/stages/kb/index.mjs should consume site-specific state rendering only through renderStateSections()',
-  );
-  assert.equal(
-    /featuredAuthorCards|featuredContentCards/u.test(renderStatePageSource),
-    false,
-    'src/app/pipeline/stages/kb/index.mjs should not inline bilibili featured-card rendering',
-  );
-});
-
 test('skills generation modules do not depend on browser/auth runtime internals', async () => {
   const imports = await collectResolvedImports('src/skills');
   const hits = imports.filter((entry) => (
@@ -1051,31 +942,6 @@ test('site-doctor entrypoint reaches site-specific scenario suites only through 
     sourceText,
     /site-doctor-scenarios\.mjs/u,
     'src/entrypoints/sites/site-doctor.mjs should import the core doctor scenario registry',
-  );
-});
-
-test('nl stage reaches site-specific NL semantics only through the core registry', async () => {
-  const nlPath = path.join(REPO_ROOT, 'src', 'app', 'pipeline', 'stages', 'nl.mjs');
-  const sourceText = await readFile(nlPath, 'utf8');
-  const imports = collectImportSpecifiers(sourceText);
-  const resolved = imports
-    .map((specifier) => resolveImportPath(nlPath, specifier))
-    .filter(Boolean);
-
-  const invalid = resolved.filter((entry) => (
-    entry.startsWith('src/sites/known-sites/jable/')
-    || entry.startsWith('src/sites/known-sites/moodyz/')
-  ));
-
-  assert.deepEqual(
-    invalid,
-    [],
-    'src/app/pipeline/stages/nl.mjs should consume site-specific NL semantics only through src/sites/registry/core/nl-site-semantics.mjs',
-  );
-  assert.match(
-    sourceText,
-    /nl-site-semantics\.mjs/u,
-    'src/app/pipeline/stages/nl.mjs should import the core NL semantics registry',
   );
 });
 

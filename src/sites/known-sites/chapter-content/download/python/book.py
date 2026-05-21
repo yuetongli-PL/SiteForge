@@ -448,6 +448,15 @@ def run_tesseract_ocr(image_bytes: bytes, ocr_config: dict[str, Any]) -> str:
             pass
 
 
+def ocr_command_available(ocr_config: dict[str, Any]) -> bool:
+    command = normalize_text(ocr_config.get("command") or "")
+    if not command:
+        return False
+    if os.path.sep in command or (os.path.altsep and os.path.altsep in command):
+        return Path(command).exists()
+    return shutil.which(command) is not None
+
+
 async def ocr_image_text(
     client: httpx.AsyncClient,
     image_url: str,
@@ -461,6 +470,8 @@ async def ocr_image_text(
         return attribute_text, "attribute"
     if not ocr_config.get("enabled") or not image_url:
         return "", "disabled"
+    if not ocr_command_available(ocr_config):
+        return "", "ocr-dependency-missing"
     try:
         response = await client.get(image_url)
         response.raise_for_status()
@@ -507,6 +518,8 @@ async def normalize_paragraphs_with_ocr(
             failed += 1
             if source == "access-control-image":
                 raise RuntimeError(f"ocr-disallowed-access-control-image: {image_url or 'inline-image'}")
+            if source == "ocr-dependency-missing":
+                raise RuntimeError(f"ocr-dependency-missing: {ocr_config.get('command') or 'tesseract'}")
             if ocr_config.get("required"):
                 raise RuntimeError(f"ocr-required-image-unreadable: {image_url or 'inline-image'}")
             if ocr_config.get("preserveImagePlaceholders"):
@@ -1800,7 +1813,7 @@ def cli_entry_for_generated(context: dict[str, Any]) -> None:
 
 def require_pypy_runtime() -> None:
     if getattr(sys.implementation, "name", "") != "pypy":
-        raise SystemExit("src/sites/known-sites/chapter-content/download/python/book.py must be run with pypy3.")
+        raise SystemExit("runtime-dependency-missing: src/sites/known-sites/chapter-content/download/python/book.py must be run with pypy3.")
 
 
 def public_entry(args: argparse.Namespace) -> dict[str, Any]:

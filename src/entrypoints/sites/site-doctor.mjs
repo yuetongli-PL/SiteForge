@@ -41,8 +41,7 @@ import {
 } from '../../domain/sessions/manifest-bridge.mjs';
 import { runSessionTask } from '../../domain/sessions/runner.mjs';
 import { ensureCrawlerScript } from '../pipeline/generate-crawler-script.mjs';
-import { capture } from '../pipeline/capture.mjs';
-import { derivePageFacts, expandStates } from '../pipeline/expand-states.mjs';
+import { createPageStateRuntime } from '../../shared/page-state-runtime.mjs';
 import { siteKeepalive } from './site-keepalive.mjs';
 import { siteLogin } from './site-login.mjs';
 import {
@@ -105,6 +104,17 @@ const HELP = `Internal script usage:
 Public command:
   siteforge build <url>
 `;
+
+const { derivePageFacts } = createPageStateRuntime();
+
+function removedPipelineStageRuntime(stageName) {
+  return async () => {
+    throw new Error(`site-doctor ${stageName} runtime was removed with the legacy pipeline stage chain; use siteforge build <url> or inject a runtime implementation.`);
+  };
+}
+
+const capture = removedPipelineStageRuntime('capture');
+const expandStates = removedPipelineStageRuntime('expand');
 
 const AUTH_PROBE_WAIT_POLICY = {
   useLoadEvent: false,
@@ -2038,11 +2048,15 @@ async function runProcess(command, args, deps, options = {}) {
     ...(options.env ?? {}),
   };
   if (typeof deps.runProcess === 'function') {
-    return await deps.runProcess(command, args, {
+    const result = await deps.runProcess(command, args, {
       cwd: options.cwd ?? REPO_ROOT,
       env: resolvedEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    return {
+      ...result,
+      reasonCode: result?.reasonCode ?? classifyProcessFailureReasonCode(command, result),
+    };
   }
   return await new Promise((resolve) => {
     const child = spawn(command, args, {
@@ -2059,12 +2073,48 @@ async function runProcess(command, args, deps, options = {}) {
       stderr += String(chunk);
     });
     child.on('error', (error) => {
-      resolve({ code: 1, error: error.message, stdout, stderr });
+      const result = {
+        code: 1,
+        error: error.message,
+        errorCode: error.code ?? null,
+        stdout,
+        stderr,
+      };
+      resolve({
+        ...result,
+        reasonCode: classifyProcessFailureReasonCode(command, result),
+      });
     });
     child.on('close', (code) => {
-      resolve({ code: Number(code ?? 1), stdout, stderr });
+      const result = { code: Number(code ?? 1), stdout, stderr };
+      resolve({
+        ...result,
+        reasonCode: classifyProcessFailureReasonCode(command, result),
+      });
     });
   });
+}
+
+function classifyProcessFailureReasonCode(command, result = {}) {
+  if (Number(result?.code ?? 1) === 0) {
+    return null;
+  }
+  const commandName = path.basename(String(command ?? '')).toLowerCase();
+  const text = [
+    commandName,
+    result?.errorCode,
+    result?.error,
+    result?.stderr,
+    result?.stdout,
+  ].map((value) => String(value ?? '').toLowerCase()).join('\n');
+  if (/\b(?:tesseract|ocr-dependency-missing)\b/u.test(text)
+    && /\b(?:enoent|not found|no such file|missing|unavailable)\b/u.test(text)) {
+    return 'ocr-dependency-missing';
+  }
+  if (/\b(?:pypy3|pypy|enoent|not found|no such file|must be run with pypy3|runtime dependency)\b/u.test(text)) {
+    return 'runtime-dependency-missing';
+  }
+  return null;
 }
 
 function parseBilibiliDownloadCheckOutput(stdout = '') {
@@ -2196,6 +2246,7 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
         code: result.code,
         stdout: result.stdout,
         stderr: result.stderr,
+        reasonCode: result.reasonCode ?? null,
         details: parsed.details,
         warnings: parsed.warnings,
         error: result.error ?? null,
@@ -2247,6 +2298,7 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
       code: result.code,
       stdout: result.stdout,
       stderr: result.stderr,
+      reasonCode: result.reasonCode ?? null,
       details: parsed.details,
       warnings: parsed.warnings,
       error: result.error ?? null,
@@ -2260,6 +2312,7 @@ async function runDownloadCheck(inputUrl, sample, settings, siteProfile, deps) {
     code: result.code,
     stdout: result.stdout,
     stderr: result.stderr,
+    reasonCode: result.reasonCode ?? null,
     error: result.error ?? null,
   };
 }
@@ -3044,6 +3097,7 @@ export async function siteDoctor(inputUrl, options = {}, deps = {}) {
         report.warnings.push(...(downloadResult.warnings ?? []));
       } else {
         markFail(report.download, new Error(downloadResult.error ?? `download validation exited with code ${downloadResult.code ?? 'unknown'}`), {
+          reasonCode: downloadResult.reasonCode ?? downloadResult.details?.reasonCode ?? null,
           stderr: downloadResult.stderr,
           ...(downloadResult.details ?? {}),
           ...(downloadPassthrough ? { authPassthrough: downloadPassthrough } : {}),

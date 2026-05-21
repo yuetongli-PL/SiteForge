@@ -13,6 +13,7 @@ Builds crawl within bounded site rules, compile sanitized evidence into capabili
 ## Outputs
 
 - Site workspace: `.siteforge/sites/<site_id>/`.
+- Build reports: `build_report.user.json`, `build_report.user.md`, `build_report.debug.json`, and `build_report.json`.
 - Capability contracts: pages, risks, sessions, schemas, policies, and supported actions.
 - Descriptor-only plans: allowed, blocked, or remediation paths without privileged execution.
 - Repo-local Skill material backed by verified capability evidence.
@@ -27,8 +28,8 @@ The repository is one package and one public CLI. Dependency direction stays ent
 | --- | --- |
 | `src/entrypoints/cli/` | Public CLI facade; only `siteforge build <url>` is public. |
 | `src/entrypoints/operator/` | Internal operator entrypoints that are not routed through `siteforge`. |
-| `src/entrypoints/pipeline/` | Internal stage entrypoints and runtime wiring. |
-| `src/app/pipeline/` | Build orchestration, lifecycle, recovery, and validation. |
+| `src/entrypoints/pipeline/` | Internal build and crawler-support entrypoint wiring used by operator flows. |
+| `src/app/pipeline/build/` | SiteForge build orchestration, lifecycle, recovery, and validation. |
 | `src/app/compiler/` | Evidence and capability compilation. |
 | `src/app/planner/` | Descriptor-only plans and policy handoff. |
 | `src/domain/` | Capability, policy, schema, risk, session, artifact, and lifecycle contracts. |
@@ -39,24 +40,24 @@ The repository is one package and one public CLI. Dependency direction stays ent
 | `tests/` | Node and Python tests, fixtures, and regression gates. |
 | `tools/` | README, release, cleanup, audit, and verification tooling. |
 
-Retired public Web UI, legacy capability, legacy pipeline, and legacy kernel layers stay removed and are guarded by architecture tests. Download declarations remain metadata or site-specific internal paths unless a bounded implementation is explicitly recorded; blocked placeholders do not expose public execution.
+Retired public Web UI, legacy capability, legacy pipeline engine/runtime/stage, and legacy kernel layers stay removed and are guarded by architecture tests. Download declarations remain metadata or site-specific internal paths unless a bounded implementation is explicitly recorded; blocked placeholders do not expose public execution.
 
 ## Known Public Site Records
 
-Stable config currently keeps records for these hosts. The table separates metadata from availability so blocked, placeholder, fixture-only, or authorization-required records are not presented as generic live support.
+Stable config currently keeps records for these hosts. The table separates metadata, availability, runtime dependencies, and blocked reasons so blocked, placeholder, fixture-only, authorization-required, or dependency-bound records are not presented as generic live support.
 
 | Host | Public build status | Available public surface | Blocked or limited declarations |
 | --- | --- | --- | --- |
-| `www.22biqu.com` | known-site metadata | read-only: navigate-to-author, navigate-to-category, navigate-to-chapter, navigate-to-content, navigate-to-utility-page, open-auth-page, search-content | downloads declared: book; available: none |
+| `www.22biqu.com` | known-site metadata | read-only: navigate-to-author, navigate-to-category, navigate-to-chapter, navigate-to-content, navigate-to-utility-page, open-auth-page, search-content; downloads available: book; requires: pypy3 | downloads declared: book; available: book; requires: pypy3; dependency reason: runtime-dependency-missing |
 | `www.qidian.com` | known-site metadata | read-only: navigate-to-category, navigate-to-chapter, navigate-to-content, search-content | none recorded |
-| `www.bz888888888.com` | generic live build blocked (blocked_live_cloudflare_challenge) | none through generic live build; use only authorized or fixture-only paths | downloads declared: book; available: none; generic live collection blocked |
+| `www.bz888888888.com` | generic live build blocked (blocked_live_cloudflare_challenge) | none through generic live build; use only authorized or fixture-only paths | downloads declared: book; available: none; requires: pypy3, tesseract; blocked: book; generic live collection blocked; download reason: blocked-by-cloudflare-challenge; dependency reason: runtime-dependency-missing, ocr-dependency-missing |
 | `moodyz.com` | known-site metadata | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state | none recorded |
-| `jable.tv` | read-only metadata; download execution blocked | read-only: navigate-to-author, navigate-to-category, navigate-to-content, search-content, switch-in-page-state; ranking query | downloads declared: video, media-bundle; available: none; blocked: video, media-bundle; reason: jable-native-resolver-required |
-| `www.bilibili.com` | known-site metadata; authorization may be required for declared download path | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state | downloads declared: video, media-bundle; available: none |
-| `www.douyin.com` | known-site metadata; authorization may be required for declared download path | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state | downloads declared: video, media-bundle; available: none |
-| `www.xiaohongshu.com` | known-site metadata; authorization may be required for declared download path | read-only: search-content | downloads declared: image-note, media-bundle; available: none |
-| `x.com` | generic live build blocked (robots-disallowed) | none through generic live build; use only authorized or fixture-only paths | downloads declared: social-archive, media-bundle; available: none; generic live collection blocked; reason: robots-disallowed |
-| `www.instagram.com` | known-site metadata; authorization required for declared download path | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, query-account-profile, query-social-content, query-social-relations, search-content, switch-in-page-state | downloads declared: social-archive, media-bundle; available: none |
+| `jable.tv` | read-only metadata; download execution blocked | read-only: navigate-to-author, navigate-to-category, navigate-to-content, search-content, switch-in-page-state; ranking query | downloads declared: video, media-bundle; available: none; blocked: video, media-bundle; download reason: jable-native-resolver-required |
+| `www.bilibili.com` | known-site metadata; authorization may be required for declared download path | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state; downloads available: video, media-bundle | downloads declared: video, media-bundle; available: video, media-bundle |
+| `www.douyin.com` | known-site metadata; authorization may be required for declared download path | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state; downloads available: video, media-bundle; requires: pypy3 | downloads declared: video, media-bundle; available: video, media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.xiaohongshu.com` | known-site metadata; authorization may be required for declared download path | read-only: search-content; downloads available: image-note, media-bundle; requires: pypy3 | downloads declared: image-note, media-bundle; available: image-note, media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `x.com` | generic live build blocked (robots-disallowed) | none through generic live build; use only authorized or fixture-only paths | downloads declared: social-archive, media-bundle; available: none; requires: pypy3; blocked: social-archive, media-bundle; generic live collection blocked (robots-disallowed); download reason: download-layer-removed; dependency reason: runtime-dependency-missing |
+| `www.instagram.com` | read-only metadata; download execution blocked | read-only: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, query-account-profile, query-social-content, query-social-relations, search-content, switch-in-page-state; requires: pypy3 | downloads declared: social-archive, media-bundle; available: none; requires: pypy3; blocked: social-archive, media-bundle; download reason: download-layer-removed; dependency reason: runtime-dependency-missing |
 
 Removed internal catalog experiments are not part of the public site registry.
 
@@ -75,6 +76,8 @@ git diff --check
 ```
 
 Focused groups are available as `npm run test:cli`, `npm run test:pipeline`, `npm run test:capability`, and `npm run test:core`. Use `npm run clean:outputs` to remove local generated site data before staging.
+
+`npm run check:syntax` auto-discovers repository `.mjs` files and is a syntax gate, not a full TypeScript typecheck.
 
 ## Safety
 

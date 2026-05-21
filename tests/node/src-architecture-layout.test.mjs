@@ -157,14 +157,17 @@ test('retired compatibility directories stay removed', async () => {
     expectPathMissing('src/sites/core'),
     expectPathMissing('src/sites/catalog'),
     expectPathMissing('src/sites/capability'),
+    expectPathMissing('src/app/pipeline/engine'),
+    expectPathMissing('src/app/pipeline/runtime'),
+    expectPathMissing('src/app/pipeline/artifacts'),
+    expectPathMissing('src/app/pipeline/stages'),
   ]);
 });
 
-test('site modules and pipeline runtime do not depend directly on entrypoint modules', async () => {
+test('site modules do not depend directly on entrypoint modules', async () => {
   const sourceChecks = [
     ['src/sites/known-sites/bilibili/actions/router.mjs', 'entrypoints/sites'],
     ['src/sites/known-sites/douyin/actions/router.mjs', 'entrypoints/sites'],
-    ['src/app/pipeline/runtime/create-default-runtime.mjs', 'entrypoints/sites/site-keepalive.mjs'],
   ];
 
   for (const [relativePath, forbiddenText] of sourceChecks) {
@@ -177,9 +180,8 @@ test('site modules and pipeline runtime do not depend directly on entrypoint mod
   }
 });
 
-test('canonical src modules own pipeline options and profile validation implementations', async () => {
+test('canonical src modules own profile validation and infra implementations', async () => {
   const sourceChecks = [
-    ['src/app/pipeline/engine/options.mjs', 'lib/pipeline/options.mjs'],
     ['src/sites/registry/core/profile-validation.mjs', 'lib/profile-validation.mjs'],
     ['src/infra/browser/benchmark-report.mjs', 'lib/browser-runtime/benchmark-report.mjs'],
     ['src/infra/browser/cdp-client.mjs', 'lib/browser-runtime/cdp-client.mjs'],

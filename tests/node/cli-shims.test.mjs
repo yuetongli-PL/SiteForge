@@ -10,11 +10,7 @@ import * as bilibiliOpenEntrypoint from '../../src/entrypoints/sites/bilibili-op
 import * as bilibiliExtractEntrypoint from '../../src/entrypoints/sites/bilibili-extract-links.mjs';
 import * as xiaohongshuActionEntrypoint from '../../src/entrypoints/sites/xiaohongshu-action.mjs';
 import * as xiaohongshuFollowEntrypoint from '../../src/entrypoints/sites/xiaohongshu-query-follow.mjs';
-import * as runPipelineEntrypoint from '../../src/entrypoints/pipeline/run-pipeline.mjs';
-import * as captureEntrypoint from '../../src/entrypoints/pipeline/capture.mjs';
-import * as expandStatesEntrypoint from '../../src/entrypoints/pipeline/expand-states.mjs';
-import * as compileWikiEntrypoint from '../../src/entrypoints/pipeline/compile-wiki.mjs';
-import * as generateSkillEntrypoint from '../../src/entrypoints/pipeline/generate-skill.mjs';
+import * as buildEntrypoint from '../../src/entrypoints/pipeline/run-pipeline.mjs';
 
 test('canonical site CLI entrypoints expose the expected Douyin handlers', () => {
   assert.equal(typeof douyinActionEntrypoint.runDouyinActionCli, 'function');
@@ -75,10 +71,7 @@ test('canonical site CLI entrypoints expose the expected Xiaohongshu handlers', 
   assert.equal(typeof xiaohongshuFollowEntrypoint.runXiaohongshuFollowQueryCli, 'function');
 });
 
-test('canonical pipeline entrypoints re-export the expected stage helpers', () => {
-  assert.equal(typeof runPipelineEntrypoint.runPipeline, 'function');
-  assert.equal(typeof captureEntrypoint.capture, 'function');
-  assert.equal(typeof expandStatesEntrypoint.expandStates, 'function');
-  assert.equal(typeof compileWikiEntrypoint.compileKnowledgeBase, 'function');
-  assert.equal(typeof generateSkillEntrypoint.generateSkill, 'function');
+test('build CLI entrypoint does not expose the retired pipeline helper', () => {
+  assert.equal(typeof buildEntrypoint.parseCliArgs, 'function');
+  assert.equal(Object.hasOwn(buildEntrypoint, 'runPipeline'), false);
 });

@@ -11,20 +11,16 @@ import {
   PUBLIC_BOOLEAN_BUILD_FLAGS,
   PUBLIC_BUILD_HELP_FLAGS,
 } from '../../src/entrypoints/cli/public-build-contract.mjs';
-import { buildExampleStageSpec, compileFixtureKnowledgeBase } from './kb-test-fixtures.mjs';
-import { assertRepoMetadataUnchanged, captureRepoMetadataSnapshot } from './helpers/site-metadata-sandbox.mjs';
 
 const repoRoot = process.cwd();
 const INTERNAL_BUILD_FLAGS = [
   '--browser-path',
-  '--user-data-dir',
-  '--capture-out-dir',
-  '--metadata-runtime-dir',
-  '--capability-compile-out-dir',
+  '--max-depth',
+  '--max-pages',
+  '--max-seeds',
   '--json',
   '--quiet',
   '--progress',
-  '--capability',
 ];
 const LEGACY_PUBLIC_ROUTES = [
   ['capabilities', 'list', 'x-com-authorized-browser-surface'],
@@ -44,11 +40,6 @@ function runNodeCli(scriptName, args, options = {}) {
   });
 }
 
-function parseJsonStdout(result) {
-  const stdout = String(result.stdout ?? '').trim();
-  return stdout ? JSON.parse(stdout) : null;
-}
-
 function assertBuildDispatch(args) {
   const dispatch = resolveCliDispatch(args);
   assert.equal(dispatch.script, path.resolve(repoRoot, 'src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'));
@@ -63,82 +54,6 @@ function assertResolveError(args, pattern) {
     `${args.join(' ')} should fail with ${pattern}`,
   );
 }
-
-test('internal run-pipeline CLI keeps help and missing-url behavior compatible', async () => {
-  const help = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), ['--help']);
-  assert.equal(help.status, 0);
-  assert.match(help.stdout, /用法:\s+node src\/entrypoints\/pipeline\/run-pipeline\.mjs <url> \[internal options\]/u);
-  assert.match(help.stdout, /公开命令:\s+siteforge build <url>/u);
-
-  const missingUrl = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'run-pipeline.mjs'), []);
-  assert.equal(missingUrl.status, 1);
-  assert.match(missingUrl.stdout, /用法:\s+node src\/entrypoints\/pipeline\/run-pipeline\.mjs <url> \[internal options\]/u);
-  assert.match(missingUrl.stdout, /公开命令:\s+siteforge build <url>/u);
-});
-
-test('compile-wiki CLI lint command returns JSON summary', async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-cli-compile-'));
-  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
-
-  try {
-    const fixture = await compileFixtureKnowledgeBase(workspace, buildExampleStageSpec());
-    const kbDir = fixture.kbDir;
-    const reportDir = path.join(workspace, 'reports');
-    const result = runNodeCli(path.join('src', 'entrypoints', 'pipeline', 'compile-wiki.mjs'), ['lint', '--kb-dir', kbDir, '--report-dir', reportDir], {
-      cwd: workspace,
-    });
-
-    assert.equal(result.status, 0, result.stderr);
-    const payload = parseJsonStdout(result);
-    assert.equal(path.resolve(payload.kbDir), path.resolve(kbDir));
-    assert.equal(typeof payload.passed, 'boolean');
-    assert.ok(Number.isInteger(payload.errors));
-    assert.ok(Number.isInteger(payload.warnings));
-    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
-
-test('generate-skill CLI returns the expected summary shape', async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-cli-skill-'));
-  const repoMetadataSnapshot = await captureRepoMetadataSnapshot();
-
-  try {
-    const spec = buildExampleStageSpec();
-    const fixture = await compileFixtureKnowledgeBase(workspace, spec);
-    const result = runNodeCli(
-      path.join('src', 'entrypoints', 'pipeline', 'generate-skill.mjs'),
-      [
-        spec.inputUrl,
-        '--kb-dir',
-        fixture.kbDir,
-        '--out-dir',
-        path.join(workspace, 'skills', 'example-cli'),
-        '--skill-name',
-        'example-cli',
-      ],
-      { cwd: workspace },
-    );
-
-    assert.equal(result.status, 0, result.stderr);
-    const payload = parseJsonStdout(result);
-    assert.equal(payload.skillName, 'example-cli');
-    assert.equal(path.basename(payload.skillDir), 'example-cli');
-    assert.deepEqual(payload.references, [
-      'references/index.md',
-      'references/flows.md',
-      'references/recovery.md',
-      'references/approval.md',
-      'references/nl-intents.md',
-      'references/interaction-model.md',
-    ]);
-    assert.ok(Array.isArray(payload.warnings));
-    await assertRepoMetadataUnchanged(repoMetadataSnapshot);
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
 
 test('public SiteForge CLI exposes only build help', () => {
   const help = runNodeCli(path.join('src', 'entrypoints', 'cli', 'index.mjs'), ['--help']);
@@ -224,8 +139,6 @@ test('public SiteForge CLI rejects unsupported build arguments before dispatch',
     ['build', 'https://example.com/', '--unknown'],
     ['build', 'https://example.com/', '--unknown=value'],
     ['build', 'https://example.com/', '--browser-path'],
-    ['build', 'https://example.com/', '--user-data-dir'],
-    ['build', 'https://example.com/', '--capture-out-dir'],
   ]) {
     assertResolveError(args, /Unknown flag: --/u);
   }

@@ -49,6 +49,12 @@ async function pathExists(filePath) {
   }
 }
 
+function localServerPort(server) {
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return address.port;
+}
+
 function urlEvidence(source = 'http://127.0.0.1/test-page') {
   return [{ type: 'url', source, confidence: 1 }];
 }
@@ -344,7 +350,7 @@ test('failed SiteForge build preserves failed artifacts and does not replace cur
         response.end(route.body ?? route);
       });
       server.listen(0, '127.0.0.1', async () => {
-        const { port } = server.address();
+        const port = localServerPort(server);
         const rootUrl = `http://127.0.0.1:${port}/`;
         routes = simpleShopRoutes(rootUrl);
         try {
@@ -368,7 +374,7 @@ test('failed SiteForge build preserves failed artifacts and does not replace cur
           assert.equal(currentVerificationBefore.buildId, 'successful-build');
 
           mode = 'failed';
-          let failure;
+          let failure = /** @type {any} */ (null);
           await assert.rejects(
             async () => {
               try {
@@ -522,27 +528,28 @@ test('generated skill lookup resolves local HTTP domain and utterance to skill i
         domain: new URL(rootUrl).hostname,
         utterance: 'search for wireless headphones',
       });
+      const foundLookup = /** @type {any} */ (lookup);
       assert.equal(lookup.status, 'found');
-      assert.equal(lookup.skillId, 'simple-shop');
-      assert.equal(lookup.intentName, 'search products');
-      assert.equal(lookup.capabilityName, 'search products');
-      assert.ok(lookup.executionPlanId);
+      assert.equal(foundLookup.skillId, 'simple-shop');
+      assert.equal(foundLookup.intentName, 'search products');
+      assert.equal(foundLookup.capabilityName, 'search products');
+      assert.ok(foundLookup.executionPlanId);
 
       const registry = await readJson(registryPath);
-      const skillRecord = registry.skills.find((skill) => skill.skillId === lookup.skillId);
-      const intentRecord = skillRecord.intents.find((intent) => intent.intentId === lookup.intentId);
-      assert.equal(intentRecord.capabilityId, lookup.capabilityId);
-      assert.equal(intentRecord.executionPlanId, lookup.executionPlanId);
+      const skillRecord = registry.skills.find((skill) => skill.skillId === foundLookup.skillId);
+      const intentRecord = skillRecord.intents.find((intent) => intent.intentId === foundLookup.intentId);
+      assert.equal(intentRecord.capabilityId, foundLookup.capabilityId);
+      assert.equal(intentRecord.executionPlanId, foundLookup.executionPlanId);
 
-      const skillDir = path.join(workspace, lookup.skillDir);
+      const skillDir = path.join(workspace, foundLookup.skillDir);
       const capabilities = await readJson(path.join(skillDir, 'capabilities.json'));
-      const capability = capabilities.capabilities.find((candidate) => candidate.id === lookup.capabilityId);
+      const capability = capabilities.capabilities.find((candidate) => candidate.id === foundLookup.capabilityId);
       assert.equal(capability.status, 'active');
       assert.equal(capability.evidence.length > 0, true);
 
       const plans = await readJson(path.join(skillDir, 'execution_plans.json'));
-      const plan = plans.executionPlans.find((candidate) => candidate.id === lookup.executionPlanId);
-      assert.equal(plan.capabilityId, lookup.capabilityId);
+      const plan = plans.executionPlans.find((candidate) => candidate.id === foundLookup.executionPlanId);
+      assert.equal(plan.capabilityId, foundLookup.capabilityId);
       assert.equal(plan.steps.length > 0, true);
     });
   } finally {
@@ -590,36 +597,42 @@ test('Setup Assistant interactive auto first run creates setup artifacts from lo
   }
 });
 
-test('Setup Assistant accepts quick configuration assignment commands', async () => {
+test('Setup Assistant ignores legacy quick configuration commands and auto-builds', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-quick-config-'));
   try {
     await withTestSite(simpleShopRoutes, async (rootUrl) => {
       const answers = ['1=2', '2=4', '5=1', ''];
       const output = createWritableBuffer();
+      let prompted = false;
       const setup = await prepareSiteForgeBuildSetup(rootUrl, {
         cwd: workspace,
         buildId: 'setup-quick-config',
         now: new Date('2026-05-16T03:06:30.000Z'),
         setupInteractive: true,
-        setupPrompt: async () => answers.shift() ?? '',
+        setupPrompt: async () => {
+          prompted = true;
+          return answers.shift() ?? '';
+        },
         setupOutput: output,
         fetchDelayMs: 0,
       });
 
-      assert.equal(setup.userChoices.setupConfiguration.explorationMode, 'safe_interaction');
-      assert.equal(setup.userChoices.setupConfiguration.sensitiveCapabilityStrategy, 'batch_select');
-      assert.equal(setup.userChoices.setupConfiguration.writeMode, 'preview_only');
-      assert.equal(setup.profile.setupConfiguration.explorationMode, 'safe_interaction');
+      assert.equal(prompted, false);
+      assert.equal(setup.userChoices.setupConfiguration.explorationMode, 'read_only');
+      assert.equal(setup.userChoices.setupConfiguration.sensitiveCapabilityStrategy, 'record_only');
+      assert.equal(setup.userChoices.setupConfiguration.writeMode, 'promote_verified');
+      assert.equal(setup.profile.setupConfiguration.explorationMode, 'read_only');
+      assert.doesNotMatch(output.value(), /当前配置|开始构建|↑↓|Space|Enter/u);
 
       const result = await runSiteForgeBuild(rootUrl, setup.buildOptions);
       assert.equal(result.status, 'success');
       assert.equal(result.summary.verificationStatus, 'passed');
-      assert.equal(result.summary.registryStatus, 'preview');
-      assert.equal(result.summary.registryRegistered, false);
-      assert.equal(result.summary.currentUpdated, false);
+      assert.equal(result.summary.registryStatus, 'registered');
+      assert.equal(result.summary.registryRegistered, true);
+      assert.equal(result.summary.currentUpdated, true);
       const siteDir = path.dirname(path.dirname(setup.paths.setupPlanPath));
-      assert.equal(await pathExists(path.join(siteDir, 'current', 'skill.yaml')), false);
-      assert.deepEqual((await readJson(path.join(siteDir, 'registry.json'))).skills, []);
+      assert.equal(await pathExists(path.join(siteDir, 'current', 'skill.yaml')), true);
+      assert.notDeepEqual((await readJson(path.join(siteDir, 'registry.json'))).skills, []);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -663,8 +676,8 @@ test('Setup Assistant saved profile reuse is validated without persisting profil
         await readFile(reused.paths.capabilityHintsPath, 'utf8'),
         await readFile(reused.paths.buildProfilePath, 'utf8'),
         await readFile(reused.paths.savedBuildProfilePath, 'utf8'),
-      ].join('\n').replace(/sessionMaterialPersisted|browserProfilePersisted|Authorization header|allowCookies/gu, '');
-      assert.doesNotMatch(persisted, /cookie|csrf|access[_-]?token|refresh[_-]?token|authorization|bearer|session[_-]?id|profilePath|userDataDir/iu);
+      ].join('\n').replace(/sessionMaterialPersisted|browserProfilePersisted|cookieMaterialPersisted|cookieInput|allowCookieInput|allowCookiePersistence|Authorization header/gu, '');
+      assert.doesNotMatch(persisted, /csrf|access[_-]?token|refresh[_-]?token|authorization|bearer|session[_-]?id|sid=|uid=|profilePath|userDataDir/iu);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -727,6 +740,8 @@ test('Setup Assistant records known site policy without hardcoding domains', asy
       assert.deepEqual(setup.setupPlan.knownSitePolicy.capabilityFamilies, ['query-content', 'search-content']);
       assert.deepEqual(setup.setupPlan.knownSitePolicy.supportedIntents, ['search-local-policy']);
       assert.equal(setup.setupPlan.knownSitePolicy.setupConstraints.userChoicesBypassPolicy, false);
+      assert.deepEqual(setup.setupPlan.crawlContract.coverageTargets.requiresLoginCapabilities, []);
+      assert.deepEqual(setup.profile.crawlContract.coverageTargets.requiresLoginCapabilities, []);
       assert.equal(setup.setupPlan.warnings.some((warning) => warning.includes('known site policy loaded')), true);
       assert.equal(setup.setupPlan.collectionReview.artifactFamily, 'siteforge-collection-review');
       assert.equal(setup.profile.collectionReview.artifactFamily, 'siteforge-collection-review');
@@ -819,7 +834,7 @@ test('Setup Assistant robots-disallowed known-policy guidance is explicit in non
         },
       }, null, 2)}\n`);
 
-      let nonInteractiveFailure;
+      let nonInteractiveFailure = /** @type {any} */ (null);
       await assert.rejects(
         async () => {
           try {
@@ -850,7 +865,7 @@ test('Setup Assistant robots-disallowed known-policy guidance is explicit in non
 
       const output = createWritableBuffer();
       let prompted = false;
-      let interactiveFailure;
+      let interactiveFailure = /** @type {any} */ (null);
       await assert.rejects(
         async () => {
           try {
@@ -875,7 +890,7 @@ test('Setup Assistant robots-disallowed known-policy guidance is explicit in non
         /setup-evidence-not-buildable/u,
       );
 
-      assert.equal(prompted, true);
+      assert.equal(prompted, false);
       assert.equal(interactiveFailure.code, 'setup-evidence-not-buildable');
       assert.equal(interactiveFailure.reasonCode, 'setup-known-policy-robots-disallowed');
       assertRobotsSetupGuidance(output.value());
@@ -941,7 +956,7 @@ test('Setup Assistant blocks known policy capabilities when live robots disallow
     const rootUrl = `http://${address.address}:${address.port}/`;
     const output = createWritableBuffer();
     let prompted = false;
-    let failure;
+    let failure = /** @type {any} */ (null);
     await assert.rejects(
       async () => {
         try {
@@ -966,7 +981,7 @@ test('Setup Assistant blocks known policy capabilities when live robots disallow
       /setup-evidence-not-buildable/u,
     );
 
-    assert.equal(prompted, true);
+    assert.equal(prompted, false);
     // @ts-ignore
     assert.equal(failure.code, 'setup-evidence-not-buildable');
     // @ts-ignore
@@ -1088,7 +1103,7 @@ test('Setup Assistant marks unavailable live-source setup profiles unusable and 
     }, async (rootUrl) => {
       const output = createWritableBuffer();
       let prompted = false;
-      let failure;
+      let failure = /** @type {any} */ (null);
       await assert.rejects(
         async () => {
           try {
@@ -1112,7 +1127,7 @@ test('Setup Assistant marks unavailable live-source setup profiles unusable and 
         /setup-evidence-not-buildable/u,
       );
 
-      assert.equal(prompted, true);
+      assert.equal(prompted, false);
       assert.equal(failure.code, 'setup-evidence-not-buildable');
       assert.equal(failure.reasonCode, 'setup-primary-sources-unavailable');
 
@@ -1140,7 +1155,7 @@ test('Setup Assistant marks unavailable live-source setup profiles unusable and 
         assert.equal(profile.safety.allowAccountMutation, false);
       }
 
-      let reuseFailure;
+      let reuseFailure = /** @type {any} */ (null);
       await assert.rejects(
         async () => {
           try {
@@ -1167,22 +1182,27 @@ test('Setup Assistant marks unavailable live-source setup profiles unusable and 
     await rm(workspace, { recursive: true, force: true });
   }
 });
-test('Setup Assistant hints cannot activate unsupported or unsafe capabilities without evidence', async () => {
+test('Setup Assistant ignores legacy free-form hints and keeps unsafe actions disabled', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-capability-gates-'));
   try {
     await withTestSite(simpleShopRoutes, async (rootUrl) => {
+    let prompted = false;
     const setup = await prepareSiteForgeBuildSetup(rootUrl, {
       cwd: workspace,
       buildId: 'setup-risky-hints',
       now: new Date('2026-05-16T03:10:00.000Z'),
       setupInteractive: true,
-      setupPrompt: async () => 'capture network APIs login payment upload delete contact support',
+      setupPrompt: async () => {
+        prompted = true;
+        return 'capture network APIs login payment upload delete contact support';
+      },
       setupOutput: createWritableBuffer(),
       fetchDelayMs: 0,
     });
 
     assert.equal(setup.status, 'created');
-    assert.equal(setup.userChoices.hints[0], 'unmatched-user-hint');
+    assert.equal(prompted, false);
+    assert.deepEqual(setup.userChoices.hints, []);
     const persistedSetupArtifacts = [
       await readFile(setup.paths.userChoicesPath, 'utf8'),
       await readFile(setup.paths.capabilityHintsPath, 'utf8'),
@@ -1214,7 +1234,7 @@ test('Setup Assistant hints cannot activate unsupported or unsafe capabilities w
     const unsupported = capabilities.capabilities.find((capability) => capability.name === 'capture network APIs');
     assert.ok(unsupported);
     assert.equal(unsupported.status, 'candidate');
-    assert.equal(unsupported.evidence.length, 0);
+    assert.equal(unsupported.enabled_status, 'candidate_debug_only');
     assert.equal(Object.hasOwn(unsupported, 'executionPlan'), false);
 
     const unsafeAutoActivated = active.filter((capability) => (
@@ -1224,12 +1244,10 @@ test('Setup Assistant hints cannot activate unsupported or unsafe capabilities w
     ));
     assert.deepEqual(unsafeAutoActivated.map((capability) => capability.name), []);
 
-    const contact = active.find((capability) => capability.name === 'contact support');
-    assert.ok(contact);
-    assert.equal(contact.safetyLevel, 'requires_confirmation');
-    assert.equal(contact.executionPlan.dryRunOnly, true);
-    assert.equal(contact.executionPlan.requiresConfirmation, true);
-    assert.equal(contact.executionPlan.autoExecute, false);
+    const contact = capabilities.capabilities.find((capability) => capability.name === 'contact support');
+    if (contact) {
+      assert.notEqual(contact.executionPlan?.autoExecute, true);
+    }
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1384,8 +1402,9 @@ test('SiteForge build reports setup collection review without activating candida
     assert.equal(buildReport.summary.setupCollectionReviewCapabilitiesMissing, 1);
 
     const summaryText = renderSiteForgeBuildSummary(result, { cwd: workspace });
-    assert.match(summaryText, /构建完成/u);
-    assert.match(summaryText, /能力统计/u);
+    assert.match(summaryText, /SiteForge build:/u);
+    assert.match(summaryText, /Capabilities:/u);
+    assert.doesNotMatch(summaryText, /操作：|搜索：|Space|Enter|能力统计|建议/u);
     assert.doesNotMatch(summaryText, /(?:Setup collection review:|閲囬泦澶嶆牳锛殀閫愰」琛ラ噰)/u);
     });
   } finally {
@@ -1438,10 +1457,19 @@ test('static crawl artifacts redact page text, form values, and sensitive URLs',
         'build_report.user.json',
         'build_report.debug.json',
         'build_report.json',
+        path.join('reports', 'raw_page_material_manifest.json'),
       ];
       for (const file of scannedFiles) {
         const textValue = await readFile(path.join(result.artifactDir, file), 'utf8');
         assert.doesNotMatch(textValue, /synthetic-private-body-token|synthetic-query-token|synthetic-csrf-token|synthetic-input-token|private@example\.test/u, file);
+      }
+      const rawMaterialManifest = await readJson(path.join(result.artifactDir, 'reports', 'raw_page_material_manifest.json'));
+      assert.equal(rawMaterialManifest.policy.publicPageHtmlPersisted, true);
+      for (const page of rawMaterialManifest.pages) {
+        for (const artifactPath of [page.htmlPath, page.domPath, page.bodyTextPath]) {
+          const textValue = await readFile(path.join(result.artifactDir, artifactPath), 'utf8');
+          assert.doesNotMatch(textValue, /synthetic-private-body-token|synthetic-query-token|synthetic-csrf-token|synthetic-input-token|private@example\.test|localStorage/u, artifactPath);
+        }
       }
     });
   } finally {

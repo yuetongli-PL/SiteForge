@@ -2,6 +2,14 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 
+function localServerPort(server) {
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Local test server did not bind to a TCP port.');
+  }
+  return address.port;
+}
+
 export function testHtmlPage(title, body = '') {
   return `<!doctype html>
 <html><head><title>${title}</title></head><body>${body}</body></html>`;
@@ -80,7 +88,7 @@ export async function withTestSite(routesOrFactory, callback) {
       resolve();
     });
   });
-  const { port } = server.address();
+  const port = localServerPort(server);
   const rootUrl = `http://127.0.0.1:${port}/`;
   routes = typeof routesOrFactory === 'function' ? routesOrFactory(rootUrl) : routesOrFactory;
   try {
@@ -145,7 +153,7 @@ export async function withDirectorySite(rootDir, callback) {
       resolve();
     });
   });
-  const { port } = server.address();
+  const port = localServerPort(server);
   rootUrl = `http://127.0.0.1:${port}/`;
   try {
     return await callback(rootUrl);

@@ -1,7 +1,7 @@
-// @ts-check
+﻿// @ts-check
 
 import path from 'node:path';
-import process, { stdin as defaultStdin, stderr as defaultStderr, stdout as defaultStdout } from 'node:process';
+import process, { stderr as defaultStderr, stdout as defaultStdout } from 'node:process';
 import { createInterface as createReadlineInterface } from 'node:readline/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -20,8 +20,10 @@ import {
 } from './models.mjs';
 import {
   AUTH_STATE_REPORT_FILE,
+  canRunAuthenticatedLayer,
   createCrawlContract,
   createPublicOnlyAuthStateReport,
+  normalizeAuthStateReport,
   runDefaultBrowserAuthStateCheck,
 } from './auth-state.mjs';
 import {
@@ -35,14 +37,6 @@ import {
   SANITIZED_SUMMARY_ONLY,
   sanitizeEvidenceRef,
 } from './risk-policy.mjs';
-import {
-  enterTerminalTui,
-  isTerminalCharacterKey,
-  isTerminalReturnKey,
-  isTerminalSlashKey,
-  isTerminalSpaceKey,
-  readTerminalKeys,
-} from './terminal-tui.mjs';
 import { createSiteWorkspace, createSiteWorkspacePaths, ensureSiteWorkspace } from './workspace.mjs';
 
 export const SETUP_ASSISTANT_SCHEMA_VERSION = 1;
@@ -79,13 +73,13 @@ const ROBOTS_DISALLOWED_SETUP_GUIDANCE = Object.freeze([
   '通用采集器被 robots.txt 阻止。',
   'SiteForge 不会基于这次通用采集生成 Skill。',
   'SiteForge 不会基于这次通用采集更新 current/ 或 registry.json。',
-  '只能使用合规的已知站点适配器/API、用户授权浏览器路径，或真实网站公开证据路径。',
+  '只能使用合规的已知站点适配器、API、用户授权路径，或真实网站公开证据路径。',
 ]);
 
 const USER_AUTHORIZED_SETUP_GUIDANCE = Object.freeze([
-  '可以打开你的系统默认浏览器来获取用户授权设置证据。',
-  '你必须在该浏览器中手动完成登录、MFA、授权或验证。',
-  'SiteForge 只保存受限证据摘要；不会保存凭据值、浏览器 profile、页面正文或完整页面源码。',
+  '用户授权证据只能来自显式安全输入或脱敏结构摘要。',
+  'SiteForge 不会把终端确认或最终 URL 当作登录成功证明。',
+  'SiteForge 只保存受限证据摘要；不会保存凭据、浏览器 profile、页面正文或完整页面源码。',
 ]);
 
 const clone = jsonClone;
@@ -104,8 +98,7 @@ export function parseContinueUncollectedCollectionAnswer(answer) {
       reasonCode: 'default-no',
     };
   }
-  if (/^(?:y|yes|ok|okay|true|1|continue|go|go ahead|yes please)$/iu.test(text)
-    || /^(?:是|是的|继续|继续采集|采集|补采|可以|好|好的|确认|要)$/u.test(text)) {
+  if (/^(?:y|yes|ok|okay|true|1|continue|go|go ahead|yes please)$/iu.test(text)) {
     return {
       continue: true,
       explicit: true,
@@ -148,48 +141,7 @@ function sanitizedSetupHint(hint, requested = requestedCapabilityFromHint(hint))
   return requested?.id ? `unsupported:${normalizeCapabilityId(requested.id)}` : 'unmatched-user-hint';
 }
 
-const SETUP_DISPLAY_TEXT_ZH = new Map([
-  ['User-authorized browser surfaces', '用户授权浏览器页面'],
-  ['Homepage and main navigation', '首页和主导航'],
-  ['Search and discovery pages', '搜索和发现页面'],
-  ['Product or item pages', '产品或条目页面'],
-  ['Articles, feeds, and content pages', '文章、信息流和内容页面'],
-  ['Contact and support pages', '联系和支持页面'],
-  ['Login, registration, or account pages', '登录、注册或账号页面'],
-  ['Payment, upload, or mutation pages', '付款、上传或变更页面'],
-  ['General public pages', '通用公开页面'],
-  ['List followed users', '读取关注列表'],
-  ['List followed updates', '读取关注动态'],
-  ['List profile content', '读取个人主页内容'],
-  ['Search posts', '搜索帖子'],
-  ['List recommended timeline posts', '读取推荐时间线帖子'],
-  ['List notifications', '读取通知摘要'],
-  ['List bookmarks', '读取书签摘要'],
-  ['List lists', '读取列表摘要'],
-  ['List direct messages', '读取私信会话摘要'],
-  ['Prepare media download candidate', '准备媒体下载候选项'],
-  ['View public homepage', '查看公开首页'],
-  ['Browse public content pages', '浏览公开内容页面'],
-  ['Browse product or item pages', '浏览产品或条目页面'],
-  ['Search with public GET forms', '使用公开 GET 表单搜索'],
-  ['Prepare contact drafts only', '仅准备联系草稿'],
-  ['Recognize account surfaces without using them', '识别账号页面但不使用'],
-  ['Use user-authorized known-site adapter', '使用用户授权的已知站点适配器'],
-  ['Keep risky actions disabled', '保持风险操作禁用'],
-  ['View public pages', '查看公开页面'],
-  ['Use a bounded user-authorized browser evidence summary for known-site read-only capabilities.', '使用受限的用户授权浏览器证据摘要生成已知站点只读能力。'],
-  ['User-authorized browser evidence was captured for a bounded known-site adapter path.', '已为受限的已知站点适配器路径捕获用户授权浏览器证据。'],
-  ['Capability-specific evidence is required before this requested ability can become active.', '该请求能力需要能力级证据，验证通过后才会激活。'],
-  ['Public homepage or sitemap page evidence was available during setup.', '设置期间发现了公开首页或站点地图页面证据。'],
-  ['robots.txt, homepage, and sitemap were unavailable during setup.', '设置期间无法获取 robots.txt、首页和站点地图。'],
-  ['Known site policy advertises social/download/query capabilities, but robots.txt disallowed all setup page evidence.', '已知站点策略声明了社交、下载或查询能力，但 robots.txt 阻止了所有设置页面证据。'],
-  ['robots.txt disallowed all setup page evidence.', 'robots.txt 阻止了所有设置页面证据。'],
-  ['Setup found only a synthetic fallback URL and no public page evidence.', '设置过程只找到合成兜底 URL，没有公开页面证据。'],
-  ['Setup did not find public page evidence that is sufficient for a build.', '设置过程没有找到足以构建的公开页面证据。'],
-  ['Setup is not ready to build.', '设置尚未就绪，不能构建。'],
-  ['User-authorized browser evidence was captured without persisting raw session material.', '已捕获用户授权浏览器证据，未保存原始会话材料。'],
-  ['public pages', '公开页面'],
-]);
+const SETUP_DISPLAY_TEXT_ZH = new Map();
 
 function setupDisplayText(value) {
   const text = String(value ?? '');
@@ -228,129 +180,8 @@ export async function launchExternalBrowserUrl(url, options = /** @type {any} */
   return await spawnDetached('xdg-open', [targetUrl]);
 }
 
-function parseBrowserAuthorizationConfirmationChoice(answer) {
-  const text = compactText(answer).toLowerCase();
-  if (!text || ['1', 'y', 'yes', 'ok', 'done', '完成', '已完成', '我已完成登录', '登录完成', '可以访问', '是'].includes(text)) {
-    return { status: 'authorized' };
-  }
-  if (['2', 'blocked', 'refused', '拒绝', '被拒绝', '登录被拒绝', '无法登录'].includes(text)) {
-    return { status: 'blocked' };
-  }
-  if (['3', 'cancel', 'c', '取消', '退出'].includes(text)) {
-    return { status: 'cancel' };
-  }
-  return { status: 'cancel', reasonCode: 'unrecognized-terminal-confirmation' };
-}
-
-function browserAuthRows(ui, targetUrl) {
-  const rows = /** @type {any[]} */ ([
-    { type: 'section', id: 'scope', title: '授权范围', right: `目标站点：${targetUrl}` },
-  ]);
-  if (ui.expanded.has('scope')) {
-    rows.push(
-      { type: 'detail', left: '    [ ] 打开目标站点', right: '已在系统默认浏览器中打开' },
-      { type: 'detail', left: '    [ ] 完成登录、MFA 或授权', right: '只需要在浏览器里操作，SiteForge 不接收密码' },
-      { type: 'detail', left: '    [ ] 确认可以访问目标页面', right: '终端只记录授权边界，不保存会话材料' },
-    );
-  }
-  rows.push(
-    { type: 'section', id: 'privacy', title: '隐私边界', right: '不保存 cookie、token、浏览器 profile、页面正文或完整页面源码' },
-    { type: 'action', id: 'authorized', left: '我已完成登录', right: 'Enter 或 Space 确认' },
-    { type: 'action', id: 'blocked', left: '登录被拒绝', right: '记录为未授权，不继续构建' },
-    { type: 'action', id: 'cancel', left: '取消', right: '退出本次构建' },
-  );
-  return rows;
-}
-
-function renderBrowserAuthTui(ui, targetUrl) {
-  const rows = browserAuthRows(ui, targetUrl);
-  const lines = [
-    '访问确认',
-    '',
-    '↑↓ 移动  Enter 展开/确认  Space 确认  Esc 取消',
-    '',
-  ];
-  rows.forEach((row, index) => {
-    const focused = index === ui.focus ? '› ' : '  ';
-    if (row.type === 'section') {
-      const expanded = ui.expanded.has(row.id) ? '▼' : '▶';
-      lines.push(setupTuiRow(`${focused}${expanded} ${row.title}`, row.right));
-      return;
-    }
-    if (row.type === 'action') {
-      const marker = index === ui.focus ? '[x]' : '[ ]';
-      lines.push(setupTuiRow(`${focused}${marker} ${row.left}`, row.right));
-      return;
-    }
-    lines.push(setupTuiRow(`${focused}${row.left}`, row.right));
-  });
-  return `${lines.join('\n')}\n`;
-}
-
-async function promptBrowserAuthorizationConfirmationTui({ targetUrl, options = /** @type {any} */ ({}) }) {
-  if (!canUseSetupTui(options)) {
-    return null;
-  }
-  const input = options.setupInput ?? defaultStdin;
-  const output = options.setupOutput ?? defaultStdout;
-  const ui = {
-    expanded: new Set(['scope']),
-    focus: 5,
-  };
-  const terminal = enterTerminalTui(input, output);
-  if (!terminal) {
-    return null;
-  }
-  const render = () => {
-    const rows = browserAuthRows(ui, targetUrl);
-    if (ui.focus >= rows.length) {
-      ui.focus = Math.max(0, rows.length - 1);
-    }
-    terminal.render(renderBrowserAuthTui(ui, targetUrl));
-  };
-  render();
-  try {
-    for await (const key of readTerminalKeys(input)) {
-      const rows = browserAuthRows(ui, targetUrl);
-      if (key.ctrl && key.name === 'c') {
-        return { status: 'cancel' };
-      }
-      if (key.name === 'escape') {
-        return { status: 'cancel' };
-      }
-      if (key.name === 'up') {
-        ui.focus = Math.max(0, ui.focus - 1);
-      } else if (key.name === 'down') {
-        ui.focus = Math.min(Math.max(0, rows.length - 1), ui.focus + 1);
-      } else if (isTerminalReturnKey(key) || isSetupTuiSpaceKey(key)) {
-        const row = rows[ui.focus];
-        if (row?.type === 'section') {
-          if (ui.expanded.has(row.id)) ui.expanded.delete(row.id);
-          else ui.expanded.add(row.id);
-        } else if (row?.type === 'action') {
-          if (row.id === 'authorized') return { status: 'authorized' };
-          if (row.id === 'blocked') return { status: 'blocked' };
-          return { status: 'cancel' };
-        }
-      }
-      render();
-    }
-  } finally {
-    terminal.close();
-  }
-  return { status: 'cancel' };
-}
-
-async function waitForBrowserAuthorizationConfirmation({ targetUrl, options = /** @type {any} */ ({}) }) {
-  if (typeof options.browserAuthorizationConfirmationProvider === 'function') {
-    return await options.browserAuthorizationConfirmationProvider({ targetUrl, options });
-  }
-  const tuiChoice = await promptBrowserAuthorizationConfirmationTui({ targetUrl, options });
-  if (tuiChoice) {
-    return tuiChoice;
-  }
-  const answer = await askSetupQuestion('1/2: ', options);
-  return parseBrowserAuthorizationConfirmationChoice(answer);
+async function waitForBrowserAuthorizationConfirmation() {
+  return { status: 'blocked', reasonCode: 'browser-auth-disabled' };
 }
 
 function setupNow(options = /** @type {any} */ ({})) {
@@ -510,6 +341,72 @@ function knownGenericLiveBuildSummary(registryRecord, capabilityRecord) {
   };
 }
 
+function explicitPublicRouteTemplates(...records) {
+  return records.flatMap((record) => (
+    Array.isArray(record?.publicRouteTemplates)
+      ? record.publicRouteTemplates
+      : Array.isArray(record?.publicRoutes)
+        ? record.publicRoutes
+        : []
+  ));
+}
+
+function knownPolicyPublicRouteTemplates(registryRecord, capabilityRecord) {
+  const explicit = explicitPublicRouteTemplates(registryRecord, capabilityRecord);
+  const adapterId = String(registryRecord?.adapterId ?? capabilityRecord?.adapterId ?? '').toLowerCase();
+  const archetype = String(registryRecord?.siteArchetype ?? capabilityRecord?.primaryArchetype ?? '').toLowerCase();
+  const supported = new Set(capabilityRecord?.supportedIntents ?? []);
+  const families = new Set([
+    ...(registryRecord?.capabilityFamilies ?? []),
+    ...(capabilityRecord?.capabilityFamilies ?? []),
+  ]);
+  const explicitRouteKeys = new Set(explicit
+    .map((route) => String(route?.path ?? route?.route ?? route?.pathTemplate ?? route?.routeTemplate ?? '').trim())
+    .filter(Boolean));
+  const inferred = [];
+  const addInferred = (route) => {
+    const routeKey = String(route?.path ?? route?.route ?? route?.pathTemplate ?? route?.routeTemplate ?? '').trim();
+    if (routeKey && !explicitRouteKeys.has(routeKey)) {
+      inferred.push(route);
+    }
+  };
+  if (adapterId === 'chapter-content' || archetype === 'chapter-content') {
+    if (families.has('navigate-to-category') || supported.has('open-category')) {
+      addInferred({ id: 'chapter-content-category-template', pathTemplate: '/category/{categoryId}/', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: false });
+    }
+    if (families.has('search-content') || supported.has('search-book')) {
+      addInferred({ id: 'chapter-content-search-template', pathTemplate: '/search', pageType: 'search-results-page', capabilityFamilies: ['search-content'], seedable: false });
+    }
+    if (families.has('navigate-to-content') || supported.has('open-book')) {
+      addInferred({ id: 'chapter-content-book-template', pathTemplate: '/book/{bookId}/', pageType: 'book-detail-page', capabilityFamilies: ['navigate-to-content'], seedable: false });
+    }
+    if (families.has('navigate-to-chapter') || supported.has('open-chapter')) {
+      addInferred({ id: 'chapter-content-chapter-template', pathTemplate: '/chapter/{bookId}/{chapterId}/', pageType: 'chapter-page', capabilityFamilies: ['navigate-to-chapter'], seedable: false });
+    }
+  }
+  const byId = new Map();
+  for (const [index, route] of [...explicit, ...inferred].entries()) {
+    if (!route || typeof route !== 'object') {
+      continue;
+    }
+    const pathValue = route.path ?? route.route ?? null;
+    const pathTemplate = route.pathTemplate ?? route.routeTemplate ?? null;
+    if (!pathValue && !pathTemplate) {
+      continue;
+    }
+    const id = String(route.id ?? pathValue ?? pathTemplate ?? `public-route-${index}`).trim();
+    byId.set(id, {
+      id,
+      path: pathValue ?? null,
+      pathTemplate: pathTemplate ?? null,
+      pageType: route.pageType ?? null,
+      capabilityFamilies: uniqueSortedStrings(route.capabilityFamilies ?? []),
+      seedable: route.seedable === true && Boolean(pathValue),
+    });
+  }
+  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id, 'en'));
+}
+
 function knownPolicySummary(registryRecord, capabilityRecord) {
   if (!registryRecord && !capabilityRecord) {
     return null;
@@ -518,10 +415,15 @@ function knownPolicySummary(registryRecord, capabilityRecord) {
     ...(registryRecord?.capabilityFamilies ?? []),
     ...(capabilityRecord?.capabilityFamilies ?? []),
   ]);
+  const pageTypes = uniqueSortedStrings([
+    ...(registryRecord?.pageTypes ?? []),
+    ...(capabilityRecord?.pageTypes ?? []),
+  ]);
   const supportedIntents = uniqueSortedStrings(capabilityRecord?.supportedIntents ?? []);
   const safeActionKinds = uniqueSortedStrings(capabilityRecord?.safeActionKinds ?? []);
   const approvalActionKinds = uniqueSortedStrings(capabilityRecord?.approvalActionKinds ?? []);
   const genericLiveBuild = knownGenericLiveBuildSummary(registryRecord, capabilityRecord);
+  const publicRouteTemplates = knownPolicyPublicRouteTemplates(registryRecord, capabilityRecord);
   return {
     schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
     status: 'matched',
@@ -531,6 +433,8 @@ function knownPolicySummary(registryRecord, capabilityRecord) {
     repoSkillDir: registryRecord?.repoSkillDir ?? null,
     siteArchetype: registryRecord?.siteArchetype ?? capabilityRecord?.primaryArchetype ?? null,
     siteAccessStatus: registryRecord?.siteAccessStatus ?? capabilityRecord?.siteAccessStatus ?? null,
+    pageTypes,
+    publicRouteTemplates,
     capabilityFamilies,
     supportedIntents,
     safeActionKinds,
@@ -840,8 +744,8 @@ function normalizeUserAuthorizedEvidence(evidence, site, setupPlan, options = /*
     if (!pagesByUrl.has(seed.normalizedUrl)) {
       pagesByUrl.set(seed.normalizedUrl, normalizeUserAuthorizedEvidencePage({
         url: seed.normalizedUrl,
-        title: `${new URL(site.rootUrl).hostname} 授权浏览器 seed`,
-        textSummary: `用户授权浏览器 seed 摘要：${seed.seedType || 'page'}；可见条数=${seed.visibleItemCount}；未保存原始页面材料。`,
+        title: `${new URL(site.rootUrl).hostname} authorized seed`,
+        textSummary: `authorized seed summary: ${seed.seedType || 'page'}; visible items ${seed.visibleItemCount}; raw page material was not saved.`,
       }, site));
     }
   }
@@ -950,8 +854,7 @@ async function persistAutoAuthorizedKnownSiteProfile({ inputUrl, paths, setupPla
 function userAuthorizedSetupIncompleteError(paths, evidence) {
   const signals = uniqueSortedStrings(evidence?.authState?.riskSignals ?? ['unknown-auth-state']);
   const error = /** @type {Error & Record<string, any>} */ (new Error(
-    `user-authorized-setup-incomplete: 用户授权设置尚未完成。` +
-    `风险信号=${signals.join(',')}。请手动完成登录、MFA、授权或验证后，重新运行 siteforge build <url>。`,
+    `user-authorized-setup-incomplete: auth setup is incomplete. signals=${signals.join(',')}`,
   ));
   error.code = 'user-authorized-setup-incomplete';
   error.reasonCode = signals.includes('login-wall')
@@ -993,7 +896,7 @@ function detectManualUserAuthorizedAuthState(finalUrlOrStatus, site) {
   }
   const lowerText = text.toLowerCase();
   if (
-    ['blocked', '被拒绝', '拒绝', '登录被拒绝', '无法登录'].includes(lowerText)
+    ['blocked', 'refused'].includes(lowerText)
     || /unsafe browser|browser or app may not be secure|not secure|couldn.t sign you in/u.test(lowerText)
   ) {
     return {
@@ -1075,7 +978,7 @@ export function parseSupplementalCollectionEvidenceInput(answer, site) {
     };
   }
 
-  const countText = text.match(/^(\d+)(?:\s*(?:个|条|项|则|件|篇|items?|visible))?$/iu)?.[1];
+  const countText = text.match(/^(\d+)(?:\s*(?:个|条|项|页|本|篇|items?|visible))?$/iu)?.[1];
   if (countText) {
     const sampleCount = Math.max(0, Number(countText) || 0);
     return sampleCount > 0
@@ -1314,7 +1217,7 @@ async function collectAuthorizedBrowserSeedsFromSession(session, site) {
       const searchInputCount = [...document.querySelectorAll('input, [role="searchbox"], [aria-label]')]
         .filter((node) => {
           const element = /** @type {any} */ (node);
-          return /search|搜索/i.test([
+          return /search|鎼滅储/i.test([
             element.getAttribute?.('aria-label'),
             element.getAttribute?.('placeholder'),
             element.getAttribute?.('role'),
@@ -1512,118 +1415,17 @@ function authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, site, knownSitePolicy
   return seeds;
 }
 
-async function externalBrowserUserAuthorizedEvidenceProvider({ inputUrl, setupPlan, paths, options }) {
-  let authState;
-  if (options.manual === true) {
-    writeSetupLine(options, '正在打开系统默认浏览器完成授权边界确认。');
-    writeSetupLine(options, '请在浏览器中完成登录、MFA 或授权。');
-    await launchExternalBrowserUrl(inputUrl, options);
-    const answer = await askSetupQuestion('1/2: ', options);
-    authState = detectManualUserAuthorizedAuthState(answer, paths.site);
-  } else {
-    if (!canUseSetupTui(options)) {
-      writeSetupLine(options, '访问确认');
-      writeSetupLine(options, '');
-      writeSetupTreeRow(options, '▼ 授权范围', `目标站点：${paths.site.rootUrl}`);
-      writeSetupTreeRow(options, '    [ ] 打开目标站点', '已在系统默认浏览器中打开');
-      writeSetupTreeRow(options, '    [ ] 完成登录、MFA 或授权', '只需要在浏览器里操作，SiteForge 不接收密码');
-      writeSetupTreeRow(options, '    [ ] 确认可以访问目标页面', '终端只记录授权边界，不保存会话材料');
-      writeSetupLine(options, '');
-      writeSetupTreeRow(options, '▶ 隐私边界', '不保存 cookie、token、浏览器 profile、页面正文或完整页面源码');
-      writeSetupTreeRow(options, '▶ 操作选项', 'Enter/1 已完成登录；2 登录被拒绝；3 取消');
-      writeSetupLine(options, '');
-    }
-    await launchExternalBrowserUrl(inputUrl, options);
-    const confirmation = await waitForBrowserAuthorizationConfirmation({ targetUrl: inputUrl, options });
-    if (confirmation.status === 'authorized') {
-      writeSetupLine(options, '✓ 浏览器确认已收到');
-      writeSetupLine(options, '  正在验证访问状态...');
-      authState = {
-        status: 'authorized',
-        finalUrl: defaultKnownSiteAuthorizedFinalUrl(paths.site),
-        finalPath: new URL(defaultKnownSiteAuthorizedFinalUrl(paths.site)).pathname,
-        riskSignals: [],
-      };
-      writeSetupLine(options, '✓ 访问确认完成');
-      writeSetupLine(options, '');
-    } else {
-      authState = {
-        status: 'incomplete',
-        finalPath: null,
-        hasPasswordInput: false,
-        riskSignals: [confirmation.status === 'blocked' ? 'login-refused' : 'browser-confirmation-cancelled'],
-      };
-    }
-  }
-  const finalUrl = authState.finalUrl ?? defaultKnownSiteAuthorizedFinalUrl(paths.site);
+async function defaultUserAuthorizedEvidenceProvider({ paths }) {
   return {
     capturedAt: new Date().toISOString(),
-    finalUrl,
-    title: `${new URL(paths.site.rootUrl).hostname} 用户授权浏览器页面`,
-    authState,
-    pages: [{
-      url: finalUrl,
-      title: `${new URL(paths.site.rootUrl).hostname} 用户授权浏览器页面`,
-      textSummary: '用户已在系统默认浏览器中完成授权；SiteForge 未保存原始会话材料。',
-    }],
-    browserSeeds: authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, paths.site, setupPlan?.knownSitePolicy),
+    finalUrl: paths?.site?.rootUrl ?? null,
+    status: 'skipped',
+    pages: [],
+    browserSeeds: [],
+    rawMaterialPersisted: false,
+    sessionMaterialPersisted: false,
+    browserProfilePersisted: false,
   };
-}
-
-async function controlledBrowserUserAuthorizedEvidenceProvider({ inputUrl, setupPlan, paths, options }) {
-  const timeoutMs = Math.max(5_000, Number(options.browserAuthorizationTimeoutMs ?? options.timeoutMs ?? 120_000));
-  writeSetupLine(options, '正在打开可见浏览器，用于获取用户授权设置证据...');
-  writeSetupLine(options, '请手动完成登录或授权，然后回到这里按 Enter。');
-  const session = await openBrowserSession({
-    browserPath: options.browserPath,
-    headless: false,
-    timeoutMs,
-    fullPage: false,
-    viewport: {
-      width: 1440,
-      height: 900,
-      deviceScaleFactor: 1,
-    },
-    startupUrl: inputUrl,
-    cleanupUserDataDirOnShutdown: true,
-  }, {
-    userDataDirPrefix: `${setupPlan.knownSitePolicy?.siteKey ?? paths.site.id}-siteforge-authorized-`,
-  });
-  try {
-    await askSetupQuestion('浏览器显示授权后的页面后，请按 Enter 继续：', options);
-    const metadata = await session.getPageMetadata(inputUrl);
-    const authState = await detectUserAuthorizedAuthState(session);
-    const finalUrl = metadata.finalUrl ?? inputUrl;
-    const browserSeeds = authState.status === 'authorized'
-      ? uniqueAuthorizedBrowserSeeds([
-        ...await collectAuthorizedBrowserSeedsFromSession(session, paths.site),
-        ...authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, paths.site, setupPlan?.knownSitePolicy),
-      ])
-      : [];
-    return {
-      capturedAt: new Date().toISOString(),
-      finalUrl,
-      title: metadata.title || `${new URL(paths.site.rootUrl).hostname} 授权浏览器页面`,
-      authState,
-      pages: [{
-        url: finalUrl,
-        title: metadata.title || `${new URL(paths.site.rootUrl).hostname} 授权浏览器页面`,
-      }],
-      browserSeeds,
-    };
-  } finally {
-    await session.close().catch(() => {});
-  }
-}
-
-async function defaultUserAuthorizedEvidenceProvider(request) {
-  if (
-    request.options?.userAuthorizedEvidenceMode === 'controlled-browser'
-    || request.options?.useControlledAuthorizationBrowser === true
-  ) {
-    return await controlledBrowserUserAuthorizedEvidenceProvider(request);
-  }
-  return await externalBrowserUserAuthorizedEvidenceProvider(request);
 }
 
 async function collectUserAuthorizedEvidence({ inputUrl, setupPlan, paths, options }) {
@@ -1735,47 +1537,47 @@ const USER_AUTHORIZED_CAPABILITY_PROOF_DESCRIPTORS = Object.freeze({
   'list-followed-users': {
     action: 'followed-users',
     intentType: 'list-followed-users',
-    prompt: '请只在已打开的正常浏览器中访问关注列表页。填写站内页面地址或看到的数量；不要提交表单，不要粘贴账号、正文、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'list-followed-updates': {
     action: 'followed-posts-by-date',
     intentType: 'list-followed-updates',
-    prompt: '请只在已打开的正常浏览器中访问关注动态页。填写站内页面地址或看到的动态数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'list-profile-content': {
     action: 'profile-content',
     intentType: 'list-profile-content',
-    prompt: '请只在已打开的正常浏览器中访问个人主页内容页。填写站内页面地址或看到的内容数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'search-posts': {
     action: 'search',
     intentType: 'search-posts',
-    prompt: '请只在已打开的正常浏览器中访问搜索结果页。填写站内页面地址或看到的结果数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'recommended-timeline-posts': {
     action: 'recommended-timeline-posts',
     intentType: 'recommended-timeline-posts',
-    prompt: '请只在已打开的正常浏览器中访问推荐时间线页。填写站内页面地址或看到的推荐帖子数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'list-notifications': {
     action: 'notifications',
     intentType: 'list-notifications',
-    prompt: '请只在已打开的正常浏览器中访问通知页。填写站内页面地址或看到的通知数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'list-bookmarks': {
     action: 'bookmarks',
     intentType: 'list-bookmarks',
-    prompt: '请只在已打开的正常浏览器中访问书签页。填写站内页面地址或看到的书签数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'list-lists': {
     action: 'lists',
     intentType: 'list-lists',
-    prompt: '请只在已打开的正常浏览器中访问列表页。填写站内页面地址或看到的列表数量；不要提交表单，不要粘贴正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
   'list-direct-messages': {
     action: 'direct-messages',
     intentType: 'list-direct-messages',
-    prompt: '请只在已打开的正常浏览器中访问私信会话列表页。填写站内页面地址或看到的会话数量；不要提交表单，不要粘贴私信正文、账号、cookie、token 或私密内容。站内页面地址或数量（回车跳过）：',
+    prompt: 'Enter only a same-site page URL or visible count; do not paste forms, account data, body text, cookie, token, or private content.',
   },
 });
 
@@ -1828,7 +1630,7 @@ function requestedCapabilityFromHint(hint) {
     return { id: 'list-followed-users', label: '读取关注列表', supported: true };
   }
   if (/(关注动态|关注更新|followed updates|following posts|followed account posts)/iu.test(normalized)) {
-    return { id: 'list-followed-updates', label: '读取关注动态', supported: true };
+    return { id: 'list-followed-updates', label: 'List followed updates', supported: true };
   }
   if (/(个人主页|主页内容|profile content|account posts|profile posts)/iu.test(normalized)) {
     return { id: 'list-profile-content', label: '读取个人主页内容', supported: true };
@@ -1933,6 +1735,7 @@ function isUsableSavedBuildProfile(profile) {
     && profile?.site?.rootUrl
     && profile?.source?.type === 'live_website'
     && !profileHasRetiredFixtureSource(profile)
+    && !profileHasRetiredAuthenticationModel(profile)
     && profile?.scope
     && profile?.safety
     && hasCurrentSetupEvidenceGate(profile)
@@ -1969,6 +1772,32 @@ function profileHasRetiredFixtureSource(value) {
       }
     }
     if (profileHasRetiredFixtureSource(item)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function profileHasRetiredAuthenticationModel(value) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => profileHasRetiredAuthenticationModel(item));
+  }
+  if (typeof value !== 'object') {
+    return false;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    const retiredKeys = new Set([
+      `auth${'Level'}`,
+      `requiredAuth${'Level'}`,
+      `observedAuth${'Level'}`,
+    ]);
+    if (retiredKeys.has(key)) {
+      return true;
+    }
+    if (profileHasRetiredAuthenticationModel(item)) {
       return true;
     }
   }
@@ -2019,16 +1848,13 @@ function isProfileMarkedUnusable(profile) {
 }
 
 function resolveSetupInteractive(options = /** @type {any} */ ({})) {
-  if (typeof options.setupInteractive === 'boolean') {
-    return options.setupInteractive && !options.json && !options.quiet;
-  }
-  if (typeof options.interactive === 'boolean') {
-    return options.interactive && !options.noTty && !options.json && !options.quiet;
-  }
-  if (options.forceTty) {
-    return !options.noTty && !options.json && !options.quiet;
-  }
-  return Boolean(defaultStdin.isTTY && (defaultStdout.isTTY || defaultStderr.isTTY) && !options.noTty && !options.json && !options.quiet);
+  return Boolean(
+    typeof options.setupPrompt === 'function'
+    && (options.setupInteractive === true || options.interactive === true)
+    && !options.noTty
+    && !options.json
+    && !options.quiet,
+  );
 }
 
 async function safeRead(source, urlValue, warnings, label) {
@@ -2247,12 +2073,15 @@ function buildSetupEvidenceQuality({
   knownSitePolicy = null,
   pages,
   userAuthorizedEvidence = null,
+  authorizedSources = /** @type {any[]} */ ([]),
 }) {
   const actualPageUrls = uniquePageUrls(pages, (page) => page.source !== 'synthetic_fallback');
   const syntheticPageUrls = uniquePageUrls(pages, (page) => page.source === 'synthetic_fallback');
   const userAuthorizedPageUrls = uniqueSortedStrings((userAuthorizedEvidence?.pages ?? [])
     .map((page) => page.normalizedUrl ?? page.url)
     .filter(Boolean));
+  const authorizedSourceStructureEvidenceCount = (Array.isArray(authorizedSources) ? authorizedSources : [])
+    .reduce((sum, source) => sum + (Array.isArray(source?.structurePages) ? source.structurePages.length : 0), 0);
   const robotsExcludedPageEvidenceUrls = uniqueSortedStrings(robotsExcludedUrls);
   const allPrimarySourcesUnavailable = !robotsAvailable && !homepageAvailable && !sitemapAvailable;
   const syntheticFallbackOnly = actualPageUrls.length === 0 && syntheticPageUrls.length > 0;
@@ -2267,15 +2096,18 @@ function buildSetupEvidenceQuality({
       homepage: homepageAvailable,
       sitemap: sitemapAvailable,
       userAuthorizedBrowser: userAuthorizedPageUrls.length > 0,
+      authorizedSources: authorizedSourceStructureEvidenceCount > 0,
     },
     sourceStatus: {
       robots: robotsAvailable ? 'parsed' : 'unavailable',
       homepage: homepageAvailable ? 'parsed' : homepageRobotsBlocked ? 'robots_disallowed' : 'synthetic_fallback',
       sitemap: sitemapAvailable ? 'parsed' : 'unavailable',
       userAuthorizedBrowser: userAuthorizedPageUrls.length ? 'captured' : 'not_used',
+      authorizedSources: authorizedSourceStructureEvidenceCount ? 'configured' : 'not_used',
     },
     actualPageEvidenceCount: actualPageUrls.length,
     userAuthorizedBrowserEvidenceCount: userAuthorizedPageUrls.length,
+    authorizedSourceStructureEvidenceCount,
     syntheticPageEvidenceCount: syntheticPageUrls.length,
     actualPageEvidenceUrls: actualPageUrls.slice(0, 10),
     userAuthorizedBrowserEvidenceUrls: userAuthorizedPageUrls.slice(0, 10),
@@ -2301,6 +2133,20 @@ function buildSetupReadiness(evidenceQuality) {
       reason: 'User-authorized browser evidence was captured for a bounded known-site adapter path.',
       guidance: [...USER_AUTHORIZED_SETUP_GUIDANCE],
       requiredEvidence: 'At least one public page source or one user-authorized bounded browser evidence summary.',
+    };
+  }
+  if (Number(evidenceQuality.authorizedSourceStructureEvidenceCount ?? 0) > 0) {
+    return {
+      schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+      status: 'ready',
+      buildable: true,
+      reasonCode: 'setup-authorized-source-evidence',
+      reason: 'Authorized sanitized structure source evidence was configured for this site.',
+      guidance: [
+        'Authorized source evidence is treated as a separate evidence layer, not as public crawl success.',
+        'Only sanitized structure summaries are accepted; raw page content and session material are not persisted.',
+      ],
+      requiredEvidence: 'At least one public page source, one authorized sanitized structure source, or one user-authorized bounded browser evidence summary.',
     };
   }
   if (evidenceQuality.actualPageEvidenceCount > 0) {
@@ -2508,6 +2354,27 @@ function collectionReviewProofCovers(value, proofs) {
     proof.intentType,
     proof.action,
   ].map(normalizeCapabilityId).some((id) => id && (id === target || id.includes(target) || target.includes(id))));
+}
+
+function capabilityProofMatches(proof, capability = /** @type {any} */ ({})) {
+  const targets = [
+    capability.id,
+    capability.name,
+    capability.action,
+    capability.intentType,
+  ].filter(Boolean);
+  return targets.some((target) => collectionReviewProofCovers(target, [proof]));
+}
+
+function hasVerifiedCapabilityProof(setupPlan, capability = /** @type {any} */ ({})) {
+  const proofs = collectionReviewVerifiedProofs(setupPlan?.userAuthorizedEvidence);
+  return proofs.some((proof) => capabilityProofMatches(proof, capability));
+}
+
+function capabilityProofsFromAuthorizedBrowserSeeds(setupPlan = null, capability = null) {
+  void setupPlan;
+  void capability;
+  return [];
 }
 
 function collectionReviewPolicyCapabilities(knownSitePolicy, userAuthorizedEvidence = null) {
@@ -2946,6 +2813,35 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
     robotsPolicy,
     robotsExcludedUrls,
   });
+  const normalizedInputUrl = normalizeUrl(inputUrl, paths.site.rootUrl);
+  const inputIsRoot = normalizedInputUrl === normalizeUrl(paths.site.rootUrl, paths.site.rootUrl);
+  const inputAllowedByRobots = !robotsPolicy || isUrlAllowedByRobots(normalizedInputUrl, robotsPolicy);
+  let inputPageSource = null;
+  if (!inputIsRoot) {
+    if (inputAllowedByRobots) {
+      inputPageSource = await safeRead(source, normalizedInputUrl, warnings, 'input page');
+      recordSourceDiagnostic(sourceDiagnostics, 'input page', inputPageSource);
+    } else {
+      robotsExcludedUrls.push(normalizedInputUrl);
+      warnings.push('robots excluded setup input page evidence before setup recommendations.');
+    }
+    if (inputPageSource?.body) {
+      const inputPage = parseHtmlDocument(inputPageSource.body, normalizedInputUrl);
+      addSetupPageCandidate({
+        url: normalizedInputUrl,
+        title: inputPage.title || new URL(normalizedInputUrl).hostname,
+        source: 'input',
+      });
+      for (const link of inputPage.links.slice(0, 50)) {
+        addSetupPageCandidate({
+          url: link.href,
+          label: link.label,
+          source: 'input_link',
+        });
+      }
+      forms.push(...inspectForms(inputPage.forms));
+    }
+  }
   const homepageAllowedByRobots = !robotsPolicy || isUrlAllowedByRobots(paths.site.rootUrl, robotsPolicy);
   let homepageSource = null;
   if (homepageAllowedByRobots) {
@@ -3010,6 +2906,7 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
     robotsExcludedUrls,
     knownSitePolicy,
     pages,
+    authorizedSources: options.localBuildConfig?.authorizedSources ?? [],
   });
   const buildReadiness = buildSetupReadiness(evidenceQuality);
   const recommendedCapabilities = applyBuildReadinessToCapabilities(
@@ -3042,6 +2939,7 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
     },
     robots,
     knownSitePolicy,
+    localBuildConfig: options.localBuildConfig ? localBuildConfigForSetup(paths.site, options.localBuildConfig) : null,
     sourceDiagnostics,
     evidenceQuality,
     buildReadiness,
@@ -3058,11 +2956,9 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
   };
   setupPlan.authStateReport = createPublicOnlyAuthStateReport({
     site: setupPlan.site,
-    authChoice: 'declined',
   });
   setupPlan.crawlContract = createCrawlContract({
     site: setupPlan.site,
-    authChoice: 'declined',
     authStateReport: setupPlan.authStateReport,
     coverageTargets: coverageTargetsFromSetupPlan(setupPlan),
   });
@@ -3071,6 +2967,90 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
   await ensureDir(path.dirname(paths.setupPlanPath));
   await writeJsonFile(paths.setupPlanPath, setupPlan);
   return { paths, setupPlan };
+}
+
+async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options }) {
+  const authMode = options.authMode === 'cookie' || options.authMode === 'browser' ? options.authMode : 'none';
+  options.authMode = authMode;
+  const authStateReport = await runDefaultBrowserAuthStateCheck({
+    inputUrl,
+    site: setupPlan.site,
+    options,
+  });
+  const nextPlan = {
+    ...setupPlan,
+    authStateReport,
+  };
+  if (authMode === 'cookie' && options.strictCookieAuth === true && !canRunAuthenticatedLayer(authStateReport)) {
+    const status = authStateReport?.authVerificationStatus ?? 'auth_check_failed';
+    const signals = uniqueSortedStrings([status, ...(authStateReport?.blockingSignals ?? [])]);
+    nextPlan.buildReadiness = {
+      schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+      status: 'not_ready',
+      buildable: false,
+      reasonCode: status,
+      reason: 'Configured cookie authentication did not verify, so SiteForge stopped instead of falling back to a public-only build.',
+      guidance: signals.length
+        ? signals.map((signal) => `Cookie auth check signal: ${signal}.`)
+        : ['Provide a current same-site Cookie value or remove the site cookie from siteforge.local.json.'],
+      requiredEvidence: 'A configured Cookie must verify against the same-site auth check URL before build can continue.',
+    };
+    nextPlan.summary = {
+      ...nextPlan.summary,
+      buildable: false,
+      readinessStatus: 'not_ready',
+    };
+    nextPlan.recommendedCapabilities = applyBuildReadinessToCapabilities(
+      nextPlan.recommendedCapabilities ?? [],
+      nextPlan.buildReadiness,
+    );
+  }
+  if (authMode === 'browser' && options.strictBrowserAuth === true && !canRunAuthenticatedLayer(authStateReport)) {
+    const status = authStateReport?.authVerificationStatus ?? 'browser_check_failed';
+    const signals = uniqueSortedStrings([status, ...(authStateReport?.blockingSignals ?? [])]);
+    nextPlan.buildReadiness = {
+      schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+      status: 'not_ready',
+      buildable: false,
+      reasonCode: status,
+      reason: 'Configured default-browser authentication bridge did not verify, so SiteForge stopped instead of falling back to a public-only build.',
+      guidance: signals.length
+        ? signals.map((signal) => `Browser auth bridge signal: ${signal}.`)
+        : ['Enable the local browser bridge or remove browser auth from siteforge.local.json.'],
+      requiredEvidence: 'A default-browser bridge must return sanitized same-site structure evidence before build can continue.',
+    };
+    nextPlan.summary = {
+      ...nextPlan.summary,
+      buildable: false,
+      readinessStatus: 'not_ready',
+    };
+    nextPlan.recommendedCapabilities = applyBuildReadinessToCapabilities(
+      nextPlan.recommendedCapabilities ?? [],
+      nextPlan.buildReadiness,
+    );
+  }
+  nextPlan.crawlContract = createCrawlContract({
+    site: nextPlan.site,
+    authStateReport,
+    coverageTargets: coverageTargetsFromSetupPlan(nextPlan),
+  });
+  nextPlan.collectionReview = buildCollectionReviewModel({ setupPlan: nextPlan });
+  await ensureDir(paths.artifactDir);
+  await ensureDir(path.dirname(paths.setupPlanPath));
+  await writeJsonFile(paths.authStateReportPath, authStateReport);
+  await writeJsonFile(paths.setupPlanPath, nextPlan);
+  return nextPlan;
+}
+
+async function collectSelectedCapabilityProofs(setupPlan, userChoices, options = /** @type {any} */ ({})) {
+  void userChoices;
+  void options;
+  return setupPlan;
+}
+
+async function collectMissingCapabilityProofs(setupPlan, options = /** @type {any} */ ({})) {
+  void options;
+  return setupPlan;
 }
 
 function applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidence, paths) {
@@ -3087,6 +3067,7 @@ function applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidenc
     knownSitePolicy: setupPlan.knownSitePolicy,
     pages: authorizedPageInputs,
     userAuthorizedEvidence,
+    authorizedSources: setupPlan.localBuildConfig?.authorizedSources ?? [],
   });
   const buildReadiness = buildSetupReadiness(evidenceQuality);
   const policyCapabilities = knownPolicyRecommendedCapabilities(setupPlan.knownSitePolicy, {
@@ -3102,7 +3083,6 @@ function applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidenc
     userAuthorizedEvidence,
     authStateReport: setupPlan.authStateReport ?? createPublicOnlyAuthStateReport({
       site: setupPlan.site,
-      authChoice: 'selected',
       reasonCode: 'legacy-user-authorized-evidence-not-auth-verification',
     }),
     summary: {
@@ -3144,7 +3124,6 @@ function applyUserAuthorizedEvidenceToSetupPlan(setupPlan, userAuthorizedEvidenc
   };
   nextPlan.crawlContract = createCrawlContract({
     site: nextPlan.site,
-    authChoice: nextPlan.authStateReport?.authChoice ?? 'selected',
     authStateReport: nextPlan.authStateReport,
     coverageTargets: coverageTargetsFromSetupPlan(nextPlan),
   });
@@ -3306,21 +3285,154 @@ function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
   return [...routes].sort((left, right) => left.localeCompare(right, 'en'));
 }
 
+const KNOWN_POLICY_LOGIN_CAPABILITY_IDS = new Set([
+  'list-followed-users',
+  'list-followed-updates',
+  'recommended-timeline-posts',
+  'list-recommended-timeline-posts',
+  'list-notifications',
+  'notifications',
+  'list-bookmarks',
+  'bookmarks',
+  'list-lists',
+  'lists',
+  'list-direct-messages',
+  'direct-messages',
+  'messages',
+]);
+
+function knownPolicyRequiresLoginCapabilityIds(knownSitePolicy = null) {
+  if (!knownSitePolicy) {
+    return [];
+  }
+  return uniqueSortedStrings(knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized: true })
+    .map((capability) => normalizeCapabilityId(capability.id ?? capability.name))
+    .filter((id) => KNOWN_POLICY_LOGIN_CAPABILITY_IDS.has(id)));
+}
+
+function normalizeConfiguredRouteTargets(site, values = /** @type {any[]} */ ([])) {
+  const targets = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    try {
+      const normalized = normalizeUrl(value, site.rootUrl);
+      if (isInternalUrl(normalized, site.allowedDomains)) {
+        targets.push(normalized);
+      }
+    } catch {
+      // Ignore malformed local route hints; they cannot become crawl seeds.
+    }
+  }
+  return uniqueSortedStrings(targets);
+}
+
+function sanitizeAuthorizedSourcesForSetup(sources = /** @type {any[]} */ ([])) {
+  const sanitizeLinks = (links = /** @type {any[]} */ ([])) => (Array.isArray(links) ? links : [])
+    .slice(0, 160)
+    .map((link, linkIndex) => {
+      if (!link || typeof link !== 'object') {
+        return null;
+      }
+      return {
+        href: sanitizeEvidenceRef(link.href ?? link.url ?? link.path ?? null),
+        label: sanitizeEvidenceRef(link.label ?? link.title ?? link.name ?? `authorized-link-${linkIndex + 1}`),
+        selector: sanitizeEvidenceRef(link.selector ?? `authorized-link-${linkIndex + 1}`),
+        semanticKind: sanitizeEvidenceRef(link.semanticKind ?? link.role ?? null),
+        structureType: sanitizeEvidenceRef(link.structureType ?? link.structure_type ?? null),
+        routeTemplate: sanitizeEvidenceRef(link.routeTemplate ?? link.routePattern ?? null),
+      };
+    })
+    .filter((link) => link && (link.href || link.routeTemplate));
+  return (Array.isArray(sources) ? sources : [])
+    .map((source, index) => {
+      if (!source || typeof source !== 'object') {
+        return null;
+      }
+      const structurePages = Array.isArray(source.structurePages)
+        ? source.structurePages.slice(0, 80).map((page, pageIndex) => ({
+          id: sanitizeEvidenceRef(page?.id ?? `authorized-page-${pageIndex + 1}`),
+          url: sanitizeEvidenceRef(page?.url ?? null),
+          title: sanitizeEvidenceRef(page?.title ?? null),
+          pageType: sanitizeEvidenceRef(page?.pageType ?? 'authorized_source_summary'),
+          routeTemplate: sanitizeEvidenceRef(page?.routeTemplate ?? null),
+          visibleItemCount: Number.isFinite(Number(page?.visibleItemCount)) ? Math.max(0, Number(page.visibleItemCount)) : 0,
+          listPresent: page?.listPresent === true,
+          emptyStatePresent: page?.emptyStatePresent === true,
+          routeTemplates: uniqueSortedStrings(Array.isArray(page?.routeTemplates) ? page.routeTemplates.map((item) => sanitizeEvidenceRef(item)).filter(Boolean) : []),
+          links: sanitizeLinks(page?.links),
+          structureItems: (Array.isArray(page?.structureItems) ? page.structureItems : []).slice(0, 120).map((item) => ({
+            nodeType: sanitizeEvidenceRef(item?.nodeType ?? item?.type ?? 'component'),
+            structureType: sanitizeEvidenceRef(item?.structureType ?? item?.kind ?? null),
+            labelSummary: sanitizeEvidenceRef(item?.labelSummary ?? item?.label ?? null),
+            visibleItemCount: Number.isFinite(Number(item?.visibleItemCount)) ? Math.max(0, Number(item.visibleItemCount)) : 0,
+            listPresent: item?.listPresent === true,
+            emptyStatePresent: item?.emptyStatePresent === true,
+            routeTemplates: uniqueSortedStrings(Array.isArray(item?.routeTemplates) ? item.routeTemplates.map((route) => sanitizeEvidenceRef(route)).filter(Boolean) : []),
+          })),
+        }))
+        : [];
+      return {
+        id: sanitizeEvidenceRef(source.id ?? `authorized-source-${index + 1}`),
+        kind: sanitizeEvidenceRef(source.kind ?? source.type ?? 'authorized_source'),
+        url: sanitizeEvidenceRef(source.url ?? null),
+        accessBasis: sanitizeEvidenceRef(source.accessBasis ?? source.authorizationBasis ?? 'user_provided_contract'),
+        permissionScope: sanitizeEvidenceRef(source.permissionScope ?? 'sanitized_summary_only'),
+        allowedEvidence: uniqueSortedStrings(Array.isArray(source.allowedEvidence) ? source.allowedEvidence.map((item) => sanitizeEvidenceRef(item)).filter(Boolean) : []),
+        structurePages,
+        genericCrawlAllowed: false,
+        promotionAllowed: false,
+      };
+    })
+    .filter(Boolean);
+}
+
+function localBuildConfigForSetup(site, config = /** @type {any} */ ({})) {
+  const build = config.build && typeof config.build === 'object' ? config.build : {};
+  return {
+    source: config.source === 'home' ? 'home' : config.source === 'cwd' ? 'cwd' : null,
+    authMode: ['cookie', 'browser'].includes(config.authMode) ? config.authMode : null,
+    authCheckUrl: config.authCheckUrl ? sanitizeEvidenceRef(config.authCheckUrl) : null,
+    authRoutes: normalizeConfiguredRouteTargets(site, config.authRoutes),
+    publicRevisitRoutes: normalizeConfiguredRouteTargets(site, config.publicRevisitRoutes),
+    authorizedSources: sanitizeAuthorizedSourcesForSetup(config.authorizedSources),
+    build: {
+      deep: build.deep === true,
+      renderJs: build.renderJs === true ? true : build.renderJs === false ? false : null,
+      maxDepth: Number.isFinite(Number(build.maxDepth)) ? Number(build.maxDepth) : null,
+      maxPages: Number.isFinite(Number(build.maxPages)) ? Number(build.maxPages) : null,
+      maxSeeds: Number.isFinite(Number(build.maxSeeds)) ? Number(build.maxSeeds) : null,
+      maxSitemaps: Number.isFinite(Number(build.maxSitemaps)) ? Number(build.maxSitemaps) : null,
+    },
+  };
+}
+
 function coverageTargetsFromSetupPlan(setupPlan = /** @type {any} */ ({})) {
+  const knownPolicyPublicRoutes = (setupPlan.knownSitePolicy?.publicRouteTemplates ?? [])
+    .filter((route) => route?.seedable === true && route.path)
+    .map((route) => route.path);
   const publicRoutes = uniqueSortedStrings([
     setupPlan.site?.rootUrl,
+    ...knownPolicyPublicRoutes,
     ...(setupPlan.pageGroups ?? []).flatMap((group) => group.sampleUrls ?? []),
   ].filter(Boolean));
-  const authRoutes = knownPolicyAuthRouteTargets(setupPlan.knownSitePolicy);
-  const requiresLoginCapabilities = uniqueSortedStrings([
-    ...knownPolicyRecommendedCapabilities(setupPlan.knownSitePolicy, { userAuthorized: true })
-      .map((capability) => capability.id ?? capability.name),
-    ...(setupPlan.knownSitePolicy?.supportedIntents ?? []),
-  ].filter(Boolean));
+  const localConfig = setupPlan.localBuildConfig ?? {};
+  const verifiedRoutes = canRunAuthenticatedLayer(setupPlan.authStateReport)
+    ? normalizeConfiguredRouteTargets(setupPlan.site, setupPlan.authStateReport?.verifiedRoutes ?? [])
+      .filter((route) => !/\/api(?:\/|$)/iu.test(new URL(route).pathname))
+    : [];
+  const authRoutes = uniqueSortedStrings([
+    ...knownPolicyAuthRouteTargets(setupPlan.knownSitePolicy),
+    ...(localConfig.authRoutes ?? []),
+    ...verifiedRoutes,
+  ]);
+  const requiresLoginCapabilities = knownPolicyRequiresLoginCapabilityIds(setupPlan.knownSitePolicy);
+  const localRevisitRoutes = localConfig.publicRevisitRoutes ?? [];
   return {
     publicRoutes,
     authRoutes,
-    publicRevisitRoutes: publicRoutes.slice(0, 12),
+    publicRevisitRoutes: uniqueSortedStrings([
+      ...localRevisitRoutes,
+      ...publicRoutes.slice(0, 12),
+    ]),
     candidateCapabilities: uniqueSortedStrings((setupPlan.recommendedCapabilities ?? [])
       .filter((capability) => capability.recommended !== true)
       .map((capability) => capability.id ?? capability.name)),
@@ -3350,18 +3462,21 @@ function createBuildProfile(setupPlan, userChoices, capabilityHints, paths) {
     setupConfiguration: normalizeSetupConfiguration(userChoices.setupConfiguration),
     scope: clone(userChoices.scope),
     knownSitePolicy: clone(setupPlan.knownSitePolicy ?? null),
+    localBuildConfig: clone(setupPlan.localBuildConfig ?? null),
+    robots: clone(setupPlan.robots ?? null),
     sourceDiagnostics: clone(setupPlan.sourceDiagnostics ?? []),
     evidenceQuality: clone(setupPlan.evidenceQuality ?? null),
     buildReadiness: clone(setupPlan.buildReadiness ?? null),
     crawlContract: clone(setupPlan.crawlContract ?? createCrawlContract({
       site: setupPlan.site,
-      authChoice: 'declined',
       coverageTargets: coverageTargetsFromSetupPlan(setupPlan),
     })),
-    authStateReport: clone(setupPlan.authStateReport ?? createPublicOnlyAuthStateReport({
+    authStateReport: normalizeAuthStateReport(setupPlan.authStateReport ?? createPublicOnlyAuthStateReport({
       site: setupPlan.site,
-      authChoice: 'declined',
-    })),
+      authMethod: 'none',
+    }), {
+      site: setupPlan.site,
+    }),
     collectionReview: clone(setupPlan.collectionReview ?? buildCollectionReviewModel({ setupPlan })),
     profileUsability: {
       schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
@@ -3417,7 +3532,6 @@ async function persistSetupProfile({ paths, setupPlan, userChoices, saveProfile 
   await writeJsonFile(paths.capabilityHintsPath, capabilityHints);
   await writeJsonFile(paths.authStateReportPath, profile.authStateReport ?? createPublicOnlyAuthStateReport({
     site: setupPlan.site,
-    authChoice: setupPlan.crawlContract?.authChoice ?? 'declined',
   }));
   await writeJsonFile(paths.buildProfilePath, profile);
   if (saveProfile) {
@@ -3458,7 +3572,6 @@ async function persistProfileSnapshot(paths, profile) {
     updatedAt: new Date().toISOString(),
     crawlContract: clone(profile.crawlContract ?? createCrawlContract({
       site: profile.site ?? paths.site,
-      authChoice: 'declined',
       coverageTargets: {
         publicRoutes: [paths.site.rootUrl],
         authRoutes: [],
@@ -3467,10 +3580,12 @@ async function persistProfileSnapshot(paths, profile) {
         requiresLoginCapabilities: [],
       },
     })),
-    authStateReport: clone(profile.authStateReport ?? createPublicOnlyAuthStateReport({
+    authStateReport: normalizeAuthStateReport(profile.authStateReport ?? createPublicOnlyAuthStateReport({
       site: profile.site ?? paths.site,
-      authChoice: 'declined',
-    })),
+      authMethod: 'none',
+    }), {
+      site: profile.site ?? paths.site,
+    }),
     collectionReview: clone(profile.collectionReview ?? null),
     setupConfiguration: normalizeSetupConfiguration(profile.setupConfiguration),
     setupRefs: {
@@ -3500,44 +3615,11 @@ function writeSetupLine(options, line = '') {
   output.write(`${line}\n`);
 }
 
-function compactSetupCell(value, maxLength = 56) {
-  const text = String(value ?? '-')
-    .replace(/\r?\n/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .replace(/\|/gu, '/')
-    .trim();
-  if (!text) return '-';
-  const chars = [...text];
-  if (chars.length <= maxLength) return text;
-  return `${chars.slice(0, Math.max(0, maxLength - 1)).join('')}…`;
-}
-
-function writeSetupTable(options, columns, rows) {
-  writeSetupLine(options, `  | ${columns.map((column) => column.label).join(' | ')} |`);
-  writeSetupLine(options, `  | ${columns.map(() => '---').join(' | ')} |`);
-  const displayRows = rows.length ? rows : [Object.fromEntries(columns.map((column) => [column.key, '-']))];
-  for (const row of displayRows) {
-    writeSetupLine(options, `  | ${columns.map((column) => {
-      const value = typeof column.value === 'function' ? column.value(row) : row[column.key];
-      return compactSetupCell(value, column.maxLength ?? 56);
-    }).join(' | ')} |`);
+async function askSetupQuestion(prompt, options = /** @type {any} */ ({})) {
+  if (typeof options.setupPrompt === 'function') {
+    return String(await options.setupPrompt(prompt));
   }
-}
-
-function writeSetupTreeRow(options, left, right = '') {
-  const leftText = String(left ?? '');
-  const width = 34;
-  const padding = Math.max(0, width - [...leftText].length);
-  writeSetupLine(options, right ? `${leftText}${' '.repeat(padding)} │ ${right}` : leftText);
-}
-
-function canUseSetupTui(options = /** @type {any} */ ({})) {
-  if (typeof options.setupPrompt === 'function' || options.setupTui === false) {
-    return false;
-  }
-  const input = options.setupInput ?? defaultStdin;
-  const output = options.setupOutput ?? defaultStdout;
-  return Boolean(input?.isTTY && output?.isTTY && typeof input.setRawMode === 'function');
+  return '';
 }
 
 function countAuthorizedActionableElements(evidence) {
@@ -3575,122 +3657,13 @@ function userAuthorizedProofTargetCapabilities(setupPlan) {
 }
 
 function buildUserAuthorizedCollectionReviewPrompt(setupPlan) {
-  const evidence = setupPlan.userAuthorizedEvidence;
-  if (evidence?.status !== 'captured') {
-    return null;
-  }
-  const seeds = Array.isArray(evidence.browserSeeds) ? evidence.browserSeeds : [];
-  const pages = Array.isArray(evidence.pages) ? evidence.pages : [];
-  const actionableElementCount = countAuthorizedActionableElements(evidence);
-  const proofTargets = userAuthorizedProofTargetCapabilities(setupPlan);
-  const collectedCapabilityIds = collectedUserAuthorizedCapabilityIds(setupPlan);
-  const uncollectedCapabilities = proofTargets.filter((capability) => !collectedCapabilityIds.has(normalizeCapabilityId(capability.id)));
-  const collectedIntentIds = new Set();
-  const uncollectedIntentIds = new Set();
-  for (const capability of proofTargets) {
-    const descriptor = userAuthorizedCapabilityProofDescriptor(capability.id);
-    const intentId = normalizeCapabilityId(descriptor?.intentType ?? capability.id);
-    if (!intentId) {
-      continue;
-    }
-    if (collectedCapabilityIds.has(normalizeCapabilityId(capability.id))) {
-      collectedIntentIds.add(intentId);
-    } else {
-      uncollectedIntentIds.add(intentId);
-    }
-  }
-  const rows = [
-    {
-      label: '页面入口',
-      collectedCount: seeds.length,
-      uncollectedCount: seeds.length > 0 ? 0 : 1,
-      unit: '个',
-      detail: seeds.length > 0 ? '已记录可访问入口，不保存页面正文' : '尚未获得可访问入口',
-    },
-    {
-      label: '页面摘要',
-      collectedCount: pages.length,
-      uncollectedCount: pages.length > 0 ? 0 : 1,
-      unit: '个',
-      detail: pages.length > 0 ? '已记录页面级摘要' : '尚未获得页面级摘要',
-    },
-    {
-      label: '可点击/可输入入口',
-      collectedCount: actionableElementCount,
-      uncollectedCount: actionableElementCount > 0 ? 0 : 1,
-      unit: '个',
-      detail: actionableElementCount > 0 ? '已记录入口数量，不保存控件明细' : '未保存原始页面结构或控件明细',
-    },
-    {
-      label: '可用能力',
-      collectedCount: collectedCapabilityIds.size,
-      uncollectedCount: uncollectedCapabilities.length,
-      unit: '项',
-      detail: uncollectedCapabilities.length > 0 ? '未完成项需要你打开对应页面并提供可见数量或站内 URL' : '当前候选能力已有证明',
-    },
-    {
-      label: '用户指令',
-      collectedCount: collectedIntentIds.size,
-      uncollectedCount: uncollectedIntentIds.size,
-      unit: '项',
-      detail: uncollectedIntentIds.size > 0 ? '未完成项不会进入可调用 Skill' : '当前用户指令已有证明',
-    },
-  ];
-  const collectionReview = setupPlan.collectionReview ?? buildCollectionReviewModel({ setupPlan });
-  const missingCapabilities = (collectionReview.capabilities?.missing ?? [])
-    .filter((item) => userAuthorizedCapabilityProofDescriptor(item.id))
-    .slice(0, 12)
-    .map((item) => ({
-      id: item.id,
-      label: setupDisplayText(item.label ?? item.id),
-      reasonCode: item.reasonCode ?? 'capability-specific-evidence-required',
-    }));
-  return {
-    schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-user-authorized-collection-review',
-    status: rows.some((row) => row.uncollectedCount > 0) ? 'partial' : 'complete',
-    rows,
-    missingCapabilities,
-    summary: {
-      seedCount: seeds.length,
-      nodeCount: pages.length,
-      actionableElementCount,
-      collectedCapabilityCount: collectedCapabilityIds.size,
-      uncollectedCapabilityCount: uncollectedCapabilities.length,
-      collectedIntentCount: collectedIntentIds.size,
-      uncollectedIntentCount: uncollectedIntentIds.size,
-      rawMaterialPersisted: false,
-    },
-  };
+  void setupPlan;
+  return null;
 }
 
 function renderUserAuthorizedCollectionReviewPrompt(review, options = /** @type {any} */ ({})) {
-  if (!review) {
-    return;
-  }
-  writeSetupLine(options, '');
-  writeSetupLine(options, '采集现状');
-  writeSetupLine(options, '  已复用你授权后的浏览器页面，只保存入口、摘要和数量，不保存账号、正文、cookie、token 或浏览器资料。');
-  for (const row of review.rows) {
-    writeSetupLine(
-      options,
-      `  - ${row.label}：已完成 ${row.collectedCount}${row.unit}；未完成 ${row.uncollectedCount}${row.unit}。${row.detail}。`,
-    );
-  }
-  if (review.missingCapabilities?.length) {
-    writeSetupLine(options, '');
-    writeSetupLine(options, '未完成能力');
-    writeSetupLine(options, '  | 能力 | 当前状态 | 需要你做什么 |');
-    writeSetupLine(options, '  | --- | --- | --- |');
-    for (const item of review.missingCapabilities) {
-      writeSetupLine(
-        options,
-        `  | ${item.label} | 待确认 | 打开对应页面后提供站内页面地址，或填写看到的数量 |`,
-      );
-    }
-  }
-  writeSetupLine(options, '');
-  writeSetupLine(options, '当前结论：已发现页面入口；还缺少部分能力的内容证明。未补齐的能力会保留为候选，不会自动启用。');
+  void review;
+  void options;
 }
 
 function parseContinueUncollectedAnswer(answer) {
@@ -3792,7 +3765,7 @@ function setupKnownAdapterLabel(setupPlan = /** @type {any} */ ({})) {
 function setupKnownAdapterDisplayLabel(setupPlan = /** @type {any} */ ({})) {
   const policy = setupPlan.knownSitePolicy ?? {};
   if (policy.adapterId && policy.siteKey) {
-    return `${policy.adapterId}（匹配：${policy.siteKey}）`;
+    return `${policy.adapterId} (${policy.siteKey})`;
   }
   return setupKnownAdapterLabel(setupPlan);
 }
@@ -3837,7 +3810,7 @@ const SETUP_CONFIGURATION_LABELS = Object.freeze({
   }),
   capabilityRecognition: Object.freeze({
     explicit_only: '仅明确能力',
-    explicit_plus_candidates: '明确能力 + 低置信度候选',
+    explicit_plus_candidates: '明确能力 + 低置信候选',
     infer_potential: '尽可能推断潜在能力',
   }),
   lowConfidenceHandling: Object.freeze({
@@ -3929,488 +3902,7 @@ function applySetupConfigurationToChoices(userChoices) {
   return next;
 }
 
-function renderCurrentSetupConfiguration(configuration, options = /** @type {any} */ ({})) {
-  const normalized = normalizeSetupConfiguration(configuration);
-  writeSetupLine(options, '当前配置');
-  writeSetupTable(options, [
-    { key: 'index', label: '#', maxLength: 4 },
-    { key: 'item', label: '配置项', maxLength: 18 },
-    { key: 'value', label: '当前值', maxLength: 64 },
-  ], [
-    { index: 1, item: '探索模式', value: setupConfigurationLabel('explorationMode', normalized.explorationMode) },
-    { index: 2, item: '敏感能力', value: setupConfigurationLabel('sensitiveCapabilityStrategy', normalized.sensitiveCapabilityStrategy) },
-    { index: 3, item: '扫描范围', value: setupConfigurationLabel('scanScope', normalized.scanScope) },
-    { index: 4, item: '生成策略', value: setupGenerationStrategyLabel(normalized) },
-    { index: 5, item: '写入方式', value: setupConfigurationLabel('writeMode', normalized.writeMode) },
-  ]);
-}
-
-function renderSetupSafetyLimits(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '安全限制');
-  writeSetupTable(options, [
-    { key: 'index', label: '#', maxLength: 4 },
-    { key: 'rule', label: '限制', maxLength: 72 },
-  ], [
-    { index: 1, rule: '不提交表单' },
-    { index: 2, rule: '不保存、删除、支付、发布或审批' },
-    { index: 3, rule: '不修改权限、角色或系统配置' },
-    { index: 4, rule: '敏感能力默认保持“需确认”' },
-    { index: 5, rule: '写入前必须先通过验证门禁' },
-  ]);
-}
-
-function renderSetupConfigurationMenu(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '可修改配置');
-  writeSetupTable(options, [
-    { key: 'index', label: '#', maxLength: 4 },
-    { key: 'item', label: '配置项', maxLength: 18 },
-    { key: 'choices', label: '可选值', maxLength: 72 },
-  ], [
-    { index: 1, item: '探索模式', choices: '只读探索 / 安全交互 / 受控交互 / 手动引导' },
-    { index: 2, item: '敏感能力策略', choices: '仅记录 / 有限启用 / 逐项确认 / 批量选择' },
-    { index: 3, item: '扫描范围', choices: '全部入口 / 适配器入口 / 后台入口 / 手动选择 / 自定义范围' },
-    { index: 4, item: '生成策略', choices: '默认 / 精简 / 标准 / 详细 / 自定义' },
-    { index: 5, item: '写入方式', choices: '仅预览 / 写入草稿 / 更新 current/ / 更新 registry.json / 备份后更新' },
-  ]);
-}
-
-function renderSetupOperationHelp(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '操作说明');
-  writeSetupTable(options, [
-    { key: 'input', label: '输入', maxLength: 18 },
-    { key: 'meaning', label: '作用', maxLength: 72 },
-  ], [
-    { input: 'Enter', meaning: '使用当前配置并开始' },
-    { input: '1-5', meaning: '进入对应配置项修改' },
-    { input: '项=值', meaning: '快速修改配置，例如 1=2' },
-    { input: 'show', meaning: '重新显示当前配置' },
-    { input: 'reset', meaning: '恢复默认配置' },
-    { input: 'help', meaning: '查看可用命令' },
-    { input: 'cancel', meaning: '取消并退出' },
-  ]);
-}
-
-function renderSetupShortcutExamples(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '快捷示例');
-  writeSetupTable(options, [
-    { key: 'input', label: '输入', maxLength: 18 },
-    { key: 'effect', label: '效果', maxLength: 72 },
-  ], [
-    { input: '1=2', effect: '将探索模式改为“安全交互”' },
-    { input: '2=4', effect: '将敏感能力策略改为“批量选择”' },
-    { input: '3=5', effect: '输入自定义扫描范围' },
-    { input: '5=1', effect: '仅预览，不写入' },
-  ]);
-}
-
-function renderSetupConfigurationScreen(configuration, options = /** @type {any} */ ({})) {
-  const normalized = normalizeSetupConfiguration(configuration);
-  writeSetupLine(options, '准备开始自动构建');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '操作：↑↓ 移动  Enter 展开/折叠  Space 确认  / 搜索');
-  writeSetupLine(options, '提示：当前配置页可用编号或“项=值”快速修改；构建完成后进入动态能力树。');
-  writeSetupLine(options, '');
-  writeSetupTreeRow(options, '▼ 当前配置', '直接按 Enter 使用当前配置并开始');
-  writeSetupTreeRow(options, `    [x] 1. 探索模式：${setupConfigurationLabel('explorationMode', normalized.explorationMode)}`);
-  writeSetupTreeRow(options, `    [x] 2. 敏感能力：${setupConfigurationLabel('sensitiveCapabilityStrategy', normalized.sensitiveCapabilityStrategy)}`);
-  writeSetupTreeRow(options, `    [x] 3. 扫描范围：${setupConfigurationLabel('scanScope', normalized.scanScope)}`);
-  writeSetupTreeRow(options, `    [x] 4. 生成策略：${setupGenerationStrategyLabel(normalized)}`);
-  writeSetupTreeRow(options, `    [x] 5. 写入方式：${setupConfigurationLabel('writeMode', normalized.writeMode)}`);
-  writeSetupLine(options, '');
-  writeSetupTreeRow(options, '▶ 安全限制', '不提交、不保存、不删除、不支付、不发布；敏感能力需确认');
-  writeSetupTreeRow(options, '▶ 可修改配置', '1 探索模式 / 2 敏感能力 / 3 扫描范围 / 4 生成策略 / 5 写入方式');
-  writeSetupTreeRow(options, '▶ 快捷示例', '1=2 安全交互；2=4 批量选择；3=5 自定义范围；5=1 仅预览');
-  writeSetupTreeRow(options, '▶ 操作说明', 'Enter 开始；输入 项=值 快速修改；show 重显；reset 默认；help 命令；cancel 取消');
-  writeSetupLine(options, '');
-}
-
-function setupTuiPad(value, width = 34) {
-  const text = String(value ?? '');
-  const length = [...text].length;
-  if (length >= width) {
-    return text;
-  }
-  return `${text}${' '.repeat(width - length)}`;
-}
-
-function setupTuiRow(left, right = '') {
-  return right ? `${setupTuiPad(left)} │ ${right}` : left;
-}
-
-function isSetupTuiSpaceKey(key = /** @type {any} */ ({})) {
-  return isTerminalSpaceKey(key);
-}
-
-function isSetupTuiSlashKey(key = /** @type {any} */ ({})) {
-  return isTerminalSlashKey(key);
-}
-
-function isSetupTuiCharacterKey(key = /** @type {any} */ ({}), character) {
-  return isTerminalCharacterKey(key, character);
-}
-
-function setupGenerationPreset(configuration) {
-  const generation = normalizeSetupConfiguration(configuration).generationStrategy;
-  if (generation.customGenerationHint !== undefined) {
-    return 'custom';
-  }
-  if (
-    generation.nodeGranularity === 'page'
-    && generation.capabilityRecognition === 'explicit_only'
-    && generation.lowConfidenceHandling === 'discard'
-  ) {
-    return 'compact';
-  }
-  if (
-    generation.nodeGranularity === 'page_region_control'
-    && generation.capabilityRecognition === 'infer_potential'
-  ) {
-    return 'detailed';
-  }
-  return 'standard';
-}
-
-function setupTuiFieldDefinitions() {
-  return [
-    {
-      section: '1',
-      label: '探索模式',
-      get: (configuration) => normalizeSetupConfiguration(configuration).explorationMode,
-      set: (configuration, value) => ({ ...configuration, explorationMode: value }),
-      choices: [
-        ['read_only', '只读探索'],
-        ['safe_interaction', '安全交互'],
-        ['controlled_interaction', '受控交互'],
-        ['manual_guided', '手动引导'],
-      ],
-    },
-    {
-      section: '2',
-      label: '敏感能力',
-      get: (configuration) => normalizeSetupConfiguration(configuration).sensitiveCapabilityStrategy,
-      set: (configuration, value) => ({ ...configuration, sensitiveCapabilityStrategy: value }),
-      choices: [
-        ['record_only', '仅记录，不启用'],
-        ['limited_enable', '有限启用'],
-        ['confirm_each', '逐项确认'],
-        ['batch_select', '批量选择'],
-      ],
-    },
-    {
-      section: '3',
-      label: '扫描范围',
-      get: (configuration) => normalizeSetupConfiguration(configuration).scanScope,
-      set: (configuration, value) => ({ ...configuration, scanScope: value }),
-      choices: [
-        ['all', '全部入口'],
-        ['adapter', '适配器入口'],
-        ['admin', '后台 / 管理相关入口'],
-        ['manual', '手动选择入口'],
-        ['custom', '自定义范围'],
-      ],
-    },
-    {
-      section: '4',
-      label: '生成策略',
-      get: setupGenerationPreset,
-      set: (configuration, value) => {
-        if (value === 'compact') {
-          return {
-            ...configuration,
-            generationStrategy: {
-              nodeGranularity: 'page',
-              capabilityRecognition: 'explicit_only',
-              lowConfidenceHandling: 'discard',
-            },
-          };
-        }
-        if (value === 'detailed') {
-          return {
-            ...configuration,
-            generationStrategy: {
-              nodeGranularity: 'page_region_control',
-              capabilityRecognition: 'infer_potential',
-              lowConfidenceHandling: 'manual_queue',
-            },
-          };
-        }
-        if (value === 'custom') {
-          return {
-            ...configuration,
-            generationStrategy: {
-              ...clone(DEFAULT_SETUP_CONFIGURATION.generationStrategy),
-              customGenerationHint: configuration.generationStrategy?.customGenerationHint ?? '',
-            },
-          };
-        }
-        return {
-          ...configuration,
-          generationStrategy: clone(DEFAULT_SETUP_CONFIGURATION.generationStrategy),
-        };
-      },
-      choices: [
-        ['standard', '页面 + 区域级'],
-        ['compact', '精简'],
-        ['detailed', '详细'],
-        ['custom', '自定义'],
-      ],
-    },
-    {
-      section: '5',
-      label: '写入方式',
-      get: (configuration) => normalizeSetupConfiguration(configuration).writeMode,
-      set: (configuration, value) => ({ ...configuration, writeMode: value }),
-      choices: [
-        ['preview_only', '仅预览，不写入'],
-        ['draft_only', '写入草稿 draft/'],
-        ['current_only', '更新 current/，不更新 registry.json'],
-        ['promote_verified', '验证通过后更新 current/ 和 registry.json'],
-        ['backup_promote', '创建备份后更新 current/ 和 registry.json'],
-      ],
-    },
-  ];
-}
-
-function setupTuiFieldValueLabel(field, configuration) {
-  const value = field.get(configuration);
-  return field.choices.find(([candidate]) => candidate === value)?.[1] ?? String(value ?? '-');
-}
-
-function cycleSetupTuiField(configuration, field, direction = 1) {
-  const normalized = normalizeSetupConfiguration(configuration);
-  const current = field.get(normalized);
-  const index = Math.max(0, field.choices.findIndex(([value]) => value === current));
-  const nextIndex = (index + direction + field.choices.length) % field.choices.length;
-  return normalizeSetupConfiguration(field.set(normalized, field.choices[nextIndex][0]));
-}
-
-function setupTuiRows(configuration, ui) {
-  const fields = setupTuiFieldDefinitions();
-  const rows = /** @type {any[]} */ ([
-    { type: 'section', id: 'config', title: '当前配置', right: 'Space 切换选中配置项' },
-  ]);
-  if (ui.expanded.has('config')) {
-    for (const field of fields) {
-      rows.push({
-        type: 'field',
-        id: `field-${field.section}`,
-        field,
-        left: `    [ ] ${field.section}. ${field.label}：${setupTuiFieldValueLabel(field, configuration)}`,
-        right: 'Enter 展开选项；Space 切换',
-      });
-      if (ui.expanded.has(`field-${field.section}`)) {
-        for (const [value, label] of field.choices) {
-          rows.push({
-            type: 'choice',
-            id: `choice-${field.section}-${value}`,
-            field,
-            value,
-            left: `        ${field.get(configuration) === value ? '[x]' : '[ ]'} ${label}`,
-            right: field.get(configuration) === value ? '当前值' : 'Space 选择',
-          });
-        }
-      }
-    }
-  }
-  rows.push({ type: 'section', id: 'safety', title: '安全限制', right: '不提交、不保存、不删除、不支付、不发布' });
-  if (ui.expanded.has('safety')) {
-    rows.push(
-      { type: 'detail', left: '    - 不提交表单', right: '' },
-      { type: 'detail', left: '    - 不保存、删除、支付、发布或审批', right: '' },
-      { type: 'detail', left: '    - 不修改权限、角色或系统配置', right: '' },
-      { type: 'detail', left: '    - 敏感能力默认保持“需确认”', right: '' },
-      { type: 'detail', left: '    - 写入前必须先通过验证门禁', right: '' },
-    );
-  }
-  rows.push({ type: 'section', id: 'commands', title: '操作说明', right: '↑↓ 移动；Enter 展开；Space 选择；/ 搜索' });
-  if (ui.expanded.has('commands')) {
-    rows.push(
-      { type: 'detail', left: '    - 在“开始构建”上按 Enter：使用当前配置并开始', right: '' },
-      { type: 'detail', left: '    - 输入 1-5：跳到对应配置项', right: '' },
-      { type: 'detail', left: '    - r：恢复默认配置', right: '' },
-      { type: 'detail', left: '    - /：搜索配置项', right: '' },
-      { type: 'detail', left: '    - Esc 或 Ctrl+C：取消', right: '' },
-    );
-  }
-  rows.push({ type: 'action', id: 'start', left: '✓ 开始构建', right: 'Enter 使用当前配置；Space 不会误开始' });
-  if (!ui.search) {
-    return rows;
-  }
-  const needle = ui.search.toLowerCase();
-  return rows.filter((row) => {
-    if (row.type === 'action') {
-      return true;
-    }
-    const text = `${row.title ?? ''} ${row.left ?? ''} ${row.right ?? ''}`.toLowerCase();
-    return text.includes(needle);
-  });
-}
-
-function renderSetupConfigurationTui(configuration, ui) {
-  const rows = setupTuiRows(configuration, ui);
-  const lines = [
-    '准备开始自动构建',
-    '',
-    '↑↓ 移动  Enter 展开/开始  Space 确认/切换  / 搜索  r 重置  Esc 取消',
-    `搜索：${ui.searchMode ? `${ui.search}_` : (ui.search || '-')}`,
-    '',
-  ];
-  rows.forEach((row, index) => {
-    const focused = index === ui.focus ? '› ' : '  ';
-    if (row.type === 'section') {
-      const expanded = ui.expanded.has(row.id) ? '▼' : '▶';
-      lines.push(setupTuiRow(`${focused}${expanded} ${row.title}`, row.right));
-      return;
-    }
-    if (row.type === 'field') {
-      const selected = index === ui.focus ? '[x]' : '[ ]';
-      lines.push(setupTuiRow(`${focused}  ${selected} ${row.field.section}. ${row.field.label}：${setupTuiFieldValueLabel(row.field, configuration)}`, row.right));
-      return;
-    }
-    if (row.type === 'choice') {
-      lines.push(setupTuiRow(`${focused}${row.left}`, row.right));
-      return;
-    }
-    lines.push(setupTuiRow(`${focused}${row.left}`, row.right));
-  });
-  lines.push('', '提示：非交互终端会回退为“选择：”文本模式。');
-  return `${lines.join('\n')}\n`;
-}
-
-async function promptSetupConfigurationTui(options = /** @type {any} */ ({}), configuration = defaultSetupConfiguration()) {
-  if (typeof options.setupPrompt === 'function' || options.setupTui === false) {
-    return null;
-  }
-  const input = options.setupInput ?? defaultStdin;
-  const output = options.setupOutput ?? defaultStdout;
-  if (!input?.isTTY || !output?.isTTY || typeof input.setRawMode !== 'function') {
-    return null;
-  }
-  let next = normalizeSetupConfiguration(configuration);
-  let changed = false;
-  const ui = {
-    expanded: new Set(['config']),
-    focus: 0,
-    search: '',
-    searchMode: false,
-  };
-  ui.focus = Math.max(0, setupTuiRows(next, ui).findIndex((row) => row.type === 'action' && row.id === 'start'));
-  const terminal = enterTerminalTui(input, output);
-  if (!terminal) {
-    return null;
-  }
-  const render = () => {
-    const rows = setupTuiRows(next, ui);
-    if (ui.focus >= rows.length) {
-      ui.focus = Math.max(0, rows.length - 1);
-    }
-    terminal.render(renderSetupConfigurationTui(next, ui));
-  };
-  render();
-  try {
-    for await (const key of readTerminalKeys(input)) {
-      const rows = setupTuiRows(next, ui);
-      if (key.ctrl && key.name === 'c') {
-        throw setupCancelledError();
-      }
-      if (ui.searchMode) {
-        if (isTerminalReturnKey(key)) {
-          ui.searchMode = false;
-        } else if (key.name === 'escape') {
-          ui.searchMode = false;
-          ui.search = '';
-        } else if (key.name === 'backspace') {
-          ui.search = [...ui.search].slice(0, -1).join('');
-        } else if (key.text && [...key.text].length === 1 && !key.ctrl && !key.meta) {
-          ui.search += key.text;
-        }
-        render();
-        continue;
-      }
-      if (key.name === 'escape') {
-        throw setupCancelledError();
-      }
-      if (isSetupTuiCharacterKey(key, 'q')) {
-        return { configuration: next, changed };
-      }
-      if (key.name === 'up') {
-        ui.focus = Math.max(0, ui.focus - 1);
-      } else if (key.name === 'down') {
-        ui.focus = Math.min(Math.max(0, rows.length - 1), ui.focus + 1);
-      } else if (isTerminalReturnKey(key)) {
-        const row = rows[ui.focus];
-        if (row?.type === 'action') {
-          return { configuration: next, changed };
-        }
-        if (row?.type === 'section') {
-          if (ui.expanded.has(row.id)) {
-            ui.expanded.delete(row.id);
-          } else {
-            ui.expanded.add(row.id);
-          }
-        } else if (row?.type === 'field') {
-          const id = `field-${row.field.section}`;
-          if (ui.expanded.has(id)) ui.expanded.delete(id);
-          else ui.expanded.add(id);
-        } else if (row?.type === 'choice') {
-          next = normalizeSetupConfiguration(row.field.set(next, row.value));
-          changed = true;
-        }
-      } else if (isSetupTuiSpaceKey(key)) {
-        const row = rows[ui.focus];
-        if (row?.type === 'field') {
-          next = cycleSetupTuiField(next, row.field);
-          changed = true;
-        } else if (row?.type === 'choice') {
-          next = normalizeSetupConfiguration(row.field.set(next, row.value));
-          changed = true;
-        }
-      } else if (isSetupTuiSlashKey(key)) {
-        ui.searchMode = true;
-        ui.search = '';
-      } else if (isSetupTuiCharacterKey(key, 'r')) {
-        next = defaultSetupConfiguration();
-        changed = true;
-      } else if (/^[1-5]$/u.test(key.text ?? key.sequence ?? '')) {
-        const wanted = key.text ?? key.sequence;
-        const index = rows.findIndex((row) => row.type === 'field' && row.field.section === wanted);
-        if (index >= 0) {
-          ui.focus = index;
-        }
-      }
-      render();
-    }
-  } finally {
-    terminal.close();
-  }
-  return { configuration: next, changed };
-}
-
-async function completeSetupConfigurationCustomPrompts(configuration, options = /** @type {any} */ ({})) {
-  let next = normalizeSetupConfiguration(configuration);
-  if (next.scanScope === 'custom' && !next.customScopeHint) {
-    const customScope = await askSetupQuestion('范围说明：', options);
-    next = {
-      ...next,
-      customScopeHint: sanitizedSetupHint(customScope, requestedCapabilityFromHint(customScope)),
-    };
-  }
-  if (next.generationStrategy?.customGenerationHint === '') {
-    const customGeneration = await askSetupQuestion('生成策略说明：', options);
-    next = {
-      ...next,
-      generationStrategy: {
-        ...next.generationStrategy,
-        customGenerationHint: sanitizedSetupHint(customGeneration, requestedCapabilityFromHint(customGeneration)),
-      },
-    };
-  }
-  return normalizeSetupConfiguration(next);
-}
-
 function renderSetupPlan(setupPlan, options = /** @type {any} */ ({})) {
-  const configuration = defaultSetupConfiguration();
-  renderSetupConfigurationScreen(configuration, options);
   if (setupPlan.buildReadiness?.buildable === false) {
     writeSetupLine(options, '当前不可构建');
     writeSetupLine(options, `  ! ${setupDisplayText(setupPlan.buildReadiness.reason)}`);
@@ -4419,726 +3911,26 @@ function renderSetupPlan(setupPlan, options = /** @type {any} */ ({})) {
     }
     writeSetupLine(options, '');
   }
-  return;
 }
 
 function renderSavedProfileSummary(profile, options = /** @type {any} */ ({})) {
-  const selectedCapabilities = profile.capabilityScope?.selectedCapabilities ?? [];
-  writeSetupLine(options, 'SiteForge 已保存设置');
-  writeSetupLine(options, `站点：${profile.site?.rootUrl ?? '-'}`);
-  writeSetupLine(options, `范围：深度=${profile.scope?.maxDepth ?? '-'} 页面=${profile.scope?.maxPages ?? '-'} 种子=${profile.scope?.maxSeeds ?? '-'}`);
-  writeSetupLine(options, `能力：${selectedCapabilities.map((capability) => setupDisplayText(capability.name)).join('，') || '公开页面'}`);
-  writeSetupLine(options, '默认：复用已保存设置。');
-  writeSetupLine(options, '');
-}
-
-async function askSetupQuestion(message, options = /** @type {any} */ ({})) {
-  if (options.__siteforgePendingSetupAnswer) {
-    const answer = options.__siteforgePendingSetupAnswer;
-    delete options.__siteforgePendingSetupAnswer;
-    return compactText(answer);
-  }
-  if (typeof options.setupPrompt === 'function') {
-    return compactText(await options.setupPrompt(message));
-  }
-  const input = options.setupInput ?? defaultStdin;
-  const output = options.setupOutput ?? defaultStdout;
-  const rl = createReadlineInterface({ input, output });
-  try {
-    return compactText(await rl.question(message));
-  } finally {
-    rl.close();
-  }
-}
-
-function parseLoginEnhancementChoice(answer) {
-  const text = compactText(answer).toLowerCase();
-  if (!text || /^(?:1|n|no|public|public_only|公开|不使用|不用|否)$/u.test(text)) {
-    return 'declined';
-  }
-  if (/^(?:2|y|yes|login|auth|enhanced|使用|登录|登錄|是)$/u.test(text)) {
-    return 'selected';
-  }
-  return 'declined';
-}
-
-function parseLoginEnhancementChoiceStrict(answer) {
-  const text = compactText(answer).toLowerCase();
-  if (!text) {
-    return 'declined';
-  }
-  if (/^(?:1|n|no|public|public_only)$/u.test(text) || /不使用|不用|公开|否/u.test(text)) {
-    return 'declined';
-  }
-  if (/^(?:2|y|yes|login|auth|enhanced)$/u.test(text) || /使用|登录|是/u.test(text)) {
-    return 'selected';
-  }
-  return null;
-}
-
-function renderLoginEnhancementPrompt(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, 'SiteForge 可以使用登录态增强抓取，以发现登录后页面和能力。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '请选择：');
-  writeSetupLine(options, '  1. 不使用登录态，只抓公开能力');
-  writeSetupLine(options, '  2. 使用登录态，打开系统默认浏览器，登录后继续增强抓取');
-  writeSetupLine(options, '');
-}
-
-async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive }) {
-  let authChoice = options.loginEnhanced === true || options.authEnhanced === true
-    ? 'selected'
-    : options.publicOnly === true || options.loginEnhanced === false || options.authEnhanced === false
-      ? 'declined'
-      : null;
-  if (!authChoice && interactive) {
-    renderLoginEnhancementPrompt(options);
-    const answer = await askSetupQuestion('1/2: ', options);
-    authChoice = parseLoginEnhancementChoiceStrict(answer);
-    if (!authChoice && compactText(answer)) {
-      options.__siteforgePendingSetupAnswer = answer;
-      authChoice = 'declined';
-    }
-  }
-  if (!authChoice) {
-    authChoice = 'declined';
-  }
-
-  let authStateReport = createPublicOnlyAuthStateReport({
-    site: setupPlan.site,
-    authChoice,
-    reasonCode: interactive ? null : 'non-interactive-public-only-default',
-  });
-  if (authChoice === 'selected') {
-    authStateReport = await runDefaultBrowserAuthStateCheck({
-      inputUrl,
-      site: setupPlan.site,
-      options,
-      ask: (message) => askSetupQuestion(message, options),
-      writeLine: (line) => writeSetupLine(options, line),
-    });
-  }
-  const crawlContract = createCrawlContract({
-    site: setupPlan.site,
-    authChoice,
-    authStateReport,
-    coverageTargets: coverageTargetsFromSetupPlan(setupPlan),
-    sourceMode: authChoice === 'selected' ? 'default_browser_login' : 'live_static',
-  });
-  const nextPlan = {
-    ...setupPlan,
-    authStateReport,
-    crawlContract,
-  };
-  nextPlan.collectionReview = buildCollectionReviewModel({
-    setupPlan: nextPlan,
-    userAuthorizedEvidence: nextPlan.userAuthorizedEvidence ?? null,
-    knownSitePolicy: nextPlan.knownSitePolicy ?? null,
-  });
-  await writeJsonFile(paths.authStateReportPath, authStateReport);
-  await writeJsonFile(paths.setupPlanPath, nextPlan);
-  return nextPlan;
-}
-
-function selectedCapabilityProofTargets(userChoices) {
-  return (userChoices.availableCapabilities ?? [])
-    .filter((capability) => (
-      capability?.selected === true
-      && capability.evidenceRequirement === 'capability-specific-evidence'
-      && userAuthorizedCapabilityProofDescriptor(capability.id)
-    ));
-}
-
-function capabilityProofMatches(proof, capability) {
-  const descriptor = userAuthorizedCapabilityProofDescriptor(capability.id ?? capability.name);
-  const wanted = new Set([
-    normalizeCapabilityId(capability.id ?? capability.name),
-    normalizeCapabilityId(descriptor?.intentType),
-    normalizeCapabilityId(descriptor?.action),
-  ].filter(Boolean));
-  return [
-    proof.capabilityId,
-    proof.setupCapabilityId,
-    proof.intentType,
-    proof.action,
-  ].map(normalizeCapabilityId).some((id) => wanted.has(id));
-}
-
-function hasVerifiedCapabilityProof(setupPlan, capability) {
-  return (setupPlan.userAuthorizedEvidence?.capabilityProofs ?? [])
-    .some((proof) => proof?.status === 'verified'
-      && Number(proof.sampleCount ?? 0) > 0
-      && capabilityProofMatches(proof, capability));
-}
-
-function browserSeedMatchesCapability(seed, capability, descriptor) {
-  if ([
-    'user-authorized-normal-browser-route-seed',
-    'known-site-authorized-route-expansion',
-  ].includes(seed?.source)) {
-    return false;
-  }
-  const wanted = new Set([
-    normalizeCapabilityId(capability.id ?? capability.name),
-    normalizeCapabilityId(descriptor?.intentType),
-    normalizeCapabilityId(descriptor?.action),
-  ].filter(Boolean));
-  const seedIds = (seed.capabilityIds ?? []).map(normalizeCapabilityId).filter(Boolean);
-  const route = `${seed.seedType ?? ''} ${seed.routeKind ?? ''} ${seed.normalizedUrl ?? ''}`.toLowerCase();
-  const visibleItemCount = Number(seed.visibleItemCount ?? seed.articleLikeCount ?? seed.itemCount ?? seed.sampleCount ?? 0) || 0;
-  const searchInputCount = Number(seed.searchInputCount ?? 0) || 0;
-  const seedIdMatches = seedIds.some((id) => wanted.has(id));
-  if (wanted.has('recommended-timeline-posts')) {
-    return (seedIdMatches || /timeline|feed|\/home(?:[/?#]|$)/u.test(route)) && visibleItemCount > 0;
-  }
-  if (wanted.has('search-posts')) {
-    return (seedIdMatches || searchInputCount > 0 || /search/u.test(route)) && visibleItemCount > 0;
-  }
-  if (wanted.has('list-profile-content')) {
-    return (seedIdMatches || /profile|author|user/u.test(route)) && visibleItemCount > 0;
-  }
-  if (wanted.has('list-followed-users')) {
-    return (seedIdMatches || /following/u.test(route)) && visibleItemCount > 0;
-  }
-  if (wanted.has('list-followed-updates')) {
-    return (seedIdMatches || /following/u.test(route)) && visibleItemCount > 0;
-  }
-  if (
-    wanted.has('list-notifications')
-    || wanted.has('list-bookmarks')
-    || wanted.has('list-lists')
-    || wanted.has('list-direct-messages')
-  ) {
-    return seedIdMatches && visibleItemCount > 0;
-  }
-  return seedIdMatches && visibleItemCount > 0;
-}
-
-function capabilityProofsFromAuthorizedBrowserSeeds(setupPlan, capability) {
-  const descriptor = userAuthorizedCapabilityProofDescriptor(capability.id ?? capability.name);
-  if (!descriptor) {
-    return [];
-  }
-  const proofs = /** @type {any[]} */ ([]);
-  for (const seed of setupPlan.userAuthorizedEvidence?.browserSeeds ?? []) {
-    if (!browserSeedMatchesCapability(seed, capability, descriptor)) {
-      continue;
-    }
-    const sampleCount = Math.max(1, Number(seed.visibleItemCount ?? seed.articleLikeCount ?? 0) || 0);
-    proofs.push({
-      setupCapabilityId: capability.id,
-      intentType: descriptor.intentType,
-      action: descriptor.action,
-      status: 'verified',
-      evidenceType: 'authorized-browser-seed-scan',
-      sampleCount,
-      source: seed.source ?? 'user-authorized-browser-seed-scan',
-    });
-  }
-  return normalizeUserAuthorizedCapabilityProofs(proofs);
-}
-
-async function collectProofForCapability(setupPlan, userChoices, capability, options = /** @type {any} */ ({})) {
-  const descriptor = userAuthorizedCapabilityProofDescriptor(capability.id);
-  if (!descriptor) {
-    return [];
-  }
-  const seedProofs = capabilityProofsFromAuthorizedBrowserSeeds(setupPlan, capability);
-  if (seedProofs.length) {
-    return seedProofs;
-  }
-  if (typeof options.capabilityProofProvider === 'function') {
-    const provided = await options.capabilityProofProvider({
-      setupPlan,
-      userChoices,
-      capability,
-      descriptor,
-      options,
-    });
-    const providedProofs = Array.isArray(provided) ? provided : [provided].filter(Boolean);
-    const normalized = normalizeUserAuthorizedCapabilityProofs(providedProofs);
-    if (normalized.length) {
-      return normalized;
-    }
-  }
-  if (options.disableManualCapabilityProofPrompt === true) {
-    return [];
-  }
-  writeSetupLine(options, '');
-  writeSetupLine(options, `确认能力：${setupDisplayText(capability.name)}`);
-  writeSetupLine(options, '请只在已打开的正常浏览器里手动访问对应页面。SiteForge 不会自动提交表单，也不会采集正文、账号或会话材料。');
-  if (options.skipCapabilityCollectionConfirmation !== true) {
-    writeSetupLine(options, '默认安全：按 Enter 或输入 no/否 跳过。');
-    const continueAnswer = await askSetupQuestion(
-      `是否继续确认“${setupDisplayText(capability.name)}”？输入 yes/y/是/继续 才继续：`,
-      options,
-    );
-    const continueDecision = parseContinueUncollectedCollectionAnswer(continueAnswer);
-    if (!continueDecision.continue) {
-      if (continueDecision.reasonCode === 'unrecognized') {
-        writeSetupLine(options, '未识别为 yes/是/继续；已按安全默认值跳过补充确认。');
-      }
-      return [];
-    }
-  }
-  writeSetupLine(options, '只保存能力名称、站内页面地址或数量；不要粘贴正文、账号、cookie、token、验证码、私信内容或其他私密内容。');
-  const answer = await askSetupQuestion('1/2: ', options);
-  const evidenceInput = parseSupplementalCollectionEvidenceInput(answer, setupPlan.site);
-  if (!evidenceInput.accepted || evidenceInput.sampleCount < 1) {
-    if (evidenceInput.reasonCode !== 'empty') {
-      writeSetupLine(options, `补充信息未被接受（${evidenceInput.reasonCode}）；已跳过该未抓取项。`);
-    }
-    return [];
-  }
-  return normalizeUserAuthorizedCapabilityProofs([{
-    setupCapabilityId: capability.id,
-    intentType: descriptor.intentType,
-    action: descriptor.action,
-    status: 'verified',
-    evidenceType: evidenceInput.evidenceType,
-    sampleCount: evidenceInput.sampleCount,
-    source: evidenceInput.reasonCode === 'final-url'
-      ? 'user-authorized-normal-browser-manual-final-url'
-      : 'user-authorized-normal-browser-manual-proof',
-  }]);
-}
-
-function mergeCapabilityProofsIntoSetupPlan(setupPlan, proofs) {
-  const normalized = normalizeUserAuthorizedCapabilityProofs(proofs);
-  if (!normalized.length || !setupPlan.userAuthorizedEvidence) {
-    return setupPlan;
-  }
-  const existing = normalizeUserAuthorizedCapabilityProofs(setupPlan.userAuthorizedEvidence.capabilityProofs);
-  const merged = /** @type {any[]} */ ([]);
-  const seen = new Set();
-  for (const proof of [...existing, ...normalized]) {
-    const key = [
-      normalizeCapabilityId(proof.setupCapabilityId),
-      normalizeCapabilityId(proof.intentType),
-      normalizeCapabilityId(proof.action),
-      proof.evidenceType,
-    ].join('|');
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    merged.push(proof);
-  }
-  const nextPlan = {
-    ...setupPlan,
-    userAuthorizedEvidence: {
-      ...setupPlan.userAuthorizedEvidence,
-      capabilityProofs: merged,
-      evidenceBoundary: 'User authorization proves access to a bounded browser surface only; selected capabilities still require sanitized capability-specific proof and safety gates.',
-    },
-  };
-  const proofedIds = new Set(merged.flatMap((proof) => [
-    proof.capabilityId,
-    proof.setupCapabilityId,
-    proof.intentType,
-    proof.action,
-  ]).map(normalizeCapabilityId).filter(Boolean));
-  nextPlan.recommendedCapabilities = (nextPlan.recommendedCapabilities ?? []).map((capability) => {
-    const capabilityId = normalizeCapabilityId(capability.id ?? capability.name);
-    if (
-      capabilityId
-      && proofedIds.has(capabilityId)
-      && capability.evidenceRequirement === 'capability-specific-evidence'
-      && capability.safety === 'read_only'
-    ) {
-      return {
-        ...capability,
-        recommended: true,
-        status: 'recommended',
-        disabledReason: null,
-        reason: 'Capability-specific user-authorized evidence was collected during setup.',
-      };
-    }
-    return capability;
-  });
-  nextPlan.collectionReview = buildCollectionReviewModel({
-    setupPlan: nextPlan,
-    userAuthorizedEvidence: nextPlan.userAuthorizedEvidence,
-    knownSitePolicy: nextPlan.knownSitePolicy,
-  });
-  return nextPlan;
-}
-
-async function collectMissingCapabilityProofs(setupPlan, options = /** @type {any} */ ({})) {
-  if (!setupPlan.userAuthorizedEvidence) {
-    return setupPlan;
-  }
-  const targets = userAuthorizedProofTargetCapabilities(setupPlan)
-    .filter((capability) => !hasVerifiedCapabilityProof(setupPlan, capability));
-  if (!targets.length) {
-    return setupPlan;
-  }
-  writeSetupLine(options, '');
-  writeSetupLine(options, '开始补充确认。每一项都只需要站内页面地址或看到的数量；不需要的项直接按 Enter 跳过。');
-  const collected = /** @type {any[]} */ ([]);
-  const userChoices = {
-    availableCapabilities: targets.map((capability) => ({ ...capability, selected: true })),
-    selectedCapabilityIds: targets.map((capability) => capability.id),
-  };
-  for (const capability of targets) {
-    collected.push(...await collectProofForCapability(setupPlan, userChoices, capability, {
-      ...options,
-      skipCapabilityCollectionConfirmation: true,
-    }));
-  }
-  return mergeCapabilityProofsIntoSetupPlan(setupPlan, collected);
-}
-
-async function collectSelectedCapabilityProofs(setupPlan, userChoices, options = /** @type {any} */ ({})) {
-  if (!setupPlan.userAuthorizedEvidence) {
-    return setupPlan;
-  }
-  const collected = /** @type {any[]} */ ([]);
-  for (const capability of selectedCapabilityProofTargets(userChoices)) {
-    if (hasVerifiedCapabilityProof(setupPlan, capability)) {
-      continue;
-    }
-    collected.push(...await collectProofForCapability(setupPlan, userChoices, capability, options));
-  }
-  return mergeCapabilityProofsIntoSetupPlan(setupPlan, collected);
-}
-
-function setupCancelledError() {
-  const error = /** @type {Error & Record<string, any>} */ (new Error('setup-cancelled: 用户取消了首次设置。'));
-  error.code = 'setup-cancelled';
-  return error;
-}
-
-function isSetupCancelAnswer(answer) {
-  return /^(?:cancel|取消|退出|quit|q)$/iu.test(compactText(answer));
-}
-
-function isSetupShowAnswer(answer) {
-  return /^(?:show|显示|查看)$/iu.test(compactText(answer));
-}
-
-function isSetupResetAnswer(answer) {
-  return /^(?:reset|重置|恢复默认)$/iu.test(compactText(answer));
-}
-
-function isSetupHelpAnswer(answer) {
-  return /^(?:help|帮助|\?)$/iu.test(compactText(answer));
-}
-
-function parseSetupQuickConfigurationAnswer(answer) {
-  const match = compactText(answer).match(/^([1-5])\s*=\s*([1-5])$/u);
-  if (!match) {
-    return null;
-  }
-  return {
-    section: match[1],
-    value: match[2],
-  };
-}
-
-function isSetupConfigurationMenuAnswer(answer) {
-  return /^[1-5]$/u.test(compactText(answer))
-    || parseSetupQuickConfigurationAnswer(answer) !== null
-    || isSetupCancelAnswer(answer)
-    || isSetupShowAnswer(answer)
-    || isSetupResetAnswer(answer)
-    || isSetupHelpAnswer(answer);
-}
-
-function setupConfigurationStartPrompt() {
-  return '选择：';
-}
-
-function setupConfigurationContinuePrompt() {
-  return '选择：';
-}
-
-function renderExplorationModeMenu(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '');
-  writeSetupLine(options, '探索模式');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  1. 只读探索（默认）');
-  writeSetupLine(options, '     仅读取页面、路由、结构和静态控件，不触发业务操作。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  2. 安全交互');
-  writeSetupLine(options, '     可点击导航、菜单、分页、筛选、标签页；不提交表单。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  3. 受控交互');
-  writeSetupLine(options, '     可探索低风险流程；敏感能力会暂停等待确认。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  4. 手动引导');
-  writeSetupLine(options, '     每发现新页面、新能力或不确定操作，先询问你。');
-  writeSetupLine(options, '');
-}
-
-function renderSensitiveCapabilityStrategyMenu(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '');
-  writeSetupLine(options, '敏感能力策略');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  1. 仅记录，不启用（默认）');
-  writeSetupLine(options, '     发现后写入能力清单，状态保持“需确认”。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  2. 有限启用');
-  writeSetupLine(options, '     允许读取页面和表单结构，但不提交、不保存、不确认。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  3. 逐项确认');
-  writeSetupLine(options, '     每发现一个敏感能力，都暂停询问。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  4. 批量选择');
-  writeSetupLine(options, '     扫描完成后展示敏感能力列表，由你批量确认。');
-  writeSetupLine(options, '');
-}
-
-function renderScanScopeMenu(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '');
-  writeSetupLine(options, '扫描范围');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  1. 全部入口（默认）');
-  writeSetupLine(options, '  2. 仅扫描已知适配器覆盖的入口');
-  writeSetupLine(options, '  3. 仅扫描后台 / 管理相关入口');
-  writeSetupLine(options, '  4. 手动选择入口');
-  writeSetupLine(options, '  5. 输入自定义范围');
-  writeSetupLine(options, '');
-}
-
-function renderGenerationStrategyMenu(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '');
-  writeSetupLine(options, '生成策略');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  1. 默认');
-  writeSetupLine(options, '     页面 + 区域级节点；明确能力 + 低置信度候选。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  2. 精简');
-  writeSetupLine(options, '     页面级节点；仅识别明确能力；低置信度结果丢弃。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  3. 标准');
-  writeSetupLine(options, '     页面 + 区域级节点；明确能力 + 低置信度候选。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  4. 详细');
-  writeSetupLine(options, '     页面 + 区域 + 控件级节点；尽可能推断潜在能力。');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  5. 自定义');
-  writeSetupLine(options, '     输入一句话描述节点粒度、能力识别或低置信度处理。');
-  writeSetupLine(options, '');
-}
-
-function renderWriteModeMenu(options = /** @type {any} */ ({})) {
-  writeSetupLine(options, '');
-  writeSetupLine(options, '写入方式');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '  1. 仅预览，不写入');
-  writeSetupLine(options, '  2. 写入草稿 draft/');
-  writeSetupLine(options, '  3. 更新 current/，不更新 registry.json');
-  writeSetupLine(options, '  4. 更新 current/ 和 registry.json（默认）');
-  writeSetupLine(options, '  5. 创建备份后更新 current/ 和 registry.json');
-  writeSetupLine(options, '');
-  writeSetupLine(options, '当前实现会始终先执行验证门禁；验证失败不会更新 current/ 或 registry.json。');
-  writeSetupLine(options, '');
-}
-
-function selectionOrDefault(answer, defaultValue) {
-  const text = compactText(answer);
-  if (!text) return defaultValue;
-  if (isSetupCancelAnswer(text)) throw setupCancelledError();
-  return text;
-}
-
-async function updateSetupConfigurationSection(section, configuration, options = /** @type {any} */ ({}), presetAnswer = null) {
-  const next = normalizeSetupConfiguration(configuration);
-  if (section === '1') {
-    if (presetAnswer === null) {
-      renderExplorationModeMenu(options);
-    }
-    const answer = selectionOrDefault(
-      presetAnswer ?? await askSetupQuestion('选择探索模式 [1/2/3/4]，默认 1：', options),
-      '1',
-    );
-    const values = {
-      1: 'read_only',
-      2: 'safe_interaction',
-      3: 'controlled_interaction',
-      4: 'manual_guided',
-    };
-    if (values[answer]) next.explorationMode = values[answer];
-  } else if (section === '2') {
-    if (presetAnswer === null) {
-      renderSensitiveCapabilityStrategyMenu(options);
-    }
-    const answer = selectionOrDefault(
-      presetAnswer ?? await askSetupQuestion('选择敏感能力策略 [1/2/3/4]，默认 1：', options),
-      '1',
-    );
-    const values = {
-      1: 'record_only',
-      2: 'limited_enable',
-      3: 'confirm_each',
-      4: 'batch_select',
-    };
-    if (values[answer]) next.sensitiveCapabilityStrategy = values[answer];
-  } else if (section === '3') {
-    if (presetAnswer === null) {
-      renderScanScopeMenu(options);
-    }
-    const answer = selectionOrDefault(
-      presetAnswer ?? await askSetupQuestion('扫描范围 [1/2/3/4/5]，默认 1：', options),
-      '1',
-    );
-    const values = {
-      1: 'all',
-      2: 'adapter',
-      3: 'admin',
-      4: 'manual',
-      5: 'custom',
-    };
-    if (values[answer]) next.scanScope = values[answer];
-    if (answer === '5') {
-      const customScope = await askSetupQuestion('范围说明：', options);
-      next.customScopeHint = sanitizedSetupHint(customScope, requestedCapabilityFromHint(customScope));
-    }
-  } else if (section === '4') {
-    if (presetAnswer === null) {
-      renderGenerationStrategyMenu(options);
-    }
-    const answer = selectionOrDefault(
-      presetAnswer ?? await askSetupQuestion('选择生成策略 [1/2/3/4/5]，默认 1：', options),
-      '1',
-    );
-    if (answer === '2') {
-      next.generationStrategy = {
-        nodeGranularity: 'page',
-        capabilityRecognition: 'explicit_only',
-        lowConfidenceHandling: 'discard',
-      };
-    } else if (answer === '4') {
-      next.generationStrategy = {
-        nodeGranularity: 'page_region_control',
-        capabilityRecognition: 'infer_potential',
-        lowConfidenceHandling: 'manual_queue',
-      };
-    } else if (answer === '5') {
-      const customGeneration = await askSetupQuestion('生成策略说明：', options);
-      next.generationStrategy = {
-        ...clone(DEFAULT_SETUP_CONFIGURATION.generationStrategy),
-        customGenerationHint: sanitizedSetupHint(customGeneration, requestedCapabilityFromHint(customGeneration)),
-      };
-    } else {
-      next.generationStrategy = clone(DEFAULT_SETUP_CONFIGURATION.generationStrategy);
-    }
-  } else if (section === '5') {
-    if (presetAnswer === null) {
-      renderWriteModeMenu(options);
-    }
-    const answer = selectionOrDefault(
-      presetAnswer ?? await askSetupQuestion('写入方式 [1/2/3/4/5]，默认 4：', options),
-      '4',
-    );
-    const values = {
-      1: 'preview_only',
-      2: 'draft_only',
-      3: 'current_only',
-      4: 'promote_verified',
-      5: 'backup_promote',
-    };
-    if (values[answer]) next.writeMode = values[answer];
-  }
-  return normalizeSetupConfiguration(next);
-}
-
-function renderUpdatedSetupConfiguration(configuration, options = /** @type {any} */ ({})) {
-  const normalized = normalizeSetupConfiguration(configuration);
-  writeSetupLine(options, '');
-  writeSetupLine(options, '已更新配置');
-  writeSetupLine(options, `  探索模式：${setupConfigurationLabel('explorationMode', normalized.explorationMode)}`);
-  writeSetupLine(options, `  敏感能力：${setupConfigurationLabel('sensitiveCapabilityStrategy', normalized.sensitiveCapabilityStrategy)}`);
-  writeSetupLine(options, `  扫描范围：${setupConfigurationLabel('scanScope', normalized.scanScope)}`);
-  writeSetupLine(options, `  生成策略：${setupGenerationStrategyLabel(normalized)}`);
-  writeSetupLine(options, `  写入方式：${setupConfigurationLabel('writeMode', normalized.writeMode)}`);
-  writeSetupLine(options, '');
+  void profile;
+  void options;
 }
 
 async function promptAutomaticSetupConfiguration(options, choices, initialAnswer = null) {
-  let nextChoices = applySetupConfigurationToChoices(choices);
-  if (initialAnswer === null) {
-    const tuiResult = await promptSetupConfigurationTui(options, nextChoices.setupConfiguration);
-    if (tuiResult) {
-      nextChoices.setupConfiguration = await completeSetupConfigurationCustomPrompts(tuiResult.configuration, options);
-      nextChoices.acceptedDefaultRecommendation = tuiResult.changed !== true;
-      return applySetupConfigurationToChoices(nextChoices);
-    }
-  }
-  let answer = initialAnswer === null
-    ? await askSetupQuestion(setupConfigurationStartPrompt(), options)
-    : compactText(initialAnswer);
-  while (true) {
-    if (isSetupCancelAnswer(answer)) {
-      throw setupCancelledError();
-    }
-    if (!answer) {
-      nextChoices.acceptedDefaultRecommendation = nextChoices.acceptedDefaultRecommendation !== false;
-      return applySetupConfigurationToChoices(nextChoices);
-    }
-    if (!isSetupConfigurationMenuAnswer(answer)) {
-      const hintedChoices = applyHintToChoices(answer, nextChoices);
-      hintedChoices.acceptedDefaultRecommendation = false;
-      return applySetupConfigurationToChoices(hintedChoices);
-    }
-    if (isSetupShowAnswer(answer)) {
-      writeSetupLine(options, '');
-      renderCurrentSetupConfiguration(nextChoices.setupConfiguration, options);
-      writeSetupLine(options, '');
-      answer = await askSetupQuestion(setupConfigurationContinuePrompt(), options);
-      continue;
-    }
-    if (isSetupResetAnswer(answer)) {
-      nextChoices.setupConfiguration = defaultSetupConfiguration();
-      nextChoices.acceptedDefaultRecommendation = true;
-      renderUpdatedSetupConfiguration(nextChoices.setupConfiguration, options);
-      answer = await askSetupQuestion(setupConfigurationContinuePrompt(), options);
-      continue;
-    }
-    if (isSetupHelpAnswer(answer)) {
-      writeSetupLine(options, '');
-      renderSetupOperationHelp(options);
-      writeSetupLine(options, '');
-      renderSetupShortcutExamples(options);
-      writeSetupLine(options, '');
-      answer = await askSetupQuestion(setupConfigurationContinuePrompt(), options);
-      continue;
-    }
-    const quickConfig = parseSetupQuickConfigurationAnswer(answer);
-    if (quickConfig) {
-      nextChoices.setupConfiguration = await updateSetupConfigurationSection(
-        quickConfig.section,
-        nextChoices.setupConfiguration,
-        options,
-        quickConfig.value,
-      );
-    } else {
-      nextChoices.setupConfiguration = await updateSetupConfigurationSection(answer, nextChoices.setupConfiguration, options);
-    }
-    nextChoices.acceptedDefaultRecommendation = false;
-    renderUpdatedSetupConfiguration(nextChoices.setupConfiguration, options);
-    answer = await askSetupQuestion(setupConfigurationContinuePrompt(), options);
-  }
+  void options;
+  void initialAnswer;
+  return applySetupConfigurationToChoices(choices);
 }
 
 async function promptFirstRunChoices(setupPlan, options = /** @type {any} */ ({}), mode = 'accept-recommended', initialAnswer = null, promptOptions = /** @type {any} */ ({})) {
+  void options;
+  void initialAnswer;
   if (promptOptions.renderPlan !== false) {
     renderSetupPlan(setupPlan, options);
   }
-  if (options.manual !== true) {
-    const choices = defaultChoicesFromPlan(setupPlan, mode);
-    return await promptAutomaticSetupConfiguration(options, choices, initialAnswer);
-  }
-  const defaultPrompt = options.manual === true
-    ? '按 Enter 使用默认设置并开始构建；或输入你想要的能力/范围，例如“读取推荐时间线帖子”：'
-    : '按 Enter 开始自动构建；如需限定范围，可输入一句话说明（可选）：';
-  const answer = initialAnswer === null
-    ? await askSetupQuestion(defaultPrompt, options)
-    : compactText(initialAnswer);
-  const choices = applyHintToChoices(answer, defaultChoicesFromPlan(setupPlan, mode));
-  choices.acceptedDefaultRecommendation = answer.length === 0;
-  return choices;
+  return applyBuildModeChoiceOverrides(defaultChoicesFromPlan(setupPlan, mode), options);
 }
 
 function buildOptionsFromProfile(options, paths, profile) {
@@ -5160,7 +3952,7 @@ function buildOptionsFromProfile(options, paths, profile) {
     maxPages: options.maxPages ?? scope.maxPages,
     maxSeeds: options.maxSeeds ?? scope.maxSeeds,
     maxSitemaps: options.maxSitemaps ?? scope.maxSitemaps,
-    renderJs: options.renderJs ?? scope.renderJs,
+    renderJs: options.renderJs ?? (scope.renderJs === true ? true : undefined),
     captureNetwork: options.captureNetwork ?? scope.captureNetwork,
     submitForms: false,
     allowDestructiveActions: safety.allowDestructiveActions === true ? false : false,
@@ -5173,9 +3965,7 @@ function buildOptionsFromProfile(options, paths, profile) {
 
 function firstTimeSetupRequiredError(paths, setupPlan) {
   const error = /** @type {Error & Record<string, any>} */ (new Error(
-    `first-time-setup-required: ${setupPlan.site.rootUrl} 还没有已保存的 build_profile.json。` +
-    `请先在交互式终端运行一次 siteforge build <url>，接受或编辑设置。` +
-    `setup_plan.json 已写入 ${paths.setupPlanPath}`,
+    `first-time-setup-required: ${setupPlan.site.rootUrl} has no saved build_profile.json. setup_plan.json: ${paths.setupPlanPath}`,
   ));
   error.code = 'first-time-setup-required';
   error.artifactDir = paths.artifactDir;
@@ -5186,10 +3976,10 @@ function firstTimeSetupRequiredError(paths, setupPlan) {
 function setupEvidenceNotBuildableError(paths, setupPlan) {
   const guidance = (setupPlan.buildReadiness?.guidance ?? []).map((line) => setupDisplayText(line)).join(' ');
   const error = /** @type {Error & Record<string, any>} */ (new Error(
-    `setup-evidence-not-buildable: SiteForge 没有找到足够的公开设置证据，站点为 ${setupPlan.site.rootUrl}。` +
-    `${setupDisplayText(setupPlan.buildReadiness?.reason ?? '设置尚未就绪，不能构建。')} ` +
-    `${guidance ? `${guidance} ` : ''}` +
-    `setup_plan.json 已写入 ${paths.setupPlanPath}`,
+    `setup-evidence-not-buildable: SiteForge did not find enough public setup evidence for ${setupPlan.site.rootUrl}. `
+    + `${setupDisplayText(setupPlan.buildReadiness?.reason ?? 'setup-not-buildable')} `
+    + `${guidance ? `${guidance} ` : ''}`
+    + `setup_plan.json: ${paths.setupPlanPath}`,
   ));
   error.code = 'setup-evidence-not-buildable';
   error.reasonCode = setupPlan.buildReadiness?.reasonCode ?? 'setup-no-page-evidence';
@@ -5220,15 +4010,17 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
   const paths = buildSetupAssistantPaths(inputUrl, options);
   const interactive = resolveSetupInteractive(options);
   const savedProfileCandidate = await readJsonOrNull(paths.savedBuildProfilePath);
-  const savedProfile = isUsableSavedBuildProfile(savedProfileCandidate) ? savedProfileCandidate : null;
+  const savedProfile = options.strictCookieAuth === true || options.strictBrowserAuth === true
+    ? null
+    : isUsableSavedBuildProfile(savedProfileCandidate) ? savedProfileCandidate : null;
 
   if (!savedProfile) {
     let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
-    setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive });
+    setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options });
     let setupReview = { continueUncollected: true, nextChoiceHint: null };
     let setupPlanRendered = false;
     if (!isSetupPlanBuildable(setupPlan)) {
-      // Login enhancement is now governed by crawlContract/auth_state_report.
+      // Cookie authentication is governed by crawlContract/auth_state_report.
       // Synthetic or known-site policy evidence must not make setup buildable.
     }
     if (!isSetupPlanBuildable(setupPlan)) {
@@ -5292,7 +4084,7 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
     const answer = await askSetupQuestion('1/2: ', options);
     if (/^(?:edit|e|编辑)$/iu.test(answer) || answer.length > 0 && !/^(?:reset|r|重置)$/iu.test(answer)) {
       let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
-      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive });
+      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options });
       let setupReview = { continueUncollected: true, nextChoiceHint: null };
       let setupPlanRendered = false;
       if (!isSetupPlanBuildable(setupPlan)) {
@@ -5303,7 +4095,7 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
           mode: 'edit-saved-profile-unusable',
         });
       }
-      let userChoices = answer && !/^(?:edit|e|编辑)$/iu.test(answer)
+      let userChoices = answer && !/^(?:edit|e|缂栬緫)$/iu.test(answer)
         ? applyHintToChoices(answer, defaultChoicesFromPlan(setupPlan, 'edit-saved-profile'))
         : await promptFirstRunChoices(setupPlan, options, 'edit-saved-profile', setupReview.nextChoiceHint, {
           renderPlan: !setupPlanRendered,
@@ -5331,7 +4123,7 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
     }
     if (/^(?:reset|r|重置)$/iu.test(answer)) {
       let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
-      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, interactive });
+      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options });
       let setupReview = { continueUncollected: true, nextChoiceHint: null };
       let setupPlanRendered = false;
       if (!isSetupPlanBuildable(setupPlan)) {

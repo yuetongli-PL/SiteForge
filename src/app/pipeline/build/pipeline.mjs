@@ -2,13 +2,18 @@
 
 import path from 'node:path';
 import process from 'node:process';
-import { displayPath } from '../../../infra/cli/path-display.mjs';
+import { displayPath, displayReportPath } from '../../../infra/cli/path-display.mjs';
 import { buildStatusLabel, collectionStatusLabel, verificationStatusLabel } from '../../../infra/cli/status-labels.mjs';
+import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { pathExists } from '../../../infra/io.mjs';
 import { jsonClone } from '../../../shared/clone.mjs';
 import { mapWithConcurrency } from '../../../shared/concurrency.mjs';
 import { slugifyAscii, uniqueSortedStrings } from '../../../shared/normalize.mjs';
-import { prepareRedactedArtifactJsonWithAudit } from '../../../domain/sessions/security-guard.mjs';
+import { sanitizePublicUrl } from '../../../shared/url-safety.mjs';
+import {
+  assertNoForbiddenPatterns,
+  prepareRedactedArtifactJsonWithAudit,
+} from '../../../domain/sessions/security-guard.mjs';
 import {
   ensureBuildDirectories,
   readJsonIfExists,
@@ -64,6 +69,7 @@ import {
   capabilityEnablementStatusCounts,
   capabilityEvidenceStatusSummary,
   findForcedDisabledActions,
+  isReadOnlyFollowSurface,
   normalizeCapabilityEnablementStatus,
   normalizeCapabilityEvidenceStatus,
   publicSafeRemediation,
@@ -71,12 +77,16 @@ import {
   sanitizeEvidenceRef,
 } from './risk-policy.mjs';
 import {
+  extractElementInstances,
   isUrlAllowedByRobots,
   parseHtmlDocument,
   parseRobotsPolicy,
   parseRobotsSitemaps,
   parseSitemapUrls,
+  robotsDecisionForUrl,
   routePatternForUrl,
+  selectRobotsGroups,
+  stripHtml,
 } from './html.mjs';
 import {
   createSocialSpaAutoDiscoverySummary,
@@ -110,13 +120,13 @@ import {
 import {
   AUTH_STATE_REPORT_FILE,
   CRAWL_AUTHENTICATED_FILE,
-  authLevelRank,
   authSummaryForReport,
   canRunAuthenticatedLayer,
   createCrawlContract,
   createPublicOnlyAuthStateReport,
   evidenceLevelRank,
   normalizeAuthStateReport,
+  runDefaultBrowserAuthStateCheck,
 } from './auth-state.mjs';
 
 export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
@@ -422,6 +432,8 @@ function createBlockedStageError(code, message, {
         ? (warningReason?.reasonCode === 'robots-disallowed' ? warningReason : normalizeSiteForgeReason('empty-seed-set'))
         : code === 'siteforge-static-evidence-unavailable'
           ? normalizeSiteForgeReason('dynamic-unsupported')
+          : code === 'siteforge-rendered-evidence-unavailable'
+            ? normalizeSiteForgeReason('dynamic-unsupported')
           : code === 'siteforge-static-crawl-empty'
             ? (warningReason?.reasonCode === 'network-fetch-failed' || warningReason?.reasonCode === 'robots-disallowed'
               ? warningReason
@@ -454,6 +466,27 @@ function hasUsableStaticPageEvidence(page) {
   return page?.diagnostics?.staticEvidenceStatus === 'present';
 }
 
+function hasPublicRenderedProvider(context) {
+  return typeof context?.options?.publicRenderedStructureProvider === 'function'
+    || Boolean(context?.options?.publicRenderedStructureSummary);
+}
+
+function publicRenderedExplicitlyDisabled(context) {
+  return context?.options?.renderJs === false
+    || context?.options?.publicRenderedAuto === false;
+}
+
+function canAutoAttemptPublicRenderedLayer(context) {
+  return !publicRenderedExplicitlyDisabled(context);
+}
+
+function canAttemptPublicRenderedLayer(context, { renderedRequired = false } = /** @type {any} */ ({})) {
+  return hasPublicRenderedProvider(context)
+    || context?.options?.renderJs === true
+    || context?.policy?.renderJs === true
+    || (renderedRequired && canAutoAttemptPublicRenderedLayer(context));
+}
+
 function requireStage(stageResults, name) {
   const result = stageResults[name];
   if (!result) {
@@ -480,7 +513,7 @@ function pageNodeIdForPage(page) {
 
 function pageSourceLayer(page = /** @type {any} */ ({})) {
   const layer = String(page?.sourceLayer ?? '').trim();
-  if (layer === 'authenticated' || layer === 'authenticated_overlay' || layer === 'public') {
+  if (layer === 'authenticated' || layer === 'authenticated_overlay' || layer === 'public_rendered' || layer === 'authorized_source' || layer === 'public') {
     return layer;
   }
   return page?.authRequired === true ? 'authenticated' : 'public';
@@ -488,10 +521,18 @@ function pageSourceLayer(page = /** @type {any} */ ({})) {
 
 function nodeSourceLayer(node = /** @type {any} */ ({})) {
   const layer = String(node?.sourceLayer ?? '').trim();
-  if (layer === 'authenticated' || layer === 'authenticated_overlay' || layer === 'public') {
+  if (layer === 'authenticated' || layer === 'authenticated_overlay' || layer === 'public_rendered' || layer === 'authorized_source' || layer === 'public') {
     return layer;
   }
   return node?.authRequired === true ? 'authenticated' : 'public';
+}
+
+function isPublicReadSourceLayer(layer) {
+  return layer === 'public' || layer === 'public_rendered' || layer === 'authorized_source';
+}
+
+function isAuthenticatedSourceLayer(layer) {
+  return layer === 'authenticated' || layer === 'authenticated_overlay';
 }
 
 function pageEvidenceLevel(page = /** @type {any} */ ({})) {
@@ -505,6 +546,12 @@ function pageEvidenceLevel(page = /** @type {any} */ ({})) {
   if (layer === 'authenticated') {
     return 'login_route_verified';
   }
+  if (layer === 'public_rendered') {
+    return 'public_rendered_verified';
+  }
+  if (layer === 'authorized_source') {
+    return 'authorized_source_verified';
+  }
   return 'public_verified';
 }
 
@@ -513,6 +560,7 @@ function pagesFromStageResults(stageResults = /** @type {any} */ ({})) {
     ...(stageResults.crawlStatic?.pages ?? []),
     ...(stageResults.crawlAuthenticated?.authenticatedPages ?? []),
     ...(stageResults.crawlAuthenticated?.authenticatedOverlayPages ?? []),
+    ...(stageResults.crawlRendered?.publicRenderedPages ?? stageResults.crawlRendered?.pages ?? []),
   ];
 }
 
@@ -621,9 +669,205 @@ function catalogRouteClassification(pathname = '', haystack = '') {
   return null;
 }
 
-function classifyPage(page) {
+function policyTextForContext(context = /** @type {any} */ ({})) {
+  const policy = context.setupProfile?.knownSitePolicy ?? {};
+  return [
+    policy.siteArchetype,
+    policy.primaryArchetype,
+    policy.adapterId,
+    policy.siteKey,
+    ...(policy.pageTypes ?? []),
+    ...(policy.capabilityFamilies ?? []),
+    ...(policy.supportedIntents ?? []),
+  ].join(' ').toLowerCase();
+}
+
+function isChapterContentContext(context = /** @type {any} */ ({})) {
+  return /chapter-content|open-book|open-chapter|search-book|navigate-to-chapter/u.test(policyTextForContext(context));
+}
+
+function isSocialSiteContext(context = /** @type {any} */ ({})) {
+  return /social|timeline|post|direct-message|notification|bookmark|following|followers|twitter|instagram|x\.com/u.test(policyTextForContext(context));
+}
+
+function chapterContentClassification(pathname = '', pageType = '', context = /** @type {any} */ ({})) {
+  const pathText = String(pathname ?? '').toLowerCase().replace(/\/+$/u, '') || '/';
+  const pageTypeText = String(pageType ?? '').toLowerCase().replace(/[^a-z0-9]+/gu, '-');
+  const hasPolicySignal = isChapterContentContext(context);
+  const hasStructureSignal = /book|chapter|novel|fiction|reader|serialized/u.test(`${pathText} ${pageTypeText}`);
+  if (!hasPolicySignal && !hasStructureSignal) {
+    return null;
+  }
+  if (pageTypeText === 'home' || (pathText === '/' && !hasStructureSignal)) {
+    return hasPolicySignal ? 'chapter_content_home' : null;
+  }
+  if (/book-detail|content-detail/u.test(pageTypeText) || /^\/(?:book|books|works|work)\/(?:[^/]+|:id)(?:\/)?$/u.test(pathText)) {
+    return 'book_detail';
+  }
+  if (/chapter-page|chapter-detail/u.test(pageTypeText)
+    || /^\/(?:chapter|chapters|read|reader)\/(?:[^/]+|:id)\/(?:[^/]+|:id)(?:\/)?$/u.test(pathText)) {
+    return 'chapter_detail';
+  }
+  if (/book-search-results|search-results|search-page/u.test(pageTypeText)
+    || (hasPolicySignal && /\/(?:search|soushu|so|booksearch)(?:\/|$)/u.test(pathText))) {
+    return 'book_search_results';
+  }
+  if (/book-search-form/u.test(pageTypeText)) {
+    return 'book_search_form';
+  }
+  if (/book-ranking|ranking-entry/u.test(pageTypeText)
+    || (hasPolicySignal && (/ranking|rank/u.test(pageTypeText) || /\/(?:rank|ranking|top|hot)(?:\/|$)/u.test(pathText)))) {
+    return 'book_ranking_list';
+  }
+  if (/book-card|book-list|ranking-entry/u.test(pageTypeText)) {
+    return /rank|ranking/u.test(pageTypeText) ? 'book_ranking_list' : 'book_collection_list';
+  }
+  if (/chapter-link/u.test(pageTypeText)) {
+    return 'chapter_detail';
+  }
+  if (/book-collection|book-recommendation/u.test(pageTypeText)) {
+    return 'book_collection_list';
+  }
+  if (/book-category|book-list/u.test(pageTypeText)
+    || (hasPolicySignal && (/category-page|collection|list/u.test(pageTypeText)
+      || /^\/(?:all|finish|free|mm|boy|girl|category|categories|genre|genres|bookstore|library)(?:\/|$)/u.test(pathText)))) {
+    return 'book_category_list';
+  }
+  return null;
+}
+
+function classificationFromLinkSemanticKind(kind, node = /** @type {any} */ ({})) {
+  const normalizedKind = String(kind ?? '').toLowerCase();
+  if (!normalizedKind || normalizedKind === 'navigation' || normalizedKind === 'search') {
+    return null;
+  }
+  const text = [
+    node.normalizedUrl,
+    node.url,
+    node.routePattern,
+    node.routeTemplate,
+    node.title,
+    node.textSummary,
+    node.structureType,
+    node.linkStructureType,
+  ].join(' ').toLowerCase();
+  const listLike = (
+    node.listPresent === true
+    || Number(node.visibleItemCount ?? 0) >= 3
+    || /(?:^|[/:?\s])(?:list|lists|collection|collections|catalog|index|page|pages|category|categories|tag|tags|rank|ranking|top|hot|popular|latest|new|recent|archive|archives)(?=[/?#:\s]|$)/u.test(text)
+  );
+  if (normalizedKind === 'category') return 'category_list';
+  if (normalizedKind === 'tag') return 'tag_list';
+  if (normalizedKind === 'ranking') return 'ranking_list';
+  if (normalizedKind === 'following_list' || normalizedKind === 'followed_channel') return 'following_list';
+  if (normalizedKind === 'profile') return 'profile_detail';
+  if (normalizedKind === 'repository') return listLike ? 'repository_list' : 'repository_detail';
+  if (normalizedKind === 'article') return listLike ? 'article_list' : 'article_detail';
+  if (normalizedKind === 'work') return listLike ? 'work_list' : 'work_detail';
+  if (normalizedKind === 'media' || normalizedKind === 'detail') {
+    return listLike ? 'collection_list' : 'entity_detail';
+  }
+  return null;
+}
+
+function genericPublicClassification(pathname = '', pageType = '', haystack = '', node = /** @type {any} */ ({})) {
+  const pathText = String(pathname ?? '').toLowerCase().replace(/\/+$/u, '') || '/';
+  const pageTypeText = String(pageType ?? '').toLowerCase().replace(/[^a-z0-9]+/gu, '-');
+  const text = [
+    pathText,
+    pageTypeText,
+    haystack,
+    node.structureType,
+    node.linkSemanticKind,
+    node.linkStructureType,
+    ...(Array.isArray(node.routeTemplates) ? node.routeTemplates : []),
+  ].join(' ').toLowerCase();
+  const semanticClassification = classificationFromLinkSemanticKind(node.linkSemanticKind, node);
+  if (semanticClassification) {
+    return semanticClassification;
+  }
+  const segments = pathText.split('/').filter(Boolean);
+  if (/search|query|keyword|find|soushu|so\b|搜索|搜书|检索/u.test(text)) {
+    return /results?|result-list/u.test(text) ? 'search_results' : 'search_page';
+  }
+  if (/分类|类别|频道|书库|书城/u.test(text)) {
+    return 'category_list';
+  }
+  if (/标签|话题/u.test(text)) {
+    return 'tag_list';
+  }
+  if (/排行|榜单|热门|最新|新书/u.test(text)) {
+    return 'ranking_list';
+  }
+  if (/categor|category|categories|genre|genres|channel|channels|section|sections|分类|频道/u.test(text)) {
+    return 'category_list';
+  }
+  if (/\btag\b|tags|topic|topics|标签|话题/u.test(text)) {
+    return 'tag_list';
+  }
+  if (/rank|ranking|top|hot|popular|trending|latest|recent|archive|archives|排行|榜|热门|最新/u.test(text)) {
+    return 'ranking_list';
+  }
+  if (/repositories|repository|\brepos?\b|github|gitlab|source-code|source code|open-source|open source|code search|仓库|项目/u.test(text)) {
+    if (/\/(?:repositories|repos|projects|explore|topics?)(?:\/|$)/u.test(pathText)
+      || /list|search|collection|explore|topic/u.test(text)) {
+      return 'repository_list';
+    }
+    if (segments.length >= 2 || /detail|readme|source-code|source code|code search/u.test(text)) {
+      return 'repository_detail';
+    }
+  }
+  if (/\/works?(?:\/(?:date|rank|ranking|top|hot|popular|latest|new|page|\d{4})(?:\/|$)|$)/u.test(pathText)
+    || /\b(?:work|works|book|books|novel|fiction|serialized)\b/u.test(text)
+    || /小说|书籍|作品|章节|阅读/u.test(text)) {
+    if (/\/works?\/[^/]+/u.test(pathText) && !/\/works?\/(?:date|rank|ranking|top|hot|popular|latest|new|page|\d{4})(?:\/|$)/u.test(pathText)) {
+      return 'work_detail';
+    }
+    return 'work_list';
+  }
+  if (/文章|资讯|新闻/u.test(text)) {
+    if (/详情|正文/u.test(text)) {
+      return 'article_detail';
+    }
+    return 'article_list';
+  }
+  if (/作者|作家|用户/u.test(text)) {
+    return 'profile_detail';
+  }
+  if (/详情|目录/u.test(text)) {
+    if (/列表|list|collection|catalog|index|page/u.test(text) || Number(node.visibleItemCount ?? 0) >= 3 || node.listPresent === true) {
+      return 'collection_list';
+    }
+    return 'entity_detail';
+  }
+  if (/article|articles|story|stories|news|blog|post|posts|资讯|新闻|文章/u.test(text)) {
+    if (/\/(?:article|articles|story|stories|news|blog|posts?)\/[^/]+/u.test(pathText) || /detail|正文/u.test(text)) {
+      return 'article_detail';
+    }
+    return 'article_list';
+  }
+  if (/author|authors|profile|profiles|user|users|org|organization|people|actor|actors|model|models|作者|用户|组织/u.test(text)) {
+    return 'profile_detail';
+  }
+  if (/detail|details|item|items|product|products|video|videos|watch|content|entity|详情/u.test(text)) {
+    if (/list|collection|catalog|index|page|列表/u.test(text) || Number(node.visibleItemCount ?? 0) >= 3 || node.listPresent === true) {
+      return 'collection_list';
+    }
+    return 'entity_detail';
+  }
+  if (
+    node.listPresent === true
+    || Number(node.visibleItemCount ?? 0) >= 3
+    || /list|collection|catalog|directory|index|feed|cards?|entries|results?|列表|目录/u.test(text)
+  ) {
+    return 'collection_list';
+  }
+  return null;
+}
+
+function classifyPage(page, context = /** @type {any} */ ({})) {
   const sourceLayer = pageSourceLayer(page);
-  if (sourceLayer !== 'public') {
+  if (isAuthenticatedSourceLayer(sourceLayer)) {
     const authText = `${page.routeTemplate ?? ''} ${page.routePattern ?? ''} ${page.pageType ?? ''} ${page.title ?? ''} ${page.textSummary ?? ''}`.toLowerCase();
     if (/notification|mention/u.test(authText)) return 'notification_list';
     if (/bookmark|saved/u.test(authText)) return 'bookmark_list';
@@ -636,12 +880,17 @@ function classifyPage(page) {
     return 'authenticated_home';
   }
   if (page.pageType === 'home') {
-    return 'homepage';
-  }
-  if (page.pageType) {
-    return `social_${String(page.pageType).replace(/[^a-z0-9_]+/giu, '_').toLowerCase()}`;
+    return chapterContentClassification('/', page.pageType, context) ?? 'homepage';
   }
   const parsed = new URL(page.normalizedUrl);
+  const chapterClassification = chapterContentClassification(
+    page.routeTemplate ?? parsed.pathname,
+    page.pageType,
+    context,
+  );
+  if (chapterClassification) {
+    return chapterClassification;
+  }
   const haystack = `${parsed.pathname} ${page.title ?? ''} ${page.textSummary ?? ''}`.toLowerCase();
   if (parsed.pathname === '/') {
     return 'homepage';
@@ -656,7 +905,7 @@ function classifyPage(page) {
   if (earlyCatalogClassification) {
     return earlyCatalogClassification;
   }
-  if (/channel|feed|list|棰戦亾|瑕侀椈|鏂伴椈鍒楄〃|璧勮/iu.test(haystack)) {
+  if (/channel|feed|棰戦亾|瑕侀椈|鏂伴椈鍒楄〃|璧勮/iu.test(haystack)) {
     return 'news_channel';
   }
   const pathCatalogClassification = catalogRouteClassification(parsed.pathname, '');
@@ -678,6 +927,19 @@ function classifyPage(page) {
   }
   if (/contact|support/u.test(haystack)) {
     return 'contact';
+  }
+  const genericClassification = genericPublicClassification(
+    page.routeTemplate ?? parsed.pathname,
+    page.pageType,
+    haystack,
+    page,
+  );
+  if (genericClassification) {
+    return genericClassification;
+  }
+  if (page.pageType) {
+    const normalizedPageType = String(page.pageType).replace(/[^a-z0-9_]+/giu, '_').toLowerCase();
+    return isSocialSiteContext(context) ? `social_${normalizedPageType}` : `content_${normalizedPageType}`;
   }
   return 'content_page';
 }
@@ -884,7 +1146,11 @@ function setupProfileSummary(profile = null) {
     host: profile.knownSitePolicy.host ?? null,
     siteKey: profile.knownSitePolicy.siteKey ?? null,
     adapterId: profile.knownSitePolicy.adapterId ?? null,
+    siteArchetype: profile.knownSitePolicy.siteArchetype ?? null,
+    primaryArchetype: profile.knownSitePolicy.primaryArchetype ?? null,
     sources: clone(profile.knownSitePolicy.sources ?? []),
+    pageTypes: clone(profile.knownSitePolicy.pageTypes ?? []),
+    publicRouteTemplates: clone(profile.knownSitePolicy.publicRouteTemplates ?? []),
     capabilityFamilies: clone(profile.knownSitePolicy.capabilityFamilies ?? []),
     supportedIntents: clone(profile.knownSitePolicy.supportedIntents ?? []),
     downloadTaskTypes: clone(profile.knownSitePolicy.downloadTaskTypes ?? []),
@@ -910,15 +1176,15 @@ function setupProfileSummary(profile = null) {
     crawlContract: profile.crawlContract ? {
       crawlMode: profile.crawlContract.crawlMode ?? null,
       sourceMode: profile.crawlContract.sourceMode ?? null,
-      authChoice: profile.crawlContract.authChoice ?? null,
-      authLevel: profile.crawlContract.authLevel ?? null,
+      authMethod: profile.crawlContract.authMethod ?? null,
+      authVerificationStatus: profile.crawlContract.authVerificationStatus ?? null,
       coverageTargets: clone(profile.crawlContract.coverageTargets ?? {}),
       evidencePolicy: clone(profile.crawlContract.evidencePolicy ?? {}),
     } : null,
     authState: profile.authStateReport ? {
       crawlMode: profile.authStateReport.crawlMode ?? null,
-      authChoice: profile.authStateReport.authChoice ?? null,
-      authLevel: profile.authStateReport.authLevel ?? null,
+      authMethod: profile.authStateReport.authMethod ?? null,
+      authVerificationStatus: profile.authStateReport.authVerificationStatus ?? null,
       verified: profile.authStateReport.verified === true,
       source: profile.authStateReport.source ?? null,
       rawMaterialPersisted: profile.authStateReport.rawMaterialPersisted === true,
@@ -984,6 +1250,156 @@ function collectionReviewMissingRecords(review = null) {
     }
   }
   return records.filter((record) => record.id || record.label);
+}
+
+const FINAL_REVIEW_GENERIC_TOKENS = new Set([
+  'a',
+  'an',
+  'and',
+  'browse',
+  'capability',
+  'content',
+  'list',
+  'navigate',
+  'open',
+  'page',
+  'pages',
+  'policy',
+  'public',
+  'read',
+  'site',
+  'to',
+  'view',
+]);
+
+function finalReviewTokens(value) {
+  return normalizeSetupCapabilityId(value)
+    .split('-')
+    .filter((token) => token.length > 1);
+}
+
+function finalReviewDistinctiveTokens(value) {
+  const tokens = finalReviewTokens(value);
+  const distinctive = tokens.filter((token) => !FINAL_REVIEW_GENERIC_TOKENS.has(token));
+  return distinctive.length ? distinctive : tokens;
+}
+
+function finalReviewAliases(record = /** @type {any} */ ({})) {
+  const id = normalizeSetupCapabilityId(record.id ?? record.label);
+  const aliases = [finalReviewDistinctiveTokens(id)];
+  if (/categor/u.test(id)) aliases.push(['category'], ['categories']);
+  if (/chapter/u.test(id)) aliases.push(['chapter']);
+  if (/book/u.test(id)) aliases.push(['book']);
+  if (/search/u.test(id)) aliases.push(['search']);
+  if (/rank/u.test(id)) aliases.push(['ranking'], ['rank']);
+  if (/profile|author/u.test(id)) aliases.push(['profile'], ['author']);
+  if (/repository|repo/u.test(id)) aliases.push(['repository'], ['repositories']);
+  if (/article|news/u.test(id)) aliases.push(['article'], ['news']);
+  if (/utility|navigation/u.test(id)) aliases.push(['navigation'], ['route']);
+  if (/content/u.test(id)) aliases.push(['detail'], ['book'], ['work'], ['article'], ['repository'], ['content']);
+  return aliases.filter((tokens) => Array.isArray(tokens) && tokens.length > 0);
+}
+
+function finalReviewSignalRecords(capabilities = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
+  const callableCapabilityIds = new Set((intents ?? [])
+    .filter((intent) => intent.callable !== false)
+    .map((intent) => normalizeSetupCapabilityId(intent.capabilityId))
+    .filter(Boolean));
+  const capabilitySignals = (capabilities ?? [])
+    .filter((capability) => (
+      capability.status === 'active'
+      || capability.enabled_status === 'enabled'
+      || capability.enabled_status === 'limited_enabled'
+      || callableCapabilityIds.has(normalizeSetupCapabilityId(capability.id))
+    ))
+    .flatMap((capability) => [
+      capability.id,
+      capability.name,
+      capability.user_facing_name,
+      capability.userFacingName,
+      capability.userValue,
+      capability.action,
+      capability.object,
+      capability.category,
+      capability.setupCapabilityId,
+      capability.intentAction,
+      capability.routeTemplate,
+      capability.routePath,
+      ...(capability.intents ?? []),
+    ]);
+  const intentSignals = (intents ?? [])
+    .filter((intent) => intent.callable !== false)
+    .flatMap((intent) => [
+      intent.id,
+      intent.name,
+      intent.capabilityId,
+      intent.canonicalUtterance,
+      ...(intent.utteranceExamples ?? []),
+    ]);
+  return uniqueSortedStrings([...capabilitySignals, ...intentSignals]
+    .map(normalizeSetupCapabilityId)
+    .filter(Boolean));
+}
+
+function finalReviewSignalCovers(record, signals = /** @type {any[]} */ ([])) {
+  const target = normalizeSetupCapabilityId(record?.id ?? record?.label);
+  if (!target || !signals.length) {
+    return false;
+  }
+  if (signals.some((signal) => signal === target || signal.includes(target) || target.includes(signal))) {
+    return true;
+  }
+  return finalReviewAliases(record).some((aliasTokens) => signals.some((signal) => {
+    const signalTokens = new Set(finalReviewTokens(signal));
+    return aliasTokens.every((token) => signalTokens.has(token) || signal.includes(token));
+  }));
+}
+
+function reconcileSetupCollectionReviewWithBuildOutputs(
+  review = null,
+  capabilities = /** @type {any[]} */ ([]),
+  intents = /** @type {any[]} */ ([]),
+) {
+  if (!review || typeof review !== 'object') {
+    return review;
+  }
+  const signals = finalReviewSignalRecords(capabilities, intents);
+  if (!signals.length) {
+    return review;
+  }
+  const next = clone(review);
+  for (const kind of ['capabilities', 'intents']) {
+    const bucket = next?.[kind];
+    if (!bucket || !Array.isArray(bucket.missing)) {
+      continue;
+    }
+    const collected = Array.isArray(bucket.collected) ? bucket.collected : [];
+    const missing = [];
+    for (const item of bucket.missing) {
+      if (finalReviewSignalCovers(item, signals)) {
+        collected.push({
+          ...item,
+          status: 'collected',
+          reasonCode: null,
+          reason: null,
+          collectedBy: 'final-build-capability-or-intent',
+          evidence_status: item.evidence_status ?? 'observed_sanitized',
+        });
+      } else {
+        missing.push(item);
+      }
+    }
+    bucket.collected = collected;
+    bucket.missing = missing;
+  }
+  next.summary = {
+    ...(next.summary ?? {}),
+    ...Object.fromEntries(SETUP_COLLECTION_REVIEW_KINDS.map((kind) => [kind, {
+      collected: Array.isArray(next?.[kind]?.collected) ? next[kind].collected.length : 0,
+      missing: Array.isArray(next?.[kind]?.missing) ? next[kind].missing.length : 0,
+    }])),
+  };
+  return next;
 }
 
 function setupCollectionReviewReport(review = null, sourcePath = null) {
@@ -1225,6 +1641,12 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
       ...options,
       fetchDelayMs: policy.fetchDelayMs,
       fetchTimeoutMs: policy.fetchTimeoutMs,
+      authRuntime: options.authRuntime?.method === 'cookie'
+        ? {
+          ...options.authRuntime,
+          allowedDomains: options.authRuntime.allowedDomains ?? site.allowedDomains,
+        }
+        : null,
     }),
     warnings: [],
     skillId: null,
@@ -1288,13 +1710,12 @@ async function hydrateBuildProfile(context) {
   if (!context.authStateReport) {
     context.authStateReport = createPublicOnlyAuthStateReport({
       site: context.site,
-      authChoice: context.crawlContract?.authChoice ?? 'declined',
+      authMethod: context.crawlContract?.authMethod ?? 'none',
     });
   }
   if (!context.crawlContract) {
     context.crawlContract = createCrawlContract({
       site: context.site,
-      authChoice: context.authStateReport?.authChoice ?? 'declined',
       authStateReport: context.authStateReport,
       coverageTargets: {},
     });
@@ -1321,6 +1742,12 @@ async function hydrateBuildProfile(context) {
     ...context.options,
     fetchDelayMs: context.policy.fetchDelayMs,
     fetchTimeoutMs: context.policy.fetchTimeoutMs,
+    authRuntime: context.options.authRuntime?.method === 'cookie'
+      ? {
+        ...context.options.authRuntime,
+        allowedDomains: context.options.authRuntime.allowedDomains ?? context.site.allowedDomains,
+      }
+      : null,
   });
 }
 
@@ -1519,7 +1946,7 @@ function buildGeneratedAdapterContractTests(profile) {
         && profile.riskPolicy?.privateContentSaved === false
         ? 'passed'
         : 'failed',
-      message: 'Adapter contract must not persist raw DOM, raw HTML, body text, private content, cookies, tokens, or browser profiles.',
+      message: 'Adapter contract must not persist unsanitized markup, page body text, private content, session material, or browser profiles.',
     },
     {
       id: 'route-classifier-contract-generated',
@@ -1838,6 +2265,73 @@ function routeTargetToUrl(context, routeTarget) {
   }
 }
 
+function knownPolicyPublicSeedRoutes(context) {
+  const policyRoutes = context.setupProfile?.knownSitePolicy?.publicRouteTemplates ?? [];
+  const contractRoutes = context.crawlContract?.coverageTargets?.publicRoutes ?? [];
+  const routes = [
+    ...policyRoutes
+      .filter((route) => route?.seedable === true && route.path)
+      .map((route) => ({
+        path: route.path,
+        pageType: route.pageType ?? null,
+        source: 'known_site_public_route_template',
+        reasonCode: 'known-site-public-route',
+      })),
+    ...contractRoutes.map((path) => ({
+      path,
+      pageType: null,
+      source: 'coverage_target_public_route',
+      reasonCode: 'coverage-target-public-route',
+    })),
+  ];
+  return arrayUniqueBy(routes
+    .map((route) => {
+      const normalizedUrl = routeTargetToUrl(context, route.path);
+      if (!normalizedUrl || !isInternalUrl(normalizedUrl, context.site.allowedDomains)) {
+        return null;
+      }
+      return {
+        ...route,
+        normalizedUrl,
+      };
+    })
+    .filter(Boolean), (route) => route.normalizedUrl)
+    .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
+}
+
+function knownPolicyPublicRouteTemplatePattern(route = /** @type {any} */ ({})) {
+  const raw = String(route.pathTemplate ?? route.routeTemplate ?? route.path ?? '').trim();
+  if (!raw || /[?#<>"']|(?:authorization|bearer|cookie|sid|uid|token|secret|session|password)/iu.test(raw)) {
+    return null;
+  }
+  const normalized = raw
+    .replace(/\{[^}/]+\}/gu, ':id')
+    .replace(/\/+/gu, '/');
+  if (!normalized.startsWith('/')) {
+    return null;
+  }
+  return normalized.length > 1 ? normalized.replace(/\/$/u, '') : normalized;
+}
+
+function knownPolicyPublicRouteTemplates(context) {
+  const policyRoutes = context.setupProfile?.knownSitePolicy?.publicRouteTemplates ?? [];
+  return arrayUniqueBy(policyRoutes
+    .map((route) => {
+      const pattern = knownPolicyPublicRouteTemplatePattern(route);
+      if (!pattern) {
+        return null;
+      }
+      return {
+        pattern,
+        pageType: route.pageType ?? null,
+        source: route.seedable === true ? 'known_site_public_seed_route_template' : 'known_site_public_route_template',
+        seedable: route.seedable === true,
+      };
+    })
+    .filter(Boolean), (route) => `${route.pattern}:${route.pageType ?? ''}`)
+    .sort((left, right) => left.pattern.localeCompare(right.pattern, 'en'));
+}
+
 function seedFromRouteTarget(context, routeTarget, {
   source = 'auth_route',
   confidence = 0.62,
@@ -1868,10 +2362,9 @@ function seedFromRouteTarget(context, routeTarget, {
   };
 }
 
-function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([]), robotsExcludedUrls = /** @type {any[]} */ ([])) {
+function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([]), robotsExcludedUrls = /** @type {any[]} */ ([]), robotsPolicy = null) {
   const contract = context.crawlContract ?? createCrawlContract({
     site: context.site,
-    authChoice: context.authStateReport?.authChoice ?? 'declined',
     authStateReport: context.authStateReport,
   });
   const targets = contract.coverageTargets ?? {};
@@ -1886,7 +2379,7 @@ function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([])
       sourceLayer: 'authenticated',
       authRequired: true,
       confidence: 0.62,
-      reasonCode: contract.crawlMode === 'enhanced_with_login' ? null : 'requires_login',
+      reasonCode: ['authenticated_cookie', 'authenticated_browser'].includes(contract.crawlMode) ? null : 'requires_login',
     }))
     .filter(Boolean);
   const revisitRouteSeeds = (targets.publicRevisitRoutes ?? [])
@@ -1897,21 +2390,7 @@ function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([])
       confidence: 0.66,
     }))
     .filter(Boolean);
-  const authSeeds = contract.crawlMode === 'enhanced_with_login'
-    ? authRouteSeeds
-    : [];
-  const revisitSeeds = contract.crawlMode === 'enhanced_with_login'
-    ? revisitRouteSeeds
-    : [];
-  const requiresLoginSeeds = contract.crawlMode === 'enhanced_with_login'
-    ? []
-    : authRouteSeeds.map((seed) => ({
-      ...seed,
-      sourceLayer: 'authenticated',
-      reasonCode: 'missing_auth_evidence',
-      activationDecision: 'requires_login',
-    }));
-  const blockedSeeds = uniqueSortedStrings(robotsExcludedUrls).map((urlValue) => ({
+  const blockedSeedRecords = uniqueSortedStrings(robotsExcludedUrls).map((urlValue) => ({
     url: urlValue,
     normalizedUrl: normalizeUrl(urlValue, context.site.rootUrl),
     source: 'robots',
@@ -1919,13 +2398,42 @@ function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([])
     authRequired: false,
     reasonCode: 'robots-disallowed',
   }));
+  const robotsAllowedSeed = (seed) => {
+    if (!robotsPolicy || !seed?.normalizedUrl) {
+      return true;
+    }
+    const allowed = isUrlAllowedByRobots(seed.normalizedUrl, robotsPolicy);
+    if (!allowed) {
+      blockedSeedRecords.push({
+        ...seed,
+        source: `${seed.source ?? 'seed'}_robots_blocked`,
+        reasonCode: 'robots-disallowed',
+        activationDecision: 'blocked',
+      });
+    }
+    return allowed;
+  };
+  const authSeeds = ['authenticated_cookie', 'authenticated_browser'].includes(contract.crawlMode)
+    ? authRouteSeeds.filter(robotsAllowedSeed)
+    : [];
+  const revisitSeeds = ['authenticated_cookie', 'authenticated_browser'].includes(contract.crawlMode)
+    ? revisitRouteSeeds.filter(robotsAllowedSeed)
+    : [];
+  const requiresLoginSeeds = ['authenticated_cookie', 'authenticated_browser'].includes(contract.crawlMode)
+    ? []
+    : authRouteSeeds.map((seed) => ({
+      ...seed,
+      sourceLayer: 'authenticated',
+      reasonCode: 'missing_auth_evidence',
+      activationDecision: 'requires_login',
+    }));
   const uniqueByUrl = (items) => arrayUniqueBy(items, (item) => item.normalizedUrl)
     .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
   return {
     publicSeeds: uniqueByUrl(publicSeedsLayer),
     authSeeds: uniqueByUrl(authSeeds),
     revisitSeeds: uniqueByUrl(revisitSeeds),
-    blockedSeeds: uniqueByUrl(blockedSeeds),
+    blockedSeeds: uniqueByUrl(blockedSeedRecords),
     requiresLoginSeeds: uniqueByUrl(requiresLoginSeeds),
   };
 }
@@ -1940,6 +2448,116 @@ function layeredSeedsSummary(layeredSeeds) {
   };
 }
 
+function setupProfileRobotsPolicy(context = /** @type {any} */ ({})) {
+  const robots = context.setupProfile?.robots;
+  if (robots?.status !== 'parsed') {
+    return null;
+  }
+  return {
+    userAgent: 'SiteForgeBuildStaticCrawler',
+    baseUrl: context.site.rootUrl,
+    sitemaps: uniqueSortedStrings(robots.sitemaps ?? []),
+    groups: [{
+      agents: ['*'],
+      rules: (robots.disallowPaths ?? [])
+        .filter(Boolean)
+        .map((pathValue) => ({
+          type: 'disallow',
+          path: String(pathValue),
+        })),
+    }],
+    disallowPaths: uniqueSortedStrings(robots.disallowPaths ?? []),
+  };
+}
+
+function buildRobotsDiscoveryReport(context, {
+  robotsPolicy = null,
+  robotsStatus = 'unavailable',
+  robotsUnavailableReason = null,
+  sitemapUrls = /** @type {Set<string>|string[]} */ ([]),
+  processedSitemaps = /** @type {Set<string>|string[]} */ ([]),
+  robotsExcludedUrls = /** @type {any[]} */ ([]),
+  robotsDecisionRecords = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
+  const sitemapList = robotsPolicy?.sitemaps ?? [...sitemapUrls].sort((left, right) => left.localeCompare(right, 'en'));
+  const processedSitemapList = [...processedSitemaps].sort((left, right) => left.localeCompare(right, 'en'));
+  const selected = robotsPolicy ? selectRobotsGroups(robotsPolicy) : {
+    userAgent: 'siteforgebuildstaticcrawler',
+    groups: [],
+    matchType: 'none',
+    fallbackToWildcard: false,
+  };
+  const selectedRules = selected.groups.flatMap((group) => group.rules ?? []);
+  const selectedCrawlDelaySeconds = selected.groups
+    .map((group) => Number(group.crawlDelaySeconds))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const crawlDelaySeconds = selectedCrawlDelaySeconds.length
+    ? Math.max(...selectedCrawlDelaySeconds)
+    : null;
+  const effectiveFetchDelayMs = Math.max(
+    Number(context.policy?.fetchDelayMs ?? 0) || 0,
+    crawlDelaySeconds === null ? 0 : crawlDelaySeconds * 1000,
+  );
+  const dedupedDecisions = arrayUniqueBy(
+    robotsDecisionRecords
+      .filter((record) => record?.url)
+      .map((record) => ({
+        url: normalizeUrl(record.url, context.site.rootUrl),
+        source: String(record.source ?? 'planned').slice(0, 80),
+        allowed: record.allowed === true,
+        matchedRule: record.matchedRule ?? null,
+      })),
+    (record) => `${record.url}:${record.source}`,
+  ).sort((left, right) => `${left.source}:${left.url}`.localeCompare(`${right.source}:${right.url}`, 'en'));
+  const allowedCount = dedupedDecisions.filter((record) => record.allowed).length;
+  const deniedCount = dedupedDecisions.filter((record) => !record.allowed).length;
+  const policyClassification = robotsStatus === 'unavailable'
+    ? 'robots_unavailable'
+    : !dedupedDecisions.length
+      ? 'no_planned_urls'
+      : deniedCount > 0 && allowedCount === 0
+        ? 'siteforge_scope_disallowed'
+        : deniedCount > 0
+          ? 'partial_allowed'
+          : 'all_allowed';
+  return {
+    status: robotsStatus,
+    reason: robotsUnavailableReason,
+    source: robotsStatus === 'parsed' ? 'live_robots_txt' : robotsStatus,
+    userAgent: robotsPolicy?.userAgent ?? 'SiteForgeBuildStaticCrawler',
+    selectedGroup: {
+      agents: uniqueSortedStrings(selected.groups.flatMap((group) => group.agents ?? [])),
+      matchType: selected.matchType,
+      fallbackToWildcard: selected.fallbackToWildcard,
+    },
+    policyClassification,
+    crawlDelaySeconds,
+    effectiveFetchDelayMs,
+    rulePrecedence: 'longest_path_then_allow_tie',
+    rules: {
+      allow: selectedRules.filter((rule) => rule.type === 'allow' && rule.path).length,
+      disallow: selectedRules.filter((rule) => rule.type === 'disallow' && rule.path).length,
+      emptyDisallow: selectedRules.filter((rule) => rule.type === 'disallow' && !rule.path).length,
+    },
+    sitemaps: sitemapList,
+    sitemapSummary: {
+      declared: sitemapList,
+      processed: processedSitemapList.length,
+      processedUrls: processedSitemapList,
+    },
+    disallowPaths: robotsPolicy?.disallowPaths ?? [],
+    excludedUrls: uniqueSortedStrings(robotsExcludedUrls),
+    decisions: {
+      planned: dedupedDecisions.length,
+      allowed: allowedCount,
+      denied: deniedCount,
+      deniedSamples: dedupedDecisions
+        .filter((record) => !record.allowed)
+        .slice(0, 20),
+    },
+  };
+}
+
 async function discoverSeedsStage(context) {
   const seeds = /** @type {any[]} */ ([]);
   const warnings = /** @type {any[]} */ ([]);
@@ -1948,23 +2566,31 @@ async function discoverSeedsStage(context) {
   let robotsPolicy = null;
   let robotsStatus = 'unavailable';
   let robotsUnavailableReason = null;
-  const isRobotsAllowed = (urlValue) => {
+  const robotsDecisionRecords = /** @type {any[]} */ ([]);
+  const isRobotsAllowed = (urlValue, source = 'planned') => {
     if (!robotsPolicy) {
       return true;
     }
-    const allowed = isUrlAllowedByRobots(urlValue, robotsPolicy);
-    if (!allowed) {
-      robotsExcludedUrls.push(normalizeUrl(urlValue, context.site.rootUrl));
+    const normalized = normalizeUrl(urlValue, context.site.rootUrl);
+    const decision = robotsDecisionForUrl(normalized, robotsPolicy);
+    robotsDecisionRecords.push({
+      url: normalized,
+      source,
+      allowed: decision.allowed,
+      matchedRule: decision.matchedRule,
+    });
+    if (!decision.allowed) {
+      robotsExcludedUrls.push(normalized);
       reasonCodes.add('robots-disallowed');
     }
-    return allowed;
+    return decision.allowed;
   };
-  const addSeed = (urlValue, source, confidence, evidence) => {
+  const addSeed = (urlValue, source, confidence, evidence, metadata = /** @type {any} */ ({})) => {
     const normalizedUrl = normalizeUrl(urlValue, context.site.rootUrl);
     if (!isInternalUrl(normalizedUrl, context.site.allowedDomains)) {
       return;
     }
-    if (!isRobotsAllowed(normalizedUrl)) {
+    if (!isRobotsAllowed(normalizedUrl, source)) {
       return;
     }
     seeds.push({
@@ -1973,6 +2599,7 @@ async function discoverSeedsStage(context) {
       source,
       confidence,
       evidence,
+      ...metadata,
     });
   };
   const sitemapUrls = new Set();
@@ -1980,7 +2607,7 @@ async function discoverSeedsStage(context) {
   const writeBlockedSeedsAndThrow = async (code, message) => {
     const deduped = arrayUniqueBy(seeds, (seed) => seed.normalizedUrl)
       .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
-    const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls);
+    const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls, robotsPolicy);
     const payload = {
       schemaVersion: BUILD_SCHEMA_VERSION,
       buildId: context.buildId,
@@ -1988,14 +2615,15 @@ async function discoverSeedsStage(context) {
       status: 'blocked',
       seeds: deduped,
       ...layeredSeeds,
-      robots: {
-        status: robotsStatus,
-        reason: robotsUnavailableReason,
-        sitemaps: robotsPolicy?.sitemaps ?? [...sitemapUrls].sort((left, right) => left.localeCompare(right, 'en')),
-        processedSitemaps: [...processedSitemaps].sort((left, right) => left.localeCompare(right, 'en')),
-        disallowPaths: robotsPolicy?.disallowPaths ?? [],
-        excludedUrls: uniqueSortedStrings(robotsExcludedUrls),
-      },
+      robots: buildRobotsDiscoveryReport(context, {
+        robotsPolicy,
+        robotsStatus,
+        robotsUnavailableReason,
+        sitemapUrls,
+        processedSitemaps,
+        robotsExcludedUrls,
+        robotsDecisionRecords,
+      }),
       summary: layeredSeedsSummary(layeredSeeds),
       warnings,
     };
@@ -2030,13 +2658,24 @@ async function discoverSeedsStage(context) {
     }
   } catch (error) {
     robotsUnavailableReason = error?.message ?? String(error);
-    const warning = `robots.txt unavailable: ${robotsUnavailableReason}`;
-    warnings.push(warning);
-    reasonCodes.add('robots-unavailable');
-    await writeBlockedSeedsAndThrow(
-      'robots-unavailable',
-      `robots.txt unavailable for live SiteForge build: ${robotsUnavailableReason}`,
-    );
+    const setupPolicy = setupProfileRobotsPolicy(context);
+    if (setupPolicy) {
+      robotsPolicy = setupPolicy;
+      robotsStatus = 'setup_profile';
+      warnings.push(`robots.txt unavailable during seed discovery; reused parsed setup robots policy. ${robotsUnavailableReason}`);
+      reasonCodes.add('robots-reused-from-setup');
+      for (const sitemapUrl of robotsPolicy.sitemaps) {
+        sitemapUrls.add(sitemapUrl);
+      }
+    } else {
+      const warning = `robots.txt unavailable: ${robotsUnavailableReason}`;
+      warnings.push(warning);
+      reasonCodes.add('robots-unavailable');
+      await writeBlockedSeedsAndThrow(
+        'robots-unavailable',
+        `robots.txt unavailable for live SiteForge build: ${robotsUnavailableReason}`,
+      );
+    }
   }
 
   const homepageEvidence = [
@@ -2047,14 +2686,42 @@ async function discoverSeedsStage(context) {
     }),
   ];
   addSeed(context.site.rootUrl, 'input', 1, homepageEvidence);
-  if (robotsPolicy && !seeds.length && robotsExcludedUrls.length) {
-    warnings.push('robots excluded all planned seed URLs before crawl.');
-    await writeBlockedSeedsAndThrow(
-      'robots-disallowed',
-      'robots.txt disallows all planned seed URLs for live SiteForge build.',
-    );
+  const normalizedInputUrl = normalizeUrl(context.site.normalizedUrl ?? context.site.rootUrl, context.site.rootUrl);
+  const normalizedRootUrl = normalizeUrl(context.site.rootUrl, context.site.rootUrl);
+  if (normalizedInputUrl !== normalizedRootUrl) {
+    addSeed(normalizedInputUrl, 'input_path', 1, [
+      buildEvidence({
+        type: 'url',
+        source: normalizedInputUrl,
+        text: `original build URL path ${new URL(normalizedInputUrl).pathname}; raw page content was not persisted.`,
+        confidence: 1,
+      }),
+    ], {
+      sourceLayer: 'public',
+      authRequired: false,
+      reasonCode: 'input-path-seed',
+      evidenceLevel: 'public_verified',
+    });
   }
-
+  for (const route of knownPolicyPublicSeedRoutes(context)) {
+    if (route.normalizedUrl === normalizeUrl(context.site.rootUrl, context.site.rootUrl)) {
+      continue;
+    }
+    addSeed(route.normalizedUrl, route.source, 0.68, [
+      buildEvidence({
+        type: 'url',
+        source: context.site.rootUrl,
+        text: `known-site public route seed ${new URL(route.normalizedUrl).pathname}; raw page content was not persisted.`,
+        confidence: 0.68,
+      }),
+    ], {
+      pageType: route.pageType,
+      sourceLayer: 'public',
+      authRequired: false,
+      reasonCode: route.reasonCode,
+      evidenceLevel: 'template_candidate',
+    });
+  }
   sitemapUrls.add(new URL('/sitemap.xml', context.site.rootUrl).toString());
 
   const maxSitemaps = Math.max(1, Number(context.policy.maxSitemaps ?? 10));
@@ -2073,7 +2740,6 @@ async function discoverSeedsStage(context) {
           const normalizedLoc = normalizeUrl(loc, context.site.rootUrl);
           if (
             isInternalUrl(normalizedLoc, context.site.allowedDomains)
-            && isRobotsAllowed(normalizedLoc)
             && !processedSitemaps.has(normalizedLoc)
             && !pendingSitemaps.includes(normalizedLoc)
           ) {
@@ -2107,6 +2773,13 @@ async function discoverSeedsStage(context) {
   }
 
   try {
+    if (robotsPolicy && !isRobotsAllowed(context.site.rootUrl, 'homepage_link_discovery')) {
+      warnings.push('robots excluded homepage link discovery before crawl.');
+      throw Object.assign(new Error('homepage link discovery blocked by robots.txt'), {
+        code: 'robots-disallowed',
+        reasonCode: 'robots-disallowed',
+      });
+    }
     const homepage = await context.source.read(context.site.rootUrl);
     const parsed = parseHtmlDocument(homepage.body, context.site.rootUrl);
     warnings.push(...staticDiagnosticWarnings(context.site.rootUrl, parsed.diagnostics));
@@ -2148,22 +2821,24 @@ async function discoverSeedsStage(context) {
   if (deduped.length < dedupedAll.length) {
     warnings.push(`seed discovery truncated at maxSeeds=${maxSeeds}; ${dedupedAll.length - deduped.length} seeds were left out.`);
   }
-  const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls);
+  const hasAuthorizedSourceEvidence = hasAuthorizedSourceStructureEvidence(context);
+  const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls, robotsPolicy);
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
-    status: deduped.length ? 'success' : 'blocked',
+    status: deduped.length ? 'success' : hasAuthorizedSourceEvidence ? 'authorized_source_only' : 'blocked',
     seeds: deduped,
     ...layeredSeeds,
-    robots: {
-      status: robotsStatus,
-      reason: robotsUnavailableReason,
-      sitemaps: robotsPolicy?.sitemaps ?? [...sitemapUrls].sort((left, right) => left.localeCompare(right, 'en')),
-      processedSitemaps: [...processedSitemaps].sort((left, right) => left.localeCompare(right, 'en')),
-      disallowPaths: robotsPolicy?.disallowPaths ?? [],
-      excludedUrls: uniqueSortedStrings(robotsExcludedUrls),
-    },
+    robots: buildRobotsDiscoveryReport(context, {
+      robotsPolicy,
+      robotsStatus,
+      robotsUnavailableReason,
+      sitemapUrls,
+      processedSitemaps,
+      robotsExcludedUrls,
+      robotsDecisionRecords,
+    }),
     summary: layeredSeedsSummary(layeredSeeds),
     warnings,
   };
@@ -2173,7 +2848,7 @@ async function discoverSeedsStage(context) {
     status: payload.status === 'blocked' ? 'blocked_seed_plan' : 'route_seeded',
     stage: 'discoverSeeds',
   });
-  if (!deduped.length) {
+  if (!deduped.length && !hasAuthorizedSourceEvidence) {
     const blockedCode = reasonCodes.has('robots-disallowed')
       ? 'robots-disallowed'
       : 'siteforge-seed-discovery-empty';
@@ -2206,6 +2881,7 @@ async function discoverSeedsStage(context) {
     robotsPolicy,
     robotsExcludedUrls: uniqueSortedStrings(robotsExcludedUrls),
     warnings,
+    authorizedSourceOnly: !deduped.length && hasAuthorizedSourceEvidence,
     generatedAdapter: generatedAdapter.profile,
     artifactPaths: {
       seeds: seedsPath,
@@ -2373,10 +3049,294 @@ function planRepresentativeCrawlCoverage(context, seeds, { maxPages }) {
   };
 }
 
+function configuredAuthorizedSources(context = /** @type {any} */ ({})) {
+  const direct = context.options?.authorizedSources;
+  const setup = context.setupProfile?.localBuildConfig?.authorizedSources;
+  return Array.isArray(direct) && direct.length
+    ? direct
+    : Array.isArray(setup)
+      ? setup
+      : [];
+}
+
+function authorizedSourcePageInputs(source = /** @type {any} */ ({})) {
+  const candidates = [
+    source.structurePages,
+    source.pages,
+    source.structureSummary?.pages,
+    source.structureSummary?.page ? [source.structureSummary.page] : null,
+    source.structureSummary && !Array.isArray(source.structureSummary) ? [source.structureSummary] : null,
+  ];
+  return candidates.find((items) => Array.isArray(items) && items.length) ?? [];
+}
+
+function hasAuthorizedSourceStructureEvidence(context = /** @type {any} */ ({})) {
+  return configuredAuthorizedSources(context).some((source) => authorizedSourcePageInputs(source).length > 0);
+}
+
+function normalizeAuthorizedSourceStructurePage(context, source, page, index = 0) {
+  const fallbackUrl = page?.url ?? page?.normalizedUrl ?? source?.url ?? context.site.rootUrl;
+  const normalized = normalizePublicRenderedStructurePage(context, {
+    ...page,
+    url: fallbackUrl,
+    normalizedUrl: page?.normalizedUrl ?? page?.url ?? fallbackUrl,
+    pageType: page?.pageType ?? page?.page_type ?? 'authorized_source_summary',
+    structureItems: Array.isArray(page?.structureItems) ? page.structureItems : page?.structureItem ? [page.structureItem] : [],
+    routeTemplates: page?.routeTemplates ?? page?.route_templates ?? [],
+  }, { fallbackUrl });
+  if (!normalized || normalized.blocked === true) {
+    return null;
+  }
+  const sourceId = sanitizedStructureText(source?.id, 80, `authorized-source-${index + 1}`);
+  const sourceKind = sanitizedStructureText(source?.kind ?? source?.type, 80, 'user_sanitized_summary');
+  const stateKey = `authorized_source:${sourceId}:${normalized.routeTemplate ?? normalized.routePath ?? index}`;
+  return {
+    ...normalized,
+    sourceLayer: 'authorized_source',
+    sourceAuthority: sourceKind,
+    sourceAuthorityId: sourceId,
+    authRequired: false,
+    authVerificationStatus: 'not_requested',
+    evidenceLevel: normalized.evidenceStatus === 'structure_summary_present' ? 'authorized_source_verified' : 'candidate',
+    discoveredBy: 'authorized_source',
+    sourcePath: sourceId,
+    title: normalized.title || `authorized source ${sourceId}`,
+    textSummary: 'authorized source sanitized structure summary; generic live crawl was not used for this evidence',
+    elementInstances: Array.isArray(normalized.elementInstances)
+      ? normalized.elementInstances.map((element) => ({
+        ...element,
+        evidenceLevel: 'authorized_source_verified',
+      }))
+      : [],
+    routeState: {
+      ...(normalized.routeState ?? {}),
+      source: 'authorized-source-structure-summary',
+      stateId: stateKey,
+    },
+    stateKey,
+    diagnostics: {
+      ...(normalized.diagnostics ?? {}),
+      publicEvidenceStatus: normalized.evidenceStatus === 'structure_summary_present'
+        ? 'authorized_source_structured'
+        : 'authorized_source_route_seed_only',
+      dynamicSignals: uniqueSortedStrings([
+        ...(normalized.diagnostics?.dynamicSignals ?? []),
+        'authorized-source-sanitized-summary',
+      ]),
+    },
+    collection: {
+      status: 'success',
+      source: 'authorized_source_sanitized_summary',
+      concurrent: false,
+      genericLiveCrawlUsed: false,
+    },
+    evidence: [
+      buildEvidence({
+        type: 'text',
+        source: sourceId,
+        text: `${sourceKind} authorized source sanitized structure summary; no cookie, token, raw HTML, raw DOM, private body, or browser profile was persisted.`,
+        confidence: 0.74,
+      }),
+    ],
+  };
+}
+
+function buildAuthorizedSourceManifest(context) {
+  const sources = configuredAuthorizedSources(context);
+  const warnings = [];
+  const pages = [];
+  const sourceRows = sources.slice(0, 20).map((source, sourceIndex) => {
+    const pageInputs = authorizedSourcePageInputs(source);
+    const normalizedPages = pageInputs
+      .slice(0, 40)
+      .map((page, pageIndex) => normalizeAuthorizedSourceStructurePage(context, source, page, pageIndex))
+      .filter(Boolean);
+    pages.push(...normalizedPages);
+    if (pageInputs.length && !normalizedPages.length) {
+      warnings.push(`authorized source ${source?.id ?? sourceIndex + 1} had no usable same-site sanitized structure pages.`);
+    }
+    return sanitizeReportPublicValue({
+      id: source?.id ?? `authorized-source-${sourceIndex + 1}`,
+      kind: source?.kind ?? source?.type ?? 'authorized_source',
+      url: source?.url ?? null,
+      accessBasis: source?.accessBasis ?? 'user_provided_contract',
+      permissionScope: source?.permissionScope ?? 'sanitized_summary_only',
+      allowedEvidence: uniqueSortedStrings(source?.allowedEvidence ?? []),
+      genericCrawlAllowed: false,
+      promotionAllowed: false,
+      structurePagesProvided: pageInputs.length,
+      structurePagesAccepted: normalizedPages.length,
+    });
+  });
+  const manifest = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-authorized-source-manifest',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    status: pages.length ? 'structure_summary_available' : sources.length ? 'configured_without_structure_summary' : 'not_configured',
+    sources: sourceRows,
+    pages,
+    summary: {
+      configuredSources: sourceRows.length,
+      structurePages: pages.length,
+      genericCrawlAllowed: false,
+      promotionAllowed: false,
+      rawHtmlPersisted: false,
+      rawDomPersisted: false,
+      privateBodyPersisted: false,
+      cookiePersisted: false,
+      tokenPersisted: false,
+      browserProfilePersisted: false,
+    },
+    warnings,
+  };
+  return { manifest, pages, warnings };
+}
+
+const RAW_PAGE_MATERIAL_DIR = 'raw_pages';
+const RAW_PAGE_MATERIAL_MANIFEST_FILE = 'raw_page_material_manifest.json';
+const RAW_PAGE_MATERIAL_MANIFEST_RELATIVE_PATH = `reports/${RAW_PAGE_MATERIAL_MANIFEST_FILE}`;
+const AUTHORIZED_SOURCE_MANIFEST_FILE = 'authorized_source_manifest.json';
+const AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH = `reports/${AUTHORIZED_SOURCE_MANIFEST_FILE}`;
+
+function pageMaterialIdForUrl(urlValue) {
+  return stableNodeId('page-material', urlValue).replace(/[^A-Za-z0-9._-]/gu, '-');
+}
+
+function redactSensitiveHtmlTagAttributes(tag) {
+  if (!/(?:csrf|xsrf|token|auth|authorization|cookie|session|sid|uid|password|secret)/iu.test(tag)) {
+    return tag;
+  }
+  return tag.replace(/\s([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|[^\s"'=<>`]+)/gu, (match, name) => (
+    /(?:csrf|xsrf|token|auth|authorization|cookie|session|sid|uid|password|secret|value|content)/iu.test(name)
+      ? (/^(?:value|content)$/iu.test(name) ? ` ${name}="[REDACTED]"` : ' data-siteforge-redacted="[REDACTED]"')
+      : match
+  ));
+}
+
+function sanitizePersistedPageMaterialText(value) {
+  return String(value ?? '')
+    .replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/giu, '$1[SITEFORGE_SCRIPT_BODY_REDACTED]$2')
+    .replace(/<[^>]+>/gu, (tag) => redactSensitiveHtmlTagAttributes(tag))
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu, '[REDACTED_AUTH]')
+    .replace(/\bauthorization\s*[:=]\s*[^\r\n<>"']+/giu, '[REDACTED_AUTH_HEADER]')
+    .replace(/\b(?:cookie|set-cookie)\s*[:=]\s*[^;\s<>"']+/giu, '[REDACTED_COOKIE_HEADER]')
+    .replace(/\b(?:sid|uid|session(?:id)?|session[_-]?id|sessdata|access[_-]?token|refresh[_-]?token|token|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|auth|api[_-]?key|secret|password)\s*[:=]\s*[^&;\s<>"']+/giu, '[REDACTED_SENSITIVE_ASSIGNMENT]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, '[REDACTED_EMAIL]')
+    .replace(/\bsynthetic-[A-Za-z0-9._-]*(?:token|secret|private)[A-Za-z0-9._-]*\b/giu, '[REDACTED_SYNTHETIC_SECRET]')
+    .replace(/\b(?:localStorage|sessionStorage)\b/gu, '[REDACTED_BROWSER_STORAGE]')
+    .replace(/\b(?:userDataDir|browserProfile|browser profile)\b/giu, '[REDACTED_BROWSER_STATE]');
+}
+
+function sanitizePersistedPageHtml(html) {
+  const sanitized = sanitizePersistedPageMaterialText(html);
+  assertNoForbiddenPatterns(sanitized);
+  return sanitized;
+}
+
+function sanitizePersistedPageBodyText(html) {
+  const sanitized = sanitizePersistedPageMaterialText(stripHtml(html));
+  assertNoForbiddenPatterns(sanitized);
+  return sanitized;
+}
+
+async function writePublicRawPageMaterialArtifacts(context, pages = /** @type {any[]} */ ([]), materialByUrl = new Map()) {
+  const manifestPages = [];
+  const byNormalizedUrl = new Map();
+  for (const page of pages) {
+    const material = materialByUrl.get(page.normalizedUrl);
+    if (!material?.html) {
+      continue;
+    }
+    const materialId = pageMaterialIdForUrl(page.normalizedUrl);
+    const htmlRelativePath = `${RAW_PAGE_MATERIAL_DIR}/${materialId}.html`;
+    const domRelativePath = `${RAW_PAGE_MATERIAL_DIR}/${materialId}.dom.html`;
+    const bodyTextRelativePath = `${RAW_PAGE_MATERIAL_DIR}/${materialId}.body.txt`;
+    const html = sanitizePersistedPageHtml(material.html);
+    const dom = sanitizePersistedPageHtml(material.html);
+    const bodyText = sanitizePersistedPageBodyText(material.html);
+    const htmlPath = await writeArtifactText(context, htmlRelativePath, html);
+    const domPath = await writeArtifactText(context, domRelativePath, dom);
+    const bodyTextPath = await writeArtifactText(context, bodyTextRelativePath, bodyText);
+    const descriptor = {
+      materialId,
+      url: sanitizeEvidenceRef(page.normalizedUrl) ?? null,
+      finalUrl: sanitizeEvidenceRef(material.finalUrl ?? page.normalizedUrl) ?? null,
+      sourceLayer: 'public',
+      sourceType: material.sourceType ?? 'live_website',
+      fetchedAt: material.fetchedAt ?? null,
+      htmlPath: htmlRelativePath,
+      domPath: domRelativePath,
+      bodyTextPath: bodyTextRelativePath,
+      htmlBytes: Buffer.byteLength(html, 'utf8'),
+      domBytes: Buffer.byteLength(dom, 'utf8'),
+      bodyTextBytes: Buffer.byteLength(bodyText, 'utf8'),
+      redacted: true,
+      scriptBodiesRedacted: true,
+      cookieMaterialPersisted: false,
+      tokenMaterialPersisted: false,
+      authHeaderMaterialPersisted: false,
+      browserProfilePersisted: false,
+      storagePersisted: false,
+      absolutePathsPersisted: false,
+    };
+    manifestPages.push(descriptor);
+    byNormalizedUrl.set(page.normalizedUrl, {
+      ...descriptor,
+      htmlPath: relativeReportPath(context.cwd, htmlPath),
+      domPath: relativeReportPath(context.cwd, domPath),
+      bodyTextPath: relativeReportPath(context.cwd, bodyTextPath),
+    });
+  }
+  const manifest = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-raw-page-material-manifest',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    status: 'success',
+    sourceLayer: 'public',
+    summary: {
+      pages: manifestPages.length,
+      htmlFiles: manifestPages.length,
+      domFiles: manifestPages.length,
+      bodyTextFiles: manifestPages.length,
+      authenticatedPagesPersisted: 0,
+    },
+    policy: {
+      publicPageHtmlPersisted: true,
+      publicPageDomPersisted: true,
+      publicPageBodyTextPersisted: true,
+      authenticatedPageMaterialPersisted: false,
+      cookieMaterialPersisted: false,
+      tokenMaterialPersisted: false,
+      authHeaderMaterialPersisted: false,
+      browserProfilePersisted: false,
+      storageMaterialPersisted: false,
+      rawNetworkPayloadPersisted: false,
+      sensitiveAssignmentsRedacted: true,
+      scriptBodiesRedacted: true,
+    },
+    pages: manifestPages,
+  };
+  const write = await writeRedactedArtifactJson(context, RAW_PAGE_MATERIAL_MANIFEST_RELATIVE_PATH, manifest);
+  return {
+    artifactPath: write.artifactPath,
+    value: write.value,
+    byNormalizedUrl,
+  };
+}
+
 async function crawlStaticStage(context, stageResults) {
-  const { seeds, robotsPolicy = null } = requireStage(stageResults, 'discoverSeeds');
+  const { seeds, robotsPolicy = null, robots = null } = requireStage(stageResults, 'discoverSeeds');
+  const authorizedSourceManifest = buildAuthorizedSourceManifest(context);
   const maxDepth = Number(context.policy.maxDepth ?? 2);
   const maxPages = Math.max(1, Number(context.policy.maxPages ?? 50));
+  const robotsCrawlDelaySeconds = Number(robots?.crawlDelaySeconds);
+  const robotsCrawlDelayActive = Number.isFinite(robotsCrawlDelaySeconds) && robotsCrawlDelaySeconds > 0;
+  const crawlConcurrency = robotsCrawlDelayActive ? 1 : STATIC_CRAWL_COLLECTION_CONCURRENCY;
+  const effectiveCrawlFetchDelayMs = robotsCrawlDelayActive
+    ? Math.max(0, Number(robots?.effectiveFetchDelayMs ?? 0) || 0)
+    : 0;
   const coveragePlan = planRepresentativeCrawlCoverage(context, seeds, { maxPages });
   const queue = coveragePlan.seeds.map((seed) => ({
     url: seed.normalizedUrl,
@@ -2391,9 +3351,25 @@ async function crawlStaticStage(context, stageResults) {
   const queued = new Set(queue.map((entry) => entry.url));
   const pages = /** @type {any[]} */ ([]);
   const failures = /** @type {any[]} */ ([]);
-  const warnings = [...coveragePlan.warnings];
+  const rawPageMaterialByUrl = new Map();
+  const warnings = [
+    ...coveragePlan.warnings,
+    ...authorizedSourceManifest.warnings,
+  ];
   const reasonCodes = new Set();
   const robotsExcludedUrls = /** @type {any[]} */ ([]);
+  let lastCrawlFetchStartedAt = 0;
+  const waitForRobotsCrawlDelay = async () => {
+    if (!effectiveCrawlFetchDelayMs || !lastCrawlFetchStartedAt) {
+      lastCrawlFetchStartedAt = Date.now();
+      return;
+    }
+    const elapsedMs = Date.now() - lastCrawlFetchStartedAt;
+    if (effectiveCrawlFetchDelayMs > elapsedMs) {
+      await new Promise((resolve) => setTimeout(resolve, effectiveCrawlFetchDelayMs - elapsedMs));
+    }
+    lastCrawlFetchStartedAt = Date.now();
+  };
   const canCrawl = (urlValue, collection = { robotsExcludedUrls, reasonCodes }) => {
     if (!robotsPolicy) {
       return true;
@@ -2411,10 +3387,37 @@ async function crawlStaticStage(context, stageResults) {
     const entryReasonCodes = new Set();
     const entryRobotsExcludedUrls = /** @type {any[]} */ ([]);
     try {
+      await waitForRobotsCrawlDelay();
       const pageSource = await context.source.read(entry.url);
       const parsed = parseHtmlDocument(pageSource.body, entry.url);
       entryWarnings.push(...staticDiagnosticWarnings(entry.url, parsed.diagnostics));
       const normalizedUrl = normalizeUrl(parsed.canonicalUrl ?? entry.url);
+      rawPageMaterialByUrl.set(normalizedUrl, {
+        html: pageSource.body,
+        finalUrl: pageSource.finalUrl ?? pageSource.sourcePath ?? normalizedUrl,
+        sourceType: pageSource.sourceType ?? 'live_website',
+        fetchedAt: pageSource.fetchedAt ?? null,
+      });
+      const links = parsed.links
+        .map((link) => ({ ...link, normalizedHref: normalizeUrl(link.href, entry.url) }))
+        .filter((link) => (
+          isInternalUrl(link.normalizedHref, context.site.allowedDomains)
+          && canCrawl(link.normalizedHref, {
+            robotsExcludedUrls: entryRobotsExcludedUrls,
+            reasonCodes: entryReasonCodes,
+          })
+        ));
+      const allowedRouteTemplates = uniqueSortedStrings(links.map((link) => {
+        if (link.routeTemplate) {
+          return link.routeTemplate;
+        }
+        try {
+          return routePatternForUrl(link.normalizedHref);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean));
+      const allowedRouteTemplateSet = new Set(allowedRouteTemplates);
       const page = {
         url: entry.url,
         normalizedUrl,
@@ -2422,23 +3425,50 @@ async function crawlStaticStage(context, stageResults) {
         discoveredBy: entry.discoveredBy,
         sourceLayer: 'public',
         authRequired: false,
-        authLevel: null,
+        authVerificationStatus: null,
         evidenceLevel: 'public_verified',
         sourcePath: pageSource.sourcePath,
         title: parsed.title,
         textSummary: parsed.textSummary,
         canonicalUrl: parsed.canonicalUrl,
-        links: parsed.links
-          .map((link) => ({ ...link, normalizedHref: normalizeUrl(link.href, entry.url) }))
-          .filter((link) => (
-            isInternalUrl(link.normalizedHref, context.site.allowedDomains)
-            && canCrawl(link.normalizedHref, {
+        pageType: entry.seed?.pageType ?? null,
+        routeTemplate: entry.seed?.routeTemplate ?? null,
+        visibleItemCount: Number(parsed.visibleItemCount ?? 0) || 0,
+        listPresent: parsed.listPresent === true,
+        emptyStatePresent: parsed.emptyStatePresent === true,
+        routeTemplates: uniqueSortedStrings((parsed.routeTemplates ?? [])
+          .filter((template) => allowedRouteTemplateSet.has(template))),
+        structureItems: (parsed.structureItems ?? []).map((item, itemIndex) => ({
+          ...item,
+          routeTemplates: uniqueSortedStrings((item.routeTemplates ?? [])
+            .filter((template) => allowedRouteTemplateSet.has(template))),
+          structureHash: stableNodeId(
+            'static-structure',
+            `${entry.url}:${item.structureType ?? 'structure'}:${item.visibleItemCount ?? 0}:${item.listPresent === true}:${item.routeTemplates?.join('|') ?? ''}:${itemIndex}`,
+          ),
+        })),
+        structureHash: stableNodeId(
+          'static-page-structure',
+          `${entry.url}:${parsed.visibleItemCount ?? 0}:${parsed.listPresent === true}:${(parsed.routeTemplates ?? []).join('|')}`,
+        ),
+        links,
+        forms: parsed.forms,
+        controls: parsed.controls,
+        elementInstances: (parsed.elementInstances ?? [])
+          .map((element) => ({
+            ...element,
+            href: element.href ? normalizeUrl(element.href, entry.url) : null,
+            action: element.action ? normalizeUrl(element.action, entry.url) : null,
+          }))
+          .filter((element) => (
+            !element.href || isInternalUrl(element.href, context.site.allowedDomains)
+          ))
+          .filter((element) => (
+            !element.href || canCrawl(element.href, {
               robotsExcludedUrls: entryRobotsExcludedUrls,
               reasonCodes: entryReasonCodes,
             })
           )),
-        forms: parsed.forms,
-        controls: parsed.controls,
         diagnostics: parsed.diagnostics,
         collection: {
           status: 'success',
@@ -2487,7 +3517,7 @@ async function crawlStaticStage(context, stageResults) {
   let index = 0;
   while (index < queue.length && visited.size < effectiveMaxPages) {
     const batch = /** @type {any[]} */ ([]);
-    while (index < queue.length && batch.length < STATIC_CRAWL_COLLECTION_CONCURRENCY && visited.size < effectiveMaxPages) {
+    while (index < queue.length && batch.length < crawlConcurrency && visited.size < effectiveMaxPages) {
       const entry = queue[index];
       index += 1;
       if (visited.has(entry.url)) {
@@ -2503,7 +3533,7 @@ async function crawlStaticStage(context, stageResults) {
     if (!batch.length) {
       continue;
     }
-    const results = await mapWithConcurrency(batch, STATIC_CRAWL_COLLECTION_CONCURRENCY, crawlEntry);
+    const results = await mapWithConcurrency(batch, crawlConcurrency, crawlEntry);
     for (const result of results) {
       warnings.push(...result.warnings);
       for (const reasonCode of result.reasonCodes) {
@@ -2538,10 +3568,18 @@ async function crawlStaticStage(context, stageResults) {
     warnings.push(`crawl truncated at maxPages=${effectiveMaxPages}; ${queue.length - index} queued URLs were not fetched.`);
   }
 
-  const dedupedPages = arrayUniqueBy(pages, (page) => page.normalizedUrl)
+  const dedupedPages = arrayUniqueBy([...pages, ...authorizedSourceManifest.pages], (page) => pageIdentity(page))
     .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
   const dedupedFailures = arrayUniqueBy(failures, (failure) => failure.normalizedUrl)
     .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
+  const rawPageMaterialWrite = await writePublicRawPageMaterialArtifacts(context, dedupedPages, rawPageMaterialByUrl);
+  const authorizedSourceWrite = await writeRedactedArtifactJson(context, AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH, authorizedSourceManifest.manifest);
+  for (const page of dedupedPages) {
+    const descriptor = rawPageMaterialWrite.byNormalizedUrl.get(page.normalizedUrl);
+    if (descriptor) {
+      page.rawPageMaterial = descriptor;
+    }
+  }
   const staticDiagnosticSummary = {
     empty: dedupedPages.filter((page) => page.diagnostics?.staticEvidenceStatus === 'empty').length,
     dynamicShell: dedupedPages.filter((page) => page.diagnostics?.staticEvidenceStatus === 'dynamic_shell').length,
@@ -2552,7 +3590,11 @@ async function crawlStaticStage(context, stageResults) {
     : dedupedPages.every((page) => !hasUsableStaticPageEvidence(page))
       ? 'siteforge-static-evidence-unavailable'
       : null;
-  const errors = blockedReason
+  const renderedEvidenceRequired = blockedReason === 'siteforge-static-evidence-unavailable'
+    && staticDiagnosticSummary.dynamicShell > 0
+    && canAttemptPublicRenderedLayer(context, { renderedRequired: true });
+  const shouldBlockStatic = Boolean(blockedReason && !renderedEvidenceRequired);
+  const errors = shouldBlockStatic
     ? [
       blockedReason === 'siteforge-static-crawl-empty'
         ? 'Static crawl produced no pages with evidence; build stopped before draft skill generation.'
@@ -2567,7 +3609,7 @@ async function crawlStaticStage(context, stageResults) {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
-    status: blockedReason ? 'blocked' : 'success',
+    status: shouldBlockStatic ? 'blocked' : 'success',
     pages: dedupedPages,
     failures: dedupedFailures,
     errors,
@@ -2576,6 +3618,7 @@ async function crawlStaticStage(context, stageResults) {
     },
     summary: {
       pages: dedupedPages.length,
+      publicPages: pages.length,
       sourceLayer: 'public',
       duplicateUrls,
       duplicateRatio,
@@ -2589,17 +3632,26 @@ async function crawlStaticStage(context, stageResults) {
       representativeUnfetchedSeeds: Math.max(0, seeds.length - coveragePlan.seeds.length),
       fetchedUrls: visited.size,
       failedUrls: dedupedFailures.length,
+      rawPageMaterial: rawPageMaterialWrite.value.summary,
       queuedUrls: queue.length,
       unfetchedUrls: Math.max(0, queue.length - index),
-      collectionConcurrency: STATIC_CRAWL_COLLECTION_CONCURRENCY,
+      collectionConcurrency: crawlConcurrency,
+      robotsCrawlDelaySeconds: robotsCrawlDelayActive ? robotsCrawlDelaySeconds : null,
+      effectiveCrawlFetchDelayMs: robotsCrawlDelayActive ? effectiveCrawlFetchDelayMs : null,
       robotsExcludedUrls: uniqueSortedStrings(robotsExcludedUrls),
-      blockedReason,
+      authorizedSource: authorizedSourceWrite.value.summary,
+      authorizedSourcePages: authorizedSourceManifest.pages.length,
+      blockedReason: shouldBlockStatic ? blockedReason : null,
+      staticBlockedReason: blockedReason,
+      renderedEvidenceRequired,
     },
     warnings,
+    rawPageMaterial: rawPageMaterialWrite.value,
+    authorizedSource: authorizedSourceWrite.value,
   };
   const crawlStaticPath = await writeArtifactJson(context, 'crawl_static.json', payload);
   const crawlCheckpointPath = await writeCrawlCheckpoint(context, {
-    status: blockedReason ? 'blocked' : 'completed',
+    status: shouldBlockStatic ? 'blocked' : 'completed',
     mode: coveragePlan.mode,
     seeds,
     pages: dedupedPages,
@@ -2612,7 +3664,7 @@ async function crawlStaticStage(context, stageResults) {
     summary: payload.summary,
     warnings,
   });
-  if (blockedReason) {
+  if (shouldBlockStatic) {
     throw createBlockedStageError(
       blockedReason,
       errors[0],
@@ -2621,6 +3673,8 @@ async function crawlStaticStage(context, stageResults) {
         artifactPaths: {
           crawlStatic: crawlStaticPath,
           crawlCheckpoint: crawlCheckpointPath,
+          rawPageMaterialManifest: rawPageMaterialWrite.artifactPath,
+          authorizedSourceManifest: authorizedSourceWrite.artifactPath,
         },
         reasonCodes: uniqueSortedStrings([...reasonCodes]),
         summary: payload.summary,
@@ -2633,30 +3687,99 @@ async function crawlStaticStage(context, stageResults) {
     artifactPaths: {
       crawlStatic: crawlStaticPath,
       crawlCheckpoint: crawlCheckpointPath,
+      rawPageMaterialManifest: rawPageMaterialWrite.artifactPath,
+      authorizedSourceManifest: authorizedSourceWrite.artifactPath,
     },
     reasonCodes: uniqueSortedStrings([...reasonCodes]),
     summary: payload.summary,
+    rawPageMaterial: rawPageMaterialWrite.value,
+    authorizedSource: authorizedSourceWrite.value,
   };
 }
 
 async function authStateCheckStage(context) {
-  const normalizedReport = normalizeAuthStateReport(
-    context.authStateReport ?? createPublicOnlyAuthStateReport({ site: context.site, authChoice: 'declined' }),
-    {
-      site: context.site,
-      crawlMode: context.authStateReport?.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
-      authChoice: context.authStateReport?.authChoice ?? context.crawlContract?.authChoice ?? 'declined',
-    },
+  const needsAuthCheck = ['cookie', 'browser'].includes(context.options.authMode) && (
+    !canRunAuthenticatedLayer(context.authStateReport)
+    || context.options.authRuntime?.method !== context.options.authMode
   );
+  const baseReport = needsAuthCheck
+    ? await runDefaultBrowserAuthStateCheck({
+      inputUrl: context.inputUrl,
+      site: context.site,
+      options: context.options,
+    })
+    : context.authStateReport ?? createPublicOnlyAuthStateReport({ site: context.site, authMethod: 'none' });
+  const normalizedReport = normalizeAuthStateReport(baseReport, {
+    site: context.site,
+    crawlMode: baseReport?.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
+    authMethod: baseReport?.authMethod ?? context.crawlContract?.authMethod ?? 'none',
+  });
+  const coverageTargets = { ...(context.crawlContract?.coverageTargets ?? {}) };
+  if (canRunAuthenticatedLayer(normalizedReport)) {
+    const verifiedAuthRoutes = uniqueSortedStrings((normalizedReport.verifiedRoutes ?? [])
+      .map((route) => {
+        try {
+          const normalized = normalizeUrl(route, context.site.rootUrl);
+          return isInternalUrl(normalized, context.site.allowedDomains) && !/\/api(?:\/|$)/iu.test(new URL(normalized).pathname)
+            ? normalized
+            : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean));
+    coverageTargets.authRoutes = uniqueSortedStrings([
+      ...(coverageTargets.authRoutes ?? []),
+      ...verifiedAuthRoutes,
+    ]);
+  }
   const nextContract = createCrawlContract({
     site: context.site,
-    authChoice: normalizedReport.authChoice,
     authStateReport: normalizedReport,
-    coverageTargets: context.crawlContract?.coverageTargets ?? {},
+    coverageTargets,
   });
   context.authStateReport = normalizedReport;
   context.crawlContract = nextContract;
+  context.source = createBuildSource(context.inputUrl, {
+    ...context.options,
+    fetchDelayMs: context.policy.fetchDelayMs,
+    fetchTimeoutMs: context.policy.fetchTimeoutMs,
+    authRuntime: context.options.authRuntime?.method === 'cookie'
+      ? {
+        ...context.options.authRuntime,
+        allowedDomains: context.options.authRuntime.allowedDomains ?? context.site.allowedDomains,
+      }
+      : null,
+  });
   const authStateReportPath = await writeArtifactJson(context, AUTH_STATE_REPORT_FILE, normalizedReport);
+  if (context.options.strictCookieAuth === true && context.options.authMode === 'cookie' && !canRunAuthenticatedLayer(normalizedReport)) {
+    const status = normalizedReport.authVerificationStatus ?? 'auth_check_failed';
+    const error = /** @type {Error & Record<string, any>} */ (new Error(
+      `Configured cookie authentication did not verify; build stopped instead of falling back to public-only mode. [reasonCode=${status}]`,
+    ));
+    error.code = 'cookie-auth-verification-failed';
+    error.reasonCode = status;
+    error.reasonCodes = uniqueSortedStrings([status, ...(normalizedReport.blockingSignals ?? [])]);
+    error.stageStatus = 'blocked';
+    error.buildStatus = 'failed';
+    error.artifactPaths = { authStateReport: authStateReportPath };
+    error.summary = authSummaryForReport(nextContract, normalizedReport);
+    throw error;
+  }
+  if (context.options.strictBrowserAuth === true && context.options.authMode === 'browser' && !canRunAuthenticatedLayer(normalizedReport)) {
+    const status = normalizedReport.authVerificationStatus ?? 'browser_check_failed';
+    const error = /** @type {Error & Record<string, any>} */ (new Error(
+      `Configured default-browser authentication bridge did not verify; build stopped instead of falling back to public-only mode. [reasonCode=${status}]`,
+    ));
+    error.code = 'browser-auth-verification-failed';
+    error.reasonCode = status;
+    error.reasonCodes = uniqueSortedStrings([status, ...(normalizedReport.blockingSignals ?? [])]);
+    error.stageStatus = 'blocked';
+    error.buildStatus = 'failed';
+    error.artifactPaths = { authStateReport: authStateReportPath };
+    error.summary = authSummaryForReport(nextContract, normalizedReport);
+    throw error;
+  }
   return {
     authStateReport: normalizedReport,
     crawlContract: nextContract,
@@ -2664,44 +3787,175 @@ async function authStateCheckStage(context) {
     reasonCodes: normalizedReport.verified === true ? [] : uniqueSortedStrings(normalizedReport.blockingSignals ?? []),
     warnings: normalizedReport.verified === true
       ? []
-      : ['Login enhancement did not reach verified sanitized structure access; authenticated crawl remains disabled for this build.'],
+      : [context.options.authMode === 'browser'
+        ? 'Default-browser authentication bridge did not verify successfully; authenticated crawl remains disabled for this build.'
+        : 'Cookie authentication did not verify successfully; authenticated crawl remains disabled for this build.'],
     summary: authSummaryForReport(nextContract, normalizedReport),
   };
 }
 
-function sanitizedControl(control = /** @type {any} */ ({}), index = 0) {
+function sanitizedStructureText(value, maxLength = 80, fallback = null) {
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return fallback;
+  }
+  if (/[<>{}]|=|\b(?:authorization|bearer|cookie|sid|uid|user[_-]?id|account[_-]?id|token|secret|session|password|localStorage|sessionStorage|userDataDir|raw\s+dom|raw\s+html|html|script)\b/iu.test(raw)) {
+    return '[REDACTED]';
+  }
+  const safe = sanitizeEvidenceRef(value);
+  if (!safe) {
+    return fallback;
+  }
+  if (/\b(?:authorization|bearer|cookie|sid|uid|token|secret|session|password|localStorage|sessionStorage|userDataDir)\b/iu.test(String(safe))) {
+    return '[REDACTED]';
+  }
+  return String(safe).slice(0, maxLength);
+}
+
+function safeStructureHash(prefix, providedValue, fallbackValue) {
+  const provided = String(providedValue ?? '').trim();
+  if (/^(?:[a-z][a-z0-9_-]*:)?[a-f0-9]{12,128}$/iu.test(provided)) {
+    return provided.slice(0, 160);
+  }
+  return stableNodeId(prefix, fallbackValue);
+}
+
+function sanitizedControl(control = /** @type {any} */ ({}), index = 0, {
+  fallbackPrefix = 'auth',
+} = /** @type {any} */ ({})) {
   return {
     kind: String(control.kind ?? control.controlType ?? 'button').slice(0, 40),
     type: control.type ? String(control.type).slice(0, 40) : null,
-    label: control.label ? String(control.label).slice(0, 80) : null,
-    name: control.name ? String(control.name).slice(0, 80) : null,
-    selector: control.selector ? String(control.selector).slice(0, 120) : `auth-control-${index}`,
+    label: sanitizedStructureText(control.label, 80),
+    name: sanitizedStructureText(control.name, 80),
+    selector: sanitizedStructureText(control.selector, 120, `${fallbackPrefix}-control-${index}`),
     attrs: control.attrs && typeof control.attrs === 'object'
       ? {
-        role: control.attrs.role ? String(control.attrs.role).slice(0, 40) : null,
+        role: sanitizedStructureText(control.attrs.role, 40),
       }
       : {},
   };
 }
 
-function sanitizedForm(form = /** @type {any} */ ({}), index = 0) {
+function sanitizedForm(form = /** @type {any} */ ({}), index = 0, {
+  fallbackPrefix = 'auth',
+} = /** @type {any} */ ({})) {
   const method = String(form.method ?? 'GET').toUpperCase();
   return {
-    label: form.label ? String(form.label).slice(0, 80) : `auth-form-${index}`,
-    selector: form.selector ? String(form.selector).slice(0, 120) : `auth-form-${index}`,
+    label: sanitizedStructureText(form.label, 80, `${fallbackPrefix}-form-${index}`),
+    selector: sanitizedStructureText(form.selector, 120, `${fallbackPrefix}-form-${index}`),
     method,
-    action: form.action ? String(form.action).slice(0, 200) : null,
+    action: sanitizedStructureText(form.action, 200),
     textSummary: 'sanitized form structure only',
     inputs: Array.isArray(form.inputs)
       ? form.inputs.slice(0, 20).map((input, inputIndex) => ({
-        name: input?.name ? String(input.name).slice(0, 80) : null,
+        name: sanitizedStructureText(input?.name, 80),
         type: input?.type ? String(input.type).slice(0, 40) : null,
-        selector: input?.selector ? String(input.selector).slice(0, 120) : `auth-input-${inputIndex}`,
-        label: input?.label ? String(input.label).slice(0, 80) : null,
+        selector: sanitizedStructureText(input?.selector, 120, `${fallbackPrefix}-input-${inputIndex}`),
+        label: sanitizedStructureText(input?.label, 80),
         tagName: input?.tagName ? String(input.tagName).slice(0, 20) : null,
       }))
       : [],
   };
+}
+
+function sanitizeRenderedInternalUrl(context, value, baseUrl = context.site.rootUrl) {
+  const normalized = normalizeUrl(value, baseUrl);
+  if (!isInternalUrl(normalized, context.site.allowedDomains)) {
+    return null;
+  }
+  const parsed = new URL(normalized);
+  parsed.search = '';
+  parsed.hash = '';
+  parsed.username = '';
+  parsed.password = '';
+  return parsed.toString();
+}
+
+function sanitizeRenderedRouteTemplate(value) {
+  const text = String(value ?? '').trim();
+  if (!text || /[?#<>"'{}]|(?:authorization|bearer|cookie|sid|uid|token|secret|session|password)/iu.test(text)) {
+    return null;
+  }
+  const pathOnly = text.startsWith('http')
+    ? (() => {
+      try {
+        return new URL(text).pathname;
+      } catch {
+        return null;
+      }
+    })()
+    : text;
+  if (!pathOnly || !pathOnly.startsWith('/')) {
+    return null;
+  }
+  return pathOnly
+    .replace(/\/\d+(?=\/|$)/gu, '/:id')
+    .replace(/\/[a-z0-9]{12,}(?=\/|$)/giu, '/:slug')
+    .slice(0, 160);
+}
+
+function normalizedRenderedStructureItems(page = /** @type {any} */ ({}), {
+  routeTemplate,
+  pageType,
+  visibleItemCount,
+  listPresent,
+  emptyStatePresent,
+  unreadMarkerPresent,
+  structureHash,
+  formsLength,
+  controlsLength,
+} = /** @type {any} */ ({})) {
+  const rawItems = Array.isArray(page.structureItems) && page.structureItems.length
+    ? page.structureItems
+    : [{
+      nodeType: page.modalPresence === true ? 'modal' : 'content',
+      structureType: page.structureType ?? pageType,
+      visibleItemCount,
+      listPresent,
+      emptyStatePresent,
+      unreadMarkerPresent,
+      routeTemplates: page.routeTemplates ?? [],
+    }];
+  return rawItems.slice(0, 24).map((item, index) => {
+    const itemVisibleCount = Math.max(0, Number(item?.visibleItemCount ?? visibleItemCount ?? 0) || 0);
+    const itemListPresent = item?.listPresent === true || item?.listPresence === true;
+    const itemEmptyState = item?.emptyStatePresent === true || item?.empty_state_present === true;
+    const routeTemplates = uniqueSortedStrings((item?.routeTemplates ?? item?.route_templates ?? page.routeTemplates ?? [])
+      .map(sanitizeRenderedRouteTemplate)
+      .filter(Boolean))
+      .slice(0, 20);
+    const itemStructureType = sanitizedStructureText(item?.structureType ?? item?.structure_type ?? pageType, 80, pageType);
+    const itemHash = safeStructureHash(
+      'public-rendered-structure-item',
+      item?.structureHash,
+      `${routeTemplate}:${itemStructureType}:${itemVisibleCount}:${itemListPresent}:${itemEmptyState}:${routeTemplates.join('|')}:${index}`,
+    );
+    const itemEvidenceStatus = itemVisibleCount > 0
+      || itemListPresent
+      || itemEmptyState
+      || routeTemplates.length > 0
+      || Number(item?.formCount ?? 0) > 0
+      || formsLength > 0
+      || controlsLength > 0
+      ? 'structure_summary_present'
+      : 'route_seed_only';
+    return {
+      id: stableNodeId('public-rendered-structure-item', `public_rendered:${routeTemplate}:${itemHash}:${index}`),
+      nodeType: ['content', 'operation', 'modal'].includes(item?.nodeType) ? item.nodeType : 'content',
+      structureType: itemStructureType,
+      labelSummary: `${itemStructureType} sanitized public rendered structure`,
+      structureHash: itemHash,
+      visibleItemCount: itemVisibleCount,
+      listPresent: itemListPresent,
+      emptyStatePresent: itemEmptyState,
+      unreadMarkerPresent: item?.unreadMarkerPresent === true || unreadMarkerPresent === true,
+      routeTemplates,
+      evidenceStatus: itemEvidenceStatus,
+      riskLevel: page.riskLevel ?? 'read_public_low',
+      evidenceLevel: itemEvidenceStatus === 'structure_summary_present' ? 'public_rendered_verified' : 'candidate',
+    };
+  });
 }
 
 function normalizeAuthenticatedStructurePage(context, page = /** @type {any} */ ({}), {
@@ -2720,7 +3974,42 @@ function normalizeAuthenticatedStructurePage(context, page = /** @type {any} */ 
   const emptyStatePresent = page.emptyStatePresent === true || page.empty_state_present === true;
   const unreadMarkerPresent = page.unreadMarkerPresent === true || page.unread_marker_present === true;
   const pageType = page.pageType ?? page.page_type ?? 'authenticated_summary';
+  const internalLinks = Array.isArray(page.links)
+    ? page.links
+      .map((link, index) => {
+        try {
+          const normalizedHref = sanitizeRenderedInternalUrl(context, link?.normalizedHref ?? link?.href, normalizedUrl);
+          if (!normalizedHref) {
+            return null;
+          }
+          return {
+            href: normalizedHref,
+            normalizedHref,
+            label: sanitizedStructureText(link?.label, 80, `auth-link-${index + 1}`),
+            selector: sanitizedStructureText(link?.selector, 120, `auth-link-${index + 1}`),
+            semanticKind: sanitizedStructureText(link?.semanticKind ?? link?.role, 60, null),
+            structureType: sanitizedStructureText(link?.structureType ?? link?.structure_type, 100, null),
+            routeTemplate: sanitizeRenderedRouteTemplate(link?.routeTemplate ?? link?.routePattern),
+            attrs: {},
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+    : [];
   const structureHash = String(page.structureHash ?? page.structure_hash ?? stableNodeId('auth-structure', `${routeTemplate}:${pageType}:${visibleItemCount}:${listPresent}:${emptyStatePresent}:${unreadMarkerPresent}`));
+  const forms = Array.isArray(page.forms) ? page.forms.slice(0, 12).map((form, index) => sanitizedForm(form, index)) : [];
+  const controls = Array.isArray(page.controls) ? page.controls.slice(0, 40).map((control, index) => sanitizedControl(control, index)) : [];
+  const elementInstances = extractElementInstances({ links: internalLinks, forms, controls })
+    .map((element) => ({
+      ...element,
+      evidenceLevel: page.evidenceLevel ?? (authStateReport?.authMethod === 'browser' ? 'browser_structure_verified' : 'login_page_verified'),
+    }));
+  const routeTemplates = uniqueSortedStrings([
+    ...(page.routeTemplates ?? page.route_templates ?? []),
+    ...internalLinks.map((link) => link.routeTemplate),
+  ].map(sanitizeRenderedRouteTemplate).filter(Boolean)).slice(0, 80);
   return {
     url: normalizedUrl,
     normalizedUrl,
@@ -2728,8 +4017,10 @@ function normalizeAuthenticatedStructurePage(context, page = /** @type {any} */ 
     discoveredBy: 'rendered_link',
     sourceLayer,
     authRequired: true,
-    authLevel: authStateReport?.authLevel ?? null,
-    evidenceLevel: page.evidenceLevel ?? (visibleItemCount > 0 || listPresent || emptyStatePresent ? 'login_page_verified' : 'login_route_verified'),
+    authVerificationStatus: authStateReport?.authVerificationStatus ?? null,
+    evidenceLevel: page.evidenceLevel ?? (authStateReport?.authMethod === 'browser'
+      ? 'browser_structure_verified'
+      : (visibleItemCount > 0 || listPresent || emptyStatePresent ? 'login_page_verified' : 'login_route_verified')),
     sourcePath: normalizedUrl,
     title: page.title ? String(page.title).slice(0, 120) : `${sourceLayer} route ${routeTemplate}`,
     textSummary: 'sanitized authenticated structure summary; no page body persisted',
@@ -2755,9 +4046,11 @@ function normalizeAuthenticatedStructurePage(context, page = /** @type {any} */ 
     structureHash,
     evidenceStatus: page.evidenceStatus ?? (visibleItemCount > 0 || listPresent || emptyStatePresent ? 'structure_summary_present' : 'route_seed_only'),
     riskLevel: page.riskLevel ?? 'read_personal_medium',
-    links: [],
-    forms: Array.isArray(page.forms) ? page.forms.slice(0, 12).map(sanitizedForm) : [],
-    controls: Array.isArray(page.controls) ? page.controls.slice(0, 40).map(sanitizedControl) : [],
+    links: internalLinks,
+    routeTemplates,
+    forms,
+    controls,
+    elementInstances,
     structureItems: [
       {
         id: stableNodeId('auth-structure-item', `${sourceLayer}:${routeTemplate}:${structureHash}`),
@@ -2776,32 +4069,82 @@ function normalizeAuthenticatedStructurePage(context, page = /** @type {any} */ 
     overlayFor,
     diagnostics: {
       staticEvidenceStatus: 'present',
-      dynamicSignals: ['default-browser-login-sanitized-summary'],
+      dynamicSignals: [authStateReport?.authMethod === 'browser' ? 'browser-auth-sanitized-summary' : 'cookie-auth-sanitized-summary'],
       warnings: [],
     },
     collection: {
       status: 'success',
-      source: 'default_browser_login_sanitized_summary',
+      source: authStateReport?.authMethod === 'browser' ? 'browser_auth_sanitized_summary' : 'cookie_auth_sanitized_summary',
       concurrent: false,
     },
     evidence: [
       buildEvidence({
         type: 'text',
         source: normalizedUrl,
-        text: `${sourceLayer} sanitized route and structure summary; no cookie, token, raw DOM, HTML, body, profile, or private content persisted.`,
+        text: `${sourceLayer} sanitized route and structure summary; no session material, unsanitized markup, page body, profile, or private content persisted.`,
         confidence: page.evidenceLevel === 'capability_verified' ? 0.88 : 0.74,
       }),
     ],
   };
 }
 
+function authenticatedStructurePageFromHtml(context, response, {
+  sourceLayer = 'authenticated',
+  fallbackUrl = context.site.rootUrl,
+  overlayFor = null,
+} = /** @type {any} */ ({})) {
+  const normalizedUrl = normalizeUrl(response?.finalUrl ?? response?.sourcePath ?? response?.requestedUrl ?? fallbackUrl, context.site.rootUrl);
+  const body = String(response?.body ?? '');
+  const routeTemplate = routePatternForUrl(normalizedUrl);
+  const listPresent = /<(?:ul|ol|table)\b|role=["']list["']|data-[^=]*list/iu.test(body);
+  const visibleItemCount = (body.match(/<(?:li|article|tr)\b|role=["']listitem["']/giu) ?? []).length;
+  const emptyStatePresent = /\b(?:empty|no\s+(?:items|results|messages|notifications|bookmarks))\b/iu.test(body);
+  const unreadMarkerPresent = /\b(?:unread|aria-label=["'][^"']*unread)/iu.test(body);
+  return normalizeAuthenticatedStructurePage(context, {
+    url: normalizedUrl,
+    routeTemplate,
+    pageType: sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay_summary' : 'authenticated_cookie_summary',
+    visibleItemCount,
+    listPresent,
+    emptyStatePresent,
+    unreadMarkerPresent,
+    structureHash: stableNodeId('auth-cookie-structure', `${routeTemplate}:${visibleItemCount}:${listPresent}:${emptyStatePresent}:${unreadMarkerPresent}`),
+    evidenceLevel: visibleItemCount > 0 || listPresent || emptyStatePresent ? 'login_page_verified' : 'login_route_verified',
+  }, { sourceLayer, fallbackUrl: normalizedUrl, overlayFor });
+}
+
+async function collectAuthenticatedStructurePages(context, seeds, {
+  sourceLayer = 'authenticated',
+  overlay = false,
+  warnings = /** @type {string[]} */ ([]),
+} = /** @type {any} */ ({})) {
+  const limit = Math.max(0, Math.min(Number(context.policy.maxPages ?? 20) || 20, seeds.length));
+  const pages = [];
+  for (const seed of seeds.slice(0, limit)) {
+    try {
+      const response = await context.source.read(seed.normalizedUrl ?? seed.url);
+      const page = authenticatedStructurePageFromHtml(context, response, {
+        sourceLayer,
+        fallbackUrl: seed.normalizedUrl ?? seed.url,
+        overlayFor: overlay ? seed.normalizedUrl ?? seed.url : null,
+      });
+      if (page) {
+        pages.push(page);
+      }
+    } catch (error) {
+      warnings.push(`authenticated cookie crawl skipped ${sanitizeEvidenceRef(seed.normalizedUrl ?? seed.url) ?? '<url>'}: ${error?.code ?? error?.reasonCode ?? 'fetch_failed'}`);
+    }
+  }
+  return pages;
+}
+
 async function crawlAuthenticatedStage(context, stageResults) {
   const authStateReport = context.authStateReport ?? requireStage(stageResults, 'authStateCheck').authStateReport;
   const crawlContract = context.crawlContract ?? requireStage(stageResults, 'authStateCheck').crawlContract;
-  const canRunAuth = crawlContract?.crawlMode === 'enhanced_with_login' && canRunAuthenticatedLayer(authStateReport);
+  const canRunAuth = ['authenticated_cookie', 'authenticated_browser'].includes(crawlContract?.crawlMode) && canRunAuthenticatedLayer(authStateReport);
   const warnings = /** @type {string[]} */ ([]);
   if (!canRunAuth) {
-    const reason = 'Authenticated crawl skipped because login enhancement was declined, failed, or did not reach verified sanitized structure access.';
+    const reason = 'Authenticated crawl skipped because runtime authentication was not requested or did not verify successfully.';
     warnings.push(reason);
     const payload = {
       schemaVersion: BUILD_SCHEMA_VERSION,
@@ -2815,7 +4158,7 @@ async function crawlAuthenticatedStage(context, stageResults) {
       authCoverageSummary: {
         authenticatedPages: 0,
         authenticatedOverlayPages: 0,
-        authLevel: authStateReport?.authLevel ?? null,
+        authVerificationStatus: authStateReport?.authVerificationStatus ?? null,
         verified: authStateReport?.verified === true,
       },
       privacy: {
@@ -2854,50 +4197,21 @@ async function crawlAuthenticatedStage(context, stageResults) {
   } else if (context.options.authenticatedStructureSummary) {
     provided = context.options.authenticatedStructureSummary;
   }
-  if (!provided) {
-    const reason = 'Authenticated crawl skipped because no sanitized default-browser structure summary provider was configured.';
-    warnings.push(reason);
-    const payload = {
-      schemaVersion: BUILD_SCHEMA_VERSION,
-      buildId: context.buildId,
-      siteId: context.site.id,
-      status: 'skipped',
-      reason,
-      reasonCode: 'auth-structure-provider-missing',
-      authenticatedPages: [],
-      authenticatedOverlayPages: [],
-      authCoverageSummary: {
-        authenticatedPages: 0,
-        authenticatedOverlayPages: 0,
-        authLevel: authStateReport.authLevel,
-        verified: authStateReport.verified === true,
-      },
-      privacy: {
-        rawDomSaved: false,
-        rawHtmlSaved: false,
-        rawContentSaved: false,
-        privateContentSaved: false,
-        cookiesSaved: false,
-        tokensSaved: false,
-        browserProfileSaved: false,
-      },
-    };
-    const crawlAuthenticatedPath = await writeArtifactJson(context, CRAWL_AUTHENTICATED_FILE, payload);
-    return {
-      status: 'skipped',
-      authenticatedPages: [],
-      authenticatedOverlayPages: [],
-      authCoverageSummary: payload.authCoverageSummary,
-      warnings,
-      reasonCode: 'auth-structure-provider-missing',
-      reasonCodes: ['auth-structure-provider-missing'],
-      artifactPaths: { crawlAuthenticated: crawlAuthenticatedPath },
-      summary: payload.authCoverageSummary,
-    };
-  }
-
   const authSeeds = stageResults.discoverSeeds?.authSeeds ?? [];
   const revisitSeeds = stageResults.discoverSeeds?.revisitSeeds ?? [];
+  if (!provided) {
+    provided = {
+      authenticatedPages: await collectAuthenticatedStructurePages(context, authSeeds, {
+        sourceLayer: 'authenticated',
+        warnings,
+      }),
+      authenticatedOverlayPages: await collectAuthenticatedStructurePages(context, revisitSeeds, {
+        sourceLayer: 'authenticated_overlay',
+        overlay: true,
+        warnings,
+      }),
+    };
+  }
   const authenticatedPages = arrayUniqueBy((provided.authenticatedPages ?? provided.pages ?? [])
     .map((page, index) => normalizeAuthenticatedStructurePage(context, page, {
       sourceLayer: 'authenticated',
@@ -2919,7 +4233,7 @@ async function crawlAuthenticatedStage(context, stageResults) {
   const authCoverageSummary = {
     authenticatedPages: authenticatedPages.length,
     authenticatedOverlayPages: authenticatedOverlayPages.length,
-    authLevel: authStateReport.authLevel,
+    authVerificationStatus: authStateReport.authVerificationStatus,
     verified: authStateReport.verified === true,
     rawMaterialPersisted: false,
     sessionMaterialPersisted: false,
@@ -2955,23 +4269,490 @@ async function crawlAuthenticatedStage(context, stageResults) {
   };
 }
 
-async function crawlRenderedStage(context) {
+function publicRenderedStructureSummaryFromPage(maxItems = 40) {
+  const bounded = Math.max(1, Number(maxItems) || 40);
+  const attr = (node, name) => String(node?.getAttribute?.(name) || '').trim();
+  const role = (node) => attr(node, 'role').toLowerCase();
+  const templateFromUrl = (value) => {
+    try {
+      const url = new URL(value, window.location.href);
+      if (url.origin !== window.location.origin) return null;
+      return url.pathname
+        .replace(/\/\d+(?=\/|$)/gu, '/:id')
+        .replace(/\/[a-z0-9]{12,}(?=\/|$)/giu, '/:slug')
+        .replace(/\/+$/u, '/') || '/';
+    } catch {
+      return null;
+    }
+  };
+  const label = (node, fallback) => String(
+    attr(node, 'aria-label')
+    || attr(node, 'title')
+    || attr(node, 'placeholder')
+    || attr(node, 'name')
+    || fallback
+    || '',
+  ).trim().slice(0, 80);
+  const hrefOf = (node) => String(node?.href || attr(node, 'href') || '').trim();
+  const listContainers = [
+    ...document.querySelectorAll('ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]'),
+  ];
+  const itemNodes = [
+    ...document.querySelectorAll('article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]'),
+  ];
+  const bodyText = String(document.body?.innerText || '').slice(0, 4000);
+  const routePath = `${window.location.pathname || '/'}${window.location.search || ''}`;
+  const routeTemplates = [...new Set([...document.querySelectorAll('a[href], area[href]')]
+    .map((node) => templateFromUrl(hrefOf(node)))
+    .filter(Boolean))].slice(0, bounded);
+  const categoryRouteTemplates = routeTemplates.filter((route) => /\/(?:all|finish|free|mm|boy|girl|category|categories|genre|genres|rank|ranking|top|hot)(?:\/|$)/iu.test(route));
+  const bookRouteTemplates = routeTemplates.filter((route) => /\/(?:book|books|work|works)\/(?::id|:slug)(?:\/|$)/iu.test(route));
+  const chapterRouteTemplates = routeTemplates.filter((route) => /\/chapter\/(?::id|:slug)\/(?::id|:slug)(?:\/|$)/iu.test(route));
+  const searchForms = [...document.querySelectorAll('form')].filter((form) => /search|soushu|query|keyword|q\b/iu.test(`${form.action || ''} ${form.method || ''} ${form.textContent || ''} ${[...form.querySelectorAll('input, select, textarea')].map((input) => `${attr(input, 'name')} ${attr(input, 'type')}`).join(' ')}`));
+  const structureItems = [];
+  if (categoryRouteTemplates.length) {
+    structureItems.push({
+      nodeType: 'content',
+      structureType: categoryRouteTemplates.some((route) => /rank|top|hot/iu.test(route)) ? 'book_ranking_list' : 'book_category_list',
+      visibleItemCount: categoryRouteTemplates.length,
+      listPresent: true,
+      routeTemplates: categoryRouteTemplates.slice(0, 20),
+    });
+  }
+  if (bookRouteTemplates.length) {
+    structureItems.push({
+      nodeType: 'content',
+      structureType: 'book_card',
+      visibleItemCount: bookRouteTemplates.length,
+      listPresent: true,
+      routeTemplates: bookRouteTemplates.slice(0, 20),
+    });
+  }
+  if (chapterRouteTemplates.length) {
+    structureItems.push({
+      nodeType: 'content',
+      structureType: 'chapter_link',
+      visibleItemCount: chapterRouteTemplates.length,
+      listPresent: true,
+      routeTemplates: chapterRouteTemplates.slice(0, 20),
+    });
+  }
+  if (searchForms.length) {
+    structureItems.push({
+      nodeType: 'operation',
+      structureType: 'book_search_form',
+      visibleItemCount: 0,
+      listPresent: false,
+      formCount: searchForms.length,
+    });
+  }
+  const loginLike = /(?:^|\/)(?:login|signin|sign-in|account\/login)(?:\/|$)/iu.test(window.location.pathname)
+    || /\b(?:log in|sign in|please authenticate|account required)\b/iu.test(bodyText);
+  const challengeLike = /\b(?:captcha|verify you are human|checking your browser|security check|challenge|anti[-\s]?bot)\b/iu.test(bodyText);
+  return {
+    url: window.location.href,
+    finalUrl: window.location.href,
+    title: String(document.title || '').slice(0, 120),
+    routePath,
+    pageType: window.location.pathname === '/' ? 'home' : 'public_rendered_summary',
+    listPresent: listContainers.length > 0,
+    visibleItemCount: Math.min(itemNodes.length, 999),
+    emptyStatePresent: /\b(?:no results|no items|empty|nothing found)\b/iu.test(bodyText),
+    modalPresence: document.querySelector('[role="dialog"], dialog, [class*="modal"]') !== null,
+    unreadMarkerPresent: document.querySelector('[aria-label*="unread" i], [class*="unread" i]') !== null,
+    loginLike,
+    challengeLike,
+    routeTemplates,
+    structureItems,
+    links: [...document.querySelectorAll('a[href], area[href]')].slice(0, bounded).map((node, index) => ({
+      href: hrefOf(node),
+      label: label(node, `link-${index + 1}`),
+      selector: `a[href]:nth-of-type(${index + 1})`,
+    })),
+    forms: [...document.querySelectorAll('form')].slice(0, Math.min(12, bounded)).map((form, index) => ({
+      label: label(form, `form-${index + 1}`),
+      selector: `form:nth-of-type(${index + 1})`,
+      method: String(form.method || 'GET').toUpperCase(),
+      action: String(form.action || window.location.href),
+      inputs: [...form.querySelectorAll('input, select, textarea')].slice(0, 20).map((input, inputIndex) => ({
+        name: attr(input, 'name'),
+        type: attr(input, 'type') || input.tagName.toLowerCase(),
+        selector: `${input.tagName.toLowerCase()}:nth-of-type(${inputIndex + 1})`,
+        label: label(input, `input-${inputIndex + 1}`),
+        tagName: input.tagName.toLowerCase(),
+      })),
+    })),
+    controls: [...document.querySelectorAll('button, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"]')]
+      .slice(0, bounded)
+      .map((node, index) => ({
+        kind: role(node) || node.tagName.toLowerCase(),
+        type: attr(node, 'type') || null,
+        label: label(node, `control-${index + 1}`),
+        name: attr(node, 'name') || null,
+        selector: `${node.tagName.toLowerCase()}:nth-of-type(${index + 1})`,
+        attrs: { role: role(node) || null },
+      })),
+  };
+}
+
+function normalizePublicRenderedStructurePage(context, page = /** @type {any} */ ({}), {
+  fallbackUrl = context.site.rootUrl,
+} = /** @type {any} */ ({})) {
+  const normalizedUrl = sanitizeRenderedInternalUrl(context, page.normalizedUrl ?? page.finalUrl ?? page.url ?? fallbackUrl, context.site.rootUrl);
+  if (!normalizedUrl) {
+    return null;
+  }
+  const routeTemplate = page.routeTemplate ?? routePatternForUrl(normalizedUrl);
+  const visibleItemCount = Math.max(0, Number(page.visibleItemCount ?? 0) || 0);
+  const listPresent = page.listPresent === true || page.listPresence === true;
+  const emptyStatePresent = page.emptyStatePresent === true || page.empty_state_present === true;
+  const unreadMarkerPresent = page.unreadMarkerPresent === true || page.unread_marker_present === true;
+  const pageType = page.pageType ?? page.page_type ?? (new URL(normalizedUrl).pathname === '/' ? 'home' : 'public_rendered_summary');
+  const normalizedPath = new URL(normalizedUrl).pathname.toLowerCase();
+  const blockedByChallenge = page.challengeLike === true
+    || page.blockerCategory === 'challenge_or_probe'
+    || /(?:^|\/)(?:challenge|captcha|checkpoint|verify)(?:\/|$)/u.test(normalizedPath);
+  const blockedByAuth = page.loginLike === true
+    || page.blockerCategory === 'auth_required'
+    || /(?:^|\/)(?:login|signin|sign-in|auth|account\/login)(?:\/|$)/u.test(normalizedPath);
+  if (blockedByChallenge || blockedByAuth) {
+    return {
+      blocked: true,
+      url: normalizedUrl,
+      normalizedUrl,
+      reasonCode: blockedByChallenge ? 'blocked_by_challenge' : 'blocked_by_auth',
+    };
+  }
+  const internalLinks = Array.isArray(page.links)
+    ? page.links
+      .map((link, index) => {
+        try {
+          const normalizedHref = sanitizeRenderedInternalUrl(context, link?.normalizedHref ?? link?.href, normalizedUrl);
+          if (!normalizedHref) {
+            return null;
+          }
+          return {
+            href: normalizedHref,
+            normalizedHref,
+            label: sanitizedStructureText(link?.label, 80, `rendered-link-${index + 1}`),
+            selector: sanitizedStructureText(link?.selector, 120, `rendered-link-${index + 1}`),
+            semanticKind: sanitizedStructureText(link?.semanticKind ?? link?.role, 60, null),
+            structureType: sanitizedStructureText(link?.structureType ?? link?.structure_type, 100, null),
+            routeTemplate: sanitizeRenderedRouteTemplate(link?.routeTemplate ?? link?.routePattern),
+            attrs: {},
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+    : [];
+  const forms = Array.isArray(page.forms)
+    ? page.forms.slice(0, 12).map((form, index) => {
+      const next = sanitizedForm(form, index, { fallbackPrefix: 'public-rendered' });
+      try {
+        next.action = next.action ? sanitizeRenderedInternalUrl(context, next.action, normalizedUrl) : normalizedUrl;
+      } catch {
+        next.action = null;
+      }
+      next.textSummary = 'sanitized public rendered form structure only';
+      return next;
+    })
+    : [];
+  const controls = Array.isArray(page.controls)
+    ? page.controls.slice(0, 40).map((control, index) => sanitizedControl(control, index, { fallbackPrefix: 'public-rendered' }))
+    : [];
+  const routeTemplates = uniqueSortedStrings((page.routeTemplates ?? page.route_templates ?? [])
+    .map(sanitizeRenderedRouteTemplate)
+    .filter(Boolean))
+    .slice(0, 40);
+  const elementInstances = extractElementInstances({ links: internalLinks, forms, controls })
+    .map((element) => ({
+      ...element,
+      evidenceLevel: 'public_rendered_verified',
+    }));
+  const structureHash = safeStructureHash(
+    'public-rendered-structure',
+    page.structureHash ?? page.structure_hash,
+    `${routeTemplate}:${pageType}:${visibleItemCount}:${listPresent}:${emptyStatePresent}:${unreadMarkerPresent}:${forms.length}:${controls.length}:${routeTemplates.join('|')}`,
+  );
+  const structureItems = normalizedRenderedStructureItems(page, {
+    routeTemplate,
+    pageType,
+    visibleItemCount,
+    listPresent,
+    emptyStatePresent,
+    unreadMarkerPresent,
+    structureHash,
+    formsLength: forms.length,
+    controlsLength: controls.length,
+  });
+  const structurePresent = visibleItemCount > 0
+    || listPresent
+    || emptyStatePresent
+    || forms.length > 0
+    || controls.length > 0
+    || routeTemplates.length > 0
+    || structureItems.some((item) => item.evidenceStatus === 'structure_summary_present');
+  return {
+    url: normalizedUrl,
+    normalizedUrl,
+    depth: 0,
+    discoveredBy: 'rendered_link',
+    sourceLayer: 'public_rendered',
+    authRequired: false,
+    authVerificationStatus: 'not_requested',
+    evidenceLevel: structurePresent ? 'public_rendered_verified' : 'candidate',
+    sourcePath: normalizedUrl,
+    title: sanitizedStructureText(page.title, 120, `public rendered route ${routeTemplate}`),
+    textSummary: 'sanitized public rendered structure summary; no page body persisted',
+    canonicalUrl: normalizedUrl,
+    routeTemplate,
+    routePath: new URL(normalizedUrl).pathname,
+    tabState: page.tabState ?? page.tab_state ?? null,
+    pageType,
+    routeState: {
+      source: 'public-rendered-structure-summary',
+      stateId: page.stateKey ?? page.stateId ?? `public_rendered:${routeTemplate}:${page.tabState ?? 'default'}`,
+      routeTemplate,
+      routePath: new URL(normalizedUrl).pathname,
+      tabState: page.tabState ?? page.tab_state ?? null,
+      pageType,
+    },
+    stateKey: page.stateKey ?? page.stateId ?? `public_rendered:${routeTemplate}:${page.tabState ?? 'default'}`,
+    visibleItemCount,
+    listPresent,
+    emptyStatePresent,
+    unreadMarkerPresent,
+    modalPresence: page.modalPresence === true || page.modal_present === true,
+    structureHash,
+    evidenceStatus: structurePresent ? 'structure_summary_present' : 'route_seed_only',
+    riskLevel: page.riskLevel ?? 'read_public_low',
+    links: internalLinks,
+    forms,
+    controls,
+    elementInstances,
+    routeTemplates,
+    structureItems,
+    diagnostics: {
+      staticEvidenceStatus: 'present',
+      publicEvidenceStatus: structurePresent ? 'public_rendered_structured' : 'public_rendered_route_seed_only',
+      blockerCategory: null,
+      dynamicSignals: ['public-rendered-structure-summary'],
+      warnings: [],
+    },
+    collection: {
+      status: 'success',
+      source: 'public_rendered_sanitized_summary',
+      concurrent: false,
+    },
+    evidence: [
+      buildEvidence({
+        type: 'text',
+        source: normalizedUrl,
+        text: 'public rendered sanitized route and structure summary; no session material, unsanitized markup, network payload, profile, or page body persisted.',
+        confidence: 0.76,
+      }),
+    ],
+  };
+}
+
+function renderedTargetsFromStageResults(context, stageResults) {
+  const staticPages = stageResults.crawlStatic?.pages ?? [];
+  const dynamicPages = staticPages.filter((page) => !hasUsableStaticPageEvidence(page));
+  const seedUrls = (stageResults.discoverSeeds?.publicSeeds ?? stageResults.discoverSeeds?.seeds ?? [])
+    .map((seed) => seed.normalizedUrl ?? seed.url)
+    .filter(Boolean);
+  const targets = dynamicPages.length
+    ? dynamicPages.map((page) => page.normalizedUrl)
+    : seedUrls.slice(0, Math.max(1, Math.min(Number(context.policy.maxPages ?? 5) || 5, 5)));
+  return uniqueSortedStrings(targets)
+    .filter((urlValue) => isInternalUrl(urlValue, context.site.allowedDomains));
+}
+
+async function collectPublicRenderedStructurePagesWithBrowser(context, targets, warnings) {
+  if (!targets.length) {
+    return [];
+  }
+  let session = null;
+  try {
+    session = await openBrowserSession({
+      browserPath: context.options.browserPath,
+      headless: context.options.headless !== false,
+      timeoutMs: Math.min(Number(context.options.timeoutMs ?? context.policy.fetchTimeoutMs ?? 10_000) || 10_000, 20_000),
+      startupUrl: 'about:blank',
+      userDataDir: null,
+      cleanupUserDataDirOnShutdown: true,
+      userDataDirPrefix: 'siteforge-public-render-',
+      userAgent: 'SiteForgeBuildPublicRenderedCrawler/1.0',
+      viewport: { width: 1280, height: 900, deviceScaleFactor: 1 },
+      fullPage: false,
+      sessionOpenRetries: 1,
+    }, {
+      userDataDirPrefix: 'siteforge-public-render-',
+      userDataDir: null,
+      cleanupUserDataDirOnShutdown: true,
+    }, context.options.publicRenderedBrowserDeps ?? {});
+    const pages = [];
+    for (const target of targets.slice(0, Math.max(1, Math.min(Number(context.policy.maxPages ?? 5) || 5, 10)))) {
+      try {
+        await session.navigateAndWait(target, {
+          useLoadEvent: false,
+          useNetworkIdle: false,
+          documentReadyTimeoutMs: Math.min(Number(context.policy.fetchTimeoutMs ?? 10_000) || 10_000, 12_000),
+          domQuietMs: 500,
+          domQuietTimeoutMs: 3_000,
+          idleMs: 250,
+        });
+        const summary = await session.callPageFunction(publicRenderedStructureSummaryFromPage, 60);
+        pages.push(summary);
+      } catch (error) {
+        warnings.push(`public rendered collection skipped ${sanitizeEvidenceRef(target) ?? '<url>'}: ${error?.code ?? error?.message ?? 'render_failed'}`);
+      }
+    }
+    return pages;
+  } catch (error) {
+    warnings.push(`public rendered collection unavailable: ${error?.code ?? error?.message ?? 'browser_unavailable'}`);
+    return [];
+  } finally {
+    await session?.close?.();
+  }
+}
+
+async function crawlRenderedStage(context, stageResults) {
+  const warnings = /** @type {string[]} */ ([]);
+  const renderedRequired = stageResults.crawlStatic?.summary?.renderedEvidenceRequired === true;
+  const targets = renderedTargetsFromStageResults(context, stageResults);
+  const hasPublicStaticGaps = (stageResults.crawlStatic?.pages ?? []).some((page) => !hasUsableStaticPageEvidence(page));
+  const renderRequested = canAttemptPublicRenderedLayer(context, { renderedRequired })
+    || (hasPublicStaticGaps && targets.length > 0 && canAutoAttemptPublicRenderedLayer(context));
+  if (!renderRequested) {
+    const payload = {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      buildId: context.buildId,
+      siteId: context.site.id,
+      status: 'skipped',
+      reason: 'Public rendered crawl was not requested; static-only public evidence remains the activation boundary.',
+      publicRenderedPages: [],
+      pages: [],
+      publicRenderedCoverageSummary: {
+        pages: 0,
+        sourceLayer: 'public_rendered',
+        renderedRequired,
+        rawDomSaved: false,
+        rawHtmlSaved: false,
+        rawContentSaved: false,
+        cookiesSaved: false,
+        tokensSaved: false,
+        browserProfileSaved: false,
+      },
+    };
+    const crawlRenderedPath = await writeArtifactJson(context, 'crawl_rendered.json', payload);
+    return {
+      status: 'skipped',
+      reasonCode: 'dynamic-unsupported',
+      reasonCodes: ['dynamic-unsupported'],
+      warnings: [payload.reason],
+      publicRenderedPages: [],
+      artifactPaths: { crawlRendered: crawlRenderedPath },
+      summary: payload.publicRenderedCoverageSummary,
+    };
+  }
+  let provided = null;
+  if (typeof context.options.publicRenderedStructureProvider === 'function') {
+    provided = await context.options.publicRenderedStructureProvider({
+      context,
+      site: context.site,
+      seeds: stageResults.discoverSeeds,
+      staticPages: stageResults.crawlStatic?.pages ?? [],
+      renderedRequired,
+    });
+  } else if (context.options.publicRenderedStructureSummary) {
+    provided = context.options.publicRenderedStructureSummary;
+  }
+  if (!provided) {
+    provided = {
+      publicRenderedPages: await collectPublicRenderedStructurePagesWithBrowser(context, targets, warnings),
+    };
+  }
+  const blockedPages = [];
+  const publicRenderedPages = arrayUniqueBy((provided.publicRenderedPages ?? provided.pages ?? [])
+    .map((page, index) => normalizePublicRenderedStructurePage(context, page, {
+      fallbackUrl: targets[index] ?? context.site.rootUrl,
+    }))
+    .filter((page) => {
+      if (page?.blocked === true) {
+        blockedPages.push(page);
+        return false;
+      }
+      return Boolean(page);
+    }), (page) => pageIdentity(page))
+    .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
+  warnings.push(...(Array.isArray(provided.warnings) ? provided.warnings.map(String) : []));
+  if (blockedPages.length) {
+    warnings.push(`public rendered collection blocked on ${blockedPages.length} route(s): ${uniqueSortedStrings(blockedPages.map((page) => page.reasonCode)).join(',')}`);
+  }
+  const publicRenderedCoverageSummary = {
+    pages: publicRenderedPages.length,
+    sourceLayer: 'public_rendered',
+    renderedRequired,
+    blockedByChallenge: blockedPages.filter((page) => page.reasonCode === 'blocked_by_challenge').length,
+    blockedByAuth: blockedPages.filter((page) => page.reasonCode === 'blocked_by_auth').length,
+    rawDomSaved: false,
+    rawHtmlSaved: false,
+    rawContentSaved: false,
+    cookiesSaved: false,
+    tokensSaved: false,
+    browserProfileSaved: false,
+  };
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
-    status: 'skipped',
-    reason: 'Controlled-browser rendered crawl is not used for login enhancement; authenticated structure evidence must come from the default-browser login flow or a sanitized bridge.',
-    pages: [],
+    status: publicRenderedPages.length ? 'success' : (renderedRequired ? 'blocked' : 'skipped'),
+    reason: publicRenderedPages.length
+      ? null
+      : renderedRequired
+        ? 'Public rendered structural evidence was required but no sanitized structure summary was collected.'
+        : 'Public rendered crawl produced no additional sanitized structure summary.',
+    publicRenderedPages,
+    pages: publicRenderedPages,
+    blockedPages,
+    publicRenderedCoverageSummary,
+    privacy: {
+      rawDomSaved: false,
+      rawHtmlSaved: false,
+      rawContentSaved: false,
+      privateContentSaved: false,
+      cookiesSaved: false,
+      tokensSaved: false,
+      browserProfileSaved: false,
+    },
+    warnings,
   };
   const crawlRenderedPath = await writeArtifactJson(context, 'crawl_rendered.json', payload);
+  if (renderedRequired && !publicRenderedPages.length) {
+    throw createBlockedStageError(
+      'siteforge-rendered-evidence-unavailable',
+      payload.reason,
+      {
+        warnings,
+        artifactPaths: { crawlRendered: crawlRenderedPath },
+        reasonCodes: ['dynamic-unsupported', ...uniqueSortedStrings(blockedPages.map((page) => page.reasonCode))],
+        summary: publicRenderedCoverageSummary,
+      },
+    );
+  }
   return {
-    status: 'skipped',
-    reasonCode: 'dynamic-unsupported',
-    reasonCodes: ['dynamic-unsupported'],
-    warnings: [payload.reason],
+    status: payload.status,
+    reasonCode: publicRenderedPages.length ? null : 'dynamic-unsupported',
+    reasonCodes: publicRenderedPages.length ? [] : ['dynamic-unsupported'],
+    publicRenderedPages,
+    pages: publicRenderedPages,
+    blockedPages,
+    warnings,
     artifactPaths: { crawlRendered: crawlRenderedPath },
-    summary: { pages: 0 },
+    summary: publicRenderedCoverageSummary,
   };
 }
 
@@ -2992,7 +4773,7 @@ async function discoverInteractionsStage(context, stageResults) {
         safety,
         sourceLayer: pageSourceLayer(page),
         authRequired: page.authRequired === true,
-        authLevel: page.authLevel ?? null,
+        authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel: pageEvidenceLevel(page),
         riskLevel: safety === 'read_only' ? page.riskLevel ?? 'read_public_low' : 'write_low',
         evidence: [
@@ -3023,7 +4804,7 @@ async function discoverInteractionsStage(context, stageResults) {
         safety: ['tab', 'menu', 'button'].includes(kind) ? 'safe' : 'requires_input',
         sourceLayer: pageSourceLayer(page),
         authRequired: page.authRequired === true,
-        authLevel: page.authLevel ?? null,
+        authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel: pageEvidenceLevel(page),
         riskLevel: ['tab', 'menu', 'button'].includes(kind) ? page.riskLevel ?? 'read_public_low' : 'write_low',
         evidence: [
@@ -3101,10 +4882,129 @@ async function buildSiteGraphStage(context, stageResults) {
   const edges = /** @type {any[]} */ ([]);
   const nodeByPageKey = new Map();
   const routeNodes = new Map();
+  const attachRouteTemplateNode = ({
+    parentNode,
+    page,
+    pattern,
+    sourceLayer,
+    authRequired,
+    evidenceLevel,
+    evidenceStatus = null,
+    routeOnly = false,
+    linkSemanticKind = null,
+    linkStructureType = null,
+    linkLabel = null,
+    linkHref = null,
+  }) => {
+    if (!parentNode || !pattern || pattern === '/') {
+      return;
+    }
+    const resolvedEvidenceStatus = routeOnly ? (evidenceStatus ?? 'link_route_template') : evidenceStatus;
+    const sanitizedLinkLabel = sanitizedStructureText(linkLabel, 80);
+    const sanitizedLinkHref = linkHref ? sanitizeEvidenceRef(linkHref) : null;
+    const categoryInstance = ['category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(String(linkSemanticKind ?? '').toLowerCase())
+      ? {
+        kind: String(linkSemanticKind).toLowerCase(),
+        label: sanitizedLinkLabel ?? String(linkSemanticKind),
+        routeTemplate: pattern,
+        normalizedUrl: sanitizedLinkHref,
+        selector: null,
+        sourceLayer,
+        evidenceStatus: resolvedEvidenceStatus,
+      }
+      : null;
+    const confidence = resolvedEvidenceStatus === 'route_seed_only'
+      ? 0.56
+      : routeOnly
+        ? 0.66
+        : 0.72;
+    const routeKey = `${pattern}:route-template:${sourceLayer}`;
+    if (!routeNodes.has(routeKey)) {
+      const routeId = sourceLayer === 'public'
+        ? routeTemplateNodeId(pattern, null)
+        : stableNodeId('node:route-template', `${pattern}:${sourceLayer}`);
+      routeNodes.set(routeKey, {
+        schemaVersion: BUILD_SCHEMA_VERSION,
+        id: routeId,
+        siteId: context.site.id,
+        type: 'route_template',
+        routePattern: pattern,
+        routeTemplate: pattern,
+        tabState: null,
+        pageType: null,
+        stateKey: null,
+        title: `Route template ${pattern}`,
+        textSummary: linkSemanticKind
+          ? `Sanitized ${linkSemanticKind} route template discovered from link on ${page.normalizedUrl}`
+          : `Sanitized route template discovered from ${page.normalizedUrl}`,
+        discoveredBy: page.discoveredBy,
+        sourceLayer,
+        authVerificationStatus: page.authVerificationStatus ?? null,
+        evidenceLevel,
+        evidenceStatus: resolvedEvidenceStatus,
+        staticEvidenceStatus: routeOnly ? null : (page.diagnostics?.staticEvidenceStatus ?? null),
+        publicEvidenceStatus: routeOnly ? null : (page.diagnostics?.publicEvidenceStatus ?? null),
+        linkSemanticKind: linkSemanticKind ?? null,
+        linkStructureType: linkStructureType ?? null,
+        linkLabel: sanitizedLinkLabel,
+        linkHref: sanitizedLinkHref,
+        categoryInstance,
+        categoryInstances: categoryInstance ? [categoryInstance] : [],
+        parentNodeIds: [],
+        childNodeIds: [],
+        authRequired,
+        confidence,
+        evidence: [
+          buildEvidence({
+            type: 'url',
+            source: page.sourcePath ?? page.normalizedUrl,
+            text: sanitizedLinkLabel ? `${sanitizedLinkLabel} ${pattern}` : pattern,
+            confidence,
+          }),
+        ],
+      });
+    } else if (linkSemanticKind || sanitizedLinkLabel || sanitizedLinkHref) {
+      const existingRouteNode = routeNodes.get(routeKey);
+      existingRouteNode.linkSemanticKind = existingRouteNode.linkSemanticKind ?? linkSemanticKind;
+      existingRouteNode.linkStructureType = existingRouteNode.linkStructureType ?? linkStructureType ?? null;
+      existingRouteNode.linkLabel = existingRouteNode.linkLabel ?? sanitizedLinkLabel;
+      existingRouteNode.linkHref = existingRouteNode.linkHref ?? sanitizedLinkHref;
+      existingRouteNode.categoryInstance = existingRouteNode.categoryInstance ?? categoryInstanceForNode(existingRouteNode);
+      if (categoryInstance) {
+        const currentInstances = Array.isArray(existingRouteNode.categoryInstances)
+          ? existingRouteNode.categoryInstances
+          : existingRouteNode.categoryInstance
+            ? [existingRouteNode.categoryInstance]
+            : [];
+        const key = `${categoryInstance.kind}:${categoryInstance.label}:${categoryInstance.routeTemplate}:${categoryInstance.normalizedUrl ?? ''}`;
+        if (!currentInstances.some((item) => `${item.kind}:${item.label}:${item.routeTemplate}:${item.normalizedUrl ?? ''}` === key)) {
+          existingRouteNode.categoryInstances = [...currentInstances, categoryInstance].slice(0, 80);
+        }
+      }
+      existingRouteNode.confidence = Math.max(Number(existingRouteNode.confidence ?? 0), confidence);
+    }
+    const routeNode = routeNodes.get(routeKey);
+    if (!parentNode.childNodeIds.includes(routeNode.id)) {
+      parentNode.childNodeIds.push(routeNode.id);
+    }
+    if (!routeNode.parentNodeIds.includes(parentNode.id)) {
+      routeNode.parentNodeIds.push(parentNode.id);
+    }
+    const edgeId = stableNodeId('edge:route-template', `${parentNode.id}:${routeNode.id}`);
+    if (!edges.some((edge) => edge.id === edgeId)) {
+      edges.push({
+        id: edgeId,
+        type: 'exposes_route_template',
+        from: parentNode.id,
+        to: routeNode.id,
+        evidence: routeNode.evidence,
+      });
+    }
+  };
 
   for (const page of pages) {
     const sourceLayer = pageSourceLayer(page);
-    const authRequired = page.authRequired === true || sourceLayer !== 'public';
+    const authRequired = page.authRequired === true || isAuthenticatedSourceLayer(sourceLayer);
     const evidenceLevel = pageEvidenceLevel(page);
     const id = pageNodeIdForPage(page);
     const node = {
@@ -3129,11 +5029,15 @@ async function buildSiteGraphStage(context, stageResults) {
       pageType: page.pageType ?? null,
       visibleItemCount: Number(page.visibleItemCount ?? 0) || 0,
       listPresent: page.listPresent === true,
+      emptyStatePresent: page.emptyStatePresent === true,
+      routeTemplates: uniqueSortedStrings(page.routeTemplates ?? []),
       structureHash: page.structureHash ?? null,
       evidenceStatus: page.evidenceStatus ?? null,
+      staticEvidenceStatus: page.diagnostics?.staticEvidenceStatus ?? null,
+      publicEvidenceStatus: page.diagnostics?.publicEvidenceStatus ?? null,
       riskLevel: page.riskLevel ?? null,
       sourceLayer,
-      authLevel: page.authLevel ?? null,
+      authVerificationStatus: page.authVerificationStatus ?? null,
       evidenceLevel,
       title: page.title,
       textSummary: page.textSummary,
@@ -3148,6 +5052,86 @@ async function buildSiteGraphStage(context, stageResults) {
     };
     nodeByPageKey.set(pageIdentity(page), node);
     nodes.push(node);
+
+    const pageElementInstances = Array.isArray(page.elementInstances) ? page.elementInstances.slice(0, 120) : [];
+    for (const [elementIndex, element] of pageElementInstances.entries()) {
+      const elementUrl = element.href ?? element.action ?? null;
+      const routeTemplate = element.routeTemplate ?? (elementUrl ? routePatternForUrl(elementUrl) : page.routeTemplate ?? null);
+      const elementLabel = sanitizedStructureText(element.label, 120, `${element.kind ?? 'element'}-${elementIndex + 1}`);
+      const elementRole = sanitizedStructureText(element.role ?? element.semanticKind ?? 'navigation', 60, 'navigation');
+      const elementId = stableNodeId(
+        'node:element',
+        `${id}:${element.kind ?? 'element'}:${element.selector ?? elementIndex}:${elementLabel}:${elementUrl ?? ''}`,
+      );
+      const elementNode = {
+        schemaVersion: BUILD_SCHEMA_VERSION,
+        id: elementId,
+        siteId: context.site.id,
+        type: element.kind === 'form' || elementRole === 'search' ? 'operation' : 'component',
+        url: elementUrl,
+        normalizedUrl: elementUrl,
+        routePattern: routeTemplate,
+        routeTemplate,
+        tabState: page.tabState ?? null,
+        stateKey: `${page.stateKey ?? page.normalizedUrl}:element:${elementIndex}`,
+        pageType: element.structureType ?? `${elementRole}_element`,
+        structureType: element.structureType ?? `${elementRole}_element`,
+        elementKind: element.kind ?? 'element',
+        elementRole,
+        elementLabel,
+        elementSelector: element.selector ?? null,
+        linkSemanticKind: element.semanticKind ?? elementRole,
+        linkStructureType: element.structureType ?? null,
+        linkLabel: elementLabel,
+        linkHref: element.href ?? null,
+        instanceKind: elementRole,
+        instanceLabel: elementLabel,
+        instanceRouteTemplate: routeTemplate,
+        formAction: element.action ?? null,
+        formMethod: element.method ?? null,
+        visibleItemCount: 1,
+        listPresent: false,
+        emptyStatePresent: false,
+        routeTemplates: routeTemplate ? [routeTemplate] : [],
+        structureHash: stableNodeId('element-structure', `${elementId}:${routeTemplate ?? ''}`),
+        evidenceStatus: element.evidenceStatus ?? 'element_instance_summary_present',
+        staticEvidenceStatus: page.diagnostics?.staticEvidenceStatus ?? null,
+        publicEvidenceStatus: page.diagnostics?.publicEvidenceStatus ?? null,
+        riskLevel: page.riskLevel ?? 'read_public_low',
+        sourceLayer,
+        authVerificationStatus: page.authVerificationStatus ?? null,
+        evidenceLevel: element.evidenceLevel ?? evidenceLevel,
+        title: elementLabel,
+        textSummary: `Sanitized ${elementRole} ${element.kind ?? 'element'} instance; session material, unsanitized markup, page body, and profile material were not persisted.`,
+        discoveredBy: element.kind === 'form' ? 'form' : 'html_link',
+        parentNodeIds: [node.id],
+        childNodeIds: [],
+        authRequired,
+        overlayFor: page.overlayFor ?? null,
+        confidence: 0.78,
+        evidence: [
+          buildEvidence({
+            type: 'dom',
+            source: page.sourcePath ?? page.normalizedUrl,
+            selector: element.selector ?? null,
+            text: `${elementLabel} ${routeTemplate ?? elementUrl ?? ''}`.trim(),
+            confidence: 0.78,
+          }),
+        ],
+      };
+      elementNode.categoryInstance = categoryInstanceForNode(elementNode);
+      nodes.push(elementNode);
+      if (!node.childNodeIds.includes(elementNode.id)) {
+        node.childNodeIds.push(elementNode.id);
+      }
+      edges.push({
+        id: stableNodeId('edge:element', `${node.id}:${elementNode.id}`),
+        type: 'exposes_element_instance',
+        from: node.id,
+        to: elementNode.id,
+        evidence: elementNode.evidence,
+      });
+    }
   }
 
   for (const page of pages) {
@@ -3158,6 +5142,31 @@ async function buildSiteGraphStage(context, stageResults) {
     for (const link of page.links) {
       const target = [...nodeByPageKey.values()].find((node) => node.normalizedUrl === link.normalizedHref);
       if (!target) {
+        const sourceLayer = pageSourceLayer(page);
+        let linkRouteTemplate = link.routeTemplate ?? null;
+        if (!linkRouteTemplate && link.normalizedHref) {
+          try {
+            linkRouteTemplate = routePatternForUrl(link.normalizedHref);
+          } catch {
+            linkRouteTemplate = null;
+          }
+        }
+        if (linkRouteTemplate && (isPublicReadSourceLayer(sourceLayer) || isAuthenticatedSourceLayer(sourceLayer))) {
+          attachRouteTemplateNode({
+            parentNode: from,
+            page,
+            pattern: linkRouteTemplate,
+            sourceLayer,
+            authRequired: page.authRequired === true || isAuthenticatedSourceLayer(sourceLayer),
+            evidenceLevel: pageEvidenceLevel(page),
+            evidenceStatus: link.semanticKind ? 'link_semantic_route_template' : 'link_route_template',
+            routeOnly: true,
+            linkSemanticKind: link.semanticKind ?? null,
+            linkStructureType: link.structureType ?? null,
+            linkLabel: link.label ?? null,
+            linkHref: link.normalizedHref ?? link.href ?? null,
+          });
+        }
         continue;
       }
       from.childNodeIds.push(target.id);
@@ -3167,6 +5176,9 @@ async function buildSiteGraphStage(context, stageResults) {
         type: 'links_to',
         from: from.id,
         to: target.id,
+        linkSemanticKind: link.semanticKind ?? null,
+        linkStructureType: link.structureType ?? null,
+        linkRouteTemplate: link.routeTemplate ?? null,
         evidence: [
           buildEvidence({
             type: 'dom',
@@ -3180,7 +5192,7 @@ async function buildSiteGraphStage(context, stageResults) {
     }
     const pattern = page.routeTemplate ?? routePatternForUrl(page.normalizedUrl);
     const sourceLayer = pageSourceLayer(page);
-    const authRequired = page.authRequired === true || sourceLayer !== 'public';
+    const authRequired = page.authRequired === true || isAuthenticatedSourceLayer(sourceLayer);
     const evidenceLevel = pageEvidenceLevel(page);
     const routeKeyBase = page.tabState ? `${pattern}:${page.tabState}` : pattern;
     const routeKey = sourceLayer === 'public' ? routeKeyBase : `${routeKeyBase}:${sourceLayer}`;
@@ -3204,8 +5216,10 @@ async function buildSiteGraphStage(context, stageResults) {
           : `Route pattern discovered from ${page.normalizedUrl}`,
         discoveredBy: page.discoveredBy,
         sourceLayer,
-        authLevel: page.authLevel ?? null,
+        authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel,
+        staticEvidenceStatus: page.diagnostics?.staticEvidenceStatus ?? null,
+        publicEvidenceStatus: page.diagnostics?.publicEvidenceStatus ?? null,
         parentNodeIds: [],
         childNodeIds: [],
         authRequired,
@@ -3230,6 +5244,17 @@ async function buildSiteGraphStage(context, stageResults) {
       to: routeNode.id,
       evidence: routeNode.evidence,
     });
+    for (const template of uniqueSortedStrings(page.routeTemplates ?? [])) {
+      attachRouteTemplateNode({
+        parentNode: from,
+        page,
+        pattern: template,
+        sourceLayer,
+        authRequired,
+        evidenceLevel,
+        evidenceStatus: page.evidenceStatus ?? null,
+      });
+    }
 
     for (const form of page.forms) {
       const formId = formNodeId(from.id, form);
@@ -3244,7 +5269,7 @@ async function buildSiteGraphStage(context, stageResults) {
         textSummary: form.textSummary,
         discoveredBy: 'form',
         sourceLayer,
-        authLevel: page.authLevel ?? null,
+        authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel,
         parentNodeIds: [from.id],
         childNodeIds: [],
@@ -3286,7 +5311,7 @@ async function buildSiteGraphStage(context, stageResults) {
         textSummary: `${control.kind}${control.type ? ` ${control.type}` : ''} ${control.label ?? control.name ?? ''}`.trim(),
         discoveredBy: 'interaction',
         sourceLayer,
-        authLevel: page.authLevel ?? null,
+        authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel,
         parentNodeIds: [from.id],
         childNodeIds: [],
@@ -3333,11 +5358,13 @@ async function buildSiteGraphStage(context, stageResults) {
         structureHash: item.structureHash ?? null,
         visibleItemCount: Number(item.visibleItemCount ?? 0) || 0,
         listPresent: item.listPresent === true,
+        emptyStatePresent: item.emptyStatePresent === true,
+        routeTemplates: uniqueSortedStrings(item.routeTemplates ?? []),
         evidenceStatus: item.evidenceStatus ?? page.evidenceStatus ?? null,
         riskLevel: item.riskLevel ?? page.riskLevel ?? null,
         discoveredBy: 'interaction',
         sourceLayer,
-        authLevel: page.authLevel ?? null,
+        authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel: item.evidenceLevel ?? evidenceLevel,
         parentNodeIds: [from.id],
         childNodeIds: [],
@@ -3362,6 +5389,17 @@ async function buildSiteGraphStage(context, stageResults) {
         to: structureId,
         evidence: structureNode.evidence,
       });
+      for (const template of uniqueSortedStrings(item.routeTemplates ?? [])) {
+        attachRouteTemplateNode({
+          parentNode: structureNode,
+          page,
+          pattern: template,
+          sourceLayer,
+          authRequired,
+          evidenceLevel: item.evidenceLevel ?? evidenceLevel,
+          evidenceStatus: item.evidenceStatus ?? page.evidenceStatus ?? null,
+        });
+      }
     }
   }
 
@@ -3387,6 +5425,48 @@ async function buildSiteGraphStage(context, stageResults) {
       from: publicNode.id,
       to: overlayNode.id,
       evidence: overlayNode.evidence,
+    });
+  }
+
+  for (const route of knownPolicyPublicRouteTemplates(context).filter((candidate) => candidate.seedable !== true)) {
+    if (route.pattern === '/') {
+      continue;
+    }
+    const routeKey = `${route.pattern}:policy-route-template:public`;
+    if (routeNodes.has(routeKey)) {
+      continue;
+    }
+    routeNodes.set(routeKey, {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      id: routeTemplateNodeId(route.pattern, 'policy'),
+      siteId: context.site.id,
+      type: 'route_template',
+      routePattern: route.pattern,
+      routeTemplate: route.pattern,
+      tabState: null,
+      pageType: route.pageType,
+      stateKey: null,
+      title: `Known public route template ${route.pattern}`,
+      textSummary: 'Sanitized public route template from site policy; no concrete page body was persisted.',
+      discoveredBy: sourceToDiscoveredBy(route.source),
+      sourceLayer: 'public',
+      authVerificationStatus: context.authStateReport?.authVerificationStatus ?? null,
+      evidenceLevel: 'public_verified',
+      evidenceStatus: 'policy_route_template',
+      staticEvidenceStatus: null,
+      publicEvidenceStatus: 'policy_route_template',
+      parentNodeIds: [],
+      childNodeIds: [],
+      authRequired: false,
+      confidence: route.seedable ? 0.72 : 0.62,
+      evidence: [
+        buildEvidence({
+          type: 'url',
+          source: context.site.rootUrl,
+          text: route.pattern,
+          confidence: route.seedable ? 0.72 : 0.62,
+        }),
+      ],
     });
   }
 
@@ -3434,7 +5514,7 @@ async function classifyNodesStage(context, stageResults) {
   const graph = clone(requireStage(stageResults, 'buildSiteGraph').graph);
   for (const node of graph.nodes) {
     if (node.type === 'page') {
-      node.classification = classifyPage(node);
+      node.classification = classifyPage(node, context);
     } else if (node.type === 'form') {
       node.classification = /contact|support|message/iu.test(`${node.title ?? ''} ${node.textSummary ?? ''}`)
         ? 'contact_form'
@@ -3442,20 +5522,35 @@ async function classifyNodesStage(context, stageResults) {
           ? 'search_form'
           : 'form';
     } else if (node.type === 'content') {
-      node.classification = `content_${node.structureType ?? node.pageType ?? 'summary'}`;
+      node.classification = chapterContentClassification(node.routeTemplate ?? node.routePattern ?? '', node.structureType ?? node.pageType ?? '', context)
+        ?? genericPublicClassification(node.routeTemplate ?? node.routePattern ?? '', node.structureType ?? node.pageType ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`, node)
+        ?? `content_${node.structureType ?? node.pageType ?? 'summary'}`;
     } else if (node.type === 'operation') {
-      node.classification = `operation_${node.structureType ?? node.pageType ?? 'summary'}`;
+      node.classification = chapterContentClassification(node.routeTemplate ?? node.routePattern ?? '', node.structureType ?? node.pageType ?? '', context)
+        ?? genericPublicClassification(node.routeTemplate ?? node.routePattern ?? '', node.structureType ?? node.pageType ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`, node)
+        ?? `operation_${node.structureType ?? node.pageType ?? 'summary'}`;
+    } else if (node.type === 'component') {
+      node.classification = chapterContentClassification(node.routeTemplate ?? node.routePattern ?? '', node.structureType ?? node.pageType ?? '', context)
+        ?? classificationFromLinkSemanticKind(node.linkSemanticKind ?? node.elementRole, node)
+        ?? genericPublicClassification(node.routeTemplate ?? node.routePattern ?? '', node.structureType ?? node.pageType ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`, node)
+        ?? `component_${node.structureType ?? node.pageType ?? 'summary'}`;
     } else if (node.type === 'modal') {
       node.classification = `modal_${node.structureType ?? node.pageType ?? 'summary'}`;
     } else if (node.type === 'route_template') {
-      node.classification = nodeSourceLayer(node) !== 'public'
-        ? classifyPage(node)
-        : catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
+      node.classification = isAuthenticatedSourceLayer(nodeSourceLayer(node))
+        ? classifyPage(node, context)
+        : chapterContentClassification(node.routePattern ?? '', node.pageType ?? '', context)
+        ?? classificationFromLinkSemanticKind(node.linkSemanticKind, node)
+        ?? catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
+        ?? genericPublicClassification(node.routePattern ?? '', node.pageType ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`, node)
         ?? 'route_template';
     } else if (node.type === 'route') {
-      node.classification = nodeSourceLayer(node) !== 'public'
-        ? classifyPage(node)
-        : catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
+      node.classification = isAuthenticatedSourceLayer(nodeSourceLayer(node))
+        ? classifyPage(node, context)
+        : chapterContentClassification(node.routePattern ?? '', node.pageType ?? '', context)
+        ?? classificationFromLinkSemanticKind(node.linkSemanticKind, node)
+        ?? catalogRouteClassification(node.routePattern ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`)
+        ?? genericPublicClassification(node.routePattern ?? '', node.pageType ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`, node)
         ?? (/product-\d+|:id/u.test(node.routePattern ?? '') ? 'entity_route' : 'route');
     }
   }
@@ -3490,10 +5585,11 @@ async function extractAffordancesStage(context, stageResults) {
   const affordances = /** @type {any[]} */ ([]);
   const commonAffordanceMetadata = (page, safety = 'read_only') => {
     const highRisk = ['state_changing', 'destructive', 'payment'].includes(safety);
+    const sourceLayer = pageSourceLayer(page);
     return {
-      sourceLayer: pageSourceLayer(page),
-      authRequired: page.authRequired === true || pageSourceLayer(page) !== 'public',
-      authLevel: page.authLevel ?? null,
+      sourceLayer,
+      authRequired: page.authRequired === true || isAuthenticatedSourceLayer(sourceLayer),
+      authVerificationStatus: page.authVerificationStatus ?? null,
       evidenceLevel: pageEvidenceLevel(page),
       riskLevel: safety === 'payment'
         ? 'write_high'
@@ -3522,6 +5618,8 @@ async function extractAffordancesStage(context, stageResults) {
         label: link.label,
         selector: link.selector,
         href: link.normalizedHref,
+        semanticKind: link.semanticKind ?? null,
+        structureType: link.structureType ?? null,
         safety: 'read_only',
         ...commonAffordanceMetadata(page, 'read_only'),
         evidence: [
@@ -3629,7 +5727,7 @@ async function extractAffordancesStage(context, stageResults) {
       tabState: routeNode.tabState ?? null,
       sourceLayer: nodeSourceLayer(routeNode),
       authRequired: routeNode.authRequired === true,
-      authLevel: routeNode.authLevel ?? null,
+      authVerificationStatus: routeNode.authVerificationStatus ?? null,
       evidenceLevel: routeNode.evidenceLevel ?? 'public_verified',
       riskLevel: routeNode.riskLevel ?? 'read_public_low',
       activationDecision: 'candidate_evidence',
@@ -3662,10 +5760,18 @@ async function extractAffordancesStage(context, stageResults) {
   };
 }
 
-/**
- * @param {any} context
- * @param {Record<string, any>} definition
- */
+function capabilityUserFacingName(name, userValue, metadata = /** @type {any} */ ({})) {
+  const explicit = metadata.user_facing_name ?? metadata.userFacingName;
+  if (explicit !== undefined && explicit !== null && String(explicit).trim()) {
+    return explicit;
+  }
+  const label = String(userValue ?? name ?? '').trim();
+  if (/[\u3400-\u9fff]/u.test(label)) {
+    return label;
+  }
+  return label ? `${label}（公开只读）` : null;
+}
+
 function makeCapability(context, {
   name,
   description,
@@ -3677,7 +5783,7 @@ function makeCapability(context, {
   inputs = /** @type {any[]} */ ([]),
   outputs = /** @type {any[]} */ ([]),
   safetyLevel = 'read_only',
-  executionPlan,
+  executionPlan = null,
   evidence,
   confidence,
   status = 'active',
@@ -3702,6 +5808,7 @@ function makeCapability(context, {
     action,
     object,
     userValue,
+    user_facing_name: capabilityUserFacingName(name, userValue, metadata),
     entryNodeIds,
     requiredNodeIds,
     inputs,
@@ -3744,7 +5851,9 @@ function disabledActionForAffordance(affordance) {
     affordance?.href,
     affordance?.safety,
   ].filter(Boolean).join(' ');
-  const forced = findForcedDisabledActions(text);
+  const forced = isReadOnlyFollowSurface(affordance)
+    ? findForcedDisabledActions(text).filter((action) => action !== 'follow' && action !== 'unfollow')
+    : findForcedDisabledActions(text);
   if (affordance?.kind === 'upload') {
     forced.push('upload');
   }
@@ -3848,6 +5957,52 @@ function knownPolicyDownloadReasonCode(context) {
     ?? 'site-adapter-required';
 }
 
+function siteContextText(context = /** @type {any} */ ({}), nodes = /** @type {any[]} */ ([])) {
+  const site = context.site ?? {};
+  const policy = context.setupProfile?.knownSitePolicy ?? {};
+  return [
+    site.rootUrl,
+    site.requestedUrl,
+    site.finalUrl,
+    policy.siteArchetype,
+    policy.primaryArchetype,
+    policy.adapterId,
+    policy.siteKey,
+    ...(policy.pageTypes ?? []),
+    ...(policy.capabilityFamilies ?? []),
+    ...nodes.slice(0, 20).map((node) => `${node.normalizedUrl ?? node.routePattern ?? ''} ${node.title ?? ''} ${node.textSummary ?? ''}`),
+  ].join(' ').toLowerCase();
+}
+
+function classificationCount(nodes = /** @type {any[]} */ ([]), pattern) {
+  return nodes.reduce((count, node) => count + (pattern.test(String(node.classification ?? '')) ? 1 : 0), 0);
+}
+
+function isRepositoryCoverageSite(context, nodes = /** @type {any[]} */ ([])) {
+  const text = siteContextText(context, nodes);
+  if (/github|gitlab|sourceforge|bitbucket|repository|repositories|\brepos?\b|source-code|source code|open-source|open source|code search/u.test(text)) {
+    return true;
+  }
+  const repositoryListCount = classificationCount(nodes, /^repository_list$/u);
+  const repositoryDetailCount = classificationCount(nodes, /^repository_detail$/u);
+  return repositoryListCount >= 1 && repositoryDetailCount >= 2 && /repository|repositories|\brepos?\b/u.test(text);
+}
+
+function isNewsCoverageSite(context, nodes = /** @type {any[]} */ ([]), homepage = null) {
+  const text = siteContextText(context, [homepage, ...nodes].filter(Boolean));
+  const explicitNewsContext = /(^|[./-])news([./-]|$)|newspaper|article|articles|新闻|资讯/u.test(text);
+  const newsCount = classificationCount(nodes, /^(news_channel|article_list|article_detail)$/u);
+  const catalogOrWorkCount = classificationCount(nodes, /^(catalog_|book_|work_|product_|chapter_)/u);
+  const repositoryCount = classificationCount(nodes, /^repository_/u);
+  if (repositoryCount > 0 && isRepositoryCoverageSite(context, nodes)) {
+    return false;
+  }
+  if (explicitNewsContext) {
+    return true;
+  }
+  return newsCount >= 2 && newsCount > catalogOrWorkCount;
+}
+
 function normalizeSetupCapabilityId(value) {
   return String(value ?? '')
     .toLowerCase()
@@ -3916,6 +6071,7 @@ function isCatalogCoverageSite(context, pageNodes = /** @type {any[]} */ ([]), r
   const pageTypes = knownPolicyPageTypes(context);
   const families = knownPolicyCapabilityFamilies(context);
   const policySignals = [
+    policy.siteArchetype,
     policy.primaryArchetype,
     policy.siteKey,
     policy.adapterId,
@@ -3925,13 +6081,42 @@ function isCatalogCoverageSite(context, pageNodes = /** @type {any[]} */ ([]), r
   if (/catalog|author|category|tag|video|book|product/u.test(policySignals)) {
     return true;
   }
-  return [...pageNodes, ...routeNodes].some((node) => /^catalog_|product_/u.test(node.classification ?? ''));
+  const nodes = [...pageNodes, ...routeNodes];
+  if (isRepositoryCoverageSite(context, nodes)) {
+    return false;
+  }
+  const hasCatalogSpecificEvidence = nodes.some((node) => (
+    /^(catalog_(category|tag|collection|topic|release|event|pagination|detail)|product_|book_)|^chapter_detail$/u
+      .test(String(node.classification ?? ''))
+  ));
+  if (isNewsCoverageSite(context, nodes) && !hasCatalogSpecificEvidence) {
+    return false;
+  }
+  return hasCatalogSpecificEvidence;
+}
+
+function hasChapterContentCoverageSignals(nodes = /** @type {any[]} */ ([])) {
+  const classifications = nodes.map((node) => String(node.classification ?? ''));
+  if (classifications.includes('chapter_detail')) {
+    return true;
+  }
+  const bookSignals = classifications.filter((classification) => [
+    'chapter_content_home',
+    'book_category_list',
+    'book_ranking_list',
+    'book_collection_list',
+    'book_search_results',
+    'book_search_form',
+    'book_detail',
+  ].includes(classification));
+  return bookSignals.length >= 2;
 }
 
 function catalogCoverageNodes(pageNodes = /** @type {any[]} */ ([]), routeNodes = /** @type {any[]} */ ([]), classifications = /** @type {any[]} */ ([])) {
   const wanted = new Set(classifications);
   return [...pageNodes, ...routeNodes]
     .filter((node) => wanted.has(node.classification))
+    .filter((node) => !isPublicUtilityRouteNode(node))
     .sort((left, right) => String(left.normalizedUrl ?? left.routePattern ?? left.id).localeCompare(
       String(right.normalizedUrl ?? right.routePattern ?? right.id),
       'en',
@@ -3964,6 +6149,15 @@ function catalogCoverageSteps(nodes = /** @type {any[]} */ ([])) {
       nodeId: node.id,
     };
   });
+}
+
+function catalogRouteOnlySteps(nodes = /** @type {any[]} */ ([])) {
+  return nodes.slice(0, 12).map((node) => ({
+    kind: 'route_template',
+    routeTemplate: node.routePattern ?? node.routeTemplate ?? null,
+    routePath: node.normalizedUrl ?? node.url ?? null,
+    nodeId: node.id,
+  }));
 }
 
 function catalogCoverageRouteState(nodes = /** @type {any[]} */ ([])) {
@@ -4026,11 +6220,29 @@ function addCatalogCoverageCapability(context, capabilities, {
   informational = false,
   activationBlockedReason = null,
   riskLevel = 'read_public_low',
+  evidenceModel = 'public_structure',
+  publicRouteOnly = false,
+  allowRouteOnlyEvidence = false,
 }) {
   if (!Array.isArray(nodes) || !nodes.length) {
     return;
   }
   const routeState = catalogCoverageRouteState(nodes);
+  const hasStructureEvidence = nodes.some((node) => nodeHasPublicStructureEvidence(node));
+  const canUseRouteOnlyEvidence = (
+    status === 'active'
+    && allowRouteOnlyEvidence === true
+    && !hasStructureEvidence
+    && /^(browse|open|view)\b/u.test(String(name ?? '').toLowerCase())
+    && !/\b(?:read|metadata|summary|summarize)\b/u.test(String(name ?? '').toLowerCase())
+    && nodes.some((node) => nodeHasRouteOnlyPublicEvidence(node))
+    && nodes.some((node) => ['page', 'route', 'route_template'].includes(node.type) || node.normalizedUrl || node.routePattern || node.routeTemplate)
+  );
+  const resolvedEvidenceModel = canUseRouteOnlyEvidence ? 'public_route_navigation' : evidenceModel;
+  const resolvedPublicRouteOnly = publicRouteOnly || canUseRouteOnlyEvidence;
+  const resolvedOutputs = canUseRouteOnlyEvidence
+    ? [{ name: 'routes', type: 'route_summary' }]
+    : outputs;
   const capability = makeCapability(context, {
     name,
     description,
@@ -4039,7 +6251,7 @@ function addCatalogCoverageCapability(context, capabilities, {
     userValue,
     entryNodeIds: status === 'active' ? nodes.slice(0, 20).map((node) => node.id) : [],
     requiredNodeIds: status === 'active' ? nodes.slice(0, 20).map((node) => node.id) : [],
-    outputs,
+    outputs: resolvedOutputs,
     safetyLevel: 'read_only',
     evidence: catalogCoverageEvidence(context, nodes, name),
     confidence,
@@ -4051,6 +6263,8 @@ function addCatalogCoverageCapability(context, capabilities, {
     enabled_status: status === 'active' ? 'enabled' : 'disabled',
     evidence_status: status === 'active' ? 'verified' : 'disabled',
     default_policy: status === 'active' ? 'read_only' : 'disabled',
+    evidenceModel: resolvedEvidenceModel,
+    publicRouteOnly: resolvedPublicRouteOnly,
     routeTemplate: routeState?.routeTemplate ?? null,
     routePath: routeState?.routePath ?? null,
     routeState,
@@ -4063,10 +6277,948 @@ function addCatalogCoverageCapability(context, capabilities, {
   if (status === 'active' && !informational) {
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
+      steps: canUseRouteOnlyEvidence ? catalogRouteOnlySteps(nodes) : catalogCoverageSteps(nodes),
+    });
+  }
+  capabilities.push(capability);
+}
+
+function publicReadableNodes(graph, classifications = /** @type {any[]} */ ([])) {
+  const wanted = new Set(classifications);
+  return (graph?.nodes ?? [])
+    .filter((node) => !node.authRequired && isPublicReadSourceLayer(nodeSourceLayer(node)))
+    .filter((node) => wanted.size === 0 || wanted.has(node.classification))
+    .filter((node) => ['page', 'content', 'operation', 'route', 'route_template', 'form', 'menu', 'tab', 'component'].includes(node.type))
+    .filter((node) => node.classification === 'homepage' || !isPublicUtilityRouteNode(node))
+    .sort((left, right) => String(left.normalizedUrl ?? left.routePattern ?? left.id).localeCompare(
+      String(right.normalizedUrl ?? right.routePattern ?? right.id),
+      'en',
+    ));
+}
+
+function nodeHasRouteOnlyPublicEvidence(node = /** @type {any} */ ({})) {
+  return ['link_route_template', 'link_semantic_route_template'].includes(node.evidenceStatus);
+}
+
+function authenticatedReadRouteTargetSet(context = /** @type {any} */ ({})) {
+  const targets = context.crawlContract?.coverageTargets ?? {};
+  return new Set([
+    ...(targets.authRoutes ?? []),
+    ...(targets.publicRevisitRoutes ?? []),
+  ].map((value) => {
+    try {
+      return normalizeUrl(value, context.site.rootUrl);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean));
+}
+
+function isAuthenticatedReadRiskRoute(node = /** @type {any} */ ({})) {
+  const text = [
+    node.normalizedUrl,
+    node.url,
+    node.routePattern,
+    node.routeTemplate,
+    node.title,
+    node.textSummary,
+    node.classification,
+  ].join(' ').toLowerCase();
+  return /(?:^|[/:?\s])(?:wallet|pay|payment|checkout|cart|order|recharge|vip|member)(?=[/?#:\s]|$)|钱包|支付|付款|充值|订单/iu.test(text);
+}
+
+function hasAuthenticatedSanitizedStructureEvidence(node = /** @type {any} */ ({})) {
+  return node.listPresent === true
+    || node.emptyStatePresent === true
+    || Number(node.visibleItemCount ?? 0) > 0;
+}
+
+function authenticatedNodeMatchesTarget(context, node, targetSet) {
+  const normalizedUrl = node.normalizedUrl ? normalizeUrl(node.normalizedUrl, context.site.rootUrl) : null;
+  if (normalizedUrl && targetSet.has(normalizedUrl)) {
+    return true;
+  }
+  const routePattern = String(node.routePattern ?? node.routeTemplate ?? '').replace(/\/+$/u, '') || '/';
+  return [...targetSet].some((target) => {
+    try {
+      const targetPath = new URL(target).pathname.replace(/\/+$/u, '') || '/';
+      return targetPath === routePattern;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function isBoundedAuthenticatedRouteNode(context, node, targetSet) {
+  if (!['authenticated', 'authenticated_overlay'].includes(nodeSourceLayer(node))) {
+    return false;
+  }
+  if (!['page', 'content', 'operation', 'route', 'route_template'].includes(node.type)) {
+    return false;
+  }
+  if (isAuthenticatedReadRiskRoute(node)) {
+    return false;
+  }
+  return authenticatedNodeMatchesTarget(context, node, targetSet);
+}
+
+function isBoundedAuthenticatedReadNode(context, node, targetSet) {
+  if (!isBoundedAuthenticatedRouteNode(context, node, targetSet)) {
+    return false;
+  }
+  if (!hasAuthenticatedSanitizedStructureEvidence(node)) {
+    return false;
+  }
+  return true;
+}
+
+function addAuthenticatedReadCoverageCapabilities(context, capabilities, graph) {
+  if (!canRunAuthenticatedLayer(context.authStateReport)) {
+    return;
+  }
+  const targetSet = authenticatedReadRouteTargetSet(context);
+  if (!targetSet.size) {
+    return;
+  }
+  const routeNodes = (graph?.nodes ?? [])
+    .filter((node) => isBoundedAuthenticatedRouteNode(context, node, targetSet))
+    .sort((left, right) => String(left.normalizedUrl ?? left.routePattern ?? left.id).localeCompare(
+      String(right.normalizedUrl ?? right.routePattern ?? right.id),
+      'en',
+    ));
+  const nodes = routeNodes.filter((node) => hasAuthenticatedSanitizedStructureEvidence(node));
+  const routeOnlyNodes = routeNodes.filter((node) => !hasAuthenticatedSanitizedStructureEvidence(node));
+  const byLayer = new Map([
+    ['authenticated', nodes.filter((node) => nodeSourceLayer(node) === 'authenticated')],
+    ['authenticated_overlay', nodes.filter((node) => nodeSourceLayer(node) === 'authenticated_overlay')],
+  ]);
+  for (const [layer, layerNodes] of byLayer) {
+    if (!layerNodes.length) {
+      continue;
+    }
+    const isOverlay = layer === 'authenticated_overlay';
+    const name = isOverlay ? 'read authenticated overlay summaries' : 'read authenticated route summaries';
+    if (hasCapabilityNamed(capabilities, name)) {
+      continue;
+    }
+    const capability = makeCapability(context, {
+      name,
+      description: isOverlay
+        ? 'Read only sanitized structural overlay summaries from configured authenticated revisits.'
+        : 'Read only sanitized structural summaries from configured authenticated routes.',
+      action: 'view',
+      object: isOverlay ? 'authenticated overlay summaries' : 'authenticated route summaries',
+      userValue: isOverlay ? '查看登录态 overlay 的脱敏结构摘要' : '查看登录态页面的脱敏结构摘要',
+      entryNodeIds: layerNodes.slice(0, 20).map((node) => node.id),
+      requiredNodeIds: layerNodes.slice(0, 20).map((node) => node.id),
+      outputs: [{ name: 'summary', type: 'sanitized_summary' }],
+      safetyLevel: 'read_only',
+      evidence: layerNodes.flatMap((node) => node.evidence ?? []).slice(0, 8),
+      confidence: 0.78,
+      status: 'active',
+      informational: false,
+      sourceLayer: layer,
+      authRequired: true,
+      risk_level: 'read_personal_medium',
+      enabled_status: 'limited_enabled',
+      default_policy: 'limited_enabled',
+      evidence_status: 'verified',
+      saved_material: ['sanitized_summary_only'],
+      raw_content_saved: false,
+      private_content_saved: false,
+      raw_dom_saved: false,
+      raw_html_saved: false,
+      cookie_material_saved: false,
+      evidenceModel: 'authenticated_sanitized_structure',
+      intents: isOverlay
+        ? ['查看登录态覆盖摘要', 'read authenticated overlay summaries', 'show authenticated overlay structure']
+        : ['查看登录态页面摘要', 'read authenticated route summaries', 'show authenticated route structure'],
+    });
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'limited_read',
+      dryRunOnly: false,
+      requiresConfirmation: false,
+      autoExecute: false,
+      steps: layerNodes.slice(0, 12).map((node) => ({
+        kind: 'read_sanitized_summary',
+        nodeId: node.id,
+        routeTemplate: node.routeTemplate ?? node.routePattern ?? null,
+        routePath: node.normalizedUrl ?? node.url ?? null,
+        sourceLayer: layer,
+        savedMaterial: 'sanitized_summary_only',
+      })),
+    });
+    capabilities.push(capability);
+  }
+  const routeOnlyByLayer = new Map([
+    ['authenticated', routeOnlyNodes.filter((node) => nodeSourceLayer(node) === 'authenticated')],
+    ['authenticated_overlay', routeOnlyNodes.filter((node) => nodeSourceLayer(node) === 'authenticated_overlay')],
+  ]);
+  for (const [layer, layerNodes] of routeOnlyByLayer) {
+    if (!layerNodes.length) {
+      continue;
+    }
+    const isOverlay = layer === 'authenticated_overlay';
+    const name = isOverlay ? 'open authenticated overlay routes' : 'open authenticated configured routes';
+    if (hasCapabilityNamed(capabilities, name)) {
+      continue;
+    }
+    const capability = makeCapability(context, {
+      name,
+      description: isOverlay
+        ? 'Open configured authenticated revisit routes using only sanitized route-access evidence.'
+        : 'Open configured authenticated routes using only sanitized route-access evidence.',
+      action: 'view',
+      object: isOverlay ? 'authenticated overlay routes' : 'configured authenticated routes',
+      userValue: isOverlay
+        ? 'Open authenticated overlay routes without saving private content.'
+        : 'Open configured authenticated routes without saving private content.',
+      entryNodeIds: layerNodes.slice(0, 20).map((node) => node.id),
+      requiredNodeIds: layerNodes.slice(0, 20).map((node) => node.id),
+      outputs: [{ name: 'routes', type: 'route_access_summary' }],
+      safetyLevel: 'read_only',
+      evidence: layerNodes.flatMap((node) => node.evidence ?? []).slice(0, 8),
+      confidence: 0.7,
+      status: 'active',
+      informational: false,
+      sourceLayer: layer,
+      authRequired: true,
+      risk_level: 'read_personal_medium',
+      enabled_status: 'limited_enabled',
+      default_policy: 'limited_enabled',
+      evidence_status: 'verified',
+      saved_material: ['sanitized_route_access_only'],
+      raw_content_saved: false,
+      private_content_saved: false,
+      raw_dom_saved: false,
+      raw_html_saved: false,
+      cookie_material_saved: false,
+      evidenceModel: 'authenticated_route_only',
+      intents: isOverlay
+        ? ['open authenticated overlay routes', 'show authenticated overlay route access']
+        : ['open authenticated routes', 'show authenticated route access'],
+    });
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'limited_read',
+      dryRunOnly: false,
+      requiresConfirmation: false,
+      autoExecute: false,
+      steps: layerNodes.slice(0, 12).map((node) => ({
+        kind: 'open_configured_authenticated_route',
+        nodeId: node.id,
+        routeTemplate: node.routeTemplate ?? node.routePattern ?? null,
+        routePath: node.normalizedUrl ?? node.url ?? null,
+        sourceLayer: layer,
+        savedMaterial: 'sanitized_route_access_only',
+      })),
+    });
+    capabilities.push(capability);
+  }
+}
+
+function hasCapabilityNamed(capabilities = /** @type {any[]} */ ([]), name) {
+  const normalizedName = String(name ?? '').toLowerCase();
+  return capabilities.some((capability) => String(capability.name ?? '').toLowerCase() === normalizedName);
+}
+
+function isPublicUtilityRouteNode(node = /** @type {any} */ ({})) {
+  const text = [
+    node.normalizedUrl,
+    node.url,
+    node.routePattern,
+    node.routeTemplate,
+    node.title,
+    node.textSummary,
+    node.classification,
+  ].join(' ').toLowerCase();
+  return /(?:^|[/:?\s])(?:login|signin|sign-in|signup|sign-up|register|passport|account|settings|wallet|pay|payment|checkout|cart|order|recharge|vip|member)(?=[/?#:\s]|$)|登录|登入|注册|账号|设置|钱包|支付|付款|充值|会员|订单/iu.test(text);
+}
+
+function isStructureElementInstanceNode(node = /** @type {any} */ ({})) {
+  const layer = nodeSourceLayer(node);
+  return ['component', 'operation'].includes(node.type)
+    && (isPublicReadSourceLayer(layer) || isAuthenticatedSourceLayer(layer))
+    && node.evidenceStatus === 'element_instance_summary_present'
+    && !isPublicUtilityRouteNode(node);
+}
+
+function hasMeaningfulElementLabel(node = /** @type {any} */ ({})) {
+  const label = String(node.elementLabel ?? node.linkLabel ?? node.title ?? '').trim();
+  return label.length >= 2 && !/^(?:link|control|element)-\d+$/iu.test(label);
+}
+
+function categoryInstanceForNode(node = /** @type {any} */ ({})) {
+  const role = String(node.elementRole ?? node.linkSemanticKind ?? '').toLowerCase();
+  if (!['category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(role)) {
+    return null;
+  }
+  const label = sanitizedStructureText(node.elementLabel ?? node.linkLabel ?? node.title, 120, role);
+  return {
+    kind: role,
+    label,
+    routeTemplate: node.routeTemplate ?? node.routePattern ?? null,
+    normalizedUrl: node.normalizedUrl ?? node.url ?? node.linkHref ?? null,
+    selector: node.elementSelector ?? null,
+    sourceLayer: nodeSourceLayer(node),
+    evidenceStatus: node.evidenceStatus ?? null,
+  };
+}
+
+function chineseElementVerb(role) {
+  const normalizedRole = String(role ?? '').toLowerCase();
+  if (normalizedRole === 'search') return '\u641c\u7d22';
+  if (normalizedRole === 'ranking') return '\u67e5\u770b\u699c\u5355';
+  if (normalizedRole === 'following_list' || normalizedRole === 'followed_channel') return '\u67e5\u770b';
+  if (normalizedRole === 'category' || normalizedRole === 'tag') return '\u6d4f\u89c8';
+  if (['work', 'article', 'media', 'detail'].includes(normalizedRole)) return '\u6253\u5f00';
+  if (normalizedRole === 'profile') return '\u67e5\u770b';
+  return '\u6253\u5f00';
+  if (role === 'search') return '搜索';
+  if (role === 'ranking') return '查看榜单';
+  if (role === 'category' || role === 'tag') return '浏览';
+  if (role === 'work' || role === 'article' || role === 'media' || role === 'detail') return '打开';
+  if (role === 'profile') return '查看';
+  return '打开';
+}
+
+function chineseElementCanonicalUtterance(role, objectLabel) {
+  const normalizedRole = String(role ?? '').toLowerCase();
+  const label = String(objectLabel ?? '').trim() || '\u9875\u9762\u5165\u53e3';
+  if (normalizedRole === 'ranking' && /[\u3400-\u9fff]/u.test(label)) {
+    return /(?:榜|排行|热搜|热门|最新)/u.test(label)
+      ? `\u67e5\u770b${label}`
+      : `\u67e5\u770b${label}\u699c\u5355`;
+  }
+  return `${chineseElementVerb(normalizedRole)}${label}`;
+}
+
+function chineseElementIntentExamples(role, objectLabel) {
+  const normalizedRole = String(role ?? '').toLowerCase();
+  const label = String(objectLabel ?? '').trim() || '\u9875\u9762\u5165\u53e3';
+  const examples = [
+    chineseElementCanonicalUtterance(normalizedRole, label),
+    `\u6253\u5f00${label}`,
+    `\u67e5\u770b${label}`,
+    `open ${label}`,
+  ];
+  if (normalizedRole === 'category') {
+    examples.push(`\u6253\u5f00${label}\u5206\u7c7b`, `\u67e5\u770b${label}\u5206\u7c7b`);
+  } else if (normalizedRole === 'tag') {
+    examples.push(`\u6253\u5f00${label}\u6807\u7b7e`, `\u67e5\u770b${label}\u6807\u7b7e`);
+  } else if (normalizedRole === 'ranking') {
+    examples.push(`\u6253\u5f00${label}\u6392\u884c`, `\u67e5\u770b${label}\u699c\u5355`);
+  } else if (normalizedRole === 'following_list' || normalizedRole === 'followed_channel') {
+    examples.push(`\u6253\u5f00${label}`, `\u67e5\u770b${label}\u5217\u8868`);
+  } else if (normalizedRole === 'search') {
+    examples.push(`\u4f7f\u7528${label}\u641c\u7d22`, `\u5728${label}\u91cc\u641c\u7d22`);
+  } else if (normalizedRole === 'article') {
+    examples.push(`\u9605\u8bfb${label}`, `\u6253\u5f00${label}\u6587\u7ae0`);
+  } else if (['work', 'media', 'detail'].includes(normalizedRole)) {
+    examples.push(`\u6253\u5f00${label}\u8be6\u60c5`, `\u67e5\u770b${label}\u4fe1\u606f`);
+  } else if (normalizedRole === 'profile') {
+    examples.push(`\u67e5\u770b${label}\u4e3b\u9875`, `\u6253\u5f00${label}\u8d44\u6599`);
+  }
+  return uniqueSortedStrings(examples);
+}
+
+function elementCapabilityName(node = /** @type {any} */ ({}), index = 0) {
+  const role = String(node.elementRole ?? node.linkSemanticKind ?? 'navigation').toLowerCase();
+  const label = String(node.elementLabel ?? node.title ?? role).trim();
+  const labelSlug = slugifyAscii(label, '');
+  const routeSlug = slugifyAscii(node.routeTemplate ?? node.routePattern ?? node.normalizedUrl ?? '', '');
+  const stableSuffix = node.id?.slice(-8) || `element-${index + 1}`;
+  const suffix = labelSlug || (routeSlug ? `${routeSlug}-${stableSuffix}` : stableSuffix);
+  return role === 'search'
+    ? `search with page element ${suffix}`
+    : `open ${role} element ${suffix}`;
+}
+
+function elementCapabilityIntentSeeds(node = /** @type {any} */ ({})) {
+  const role = String(node.elementRole ?? node.linkSemanticKind ?? 'navigation').toLowerCase();
+  const label = String(node.elementLabel ?? node.title ?? '').trim()
+    || String(node.routeTemplate ?? node.routePattern ?? '\u9875\u9762\u5165\u53e3');
+  const canonicalUtterance = chineseElementCanonicalUtterance(role, label);
+  return [
+    {
+      canonicalUtterance,
+      utteranceExamples: chineseElementIntentExamples(role, label),
+      negativeExamples: ['\u81ea\u52a8\u652f\u4ed8', '\u5220\u9664\u6570\u636e', '\u63d0\u4ea4\u8868\u5355'],
+      slots: role === 'search' ? [{ name: 'query', type: 'string', required: false }] : [],
+      invocationScore: 0.82,
+    },
+    {
+      canonicalUtterance: `open ${label}`,
+      utteranceExamples: [`open ${label}`],
+      negativeExamples: ['submit a payment', 'delete account data'],
+      slots: [],
+      invocationScore: 0.72,
+    },
+  ];
+}
+
+function addPublicElementInstanceCapabilities(context, capabilities, graph, robotsPolicy = null) {
+  const existingNames = new Set(capabilities.map((capability) => String(capability.name ?? '').toLowerCase()));
+  const nodes = (graph?.nodes ?? [])
+    .filter((node) => (
+      isStructureElementInstanceNode(node)
+      && hasMeaningfulElementLabel(node)
+      && nodeTargetAllowedByRobots(context, node, robotsPolicy)
+    ))
+    .sort((left, right) => (
+      String(left.elementRole ?? left.linkSemanticKind ?? '').localeCompare(String(right.elementRole ?? right.linkSemanticKind ?? ''), 'en')
+      || String(left.elementLabel ?? left.title ?? '').localeCompare(String(right.elementLabel ?? right.title ?? ''), 'zh-Hans-CN')
+      || String(left.routeTemplate ?? left.routePattern ?? '').localeCompare(String(right.routeTemplate ?? right.routePattern ?? ''), 'en')
+    ))
+    .slice(0, 80);
+  for (const [index, node] of nodes.entries()) {
+    const name = elementCapabilityName(node, index);
+    if (existingNames.has(name.toLowerCase())) {
+      continue;
+    }
+    existingNames.add(name.toLowerCase());
+    const role = String(node.elementRole ?? node.linkSemanticKind ?? 'navigation').toLowerCase();
+    const label = String(node.elementLabel ?? node.title ?? name).trim();
+    const action = role === 'search' ? 'search' : 'view';
+    const layer = nodeSourceLayer(node);
+    const authRequired = node.authRequired === true || isAuthenticatedSourceLayer(layer);
+    const capability = makeCapability(context, {
+      name,
+      description: `Use the ${authRequired ? 'authenticated' : 'public'} page element "${label}" discovered from sanitized element evidence.`,
+      action,
+      object: label,
+      userValue: chineseElementCanonicalUtterance(role, label),
+      entryNodeIds: [node.id],
+      requiredNodeIds: [node.id],
+      inputs: action === 'search' ? [{ name: 'query', type: 'text', required: false }] : [],
+      outputs: [{ name: 'element', type: 'sanitized_element_summary' }],
+      safetyLevel: 'read_only',
+      evidence: node.evidence ?? [],
+      confidence: 0.74,
+      status: 'active',
+      sourceLayer: layer,
+      authRequired,
+      risk_level: authRequired ? 'read_personal_medium' : 'read_public_low',
+      enabled_status: authRequired ? 'limited_enabled' : 'enabled',
+      default_policy: authRequired ? 'limited_enabled' : 'read_only',
+      evidence_status: 'verified',
+      evidenceModel: authRequired ? 'authenticated_route_only' : 'public_element_summary',
+      elementRole: role,
+      elementLabel: label,
+      saved_material: ['sanitized_element_summary_only'],
+      raw_content_saved: false,
+      raw_dom_saved: false,
+      raw_html_saved: false,
+      private_content_saved: false,
+      intents: elementCapabilityIntentSeeds(node),
+    });
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'read_only',
+      steps: [{
+        kind: action === 'search' ? 'element_search_summary' : 'open_element_route',
+        nodeId: node.id,
+        label,
+        routeTemplate: node.routeTemplate ?? node.routePattern ?? null,
+        url: node.normalizedUrl ?? node.url ?? null,
+        sourceLayer: layer,
+        savedMaterial: 'sanitized_element_summary_only',
+      }],
+    });
+    capabilities.push(capability);
+  }
+}
+
+function routeInstanceCapabilityName(node = /** @type {any} */ ({}), index = 0) {
+  const route = node.routeTemplate ?? node.routePattern ?? node.normalizedUrl ?? `route-${index + 1}`;
+  const suffix = slugifyAscii(`${node.linkLabel ?? node.title ?? ''} ${route}`, `route-${index + 1}`);
+  return `open public route ${suffix}`;
+}
+
+function routeInstanceIntents(node = /** @type {any} */ ({})) {
+  const label = String(node.linkLabel ?? node.title ?? node.routeTemplate ?? node.routePattern ?? '\u516c\u5f00\u5165\u53e3').trim();
+  return uniqueSortedStrings([
+    `\u6253\u5f00${label}`,
+    `\u67e5\u770b${label}`,
+    `\u6d4f\u89c8${label}`,
+    `open ${label}`,
+  ]);
+}
+
+function addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy = null) {
+  const existingNames = new Set(capabilities.map((capability) => String(capability.name ?? '').toLowerCase()));
+  const seenRoutes = new Set();
+  const nodes = (graph?.nodes ?? [])
+    .filter((node) => (
+      ['route', 'route_template'].includes(node.type)
+      && node.authRequired !== true
+      && isPublicReadSourceLayer(nodeSourceLayer(node))
+      && (node.routeTemplate || node.routePattern || node.normalizedUrl)
+      && (node.routeTemplate ?? node.routePattern) !== '/'
+      && !isPublicUtilityRouteNode(node)
+      && hasPublicRouteNavigationCapabilityEvidence(context, node, robotsPolicy)
+      && nodeTargetAllowedByRobots(context, node, robotsPolicy)
+    ))
+    .sort((left, right) => String(left.routeTemplate ?? left.routePattern ?? '').localeCompare(
+      String(right.routeTemplate ?? right.routePattern ?? ''),
+      'en',
+    ));
+  for (const node of nodes) {
+    const routeKey = `${nodeSourceLayer(node)}:${node.routeTemplate ?? node.routePattern ?? node.normalizedUrl}`;
+    if (seenRoutes.has(routeKey)) {
+      continue;
+    }
+    seenRoutes.add(routeKey);
+    if (seenRoutes.size > 80) {
+      break;
+    }
+    const name = routeInstanceCapabilityName(node, seenRoutes.size - 1);
+    if (existingNames.has(name.toLowerCase())) {
+      continue;
+    }
+    existingNames.add(name.toLowerCase());
+    const routeLabel = String(node.linkLabel ?? node.title ?? node.routeTemplate ?? node.routePattern ?? '公开入口').trim();
+    const capability = makeCapability(context, {
+      name,
+      description: `Open public route "${routeLabel}" using route-template evidence only.`,
+      action: 'view',
+      object: routeLabel,
+      userValue: `打开公开入口：${routeLabel}`,
+      entryNodeIds: [node.id],
+      requiredNodeIds: [node.id],
+      outputs: [{ name: 'route', type: 'route_summary' }],
+      safetyLevel: 'read_only',
+      evidence: node.evidence ?? [],
+      confidence: node.evidenceStatus === 'route_seed_only' ? 0.62 : 0.7,
+      status: 'active',
+      sourceLayer: nodeSourceLayer(node),
+      evidenceModel: 'public_route_navigation',
+      publicRouteOnly: true,
+      saved_material: ['sanitized_route_summary_only'],
+      raw_content_saved: false,
+      raw_dom_saved: false,
+      raw_html_saved: false,
+      private_content_saved: false,
+      intents: routeInstanceIntents(node),
+    });
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'read_only',
+      steps: [{
+        kind: 'route_template',
+        nodeId: node.id,
+        routeTemplate: node.routeTemplate ?? node.routePattern ?? null,
+        url: node.normalizedUrl ?? node.url ?? null,
+        savedMaterial: 'sanitized_route_summary_only',
+      }],
+    });
+    capabilities.push(capability);
+  }
+}
+
+function hasPublicRouteNavigationCapabilityEvidence(context = /** @type {any} */ ({}), node = /** @type {any} */ ({}), robotsPolicy = null) {
+  const evidenceStatus = String(node.evidenceStatus ?? '');
+  const publicEvidenceStatus = String(node.publicEvidenceStatus ?? '');
+  if (publicEvidenceStatus === 'public_rendered_route_seed_only') {
+    return false;
+  }
+  if (['link_route_template', 'link_semantic_route_template', 'policy_route_template'].includes(evidenceStatus)) {
+    return true;
+  }
+  if (['public_static_structured', 'public_rendered_structured', 'policy_route_template'].includes(publicEvidenceStatus)) {
+    return true;
+  }
+  if (node.categoryInstance && nodeTargetAllowedByRobots(context, node, robotsPolicy)) {
+    return true;
+  }
+  return evidenceStatus === 'structure_summary_present';
+}
+
+function nodeTargetAllowedByRobots(context = /** @type {any} */ ({}), node = /** @type {any} */ ({}), robotsPolicyOverride = null) {
+  if (nodeSourceLayer(node) === 'authorized_source' || node.sourceAuthority || node.sourceAuthorityId) {
+    return true;
+  }
+  const robotsPolicy = robotsPolicyOverride ?? setupProfileRobotsPolicy(context);
+  if (!robotsPolicy) {
+    return true;
+  }
+  const targets = uniqueSortedStrings([
+    node.normalizedUrl,
+    node.url,
+    node.linkHref,
+    node.href,
+    node.formAction,
+  ].filter(Boolean));
+  if (targets.length === 0) {
+    return true;
+  }
+  return targets.every((target) => {
+    try {
+      const urlValue = normalizeUrl(target, context.site?.rootUrl);
+      return isInternalUrl(urlValue, context.site?.allowedDomains ?? [])
+        && isUrlAllowedByRobots(urlValue, robotsPolicy);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function publicSearchNodes(graph) {
+  return publicReadableNodes(graph, [
+    'search',
+    'search_page',
+    'search_results',
+    'search_form',
+    'book_search_results',
+    'book_search_form',
+  ]);
+}
+
+function publicSearchObject(context, graph) {
+  const text = [
+    context.site?.rootUrl,
+    ...(graph?.nodes ?? []).slice(0, 80).flatMap((node) => [
+      node.classification,
+      node.title,
+      node.textSummary,
+      node.routePattern,
+      node.structureType,
+    ]),
+  ].join(' ').toLowerCase();
+  if (/repositories|repository|\brepos?\b|github|code search|project/u.test(text)) return 'repositories';
+  if (/book|novel|fiction|chapter|works?|serialized/u.test(text)) return 'books and works';
+  if (/article|story|news|channel/u.test(text)) return 'articles and news';
+  if (/video|media|watch/u.test(text)) return 'media items';
+  if (/product|shop|catalog/u.test(text)) return 'catalog content';
+  return 'public content';
+}
+
+function isProductCommerceContext(context, graph, productList = null, productDetail = null) {
+  if (!productList && !productDetail) {
+    return false;
+  }
+  const text = [
+    context.site?.rootUrl,
+    productList?.title,
+    productList?.textSummary,
+    productDetail?.title,
+    productDetail?.textSummary,
+    ...(graph?.nodes ?? []).slice(0, 60).flatMap((node) => [
+      node.classification,
+      node.title,
+      node.textSummary,
+      node.routePattern,
+    ]),
+  ].join(' ').toLowerCase();
+  if (/github|repository|repositories|\brepos?\b|code search/u.test(text)) {
+    return false;
+  }
+  return /shop|store|product|products|catalog|cart|checkout|commerce/u.test(text);
+}
+
+function addGenericPublicSearchCapability(context, capabilities, graph, searchForm) {
+  if (hasCapabilityNamed(capabilities, 'search public content')) {
+    return;
+  }
+  const nodes = searchForm
+    ? (graph.nodes ?? []).filter((node) => node.id === searchForm.nodeId)
+    : publicSearchNodes(graph);
+  if (!searchForm && !nodes.length) {
+    return;
+  }
+  const hasSearchRouteFallbackEvidence = !searchForm
+    && nodes.length > 0
+    && (graph.nodes ?? []).some((node) => !node.authRequired && isPublicReadSourceLayer(nodeSourceLayer(node)) && nodeHasPublicStructureEvidence(node));
+  const object = publicSearchObject(context, graph);
+  const capability = makeCapability(context, {
+    name: 'search public content',
+    description: `Search public ${object} using discovered read-only search evidence.`,
+    action: 'search',
+    object,
+    userValue: `Search ${object} without submitting state-changing actions.`,
+    entryNodeIds: nodes.slice(0, 10).map((node) => node.id),
+    requiredNodeIds: nodes.slice(0, 10).map((node) => node.id),
+    inputs: searchForm?.inputs?.length ? searchForm.inputs : [{ name: 'query', type: 'string', required: true }],
+    outputs: [{ name: 'results', type: 'sanitized_summary' }],
+    safetyLevel: 'read_only',
+    evidence: searchForm?.evidence ?? catalogCoverageEvidence(context, nodes, 'search public content'),
+    confidence: searchForm ? 0.88 : 0.72,
+    autoGenerated: true,
+    category: 'public-search',
+    risk_level: 'read_public_low',
+    enabled_status: 'enabled',
+    evidence_status: 'verified',
+    default_policy: 'read_only',
+    evidenceModel: hasSearchRouteFallbackEvidence ? 'public_route_navigation' : 'public_structure',
+    publicRouteOnly: hasSearchRouteFallbackEvidence,
+    intents: [
+      'search public content',
+      `search ${object}`,
+      'find public site content by keyword',
+    ],
+  });
+  if (searchForm) {
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'read_only',
+      steps: [{
+        kind: 'form_get',
+        nodeId: searchForm.nodeId,
+        selector: searchForm.selector,
+        endpoint: searchForm.endpoint,
+        method: searchForm.method,
+        submit: false,
+        querySlot: searchForm.inputs?.find((input) => input.name)?.name ?? 'q',
+      }],
+    });
+  } else if (nodes.length) {
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'read_only',
       steps: catalogCoverageSteps(nodes),
     });
   }
   capabilities.push(capability);
+}
+
+function addGenericPublicCoverageCapabilities(context, capabilities, graph, searchForm) {
+  const routeNodes = publicReadableNodes(graph, []).filter((node) => node.type === 'route' || node.type === 'route_template');
+  const nonRootRouteNodes = routeNodes.filter((node) => !['/', null, undefined].includes(node.routePattern ?? node.routeTemplate));
+  const homepageNodes = publicReadableNodes(graph, ['homepage']).filter((node) => nodeHasPublicStructureEvidence(node)).slice(0, 3);
+  const repositoryCoverageSite = isRepositoryCoverageSite(context, graph?.nodes ?? []);
+  const collectionClassifications = [
+    'collection_list',
+    'ranking_list',
+    'work_list',
+    'article_list',
+    'search_results',
+    'product_list',
+    'catalog_collection',
+    'catalog_topic_list',
+    'catalog_topic_pagination',
+    'catalog_release_list',
+    'catalog_event_media',
+    'book_collection_list',
+    'book_ranking_list',
+    ...(repositoryCoverageSite ? ['repository_list'] : []),
+  ];
+  const categoryNodes = publicReadableNodes(graph, [
+    'category_list',
+    'tag_list',
+    'news_channel',
+    'catalog_category',
+    'catalog_tag',
+    'book_category_list',
+  ]);
+  const collectionNodes = publicReadableNodes(graph, collectionClassifications);
+  const articleListNodes = publicReadableNodes(graph, [
+    'article_list',
+    'news_channel',
+  ]);
+  const rankingNodes = publicReadableNodes(graph, [
+    'ranking_list',
+    'book_ranking_list',
+  ]);
+  const tagNodes = publicReadableNodes(graph, [
+    'tag_list',
+    'catalog_tag',
+  ]);
+  const profileNodes = publicReadableNodes(graph, [
+    'profile_detail',
+    'catalog_author',
+  ]);
+  const detailNodes = publicReadableNodes(graph, [
+    'entity_detail',
+    'work_detail',
+    'repository_detail',
+    'article_detail',
+    'profile_detail',
+    'product_detail',
+    'catalog_detail',
+    'catalog_topic_detail',
+    'book_detail',
+    'chapter_detail',
+    'entity_route',
+  ]);
+  const repositoryListNodes = repositoryCoverageSite ? publicReadableNodes(graph, ['repository_list']) : [];
+  const repositoryDetailNodes = repositoryCoverageSite ? publicReadableNodes(graph, ['repository_detail']) : [];
+  const categoryCoverageNodes = categoryNodes.filter((node) => nodeHasRouteOnlyPublicEvidence(node));
+  const rankingCoverageNodes = rankingNodes.filter((node) => nodeHasRouteOnlyPublicEvidence(node));
+  const detailCoverageNodes = detailNodes.filter((node) => nodeHasRouteOnlyPublicEvidence(node));
+  const profileCoverageNodes = profileNodes.filter((node) => nodeHasRouteOnlyPublicEvidence(node));
+  const metadataNodes = publicReadableNodes(graph, [])
+    .filter((node) => (
+      nodeHasPublicStructureEvidence(node)
+      || ['collection_list', 'category_list', 'tag_list', 'ranking_list', 'repository_list', 'article_list', 'work_list'].includes(node.classification)
+    ))
+    .slice(0, 80);
+
+  if (!hasCapabilityNamed(capabilities, 'browse public navigation')) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public navigation',
+      description: 'Browse public navigation, route templates, and linked site areas discovered from sanitized evidence.',
+      action: 'view',
+      object: 'public navigation',
+      userValue: '浏览公开站点入口、导航和栏目路由。',
+      nodes: [...homepageNodes, ...nonRootRouteNodes].slice(0, 80),
+      outputs: [{ name: 'routes', type: 'route_summary' }],
+      intents: ['浏览站点导航', '打开公开入口', '查看公开栏目', '查看站点路由', 'browse public navigation', 'open public entry points', 'view public sections', 'view site routes'],
+      confidence: 0.7,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'browse public categories')) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public categories',
+      description: 'Browse discovered public category, tag, channel, or section routes.',
+      action: 'view',
+      object: 'public categories and channels',
+      userValue: '\u6d4f\u89c8\u516c\u5f00\u5206\u7c7b\u3001\u6807\u7b7e\u548c\u9891\u9053\u3002',
+      nodes: categoryCoverageNodes.length ? categoryCoverageNodes : categoryNodes,
+      outputs: [{ name: 'categories', type: 'list' }],
+      intents: [
+        '\u6d4f\u89c8\u516c\u5f00\u5206\u7c7b',
+        '\u6253\u5f00\u5206\u7c7b\u9875\u9762',
+        '\u67e5\u770b\u516c\u5f00\u9891\u9053\u548c\u6807\u7b7e',
+        'browse public categories',
+        'open category pages',
+      ],
+      confidence: 0.74,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'browse public collections') && collectionNodes.length) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public collections',
+      description: 'Browse discovered public list, ranking, archive, repository, article, work, and collection routes.',
+      action: 'view',
+      object: 'public collections',
+      userValue: '浏览公开列表、榜单和合集。',
+      nodes: collectionNodes,
+      outputs: [{ name: 'items', type: 'list' }],
+      intents: ['浏览公开列表', '打开公开合集', '查看最新公开内容', 'browse public collections', 'open public lists', 'view rankings and latest public items'],
+      confidence: 0.74,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'open public detail pages') && detailNodes.length) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'open public detail pages',
+      description: 'Open discovered public detail pages such as articles, works, repositories, profiles, products, or catalog entries.',
+      action: 'view',
+      object: 'public detail pages',
+      userValue: '打开公开详情页，不保存原始正文。',
+      nodes: detailCoverageNodes.length ? detailCoverageNodes : detailNodes,
+      outputs: [{ name: 'detail', type: 'entity' }],
+      intents: ['打开公开详情页', '查看公开作品详情', '打开公开内容详情', 'open public detail pages', 'view public detail page', 'open article work repository or item detail'],
+      confidence: 0.72,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'browse public articles') && articleListNodes.length) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public articles',
+      description: 'Browse discovered public article, news, or story list routes.',
+      action: 'view',
+      object: 'public articles and news lists',
+      userValue: '浏览公开文章和新闻列表。',
+      nodes: articleListNodes,
+      outputs: [{ name: 'articles', type: 'list' }],
+      intents: ['浏览公开文章', '打开文章列表', '查看公开新闻列表', 'browse public articles', 'open article lists', 'show public news lists'],
+      confidence: 0.75,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'browse public rankings') && rankingNodes.length) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public rankings',
+      description: 'Browse discovered public ranking, trending, popular, or latest routes.',
+      action: 'view',
+      object: 'public rankings',
+      userValue: '浏览公开榜单和最新列表。',
+      nodes: rankingCoverageNodes.length ? rankingCoverageNodes : rankingNodes,
+      outputs: [{ name: 'ranked_items', type: 'list' }],
+      intents: ['浏览公开榜单', '查看公开排行榜', '打开热门或最新列表', 'browse public rankings', 'view public ranking lists', 'open trending or latest lists'],
+      confidence: 0.75,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'browse public tags') && tagNodes.length) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public tags',
+      description: 'Browse discovered public tag or topic routes.',
+      action: 'view',
+      object: 'public tags and topics',
+      userValue: '浏览公开标签和话题页面。',
+      nodes: tagNodes,
+      outputs: [{ name: 'tags', type: 'list' }],
+      intents: ['浏览公开标签', '打开公开话题页', '查看公开主题', 'browse public tags', 'open public tag pages', 'show public topics'],
+      confidence: 0.74,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'open public profiles') && profileNodes.length) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'open public profiles',
+      description: 'Open discovered public profile, author, model, creator, or organization pages.',
+      action: 'view',
+      object: 'public profiles',
+      userValue: '打开公开作者、创作者或资料页。',
+      nodes: profileCoverageNodes.length ? profileCoverageNodes : profileNodes,
+      outputs: [{ name: 'profile', type: 'entity' }],
+      intents: ['打开公开资料页', '查看公开作者页面', '打开创作者页面', 'open public profiles', 'view public profile pages', 'open author or creator pages'],
+      confidence: 0.74,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'browse public repositories')) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'browse public repositories',
+      description: 'Browse discovered public repository or project list routes.',
+      action: 'view',
+      object: 'public repositories',
+      userValue: '浏览公开仓库和项目列表。',
+      nodes: repositoryListNodes,
+      outputs: [{ name: 'repositories', type: 'list' }],
+      intents: ['浏览公开仓库', '查看项目列表', '打开公开项目', 'browse public repositories', 'show repository lists', 'open public projects'],
+      confidence: 0.76,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'open public repository details')) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'open public repository details',
+      description: 'Open discovered public repository or project detail pages.',
+      action: 'view',
+      object: 'public repository details',
+      userValue: '打开公开仓库详情页。',
+      nodes: repositoryDetailNodes,
+      outputs: [{ name: 'repository', type: 'entity' }],
+      intents: ['打开公开仓库详情', '查看仓库详情', '打开公开项目页', 'open public repository details', 'view repository detail', 'open public project page'],
+      confidence: 0.76,
+      allowRouteOnlyEvidence: true,
+    });
+  }
+
+  if (!hasCapabilityNamed(capabilities, 'read public metadata')) {
+    addCatalogCoverageCapability(context, capabilities, {
+      name: 'read public metadata',
+      description: 'Read sanitized public metadata from discovered pages, lists, controls, and route summaries without storing raw page bodies.',
+      action: 'view',
+      object: 'public metadata',
+      userValue: '读取脱敏后的公开页面和列表元数据。',
+      nodes: metadataNodes,
+      outputs: [{ name: 'metadata', type: 'sanitized_summary' }],
+      intents: ['读取公开元数据', '总结公开站点元数据', '查看公开页面摘要', 'read public metadata', 'summarize public site metadata', 'show public page summaries'],
+      confidence: 0.72,
+    });
+  }
+
+  addGenericPublicSearchCapability(context, capabilities, graph, searchForm);
 }
 
 function addGenericCatalogCoverageCapabilities(context, capabilities, graph, searchForm) {
@@ -4153,7 +7305,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'open topic update detail',
     description: 'Open discovered public TOPICS update detail pages.',
     object: 'topic update detail',
-    userValue: '鏌ョ湅鏇存柊淇℃伅璇︽儏锛堟洿鏂版儏鍫辫┏绱帮級',
+    userValue: '\u67e5\u770b\u66f4\u65b0\u4fe1\u606f\u8be6\u60c5\u3002',
     nodes: topicDetails,
     outputs: [{ name: 'topic_update_detail', type: 'entity' }],
     intents: [
@@ -4168,7 +7320,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse event and media updates',
     description: 'Browse discovered public EVENT / MEDIA routes surfaced by the site.',
     object: 'event and media updates',
-    userValue: '鏌ョ湅娲诲姩/濯掍綋鏇存柊鍏ュ彛锛圗VENT / MEDIA 銈ゃ儥銉炽儓銉汇儭銉囥偅銈㈡儏鍫憋級',
+    userValue: '\u67e5\u770b\u6d3b\u52a8\u548c\u5a92\u4f53\u66f4\u65b0\u5165\u53e3\u3002',
     nodes: eventMedia,
     outputs: [{ name: 'event_media_entries', type: 'list' }],
     intents: [
@@ -4183,7 +7335,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse release updates',
     description: 'Browse discovered public RELEASE routes surfaced by the site.',
     object: 'release updates',
-    userValue: '鏌ョ湅銉儶銉笺偣淇℃伅鍒楄〃锛圧ELEASE 銉儶銉笺偣涓€瑕э級',
+    userValue: '\u67e5\u770b\u53d1\u5e03\u4fe1\u606f\u5217\u8868\u3002',
     nodes: releaseLists,
     outputs: [{ name: 'release_entries', type: 'list' }],
     intents: [
@@ -4198,57 +7350,69 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse catalog collections',
     description: 'Browse all discovered public catalog, list, latest, and collection routes.',
     object: 'catalog collections',
-    userValue: '娴忚鐩綍鍒楄〃',
+    userValue: '\u6d4f\u89c8\u76ee\u5f55\u5217\u8868\u3002',
     nodes: collections.length ? collections : fallbackCollections,
     outputs: [{ name: 'catalog_entries', type: 'list' }],
-    intents: ['browse catalog collections', 'view all content lists', 'open site catalog', 'view latest content'],
+    intents: ['浏览目录合集', '查看全部内容列表', '打开站点目录', '查看最新内容', 'browse catalog collections', 'view all content lists', 'open site catalog', 'view latest content'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog categories',
     description: 'Browse every discovered public category route.',
     object: 'catalog categories',
-    userValue: '娴忚鍒嗙被',
+    userValue: '\u6d4f\u89c8\u5168\u90e8\u516c\u5f00\u5206\u7c7b\u8def\u7531\u3002',
     nodes: categories,
     outputs: [{ name: 'categories', type: 'list' }],
-    intents: ['browse catalog categories', 'view all categories', 'open category page', 'view content by category'],
+    intents: [
+      '\u6d4f\u89c8\u5206\u7c7b\u76ee\u5f55',
+      '\u67e5\u770b\u5168\u90e8\u5206\u7c7b',
+      '\u6253\u5f00\u5206\u7c7b\u9875\u9762',
+      '\u6309\u5206\u7c7b\u67e5\u770b\u5185\u5bb9',
+      'browse catalog categories',
+    ],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog tags',
     description: 'Browse every discovered public tag or topic route.',
     object: 'catalog tags',
-    userValue: '娴忚鏍囩',
+    userValue: '\u6d4f\u89c8\u5168\u90e8\u516c\u5f00\u6807\u7b7e\u6216\u4e3b\u9898\u8def\u7531\u3002',
     nodes: tags,
     outputs: [{ name: 'tags', type: 'list' }],
-    intents: ['browse catalog tags', 'view tag content', 'filter content by tag', 'open tag page'],
+    intents: [
+      '\u6d4f\u89c8\u6807\u7b7e\u76ee\u5f55',
+      '\u67e5\u770b\u6807\u7b7e\u5185\u5bb9',
+      '\u6309\u6807\u7b7e\u7b5b\u9009\u5185\u5bb9',
+      '\u6253\u5f00\u6807\u7b7e\u9875\u9762',
+      'browse catalog tags',
+    ],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'browse catalog rankings',
     description: 'Browse discovered public ranking, hot, popular, and latest routes.',
     object: 'catalog ranking routes',
-    userValue: 'Browse ranking and latest content routes.',
+    userValue: '\u6d4f\u89c8\u76ee\u5f55\u699c\u5355\u548c\u6700\u65b0\u5217\u8868\u3002',
     nodes: rankings,
     outputs: [{ name: 'ranked_entries', type: 'list' }],
-    intents: ['browse catalog rankings', 'view popular content', 'view recent updates', 'open latest content list'],
+    intents: ['浏览目录榜单', '查看热门内容', '查看最近更新', '打开最新内容列表', 'browse catalog rankings', 'view popular content', 'view recent updates', 'open latest content list'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'open catalog detail',
     description: 'Open discovered public detail pages from catalog evidence.',
     object: 'catalog detail pages',
-    userValue: '鎵撳紑鐩綍璇︽儏',
+    userValue: '\u6253\u5f00\u76ee\u5f55\u8be6\u60c5\u3002',
     nodes: details,
     outputs: [{ name: 'detail', type: 'entity' }],
-    intents: ['open catalog detail', 'view public detail page', 'open item detail', 'view site public detail'],
+    intents: ['打开目录详情', '查看公开详情页', '打开条目详情', '查看站点公开详情', 'open catalog detail', 'view public detail page', 'open item detail', 'view site public detail'],
   });
 
   addCatalogCoverageCapability(context, capabilities, {
     name: 'open catalog author profile',
     description: 'Open discovered public author, model, actor, performer, or profile routes.',
     object: 'catalog author profiles',
-    userValue: '鎵撳紑浣滆€呮垨婕斿憳椤甸潰',
+    userValue: '\u6253\u5f00\u4f5c\u8005\u6216\u6f14\u5458\u9875\u9762\u3002',
     nodes: authors,
     outputs: [{ name: 'profile', type: 'entity' }],
     intents: ['open author profile', 'view performer profile', 'view author information', 'browse content by author'],
@@ -4258,7 +7422,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'browse catalog pagination',
     description: 'Follow discovered read-only pagination routes inside the catalog.',
     object: 'catalog pagination',
-    userValue: '娴忚鍒嗛〉',
+    userValue: '\u6d4f\u89c8\u5206\u9875\u3002',
     nodes: pagination,
     outputs: [{ name: 'page', type: 'list' }],
     intents: ['browse next page', 'view paginated content', 'continue pagination', 'open more list pages'],
@@ -4268,10 +7432,10 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     name: 'read public catalog metadata',
     description: 'Read public metadata structure from discovered catalog routes without storing raw page bodies.',
     object: 'public catalog metadata',
-    userValue: 'Read public catalog metadata.',
+    userValue: '读取公开目录元数据。',
     nodes: publicMetadataNodes,
     outputs: [{ name: 'metadata', type: 'sanitized_summary' }],
-    intents: ['read public catalog metadata', 'summarize catalog metadata', 'view public item information', 'extract public list summary'],
+    intents: ['读取公开目录元数据', '总结目录元数据', '查看公开条目信息', '提取公开列表摘要', 'read public catalog metadata', 'summarize catalog metadata', 'view public item information', 'extract public list summary'],
   });
 
   if (searchForm && !capabilities.some((capability) => capability.name === 'search catalog content')) {
@@ -4280,7 +7444,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
       description: 'Prepare a read-only search query against the discovered catalog search form.',
       action: 'search',
       object: 'catalog content',
-      userValue: '搜索站内内容',
+      userValue: '搜索站内目录内容。',
       entryNodeIds: [searchForm.nodeId],
       requiredNodeIds: [searchForm.nodeId],
       inputs: searchForm.inputs?.length ? searchForm.inputs : [{ name: 'q', type: 'text', required: true }],
@@ -4294,7 +7458,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
       enabled_status: 'enabled',
       evidence_status: 'verified',
       default_policy: 'read_only',
-      intents: ['search catalog content', 'search videos or works', 'find content by keyword', 'find catalog item'],
+      intents: ['搜索目录内容', '搜索视频或作品', '按关键词查找内容', '查找目录条目', 'search catalog content', 'search videos or works', 'find content by keyword', 'find catalog item'],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
@@ -4326,6 +7490,142 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
       riskLevel: 'download_high',
       activationBlockedReason: knownPolicyDownloadReasonCode(context),
     });
+  }
+}
+
+function addChapterContentCoverageCapabilities(context, capabilities, graph, searchForm) {
+  if (!isChapterContentContext(context) && !hasChapterContentCoverageSignals(graph.nodes ?? [])) {
+    return;
+  }
+  const readableNodes = graph.nodes.filter((node) => ['page', 'content', 'route', 'route_template', 'form'].includes(node.type));
+  const categories = catalogCoverageNodes(readableNodes, [], ['book_category_list']);
+  const rankings = catalogCoverageNodes(readableNodes, [], ['book_ranking_list']);
+  const collections = catalogCoverageNodes(readableNodes, [], ['book_collection_list', 'chapter_content_home']);
+  const bookDetails = catalogCoverageNodes(readableNodes, [], ['book_detail']);
+  const chapterDetails = catalogCoverageNodes(readableNodes, [], ['chapter_detail']);
+  const searchNodes = catalogCoverageNodes(readableNodes, [], ['book_search_results', 'book_search_form']);
+  const metadataNodes = [
+    ...collections,
+    ...categories,
+    ...rankings,
+    ...bookDetails,
+    ...chapterDetails,
+    ...searchNodes,
+  ].slice(0, 80);
+  const hasChapterStructureEvidence = metadataNodes.some((node) => nodeHasPublicStructureEvidence(node));
+
+  addCatalogCoverageCapability(context, capabilities, {
+    name: 'browse book categories',
+    description: 'Browse discovered public book category routes using sanitized route and structure evidence.',
+    object: 'book categories',
+    userValue: '\u6d4f\u89c8\u516c\u5f00\u56fe\u4e66\u5206\u7c7b\u8def\u7531\u3002',
+    nodes: categories,
+    outputs: [{ name: 'book_categories', type: 'list' }],
+    intents: [
+      '\u6d4f\u89c8\u56fe\u4e66\u5206\u7c7b',
+      '\u6253\u5f00\u56fe\u4e66\u5206\u7c7b',
+      '\u6309\u5206\u7c7b\u67e5\u770b\u5c0f\u8bf4',
+      'browse book categories',
+    ],
+    allowRouteOnlyEvidence: hasChapterStructureEvidence,
+  });
+  addCatalogCoverageCapability(context, capabilities, {
+    name: 'browse book rankings',
+    description: 'Browse discovered public ranking routes for books and serialized works.',
+    object: 'book rankings',
+    userValue: '\u67e5\u770b\u516c\u5f00\u56fe\u4e66\u699c\u5355\u548c\u6392\u884c\u8def\u7531\u3002',
+    nodes: rankings,
+    outputs: [{ name: 'book_rankings', type: 'list' }],
+    intents: ['\u67e5\u770b\u56fe\u4e66\u699c\u5355', '\u6253\u5f00\u5c0f\u8bf4\u6392\u884c', '\u67e5\u770b\u70ed\u95e8\u4f5c\u54c1', 'browse book rankings', 'view ranking list', 'open popular books'],
+    allowRouteOnlyEvidence: hasChapterStructureEvidence,
+  });
+  addCatalogCoverageCapability(context, capabilities, {
+    name: 'browse book collections',
+    description: 'Browse discovered public book collection or recommendation lists without saving book body text.',
+    object: 'book collections',
+    userValue: '\u6d4f\u89c8\u516c\u5f00\u56fe\u4e66\u4e66\u5e93\u3001\u63a8\u8350\u548c\u5217\u8868\u8def\u7531\u3002',
+    nodes: collections,
+    outputs: [{ name: 'book_entries', type: 'list' }],
+    intents: ['\u6d4f\u89c8\u5c0f\u8bf4\u4e66\u5e93', '\u67e5\u770b\u56fe\u4e66\u5217\u8868', '\u6253\u5f00\u516c\u5f00\u4f5c\u54c1\u5217\u8868', 'browse book collections', 'view book lists', 'open public novel list'],
+    allowRouteOnlyEvidence: hasChapterStructureEvidence,
+  });
+  addCatalogCoverageCapability(context, capabilities, {
+    name: 'open book detail',
+    description: 'Open discovered public book detail routes from sanitized route-template evidence.',
+    object: 'book detail',
+    userValue: '\u6253\u5f00\u516c\u5f00\u56fe\u4e66\u8be6\u60c5\u9875\u3002',
+    nodes: bookDetails,
+    outputs: [{ name: 'book_detail', type: 'entity' }],
+    intents: ['\u6253\u5f00\u56fe\u4e66\u8be6\u60c5', '\u67e5\u770b\u5c0f\u8bf4\u9875\u9762', '\u6253\u5f00\u4f5c\u54c1\u4fe1\u606f', 'open book detail', 'view book detail', 'open novel page'],
+    allowRouteOnlyEvidence: hasChapterStructureEvidence,
+  });
+  addCatalogCoverageCapability(context, capabilities, {
+    name: 'open chapter',
+    description: 'Open discovered public chapter routes without storing chapter body text.',
+    object: 'chapter route',
+    userValue: '\u6253\u5f00\u516c\u5f00\u7ae0\u8282\u8def\u7531\uff0c\u4e0d\u4fdd\u5b58\u7ae0\u8282\u6b63\u6587\u3002',
+    nodes: chapterDetails,
+    outputs: [{ name: 'chapter_route', type: 'entity' }],
+    intents: ['\u6253\u5f00\u7ae0\u8282', '\u67e5\u770b\u7ae0\u8282\u9875', '\u6253\u5f00\u516c\u5f00\u7ae0\u8282', 'open chapter', 'view chapter page', 'open public chapter'],
+    allowRouteOnlyEvidence: hasChapterStructureEvidence,
+  });
+  addCatalogCoverageCapability(context, capabilities, {
+    name: 'read public book metadata',
+    description: 'Read public book-list and detail metadata structure without storing page body or chapter text.',
+    object: 'public book metadata',
+    userValue: '\u8bfb\u53d6\u516c\u5f00\u56fe\u4e66\u5143\u6570\u636e\u548c\u5217\u8868\u6458\u8981\u3002',
+    nodes: metadataNodes,
+    outputs: [{ name: 'book_metadata', type: 'sanitized_summary' }],
+    intents: ['\u8bfb\u53d6\u516c\u5f00\u56fe\u4e66\u5143\u6570\u636e', '\u603b\u7ed3\u4e66\u7c4d\u5217\u8868\u6458\u8981', '\u67e5\u770b\u516c\u5f00\u5c0f\u8bf4\u4fe1\u606f', 'read public book metadata', 'summarize book list metadata', 'view public novel metadata'],
+  });
+
+  if ((searchForm || searchNodes.length) && !capabilities.some((capability) => capability.name === 'search books')) {
+    const nodes = searchForm
+      ? graph.nodes.filter((node) => node.id === searchForm.nodeId)
+      : searchNodes;
+    const capability = makeCapability(context, {
+      name: 'search books',
+      description: 'Prepare a read-only public book search using a discovered GET search form or search route.',
+      action: 'search',
+      object: 'books',
+      userValue: '\u6309\u5173\u952e\u8bcd\u641c\u7d22\u516c\u5f00\u56fe\u4e66\u6216\u5c0f\u8bf4\u3002',
+      entryNodeIds: nodes.slice(0, 10).map((node) => node.id),
+      requiredNodeIds: nodes.slice(0, 10).map((node) => node.id),
+      inputs: searchForm?.inputs?.length ? searchForm.inputs : [{ name: 'q', type: 'text', required: true }],
+      outputs: [{ name: 'book_results', type: 'list' }],
+      safetyLevel: 'read_only',
+      evidence: searchForm?.evidence ?? catalogCoverageEvidence(context, nodes, 'search books'),
+      confidence: searchForm ? 0.9 : 0.72,
+      autoGenerated: true,
+      category: 'chapter-content',
+      risk_level: 'read_public_low',
+      enabled_status: 'enabled',
+      evidence_status: 'verified',
+      default_policy: 'read_only',
+      evidenceModel: !searchForm && hasChapterStructureEvidence ? 'public_route_navigation' : 'public_structure',
+      publicRouteOnly: !searchForm && hasChapterStructureEvidence,
+      intents: ['\u641c\u7d22\u56fe\u4e66', '\u6309\u5173\u952e\u8bcd\u627e\u5c0f\u8bf4', '\u641c\u7d22\u8fde\u8f7d\u4f5c\u54c1', 'search books', 'find novels by keyword', 'search serialized works'],
+    });
+    if (searchForm) {
+      capability.executionPlan = buildExecutionPlan(capability.id, {
+        mode: 'read_only',
+        steps: [{
+          kind: 'form_get',
+          nodeId: searchForm.nodeId,
+          selector: searchForm.selector,
+          endpoint: searchForm.endpoint,
+          method: searchForm.method,
+          submit: false,
+          querySlot: searchForm.inputs?.find((input) => input.name)?.name ?? 'q',
+        }],
+      });
+    } else if (nodes.length) {
+      capability.executionPlan = buildExecutionPlan(capability.id, {
+        mode: 'read_only',
+        steps: catalogCoverageSteps(nodes),
+      });
+    }
+    capabilities.push(capability);
   }
 }
 
@@ -4540,7 +7840,7 @@ function capabilityRequiresLogin(context, capability = /** @type {any} */ ({}), 
     ...(capability.entryNodeIds ?? []),
     ...(capability.requiredNodeIds ?? []),
   ].map((id) => nodesById.get(id)).filter(Boolean);
-  if (nodes.some((node) => node.authRequired === true || nodeSourceLayer(node) !== 'public')) {
+  if (nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)))) {
     return true;
   }
   const text = [
@@ -4551,7 +7851,7 @@ function capabilityRequiresLogin(context, capability = /** @type {any} */ ({}), 
     capability.setupCapabilityId,
     capability.intentAction,
   ].join(' ').toLowerCase();
-  if (/notification|bookmark|\blists?\b|direct message|\bdm\b|following timeline|followed updates|followed users|recommended timeline|account followers/u.test(text)) {
+  if (/notification|bookmark|list-lists|\buser lists?\b|\blist lists\b|lists summary|direct message|\bdm\b|following timeline|followed updates|followed users|recommended timeline|account followers/u.test(text)) {
     return true;
   }
   const requiredLoginIds = new Set(context.crawlContract?.coverageTargets?.requiresLoginCapabilities ?? []);
@@ -4570,6 +7870,12 @@ function sourceLayerForCapability(capability = /** @type {any} */ ({}), nodesByI
   if (nodes.some((node) => nodeSourceLayer(node) === 'authenticated')) {
     return 'authenticated';
   }
+  if (nodes.some((node) => nodeSourceLayer(node) === 'authorized_source')) {
+    return 'authorized_source';
+  }
+  if (nodes.some((node) => nodeSourceLayer(node) === 'public_rendered')) {
+    return 'public_rendered';
+  }
   return capability.authRequired === true ? 'authenticated' : 'public';
 }
 
@@ -4578,10 +7884,21 @@ function observedCapabilityEvidenceLevel(capability = /** @type {any} */ ({}), n
     ...(capability.entryNodeIds ?? []),
     ...(capability.requiredNodeIds ?? []),
   ].map((id) => nodesById.get(id)).filter(Boolean);
-  const levels = nodes.map((node) => node.evidenceLevel ?? (node.authRequired ? 'login_route_verified' : 'public_verified'));
+  const levels = nodes.map((node) => {
+    if (node.evidenceLevel) {
+      return node.evidenceLevel;
+    }
+    if (nodeSourceLayer(node) === 'public_rendered') {
+      return 'public_rendered_verified';
+    }
+    if (nodeSourceLayer(node) === 'authorized_source') {
+      return 'authorized_source_verified';
+    }
+    return node.authRequired ? 'login_route_verified' : 'public_verified';
+  });
   if (
     canRunAuthenticatedLayer(authStateReport)
-    && nodes.some((node) => node.authRequired === true || nodeSourceLayer(node) !== 'public')
+    && nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)))
     && nodes.some((node) => node.listPresent === true || Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true)
   ) {
     levels.push('capability_verified');
@@ -4599,9 +7916,36 @@ function observedCapabilityEvidenceLevel(capability = /** @type {any} */ ({}), n
   return levels.sort((left, right) => evidenceLevelRank(right) - evidenceLevelRank(left))[0] ?? 'candidate';
 }
 
+function nodeHasPublicStructureEvidence(node = /** @type {any} */ ({})) {
+  const layer = nodeSourceLayer(node);
+  if (['route_seed_only', 'link_route_template', 'link_semantic_route_template'].includes(node.evidenceStatus)
+    || node.publicEvidenceStatus === 'public_rendered_route_seed_only') {
+    return false;
+  }
+  if (node.evidenceStatus === 'structure_summary_present') {
+    return true;
+  }
+  if (node.publicEvidenceStatus === 'public_static_structured' || node.staticEvidenceStatus === 'present') {
+    return true;
+  }
+  if (node.listPresent === true || Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true) {
+    return true;
+  }
+  if (Array.isArray(node.routeTemplates) && node.routeTemplates.length > 0) {
+    return true;
+  }
+  if (layer === 'public_rendered' || layer === 'authorized_source') {
+    return ['form', 'component', 'menu', 'tab'].includes(node.type);
+  }
+  return layer === 'public' && ['form', 'component', 'menu', 'tab'].includes(node.type);
+}
+
 function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ ({}), nodesById = new Map()) {
   const authRequired = capabilityRequiresLogin(context, capability, nodesById);
   const sourceLayer = sourceLayerForCapability({ ...capability, authRequired }, nodesById);
+  const publicRouteNavigationOnly = capability.evidenceModel === 'public_route_navigation' || capability.publicRouteOnly === true;
+  const publicElementSummary = capability.evidenceModel === 'public_element_summary';
+  const authenticatedRouteOnly = capability.evidenceModel === 'authenticated_route_only';
   const nodes = [
     ...(capability.entryNodeIds ?? []),
     ...(capability.requiredNodeIds ?? []),
@@ -4613,28 +7957,66 @@ function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
   if (!authRequired) {
     observedEvidence.add('public_route_accessible');
   }
-  const hasAuthNode = nodes.some((node) => node.authRequired === true || nodeSourceLayer(node) !== 'public');
+  const hasPublicRouteReference = nodes.some((node) => (
+    isPublicReadSourceLayer(nodeSourceLayer(node))
+    && (
+      ['page', 'route', 'route_template'].includes(node.type)
+      || Boolean(node.normalizedUrl)
+      || Boolean(node.routePattern)
+      || Boolean(node.routeTemplate)
+    )
+  ));
+  if (!authRequired && hasPublicRouteReference) {
+    observedEvidence.add('public_route_template_present');
+  }
+  if (!authRequired && nodes.some((node) => node.evidenceStatus === 'element_instance_summary_present')) {
+    observedEvidence.add('public_element_instance_present');
+  }
+  const hasPublicStructure = nodes.some((node) => nodeHasPublicStructureEvidence(node));
+  if (!authRequired && hasPublicStructure) {
+    if (nodes.some((node) => nodeSourceLayer(node) === 'authorized_source' && nodeHasPublicStructureEvidence(node))) {
+      observedEvidence.add('authorized_source_structure_present');
+    } else if (nodes.some((node) => nodeSourceLayer(node) === 'public_rendered' && nodeHasPublicStructureEvidence(node))) {
+      observedEvidence.add('public_rendered_structure_present');
+    } else {
+      observedEvidence.add('public_structure_present');
+    }
+  }
+  const hasAuthNode = nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)));
   if (authRequired && hasAuthNode) observedEvidence.add('route_accessible');
   if (authRequired && canRunAuthenticatedLayer(context.authStateReport)) observedEvidence.add('not_login_wall');
   const hasListContainer = nodes.some((node) => (
     node.listPresent === true
+    || node.emptyStatePresent === true
     || /list|timeline|notification|bookmark|direct_message|following/u.test(String(node.classification ?? node.pageType ?? node.structureType ?? ''))
   ));
   if (authRequired && hasListContainer) observedEvidence.add('list_container_present');
   const hasVisibleItemsOrEmptyState = nodes.some((node) => Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true);
   if (authRequired && hasVisibleItemsOrEmptyState) observedEvidence.add('visible_item_count_or_empty_state');
   const requiredEvidence = authRequired
-    ? ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
-    : ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'risk_policy_passed'];
+    ? authenticatedRouteOnly
+      ? ['source_node_present', 'route_accessible', 'not_login_wall', 'sanitized_evidence_present', 'risk_policy_passed']
+      : ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
+    : publicRouteNavigationOnly
+      ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_route_template_present', 'risk_policy_passed']
+      : publicElementSummary
+        ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_element_instance_present', 'risk_policy_passed']
+        : ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_structure_present', 'risk_policy_passed'];
   const observed = uniqueSortedStrings([...observedEvidence]);
-  const missingEvidence = requiredEvidence.filter((item) => !observedEvidence.has(item));
-  const observedAuthLevel = observedCapabilityEvidenceLevel(capability, nodesById, context.authStateReport);
-  const requiredAuthLevel = authRequired ? 'capability_verified' : 'public_verified';
+  const missingEvidence = requiredEvidence.filter((item) => (
+    item === 'public_structure_present'
+      ? !observedEvidence.has('public_structure_present') && !observedEvidence.has('public_rendered_structure_present') && !observedEvidence.has('authorized_source_structure_present')
+      : !observedEvidence.has(item)
+  ));
+  const observedEvidenceLevel = observedCapabilityEvidenceLevel(capability, nodesById, context.authStateReport);
+  const requiredEvidenceLevel = authRequired
+    ? authenticatedRouteOnly ? 'login_route_verified' : 'capability_verified'
+    : 'public_verified';
   return {
     capabilityId: capability.id,
     authRequired,
-    requiredAuthLevel,
-    observedAuthLevel,
+    requiredEvidenceLevel,
+    observedEvidenceLevel,
     sourceLayer,
     requiredEvidence,
     observedEvidence: observed,
@@ -4650,14 +8032,16 @@ function applyCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
     ...capability,
     authRequired: matrix.authRequired,
     sourceLayer: matrix.sourceLayer,
-    requiredAuthLevel: matrix.requiredAuthLevel,
-    observedAuthLevel: matrix.observedAuthLevel,
+    requiredEvidenceLevel: matrix.requiredEvidenceLevel,
+    observedEvidenceLevel: matrix.observedEvidenceLevel,
     evidenceMatrix: matrix,
     activationEvidence: matrix,
   };
   const forcedRiskDisabled = ['write_high', 'account_security_critical'].includes(next.risk_level)
     || ['payment', 'destructive'].includes(next.safetyLevel)
-    || findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).length > 0;
+    || (isReadOnlyFollowSurface(next)
+      ? findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).filter((action) => action !== 'follow' && action !== 'unfollow').length > 0
+      : findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).length > 0);
   const confirmationRisk = isHighRiskCapability(next) || next.risk_level === 'write_low';
   if (forcedRiskDisabled) {
     delete next.executionPlan;
@@ -4727,12 +8111,33 @@ async function discoverCapabilitiesStage(context, stageResults) {
   const { affordances } = requireStage(stageResults, 'extractAffordances');
   const capabilities = /** @type {any[]} */ ([]);
   const pageNodes = graph.nodes.filter((node) => node.type === 'page');
-  const homepage = pageNodes.find((node) => node.classification === 'homepage') ?? pageNodes[0];
-  const newsChannels = pageNodes.filter((node) => node.classification === 'news_channel');
+  const publicEvidenceScore = (node) => (
+    nodeSourceLayer(node) === 'public_rendered'
+      ? 4
+      : node.publicEvidenceStatus === 'public_static_structured' || node.staticEvidenceStatus === 'present'
+        ? 3
+        : node.evidenceStatus === 'structure_summary_present'
+          ? 2
+          : 1
+  );
+  const homepage = pageNodes
+    .filter((node) => node.classification === 'homepage')
+    .sort((left, right) => publicEvidenceScore(right) - publicEvidenceScore(left))[0]
+    ?? pageNodes.sort((left, right) => publicEvidenceScore(right) - publicEvidenceScore(left))[0];
+  const newsChannels = publicReadableNodes(graph, ['news_channel', 'article_list'])
+    .filter((node) => nodeHasPublicStructureEvidence(node) && node.normalizedUrl);
   const newsArticle = pageNodes.find((node) => node.classification === 'article_detail');
-  const isNewsSite = Boolean(newsChannels.length || newsArticle || /news|鏂伴椈/iu.test(`${context.site.rootUrl} ${homepage?.title ?? ''} ${homepage?.textSummary ?? ''}`));
-  const productList = pageNodes.find((node) => node.classification === 'product_list');
-  const productDetail = pageNodes.find((node) => node.classification === 'product_detail');
+  const isRepositorySite = isRepositoryCoverageSite(context, pageNodes);
+  const isNewsSite = !isRepositorySite && isNewsCoverageSite(context, pageNodes, homepage);
+  const hasAnyPublicStructureEvidence = graph.nodes.some((node) => (
+    node.id !== homepage?.id
+    && !node.authRequired
+    && isPublicReadSourceLayer(nodeSourceLayer(node))
+    && nodeHasPublicStructureEvidence(node)
+  ));
+  const isChapterSite = isChapterContentContext(context) || hasChapterContentCoverageSignals(graph.nodes ?? []);
+  const productList = isChapterSite || isRepositorySite ? null : pageNodes.find((node) => node.classification === 'product_list');
+  const productDetail = isChapterSite || isRepositorySite ? null : pageNodes.find((node) => node.classification === 'product_detail');
   const searchForm = affordances.find((affordance) => affordance.kind === 'form' && affordance.safety === 'read_only' && /search/iu.test(`${affordance.label ?? ''} ${affordance.endpoint ?? ''}`));
   const contactForm = affordances.find((affordance) => affordance.kind === 'form' && affordance.safety === 'state_changing' && /contact|support|message/iu.test(`${affordance.label ?? ''} ${affordance.endpoint ?? ''} ${affordance.evidence?.[0]?.text ?? ''}`));
 
@@ -4742,13 +8147,22 @@ async function discoverCapabilitiesStage(context, stageResults) {
       description: isNewsSite ? 'Open and inspect the public news homepage.' : 'Open and inspect the public homepage.',
       action: 'view',
       object: isNewsSite ? 'news homepage' : 'homepage',
-      userValue: 'Understand the site entry point and navigation.',
+      userValue: isNewsSite ? '\u67e5\u770b\u65b0\u95fb\u7ad9\u70b9\u9996\u9875\u548c\u516c\u5f00\u5bfc\u822a\u3002' : 'Understand the site entry point and navigation.',
       entryNodeIds: [homepage.id],
       outputs: [{ name: 'page', type: 'html' }],
       safetyLevel: 'read_only',
       evidence: homepage.evidence,
       confidence: 0.95,
       informational: true,
+      evidenceModel: hasAnyPublicStructureEvidence ? 'public_route_navigation' : 'public_structure',
+      publicRouteOnly: hasAnyPublicStructureEvidence,
+      intents: isNewsSite ? [{
+        canonicalUtterance: 'view news homepage',
+        utteranceExamples: ['\u67e5\u770b\u65b0\u95fb\u9996\u9875', '\u6253\u5f00\u65b0\u95fb\u9996\u9875', 'view news homepage', 'open the news homepage'],
+        negativeExamples: ['submit a comment', 'log in to my account'],
+        slots: [],
+        invocationScore: 0.96,
+      }] : undefined,
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
@@ -4757,19 +8171,26 @@ async function discoverCapabilitiesStage(context, stageResults) {
     capabilities.push(capability);
   }
 
-  if (newsChannels.length) {
+  if (newsChannels.length && isNewsSite) {
     const primaryChannel = newsChannels[0];
     const capability = makeCapability(context, {
       name: 'browse news channels',
       description: 'Open public news channel or feed pages discovered from site evidence.',
       action: 'view',
       object: 'news channels',
-      userValue: 'Browse channel-level news lists and feeds.',
+      userValue: '\u6d4f\u89c8\u65b0\u95fb\u9891\u9053\u3001\u680f\u76ee\u548c\u516c\u5f00\u4fe1\u606f\u6d41\u3002',
       entryNodeIds: newsChannels.map((node) => node.id),
       outputs: [{ name: 'articles', type: 'list' }],
       safetyLevel: 'read_only',
       evidence: newsChannels.flatMap((node) => node.evidence).slice(0, 5),
       confidence: 0.86,
+      intents: [{
+        canonicalUtterance: 'browse news channels',
+        utteranceExamples: ['\u6d4f\u89c8\u65b0\u95fb\u9891\u9053', '\u6253\u5f00\u65b0\u95fb\u680f\u76ee', '\u67e5\u770b\u9891\u9053\u65b0\u95fb', 'browse news channels', 'show news channel pages'],
+        negativeExamples: ['post a comment', 'upload a video'],
+        slots: [],
+        invocationScore: 0.9,
+      }],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
@@ -4781,18 +8202,25 @@ async function discoverCapabilitiesStage(context, stageResults) {
     capabilities.push(capability);
   }
 
-  if (newsArticle) {
+  if (newsArticle && isNewsSite) {
     const capability = makeCapability(context, {
       name: 'view news article details',
       description: 'Open a public news article page and inspect the article content.',
       action: 'view',
       object: 'news article',
-      userValue: 'Read article-level news details.',
+      userValue: '\u6253\u5f00\u5e76\u9605\u8bfb\u516c\u5f00\u65b0\u95fb\u6587\u7ae0\u8be6\u60c5\u3002',
       entryNodeIds: [newsArticle.id],
       outputs: [{ name: 'article', type: 'entity' }],
       safetyLevel: 'read_only',
       evidence: newsArticle.evidence,
       confidence: 0.84,
+      intents: [{
+        canonicalUtterance: 'view news article details',
+        utteranceExamples: ['\u6253\u5f00\u65b0\u95fb\u6587\u7ae0', '\u9605\u8bfb\u65b0\u95fb\u8be6\u60c5', 'open a news article', 'read a news article detail page'],
+        negativeExamples: ['subscribe me to alerts', 'pay for this article'],
+        slots: [{ name: 'article', type: 'string', required: false }],
+        invocationScore: 0.84,
+      }],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
@@ -4821,7 +8249,7 @@ async function discoverCapabilitiesStage(context, stageResults) {
     capabilities.push(capability);
   }
 
-  if (searchForm) {
+  if (searchForm && !isChapterSite && isProductCommerceContext(context, graph, productList, productDetail)) {
     const capability = makeCapability(context, {
       name: 'search products',
       description: 'Prepare a read-only GET search query against the product search form.',
@@ -4909,7 +8337,13 @@ async function discoverCapabilitiesStage(context, stageResults) {
     capabilities.push(capability);
   }
 
+  const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? null;
+  addGenericPublicCoverageCapabilities(context, capabilities, graph, searchForm);
+  addPublicElementInstanceCapabilities(context, capabilities, graph, robotsPolicy);
+  addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy);
+  addAuthenticatedReadCoverageCapabilities(context, capabilities, graph);
   addGenericCatalogCoverageCapabilities(context, capabilities, graph, searchForm);
+  addChapterContentCoverageCapabilities(context, capabilities, graph, searchForm);
   addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage);
   addDisabledRiskCapabilities(context, capabilities, affordances);
   capabilities.push(...generateAutoCapabilities(context, {
@@ -4999,7 +8433,7 @@ function intentTemplates(capability) {
   if (capability.name === 'view news homepage') {
     return {
       canonicalUtterance: 'view news homepage',
-      utteranceExamples: ['view news homepage', 'open the news homepage', 'show the news homepage'],
+      utteranceExamples: ['\u67e5\u770b\u65b0\u95fb\u9996\u9875', '\u6253\u5f00\u65b0\u95fb\u9996\u9875', 'view news homepage', 'open the news homepage', 'show the news homepage'],
       negativeExamples: ['submit a comment', 'log in to my account'],
       slots: [],
       invocationScore: 0.96,
@@ -5008,7 +8442,7 @@ function intentTemplates(capability) {
   if (capability.name === 'browse news channels') {
     return {
       canonicalUtterance: 'browse news channels',
-      utteranceExamples: ['甯垜娴忚鏂伴椈棰戦亾', 'browse news channels', 'show news channel pages'],
+      utteranceExamples: ['\u6d4f\u89c8\u65b0\u95fb\u9891\u9053', '\u6253\u5f00\u65b0\u95fb\u680f\u76ee', '\u67e5\u770b\u9891\u9053\u65b0\u95fb', 'browse news channels', 'show news channel pages'],
       negativeExamples: ['post a comment', 'upload a video'],
       slots: [],
       invocationScore: 0.9,
@@ -5017,7 +8451,7 @@ function intentTemplates(capability) {
   if (capability.name === 'view news article details') {
     return {
       canonicalUtterance: 'view news article details',
-      utteranceExamples: ['open a news article', 'read a news article detail page', 'follow an internal news article link'],
+      utteranceExamples: ['\u6253\u5f00\u65b0\u95fb\u6587\u7ae0', '\u9605\u8bfb\u65b0\u95fb\u8be6\u60c5', 'open a news article', 'read a news article detail page', 'follow an internal news article link'],
       negativeExamples: ['subscribe me to alerts', 'pay for this article'],
       slots: [{ name: 'article', type: 'string', required: false }],
       invocationScore: 0.84,
@@ -5158,10 +8592,131 @@ function intentTemplates(capability) {
   };
 }
 
+function capabilityBySourceNodeId(capabilities = /** @type {any[]} */ ([])) {
+  const byNodeId = new Map();
+  const intentPreference = (capability = /** @type {any} */ ({})) => (
+    (capability.evidenceModel === 'public_element_summary' ? 4 : 0)
+    + (capability.publicRouteOnly === true ? 2 : 0)
+    + (capability.status === 'active' ? 1 : 0)
+  );
+  for (const capability of capabilities) {
+    for (const nodeId of [
+      ...(capability.entryNodeIds ?? []),
+      ...(capability.requiredNodeIds ?? []),
+    ]) {
+      const existing = byNodeId.get(nodeId);
+      if (!existing || intentPreference(capability) > intentPreference(existing)) {
+        byNodeId.set(nodeId, capability);
+      }
+    }
+  }
+  return byNodeId;
+}
+
+function graphIntentLabelForNode(node = /** @type {any} */ ({})) {
+  return String(
+    node.categoryInstance?.label
+    ?? node.instanceLabel
+    ?? node.elementLabel
+    ?? node.linkLabel
+    ?? node.title
+    ?? node.routeTemplate
+    ?? node.routePattern
+    ?? '页面入口',
+  ).trim();
+}
+
+function graphIntentRoleForNode(node = /** @type {any} */ ({})) {
+  return String(
+    node.categoryInstance?.kind
+    ?? node.instanceKind
+    ?? node.elementRole
+    ?? node.linkSemanticKind
+    ?? 'navigation',
+  ).toLowerCase();
+}
+
+function graphIntentCanonicalUtterance(node = /** @type {any} */ ({})) {
+  const label = graphIntentLabelForNode(node);
+  return `${chineseElementVerb(graphIntentRoleForNode(node))}${label}`;
+}
+
+function graphIntentExamples(node = /** @type {any} */ ({})) {
+  const label = graphIntentLabelForNode(node);
+  return chineseElementIntentExamples(graphIntentRoleForNode(node), label);
+}
+
+function graphIntentCandidateNodes(context, graph, robotsPolicy = null) {
+  return (graph?.nodes ?? [])
+    .filter((node) => (
+      (
+        isStructureElementInstanceNode(node)
+        || (
+          ['route', 'route_template'].includes(node.type)
+          && node.authRequired !== true
+          && isPublicReadSourceLayer(nodeSourceLayer(node))
+          && (node.categoryInstance || node.linkLabel || node.routeTemplate || node.routePattern)
+          && !isPublicUtilityRouteNode(node)
+        )
+      )
+      && (hasMeaningfulElementLabel(node) || node.categoryInstance || node.routeTemplate || node.routePattern)
+      && nodeTargetAllowedByRobots(context, node, robotsPolicy)
+    ))
+    .sort((left, right) => (
+      graphIntentRoleForNode(left).localeCompare(graphIntentRoleForNode(right), 'en')
+      || graphIntentLabelForNode(left).localeCompare(graphIntentLabelForNode(right), 'zh-Hans-CN')
+      || String(left.routeTemplate ?? left.routePattern ?? '').localeCompare(String(right.routeTemplate ?? right.routePattern ?? ''), 'en')
+    ))
+    .slice(0, 120);
+}
+
+function generateGraphElementIntentRecords(context, graph, capabilities = /** @type {any[]} */ ([]), robotsPolicy = null) {
+  const byNodeId = capabilityBySourceNodeId(capabilities);
+  return graphIntentCandidateNodes(context, graph, robotsPolicy).map((node) => {
+    const capability = byNodeId.get(node.id) ?? null;
+    const callable = capability?.status === 'active' && capability.enabled_status !== 'candidate_debug_only';
+    const safeRemediation = callable ? null : publicSafeRemediation({ path: 'requires_manual_review' });
+    const canonicalUtterance = graphIntentCanonicalUtterance(node);
+    return {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      id: stableNodeId('intent:graph-element', `${context.skillId}:${node.id}:${canonicalUtterance}`),
+      capabilityId: capability?.id ?? null,
+      skillId: context.skillId,
+      name: capability?.name ?? `graph element intent: ${graphIntentLabelForNode(node)}`,
+      description: 'Intent generated directly from sanitized graph element evidence, independent of capability discovery.',
+      canonicalUtterance,
+      utteranceExamples: graphIntentExamples(node),
+      negativeExamples: ['自动支付', '删除数据', '提交表单'],
+      slots: [],
+      negativeExamples: ['\u81ea\u52a8\u652f\u4ed8', '\u5220\u9664\u6570\u636e', '\u63d0\u4ea4\u8868\u5355'],
+      safetyLevel: capability?.safetyLevel ?? 'read_only',
+      invocationScore: capability ? 0.78 : 0.58,
+      evidence: node.evidence ?? [],
+      callable,
+      enabled_status: callable ? (capability.enabled_status ?? 'enabled') : 'candidate_debug_only',
+      safe_remediation_path: safeRemediation?.path ?? null,
+      safe_remediation: safeRemediation,
+      evidence_status: callable ? 'verified' : 'candidate',
+      default_policy: callable ? 'read_only' : 'candidate_debug_only',
+      category: capability?.category ?? graphIntentRoleForNode(node),
+      risk_level: capability?.risk_level ?? node.riskLevel ?? 'read_public_low',
+      intentSource: 'graph_element',
+      sourceNodeId: node.id,
+      sourceLayer: nodeSourceLayer(node),
+      categoryInstance: node.categoryInstance ?? null,
+      graphOnly: capability ? false : true,
+    };
+  });
+}
+
 async function generateIntentsStage(context, stageResults) {
   const { capabilities } = requireStage(stageResults, 'discoverCapabilities');
+  const graph = requireStage(stageResults, 'classifyNodes').graph;
   const activeCapabilities = capabilities.filter((capability) => capability.status === 'active');
-  const intents = generateAutoIntentRecords(context, capabilities, { includeCandidateDebug: true });
+  const intents = arrayUniqueBy([
+    ...generateAutoIntentRecords(context, capabilities, { includeCandidateDebug: true }),
+    ...generateGraphElementIntentRecords(context, graph, capabilities, stageResults.discoverSeeds?.robotsPolicy ?? null),
+  ], (intent) => `${intent.id}:${intent.capabilityId ?? intent.sourceNodeId ?? ''}`);
   const capabilityIds = new Set(capabilities.map((capability) => capability.id));
   for (const intent of intents) {
     assertUserIntent(intent, capabilityIds);
@@ -5385,8 +8940,38 @@ async function verifySkillStage(context, stageResults) {
     invocationProbe,
     successfulBuild: true,
   });
-  const errors = report.errors ?? [];
-  const warnings = report.warnings ?? [];
+  const pageReconciliation = buildPageReconciliationReport(context, stageResults, report);
+  if (!report.gates) {
+    /** @type {any} */ (report).gates = {};
+  }
+  /** @type {any} */ (report.gates).pageReconciliation = {
+    status: pageReconciliation.status,
+    reasonCodes: pageReconciliation.summary.reasonCodes,
+    challengeLikePages: pageReconciliation.summary.challengeLikePages,
+    expectedCategoryLinks: pageReconciliation.summary.expectedCategoryLinks,
+    missingCategoryLinks: pageReconciliation.summary.missingCategoryLinks,
+    categoryCapabilities: pageReconciliation.summary.categoryCapabilities,
+    categoryIntents: pageReconciliation.summary.categoryIntents,
+    blockerClass: pageReconciliation.summary.blockerClass,
+    primaryReasonCode: pageReconciliation.summary.primaryReasonCode,
+    retryDisposition: pageReconciliation.summary.retryDisposition,
+  };
+  report.pageReconciliation = pageReconciliation.summary;
+  if (pageReconciliation.status === 'failed' || pageReconciliation.status === 'blocked') {
+    report.status = pageReconciliation.status === 'blocked' ? 'blocked' : 'failed';
+    report.reasonCode = pageReconciliation.summary.primaryReasonCode ?? 'page-reconciliation-failed';
+    report.failureClass = pageReconciliation.status === 'blocked' ? 'blocked' : 'validation';
+    report.reasonAction = pageReconciliation.status === 'blocked' ? 'respect-external-access-boundary' : 'review-page-reconciliation-report';
+    report.errors = uniqueSortedStrings([
+      ...(report.errors ?? []),
+      `Page reconciliation failed: ${pageReconciliation.summary.reasonCodes.join(',') || 'unknown'}.`,
+    ]);
+  } else if (pageReconciliation.status === 'warning') {
+    report.warnings = uniqueSortedStrings([
+      ...(report.warnings ?? []),
+      `Page reconciliation warning: ${pageReconciliation.summary.reasonCodes.join(',') || pageReconciliation.status}.`,
+    ]);
+  }
   const verificationPath = await writeArtifactJson(context, 'verification_report.json', report);
   if (report.status !== 'passed') {
     const error = /** @type {Error & Record<string, any>} */ (new Error(`Skill verification failed [${report.reasonCode ?? 'validation-failed'}]: ${report.errors?.[0] ?? 'unknown error'}`));
@@ -5394,6 +8979,8 @@ async function verifySkillStage(context, stageResults) {
     error.failureClass = report.failureClass ?? 'validation';
     error.reasonCode = report.reasonCode ?? 'validation-failed';
     error.reasonAction = report.reasonAction ?? null;
+    error.stageStatus = report.status;
+    error.buildStatus = report.status;
     error.verificationReport = report;
     error.verificationReportPath = verificationPath;
     throw error;
@@ -5587,7 +9174,7 @@ function collectionOutcomeReason(value, stageName = '') {
     return 'Collection stage was blocked before producing verified output.';
   }
   if (reason === 'dynamic-unsupported' && stage === 'crawlRendered') {
-    return 'Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.';
+    return 'Public rendered structural evidence was needed but was not collected; install or point SiteForge at a Chromium browser with --browser-path, or provide a sanitized publicRenderedStructureProvider in tests.';
   }
   if (reason === 'dynamic-unsupported' && stage === 'captureNetworkTraces') {
     return 'Network summary was not requested; raw network tracing is not part of the public build path.';
@@ -5650,6 +9237,9 @@ function collectUnsuccessfulCollections(stageResults, stageRecords, status = 'su
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   for (const capability of capabilities) {
     if (capability.status === 'active') {
+      continue;
+    }
+    if (isDebugOnlyCapability(capability)) {
       continue;
     }
     const reasonCode = capability.activationBlockedReason ?? `capability-${capability.status ?? 'inactive'}`;
@@ -6061,8 +9651,11 @@ function buildPartialSuccessReasons({
   const groups = capabilityState?.groups ?? {};
   const evidenceSummary = capabilityState?.evidence_status_summary ?? {};
   const reasons = /** @type {any[]} */ ([]);
+  const verificationPassed = report?.summary?.verificationStatus === 'passed'
+    || report?.verificationStatus === 'passed'
+    || report?.verificationReport?.status === 'passed';
   const reportReasonCode = safePublicReasonCode(report?.reasonCode);
-  if (reportReasonCode) {
+  if (reportReasonCode && !(verificationPassed && reportReasonCode === 'validation-failed')) {
     const publicReason = partialSuccessReasonFromWarning(reportReasonCode);
     if (publicReason) {
       reasons.push(publicReason);
@@ -6098,7 +9691,13 @@ function buildPartialSuccessReasons({
     reasons.push('Some capabilities still lack confirmation or capability-level evidence.');
   }
   const warningReasons = uniqueSortedStrings((report?.warnings ?? [])
-    .map((warning) => partialSuccessReasonFromWarning(warning))
+    .map((warning) => {
+      const reasonCode = safePublicReasonCode(warning);
+      if (verificationPassed && reasonCode === 'validation-failed') {
+        return null;
+      }
+      return partialSuccessReasonFromWarning(warning);
+    })
     .filter(Boolean));
   if (warningReasons.length) {
     reasons.push(...warningReasons);
@@ -6166,11 +9765,16 @@ function summarizeNodes(stageResults = /** @type {any} */ ({})) {
 function summarizePrivacy(context, report) {
   const privacyMode = context.options?.privacyMode ?? context.options?.privacy ?? 'limited';
   const networkRequested = context.policy?.captureNetwork === true || context.options?.network === true;
+  const rawPageMaterialPages = Number(report.summary?.rawPageMaterial?.pages ?? 0);
   return {
     mode: privacyMode,
     credential_material_persisted: false,
     runtime_sensitive_material_persisted: false,
     browser_state_material_persisted: false,
+    public_page_material_persisted: rawPageMaterialPages > 0,
+    public_page_material_pages: rawPageMaterialPages,
+    public_page_material_redacted: rawPageMaterialPages > 0,
+    private_page_material_persisted: false,
     raw_network_traces_persisted: false,
     sanitized_reports: true,
     network_capture_requested: networkRequested,
@@ -6239,19 +9843,76 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
       }
     }
   } else {
-    steps.push(report.reasonAction ?? report.reason ?? 'Fix the reported blocker and rerun the build.');
+    const dynamicBlocked = report.reasonCode === 'dynamic-unsupported'
+      || Object.values(report.stages ?? {}).some((stage) => (stage.reasonCodes ?? []).includes('dynamic-unsupported'));
+    if (dynamicBlocked) {
+      steps.push('For public dynamic pages, SiteForge now attempts a sanitized public rendered structure summary automatically; if the browser cannot launch, rerun with --browser-path pointing to Chrome or Chromium.');
+      steps.push('If the rendered route is a challenge, CAPTCHA, login wall, or access-control page, SiteForge will keep it blocked and will not bypass it.');
+    } else {
+      steps.push(report.reasonAction ?? report.reason ?? 'Fix the reported blocker and rerun the build.');
+    }
   }
   return uniqueSortedStrings(steps);
+}
+
+function buildNextStepWorkflows({ resultStatus, report }) {
+  const workflows = /** @type {any[]} */ ([]);
+  const accessPlanPath = report.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? ACCESS_REMEDIATION_PLAN_FILE : null;
+  if (accessPlanPath) {
+    workflows.push(
+      {
+        id: 'access-remediation-plan',
+        status: 'available',
+        report: accessPlanPath,
+        purpose: 'Use compliant alternatives after robots, challenge, or access-boundary blocks generic live crawling.',
+        promotionAllowed: false,
+        updatesCurrent: false,
+        updatesRegistry: false,
+      },
+      {
+        id: 'official-api-or-feed',
+        status: 'requires-user-input',
+        allowedEvidence: ['response_shape', 'schema_hash', 'rate_limit_policy', 'permission_scope'],
+        promotionAllowed: false,
+      },
+      {
+        id: 'manual-summary',
+        status: 'requires-sanitized-structure-source',
+        allowedEvidence: ['route_template', 'page_type', 'visible_item_count', 'control_type', 'structure_hash'],
+        promotionAllowed: false,
+      },
+      {
+        id: 'local-http-validation',
+        status: 'available-for-tests-only',
+        promotionAllowed: false,
+        liveSupportClaimAllowed: false,
+      },
+    );
+  }
+  if (!workflows.length && resultStatus === 'failed') {
+    workflows.push({
+      id: 'rerun-after-blocker-fixed',
+      status: 'available-after-input-change',
+      promotionAllowed: false,
+      updatesCurrent: false,
+      updatesRegistry: false,
+    });
+  }
+  return workflows;
 }
 
 function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), capabilities = /** @type {any[]} */ ([])) {
   const nodes = stageResults.classifyNodes?.graph?.nodes
     ?? stageResults.buildSiteGraph?.graph?.nodes
     ?? [];
-  const publicNodes = nodes.filter((node) => nodeSourceLayer(node) === 'public');
+  const publicStaticNodes = nodes.filter((node) => nodeSourceLayer(node) === 'public');
+  const publicRenderedNodes = nodes.filter((node) => nodeSourceLayer(node) === 'public_rendered');
+  const authorizedSourceNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authorized_source');
+  const publicNodes = [...publicStaticNodes, ...publicRenderedNodes];
   const authNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authenticated');
   const overlayNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authenticated_overlay');
   const publicCapabilities = capabilities.filter((capability) => capability.authRequired !== true);
+  const publicCrawlCapabilities = publicCapabilities.filter((capability) => capability.sourceLayer !== 'authorized_source');
   const authCapabilities = capabilities.filter((capability) => capability.authRequired === true);
   const requiresLoginButMissing = authCapabilities
     .filter((capability) => capability.status !== 'active' && capability.activationBlockedReason === 'missing_auth_evidence')
@@ -6272,6 +9933,11 @@ function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), ca
     }));
   const blockedByAuth = authCapabilities
     .filter((capability) => capability.status !== 'active')
+    .filter((capability) => !(
+      isHighRiskCapability(capability)
+      || ['write_low', 'write_high', 'account_security_critical'].includes(capability.risk_level)
+      || ['forced-action-disabled', 'risk-policy-disabled'].includes(capability.activationBlockedReason)
+    ))
     .map((capability) => ({
       id: capability.id,
       name: capability.name,
@@ -6281,12 +9947,25 @@ function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), ca
     }));
   return {
     crawlMode: context.crawlContract?.crawlMode ?? 'public_only',
-    authChoice: context.crawlContract?.authChoice ?? context.authStateReport?.authChoice ?? 'declined',
-    authLevel: context.crawlContract?.authLevel ?? context.authStateReport?.authLevel ?? null,
+    authMethod: context.crawlContract?.authMethod ?? context.authStateReport?.authMethod ?? 'none',
+    authVerificationStatus: context.crawlContract?.authVerificationStatus ?? context.authStateReport?.authVerificationStatus ?? null,
     public: {
-      pages: stageResults.crawlStatic?.pages?.length ?? 0,
+      pages: stageResults.crawlStatic?.summary?.publicPages
+        ?? (stageResults.crawlStatic?.pages ?? []).filter((page) => pageSourceLayer(page) === 'public').length,
       nodes: publicNodes.length,
-      capabilities: publicCapabilities.filter((capability) => capability.status === 'active').length,
+      capabilities: publicCrawlCapabilities.filter((capability) => capability.status === 'active').length,
+    },
+    publicRendered: {
+      pages: stageResults.crawlRendered?.publicRenderedPages?.length ?? 0,
+      nodes: publicRenderedNodes.length,
+      capabilities: publicCapabilities
+        .filter((capability) => capability.status === 'active' && capability.sourceLayer === 'public_rendered').length,
+    },
+    authorizedSource: {
+      pages: stageResults.crawlStatic?.summary?.authorizedSourcePages ?? 0,
+      nodes: authorizedSourceNodes.length,
+      capabilities: publicCapabilities
+        .filter((capability) => capability.status === 'active' && capability.sourceLayer === 'authorized_source').length,
     },
     authenticated: {
       pages: stageResults.crawlAuthenticated?.authenticatedPages?.length ?? 0,
@@ -6353,6 +10032,7 @@ function buildUserReport(context, stageResults, report) {
     enabled: enabledCapabilities.length,
     limited_enabled: limitedEnabledCapabilities.length,
     confirmation_required: confirmationRequiredCapabilities.length,
+    candidate: capabilityState.groups.candidate?.length ?? 0,
     disabled: disabledCapabilities.length,
     capabilities_total: capabilities.length,
     intents_total: intents.length,
@@ -6387,6 +10067,13 @@ function buildUserReport(context, stageResults, report) {
     context.cwd,
     report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? capabilityIntentSummaryHtmlPath(context),
   );
+  const rawPageMaterialManifestPath = report.artifacts?.[RAW_PAGE_MATERIAL_MANIFEST_FILE]
+    ? relativeReportPath(context.cwd, report.artifacts[RAW_PAGE_MATERIAL_MANIFEST_FILE])
+    : null;
+  const authorizedSourceManifestPath = report.artifacts?.[AUTHORIZED_SOURCE_MANIFEST_FILE]
+    ? relativeReportPath(context.cwd, report.artifacts[AUTHORIZED_SOURCE_MANIFEST_FILE])
+    : null;
+  const rawPageMaterialSummary = report.summary?.rawPageMaterial ?? null;
   return {
     // Migration: status remains the legacy stage/build field; result_status is the stable user-facing outcome.
     result_status: resultStatus,
@@ -6405,8 +10092,8 @@ function buildUserReport(context, stageResults, report) {
     skill_id: skillId,
     build_id: report.buildId ?? context.buildId,
     crawlMode: authSummary.crawlMode,
-    authChoice: authSummary.authChoice,
-    authLevel: authSummary.authLevel,
+    authMethod: authSummary.authMethod,
+    authVerificationStatus: authSummary.authVerificationStatus,
     auth_summary: authSummary,
     coverage,
     requires_login_candidates: coverage.requiresLoginButMissing,
@@ -6442,9 +10129,11 @@ function buildUserReport(context, stageResults, report) {
       summary: context.setupProfile.userAuthorizedEvidence.autoDiscovery.summary ?? null,
     } : null,
     auth_explanation_zh: [
-      authSummary.crawlMode === 'enhanced_with_login'
-        ? `Login-enhanced crawl was used; auth level is ${authSummary.authLevel}.`
-        : 'Login-enhanced crawl was not used; only public pages and public capabilities were built.',
+      authSummary.crawlMode === 'authenticated_browser'
+        ? `Default-browser bridge authenticated crawl was used; auth verification status is ${authSummary.authVerificationStatus}.`
+        : authSummary.crawlMode === 'authenticated_cookie'
+        ? `Cookie-authenticated crawl was used; auth verification status is ${authSummary.authVerificationStatus}.`
+        : 'Authenticated crawl was not used; only public pages and public capabilities were built.',
       coverage.requiresLoginButMissing.length
         ? `${coverage.requiresLoginButMissing.length} login-related capabilities remain candidates because auth evidence is missing.`
         : 'No login-evidence candidate capabilities were found.',
@@ -6454,7 +10143,10 @@ function buildUserReport(context, stageResults, report) {
       coverage.blockedByRisk.length
         ? `${coverage.blockedByRisk.length} capabilities were disabled or limited by risk policy.`
         : 'No additional high-risk capabilities were enabled.',
-      'No cookies, tokens, Authorization headers, browser profiles, full DOM, full HTML, body text, or private content were saved.',
+      rawPageMaterialSummary?.pages
+        ? `Public page HTML/DOM/body text material was saved with sensitive assignments and script bodies redacted: ${rawPageMaterialSummary.pages} pages.`
+        : 'No public page raw material was saved.',
+      'No cookies, tokens, Authorization headers, browser profiles, storage material, raw network payloads, or private content were saved.',
     ],
     debug_candidate_summary: {
       count: debugOnlyCapabilities.length,
@@ -6472,15 +10164,19 @@ function buildUserReport(context, stageResults, report) {
       skill_id: skillId,
       report_path: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_FILE] ?? path.join(context.artifactDir, USER_REPORT_FILE)),
       capability_intent_summary_html: htmlReportPath,
+      ...(rawPageMaterialManifestPath ? { raw_page_material_manifest: rawPageMaterialManifestPath } : {}),
+      ...(authorizedSourceManifestPath ? { authorized_source_manifest: authorizedSourceManifestPath } : {}),
     },
     reports: {
       capability_intent_summary_html: htmlReportPath,
+      ...(rawPageMaterialManifestPath ? { raw_page_material_manifest: rawPageMaterialManifestPath } : {}),
+      ...(authorizedSourceManifestPath ? { authorized_source_manifest: authorizedSourceManifestPath } : {}),
     },
     privacy_summary: summarizePrivacy(context, report),
-    saved_material: SANITIZED_SUMMARY_ONLY,
-    page_structure_source_saved: false,
-    page_source_saved: false,
-    page_content_saved: false,
+    saved_material: rawPageMaterialSummary?.pages ? 'controlled_public_page_material' : SANITIZED_SUMMARY_ONLY,
+    page_structure_source_saved: Boolean(rawPageMaterialSummary?.pages),
+    page_source_saved: Boolean(rawPageMaterialSummary?.pages),
+    page_content_saved: Boolean(rawPageMaterialSummary?.pages),
     private_content_saved: false,
     browser_state_saved: false,
     secret_material_saved: false,
@@ -6492,6 +10188,10 @@ function buildUserReport(context, stageResults, report) {
       confirmationRequired: confirmationRequiredCapabilities,
       disabledCapabilities: decoratedDisabledCapabilities,
       confirmationPaths,
+    }),
+    next_step_workflows: buildNextStepWorkflows({
+      resultStatus,
+      report,
     }),
     warnings_user_facing: buildUserFacingWarnings(report, resultStatus, context, partialSuccessReasons),
   };
@@ -6608,6 +10308,10 @@ function buildDebugReport(context, stageResults, stageRecords, report, userRepor
 
 function buildReportIndex(report, userReport, debugReport) {
   const htmlReportPath = report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? null;
+  const pageReconciliationReportPath = report.artifacts?.[PAGE_RECONCILIATION_REPORT_FILE] ?? null;
+  const accessRemediationPlanPath = report.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ?? null;
+  const rawPageMaterialManifestPath = report.artifacts?.[RAW_PAGE_MATERIAL_MANIFEST_FILE] ?? null;
+  const authorizedSourceManifestPath = report.artifacts?.[AUTHORIZED_SOURCE_MANIFEST_FILE] ?? null;
   return {
     ...report,
     artifactFamily: 'siteforge-build-report-index',
@@ -6632,13 +10336,29 @@ function buildReportIndex(report, userReport, debugReport) {
         json: report.artifacts?.[INDEX_REPORT_FILE] ?? null,
       },
       capability_intent_summary_html: htmlReportPath,
+      page_reconciliation_report: pageReconciliationReportPath,
+      raw_page_material_manifest: rawPageMaterialManifestPath,
+      authorized_source_manifest: authorizedSourceManifestPath,
+      ...(accessRemediationPlanPath ? { access_remediation_plan: accessRemediationPlanPath } : {}),
     },
     report_index: {
       default_report: 'user',
-      available_reports: ['user', 'debug', 'capability_intent_summary_html'],
+      available_reports: [
+        'user',
+        'debug',
+        'capability_intent_summary_html',
+        'page_reconciliation_report',
+        ...(rawPageMaterialManifestPath ? ['raw_page_material_manifest'] : []),
+        ...(authorizedSourceManifestPath ? ['authorized_source_manifest'] : []),
+        ...(accessRemediationPlanPath ? ['access_remediation_plan'] : []),
+      ],
       user_report: USER_REPORT_FILE,
       user_markdown: USER_REPORT_MARKDOWN_FILE,
       capability_intent_summary_html: CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH,
+      page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
+      ...(rawPageMaterialManifestPath ? { raw_page_material_manifest: RAW_PAGE_MATERIAL_MANIFEST_RELATIVE_PATH } : {}),
+      ...(authorizedSourceManifestPath ? { authorized_source_manifest: AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH } : {}),
+      ...(accessRemediationPlanPath ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
       debug_report: DEBUG_REPORT_FILE,
       user_report_alias: USER_REPORT_JSON_ALIAS,
       user_markdown_alias: USER_REPORT_MARKDOWN_ALIAS,
@@ -6681,10 +10401,10 @@ function renderBuildUserMarkdown(userReport, report, options = /** @type {any} *
 }
 
 const CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH = `reports/${CAPABILITY_INTENT_SUMMARY_HTML_FILE}`;
+const PAGE_RECONCILIATION_REPORT_FILE = 'page_reconciliation_report.json';
+const ACCESS_REMEDIATION_PLAN_FILE = 'access_remediation_plan.json';
 const HTML_REPORT_MAX_EXAMPLES = 3;
 const HTML_REPORT_FORBIDDEN_PATTERNS = Object.freeze([
-  { code: 'cookie', pattern: /\bcookie\b/iu },
-  { code: 'token', pattern: /\btoken\b/iu },
   { code: 'authorization', pattern: /\bauthorization\b/iu },
   { code: 'bearer', pattern: /\bbearer\b/iu },
   { code: 'local-storage', pattern: /\blocalStorage\b/u },
@@ -6693,6 +10413,7 @@ const HTML_REPORT_FORBIDDEN_PATTERNS = Object.freeze([
   { code: 'browser-profile', pattern: /\bbrowser profile\b/iu },
   { code: 'secret-fixture', pattern: /synthetic-secret/iu },
   { code: 'session-id', pattern: /sessionid\s*=/iu },
+  { code: 'cookie-value', pattern: /\b(?:cookie|sid|uid|session|token)\s*=/iu },
   { code: 'script-tag', pattern: /<script\b/iu },
 ]);
 
@@ -6720,9 +10441,7 @@ function sanitizeHtmlReportString(value) {
     .replace(/\bauthorization\s*[:=]\s*[^\r\n]+/giu, '[REDACTED_AUTH_HEADER]')
     .replace(/\bauthorization\b/giu, '[REDACTED_AUTH_HEADER]')
     .replace(/\bcookies?\s*[:=]\s*[^;\s&'",]+/giu, '[REDACTED_BROWSER_SESSION]')
-    .replace(/\bcookies?\b/giu, '[REDACTED_BROWSER_SESSION]')
     .replace(/\b(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret|password|session[_-]?id|sid)\s*[:=]\s*[^&\s;'",]+/giu, '[REDACTED_SECRET]')
-    .replace(/\btoken\b/giu, '[REDACTED_SECRET]')
     .replace(/\bBearer\b/giu, '[REDACTED_AUTH]')
     .replace(/\blocalStorage\b/gu, '[REDACTED_BROWSER_STORAGE]')
     .replace(/\bsessionStorage\b/gu, '[REDACTED_BROWSER_STORAGE]')
@@ -6862,10 +10581,135 @@ function summarizeHtmlCoverage(context, stageResults, capabilities, userReport =
     ?? buildCoverageReport(context, stageResults, capabilities);
 }
 
+function capabilitySourceNodesForHtml(capability = /** @type {any} */ ({}), graphNodeById = new Map()) {
+  const ids = uniqueSortedStrings([
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+  ]);
+  return ids.map((id) => graphNodeById.get(id)).filter(Boolean);
+}
+
+function routeTemplatesForHtml(capability = /** @type {any} */ ({}), sourceNodes = /** @type {any[]} */ ([])) {
+  return uniqueSortedStrings([
+    capability.routeTemplate,
+    capability.routePattern,
+    ...(capability.executionPlan?.steps ?? []).map((step) => step.routeTemplate ?? step.routePath ?? null),
+    ...sourceNodes.map((node) => node.instanceRouteTemplate ?? node.routeTemplate ?? node.routePattern ?? null),
+  ].filter(Boolean)).slice(0, 8);
+}
+
+function categoryInstancesForHtml(capability = /** @type {any} */ ({}), sourceNodes = /** @type {any[]} */ ([])) {
+  const instances = [
+    capability.categoryInstance,
+    ...sourceNodes.map((node) => node.categoryInstance),
+  ].filter(Boolean);
+  const seen = new Set();
+  return instances.filter((instance) => {
+    const key = `${instance.kind ?? ''}:${instance.label ?? ''}:${instance.routeTemplate ?? ''}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  }).slice(0, 8).map((instance) => ({
+    kind: instance.kind ?? null,
+    label: instance.label ?? null,
+    routeTemplate: instance.routeTemplate ?? null,
+    sourceLayer: instance.sourceLayer ?? null,
+    evidenceStatus: instance.evidenceStatus ?? null,
+  }));
+}
+
+function htmlCategoryInstanceLabel(instance = /** @type {any} */ ({})) {
+  return [
+    instance.kind ? `${instance.kind}:` : null,
+    instance.label,
+    instance.routeTemplate ? `(${instance.routeTemplate})` : null,
+  ].filter(Boolean).join(' ');
+}
+
+function buildElementCoverageAuditRows(graph = /** @type {any} */ ({}), capabilityRows = /** @type {any[]} */ ([]), intentRows = /** @type {any[]} */ ([])) {
+  const capabilitiesByNodeId = new Map();
+  for (const capability of capabilityRows) {
+    for (const nodeId of capability.sourceNodeIds ?? []) {
+      capabilitiesByNodeId.set(nodeId, [...(capabilitiesByNodeId.get(nodeId) ?? []), capability]);
+    }
+  }
+  const intentsBySourceNodeId = new Map();
+  const intentsByCapabilityId = new Map();
+  for (const intent of intentRows) {
+    if (intent.sourceNodeId) {
+      intentsBySourceNodeId.set(intent.sourceNodeId, [...(intentsBySourceNodeId.get(intent.sourceNodeId) ?? []), intent]);
+    }
+    if (intent.capabilityId) {
+      intentsByCapabilityId.set(intent.capabilityId, [...(intentsByCapabilityId.get(intent.capabilityId) ?? []), intent]);
+    }
+  }
+  return (graph.nodes ?? [])
+    .filter((node) => (
+      ['component', 'operation'].includes(node.type)
+      && node.evidenceStatus === 'element_instance_summary_present'
+      && ['public', 'public_rendered', 'authenticated', 'authenticated_overlay'].includes(nodeSourceLayer(node))
+    ))
+    .map((node) => {
+      const mappedCapabilities = capabilitiesByNodeId.get(node.id) ?? [];
+      const mappedIntents = uniqueSortedStrings([
+        ...(intentsBySourceNodeId.get(node.id) ?? []).map((intent) => intent.id),
+        ...mappedCapabilities.flatMap((capability) => (intentsByCapabilityId.get(capability.id) ?? []).map((intent) => intent.id)),
+      ]);
+      const mappedCapabilityIds = mappedCapabilities.map((capability) => capability.id);
+      const status = mappedCapabilityIds.length && mappedIntents.length
+        ? 'covered'
+        : mappedCapabilityIds.length
+          ? 'missing_intent'
+          : mappedIntents.length
+            ? 'graph_intent_only'
+            : 'missing_capability';
+      return {
+        nodeId: node.id,
+        status,
+        sourceLayer: nodeSourceLayer(node),
+        elementRole: node.elementRole ?? node.linkSemanticKind ?? node.instanceKind ?? null,
+        elementLabel: node.elementLabel ?? node.linkLabel ?? node.instanceLabel ?? node.title ?? null,
+        routeTemplate: node.instanceRouteTemplate ?? node.routeTemplate ?? node.routePattern ?? null,
+        categoryInstance: node.categoryInstance ?? null,
+        evidenceStatus: node.evidenceStatus ?? null,
+        mappedCapabilityIds,
+        mappedCapabilityNames: mappedCapabilities.map((capability) => capability.name).filter(Boolean),
+        mappedIntentIds: mappedIntents,
+      };
+    })
+    .sort((left, right) => (
+      String(left.sourceLayer ?? '').localeCompare(String(right.sourceLayer ?? ''), 'en')
+      || String(left.elementRole ?? '').localeCompare(String(right.elementRole ?? ''), 'en')
+      || String(left.elementLabel ?? '').localeCompare(String(right.elementLabel ?? ''), 'zh-Hans-CN')
+      || String(left.routeTemplate ?? '').localeCompare(String(right.routeTemplate ?? ''), 'en')
+    ))
+    .slice(0, 160);
+}
+
+function elementCoverageAuditSummary(rows = /** @type {any[]} */ ([])) {
+  const counts = {
+    total: rows.length,
+    covered: 0,
+    graphIntentOnly: 0,
+    missingCapability: 0,
+    missingIntent: 0,
+  };
+  for (const row of rows) {
+    if (row.status === 'covered') counts.covered += 1;
+    if (row.status === 'graph_intent_only') counts.graphIntentOnly += 1;
+    if (row.status === 'missing_capability') counts.missingCapability += 1;
+    if (row.status === 'missing_intent') counts.missingIntent += 1;
+  }
+  return counts;
+}
+
 function buildCapabilityIntentHtmlPayload(context, stageResults, report, userReport) {
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   const intents = stageResults.generateIntents?.intents ?? [];
   const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? { nodes: [] };
+  const graphNodeById = new Map((graph.nodes ?? []).map((node) => [node.id, node]));
   const verification = stageResults.verifySkill?.verificationReport ?? null;
   const registry = stageResults.registerSkill?.registryReport ?? null;
   const coverage = summarizeHtmlCoverage(context, stageResults, capabilities, userReport, report);
@@ -6878,6 +10722,9 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
   const capabilityRows = capabilities.map((capability) => {
     const mappedIntents = intentsByCapability.get(capability.id) ?? [];
     const matrix = capability.evidenceMatrix ?? capability.activationEvidence ?? null;
+    const sourceNodes = capabilitySourceNodesForHtml(capability, graphNodeById);
+    const primaryNode = sourceNodes[0] ?? {};
+    const categoryInstances = categoryInstancesForHtml(capability, sourceNodes);
     return {
       id: capability.id,
       name: capability.name,
@@ -6891,9 +10738,17 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
       riskLevel: capability.risk_level ?? capability.riskLevel ?? null,
       safetyLevel: capability.safetyLevel ?? capability.safety_level ?? null,
       authRequired: capability.authRequired === true,
-      requiredAuthLevel: capability.requiredAuthLevel ?? matrix?.requiredAuthLevel ?? null,
-      observedAuthLevel: capability.observedAuthLevel ?? matrix?.observedAuthLevel ?? null,
+      requiredEvidenceLevel: capability.requiredEvidenceLevel ?? matrix?.requiredEvidenceLevel ?? null,
+      observedEvidenceLevel: capability.observedEvidenceLevel ?? matrix?.observedEvidenceLevel ?? null,
       sourceLayer: capability.sourceLayer ?? matrix?.sourceLayer ?? 'public',
+      evidenceModel: capability.evidenceModel ?? null,
+      publicRouteOnly: capability.publicRouteOnly === true,
+      elementRole: capability.elementRole ?? primaryNode.elementRole ?? primaryNode.linkSemanticKind ?? null,
+      elementLabel: capability.elementLabel ?? primaryNode.elementLabel ?? primaryNode.linkLabel ?? primaryNode.title ?? null,
+      sourceNodeIds: sourceNodes.map((node) => node.id).slice(0, 8),
+      sourceNodeLabels: sourceNodes.map((node) => node.elementLabel ?? node.linkLabel ?? node.title ?? node.routeTemplate ?? node.routePattern).filter(Boolean).slice(0, 8),
+      routeTemplates: routeTemplatesForHtml(capability, sourceNodes),
+      categoryInstances,
       activationDecision: matrix?.activationDecision ?? capability.enabled_status ?? capability.status ?? null,
       reason: capabilityHtmlReason(capability),
       strategy: capabilityHtmlStrategy(capability),
@@ -6909,10 +10764,15 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
   });
   const intentRows = intents.map((intent) => {
     const capability = capabilityById.get(intent.capabilityId) ?? {};
+    const sourceNode = graphNodeById.get(intent.sourceNodeId) ?? null;
     return {
       id: intent.id,
       capabilityId: intent.capabilityId,
       capabilityName: capability.name ?? intent.name ?? null,
+      intentSource: intent.intentSource ?? null,
+      sourceNodeId: intent.sourceNodeId ?? null,
+      sourceLayer: intent.sourceLayer ?? sourceNode?.sourceLayer ?? null,
+      categoryInstance: intent.categoryInstance ?? sourceNode?.categoryInstance ?? null,
       canonicalUtterance: intent.canonicalUtterance ?? intent.name ?? null,
       callable: intentCallableLabel(intent, capability),
       safetyLevel: intent.safetyLevel ?? capability.safetyLevel ?? null,
@@ -6935,9 +10795,18 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
       callable: mappedIntents.filter((intent) => intent.callable === 'callable').length,
       nonCallable: mappedIntents.filter((intent) => intent.callable !== 'callable').length,
       riskLevel: capability.riskLevel,
-      authLevel: capability.observedAuthLevel ?? capability.requiredAuthLevel ?? '-',
+      authVerificationStatus: capability.observedEvidenceLevel ?? capability.requiredEvidenceLevel ?? '-',
+      elementLabel: capability.elementLabel ?? null,
+      elementRole: capability.elementRole ?? null,
+      routeTemplates: capability.routeTemplates ?? [],
+      categoryInstances: capability.categoryInstances ?? [],
     };
   });
+  const elementCoverageRows = buildElementCoverageAuditRows(graph, capabilityRows, intentRows);
+  const elementCoverage = {
+    summary: elementCoverageAuditSummary(elementCoverageRows),
+    rows: elementCoverageRows,
+  };
   const blocked = {
     disabledHighRisk: capabilityRows.filter((capability) => (
       capability.status === 'disabled'
@@ -6966,8 +10835,8 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
       buildId: report.buildId ?? context.buildId,
       skillId: report.skillId ?? context.skillId ?? null,
       crawlMode: userReport.crawlMode ?? report.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
-      authChoice: userReport.authChoice ?? report.authChoice ?? context.crawlContract?.authChoice ?? 'declined',
-      authLevel: userReport.authLevel ?? report.authLevel ?? context.authStateReport?.authLevel ?? 'L0',
+      authMethod: userReport.authMethod ?? report.authMethod ?? context.crawlContract?.authMethod ?? 'none',
+      authVerificationStatus: userReport.authVerificationStatus ?? report.authVerificationStatus ?? context.authStateReport?.authVerificationStatus ?? 'not_requested',
       resultStatus: userReport.result_status ?? report.result_status ?? null,
       legacyStatus: userReport.legacy_status ?? report.legacy_status ?? report.status ?? null,
       verificationStatus: verification?.status ?? report.summary?.verificationStatus ?? null,
@@ -6981,11 +10850,15 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
       capabilities: capabilityRows.length,
       intents: intentRows.length,
       nodes: graph.nodes?.length ?? 0,
+      elementNodes: elementCoverage.summary.total,
+      elementCoverageMissingCapabilities: elementCoverage.summary.missingCapability,
+      elementCoverageMissingIntents: elementCoverage.summary.missingIntent,
       riskBlocked: blocked.disabledHighRisk.length,
     },
     capabilities: capabilityRows,
     intents: intentRows,
     mappings: mappingRows,
+    elementCoverage,
     blocked,
   });
 }
@@ -6996,16 +10869,24 @@ function renderCapabilityRows(rows = /** @type {any[]} */ ([]), emptyMessage = '
   }
   return `<div class="table-wrapper"><table>
     <thead><tr>
-      <th>Capability</th><th>ID</th><th>Action</th><th>Status</th><th>Risk</th><th>Auth</th><th>Evidence matrix</th><th>Reason / strategy</th><th>Intent count</th>
+      <th>Capability</th><th>ID</th><th>Action</th><th>Element / category</th><th>Status</th><th>Risk</th><th>Auth</th><th>Evidence matrix</th><th>Reason / strategy</th><th>Intent count</th>
     </tr></thead>
     <tbody>
       ${rows.map((capability) => `<tr>
         <td><strong>${htmlCell(capability.name)}</strong><br><span class="muted">${htmlCell(capability.userValue ?? capability.userFacingName)}</span></td>
         <td>${htmlCell(capability.id, { code: true })}</td>
         <td>${htmlCell(capability.action)}<br><span class="muted">${htmlCell(capability.object)}</span></td>
+        <td>
+          <div class="matrix-line"><span>evidenceModel</span>${htmlCell(capability.evidenceModel ?? '-', { code: true })}</div>
+          <div class="matrix-line"><span>element</span>${htmlCell([capability.elementRole, capability.elementLabel].filter(Boolean).join(': ') || '-')}</div>
+          <div class="matrix-line"><span>routeTemplates</span>${htmlList(capability.routeTemplates ?? [], { code: true, limit: 4 })}</div>
+          <div class="matrix-line"><span>categoryInstances</span>${htmlList((capability.categoryInstances ?? []).map(htmlCategoryInstanceLabel), { code: false, limit: 4 })}</div>
+          <div class="matrix-line"><span>sourceNodes</span>${htmlList(capability.sourceNodeIds ?? [], { code: true, limit: 4 })}</div>
+          ${capability.publicRouteOnly ? htmlBadge('route-only summary', 'limited') : ''}
+        </td>
         <td>${htmlStatusBadge(capability.status)} ${htmlStatusBadge(capability.enabledStatus)}<br><span class="muted">${htmlCell(capability.evidenceStatus)}</span></td>
         <td>${htmlRiskBadge(capability.riskLevel)}<br><span class="muted">${htmlCell(capability.safetyLevel)}</span></td>
-        <td>${htmlAuthBadge(capability.authRequired ? 'required' : 'public')}<br><code>${escapeHtml(capability.sourceLayer)}</code><br><span class="muted">${htmlCell(capability.requiredAuthLevel)} / ${htmlCell(capability.observedAuthLevel)}</span></td>
+        <td>${htmlAuthBadge(capability.authRequired ? 'required' : 'public')}<br><code>${escapeHtml(capability.sourceLayer)}</code><br><span class="muted">${htmlCell(capability.requiredEvidenceLevel)} / ${htmlCell(capability.observedEvidenceLevel)}</span></td>
         <td><div class="matrix-line"><span>requiredEvidence</span>${htmlList(capability.evidenceMatrix?.requiredEvidence ?? [])}</div><div class="matrix-line"><span>observedEvidence</span>${htmlList(capability.evidenceMatrix?.observedEvidence ?? [])}</div><div class="matrix-line"><span>missingEvidence</span>${htmlList(capability.evidenceMatrix?.missingEvidence ?? [])}</div><div>${htmlStatusBadge(capability.activationDecision)}</div></td>
         <td>${htmlCell(capability.reason)}<br><span class="muted">${htmlCell(capability.strategy)}</span></td>
         <td>${htmlCell(capability.mappedIntentCount)}</td>
@@ -7020,12 +10901,18 @@ function renderIntentRows(rows = /** @type {any[]} */ ([])) {
   }
   return `<div class="table-wrapper"><table>
     <thead><tr>
-      <th>Intent</th><th>Capability</th><th>Callable</th><th>Examples</th><th>Negative examples</th><th>Reason</th>
+      <th>Intent</th><th>Capability</th><th>Source</th><th>Callable</th><th>Examples</th><th>Negative examples</th><th>Reason</th>
     </tr></thead>
     <tbody>
       ${rows.map((intent) => `<tr>
         <td><strong>${htmlCell(intent.canonicalUtterance)}</strong><br>${htmlCell(intent.id, { code: true })}</td>
         <td>${htmlCell(intent.capabilityName)}<br>${htmlCell(intent.capabilityId, { code: true })}</td>
+        <td>
+          <div class="matrix-line"><span>intentSource</span>${htmlCell(intent.intentSource ?? '-', { code: true })}</div>
+          <div class="matrix-line"><span>sourceNode</span>${htmlCell(intent.sourceNodeId ?? '-', { code: true })}</div>
+          <div class="matrix-line"><span>sourceLayer</span>${htmlCell(intent.sourceLayer ?? '-', { code: true })}</div>
+          <div class="matrix-line"><span>categoryInstance</span>${htmlCell(intent.categoryInstance ? htmlCategoryInstanceLabel(intent.categoryInstance) : '-')}</div>
+        </td>
         <td>${htmlStatusBadge(intent.callable)}<br><span class="muted">${htmlCell(intent.safetyLevel)} / ${htmlCell(intent.enabledStatus)}</span></td>
         <td>${htmlList(intent.utteranceExamples, { code: false, limit: HTML_REPORT_MAX_EXAMPLES })}</td>
         <td>${htmlList(intent.negativeExamples, { code: false, limit: HTML_REPORT_MAX_EXAMPLES })}</td>
@@ -7041,7 +10928,7 @@ function renderMappingRows(rows = /** @type {any[]} */ ([])) {
   }
   return `<div class="table-wrapper"><table>
     <thead><tr>
-      <th>Capability</th><th>Status</th><th>Intent count</th><th>Canonical utterances</th><th>Callable</th><th>Risk</th><th>Auth level</th>
+      <th>Capability</th><th>Status</th><th>Intent count</th><th>Canonical utterances</th><th>Element / route</th><th>Callable</th><th>Risk</th><th>Auth status</th>
     </tr></thead>
     <tbody>
       ${rows.map((row) => `<tr>
@@ -7049,9 +10936,10 @@ function renderMappingRows(rows = /** @type {any[]} */ ([])) {
         <td>${htmlStatusBadge(row.capabilityStatus)} ${htmlStatusBadge(row.enabledStatus)}</td>
         <td>${htmlCell(row.intentCount)}</td>
         <td>${htmlList(row.canonicalUtterances, { code: false, limit: 6 })}</td>
+        <td>${htmlCell([row.elementRole, row.elementLabel].filter(Boolean).join(': ') || '-')}<br>${htmlList(row.routeTemplates ?? [], { code: true, limit: 4 })}<br>${htmlList((row.categoryInstances ?? []).map(htmlCategoryInstanceLabel), { code: false, limit: 4 })}</td>
         <td>${htmlStatusBadge(`${row.callable} callable`)} ${htmlStatusBadge(`${row.nonCallable} non-callable`)}</td>
         <td>${htmlRiskBadge(row.riskLevel)}</td>
-        <td>${htmlAuthBadge(row.authLevel)}</td>
+        <td>${htmlAuthBadge(row.authVerificationStatus)}</td>
       </tr>`).join('')}
     </tbody>
   </table></div>`;
@@ -7062,6 +10950,9 @@ function renderCoverageTable(coverage = /** @type {any} */ ({})) {
     ['public pages', coverage.public?.pages ?? 0],
     ['public nodes', coverage.public?.nodes ?? 0],
     ['public capabilities', coverage.public?.capabilities ?? 0],
+    ['public rendered pages', coverage.publicRendered?.pages ?? 0],
+    ['public rendered nodes', coverage.publicRendered?.nodes ?? 0],
+    ['public rendered capabilities', coverage.publicRendered?.capabilities ?? 0],
     ['authenticated pages', coverage.authenticated?.pages ?? 0],
     ['authenticated nodes', coverage.authenticated?.nodes ?? 0],
     ['authenticated capabilities', coverage.authenticated?.capabilities ?? 0],
@@ -7076,6 +10967,37 @@ function renderCoverageTable(coverage = /** @type {any} */ ({})) {
     <thead><tr><th>Metric</th><th>Value</th></tr></thead>
     <tbody>${rows.map(([metric, value]) => `<tr><td>${htmlCell(metric)}</td><td>${htmlCell(value)}</td></tr>`).join('')}</tbody>
   </table></div>`;
+}
+
+function renderElementCoverageAudit(elementCoverage = /** @type {any} */ ({})) {
+  const rows = elementCoverage.rows ?? [];
+  const summary = elementCoverage.summary ?? {};
+  if (!rows.length) {
+    return '<p class="empty">No sanitized page element instances were available for coverage auditing.</p>';
+  }
+  return `
+    <div class="summary-row">
+      ${htmlBadge(`total ${summary.total ?? rows.length}`, 'muted')}
+      ${htmlBadge(`covered ${summary.covered ?? 0}`, 'success')}
+      ${htmlBadge(`graph-only ${summary.graphIntentOnly ?? 0}`, 'limited')}
+      ${htmlBadge(`missing capability ${summary.missingCapability ?? 0}`, (summary.missingCapability ?? 0) ? 'warning' : 'success')}
+      ${htmlBadge(`missing intent ${summary.missingIntent ?? 0}`, (summary.missingIntent ?? 0) ? 'warning' : 'success')}
+    </div>
+    <div class="table-wrapper"><table>
+      <thead><tr>
+        <th>Element</th><th>Source</th><th>Category instance</th><th>Coverage status</th><th>Mapped capabilities</th><th>Mapped intents</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map((row) => `<tr>
+          <td><strong>${htmlCell([row.elementRole, row.elementLabel].filter(Boolean).join(': ') || '-')}</strong><br>${htmlCell(row.routeTemplate, { code: true })}</td>
+          <td>${htmlCell(row.sourceLayer, { code: true })}<br>${htmlCell(row.nodeId, { code: true })}<br><span class="muted">${htmlCell(row.evidenceStatus)}</span></td>
+          <td>${htmlCell(row.categoryInstance ? htmlCategoryInstanceLabel(row.categoryInstance) : '-')}</td>
+          <td>${htmlStatusBadge(row.status)}</td>
+          <td>${htmlList(row.mappedCapabilityNames?.length ? row.mappedCapabilityNames : row.mappedCapabilityIds, { code: false, limit: 5 })}</td>
+          <td>${htmlList(row.mappedIntentIds ?? [], { code: true, limit: 5 })}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
 }
 
 function renderBlockedList(payload) {
@@ -7191,6 +11113,7 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
     .empty { color: var(--muted); margin: 8px 0; }
     .matrix-line { margin: 2px 0; }
     .matrix-line > span:first-child { display: inline-block; min-width: 64px; color: var(--muted); }
+    .summary-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
     .notice-list { display: grid; gap: 10px; }
     .notice { border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 8px; padding: 10px 12px; background: #fffdf7; }
     .notice p { margin: 4px 0 0; color: var(--muted); }
@@ -7219,6 +11142,7 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
       <nav>
         <a href="#overview">Overview</a>
         <a href="#coverage">Coverage</a>
+        <a href="#element-coverage">Element coverage</a>
         <a href="#capabilities">Capabilities</a>
         <a href="#intents">Intents</a>
         <a href="#mapping">Mapping</a>
@@ -7228,7 +11152,7 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
         <div class="summary-card"><span>result_status</span><strong>${escapeHtml(meta.resultStatus)}</strong></div>
         <div class="summary-card"><span>capabilities</span><strong>${escapeHtml(safe.counts?.capabilities ?? 0)}</strong></div>
         <div class="summary-card"><span>intents</span><strong>${escapeHtml(safe.counts?.intents ?? 0)}</strong></div>
-        <div class="summary-card"><span>auth level</span><strong>${escapeHtml(meta.authLevel)}</strong></div>
+        <div class="summary-card"><span>auth verification status</span><strong>${escapeHtml(meta.authVerificationStatus)}</strong></div>
         <div class="summary-card"><span>risk blocked</span><strong>${escapeHtml(safe.counts?.riskBlocked ?? 0)}</strong></div>
       </div>
     </div>
@@ -7243,8 +11167,8 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
           ['buildId', meta.buildId],
           ['skillId', meta.skillId],
           ['crawlMode', meta.crawlMode],
-          ['authChoice', meta.authChoice],
-          ['authLevel', meta.authLevel],
+          ['authMethod', meta.authMethod],
+          ['authVerificationStatus', meta.authVerificationStatus],
           ['result_status', meta.resultStatus],
           ['legacy_status', meta.legacyStatus],
           ['verification status', meta.verificationStatus],
@@ -7260,6 +11184,11 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
     <section id="coverage">
       <h2>覆盖率概览</h2>
       ${renderCoverageTable(safe.coverage ?? {})}
+    </section>
+    <section id="element-coverage">
+      <h2>页面元素覆盖审计</h2>
+      <p class="muted">逐项列出已保存的脱敏页面元素摘要，并标记是否已经映射为能力和意图。</p>
+      ${renderElementCoverageAudit(safe.elementCoverage ?? {})}
     </section>
     <section id="capabilities">
       <h2>能力汇总</h2>
@@ -7310,6 +11239,409 @@ async function writeCapabilityIntentHtmlReport(context, stageResults, report, us
   return await writeArtifactText(context, CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH, html);
 }
 
+function reconciliationRouteKey(urlValue, rootUrl = null) {
+  try {
+    const normalized = rootUrl ? normalizeUrl(urlValue, rootUrl) : normalizeUrl(urlValue);
+    const parsed = new URL(normalized);
+    parsed.hash = '';
+    parsed.search = '';
+    return parsed.toString().replace(/\/$/u, '');
+  } catch {
+    return String(urlValue ?? '').trim().replace(/[?#].*$/u, '').replace(/\/$/u, '');
+  }
+}
+
+function reconciliationLinkUrl(link) {
+  return link?.normalizedHref ?? link?.normalizedUrl ?? link?.href ?? link?.url ?? null;
+}
+
+function reconciliationLinkLabel(link) {
+  return String(link?.text ?? link?.label ?? link?.title ?? '').trim();
+}
+
+function isReconciliationCategoryLink(link) {
+  const url = String(reconciliationLinkUrl(link) ?? '');
+  const label = reconciliationLinkLabel(link);
+  const kind = String(link?.kind ?? link?.semanticKind ?? link?.structureType ?? '').toLowerCase();
+  const haystack = `${url} ${label} ${kind}`.toLowerCase();
+  return /category|categories|genre|genres|channel|channels|section|sections|classify|\bcat\b|分类|类目|類別|频道|頻道|分区|标签|榜单/u.test(haystack);
+}
+
+function isChallengeLikePage(page) {
+  const text = [
+    page?.title,
+    page?.pageType,
+    page?.publicEvidenceStatus,
+    page?.blockerCategory,
+    page?.diagnostics?.publicEvidenceStatus,
+    page?.diagnostics?.blockerCategory,
+    ...(Array.isArray(page?.diagnostics?.warnings) ? page.diagnostics.warnings : []),
+  ].join(' ');
+  return /验证码|验证|风控|安全校验|中间页|captcha|challenge|turnstile|verify|checkpoint|cf-mitigated|cdn-cgi\/challenge-platform|cloudflare/iu.test(text);
+}
+
+function classifyPageReconciliationOutcome(reasonCodes = /** @type {string[]} */ ([]), challengePages = /** @type {any[]} */ ([])) {
+  const codes = new Set(reasonCodes);
+  if (codes.has('challenge_or_probe_detected')) {
+    const challengeText = challengePages.map((page) => `${page.url ?? ''} ${page.title ?? ''}`).join(' ');
+    const primaryReasonCode = /cloudflare|cf-mitigated|cdn-cgi\/challenge-platform/iu.test(challengeText)
+      ? 'blocked-by-cloudflare-challenge'
+      : 'anti-crawl-verify';
+    return {
+      status: 'blocked',
+      blockerClass: 'external_challenge',
+      primaryReasonCode,
+      retryDisposition: 'blocked_no_bypass',
+    };
+  }
+  const internalMissingCodes = [
+    'category_links_missing_from_graph',
+    'category_capability_missing',
+    'category_intent_missing',
+  ];
+  if (internalMissingCodes.some((code) => codes.has(code))) {
+    return {
+      status: 'failed',
+      blockerClass: 'internal_missing',
+      primaryReasonCode: 'page-reconciliation-failed',
+      retryDisposition: 'retryable_internal',
+    };
+  }
+  if (reasonCodes.length) {
+    return {
+      status: 'warning',
+      blockerClass: 'none',
+      primaryReasonCode: null,
+      retryDisposition: 'no_retry',
+    };
+  }
+  return {
+    status: 'passed',
+    blockerClass: 'none',
+    primaryReasonCode: null,
+    retryDisposition: 'no_retry',
+  };
+}
+
+function reconciliationGraphUrlSet(graph, context) {
+  const urls = new Set();
+  for (const node of graph?.nodes ?? []) {
+    const urlValue = node.normalizedUrl ?? node.url ?? null;
+    if (urlValue) {
+      urls.add(reconciliationRouteKey(urlValue, context.site.rootUrl));
+    }
+    const route = node.routePattern ?? node.routeTemplate ?? null;
+    if (route && String(route).startsWith('/')) {
+      urls.add(reconciliationRouteKey(route, context.site.rootUrl));
+    }
+  }
+  return urls;
+}
+
+function hasChineseText(value) {
+  return /[\u3400-\u9fff]/u.test(String(value ?? ''));
+}
+
+const PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN = /categor|category|categories|channel|genre|tag|topic|section|navigation|collections?|lists?|rankings?|classif|book_categories|catalog categories|\u5206\u7c7b|\u6807\u7b7e|\u9891\u9053|\u985e\u5225|\u983b\u9053/iu;
+
+function buildPageReconciliationReport(context, stageResults, report = /** @type {any} */ ({})) {
+  const staticPages = stageResults.crawlStatic?.pages ?? [];
+  const renderedPages = stageResults.crawlRendered?.publicRenderedPages ?? stageResults.crawlRendered?.pages ?? [];
+  const authPages = stageResults.crawlAuthenticated?.authenticatedPages ?? [];
+  const overlayPages = stageResults.crawlAuthenticated?.authenticatedOverlayPages ?? [];
+  const allPages = [...staticPages, ...renderedPages, ...authPages, ...overlayPages];
+  const challengePages = allPages.filter(isChallengeLikePage).map((page) => ({
+    url: sanitizeEvidenceRef(page.normalizedUrl ?? page.url ?? page.sourcePath ?? context.site.rootUrl) ?? null,
+    title: sanitizedStructureText(page.title ?? page.pageType ?? 'challenge-like-page', 80, 'challenge-like-page'),
+    sourceLayer: page.sourceLayer ?? null,
+    reasonCode: 'challenge_or_probe_detected',
+  }));
+  const expectedCategoryLinks = [];
+  const seenCategoryKeys = new Set();
+  const addExpectedCategoryLink = (urlValue, labelValue = '-') => {
+    if (!urlValue) {
+      return;
+    }
+    const key = reconciliationRouteKey(urlValue, context.site.rootUrl);
+    if (seenCategoryKeys.has(key)) {
+      return;
+    }
+    seenCategoryKeys.add(key);
+    expectedCategoryLinks.push({
+      url: sanitizeEvidenceRef(urlValue) ?? null,
+      routeKey: key,
+      label: sanitizedStructureText(labelValue, 80, '-'),
+    });
+  };
+  for (const page of allPages) {
+    const pageUrl = page.normalizedUrl ?? page.url ?? null;
+    const pageLabel = page.pageType ?? page.routeTemplate ?? page.title ?? '-';
+    if (pageUrl && isReconciliationCategoryLink({ href: pageUrl, label: pageLabel, kind: page.pageType })) {
+      addExpectedCategoryLink(pageUrl, pageLabel);
+    }
+    for (const link of page.links ?? []) {
+      const urlValue = reconciliationLinkUrl(link);
+      if (!urlValue || !isReconciliationCategoryLink(link)) {
+        continue;
+      }
+      addExpectedCategoryLink(urlValue, reconciliationLinkLabel(link));
+    }
+  }
+  const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? null;
+  const graphUrls = reconciliationGraphUrlSet(graph, context);
+  const missingCategoryLinks = expectedCategoryLinks
+    .filter((link) => !graphUrls.has(link.routeKey))
+    .map(({ routeKey, ...link }) => link);
+  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
+  const intents = stageResults.generateIntents?.intents ?? [];
+  const categoryCapabilityRecords = capabilities.filter((capability) => PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN.test([
+    capability.name,
+    capability.user_facing_name,
+    capability.userFacingName,
+    capability.userValue,
+    capability.object,
+    capability.category,
+  ].join(' ')));
+  const categoryCapabilityIds = new Set(categoryCapabilityRecords
+    .map((capability) => capability.id ?? capability.capabilityId)
+    .filter(Boolean));
+  const categoryCapabilities = categoryCapabilityRecords.map((capability) => ({
+    id: capability.id ?? capability.capabilityId ?? null,
+    name: sanitizedStructureText(capability.user_facing_name ?? capability.userFacingName ?? capability.userValue ?? capability.name, 100, '-'),
+    status: capability.status ?? null,
+    enabled_status: capability.enabled_status ?? capability.enabledStatus ?? null,
+    hasChineseName: hasChineseText(capability.user_facing_name ?? capability.userFacingName ?? capability.userValue ?? capability.name),
+  }));
+  const categoryIntentRows = intents.filter((intent) => (
+    categoryCapabilityIds.has(intent.capabilityId ?? intent.capability_id)
+    || PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN.test([
+      intent.canonicalUtterance,
+      intent.canonical_utterance,
+      intent.capabilityName,
+      intent.capabilityId,
+    ].join(' '))
+  )).map((intent) => ({
+    id: intent.intentId ?? intent.id ?? null,
+    capabilityId: intent.capabilityId ?? intent.capability_id ?? null,
+    canonicalUtterance: sanitizedStructureText(intent.canonicalUtterance ?? intent.canonical_utterance, 100, '-'),
+    callable: intent.callable === true,
+    hasChineseUtterance: hasChineseText(intent.canonicalUtterance ?? intent.canonical_utterance),
+  }));
+  const reasonCodes = [];
+  if (challengePages.length) reasonCodes.push('challenge_or_probe_detected');
+  if (expectedCategoryLinks.length && missingCategoryLinks.length) reasonCodes.push('category_links_missing_from_graph');
+  if (expectedCategoryLinks.length && !categoryCapabilities.length) reasonCodes.push('category_capability_missing');
+  if (expectedCategoryLinks.length && categoryCapabilities.length && !categoryIntentRows.length) reasonCodes.push('category_intent_missing');
+  if (categoryCapabilities.length && !categoryCapabilities.some((capability) => capability.hasChineseName)) reasonCodes.push('category_capability_missing_chinese_name');
+  if (categoryIntentRows.length && !categoryIntentRows.some((intent) => intent.hasChineseUtterance)) reasonCodes.push('category_intent_missing_chinese_utterance');
+  if (challengePages.length && !expectedCategoryLinks.length && !categoryCapabilities.length) reasonCodes.push('category_links_not_observed');
+  const outcome = classifyPageReconciliationOutcome(reasonCodes, challengePages);
+  const { status } = outcome;
+  const summary = {
+    status,
+    blockerClass: outcome.blockerClass,
+    primaryReasonCode: outcome.primaryReasonCode,
+    retryDisposition: outcome.retryDisposition,
+    challengeLikePages: challengePages.length,
+    expectedCategoryLinks: expectedCategoryLinks.length,
+    missingCategoryLinks: missingCategoryLinks.length,
+    categoryCapabilities: categoryCapabilities.length,
+    categoryIntents: categoryIntentRows.length,
+    reasonCodes: uniqueSortedStrings(reasonCodes),
+    needsRerun: outcome.retryDisposition === 'retryable_internal',
+    rerunBlocked: outcome.status === 'blocked',
+  };
+  return {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-page-reconciliation-report',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    inputUrl: sanitizeEvidenceRef(context.inputUrl ?? context.site.rootUrl) ?? null,
+    status,
+    resultStatus: report.result_status ?? report.status ?? null,
+    summary,
+    challengePages,
+    expectedCategoryLinks: expectedCategoryLinks.map(({ routeKey, ...link }) => link),
+    missingCategoryLinks,
+    categoryCapabilities,
+    categoryIntents: categoryIntentRows,
+    safety: {
+      rawHtmlPersisted: false,
+      bodyTextPersisted: false,
+      cookiePersisted: false,
+      tokenPersisted: false,
+      browserProfilePersisted: false,
+    },
+  };
+}
+
+async function writePageReconciliationReport(context, stageResults, report) {
+  const reconciliation = buildPageReconciliationReport(context, stageResults, report);
+  const write = await writeRedactedArtifactJson(context, PAGE_RECONCILIATION_REPORT_FILE, reconciliation);
+  return write;
+}
+
+function shouldWriteAccessRemediationPlan(pageReconciliation = /** @type {any} */ ({})) {
+  const summary = pageReconciliation.summary ?? pageReconciliation ?? {};
+  const reasonText = [
+    summary.primaryReasonCode,
+    summary.blockerClass,
+    summary.retryDisposition,
+    ...(summary.reasonCodes ?? []),
+  ].join(' ');
+  return summary.retryDisposition === 'blocked_no_bypass'
+    || /robots|challenge|anti-crawl|verify|external_challenge/iu.test(reasonText);
+}
+
+function buildAccessRemediationPlan(context, stageResults, pageReconciliation = /** @type {any} */ ({})) {
+  const summary = pageReconciliation.summary ?? pageReconciliation ?? {};
+  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
+  const routeOnlyCapabilities = capabilities
+    .filter((capability) => capability.status === 'active' && (
+      capability.publicRouteOnly === true
+      || capability.evidenceModel === 'authenticated_route_only'
+      || capability.evidenceModel === 'public_route_navigation'
+    ))
+    .slice(0, 20)
+    .map((capability) => ({
+      id: capability.id ?? capability.capabilityId ?? null,
+      name: sanitizedStructureText(capability.name ?? capability.userValue ?? 'route-only capability', 120, 'route-only capability'),
+      evidenceModel: capability.evidenceModel ?? null,
+      enabled_status: capability.enabled_status ?? capability.enabledStatus ?? null,
+      sourceLayer: capability.sourceLayer ?? null,
+    }));
+  const remainingUnverified = capabilities
+    .filter((capability) => capability.status !== 'active' && capability.evidenceMatrix?.missingEvidence?.length)
+    .slice(0, 20)
+    .map((capability) => ({
+      id: capability.id ?? capability.capabilityId ?? null,
+      name: sanitizedStructureText(capability.name ?? capability.userValue ?? 'candidate capability', 120, 'candidate capability'),
+      status: capability.status ?? null,
+      enabled_status: capability.enabled_status ?? capability.enabledStatus ?? null,
+      missingEvidence: uniqueSortedStrings(capability.evidenceMatrix?.missingEvidence ?? []),
+    }));
+  return sanitizeReportPublicValue({
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-access-remediation-plan',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    inputUrl: sanitizeEvidenceRef(context.inputUrl ?? context.site.rootUrl) ?? null,
+    status: 'blocked',
+    reasonCode: summary.primaryReasonCode ?? 'access-boundary',
+    blockerClass: summary.blockerClass ?? null,
+    retryDisposition: summary.retryDisposition ?? 'blocked_no_bypass',
+    reasonCodes: uniqueSortedStrings(summary.reasonCodes ?? []),
+    partialRouteOnly: {
+      enabledCapabilities: routeOnlyCapabilities,
+      note: 'Route-only capabilities can open or navigate configured/public routes; they do not prove list contents, metadata, or private page bodies.',
+    },
+    remainingUnverified,
+    authorizedSourceManifestTemplate: {
+      artifactFamily: 'siteforge-authorized-source-manifest',
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      sources: [
+        {
+          id: 'official-feed-or-api',
+          kind: 'official_api_or_feed',
+          url: 'https://example.com/feed-or-api',
+          accessBasis: 'site_docs_or_contract',
+          permissionScope: 'public_metadata_or_sanitized_summary_only',
+          allowedEvidence: ['response_shape', 'schema_hash', 'permission_scope', 'rate_limit_policy'],
+          genericCrawlAllowed: false,
+          promotionAllowed: false,
+        },
+        {
+          id: 'user-structure-summary',
+          kind: 'user_sanitized_summary',
+          url: null,
+          accessBasis: 'user_provided_redacted_structure',
+          permissionScope: 'route_template,page_type,visible_item_count,control_type,structure_hash',
+          allowedEvidence: ['route_template', 'page_type', 'visible_item_count', 'structure_hash'],
+          genericCrawlAllowed: false,
+          promotionAllowed: false,
+        },
+      ],
+    },
+    workflows: [
+      {
+        workflowId: 'access:official-api-or-feed',
+        kind: 'official_api_or_feed',
+        status: 'available_if_site_provides_authorized_source',
+        allowedEvidence: ['response_shape', 'schema_hash', 'rate_limit_policy', 'permission_scope'],
+        genericCrawlAllowed: false,
+        promotionAllowed: false,
+        updatesCurrent: false,
+        updatesRegistry: false,
+      },
+      {
+        workflowId: 'access:user-supplied-structure-summary',
+        kind: 'manual_summary',
+        status: 'requires_sanitized_structure_source',
+        allowedEvidence: ['route_template', 'page_type', 'visible_item_count', 'control_type', 'structure_hash'],
+        genericCrawlAllowed: false,
+        promotionAllowed: false,
+        updatesCurrent: false,
+        updatesRegistry: false,
+      },
+      {
+        workflowId: 'access:local-http-validation',
+        kind: 'local_http_validation',
+        status: 'available_for_tests_only',
+        allowedEvidence: ['fixture_http_response', 'fixture_robots_allow'],
+        genericCrawlAllowed: false,
+        liveSupportClaimAllowed: false,
+        promotionAllowed: false,
+        updatesCurrent: false,
+        updatesRegistry: false,
+      },
+    ],
+    safety: {
+      bypassRobots: false,
+      bypassChallenge: false,
+      readBrowserProfile: false,
+      persistCookie: false,
+      persistToken: false,
+      saveRawHtml: false,
+      savePrivateBody: false,
+      rawNetworkPayloadPersisted: false,
+    },
+  });
+}
+
+async function writeAccessRemediationPlanIfNeeded(context, stageResults, pageReconciliation) {
+  if (!shouldWriteAccessRemediationPlan(pageReconciliation)) {
+    return null;
+  }
+  const plan = buildAccessRemediationPlan(context, stageResults, pageReconciliation);
+  const write = await writeRedactedArtifactJson(context, ACCESS_REMEDIATION_PLAN_FILE, plan);
+  return write;
+}
+
+function authorizedSourcesSummaryForReport(context) {
+  const sources = context.options?.authorizedSources
+    ?? context.setupProfile?.localBuildConfig?.authorizedSources
+    ?? [];
+  const rows = (Array.isArray(sources) ? sources : [])
+    .slice(0, 20)
+    .map((source, index) => sanitizeReportPublicValue({
+      id: source?.id ?? `authorized-source-${index + 1}`,
+      kind: source?.kind ?? source?.type ?? 'authorized_source',
+      url: source?.url ?? null,
+      accessBasis: source?.accessBasis ?? source?.authorizationBasis ?? 'user_provided_contract',
+      permissionScope: source?.permissionScope ?? 'sanitized_summary_only',
+      allowedEvidence: uniqueSortedStrings(source?.allowedEvidence ?? []),
+      genericCrawlAllowed: false,
+      promotionAllowed: false,
+    }));
+  return {
+    configured: rows.length,
+    sources: rows,
+    note: rows.length
+      ? 'Authorized sources are evidence inputs, not robots/challenge bypasses; promotion remains gated by source authority and evidence policy.'
+      : null,
+  };
+}
+
 function buildBuildReport(context, stageResults, stageRecords, status = 'success', error = null) {
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   const activeCapabilities = capabilities.filter((capability) => capability.status === 'active');
@@ -7319,8 +11651,13 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
     ? null
     : collectionOutcomeReason(failureReason?.reasonCode ?? error?.reasonCode ?? error?.code ?? 'build-failed');
   const collectionOutcomes = collectUnsuccessfulCollections(stageResults, stageRecords, status, error);
-  const setupCollectionReview = setupCollectionReviewReport(
+  const setupCollectionReviewSource = reconcileSetupCollectionReviewWithBuildOutputs(
     context.setupCollectionReview,
+    capabilities,
+    intents,
+  );
+  const setupCollectionReview = setupCollectionReviewReport(
+    setupCollectionReviewSource,
     context.setupCollectionReviewPath,
   );
   const warningCodes = uniqueSortedStrings(Object.values(stageRecords)
@@ -7339,6 +11676,9 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       warnings: reportWarnings,
       failureClass: failureReason?.failureClass ?? null,
       reasonCode: failureReason?.reasonCode ?? null,
+      summary: {
+        verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
+      },
     },
     setupCollectionReview,
     capabilityState,
@@ -7350,6 +11690,9 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       warnings: reportWarnings,
       failureClass: failureReason?.failureClass ?? null,
       reasonCode: failureReason?.reasonCode ?? null,
+      summary: {
+        verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
+      },
     },
     setupCollectionReview,
     capabilityState,
@@ -7382,8 +11725,8 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
     crawlContract: context.crawlContract ?? null,
     authStateReport: context.authStateReport ?? null,
     crawlMode: authSummary.crawlMode,
-    authChoice: authSummary.authChoice,
-    authLevel: authSummary.authLevel,
+    authMethod: authSummary.authMethod,
+    authVerificationStatus: authSummary.authVerificationStatus,
     siteAdapter: siteAdapterSummaryForReport(context, { includeSource: true }),
     setupCollectionReview,
     artifactStore: context.artifactStore,
@@ -7408,6 +11751,9 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       capabilities: capabilityCounts(capabilities),
       coverage,
       auth: authSummary,
+      robots: stageResults.discoverSeeds?.robots ?? null,
+      authorizedSources: authorizedSourcesSummaryForReport(context),
+      rawPageMaterial: stageResults.crawlStatic?.rawPageMaterial?.summary ?? null,
       activeCapabilities: activeCapabilities.length,
       intents: intents.length,
       verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
@@ -7445,7 +11791,38 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
 async function writeBuildReportStage(context, stageResults, stageRecords) {
   const report = buildBuildReport(context, stageResults, stageRecords, 'success');
   report.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = capabilityIntentSummaryHtmlPath(context);
+  if (stageResults.crawlStatic?.artifactPaths?.rawPageMaterialManifest) {
+    report.artifacts[RAW_PAGE_MATERIAL_MANIFEST_FILE] = stageResults.crawlStatic.artifactPaths.rawPageMaterialManifest;
+  }
+  if (stageResults.crawlStatic?.artifactPaths?.authorizedSourceManifest) {
+    report.artifacts[AUTHORIZED_SOURCE_MANIFEST_FILE] = stageResults.crawlStatic.artifactPaths.authorizedSourceManifest;
+  }
+  const pageReconciliationWrite = await writePageReconciliationReport(context, stageResults, report);
+  report.pageReconciliation = pageReconciliationWrite.value;
+  report.summary.pageReconciliation = pageReconciliationWrite.value.summary;
+  report.artifacts[PAGE_RECONCILIATION_REPORT_FILE] = pageReconciliationWrite.artifactPath;
+  const accessRemediationWrite = await writeAccessRemediationPlanIfNeeded(context, stageResults, pageReconciliationWrite.value);
+  if (accessRemediationWrite) {
+    report.accessRemediationPlan = accessRemediationWrite.value;
+    report.artifacts[ACCESS_REMEDIATION_PLAN_FILE] = accessRemediationWrite.artifactPath;
+  }
+  if (pageReconciliationWrite.value.status !== 'passed') {
+    report.warnings = uniqueSortedStrings([
+      ...(report.warnings ?? []),
+      `page-reconciliation:${pageReconciliationWrite.value.summary.reasonCodes.join(',') || pageReconciliationWrite.value.status}`,
+    ]);
+  }
   const userReport = buildUserReport(context, stageResults, report);
+  /** @type {any} */ (userReport).reports = {
+    ...(/** @type {any} */ (userReport).reports ?? {}),
+    page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
+    ...(accessRemediationWrite ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+  };
+  /** @type {any} */ (userReport).build_completion = {
+    ...(/** @type {any} */ (userReport).build_completion ?? {}),
+    page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
+    ...(accessRemediationWrite ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+  };
   report.result_status = userReport.result_status;
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
   report.artifacts[USER_REPORT_FILE] = userReportWrite.artifactPath;
@@ -7485,6 +11862,7 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
       userMarkdown: userMarkdownPath,
       debugReport: debugReportWrite.artifactPath,
       capabilityIntentSummaryHtml: htmlReportPath,
+      pageReconciliationReport: pageReconciliationWrite.artifactPath,
       userReportAlias: userReportAliasWrite.artifactPath,
       userMarkdownAlias: userMarkdownAliasPath,
       debugReportAlias: debugReportAliasWrite.artifactPath,
@@ -7496,7 +11874,45 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
 async function writeFailedBuildReport(context, stageResults, stageRecords, status, error) {
   const failedReport = buildBuildReport(context, stageResults, stageRecords, status, error);
   failedReport.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = capabilityIntentSummaryHtmlPath(context);
+  if (stageResults.crawlStatic?.artifactPaths?.rawPageMaterialManifest) {
+    failedReport.artifacts[RAW_PAGE_MATERIAL_MANIFEST_FILE] = stageResults.crawlStatic.artifactPaths.rawPageMaterialManifest;
+  }
+  if (stageResults.crawlStatic?.artifactPaths?.authorizedSourceManifest) {
+    failedReport.artifacts[AUTHORIZED_SOURCE_MANIFEST_FILE] = stageResults.crawlStatic.artifactPaths.authorizedSourceManifest;
+  }
+  try {
+    const pageReconciliationWrite = await writePageReconciliationReport(context, stageResults, failedReport);
+    failedReport.pageReconciliation = pageReconciliationWrite.value;
+    failedReport.summary.pageReconciliation = pageReconciliationWrite.value.summary;
+    failedReport.artifacts[PAGE_RECONCILIATION_REPORT_FILE] = pageReconciliationWrite.artifactPath;
+    const accessRemediationWrite = await writeAccessRemediationPlanIfNeeded(context, stageResults, pageReconciliationWrite.value);
+    if (accessRemediationWrite) {
+      failedReport.accessRemediationPlan = accessRemediationWrite.value;
+      failedReport.artifacts[ACCESS_REMEDIATION_PLAN_FILE] = accessRemediationWrite.artifactPath;
+    }
+    if (pageReconciliationWrite.value.status !== 'passed') {
+      failedReport.warnings = uniqueSortedStrings([
+        ...(failedReport.warnings ?? []),
+        `page-reconciliation:${pageReconciliationWrite.value.summary.reasonCodes.join(',') || pageReconciliationWrite.value.status}`,
+      ]);
+    }
+  } catch (reconciliationError) {
+    failedReport.warnings = uniqueSortedStrings([
+      ...(failedReport.warnings ?? []),
+      `page-reconciliation-skipped:${reconciliationError?.reasonCode ?? reconciliationError?.code ?? 'report-generation-failed'}`,
+    ]);
+  }
   const userReport = buildUserReport(context, stageResults, failedReport);
+  /** @type {any} */ (userReport).reports = {
+    ...(/** @type {any} */ (userReport).reports ?? {}),
+    page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
+    ...(failedReport.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+  };
+  /** @type {any} */ (userReport).build_completion = {
+    ...(/** @type {any} */ (userReport).build_completion ?? {}),
+    page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
+    ...(failedReport.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+  };
   failedReport.result_status = userReport.result_status;
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
   failedReport.artifacts[USER_REPORT_FILE] = userReportWrite.artifactPath;
@@ -7568,13 +11984,12 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
   if (!context.authStateReport) {
     context.authStateReport = createPublicOnlyAuthStateReport({
       site: context.site,
-      authChoice: context.crawlContract?.authChoice ?? 'declined',
+      authMethod: context.crawlContract?.authMethod ?? 'none',
     });
   }
   if (!context.crawlContract) {
     context.crawlContract = createCrawlContract({
       site: context.site,
-      authChoice: context.authStateReport.authChoice ?? 'declined',
       authStateReport: context.authStateReport,
     });
   }
@@ -7817,6 +12232,86 @@ function renderSiteForgeUserBuildSummary(result, options = /** @type {any} */ ({
   return renderFriendlySiteForgeUserBuildSummary(result, options);
 }
 
+function numberOrZero(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function renderSiteForgePlainBuildSummary(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
+  const report = result.user_report ?? result.userReport ?? {};
+  const summary = result.summary ?? {};
+  const capabilitySummary = report.capability_summary ?? summary.capabilities ?? {};
+  const enabledStatus = capabilitySummary.enabledStatus ?? report.capability_summary?.enabled_status ?? {};
+  const coverage = summary.coverage ?? report.coverage ?? {};
+  const sourceUrl = report.site?.root_url
+    ?? report.site?.input_url
+    ?? result.inputUrl
+    ?? result.site?.rootUrl
+    ?? result.site?.root_url
+    ?? null;
+  const publicUrl = sourceUrl
+    ? sanitizePublicUrl(sourceUrl, { fallback: '<url>', keepPath: false })
+    : '-';
+  const resultStatus = report.result_status ?? result.result_status ?? result.status ?? 'unknown';
+  const legacyStatus = result.status ?? report.legacy_status ?? resultStatus;
+  const skillId = report.skill_id ?? summary.skillId ?? result.skillId ?? '-';
+  const activeCount = numberOrZero(capabilitySummary.active ?? summary.activeCapabilities ?? report.enabled_capabilities?.length);
+  const limitedCount = numberOrZero(enabledStatus.limited_enabled ?? report.limited_enabled_capabilities?.length ?? report.limited_capabilities?.length);
+  const candidateCount = numberOrZero(capabilitySummary.candidate ?? report.debug_candidate_summary?.count);
+  const disabledCount = numberOrZero(capabilitySummary.disabled ?? report.disabled_capabilities?.length);
+  const publicPages = numberOrZero(coverage.public?.pages ?? report.coverage?.public?.pages);
+  const authenticatedPages = numberOrZero(coverage.authenticated?.pages ?? report.coverage?.authenticated?.pages);
+  const overlayPages = numberOrZero(coverage.overlay?.pagesRevisited ?? report.coverage?.overlay?.pagesRevisited);
+  const verificationStatus = summary.verificationStatus ?? report.build_completion?.verification_status ?? '-';
+  const registryStatus = summary.registryStatus ?? (
+    report.build_completion?.registry_registered === true ? 'registered' : 'not_registered'
+  );
+  const reportPath = result.artifacts?.[USER_REPORT_FILE]
+    ?? result.reports?.user?.json
+    ?? report.build_completion?.report_path
+    ?? USER_REPORT_FILE;
+  const htmlPath = capabilityIntentHtmlResultPath(result);
+  const pageReconciliation = result.pageReconciliation
+    ?? result.summary?.pageReconciliation
+    ?? report.pageReconciliation
+    ?? report.summary?.pageReconciliation
+    ?? null;
+  const pageReconciliationPath = pageReconciliationResultPath(result);
+  const lines = [
+    `${legacyStatus === 'success' ? '✓' : '✗'} SiteForge build: ${resultStatus}`,
+    `URL: ${publicUrl}`,
+    `Skill: ${skillId}`,
+    `Capabilities: active ${activeCount} / limited ${limitedCount} / candidate ${candidateCount} / disabled ${disabledCount}`,
+    `Coverage: public ${publicPages} pages / authenticated ${authenticatedPages} pages / overlay ${overlayPages} pages`,
+    `Verification: ${verificationStatus}`,
+    `Registry: ${registryStatus}`,
+    `Report: ${displayReportPath(reportPath, options)}`,
+  ];
+  if (pageReconciliation) {
+    const status = pageReconciliation.status ?? pageReconciliation.summary?.status ?? '-';
+    const reasonCodes = pageReconciliation.reasonCodes ?? pageReconciliation.summary?.reasonCodes ?? [];
+    const suffix = Array.isArray(reasonCodes) && reasonCodes.length
+      ? ` (${reasonCodes.slice(0, 4).join(',')})`
+      : '';
+    lines.push(`Page reconciliation: ${status}${suffix}`);
+  }
+  if (pageReconciliationPath) {
+    lines.push(`Page reconciliation report: ${displayReportPath(pageReconciliationPath, options)}`);
+  }
+  const robotsRemediationPath = robotsRemediationResultPath(result);
+  if (robotsRemediationPath) {
+    lines.push(`Robots remediation plan: ${displayReportPath(robotsRemediationPath, options)}`);
+  }
+  const accessRemediationPath = accessRemediationResultPath(result);
+  if (accessRemediationPath) {
+    lines.push(`Access remediation plan: ${displayReportPath(accessRemediationPath, options)}`);
+  }
+  if (htmlPath) {
+    lines.push(`HTML report: ${displayReportPath(htmlPath, options)}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 function capabilityIntentHtmlResultPath(result = /** @type {any} */ ({})) {
   return result.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE]
     ?? result.reports?.capability_intent_summary_html
@@ -7829,21 +12324,38 @@ function capabilityIntentHtmlResultPath(result = /** @type {any} */ ({})) {
     ?? null;
 }
 
-function appendCapabilityIntentHtmlSummaryLine(summary, result, options = /** @type {any} */ ({})) {
-  const htmlPath = capabilityIntentHtmlResultPath(result);
-  if (!htmlPath) {
-    return summary;
-  }
-  return `${String(summary ?? '').trimEnd()}\nCapability and intent HTML summary: ${displayPath(htmlPath, options.cwd)}\n`;
+function pageReconciliationResultPath(result = /** @type {any} */ ({})) {
+  return result.artifacts?.[PAGE_RECONCILIATION_REPORT_FILE]
+    ?? result.reports?.page_reconciliation_report
+    ?? result.user_report?.reports?.page_reconciliation_report
+    ?? result.userReport?.reports?.page_reconciliation_report
+    ?? result.pageReconciliationReport
+    ?? null;
+}
+
+function robotsRemediationResultPath(result = /** @type {any} */ ({})) {
+  return result.artifacts?.['robots_remediation_plan.json']
+    ?? result.reports?.robots_remediation_plan
+    ?? result.user_report?.reports?.robots_remediation_plan
+    ?? result.userReport?.reports?.robots_remediation_plan
+    ?? null;
+}
+
+function accessRemediationResultPath(result = /** @type {any} */ ({})) {
+  return result.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE]
+    ?? result.reports?.access_remediation_plan
+    ?? result.user_report?.reports?.access_remediation_plan
+    ?? result.userReport?.reports?.access_remediation_plan
+    ?? null;
 }
 
 export function renderSiteForgeBuildSummary(result, options = /** @type {any} */ ({})) {
   const mode = normalizeReportMode(
     options.reportMode ?? options.report ?? (options.debug || options.verbose ? 'debug' : 'user'),
   );
-  const userSummary = renderSiteForgeUserBuildSummary(result, options);
+  const userSummary = renderSiteForgePlainBuildSummary(result, options);
   if (mode === 'user') {
-    return appendCapabilityIntentHtmlSummaryLine(userSummary, result, options);
+    return userSummary;
   }
   const debugPath = result.artifacts?.[DEBUG_REPORT_FILE]
     ?? result.artifacts?.[DEBUG_REPORT_JSON_ALIAS]

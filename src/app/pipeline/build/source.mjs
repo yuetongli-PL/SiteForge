@@ -3,7 +3,7 @@
 import http from 'node:http';
 import net from 'node:net';
 import tls from 'node:tls';
-import { normalizeUrl } from './models.mjs';
+import { isInternalUrl, normalizeUrl } from './models.mjs';
 
 const STATIC_FETCH_HEADERS = Object.freeze({
   accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1',
@@ -398,6 +398,7 @@ function rawHttpGetOverSocket(target, socket, options = /** @type {any} */ ({}))
   return new Promise((resolve, reject) => {
     let settled = false;
     let transport = socket;
+    const ignoreLateSocketError = () => {};
     const chunks = /** @type {any[]} */ ([]);
     const cleanup = () => {
       transport.off('data', onData);
@@ -409,12 +410,19 @@ function rawHttpGetOverSocket(target, socket, options = /** @type {any} */ ({}))
         transport.off('secureConnect', writeRequest);
       }
     };
+    const guardLateSocketErrors = () => {
+      transport.on('error', ignoreLateSocketError);
+      if (transport !== socket) {
+        socket.on('error', ignoreLateSocketError);
+      }
+    };
     const finish = () => {
       if (settled) {
         return;
       }
       settled = true;
       cleanup();
+      guardLateSocketErrors();
       try {
         resolve(parseRawHttpResponse(Buffer.concat(chunks), target.toString()));
       } catch (error) {
@@ -427,6 +435,7 @@ function rawHttpGetOverSocket(target, socket, options = /** @type {any} */ ({}))
       }
       settled = true;
       cleanup();
+      guardLateSocketErrors();
       transport.destroy();
       reject(error);
     };
@@ -448,12 +457,17 @@ function rawHttpGetOverSocket(target, socket, options = /** @type {any} */ ({}))
     const onTimeout = () => fail(reasonedError(`Static fetch timed out after ${timeoutMs}ms through proxy tunnel.`, 'static-fetch-proxy-timeout'));
     const writeRequest = () => {
       const requestPath = `${target.pathname || '/'}${target.search}`;
+      const requestHeaders = {
+        ...STATIC_FETCH_HEADERS,
+        ...(options.requestHeaders ?? {}),
+      };
       const request = [
         `GET ${requestPath} HTTP/1.1`,
         `Host: ${target.host}`,
-        `Accept: ${STATIC_FETCH_HEADERS.accept}`,
-        `Accept-Encoding: ${STATIC_FETCH_HEADERS['accept-encoding']}`,
-        `User-Agent: ${STATIC_FETCH_HEADERS['user-agent']}`,
+        `Accept: ${requestHeaders.accept}`,
+        `Accept-Encoding: ${requestHeaders['accept-encoding']}`,
+        `User-Agent: ${requestHeaders['user-agent']}`,
+        ...(requestHeaders.cookie ? [`Cookie: ${requestHeaders.cookie}`] : []),
         'Connection: close',
         '',
         '',
@@ -520,6 +534,7 @@ function requestHttpViaProxy(urlValue, proxyUrl, options = /** @type {any} */ ({
   const target = new URL(urlValue);
   const headers = {
     ...STATIC_FETCH_HEADERS,
+    ...(options.requestHeaders ?? {}),
     host: target.host,
   };
   const proxyAuth = proxyAuthHeader(proxyUrl);
@@ -688,6 +703,9 @@ async function readLiveUrlViaProxy(urlValue, proxyUrl, options = /** @type {any}
 }
 
 function wrapStaticFetchFailure(error, urlValue, proxyUrl = null) {
+  if (error?.stageStatus === 'blocked' || error?.buildStatus === 'blocked') {
+    return error;
+  }
   if (error?.code && String(error.code).startsWith('static-fetch-')) {
     if (!error.reasonCode) {
       error.reasonCode = error.code;
@@ -709,16 +727,133 @@ function wrapStaticFetchFailure(error, urlValue, proxyUrl = null) {
   );
 }
 
+function responseHeaderValue(headers, name) {
+  if (!headers) {
+    return '';
+  }
+  if (typeof headers.get === 'function') {
+    return String(headers.get(name) ?? '');
+  }
+  return String(headers[String(name).toLowerCase()] ?? headers[name] ?? '');
+}
+
+function accessChallengeReasonCode({ status = 0, headers = null, body = '' } = /** @type {any} */ ({})) {
+  const text = [
+    status,
+    responseHeaderValue(headers, 'cf-mitigated'),
+    responseHeaderValue(headers, 'server'),
+    responseHeaderValue(headers, 'location'),
+    String(body ?? '').slice(0, 4096),
+  ].join(' ');
+  if (/cf-mitigated:\s*challenge|cf-mitigated.*challenge|cdn-cgi\/challenge-platform|cloudflare challenge|cloudflare/iu.test(text)) {
+    return 'blocked-by-cloudflare-challenge';
+  }
+  if (/(?:captcha|turnstile|challenge|checkpoint|verify|verification|验证码|验证|风控|安全校验|中间页)/iu.test(text)) {
+    return 'anti-crawl-verify';
+  }
+  return null;
+}
+
+function throwIfAccessChallenge({ status, headers, body, urlValue }) {
+  if (![401, 403, 429, 503].includes(Number(status))) {
+    return;
+  }
+  const reasonCode = accessChallengeReasonCode({ status, headers, body });
+  if (!reasonCode) {
+    return;
+  }
+  throw reasonedError(`Static fetch stopped at an access challenge for ${urlValue}.`, reasonCode, {
+    statusCode: status,
+    stageStatus: 'blocked',
+    buildStatus: 'blocked',
+    retryDisposition: 'blocked_no_bypass',
+  });
+}
+
+async function readLiveUrlWithManualRedirect(urlValue, options = /** @type {any} */ ({}), redirectCount = 0) {
+  if (redirectCount > MAX_PROXY_REDIRECTS) {
+    throw reasonedError(`Static fetch exceeded ${MAX_PROXY_REDIRECTS} redirects for ${urlValue}.`, 'static-fetch-redirect-limit');
+  }
+  if (!isInternalUrl(urlValue, options.allowedDomains ?? [])) {
+    throw reasonedError('Cookie-authenticated static fetch blocked a cross-site URL.', 'static-fetch-auth-cross-site-blocked');
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(options.fetchTimeoutMs ?? 10000)));
+  let response;
+  try {
+    response = await fetch(urlValue, {
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: {
+        ...STATIC_FETCH_HEADERS,
+        ...(options.requestHeaders ?? {}),
+      },
+    });
+  } catch (error) {
+    throw wrapStaticFetchFailure(error, urlValue);
+  } finally {
+    clearTimeout(timeout);
+  }
+  if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.get('location')) {
+    const nextUrl = normalizeUrl(response.headers.get('location'), urlValue);
+    if (!isInternalUrl(nextUrl, options.allowedDomains ?? [])) {
+      throw reasonedError('Cookie-authenticated static fetch blocked a cross-site redirect.', 'static-fetch-auth-cross-site-redirect-blocked');
+    }
+    return await readLiveUrlWithManualRedirect(nextUrl, options, redirectCount + 1);
+  }
+  if (!response.ok) {
+    let challengeBody = '';
+    try {
+      challengeBody = await response.text();
+    } catch {
+      challengeBody = '';
+    }
+    throwIfAccessChallenge({
+      status: response.status,
+      headers: response.headers,
+      body: challengeBody,
+      urlValue,
+    });
+    throw reasonedError(`Static fetch failed for ${urlValue}: HTTP ${response.status}`, 'static-fetch-failed', {
+      statusCode: response.status,
+    });
+  }
+  return {
+    body: await response.text(),
+    sourcePath: response.url,
+    sourceType: 'live_website',
+    requestedUrl: urlValue,
+    finalUrl: response.url,
+    fetchedAt: options.fetchedAt ?? new Date().toISOString(),
+    request: requestDiagnostic({ statusCode: response.status }),
+  };
+}
+
 async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
   const timeoutMs = Math.max(1, Number(options.fetchTimeoutMs ?? 10000));
   const proxyUrls = resolveLiveFetchProxies(urlValue, options.env ?? process.env);
   const fetchedAt = new Date().toISOString();
+  if (options.requestHeaders?.cookie) {
+    return await readLiveUrlWithManualRedirect(urlValue, {
+      ...options,
+      fetchedAt,
+    });
+  }
   if (proxyUrls.length) {
     let lastError = null;
     for (const proxyUrl of proxyUrls) {
       try {
-        const response = await readLiveUrlViaProxy(urlValue, proxyUrl, { fetchTimeoutMs: timeoutMs });
+        const response = await readLiveUrlViaProxy(urlValue, proxyUrl, {
+          fetchTimeoutMs: timeoutMs,
+          requestHeaders: options.requestHeaders,
+        });
         if (!response.ok) {
+          throwIfAccessChallenge({
+            status: response.status,
+            headers: response.headers,
+            body: response.text,
+            urlValue,
+          });
           throw reasonedError(`Static fetch failed for ${urlValue}: HTTP ${response.status}`, 'static-fetch-failed', {
             statusCode: response.status,
           });
@@ -753,7 +888,10 @@ async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
     response = await fetch(urlValue, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: STATIC_FETCH_HEADERS,
+      headers: {
+        ...STATIC_FETCH_HEADERS,
+        ...(options.requestHeaders ?? {}),
+      },
     });
   } catch (error) {
     throw wrapStaticFetchFailure(error, urlValue);
@@ -761,6 +899,18 @@ async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
     clearTimeout(timeout);
   }
   if (!response.ok) {
+    let challengeBody = '';
+    try {
+      challengeBody = await response.text();
+    } catch {
+      challengeBody = '';
+    }
+    throwIfAccessChallenge({
+      status: response.status,
+      headers: response.headers,
+      body: challengeBody,
+      urlValue,
+    });
     const error = /** @type {Error & Record<string, any>} */ (new Error(`Static fetch failed for ${urlValue}: HTTP ${response.status}`));
     error.code = 'static-fetch-failed';
     throw error;
@@ -778,6 +928,8 @@ async function readLiveUrl(urlValue, options = /** @type {any} */ ({})) {
 
 export function createBuildSource(inputUrl, options = /** @type {any} */ ({})) {
   let lastLiveReadAt = 0;
+  const runtimeCookieHeader = String(options.authRuntime?.method === 'cookie' ? options.authRuntime?.cookieHeader ?? '' : '').trim();
+  const runtimeCookieDomains = Array.isArray(options.authRuntime?.allowedDomains) ? options.authRuntime.allowedDomains : [];
   return {
     type: 'live_website',
     requestedUrl: normalizeUrl(inputUrl),
@@ -789,9 +941,14 @@ export function createBuildSource(inputUrl, options = /** @type {any} */ ({})) {
         await new Promise((resolve) => setTimeout(resolve, delayMs - elapsedMs));
       }
       lastLiveReadAt = Date.now();
+      const requestHeaders = runtimeCookieHeader && isInternalUrl(normalized, runtimeCookieDomains)
+        ? { cookie: runtimeCookieHeader }
+        : {};
       return await readLiveUrl(normalized, {
         fetchTimeoutMs: options.fetchTimeoutMs,
         env: options.env,
+        requestHeaders,
+        allowedDomains: runtimeCookieDomains,
       });
     },
   };

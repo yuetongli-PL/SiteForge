@@ -108,6 +108,7 @@ const CURRENT_ARTIFACT_CODES = [
 
 const CURRENT_SCHEMA_CODES = [
   'schema-version-incompatible',
+  'page-reconciliation-failed',
 ];
 
 const CURRENT_API_CODES = [

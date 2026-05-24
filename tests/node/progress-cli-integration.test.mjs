@@ -74,6 +74,12 @@ test('build parser keeps human-output flags', () => {
     '--compact',
     '--force-tty',
     '--progress=interactive',
+    '--auth',
+    'cookie',
+    '--cookie-env',
+    'SITEFORGE_COOKIE',
+    '--auth-check-url',
+    '/account',
   ]);
   assert.equal(parsed.url, 'https://weread.qq.com/');
   assert.equal(parsed.options.verbose, true);
@@ -83,6 +89,9 @@ test('build parser keeps human-output flags', () => {
   assert.equal(parsed.options.compact, true);
   assert.equal(parsed.options.forceTty, true);
   assert.equal(parsed.options.progressMode, 'interactive');
+  assert.equal(parsed.options.authMode, 'cookie');
+  assert.equal(parsed.options.cookieEnv, 'SITEFORGE_COOKIE');
+  assert.equal(parsed.options.authCheckUrl, '/account');
 });
 
 test('site-doctor parser accepts progress flags while keeping JSON-compatible default output', () => {

@@ -28,10 +28,13 @@ function safeFailureCode(value) {
 }
 
 function publicFailureReason(code) {
-  if (code === 'robots-unavailable') return '无法取得 robots.txt，实时构建已安全停止';
-  if (code === 'robots-disallowed') return 'robots.txt 阻止了本次候选采集范围';
-  if (code === 'network-fetch-failed') return '网络抓取失败，未保存原始错误详情';
-  if (code === 'dynamic-unsupported') return '当前路径需要动态采集能力，本次未启用';
+  if (code === 'robots-unavailable') return '无法取得 robots.txt，实时构建已安全停止。';
+  if (code === 'robots-disallowed' || code === 'setup-robots-disallowed' || code === 'setup-known-policy-robots-disallowed') return 'robots.txt 阻止了本次候选采集范围，SiteForge 不会绕过 robots 继续抓取。';
+  if (code === 'anti-crawl-verify') return '页面返回验证码、风控或安全校验中间页，SiteForge 已停止自动采集且不会绕过验证。';
+  if (code === 'blocked-by-cloudflare-challenge') return '页面触发 Cloudflare challenge，SiteForge 已停止自动采集且不会绕过 challenge。';
+  if (code === 'network-fetch-failed') return '网络抓取失败，未保存原始错误详情或敏感材料。';
+  if (code === 'dynamic-unsupported') return '当前路径需要动态采集能力，本次没有取得足够的脱敏结构证据。';
+  if (code === 'page-reconciliation-failed') return '页面核对未通过：页面分类链接、能力或意图证据与实际观察到的公开结构不匹配。';
   if (code === 'validation-failed') return '验证未通过，详细门禁结果见 verification_report.json';
   return null;
 }
@@ -530,291 +533,51 @@ export function renderSiteForgeUserBuildSummary(result, options = /** @type {any
     ?? 'build_report.user.json';
   const userReportPath = displayReportPath(rawUserReportPath, options);
 
-  if (options.layout !== 'table') {
-    const lines = [
-      `✓ 构建完成（${buildStatus}）`,
-      '',
-      '操作：↑↓ 移动  Enter 展开/折叠  Space 确认  / 搜索  q 退出',
-      '搜索：-',
-      '',
-    ];
-
-    appendTreeLine(
-      lines,
-      '▶ 能力统计',
-      `可用 ${enabled.length} / 有限脱敏 ${limited.length} / 待确认 ${confirmation.length} / 禁用阻止 ${disabled.length}`,
-    );
-    appendTreeLine(
-      lines,
-      '▶ 自动探索',
-      `页面/区域 ${nodes.page_nodes ?? 0} / 内容节点 ${nodes.content_nodes ?? 0} / 操作节点 ${nodes.operation_nodes ?? 0} / 元素 ${counts.actionable_elements ?? nodes.actionable_elements ?? 0}`,
-    );
-    appendTreeLine(lines, `▼ 待确认能力 (${confirmation.length})`, 'Space 标记确认；只写入安全确认记录');
-    appendTreeLine(
-      lines,
-      '登录态覆盖',
-      `模式 ${report.crawlMode ?? 'public_only'} / 等级 ${report.authLevel ?? 'L0'} / 公开 ${report.coverage?.public?.pages ?? 0} 页 / 登录后 ${report.coverage?.authenticated?.pages ?? 0} 页 / overlay ${report.coverage?.overlay?.pagesRevisited ?? 0} 页`,
-    );
-    for (const line of report.auth_explanation_zh ?? []) {
-      lines.push(`  - ${line}`);
-    }
-    appendTreeCapabilityRows(lines, confirmation, { limit: 8, checkbox: '[ ]' });
-    appendTreeLine(lines, `▶ 已禁用能力 (${disabled.length})`, '仅展示安全补路径；不能直接强行启用');
-    appendTreeLine(
-      lines,
-      '▶ 输出结果',
-      `验证 ${completionVerificationLabel(completion.verification_status)}；当前输出 ${completionCurrentOutputLabel(completion.current_updated)}；本地索引 ${completionRegistryLabel(completion.registry_registered)}；Skill 标识: ${skillId}`,
-    );
-    if (report.result_status === 'failed' && failureReasons.length) {
-      appendTreeLine(lines, '▶ 失败原因', failureReasons.join('；'));
-    }
-    appendTreeLine(
-      lines,
-      '▶ 建议',
-      `siteforge build ${commandUrl} --auto --deep；siteforge build ${commandUrl} --auto --deep --network（仅脱敏摘要）；siteforge build ${commandUrl} --report debug`,
-    );
-    appendTreeLine(
-      lines,
-      '▶ 调试信息',
-      `用户报告 ${userReportPath}；开发者候选 ${debugCandidateCount}`,
-    );
-    if (options.manual === true) {
-      appendTreeLine(lines, '▶ 手动模式', '逐项手动补采；允许最终 URL 或可见条数输入');
-    }
-    lines.push('');
-    lines.push('提示：非交互终端显示为树形快照；交互终端会动态刷新并支持键盘操作。');
-    return `${lines.join('\n')}\n`;
-  }
-
-  {
-    const lines = [
-      `SiteForge 正在构建 ${host} Skill`,
-      '',
-      '预扫描',
-    ];
-    appendTable(lines, [
-      { key: 'item', label: '项目', maxLength: 18 },
-      { key: 'value', label: '状态', maxLength: 56 },
-    ], [
-      { item: '目标站点', value: host },
-      { item: '探索模式', value: report.auto_discovery_summary?.mode ?? 'default' },
-      { item: '隐私模式', value: report.privacy_summary?.mode ?? 'limited' },
-      { item: '下一步', value: '自动探索页面、路由、控件和能力' },
-    ]);
-
-    lines.push('', `构建结果：${buildStatus}`, '');
-    appendTable(lines, [
-      { key: 'item', label: '分类', maxLength: 18 },
-      { key: 'count', label: '数量', maxLength: 12 },
-      { key: 'meaning', label: '说明', maxLength: 56 },
-    ], [
-      { item: '可用', count: enabled.length, meaning: '现在可用的低风险能力' },
-      { item: '有限/脱敏', count: limited.length, meaning: '只保存脱敏结构摘要' },
-      { item: '需确认', count: confirmation.length, meaning: '使用前需要明确确认' },
-      { item: '禁用/阻止', count: disabled.length, meaning: '高风险或受限能力保持关闭' },
-    ]);
-
-    lines.push('', '原因摘要');
-    appendTable(lines, [
-      { key: 'index', label: '#', maxLength: 4 },
-      { key: 'reason', label: '原因', maxLength: 72 },
-    ], partialReasons.slice(0, 6).map((reason, index) => ({ index: index + 1, reason })));
-    if (partialReasons.length > 6) {
-      lines.push(`  | … | 另有 ${partialReasons.length - 6} 条原因已写入报告 |`);
-    }
-
-    lines.push('', '授权状态');
-    appendTable(lines, [
-      { key: 'item', label: '项目', maxLength: 18 },
-      { key: 'status', label: '状态', maxLength: 56 },
-    ], [
-      { item: '授权边界', status: '已通过系统浏览器确认' },
-      { item: '保存材料', status: '仅保存脱敏结构摘要' },
-      { item: '敏感材料', status: '未保存 cookie、token、正文或账号私密内容' },
-    ]);
-
-    lines.push('', '自动探索');
-    appendTable(lines, [
-      { key: 'metric', label: '指标', maxLength: 18 },
-      { key: 'value', label: '数量', maxLength: 12 },
-      { key: 'note', label: '说明', maxLength: 42 },
-    ], [
-      { metric: '页面/区域', value: nodes.page_nodes ?? nodes.by_type?.page ?? 0, note: '页面和主要区域' },
-      { metric: '内容节点', value: nodes.content_nodes ?? 0, note: '内容结构摘要' },
-      { metric: '操作节点', value: nodes.operation_nodes ?? 0, note: '可识别操作入口' },
-      { metric: '弹窗节点', value: nodes.modal_nodes ?? 0, note: '弹窗或浮层' },
-      { metric: '路由模板', value: nodes.route_templates ?? 0, note: 'SPA/路由状态' },
-      { metric: '可操作元素', value: counts.actionable_elements ?? nodes.actionable_elements ?? 0, note: '按钮、链接、输入等' },
-      { metric: '用户可见能力', value: report.capability_summary?.user_visible ?? (enabled.length + limited.length + confirmation.length + disabled.length), note: '不含开发者候选' },
-      ...(debugCandidateCount > 0 ? [{ metric: '开发者候选', value: debugCandidateCount, note: '详见开发者详情报告' }] : []),
-    ]);
-
-    lines.push('', '能力证据');
-    appendTable(lines, [
-      { key: 'status', label: '状态', maxLength: 18 },
-      { key: 'count', label: '数量', maxLength: 12 },
-      { key: 'meaning', label: '说明', maxLength: 48 },
-    ], [
-      { status: '已验证', count: evidenceSummary.verified ?? 0, meaning: '有可验证证据' },
-      { status: '已推断', count: evidenceSummary.inferred ?? 0, meaning: '由结构或路由推断' },
-      { status: '需确认', count: evidenceSummary.confirmation_required ?? 0, meaning: '等待用户确认或补证据' },
-      { status: '已禁用', count: evidenceSummary.disabled ?? 0, meaning: '不进入默认执行路径' },
-    ]);
-
-    lines.push('', '能力摘要');
-    appendCapabilityList(lines, '可用能力', enabled, 'enabled', 12);
-    if (limited.length || Array.isArray(report.limited_capabilities) || Array.isArray(report.limited_enabled_capabilities)) {
-      appendCapabilityList(lines, '有限/脱敏能力', limited, 'limited', 8);
-    }
-    appendCapabilityList(lines, '需确认能力', confirmation, 'confirmation', 8);
-    appendCapabilityList(lines, '禁用/阻止能力', disabled, 'disabled', 8);
-
-    lines.push('', '结果');
-    appendTable(lines, [
-      { key: 'item', label: '项目', maxLength: 18 },
-      { key: 'value', label: '状态', maxLength: 112 },
-    ], [
-      { item: '构建完成', value: buildStatus },
-      { item: '验证', value: completionVerificationLabel(completion.verification_status) },
-      { item: '当前输出', value: `${completionCurrentOutputLabel(completion.current_updated)} current/` },
-      { item: '本地索引', value: `${completionRegistryLabel(completion.registry_registered)} registry.json` },
-      { item: 'Skill 标识', value: report.skill_id ?? result.skillId ?? '-' },
-      { item: '用户报告', value: displayReportPath(completion.report_path ?? userReportPath, options) },
-    ]);
-
-    lines.push('', '建议');
-    appendTable(lines, [
-      { key: 'purpose', label: '用途', maxLength: 28 },
-      { key: 'command', label: '命令', maxLength: 72 },
-    ], [
-      { purpose: '更多静态/结构探索', command: `siteforge build ${commandUrl} --auto --deep` },
-      { purpose: '脱敏网络摘要', command: `siteforge build ${commandUrl} --auto --deep --network` },
-      { purpose: '查看开发者详情', command: `siteforge build ${commandUrl} --report debug` },
-    ]);
-
-    const confirmationPaths = report.confirmation_paths ?? {};
-    const confirmationCommands = [
-      ['查看需确认能力', confirmationPaths.view_confirmation_required_command],
-      ['有限确认敏感只读', confirmationPaths.sensitive_read?.command],
-      ['确认草稿能力', confirmationPaths.draft_write?.command],
-      ['查看已禁用能力', confirmationPaths.disabled?.review_command],
-    ].filter(([, command]) => Boolean(command));
-    if (confirmationCommands.length) {
-      lines.push('', '统一确认流程');
-      appendTable(lines, [
-        { key: 'purpose', label: '用途', maxLength: 24 },
-        { key: 'command', label: '命令', maxLength: 76 },
-      ], confirmationCommands.map(([purpose, command]) => ({ purpose, command })));
-      lines.push('  注：保持禁用无需操作；私信详情、发送私信和账号写入不能通过普通确认启用。');
-    }
-
-    if (options.manual === true) {
-      lines.push('', '手动模式');
-      appendTable(lines, [
-        { key: 'item', label: '项目', maxLength: 18 },
-        { key: 'value', label: '说明', maxLength: 64 },
-      ], [
-        { item: '逐项手动补采', value: '已开启，仅 --manual 模式出现粘贴 URL 或输入可见条数提示' },
-      ]);
-    }
-
-    return `${lines.join('\n')}\n`;
-  }
-
-  const lines = [
-    `SiteForge 正在构建 ${host} Skill`,
-    '',
-    '预扫描',
-    `  ✓ 目标站点：${host}`,
-    `  ✓ 探索模式：${report.auto_discovery_summary?.mode ?? 'default'}`,
-    `  ✓ 隐私模式：${report.privacy_summary?.mode ?? 'limited'}`,
-    '  ✓ 接下来将自动探索页面、路由、控件和能力',
-    '',
-    `构建结果：${buildStatus}`,
-    '',
-    `${enabled.length} 个能力现在可用。`,
-    `${limited.length} 个能力只提供有限脱敏摘要。`,
-    `另有 ${confirmation.length} 个能力需要确认或只生成草稿。`,
-    `${disabled.length} 个高风险或受限能力保持禁用。`,
-    '',
-    '原因：',
-    ...partialReasons.map((reason) => `  - ${reason}`),
-    '',
-    '授权状态',
-    '  ✓ 已使用系统浏览器完成授权边界确认',
-    '  ✓ 只保存脱敏结构摘要',
-    '  ✓ 未保存 cookie、token、正文或账号私密内容',
-    '',
-    '自动探索',
-    `  ✓ 页面/区域：${nodes.page_nodes ?? nodes.by_type?.page ?? 0}`,
-    `  ✓ 内容节点：${nodes.content_nodes ?? 0}`,
-    `  ✓ 操作节点：${nodes.operation_nodes ?? 0}`,
-    `  ✓ 弹窗节点：${nodes.modal_nodes ?? 0}`,
-    `  ✓ 路由模板：${nodes.route_templates ?? 0}`,
-    `  ✓ 可操作元素：${counts.actionable_elements ?? nodes.actionable_elements ?? 0}`,
-    `  ✓ 用户可见能力：${report.capability_summary?.user_visible ?? (enabled.length + limited.length + confirmation.length + disabled.length)}`,
-    '',
-    '能力证据',
-    `  ✓ 已验证：${evidenceSummary.verified ?? 0}`,
-    `  ~ 已推断：${evidenceSummary.inferred ?? 0}`,
-    `  ! 需确认：${evidenceSummary.confirmation_required ?? 0}`,
-    `  × 已禁用：${evidenceSummary.disabled ?? 0}`,
-    '',
-    '能力摘要',
+  const htmlReportPath = result.artifacts?.['capability_intent_summary.html']
+    ?? report.reports?.capability_intent_summary_html
+    ?? completion.capability_intent_summary_html
+    ?? null;
+  const pageReconciliationReportPath = result.artifacts?.['page_reconciliation_report.json']
+    ?? report.reports?.page_reconciliation_report
+    ?? completion.page_reconciliation_report
+    ?? null;
+  const rawPageMaterialManifestPath = result.artifacts?.['raw_page_material_manifest.json']
+    ?? report.reports?.raw_page_material_manifest
+    ?? completion.raw_page_material_manifest
+    ?? null;
+  const staticLines = [
+    `SiteForge build: ${report.result_status ?? result.status ?? 'unknown'}`,
+    `URL: ${sanitizePublicUrl(url, { fallback: 'https://example.invalid/', keepPath: false })}`,
+    `Skill: ${skillId}`,
+    `Capabilities: enabled ${enabled.length} / limited ${limited.length} / confirmation ${confirmation.length} / disabled ${disabled.length}`,
+    `Coverage: public ${report.coverage?.public?.pages ?? 0} pages / authenticated ${report.coverage?.authenticated?.pages ?? 0} pages / overlay ${report.coverage?.overlay?.pagesRevisited ?? 0} pages`,
+    `Verification: ${completionVerificationLabel(completion.verification_status)}`,
+    `Registry: ${completionRegistryLabel(completion.registry_registered)}`,
+    `Report: ${displayReportPath(completion.report_path ?? rawUserReportPath, options)}`,
   ];
-
-  if (debugCandidateCount > 0) {
-    lines.splice(Math.max(0, lines.length - 2), 0, `  i 开发者候选：${debugCandidateCount} 项，详见开发者详情报告`);
+  if (htmlReportPath) {
+    staticLines.push(`HTML report: ${displayReportPath(htmlReportPath, options)}`);
   }
-
-  appendCapabilityList(lines, '可用能力', enabled, '✓', 12);
-  if (limited.length || Array.isArray(report.limited_capabilities) || Array.isArray(report.limited_enabled_capabilities)) {
-    appendCapabilityList(lines, '有限/脱敏能力', limited, '~', 8);
+  if (pageReconciliationReportPath) {
+    staticLines.push(`Page reconciliation report: ${displayReportPath(pageReconciliationReportPath, options)}`);
   }
-  appendCapabilityList(lines, '需确认能力', confirmation, '!', 8);
-  appendCapabilityList(lines, '禁用/阻止能力', disabled, '×', 8);
-
-  lines.push(
-    '',
-    '结果',
-    `  ✓ 构建完成：${buildStatus}`,
-    `  ✓ 验证：${completionVerificationLabel(completion.verification_status)}`,
-    `  ✓ 当前输出 current/: ${completionCurrentOutputLabel(completion.current_updated)}`,
-    `  ✓ 本地索引 registry.json: ${completionRegistryLabel(completion.registry_registered)}`,
-    `  Skill 标识: ${report.skill_id ?? result.skillId ?? '-'}`,
-    `  用户报告: ${displayReportPath(completion.report_path ?? userReportPath, options)}`,
-    '',
-    '建议',
-    `  siteforge build ${commandUrl} --auto --deep`,
-    '    用途：扩大静态和已授权结构探索；不会启用浏览器渲染采集。',
-    `  siteforge build ${commandUrl} --auto --deep --network`,
-    '    用途：只保存脱敏网络摘要；不会保存原始网络 trace。',
-    `  siteforge build ${commandUrl} --report debug`,
-    '    用途：查看开发者详情报告、门禁原因和被限制项。',
-  );
-
-  const confirmationPaths = report.confirmation_paths ?? {};
-  const confirmationCommands = [
-    confirmationPaths.view_confirmation_required_command,
-    confirmationPaths.sensitive_read?.command,
-    confirmationPaths.draft_write?.command,
-    confirmationPaths.disabled?.review_command,
-  ].filter(Boolean);
-  if (confirmationCommands.length) {
-    lines.push('', '统一确认流程');
-    for (const command of confirmationCommands) {
-      lines.push(`  ${command}`);
+  if (rawPageMaterialManifestPath) {
+    staticLines.push(`Public page material manifest: ${displayReportPath(rawPageMaterialManifestPath, options)}`);
+  }
+  if (failureReasons.length) {
+    staticLines.push(`Failure reason: ${failureReasons.join('; ')}`);
+  }
+  const authExplanation = Array.isArray(report.auth_explanation_zh)
+    ? report.auth_explanation_zh.filter(Boolean)
+    : [];
+  if (authExplanation.length) {
+    staticLines.push('Auth summary:');
+    for (const line of authExplanation.slice(0, 6)) {
+      staticLines.push(`  - ${line}`);
     }
-    lines.push('  保持禁用无需操作；私信详情、发送私信和账号写入不能通过普通确认启用。');
   }
-
-  if (options.manual === true) {
-    lines.push(
-      '',
-      '手动模式',
-      '  逐项手动补采已开启；只有 --manual 模式会要求粘贴最终 URL 或输入可见条数。',
-    );
-  }
-
-  return `${lines.join('\n')}\n`;
+  staticLines.push(
+    'Safety: public page HTML/DOM/body text may be saved as redacted build evidence; cookies, tokens, Authorization headers, browser profiles, storage material, raw network payloads, and private content are not saved.',
+  );
+  return `${staticLines.join('\n')}\n`;
 }

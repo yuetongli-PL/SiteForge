@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "SiteForge Browser Bridge",
+  "version": "0.1.0",
+  "description": "Submits sanitized SiteForge page structure summaries to a local one-time bridge.",
+  "permissions": [
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "bridge-content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

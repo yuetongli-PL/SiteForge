@@ -7,22 +7,58 @@ export const PUBLIC_BOOLEAN_BUILD_FLAGS = Object.freeze([
   '--manual',
   '--deep',
   '--network',
+  '--cookie-stdin',
+  '--robots-plan',
   '--login-enhanced',
   '--public-only',
+  '--render-js',
+  '--no-render-js',
   '--explain',
+  '--json',
+  '--quiet',
   '--verbose',
   '--debug',
+  '--no-color',
+  '--ascii',
+  '--compact',
+  '--no-tty',
+  '--force-tty',
 ]);
 
-export const PUBLIC_VALUE_BUILD_FLAGS = Object.freeze([
+export const PUBLIC_ENUM_VALUE_BUILD_FLAGS = Object.freeze([
   ['--privacy', Object.freeze(['limited', 'strict'])],
   ['--report', Object.freeze(['user', 'debug', 'both'])],
+  ['--auth', Object.freeze(['none', 'cookie', 'browser'])],
+  ['--progress', Object.freeze(['auto', 'interactive', 'plain'])],
+]);
+
+export const PUBLIC_STRING_VALUE_BUILD_FLAGS = Object.freeze([
+  '--browser-path',
+  '--timeout',
+  '--max-depth',
+  '--max-pages',
+  '--max-seeds',
+  '--max-sitemaps',
+  '--cookie-env',
+  '--cookie-file',
+  '--auth-check-url',
 ]);
 
 export const PUBLIC_BUILD_HELP_FLAGS = Object.freeze([
   ...PUBLIC_BOOLEAN_BUILD_FLAGS,
   '--privacy limited|strict',
   '--report user|debug|both',
+  '--auth none|cookie|browser',
+  '--progress auto|interactive|plain',
+  '--browser-path <path>',
+  '--timeout <ms>',
+  '--max-depth <n>',
+  '--max-pages <n>',
+  '--max-seeds <n>',
+  '--max-sitemaps <n>',
+  '--cookie-env <name>',
+  '--cookie-file <path>',
+  '--auth-check-url <url-or-path>',
 ]);
 
 export const PUBLIC_BUILD_HELP = `Usage:
@@ -31,19 +67,45 @@ export const PUBLIC_BUILD_HELP = `Usage:
 Examples:
   siteforge build https://example.com/
   siteforge build https://example.com/ --auto --privacy limited --report user
+  siteforge build https://example.com/ --auth cookie --cookie-env SITEFORGE_COOKIE --auth-check-url /account
+  siteforge build https://example.com/ --auth browser --auth-check-url /account
 
 Flags:
   --auto
-  --manual
+  --manual               Accepted for compatibility; build still starts immediately without prompts.
   --deep                 Broaden static and sanitized structure discovery.
   --network              Save only a sanitized network summary where available; raw traces are not persisted.
-  --login-enhanced       Explicitly request the default-browser login enhancement flow.
-  --public-only          Skip login enhancement and build public-only coverage.
+  --render-js            Enable rendered-page discovery.
+  --no-render-js         Disable rendered-page discovery.
+  --auth none|cookie|browser
+                          Use public-only, Cookie verification, or default-browser bridge auth.
+  --cookie-env <name>    Read Cookie header from an environment variable.
+  --cookie-file <path>   Read Cookie header or Netscape cookie jar from a file.
+  --cookie-stdin         Read Cookie header from stdin.
+  --robots-plan          On robots/setup block, print a machine-readable compliant remediation plan.
+  --auth-check-url <url-or-path>
+                          Same-site URL/path used to verify Cookie or browser bridge auth before authenticated crawl.
+  --login-enhanced       Compatibility alias for --auth cookie; still requires cookie input.
+  --public-only          Compatibility alias for --auth none.
   --privacy limited|strict
+  --browser-path <path>
+  --timeout <ms>
+  --max-depth <n>
+  --max-pages <n>
+  --max-seeds <n>
+  --max-sitemaps <n>
   --explain
   --report user|debug|both
+  --json
+  --quiet
   --verbose
   --debug
+  --no-color
+  --ascii
+  --compact
+  --progress auto|interactive|plain
+  --no-tty
+  --force-tty
 `;
 
 export function publicBooleanBuildFlagSet() {
@@ -51,5 +113,13 @@ export function publicBooleanBuildFlagSet() {
 }
 
 export function publicValueBuildFlagMap() {
-  return new Map(PUBLIC_VALUE_BUILD_FLAGS.map(([flag, values]) => [flag, [...values]]));
+  return publicEnumValueBuildFlagMap();
+}
+
+export function publicEnumValueBuildFlagMap() {
+  return new Map(PUBLIC_ENUM_VALUE_BUILD_FLAGS.map(([flag, values]) => [flag, [...values]]));
+}
+
+export function publicStringValueBuildFlagSet() {
+  return new Set(PUBLIC_STRING_VALUE_BUILD_FLAGS);
 }

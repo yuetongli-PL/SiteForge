@@ -30,6 +30,7 @@ export const SITEFORGE_REQUIRED_FINAL_ARTIFACTS = Object.freeze([
   'build_report.debug.json',
   'build_report.json',
   'capability_intent_summary.html',
+  'page_reconciliation_report.json',
 ]);
 
 export const SITEFORGE_REQUIRED_ARTIFACTS = SITEFORGE_REQUIRED_FINAL_ARTIFACTS;
@@ -39,6 +40,7 @@ export const SITEFORGE_USER_REPORT_MARKDOWN_FILE = 'build_report.user.md';
 export const SITEFORGE_DEBUG_REPORT_FILE = 'build_report.debug.json';
 export const SITEFORGE_INDEX_REPORT_FILE = 'build_report.json';
 export const SITEFORGE_CAPABILITY_INTENT_SUMMARY_HTML_FILE = 'capability_intent_summary.html';
+export const SITEFORGE_PAGE_RECONCILIATION_REPORT_FILE = 'page_reconciliation_report.json';
 export const SITEFORGE_USER_REPORT_JSON_ALIAS = 'user.json';
 export const SITEFORGE_USER_REPORT_MARKDOWN_ALIAS = 'user.md';
 export const SITEFORGE_DEBUG_REPORT_JSON_ALIAS = 'debug.json';

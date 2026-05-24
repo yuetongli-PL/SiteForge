@@ -935,6 +935,15 @@ export const REASON_CODE_CATALOG = Object.freeze([
     description: 'A SiteForge output validation gate failed without a more specific reason code.',
   }),
   defineReasonCode({
+    code: 'page-reconciliation-failed',
+    family: 'schema',
+    source: 'src/app/pipeline/build/pipeline.mjs',
+    retryable: false,
+    manualRecoveryNeeded: true,
+    artifactWriteAllowed: true,
+    description: 'Post-crawl page reconciliation found missing category coverage, challenge pages, or missing localized capability evidence.',
+  }),
+  defineReasonCode({
     code: 'artifact-missing',
     family: 'artifact',
     source: 'src/app/pipeline/build/output-validation.mjs',

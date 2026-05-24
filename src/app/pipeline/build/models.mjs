@@ -14,7 +14,7 @@ export const DEFAULT_BUILD_POLICY = Object.freeze({
   maxSeeds: 5000,
   maxSitemaps: 200,
   fetchDelayMs: 100,
-  fetchTimeoutMs: 10000,
+  fetchTimeoutMs: 20000,
   renderJs: false,
   interactive: true,
   captureNetwork: false,
@@ -62,7 +62,7 @@ export const TRACKING_QUERY_PARAMS = new Set([
 
 export const EVIDENCE_TYPES = new Set(['url', 'dom', 'text', 'network', 'form', 'screenshot', 'fixture']);
 export const SITE_NODE_TYPES = new Set(['page', 'route', 'route_template', 'content', 'operation', 'component', 'form', 'api', 'modal', 'tab', 'menu', 'pagination', 'workflow', 'entity', 'auth_state']);
-export const DISCOVERED_BY_VALUES = new Set(['sitemap', 'robots', 'html_link', 'rendered_link', 'js_route', 'interaction', 'form', 'network', 'pagination', 'fixture']);
+export const DISCOVERED_BY_VALUES = new Set(['sitemap', 'robots', 'html_link', 'rendered_link', 'js_route', 'interaction', 'form', 'network', 'pagination', 'fixture', 'authorized_source']);
 export const AFFORDANCE_KINDS = new Set(['link', 'button', 'form', 'input', 'select', 'api_call', 'route', 'menu', 'modal', 'download', 'upload']);
 export const AFFORDANCE_SAFETY_VALUES = new Set(['safe', 'read_only', 'requires_input', 'state_changing', 'destructive', 'payment']);
 export const CAPABILITY_ACTIONS = new Set(['view', 'search', 'filter', 'compare', 'create', 'submit', 'download', 'upload', 'book', 'purchase', 'login', 'register', 'manage', 'track', 'contact']);
@@ -296,10 +296,13 @@ export function assertCapability(capability) {
 }
 
 export function assertUserIntent(intent, capabilityIds) {
-  if (!intent?.id || !intent.capabilityId || !intent.skillId) {
-    throw new Error('UserIntent requires id, capabilityId, and skillId');
+  const graphOnly = intent?.intentSource === 'graph_element'
+    && intent.callable === false
+    && Boolean(intent.sourceNodeId);
+  if (!intent?.id || !intent.skillId || (!intent.capabilityId && !graphOnly)) {
+    throw new Error('UserIntent requires id, skillId, and either capabilityId or graph element source');
   }
-  if (!capabilityIds.has(intent.capabilityId)) {
+  if (intent.capabilityId && !capabilityIds.has(intent.capabilityId)) {
     throw new Error(`UserIntent ${intent.id} references missing capability ${intent.capabilityId}`);
   }
   if (!intent.canonicalUtterance || !Array.isArray(intent.utteranceExamples) || intent.utteranceExamples.length === 0) {

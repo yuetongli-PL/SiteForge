@@ -88,6 +88,89 @@
         "open-utility-page",
         "search-book"
       ],
+      "publicRouteTemplates": [
+        {
+          "id": "qidian-category-all",
+          "path": "/all/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-rank",
+          "path": "/rank/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-finished",
+          "path": "/finish/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-free",
+          "path": "/free/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-mm",
+          "path": "/mm/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-boy",
+          "path": "/boy/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-search-entry",
+          "path": "/soushu/",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-book-detail-template",
+          "pathTemplate": "/book/{bookId}/",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "qidian-chapter-template",
+          "pathTemplate": "/chapter/{bookId}/{chapterId}/",
+          "pageType": "chapter-page",
+          "capabilityFamilies": [
+            "navigate-to-chapter"
+          ],
+          "seedable": false
+        }
+      ],
       "safeActionKinds": [
         "navigate"
       ],

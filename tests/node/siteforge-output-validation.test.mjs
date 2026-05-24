@@ -27,6 +27,9 @@ import {
   testRobotsTxt,
   withTestSite,
 } from './helpers/test-site-server.mjs';
+import {
+  selectSiteForgePrimaryReason,
+} from '../../src/app/pipeline/build/output-validation.mjs';
 
 const NOW = '2026-05-16T00:00:00.000Z';
 
@@ -37,6 +40,30 @@ async function readJson(filePath) {
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
+
+test('page reconciliation failure takes priority over crawl warning reasons', () => {
+  const reason = selectSiteForgePrimaryReason([
+    { reasonCode: 'network-fetch-failed' },
+    { reasonCode: 'page-reconciliation-failed' },
+  ]);
+  assert.equal(reason.reasonCode, 'page-reconciliation-failed');
+  assert.equal(reason.failureClass, 'validation');
+});
+
+test('external access boundaries take priority over page reconciliation failures', () => {
+  const robotsReason = selectSiteForgePrimaryReason([
+    { reasonCode: 'page-reconciliation-failed' },
+    { reasonCode: 'robots-disallowed' },
+  ]);
+  assert.equal(robotsReason.reasonCode, 'robots-disallowed');
+
+  const challengeReason = selectSiteForgePrimaryReason([
+    { reasonCode: 'page-reconciliation-failed' },
+    { reasonCode: 'anti-crawl-verify' },
+  ]);
+  assert.equal(challengeReason.reasonCode, 'anti-crawl-verify');
+  assert.equal(challengeReason.failureClass, 'risk');
+});
 
 function createValidationFixture() {
   const evidence = [normalizeEvidenceObject({ type: 'url', source: 'http://127.0.0.1/simple-shop', confidence: 1 })];
@@ -144,13 +171,13 @@ function createValidationFixture() {
     informational: false,
     authRequired: false,
     sourceLayer: 'public',
-    requiredAuthLevel: 'public_verified',
-    observedAuthLevel: 'public_verified',
+    requiredEvidenceLevel: 'public_verified',
+    observedEvidenceLevel: 'public_verified',
     evidenceMatrix: {
       capabilityId,
       authRequired: false,
-      requiredAuthLevel: 'public_verified',
-      observedAuthLevel: 'public_verified',
+      requiredEvidenceLevel: 'public_verified',
+      observedEvidenceLevel: 'public_verified',
       sourceLayer: 'public',
       requiredEvidence: ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'risk_policy_passed'],
       observedEvidence: ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'risk_policy_passed'],
@@ -930,9 +957,16 @@ test('output validation rejects registry lookup misses', async () => {
 
 test('output validation rejects live builds without fetched robots.txt', async () => {
   const fixture = createValidationFixture();
-  fixture.context.source = { type: 'live_website' };
+  fixture.context.source = {
+    type: 'live_website',
+    requestedUrl: 'https://fixture.local/',
+    finalUrl: 'https://fixture.local/',
+    fetchedAt: NOW,
+  };
   fixture.stageResults.discoverSeeds.robots = {
     status: 'unavailable',
+    source: 'live_website',
+    sourceType: 'robots_txt',
     reason: 'Static fetch failed for https://fixture.local/robots.txt: HTTP 503',
     sitemaps: [],
     processedSitemaps: [],
@@ -973,6 +1007,7 @@ test('valid local HTTP build writes a verification report with populated gate co
     assert.equal(verificationReport.gates.requiredArtifacts.finalArtifacts.includes('verification_report.json'), true);
     assert.equal(verificationReport.gates.requiredArtifacts.deferredUntilBuildReport.includes('build_report.json'), true);
     assert.equal(verificationReport.gates.requiredArtifacts.deferredUntilBuildReport.includes('capability_intent_summary.html'), true);
+    assert.equal(verificationReport.gates.requiredArtifacts.deferredUntilBuildReport.includes('page_reconciliation_report.json'), true);
     assert.equal(verificationReport.gates.nodeCompleteness.graphExists, true);
     assert.equal(verificationReport.gates.nodeCompleteness.classifiedGraphExists, true);
     assert.equal(verificationReport.gates.nodeCompleteness.edgeRefsValid, true);
@@ -1005,7 +1040,7 @@ test('validation failure preserves artifacts without promoting current skill or 
     await withTestSite((rootUrl) => ({
       '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
     }), async (rootUrl) => {
-      let capturedError = null;
+      let capturedError = /** @type {any} */ (null);
       await assert.rejects(
         async () => runSiteForgeBuild(rootUrl, {
           cwd: workspace,
@@ -1014,8 +1049,8 @@ test('validation failure preserves artifacts without promoting current skill or 
           fetchDelayMs: 0,
         }),
         (error) => {
-          capturedError = error;
-          return /Static crawl produced no pages/u.test(error?.message ?? '');
+          capturedError = /** @type {any} */ (error);
+          return /Static crawl produced no pages/u.test(String(capturedError?.message ?? ''));
         },
       );
 

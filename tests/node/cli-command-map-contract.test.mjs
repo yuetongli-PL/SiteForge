@@ -34,7 +34,7 @@ test('command map generated public build commands resolve through the public CLI
 });
 
 test('command map refuses unsupported public build flags', () => {
-  for (const flag of ['--site', '--json', '--quiet', '--progress', '--capability']) {
+  for (const flag of ['--site', '--capability', '--cookie']) {
     assert.throws(
       () => downloadCliCommand({ input: 'https://example.com/', args: [flag, flag === '--site' ? 'x' : 'value'] }),
       new RegExp(flag, 'u'),

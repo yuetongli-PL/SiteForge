@@ -4620,12 +4620,11 @@ test('producer inventory observability coverage summarizes profiled lifecycle pr
   assert.equal(item.writesArtifacts, false);
   assert.equal(item.writesLogs, false);
   for (const eventType of [
-    'capture.manifest.written',
-    'capture.api_candidates.written',
     'api.catalog.collection.written',
     'api.catalog.index.written',
     'api.catalog.schema_incompatible',
     'api.catalog.upgrade_decision.written',
+    'execution.layer.consumer.receipt',
     'social.action.risk_blocked',
     'site.health.recovery.evaluated',
     'site.health.recovery.action.planned',

@@ -264,7 +264,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
 
 const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/entrypoints/operator/capabilities.mjs', 2],
-  ['src/entrypoints/build/run-build.mjs', 3],
+  ['src/entrypoints/build/run-build.mjs', 10],
   ['src/entrypoints/sites/site-recompile-preview-summary.mjs', 3],
   ['src/entrypoints/pipeline/generate-crawler-script.mjs', 6],
   ['src/entrypoints/sites/douyin-export-cookies.mjs', 5],

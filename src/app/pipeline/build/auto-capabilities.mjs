@@ -634,6 +634,33 @@ function selectRouteStateNode(nodes = /** @type {any[]} */ ([])) {
     .map((entry) => entry.node)[0] ?? nodes[0] ?? null;
 }
 
+function isSocialAutoCapabilityContext(context = /** @type {any} */ ({}), graph = /** @type {any} */ ({})) {
+  const policy = context?.setupProfile?.knownSitePolicy ?? {};
+  const policyText = [
+    policy.siteArchetype,
+    policy.primaryArchetype,
+    policy.adapterId,
+    policy.siteKey,
+    ...(policy.capabilityFamilies ?? []),
+    ...(policy.supportedIntents ?? []),
+  ].join(' ').toLowerCase();
+  if (/social|timeline|post|profile-content|search-posts|query-social/u.test(policyText)) {
+    return true;
+  }
+  if (/chapter-content|open-book|open-chapter|search-book|navigate-to-chapter/u.test(policyText)) {
+    return false;
+  }
+  return (graph?.nodes ?? []).some((node) => {
+    const text = [
+      node.classification,
+      node.pageType,
+      node.routeState?.source,
+      node.routeState?.pageKind,
+    ].join(' ').toLowerCase();
+    return /known-social-route-state-model|timeline|post_detail|notifications|bookmarks|direct_message|following_list/u.test(text);
+  });
+}
+
 const CAPABILITY_DEFINITIONS = Object.freeze([
   {
     name: 'read recommended timeline',
@@ -1293,6 +1320,9 @@ export function buildAutoDiscoveredCapabilities({
   buildExecutionPlan,
 }) {
   const privacy = context?.options?.privacy ?? context?.options?.privacyMode ?? 'limited';
+  if (!isSocialAutoCapabilityContext(context, graph)) {
+    return [];
+  }
   if (!graph?.nodes?.some((node) => node.routeState?.source === 'known-social-route-state-model' || node.routeState?.stateId)) {
     return [];
   }

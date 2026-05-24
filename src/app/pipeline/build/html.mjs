@@ -103,6 +103,12 @@ function staticHtmlDiagnostics(html, {
   if (/\bid\s*=\s*["']?(?:app|root|__next|__nuxt|gatsby-focus-wrapper)\b/iu.test(raw)) {
     dynamicSignals.push('app-shell-root');
   }
+  if (/probe\.js|challenge|captcha|verify you are human|checking your browser|security check|waf|anti[-\s]?bot/iu.test(`${raw} ${visibleText} ${noscriptText}`)) {
+    dynamicSignals.push('probe-or-challenge-signal');
+  }
+  if (/login|sign in|signin|log in|account required|please authenticate/iu.test(`${visibleText} ${noscriptText}`)) {
+    dynamicSignals.push('login-like-copy');
+  }
 
   const staticSignalCount = Number(Boolean(title))
     + Number(Boolean(summaryText && summaryText.length >= 40))
@@ -114,6 +120,24 @@ function staticHtmlDiagnostics(html, {
     : staticSignalCount === 0
       ? 'empty'
       : 'present';
+  const publicEvidenceStatus = staticEvidenceStatus === 'present'
+    ? 'public_static_structured'
+    : dynamicSignals.includes('probe-or-challenge-signal')
+      ? 'public_probe_or_challenge'
+      : dynamicSignals.includes('login-like-copy')
+        ? 'auth_required'
+        : staticEvidenceStatus === 'dynamic_shell'
+          ? 'public_dynamic_shell'
+          : 'public_static_empty';
+  const blockerCategory = publicEvidenceStatus === 'public_probe_or_challenge'
+    ? 'challenge_or_probe'
+    : publicEvidenceStatus === 'auth_required'
+      ? 'auth_required'
+      : publicEvidenceStatus === 'public_dynamic_shell'
+        ? 'dynamic_render_required'
+        : publicEvidenceStatus === 'public_static_empty'
+          ? 'empty_static_response'
+          : null;
   const warnings = /** @type {any[]} */ ([]);
   if (staticEvidenceStatus === 'dynamic_shell') {
     warnings.push('Static parser found only weak shell evidence and dynamic-site signals; browser-rendered crawl may be required.');
@@ -123,6 +147,16 @@ function staticHtmlDiagnostics(html, {
   }
   return {
     staticEvidenceStatus,
+    publicEvidenceStatus,
+    blockerCategory,
+    primaryBlocker: blockerCategory,
+    recommendedNextStep: blockerCategory === 'dynamic_render_required'
+      ? 'rerun_with_render_js'
+      : blockerCategory === 'challenge_or_probe'
+        ? 'do_not_bypass_challenge'
+        : blockerCategory === 'auth_required'
+          ? 'provide_cookie_auth_if_user_allows'
+          : null,
     staticSignalCount,
     visibleTextLength: visibleText.length,
     scriptCount,
@@ -247,12 +281,20 @@ export function extractLinks(html, baseUrl) {
       continue;
     }
     const attrs = sanitizeAttributes(rawAttrs, baseUrl, 'a');
-    links.push({
+    const label = sanitizeArtifactText(match[2], 160) || sanitizeArtifactText(rawAttrs['aria-label'] ?? rawAttrs.title ?? '', 160);
+    const link = {
       href,
       rawHref: attrs.href,
-      label: sanitizeArtifactText(match[2], 160) || sanitizeArtifactText(rawAttrs['aria-label'] ?? rawAttrs.title ?? '', 160),
+      label,
       selector: selectorFor('a', attrs, index),
       attrs,
+    };
+    const semanticKind = semanticKindForLink(link);
+    links.push({
+      ...link,
+      semanticKind,
+      structureType: structureTypeForSemanticKind(semanticKind),
+      routeTemplate: routeTemplateForUrlMaybe(href),
     });
     index += 1;
   }
@@ -325,6 +367,292 @@ function inferFormLabel({ attrs, body, action }) {
   return 'Form';
 }
 
+function routeTemplateForUrlMaybe(value) {
+  try {
+    return routePatternForUrl(value);
+  } catch {
+    return null;
+  }
+}
+
+function semanticKindForLink(link = /** @type {any} */ ({})) {
+  const text = [
+    link.href,
+    link.label,
+    link.attrs?.class,
+    link.attrs?.id,
+    link.attrs?.role,
+  ].join(' ').toLowerCase();
+  if (/搜索|搜书|检索/u.test(text)) return 'search';
+  if (/分类|类别|频道|书库|书城/u.test(text)) return 'category';
+  if (/标签|话题/u.test(text)) return 'tag';
+  if (/排行|榜单|热门|最新|新书/u.test(text)) return 'ranking';
+  if (/文章|资讯|新闻/u.test(text)) return 'article';
+  if (/小说|书籍|作品|章节|阅读/u.test(text)) return 'work';
+  if (/作者|用户|作家|主页/u.test(text)) return 'profile';
+  if (/详情|目录|书页/u.test(text)) return 'detail';
+  if (/search|query|keyword|find|搜索|搜书|检索/u.test(text)) return 'search';
+  if (/categor|genre|channel|section|classify|\bcat\b|分类|类别|频道|书库|书城/u.test(text)) return 'category';
+  if (/tag|topic|标签|话题/u.test(text)) return 'tag';
+  if (/rank|ranking|top|hot|popular|trending|latest|new|recent|排行|榜单|热门|最新|新书/u.test(text)) return 'ranking';
+  if (/repository|repositories|\brepos?\b|github|gitlab|source-code|source code|open-source|open source|code search/u.test(text)) return 'repository';
+  if (/article|story|news|post|blog|文章|资讯|新闻/u.test(text)) return 'article';
+  if (/\b(?:book|books|novel|fiction|chapter|reader|work|works)\b|小说|书籍|作品|章节|阅读/u.test(text)) return 'work';
+  if (/video|watch|movie|media/u.test(text)) return 'media';
+  if (/author|profile|user|org|organization|people|actor|model|star|作者|用户|作家/u.test(text)) return 'profile';
+  if (/detail|item|product|content|详情|目录|书页/u.test(text)) return 'detail';
+  return 'navigation';
+}
+
+function structureTypeForSemanticKind(kind) {
+  if (kind === 'search') return 'search_route_group';
+  if (kind === 'category') return 'category_link_group';
+  if (kind === 'tag') return 'tag_link_group';
+  if (kind === 'ranking') return 'ranking_link_group';
+  if (kind === 'following_list' || kind === 'followed_channel') return 'following_list_link_group';
+  if (kind === 'repository') return 'repository_link_group';
+  if (kind === 'article') return 'article_link_group';
+  if (kind === 'work') return 'work_link_group';
+  if (kind === 'media') return 'media_link_group';
+  if (kind === 'profile') return 'profile_link_group';
+  if (kind === 'detail') return 'detail_link_group';
+  return 'navigation_link_group';
+}
+
+function elementRoleForSemanticKind(kind) {
+  if (kind === 'search') return 'search';
+  if (kind === 'category') return 'category';
+  if (kind === 'tag') return 'tag';
+  if (kind === 'ranking') return 'ranking';
+  if (kind === 'following_list' || kind === 'followed_channel') return 'following_list';
+  if (kind === 'repository') return 'repository';
+  if (kind === 'article') return 'article';
+  if (kind === 'work') return 'work';
+  if (kind === 'media') return 'media';
+  if (kind === 'profile') return 'profile';
+  if (kind === 'detail') return 'detail';
+  return 'navigation';
+}
+
+export function extractElementInstances({
+  links = /** @type {any[]} */ ([]),
+  forms = /** @type {any[]} */ ([]),
+  controls = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
+  const instances = /** @type {any[]} */ ([]);
+  for (const [index, link] of links.entries()) {
+    const semanticKind = link.semanticKind ?? semanticKindForLink(link);
+    const label = sanitizeArtifactText(link.label, 100) || `link-${index + 1}`;
+    instances.push({
+      kind: 'link',
+      role: elementRoleForSemanticKind(semanticKind),
+      semanticKind,
+      structureType: link.structureType ?? structureTypeForSemanticKind(semanticKind),
+      label,
+      selector: link.selector,
+      href: link.href,
+      routeTemplate: link.routeTemplate ?? routeTemplateForUrlMaybe(link.href),
+      evidenceStatus: 'element_instance_summary_present',
+      evidenceLevel: 'public_verified',
+      rawDomPersisted: false,
+      rawHtmlPersisted: false,
+      bodyTextPersisted: false,
+    });
+  }
+  for (const [index, form] of forms.entries()) {
+    const label = sanitizeArtifactText(form.label, 100) || `form-${index + 1}`;
+    instances.push({
+      kind: 'form',
+      role: /search|query|keyword|find/u.test(`${label} ${form.action ?? ''}`.toLowerCase()) ? 'search' : 'form',
+      semanticKind: /search|query|keyword|find/u.test(`${label} ${form.action ?? ''}`.toLowerCase()) ? 'search' : 'navigation',
+      structureType: /search|query|keyword|find/u.test(`${label} ${form.action ?? ''}`.toLowerCase()) ? 'search_control_group' : 'form_control_group',
+      label,
+      selector: form.selector,
+      method: form.method,
+      action: form.action,
+      routeTemplate: routeTemplateForUrlMaybe(form.action),
+      inputCount: Array.isArray(form.inputs) ? form.inputs.length : 0,
+      evidenceStatus: 'element_instance_summary_present',
+      evidenceLevel: 'public_verified',
+      rawDomPersisted: false,
+      rawHtmlPersisted: false,
+      bodyTextPersisted: false,
+    });
+  }
+  for (const [index, control] of controls.entries()) {
+    const label = sanitizeArtifactText(control.label ?? control.name, 100) || `control-${index + 1}`;
+    instances.push({
+      kind: control.kind ?? 'control',
+      role: /search|query|keyword|find/u.test(`${label} ${control.name ?? ''}`.toLowerCase()) ? 'search' : 'control',
+      semanticKind: /search|query|keyword|find/u.test(`${label} ${control.name ?? ''}`.toLowerCase()) ? 'search' : 'navigation',
+      structureType: /search|query|keyword|find/u.test(`${label} ${control.name ?? ''}`.toLowerCase()) ? 'search_control' : 'control',
+      label,
+      selector: control.selector,
+      controlType: control.type,
+      evidenceStatus: 'element_instance_summary_present',
+      evidenceLevel: 'public_verified',
+      rawDomPersisted: false,
+      rawHtmlPersisted: false,
+      bodyTextPersisted: false,
+    });
+  }
+  return instances.slice(0, 160);
+}
+
+function repeatedRouteTemplateGroups(links = /** @type {any[]} */ ([])) {
+  const groups = new Map();
+  for (const link of links) {
+    const template = routeTemplateForUrlMaybe(link.href);
+    if (!template || template === '/') {
+      continue;
+    }
+    const current = groups.get(template) ?? [];
+    current.push(link);
+    groups.set(template, current);
+  }
+  return [...groups.entries()]
+    .filter(([, groupLinks]) => groupLinks.length >= 2)
+    .sort(([leftTemplate, leftLinks], [rightTemplate, rightLinks]) => (
+      rightLinks.length - leftLinks.length || leftTemplate.localeCompare(rightTemplate, 'en')
+    ));
+}
+
+export function extractStructureSummary(html, baseUrl, {
+  links = /** @type {any[]} */ ([]),
+  forms = /** @type {any[]} */ ([]),
+  controls = /** @type {any[]} */ ([]),
+} = /** @type {any} */ ({})) {
+  const raw = String(html ?? '').replace(/<script\b[\s\S]*?<\/script>/giu, ' ').replace(/<style\b[\s\S]*?<\/style>/giu, ' ');
+  const visibleText = stripHtml(raw);
+  const listItemCount = countMatches(raw, /<li\b/giu)
+    + countMatches(raw, /<article\b/giu)
+    + countMatches(raw, /<tr\b/giu)
+    + countMatches(raw, /\brole\s*=\s*["']?listitem\b/giu)
+    + countMatches(raw, /\bclass\s*=\s*["'][^"']*(?:card|item|entry|result|repo|repository|book|work|article|story|product|video|media)[^"']*["']/giu);
+  const repeatedTemplates = repeatedRouteTemplateGroups(links);
+  const routeTemplates = [...new Set([
+    ...links.map((link) => routeTemplateForUrlMaybe(link.href)).filter(Boolean),
+    ...forms.map((form) => routeTemplateForUrlMaybe(form.action)).filter(Boolean),
+  ])].slice(0, 80).sort((left, right) => left.localeCompare(right, 'en'));
+  const listPresent = listItemCount >= 3 || repeatedTemplates.length > 0 || /<ul\b|<ol\b|<table\b|\brole\s*=\s*["']?list\b/iu.test(raw);
+  const emptyStatePresent = /no results|nothing found|empty state|no items|暂无|没有结果|无结果/u.test(visibleText);
+  const visibleItemCount = Math.min(200, Math.max(
+    listItemCount,
+    repeatedTemplates.reduce((sum, [, groupLinks]) => sum + groupLinks.length, 0),
+  ));
+  const structureItems = /** @type {any[]} */ ([]);
+  const addItem = ({
+    structureType,
+    nodeType = 'content',
+    itemLinks = /** @type {any[]} */ ([]),
+    count = itemLinks.length,
+    confidence = 0.68,
+  }) => {
+    if (!structureType || count <= 0) {
+      return;
+    }
+    const templates = [...new Set(itemLinks.map((link) => routeTemplateForUrlMaybe(link.href)).filter(Boolean))]
+      .slice(0, 20)
+      .sort((left, right) => left.localeCompare(right, 'en'));
+    const labels = itemLinks.map((link) => sanitizeArtifactText(link.label, 48)).filter(Boolean).slice(0, 4);
+    structureItems.push({
+      nodeType,
+      structureType,
+      visibleItemCount: Math.min(200, count),
+      listPresent: count >= 2 || /list|group|collection|navigation/u.test(structureType),
+      emptyStatePresent: false,
+      routeTemplates: templates,
+      labelSummary: labels.length ? `${structureType}: ${labels.join(', ')}` : structureType,
+      evidenceLevel: 'public_verified',
+      evidenceStatus: 'structure_summary_present',
+      riskLevel: 'read_public_low',
+      confidence,
+    });
+  };
+
+  if (links.length >= 5) {
+    addItem({
+      structureType: 'navigation_link_group',
+      itemLinks: links.slice(0, 40),
+      count: links.length,
+      confidence: 0.7,
+    });
+  }
+
+  for (const [template, itemLinks] of repeatedTemplates.slice(0, 12)) {
+    addItem({
+      structureType: template.includes(':id') ? 'detail_link_group' : 'collection_link_group',
+      itemLinks,
+      count: itemLinks.length,
+      confidence: 0.74,
+    });
+  }
+
+  const linksByKind = new Map();
+  for (const link of links) {
+    const kind = semanticKindForLink(link);
+    const group = linksByKind.get(kind) ?? [];
+    group.push(link);
+    linksByKind.set(kind, group);
+  }
+  for (const [kind, itemLinks] of [...linksByKind.entries()].sort(([left], [right]) => left.localeCompare(right, 'en'))) {
+    if (kind === 'navigation' || itemLinks.length < 2) {
+      continue;
+    }
+    addItem({
+      structureType: structureTypeForSemanticKind(kind),
+      nodeType: kind === 'search' ? 'operation' : 'content',
+      itemLinks,
+      count: itemLinks.length,
+      confidence: 0.72,
+    });
+  }
+
+  const searchLikeControls = [
+    ...forms.filter((form) => /search|query|keyword|find/u.test(`${form.label ?? ''} ${form.action ?? ''} ${form.textSummary ?? ''}`.toLowerCase())),
+    ...controls.filter((control) => /search|query|keyword|find/u.test(`${control.label ?? ''} ${control.name ?? ''} ${control.type ?? ''}`.toLowerCase())),
+  ];
+  if (searchLikeControls.length) {
+    structureItems.push({
+      nodeType: 'operation',
+      structureType: 'search_control_group',
+      visibleItemCount: searchLikeControls.length,
+      listPresent: false,
+      emptyStatePresent: false,
+      routeTemplates: [],
+      labelSummary: 'search controls',
+      evidenceLevel: 'public_verified',
+      evidenceStatus: 'structure_summary_present',
+      riskLevel: 'read_public_low',
+      confidence: 0.76,
+    });
+  }
+
+  if (listPresent && !structureItems.some((item) => item.structureType === 'static_list_summary')) {
+    structureItems.push({
+      nodeType: 'content',
+      structureType: 'static_list_summary',
+      visibleItemCount,
+      listPresent: true,
+      emptyStatePresent,
+      routeTemplates: routeTemplates.slice(0, 20),
+      labelSummary: `static list summary; items=${visibleItemCount}`,
+      evidenceLevel: 'public_verified',
+      evidenceStatus: 'structure_summary_present',
+      riskLevel: 'read_public_low',
+      confidence: 0.66,
+    });
+  }
+
+  return {
+    listPresent,
+    visibleItemCount,
+    emptyStatePresent,
+    routeTemplates,
+    structureItems: structureItems.slice(0, 40),
+  };
+}
+
 export function parseHtmlDocument(html, baseUrl) {
   const title = extractTitle(html);
   const canonicalUrl = extractCanonicalUrl(html, baseUrl);
@@ -337,6 +665,8 @@ export function parseHtmlDocument(html, baseUrl) {
   ]));
   const controls = allControls.filter((control) => !formControlSelectors.has(control.selector));
   const summary = textSummary(html);
+  const structureSummary = extractStructureSummary(html, baseUrl, { links, forms, controls });
+  const elementInstances = extractElementInstances({ links, forms, controls });
   return {
     title,
     canonicalUrl,
@@ -344,6 +674,12 @@ export function parseHtmlDocument(html, baseUrl) {
     links,
     forms,
     controls,
+    listPresent: structureSummary.listPresent,
+    visibleItemCount: structureSummary.visibleItemCount,
+    emptyStatePresent: structureSummary.emptyStatePresent,
+    routeTemplates: structureSummary.routeTemplates,
+    structureItems: structureSummary.structureItems,
+    elementInstances,
     diagnostics: staticHtmlDiagnostics(html, {
       title,
       textSummary: summary,
@@ -412,6 +748,13 @@ export function parseRobotsPolicy(robotsText, baseUrl, userAgent = 'SiteForgeBui
       currentGroup.agents.push(directive.value.toLowerCase());
       continue;
     }
+    if (directive.name === 'crawl-delay' && currentGroup) {
+      const seconds = Number.parseFloat(directive.value);
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        currentGroup.crawlDelaySeconds = seconds;
+      }
+      continue;
+    }
     if ((directive.name === 'allow' || directive.name === 'disallow') && currentGroup) {
       currentGroup.rules.push({
         type: directive.name,
@@ -434,14 +777,31 @@ export function parseRobotsPolicy(robotsText, baseUrl, userAgent = 'SiteForgeBui
   };
 }
 
-function matchingRobotsRules(policy, userAgent) {
+export function selectRobotsGroups(policy, userAgent) {
   const agent = String(userAgent ?? policy?.userAgent ?? 'SiteForgeBuildStaticCrawler').toLowerCase();
   const groups = Array.isArray(policy?.groups) ? policy.groups : [];
   const exact = groups.filter((group) => (group.agents ?? []).some((candidate) => (
     candidate !== '*' && (agent === candidate || agent.includes(candidate) || candidate.includes(agent))
   )));
-  const selected = exact.length ? exact : groups.filter((group) => (group.agents ?? []).includes('*'));
-  return selected.flatMap((group) => group.rules ?? []);
+  if (exact.length) {
+    return {
+      userAgent: agent,
+      groups: exact,
+      matchType: 'exact',
+      fallbackToWildcard: false,
+    };
+  }
+  const wildcard = groups.filter((group) => (group.agents ?? []).includes('*'));
+  return {
+    userAgent: agent,
+    groups: wildcard,
+    matchType: wildcard.length ? 'wildcard' : 'none',
+    fallbackToWildcard: wildcard.length > 0,
+  };
+}
+
+function matchingRobotsRules(policy, userAgent) {
+  return selectRobotsGroups(policy, userAgent).groups.flatMap((group) => group.rules ?? []);
 }
 
 function robotsPatternToRegex(pattern) {
@@ -454,19 +814,36 @@ function robotsPatternToRegex(pattern) {
   return new RegExp(`^${escaped}`, 'u');
 }
 
-export function isUrlAllowedByRobots(urlValue, policy, userAgent = undefined) {
+export function robotsDecisionForUrl(urlValue, policy, userAgent = undefined) {
   if (!policy) {
-    return true;
+    return {
+      allowed: true,
+      matchedRule: null,
+      path: null,
+      userAgent: String(userAgent ?? 'SiteForgeBuildStaticCrawler').toLowerCase(),
+      matchType: 'none',
+      fallbackToWildcard: false,
+      rulePrecedence: 'longest_path_then_allow_tie',
+    };
   }
   let parsed;
   try {
     parsed = new URL(urlValue, policy.baseUrl);
   } catch {
-    return false;
+    return {
+      allowed: false,
+      matchedRule: null,
+      path: null,
+      userAgent: String(userAgent ?? policy?.userAgent ?? 'SiteForgeBuildStaticCrawler').toLowerCase(),
+      matchType: 'invalid_url',
+      fallbackToWildcard: false,
+      rulePrecedence: 'longest_path_then_allow_tie',
+    };
   }
   const pathAndSearch = `${parsed.pathname}${parsed.search}`;
   let bestRule = null;
-  for (const rule of matchingRobotsRules(policy, userAgent)) {
+  const selected = selectRobotsGroups(policy, userAgent);
+  for (const rule of selected.groups.flatMap((group) => group.rules ?? [])) {
     const rulePath = String(rule.path ?? '');
     if (!rulePath) {
       continue;
@@ -482,7 +859,25 @@ export function isUrlAllowedByRobots(urlValue, policy, userAgent = undefined) {
       bestRule = rule;
     }
   }
-  return bestRule?.type !== 'disallow';
+  return {
+    allowed: bestRule?.type !== 'disallow',
+    matchedRule: bestRule
+      ? {
+        type: bestRule.type,
+        path: bestRule.path,
+        length: String(bestRule.path ?? '').length,
+      }
+      : null,
+    path: pathAndSearch,
+    userAgent: selected.userAgent,
+    matchType: selected.matchType,
+    fallbackToWildcard: selected.fallbackToWildcard,
+    rulePrecedence: 'longest_path_then_allow_tie',
+  };
+}
+
+export function isUrlAllowedByRobots(urlValue, policy, userAgent = undefined) {
+  return robotsDecisionForUrl(urlValue, policy, userAgent).allowed;
 }
 
 export function parseSitemapUrls(sitemapText, baseUrl) {

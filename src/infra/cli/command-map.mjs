@@ -1,14 +1,16 @@
 // @ts-check
 
 import {
+  publicEnumValueBuildFlagMap,
   publicBooleanBuildFlagSet,
-  publicValueBuildFlagMap,
+  publicStringValueBuildFlagSet,
 } from './public-build-contract.mjs';
 
 export const UNIFIED_CLI_ENTRYPOINT = 'siteforge';
 
 const PUBLIC_BOOLEAN_BUILD_FLAGS = publicBooleanBuildFlagSet();
-const PUBLIC_VALUE_BUILD_FLAGS = publicValueBuildFlagMap();
+const PUBLIC_ENUM_VALUE_BUILD_FLAGS = publicEnumValueBuildFlagMap();
+const PUBLIC_STRING_VALUE_BUILD_FLAGS = publicStringValueBuildFlagSet();
 
 function normalizeScriptPath(scriptPath) {
   return String(scriptPath ?? '').replace(/\\/gu, '/').replace(/^\.\//u, '');
@@ -71,7 +73,7 @@ function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
       }
       continue;
     }
-    const allowedValues = PUBLIC_VALUE_BUILD_FLAGS.get(flagName);
+    const allowedValues = PUBLIC_ENUM_VALUE_BUILD_FLAGS.get(flagName);
     if (allowedValues) {
       const inlineValue = token.includes('=') ? token.slice(flagName.length + 1) : null;
       const value = inlineValue ?? args[index + 1];
@@ -80,6 +82,17 @@ function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
       }
       if (!allowedValues.includes(String(value))) {
         throw new Error(`${flagName} must be one of: ${allowedValues.join(', ')}`);
+      }
+      if (inlineValue === null) {
+        index += 1;
+      }
+      continue;
+    }
+    if (PUBLIC_STRING_VALUE_BUILD_FLAGS.has(flagName)) {
+      const inlineValue = token.includes('=') ? token.slice(flagName.length + 1) : null;
+      const value = inlineValue ?? args[index + 1];
+      if (!value || String(value).startsWith('--')) {
+        throw new Error(`Missing value for public build flag: ${flagName}`);
       }
       if (inlineValue === null) {
         index += 1;

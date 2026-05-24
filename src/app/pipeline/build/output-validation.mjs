@@ -49,6 +49,9 @@ function failureClassForReasonCode(reasonCode, family) {
   if (reasonCode === 'dynamic-unsupported') {
     return 'unsupported';
   }
+  if (reasonCode === 'page-reconciliation-failed') {
+    return 'validation';
+  }
   if (['empty-seed-set', 'empty-crawl', 'empty-graph'].includes(reasonCode)) {
     return 'discovery';
   }
@@ -99,6 +102,9 @@ export function classifySiteForgeWarning(message) {
   if (/Browser-rendered crawl is unavailable|Browser-rendered crawl is not part|Controlled-browser rendered crawl is not used|Network instrumentation is unavailable|Network summary was not requested|raw network tracing is not part|dynamic.*unsupported|rendered.*unavailable/iu.test(text)) {
     return normalizeSiteForgeReason('dynamic-unsupported');
   }
+  if (/page[- ]reconciliation|Page reconciliation failed/iu.test(text)) {
+    return normalizeSiteForgeReason('page-reconciliation-failed');
+  }
   return null;
 }
 
@@ -128,8 +134,12 @@ export function classifySiteForgeValidationError(error) {
 }
 
 const REASON_PRIORITY = Object.freeze([
-  'network-fetch-failed',
   'robots-disallowed',
+  'robots-unavailable',
+  'blocked-by-cloudflare-challenge',
+  'anti-crawl-verify',
+  'page-reconciliation-failed',
+  'network-fetch-failed',
   'empty-seed-set',
   'empty-crawl',
   'empty-graph',
@@ -137,7 +147,6 @@ const REASON_PRIORITY = Object.freeze([
   'capability-evidence-required',
   'artifact-missing',
   'validation-failed',
-  'robots-unavailable',
   'dynamic-unsupported',
 ]);
 
@@ -215,6 +224,14 @@ function urlPath(urlValue) {
   }
 }
 
+function isAuthorizedSourceRecord(value = /** @type {any} */ ({})) {
+  return value?.sourceLayer === 'authorized_source'
+    || value?.sourceAuthority
+    || value?.sourceAuthorityId
+    || value?.collection?.source === 'authorized_source_sanitized_summary'
+    || value?.discoveredBy === 'authorized_source';
+}
+
 function validateGraphDocument(document, {
   label,
   context,
@@ -287,6 +304,9 @@ function validateGraphDocument(document, {
   let robotsAllowed = true;
   if (robotsPolicy?.disallowPaths?.length) {
     for (const node of nodes) {
+      if (isAuthorizedSourceRecord(node)) {
+        continue;
+      }
       const nodeUrl = node?.normalizedUrl ?? node?.url;
       if (!nodeUrl) {
         continue;
@@ -542,14 +562,14 @@ function validateCapabilityMap({
           if (!canRunAuthenticatedLayer(context?.authStateReport)) {
             acc.fail('capabilities', 'capability.active_missing_auth_state', `Login capability ${capability.id} is active without verified auth state.`, {
               capabilityId: capability.id,
-              authLevel: context?.authStateReport?.authLevel ?? null,
+              authVerificationStatus: context?.authStateReport?.authVerificationStatus ?? null,
             });
           }
-          if (evidenceLevelRank(matrix.observedAuthLevel) < evidenceLevelRank(matrix.requiredAuthLevel)) {
+          if (evidenceLevelRank(matrix.observedEvidenceLevel) < evidenceLevelRank(matrix.requiredEvidenceLevel)) {
             acc.fail('capabilities', 'capability.auth_evidence_too_low', `Login capability ${capability.id} lacks required capability evidence level.`, {
               capabilityId: capability.id,
-              requiredAuthLevel: matrix.requiredAuthLevel ?? null,
-              observedAuthLevel: matrix.observedAuthLevel ?? null,
+              requiredEvidenceLevel: matrix.requiredEvidenceLevel ?? null,
+              observedEvidenceLevel: matrix.observedEvidenceLevel ?? null,
             });
           }
         }
@@ -834,7 +854,8 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
   const crawlStatic = getStage(stageResults, 'crawlStatic');
   const discoverSeeds = getStage(stageResults, 'discoverSeeds');
   ingestStageWarnings(stageResults, acc);
-  if (!arrayOf(discoverSeeds.seeds).length) {
+  const authorizedSourcePages = arrayOf(crawlStatic.pages).filter(isAuthorizedSourceRecord);
+  if (!arrayOf(discoverSeeds.seeds).length && !authorizedSourcePages.length) {
     acc.fail('nodes', 'seeds.empty', 'Seed discovery produced no crawlable URLs.', {
       ...(arrayOf(discoverSeeds.robotsExcludedUrls).length ? normalizeSiteForgeReason('robots-disallowed') : normalizeSiteForgeReason('empty-seed-set')),
       excludedUrls: arrayOf(discoverSeeds.robotsExcludedUrls),
@@ -862,6 +883,9 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
   }
   if (robotsPolicy?.disallowPaths?.length) {
     for (const seed of arrayOf(discoverSeeds.seeds)) {
+      if (isAuthorizedSourceRecord(seed)) {
+        continue;
+      }
       const seedUrl = seed?.normalizedUrl ?? seed?.url;
       if (seedUrl && !isUrlAllowedByRobots(seedUrl, robotsPolicy)) {
         acc.fail('nodes', 'seeds.robots_disallowed', `Seed list contains robots-disallowed URL ${seedUrl}.`, {
@@ -871,6 +895,9 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
       }
     }
     for (const page of arrayOf(crawlStatic.pages)) {
+      if (isAuthorizedSourceRecord(page)) {
+        continue;
+      }
       const pageUrl = page?.normalizedUrl ?? page?.url;
       if (pageUrl && !isUrlAllowedByRobots(pageUrl, robotsPolicy)) {
         acc.fail('nodes', 'crawl_static.robots_disallowed', `Crawl output contains robots-disallowed URL ${pageUrl}.`, {
@@ -902,6 +929,20 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
       duplicateRatio,
       threshold: OUTPUT_VALIDATION_DUPLICATE_RATIO_THRESHOLD,
     });
+  }
+  const robotsCrawlDelaySeconds = Number(discoverSeeds.robots?.crawlDelaySeconds);
+  if (Number.isFinite(robotsCrawlDelaySeconds) && robotsCrawlDelaySeconds > 0) {
+    if (Number(crawlStatic.summary?.collectionConcurrency) !== 1) {
+      acc.fail('nodes', 'robots.crawl_delay_concurrency', 'Static crawl must serialize requests when robots.txt declares crawl-delay.', {
+        crawlDelaySeconds: robotsCrawlDelaySeconds,
+        collectionConcurrency: crawlStatic.summary?.collectionConcurrency ?? null,
+      });
+    }
+    if (!Number.isFinite(Number(crawlStatic.summary?.effectiveCrawlFetchDelayMs))) {
+      acc.fail('nodes', 'robots.crawl_delay_missing_effective_delay', 'Static crawl summary is missing effective crawl-delay timing.', {
+        crawlDelaySeconds: robotsCrawlDelaySeconds,
+      });
+    }
   }
 
   const capabilities = arrayOf(getStage(stageResults, 'discoverCapabilities').capabilities);
@@ -991,6 +1032,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
           'build_report.debug.json',
           'build_report.json',
           'capability_intent_summary.html',
+          'page_reconciliation_report.json',
         ],
       },
       nodeCompleteness: {

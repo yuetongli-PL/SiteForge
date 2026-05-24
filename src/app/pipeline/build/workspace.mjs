@@ -73,6 +73,7 @@ const BUILD_ARTIFACT_DIR_BY_NAME = Object.freeze({
   'build_report.debug.json': 'reports',
   'build_report.json': 'reports',
   'capability_intent_summary.html': 'reports',
+  'page_reconciliation_report.json': 'reports',
 });
 
 const SAFE_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;

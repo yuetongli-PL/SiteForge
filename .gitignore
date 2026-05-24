@@ -15,6 +15,7 @@ coverage/
 .env
 .env.*
 !.env.example
+siteforge.local.json
 .playwright-mcp/
 profiles/
 skills/

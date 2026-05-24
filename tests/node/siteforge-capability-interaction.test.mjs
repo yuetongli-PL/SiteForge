@@ -3,23 +3,15 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { PassThrough } from 'node:stream';
 
 import {
   capabilityInteractionState,
-  parseCapabilitySelection,
-  promptForCapabilityInteraction,
-  renderCapabilityInteractionPrompt,
-  shouldOfferCapabilityInteraction,
   writeCapabilityInteractionDecisions,
   writeCapabilityRemediationPlan,
 } from '../../src/app/pipeline/build/capability-interaction.mjs';
 import {
   buildCapabilityConfirmationDecisionRecord,
 } from '../../src/app/pipeline/build/capability-decision-records.mjs';
-import {
-  parseTerminalInputKeys,
-} from '../../src/app/pipeline/build/terminal-tui.mjs';
 
 async function createSiteDir(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'siteforge-capability-interaction-'));
@@ -27,71 +19,6 @@ async function createSiteDir(t) {
     await rm(root, { recursive: true, force: true });
   });
   return root;
-}
-
-function createSimulatedTtyPair() {
-  const input = new PassThrough();
-  const output = new PassThrough();
-  let rawMode = false;
-  let terminalOutput = '';
-
-  // @ts-ignore
-  input.isTTY = true;
-  // @ts-ignore
-  input.isRaw = false;
-  // @ts-ignore
-  input.setRawMode = (enabled) => {
-    rawMode = enabled === true;
-    // @ts-ignore
-    input.isRaw = rawMode;
-    return input;
-  };
-  // @ts-ignore
-  output.isTTY = true;
-  // @ts-ignore
-  output.columns = 120;
-  // @ts-ignore
-  output.rows = 40;
-  output.on('data', (chunk) => {
-    terminalOutput += chunk.toString('utf8');
-  });
-
-  return {
-    input,
-    output,
-    rawMode: () => rawMode,
-    text: () => terminalOutput,
-  };
-}
-
-function treeKey(name, sequence = undefined) {
-  if (sequence !== undefined) return sequence;
-  if (name === 'up') return '\x1b[A';
-  if (name === 'down') return '\x1b[B';
-  if (name === 'space') return ' ';
-  if (name === 'return') return '\r';
-  if (name === 'slash') return '/';
-  if (name === 'escape') return '\x1b';
-  return name;
-}
-
-function emitTreeKey(input, name, sequence = undefined) {
-  input.write(treeKey(name, sequence));
-}
-
-async function emitTreeKeys(input, keys) {
-  await new Promise((resolve) => {
-    setImmediate(resolve);
-  });
-  for (const key of keys) {
-    if (typeof key === 'string' && key.length === 1) {
-      emitTreeKey(input, key, key);
-    } else if (typeof key === 'string') {
-      emitTreeKey(input, key);
-    } else {
-      emitTreeKey(input, key.name, key.sequence);
-    }
-  }
 }
 
 function safeReadPlan(capabilityId) {
@@ -279,13 +206,6 @@ test('capability interaction offers only evidence-backed safe confirmations', as
   assert.equal(state.disabledReview.length, 1);
   assert.equal(state.safeConfirmable.some((entry) => entry.user_facing_name === '删除帖子'), false);
 
-  const prompt = renderCapabilityInteractionPrompt(buildResult);
-  assert.match(prompt, /能力启用选择/u);
-  assert.match(prompt, /只有已有证据、且有安全执行计划的能力可以确认启用/u);
-  assert.match(prompt, /高风险写入、私信正文、账号安全操作不会通过这里启用/u);
-  assert.match(prompt, /自动生成安全补路径计划/u);
-  assert.match(prompt, /真实可用前仍需补实现、跑验证/u);
-
   const recorded = await writeCapabilityInteractionDecisions(
     buildResult,
     [...state.safeConfirmable, ...state.disabledReview],
@@ -320,8 +240,8 @@ test('capability interaction offers only evidence-backed safe confirmations', as
   assert.deepEqual(limitedDecision, buildCapabilityConfirmationDecisionRecord({
     capability: limitedCapability,
     mode: 'limited',
-    command: 'siteforge build interactive capability selection',
-    source: 'post_build_terminal_interaction',
+    command: 'siteforge build capability decision record',
+    source: 'siteforge_build_capability_record',
     sourceBuildId: 'build-test',
     updatedAt: limitedDecision.updatedAt,
   }));
@@ -390,238 +310,6 @@ test('capability interaction writes remediation plans without enabling disabled 
   assert.equal(plan.plans.some((entry) => entry.pathType === 'user_mediated_safe_action_path' && entry.resultingStatus === 'confirmation_required'), true);
 });
 
-test('capability interaction prompt generates remediation plan from terminal option', async (t) => {
-  const siteDir = await createSiteDir(t);
-  const buildResult = result(siteDir);
-  const input = new PassThrough();
-  const output = new PassThrough();
-  let terminalOutput = '';
-  output.on('data', (chunk) => {
-    terminalOutput += chunk.toString('utf8');
-  });
-
-  const interaction = promptForCapabilityInteraction(buildResult, {
-    interactive: true,
-    input,
-    output,
-    cwd: siteDir,
-    siteDir,
-  });
-  input.end('5\n');
-  const recorded = await interaction;
-
-  assert.equal(recorded.status, 'recorded');
-  assert.equal(recorded.count, 2);
-  assert.match(terminalOutput, /自动补的是安全路径和验证计划/u);
-  assert.match(terminalOutput, /真实可用前仍需(?:实现对应路径、补证据并重新验证通过|补实现、跑验证，并由报告显示通过后才算可用)/u);
-  assert.match(terminalOutput, /需要站点专用适配器验证后使用/u);
-
-  const plan = JSON.parse(await readFile(path.join(siteDir, 'capability_remediation_plan.json'), 'utf8'));
-  assert.deepEqual(
-    [...plan.safetyBoundary.allowedPathTypes].sort(),
-    [...ALLOWED_PUBLIC_REMEDIATION_TYPES].sort(),
-  );
-  assert.equal(plan.plans.every((entry) => ALLOWED_PUBLIC_REMEDIATION_TYPES.includes(entry.pathType)), true);
-  assert.equal(plan.plans.every((entry) => entry.directEnableAllowed === false), true);
-  assert.equal(plan.plans.every((entry) => entry.finalActionsAllowed === false), true);
-  assert.equal(plan.plans.some((entry) => entry.pathType === 'user_mediated_safe_action_path'), true);
-});
-
-test('terminal key parser normalizes PowerShell navigation and command keys', () => {
-  const keys = parseTerminalInputKeys('\x1b[A\x1b[B\r /q\x1b\x03').map((entry) => ({
-    name: entry.name,
-    sequence: entry.sequence,
-    ctrl: entry.ctrl === true,
-  }));
-
-  assert.deepEqual(keys, [
-    { name: 'up', sequence: '\x1b[A', ctrl: false },
-    { name: 'down', sequence: '\x1b[B', ctrl: false },
-    { name: 'return', sequence: '\r', ctrl: false },
-    { name: 'space', sequence: ' ', ctrl: false },
-    { name: 'slash', sequence: '/', ctrl: false },
-    { name: 'q', sequence: 'q', ctrl: false },
-    { name: 'escape', sequence: '\x1b', ctrl: false },
-    { name: 'c', sequence: '\x03', ctrl: true },
-  ]);
-});
-
-test('capability tree TTY dispatch selects pending confirmation and disabled remediation safely', async (t) => {
-  const siteDir = await createSiteDir(t);
-  const enabled = capability('Enabled public browse', {
-    id: 'capability:test:enabled-public-browse',
-    enabled_status: 'enabled',
-    default_policy: 'enabled',
-    risk_level: 'read_public_low',
-    evidence_status: 'verified',
-  });
-  const limited = capability('Limited timeline summary', {
-    id: 'capability:test:limited-timeline-summary',
-    enabled_status: 'limited_enabled',
-    default_policy: 'limited_enabled',
-    risk_level: 'read_personal_medium',
-    evidence_status: 'verified',
-    executionPlan: safeReadPlan('capability:test:limited-timeline-summary'),
-  });
-  const pending = capability('Pending notice summary', {
-    id: 'capability:test:pending-notice-summary',
-    enabled_status: 'confirmation_required',
-    default_policy: 'confirmation_required',
-    risk_level: 'read_personal_medium',
-    evidence_status: 'confirmation_required',
-    executionPlan: {
-      ...safeReadPlan('capability:test:pending-notice-summary'),
-      routeTemplate: '/notifications',
-    },
-  });
-  const disabled = capability('Disabled delete account', {
-    id: 'capability:test:disabled-delete-account',
-    status: 'disabled',
-    enabled_status: 'disabled',
-    default_policy: 'disabled',
-    risk_level: 'account_security_critical',
-    evidence_status: 'disabled',
-    executionPlan: {
-      id: 'plan:test:disabled-delete-account',
-      capabilityId: 'capability:test:disabled-delete-account',
-      autoExecute: true,
-      rawMaterialAllowed: true,
-      privateContentAllowed: true,
-      steps: [{
-        kind: 'delete_account',
-        delete: true,
-        finalSubmit: true,
-        rawContentAllowed: true,
-        privateContentAllowed: true,
-      }],
-    },
-  });
-  const buildResult = {
-    status: 'success',
-    result_status: 'partial_success',
-    build_id: 'build-tree-tty',
-    buildContext: { siteDir },
-    user_report: {
-      result_status: 'partial_success',
-      skill_id: 'tree-tty-skill',
-      build_id: 'build-tree-tty',
-      enabled_capabilities: [enabled],
-      limited_enabled_capabilities: [limited],
-      confirmation_required_capabilities: [pending],
-      disabled_capabilities: [disabled],
-      discovered_nodes_summary: {
-        page_nodes: 1,
-        content_nodes: 1,
-        operation_nodes: 1,
-      },
-      counts: {
-        actionable_elements: 2,
-      },
-      build_completion: {
-        verification_status: 'passed',
-        current_updated: true,
-        registry_registered: true,
-      },
-    },
-  };
-  const tty = createSimulatedTtyPair();
-
-  const interaction = promptForCapabilityInteraction(buildResult, {
-    interactive: true,
-    input: tty.input,
-    output: tty.output,
-    cwd: siteDir,
-    siteDir,
-  });
-  await emitTreeKeys(tty.input, [
-    'up',
-    'return',
-    'slash',
-    'p',
-    'e',
-    'n',
-    'd',
-    'i',
-    'n',
-    'g',
-    'return',
-    'return',
-    'slash',
-    'd',
-    'i',
-    's',
-    'a',
-    'b',
-    'l',
-    'e',
-    'd',
-    'return',
-    'space',
-    'q',
-  ]);
-  const recorded = await interaction;
-
-  assert.equal(recorded.status, 'recorded');
-  assert.equal(recorded.count, 2);
-  assert.equal(tty.rawMode(), false);
-  const terminalText = tty.text();
-  assert.match(terminalText, /Enter/u);
-  assert.match(terminalText, /Space/u);
-  assert.match(terminalText, /q/u);
-  assert.match(terminalText, /Enabled public browse/u);
-  assert.match(terminalText, /Limited timeline summary/u);
-  assert.match(terminalText, /Pending notice summary/u);
-  assert.match(terminalText, /Disabled delete account/u);
-  assert.match(terminalText, /pending_/u);
-  assert.match(terminalText, /disabled_/u);
-  assert.equal((terminalText.match(/\x1b\[\?1049h/gu) ?? []).length, 0);
-  assert.equal((terminalText.match(/\x1b\[\?1049l/gu) ?? []).length, 0);
-
-  const decisions = JSON.parse(await readFile(path.join(siteDir, 'capability_confirmations.json'), 'utf8'));
-  assert.deepEqual(decisions.decisions.map((entry) => entry.capabilityId), [
-    'capability:test:pending-notice-summary',
-  ]);
-  assert.equal(decisions.decisions[0].decision, 'confirmed_limited');
-  assert.equal(decisions.decisions[0].mode, 'limited');
-  assert.equal(decisions.decisions[0].usableAfterSelection, true);
-  assert.equal(decisions.decisions[0].usablePathType, 'limited_sanitized_summary_path');
-  assert.equal(decisions.decisions[0].completedBy, 'reused_user_login_state');
-  assert.equal(decisions.decisions[0].loginStateReuse.reusesExistingLoginState, true);
-  assert.equal(decisions.decisions[0].loginStateReuse.requiresNewLogin, false);
-  assert.equal(decisions.decisions[0].loginStateReuse.targetRoute, '/notifications');
-  assert.equal(decisions.decisions[0].loginStateReuse.cookiesPersisted, false);
-  assert.equal(decisions.decisions[0].loginStateReuse.tokensPersisted, false);
-  assert.equal(decisions.decisions[0].loginStateReuse.browserProfilePersisted, false);
-  assert.equal(decisions.decisions[0].loginStateReuse.rawContentPersisted, false);
-  assert.equal(decisions.decisions[0].requiresSiteAdapterVerificationBeforeUse, false);
-  assert.equal(decisions.decisions[0].writeActionsEnabled, false);
-  assert.notEqual(decisions.decisions[0].finalActionsAllowed, true);
-  assert.equal(decisions.decisions[0].rawMaterialAllowed, false);
-  assert.equal(decisions.decisions[0].privateContentAllowed, false);
-
-  const plan = JSON.parse(await readFile(path.join(siteDir, 'capability_remediation_plan.json'), 'utf8'));
-  assert.deepEqual(plan.plans.map((entry) => entry.capabilityId), [
-    'capability:test:disabled-delete-account',
-  ]);
-  assert.equal(plan.safetyBoundary.directEnableDisabledHighRisk, false);
-  assert.equal(plan.safetyBoundary.writeActionsEnabled, false);
-  assert.equal(plan.safetyBoundary.finalActionsAllowed, false);
-  assert.equal(plan.safetyBoundary.rawMaterialAllowed, false);
-  assert.equal(plan.safetyBoundary.privateContentAllowed, false);
-  assert.equal(plan.safetyBoundary.userMediatedSafeActionCount, 1);
-  assert.equal(plan.safetyBoundary.requiresSiteAdapterVerificationCount, 0);
-  assert.equal(plan.plans[0].pathType, 'user_mediated_safe_action_path');
-  assert.equal(plan.plans[0].useReadiness, 'immediate_user_mediated_safe_action');
-  assert.equal(plan.plans[0].resultingStatus, 'confirmation_required');
-  assert.equal(plan.plans[0].usableAfterSelection, true);
-  assert.equal(plan.plans[0].directEnableAllowed, false);
-  assert.equal(plan.plans[0].writeActionsEnabled, false);
-  assert.equal(plan.plans[0].finalActionsAllowed, false);
-  assert.equal(plan.plans[0].rawMaterialAllowed, false);
-  assert.equal(plan.plans[0].privateContentAllowed, false);
-  assert.equal(plan.plans[0].requiresSiteAdapterVerificationBeforeUse, false);
-});
-
 test('capability interaction blocks unsafe write and raw-material plans from confirmation', async (t) => {
   const siteDir = await createSiteDir(t);
   const unsafeFollow = capability('误判为只读的关注动作', {
@@ -675,20 +363,6 @@ test('capability interaction blocks unsafe write and raw-material plans from con
   assert.equal(recorded.decisions.length, 0);
 });
 
-test('capability interaction parses numbered selections and respects interactive gates', async (t) => {
-  const siteDir = await createSiteDir(t);
-  const buildResult = result(siteDir);
-
-  assert.deepEqual(parseCapabilitySelection('1,3-4', 5), [0, 2, 3]);
-  assert.deepEqual(parseCapabilitySelection('all', 3), [0, 1, 2]);
-  assert.deepEqual(parseCapabilitySelection('', 3), []);
-
-  assert.equal(shouldOfferCapabilityInteraction(buildResult, { interactive: true }), true);
-  assert.equal(shouldOfferCapabilityInteraction(buildResult, { interactive: false }), false);
-  assert.equal(shouldOfferCapabilityInteraction(buildResult, { interactive: true, json: true }), false);
-  assert.equal(shouldOfferCapabilityInteraction(buildResult, { interactive: true, manual: true }), false);
-});
-
 test('disabled high-risk capabilities get review remediation without becoming confirmable', async () => {
   const disabledHighRisk = capability('自动删除帖子', {
     id: 'capability:x:delete-post',
@@ -715,7 +389,7 @@ test('disabled high-risk capabilities get review remediation without becoming co
   assert.equal(state.disabledReview[0].confirmation_mode, 'blocked');
   assert.equal(state.disabledReview[0].ordinary_confirmation_allowed, false);
   assert.equal(state.disabledReview[0].confirm_command, null);
-  assert.match(state.disabledReview[0].interaction_blocked_reason, /普通确认不能开启|已禁用能力不会/u);
+  assert.match(state.disabledReview[0].interaction_blocked_reason, /普通确认不能开启|禁用项不会/u);
   assert.equal(isDisabledReviewRemediation(remediationPathType(state.disabledReview[0])), true);
   assert.equal(remediationPathType(state.disabledReview[0]), 'user_mediated_safe_action_path');
   assert.equal(state.disabledReview[0].safe_remediation.canAutoPrepare, true);

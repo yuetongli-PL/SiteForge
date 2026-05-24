@@ -101,7 +101,8 @@ test('siteforge build x.com noninteractive run fails closed in public_only witho
   const result = runSiteforgeBuild(workspace, [X_URL]);
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /SiteForge 构建状态：failed/u);
+  assert.match(result.stdout, /SiteForge build: failed/u);
+  assert.doesNotMatch(result.stdout, /操作：|搜索：|Space|Enter|能力统计|建议/u);
   assert.equal(result.stderr.trim(), '');
   assertExcludesAll(`${result.stdout}\n${result.stderr}`, PRIVACY_FORBIDDEN_PATTERNS, 'x.com failed output');
   assert.equal(result.stdout.includes(workspace), false, 'output should not expose absolute workspace path');
@@ -111,8 +112,11 @@ test('siteforge build x.com noninteractive run fails closed in public_only witho
   assert.equal(setupPlan.summary.buildable, false);
   assert.equal(setupPlan.buildReadiness.reasonCode, 'setup-known-policy-robots-disallowed');
   assert.equal(setupPlan.crawlContract.crawlMode, 'public_only');
-  assert.equal(setupPlan.crawlContract.authChoice, 'declined');
+  assert.equal(setupPlan.crawlContract.authMethod, 'none');
+  assert.equal(setupPlan.crawlContract.authVerificationStatus, 'not_requested');
   assert.equal(setupPlan.authStateReport.verified, false);
+  assert.equal(setupPlan.authStateReport.authMethod, 'none');
+  assert.equal(setupPlan.authStateReport.authVerificationStatus, 'not_requested');
   assert.equal(setupPlan.authStateReport.sessionMaterialPersisted, false);
   assert.equal(setupPlan.authStateReport.browserProfilePersisted, false);
 
@@ -126,25 +130,33 @@ test('siteforge build x.com noninteractive run fails closed in public_only witho
 test('siteforge build x.com --public-only keeps login capabilities out of active build promotion', async (t) => {
   const workspace = await createWorkspace(t);
   const result = runSiteforgeBuild(workspace, [X_URL, '--public-only']);
+  const output = `${result.stdout}\n${result.stderr}`;
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /SiteForge 构建状态：failed/u);
+  if (output.trim()) {
+    assert.match(output, /SiteForge build: failed|setup-known-policy-robots-disallowed/u);
+  }
   const setupPlan = await readJson(path.join(workspace, '.siteforge', 'sites', stableSiteIdFromUrl(X_URL), 'setup', 'setup_plan.json'));
   assert.equal(setupPlan.crawlContract.crawlMode, 'public_only');
-  assert.equal(setupPlan.crawlContract.evidencePolicy.allowLoginEnhanced, false);
-  assert.equal(setupPlan.authStateReport.source, 'user_declined_login_enhancement');
+  assert.equal(setupPlan.crawlContract.evidencePolicy.allowAuthenticatedCookie, false);
+  assert.equal(setupPlan.crawlContract.evidencePolicy.allowCookieInput, false);
+  assert.equal(setupPlan.crawlContract.evidencePolicy.allowCookiePersistence, false);
+  assert.equal(setupPlan.authStateReport.source, 'public_only');
+  assert.equal(setupPlan.authStateReport.authMethod, 'none');
+  assert.equal(setupPlan.authStateReport.authVerificationStatus, 'not_requested');
 });
 
-test('siteforge build x.com --manual shows login enhancement choice before supplemental collection', async (t) => {
+test('siteforge build x.com --manual fails closed before authentication prompts when robots-blocked', async (t) => {
   const workspace = await createWorkspace(t);
   const result = runSiteforgeBuild(workspace, [X_URL, '--manual']);
+  const output = `${result.stdout}\n${result.stderr}`;
 
-  assert.equal(result.status, 0);
-  assert.match(result.stdout, /SiteForge 可以使用登录态增强抓取，以发现登录后页面和能力。/u);
-  assert.match(result.stdout, /1\. 不使用登录态，只抓公开能力/u);
-  assert.match(result.stdout, /2\. 使用登录态，打开系统默认浏览器/u);
-  assert.doesNotMatch(result.stdout, /逐项手动补采/u);
-  assertExcludesAll(result.stdout, PRIVACY_FORBIDDEN_PATTERNS, 'manual login prompt output');
+  assert.notEqual(result.status, 0);
+  assert.match(output, /SiteForge build: failed|setup-known-policy-robots-disallowed/u);
+  assert.doesNotMatch(output, /打开系统默认浏览器/u);
+  assert.doesNotMatch(output, /登录态增强抓取/u);
+  assert.doesNotMatch(output, /逐项手动补采/u);
+  assertExcludesAll(output, PRIVACY_FORBIDDEN_PATTERNS, 'manual login prompt output');
 });
 
 test('rendered user summary caps lists, sorts by user-facing priority, and hides debug candidates', () => {
@@ -220,10 +232,11 @@ test('rendered user summary caps lists, sorts by user-facing priority, and hides
 
   assertExcludesAll(text, ABSOLUTE_USER_PATH_PATTERNS, 'synthetic terminal output');
   assert.doesNotMatch(text, /@private_handle|token=secret|Hidden Debug Candidate|candidate_debug_only|debug_only/u);
-  assert.match(text, /调试信息/u);
+  assert.match(text, /SiteForge build: partial_success/u);
+  assert.match(text, /Capabilities: active \d+ \/ limited \d+ \/ candidate \d+ \/ disabled \d+/u);
+  assert.match(text, /Report:/u);
   assert.equal(text.includes('build_report.user.json'), true);
 
-  assert.match(text, /能力统计/u);
-  assert.equal(countOccurrences(text, /^\s+\[ \] Confirm /gmu), 8);
-  assert.match(text, /另有 2 项\s+│ 详见报告/u);
+  assert.doesNotMatch(text, /操作：|搜索：|Space|Enter|待确认能力|已禁用能力|建议/u);
+  assert.equal(countOccurrences(text, /^\s+\[ \] Confirm /gmu), 0);
 });

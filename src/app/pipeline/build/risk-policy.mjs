@@ -287,6 +287,59 @@ function joinedCapabilityActionText(capability = /** @type {any} */ ({})) {
   ].filter(Boolean).join(' ');
 }
 
+const READ_ONLY_ACTION_PATTERN = /^(?:view|open|browse|read|list|show|inspect|navigate|search)$/iu;
+const FOLLOW_SURFACE_PATTERN = /(?:^|[/?#:_\s-])(?:follow|following|followed|followers)(?=$|[/?#:_\s-])|关注|粉丝/iu;
+const FOLLOW_MUTATION_PATTERN = /\b(?:follow account|follow user|unfollow|submit follow|create follow|follow this|add this account|remove follow)\b|关注(?:账号|用户|此人)|取关/iu;
+
+export function isReadOnlyFollowSurface(value = /** @type {any} */ ({})) {
+  const text = typeof value === 'string'
+    ? value
+    : [
+      value.kind,
+      value.action,
+      value.object,
+      value.name,
+      value.description,
+      value.userValue,
+      value.label,
+      value.href,
+      value.endpoint,
+      value.routeTemplate,
+      value.routePattern,
+      value.intentAction,
+      value.safety,
+      value.safetyLevel,
+      value.evidenceModel,
+    ].filter(Boolean).join(' ');
+  if (!FOLLOW_SURFACE_PATTERN.test(String(text))) {
+    return false;
+  }
+  if (FOLLOW_MUTATION_PATTERN.test(String(text)) || String(value?.blockedAction ?? '').match(/^un?follow$/iu)) {
+    return false;
+  }
+  if (typeof value === 'string') {
+    return /\b(?:view|open|browse|read|list|show|route|link|navigation)\b/iu.test(value);
+  }
+  const kind = String(value.kind ?? '').toLowerCase();
+  const action = String(value.action ?? value.intentAction ?? '').toLowerCase();
+  const safety = String(value.safety ?? value.safetyLevel ?? '').toLowerCase();
+  const method = String(value.method ?? '').toUpperCase();
+  const mode = String(value.executionPlan?.mode ?? '').toLowerCase();
+  const readKind = !kind || ['link', 'route', 'navigation', 'component'].includes(kind);
+  const readAction = !action || READ_ONLY_ACTION_PATTERN.test(action) || action.includes('followed');
+  const readSafety = !safety || ['read_only', 'safe'].includes(safety);
+  const readMethod = !method || ['GET', 'HEAD', 'OPTIONS'].includes(method);
+  const readMode = !mode || ['read_only', 'limited_read'].includes(mode);
+  return readKind && readAction && readSafety && readMethod && readMode;
+}
+
+function forcedDisabledActionsForCapabilityActionText(capability = /** @type {any} */ ({})) {
+  const actions = findForcedDisabledActions(joinedCapabilityActionText(capability));
+  return isReadOnlyFollowSurface(capability)
+    ? actions.filter((action) => action !== 'follow' && action !== 'unfollow')
+    : actions;
+}
+
 export function findForcedDisabledActions(value) {
   const text = String(value ?? '').toLowerCase();
   const tokens = new Set([
@@ -644,7 +697,7 @@ function remediationLabel(path) {
 
 function remediationNextStep(path, canAutoPrepare) {
   if (canAutoPrepare === true && path === 'limited_read_summary') {
-    return 'Prepare a sanitized limited-read plan; do not read or store body text, raw DOM, raw HTML, or private content.';
+    return 'Prepare a sanitized limited-read plan; do not read or store body text, unsanitized markup, or private content.';
   }
   if (canAutoPrepare === true && path === 'draft_only_preview') {
     return 'Prepare a dry-run preview plan; do not submit, send, upload, delete, pay, or publish.';
@@ -1054,7 +1107,7 @@ export function validateCapabilityEvidenceList(evidence = /** @type {any[]} */ (
 export function inferCapabilityRiskLevel(capability = /** @type {any} */ ({})) {
   const text = joinedCapabilityText(capability);
   const actionText = joinedCapabilityActionText(capability);
-  const forced = findForcedDisabledActions(actionText);
+  const forced = forcedDisabledActionsForCapabilityActionText(capability);
   const explicitRiskLevel = lowerText(capability.risk_level ?? capability.riskLevel);
   if (ACCOUNT_SECURITY_PATTERN.test(text) || forced.some((action) => action.startsWith('change_'))) {
     return 'account_security_critical';
@@ -1062,7 +1115,7 @@ export function inferCapabilityRiskLevel(capability = /** @type {any} */ ({})) {
   if (PRIVATE_MESSAGE_WRITE_PATTERN.test(text)) {
     return 'write_high';
   }
-  if (forced.length || ['payment', 'destructive'].includes(capability.safetyLevel) || WRITE_HIGH_PATTERN.test(actionText)) {
+  if (forced.length || ['payment', 'destructive'].includes(capability.safetyLevel) || (!isReadOnlyFollowSurface(capability) && WRITE_HIGH_PATTERN.test(actionText))) {
     return WRITE_LOW_PATTERN.test(text) && !forced.length ? 'write_low' : 'write_high';
   }
   if (PRIVATE_READ_PATTERN.test(text)) {
@@ -1153,7 +1206,7 @@ function riskPolicyRuntimeDefaults(policy, options = /** @type {any} */ ({})) {
 export function createCapabilityRiskPolicy(capability = /** @type {any} */ ({})) {
   const riskLevel = inferCapabilityRiskLevel(capability);
   const defaults = RISK_LEVEL_DEFAULTS[riskLevel] ?? RISK_LEVEL_DEFAULTS.read_public_low;
-  const forcedActions = findForcedDisabledActions(joinedCapabilityActionText(capability));
+  const forcedActions = forcedDisabledActionsForCapabilityActionText(capability);
   const forcedDisabled = forcedActions.length > 0;
   const disabled = forcedDisabled || defaults.enabled === false;
   const reasonCode = forcedDisabled

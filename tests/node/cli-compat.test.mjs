@@ -13,15 +13,6 @@ import {
 } from '../../src/entrypoints/cli/public-build-contract.mjs';
 
 const repoRoot = process.cwd();
-const INTERNAL_BUILD_FLAGS = [
-  '--browser-path',
-  '--max-depth',
-  '--max-pages',
-  '--max-seeds',
-  '--json',
-  '--quiet',
-  '--progress',
-];
 const LEGACY_PUBLIC_ROUTES = [
   ['capabilities', 'list', 'x-com-authorized-browser-surface'],
   ['site', 'doctor', 'https://example.com/'],
@@ -61,9 +52,6 @@ test('public SiteForge CLI exposes only build help', () => {
   assert.match(help.stdout, /siteforge build <url>/u);
   for (const flag of PUBLIC_BUILD_HELP_FLAGS) {
     assert.match(help.stdout, new RegExp(flag.replace(/[|]/gu, '\\$&'), 'u'));
-  }
-  for (const flag of INTERNAL_BUILD_FLAGS) {
-    assert.doesNotMatch(help.stdout, new RegExp(flag, 'u'));
   }
   assert.doesNotMatch(help.stdout, /siteforge capabilities/u);
   assert.doesNotMatch(help.stdout, /site doctor|site scaffold|download plan|generate-skill/u);
@@ -129,6 +117,27 @@ test('public SiteForge CLI accepts only documented build flags', () => {
     ['build', 'https://example.com/', '--report', 'debug'],
     ['build', 'https://example.com/', '--report', 'both'],
     ['build', 'https://example.com/', '--privacy', 'limited', '--report', 'both'],
+    ['build', 'https://example.com/', '--auth', 'none'],
+    ['build', 'https://example.com/', '--auth=cookie'],
+    ['build', 'https://example.com/', '--auth=browser'],
+    ['build', 'https://example.com/', '--render-js'],
+    ['build', 'https://example.com/', '--no-render-js'],
+    ['build', 'https://example.com/', '--browser-path', 'C:/Chrome/chrome.exe'],
+    ['build', 'https://example.com/', '--timeout', '30000'],
+    ['build', 'https://example.com/', '--max-depth', '4'],
+    ['build', 'https://example.com/', '--max-pages', '200'],
+    ['build', 'https://example.com/', '--max-seeds', '1000'],
+    ['build', 'https://example.com/', '--max-sitemaps', '25'],
+    ['build', 'https://example.com/', '--json'],
+    ['build', 'https://example.com/', '--quiet'],
+    ['build', 'https://example.com/', '--progress', 'plain'],
+    ['build', 'https://example.com/', '--progress=auto'],
+    ['build', 'https://example.com/', '--no-tty'],
+    ['build', 'https://example.com/', '--force-tty'],
+    ['build', 'https://example.com/', '--cookie-env', 'SITEFORGE_COOKIE'],
+    ['build', 'https://example.com/', '--cookie-file', './cookies.txt'],
+    ['build', 'https://example.com/', '--cookie-stdin'],
+    ['build', 'https://example.com/', '--auth-check-url', '/account'],
   ]) {
     assertBuildDispatch(args);
   }
@@ -138,7 +147,7 @@ test('public SiteForge CLI rejects unsupported build arguments before dispatch',
   for (const args of [
     ['build', 'https://example.com/', '--unknown'],
     ['build', 'https://example.com/', '--unknown=value'],
-    ['build', 'https://example.com/', '--browser-path'],
+    ['build', 'https://example.com/', '--cookie'],
   ]) {
     assertResolveError(args, /Unknown flag: --/u);
   }
@@ -147,12 +156,23 @@ test('public SiteForge CLI rejects unsupported build arguments before dispatch',
     ['build', 'https://example.com/', '--privacy'],
     ['build', 'https://example.com/', '--privacy='],
     ['build', 'https://example.com/', '--privacy', '--debug'],
+    ['build', 'https://example.com/', '--cookie-env'],
+    ['build', 'https://example.com/', '--cookie-env='],
+    ['build', 'https://example.com/', '--cookie-file'],
+    ['build', 'https://example.com/', '--auth-check-url'],
+    ['build', 'https://example.com/', '--browser-path'],
+    ['build', 'https://example.com/', '--timeout'],
+    ['build', 'https://example.com/', '--max-pages'],
+    ['build', 'https://example.com/', '--max-sitemaps'],
+    ['build', 'https://example.com/', '--progress'],
   ]) {
-    assertResolveError(args, /Missing value for --privacy/u);
+    assertResolveError(args, /Missing value for --(?:privacy|cookie-env|cookie-file|auth-check-url|browser-path|timeout|max-pages|max-sitemaps|progress)/u);
   }
 
   assertResolveError(['build', 'https://example.com/', '--privacy', 'invalid'], /--privacy must be one of: limited, strict/u);
   assertResolveError(['build', 'https://example.com/', '--report', 'invalid'], /--report must be one of: user, debug, both/u);
+  assertResolveError(['build', 'https://example.com/', '--auth', 'invalid'], /--auth must be one of: none, cookie, browser/u);
+  assertResolveError(['build', 'https://example.com/', '--progress', 'invalid'], /--progress must be one of: auto, interactive, plain/u);
   assertResolveError(['build', 'https://example.com/', '--auto=false'], /Flag does not take a value: --auto/u);
   assertResolveError(['build', 'https://example.com/', '--manual=true'], /Flag does not take a value: --manual/u);
   assertResolveError(['build', 'https://example.com/', '--deep=1'], /Flag does not take a value: --deep/u);

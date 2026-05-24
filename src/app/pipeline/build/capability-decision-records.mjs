@@ -94,7 +94,7 @@ export function buildCapabilityConfirmationDecisionRecord({
   capability = /** @type {any} */ ({}),
   mode = 'confirmation',
   decision = confirmationDecisionForMode(mode),
-  command = 'siteforge build interactive capability selection',
+  command = 'siteforge build capability decision record',
   source = null,
   sourceBuildId = null,
   updatedAt = new Date().toISOString(),

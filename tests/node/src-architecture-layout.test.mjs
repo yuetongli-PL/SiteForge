@@ -137,6 +137,7 @@ test('root only keeps approved project metadata regular files', async () => {
   const regularFiles = entries
     .filter((entry) => entry.isFile())
     .filter((entry) => entry.name !== '.git')
+    .filter((entry) => entry.name !== 'siteforge.local.json')
     .map((entry) => entry.name)
     .sort();
   const rootDesignDocs = regularFiles.filter((name) => /^Site Capability Layer .+\.md$/u.test(name));

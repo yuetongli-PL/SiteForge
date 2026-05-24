@@ -18,8 +18,11 @@ import {
   parseSitemapUrls,
   renderCapabilityIntentSummaryHtml,
   renderSiteForgeBuildSummary,
+  runBrowserAuthStateCheck,
+  runCookieAuthStateCheck,
   runSiteForgeBuild,
   siteForgeBuildCliJson,
+  canRunAuthenticatedLayer,
   createCrawlContract,
   stableSiteIdFromUrl,
   validateCapabilitySafetyForVerification,
@@ -37,6 +40,11 @@ import {
   buildSetupAssistantPaths,
   prepareSiteForgeBuildSetup,
 } from '../../src/app/pipeline/build/setup-assistant.mjs';
+import {
+  browserBridgeExtensionDirectory,
+  runBrowserAuthBridge,
+} from '../../src/app/pipeline/build/browser-auth-bridge.mjs';
+import { browserStructureCollectorScript } from '../../src/app/pipeline/build/browser-structure-collector.mjs';
 import {
   simpleShopRoutes,
   tencentNewsRoutes,
@@ -69,6 +77,7 @@ const REQUIRED_BUILD_ARTIFACTS = [
   'safety_policy.json',
   'verification_report.json',
   'build_report.json',
+  'page_reconciliation_report.json',
 ];
 
 async function readJson(filePath) {
@@ -88,11 +97,12 @@ function spawnNode(args, options = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       ...options,
-      encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
+    assert.ok(child.stdout);
+    assert.ok(child.stderr);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
@@ -387,7 +397,7 @@ test('live SiteForge build stops early when robots.txt disallows all planned see
       assert.equal(failure.code, 'robots-disallowed');
       // @ts-ignore
       assert.equal(failure.stage, 'discoverSeeds');
-      assert.deepEqual(fetchCalls, ['/robots.txt']);
+      assert.deepEqual(fetchCalls, ['/robots.txt', '/sitemap.xml']);
 
       // @ts-ignore
       const seeds = await readJson(path.join(failure.artifactDir, 'seeds.json'));
@@ -416,10 +426,74 @@ test('live SiteForge build stops early when robots.txt disallows all planned see
   }
 });
 
+test('live SiteForge build recovers from blocked root when sitemap exposes robots-allowed URLs', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-robots-allowed-sitemap-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: [
+          'User-agent: *',
+          'Disallow: /',
+          'Allow: /public/',
+          `Sitemap: ${new URL('/sitemap.xml', rootUrl)}`,
+          '',
+        ].join('\n'),
+      },
+      '/sitemap.xml': {
+        contentType: 'application/xml; charset=utf-8',
+        body: testSitemapXml(rootUrl, ['/public/catalog', '/private/blocked']),
+      },
+      '/public/catalog': testHtmlPage('Public Catalog', `
+        <main>
+          <h1>Public Catalog</h1>
+          <ul>
+            <li><a href="/public/category/a">Category A</a></li>
+            <li><a href="/public/category/b">Category B</a></li>
+          </ul>
+        </main>
+      `),
+      '/public/category/a': testHtmlPage('Category A', '<main><h1>Category A</h1><p>Allowed category.</p></main>'),
+      '/public/category/b': testHtmlPage('Category B', '<main><h1>Category B</h1><p>Allowed category.</p></main>'),
+      '/private/blocked': testHtmlPage('Private', '<main>Blocked</main>'),
+    }), async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'robots-allowed-sitemap',
+        now: new Date('2026-05-16T07:02:00.000Z'),
+        fetchDelayMs: 0,
+        maxPages: 5,
+      });
+
+      const seeds = await readJson(path.join(result.artifactDir, 'seeds.json'));
+      assert.equal(seeds.status, 'success');
+      assert.equal(seeds.seeds.some((seed) => /\/public\/catalog$/u.test(seed.normalizedUrl)), true);
+      assert.equal(seeds.seeds.some((seed) => /\/private\/blocked$/u.test(seed.normalizedUrl)), false);
+      assert.equal(seeds.robots.policyClassification, 'partial_allowed');
+      assert.equal(seeds.robots.decisions.allowed >= 1, true);
+      assert.equal(seeds.robots.decisions.denied >= 1, true);
+      assert.equal(seeds.robots.sitemapSummary.processed, 1);
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.pages.some((page) => /\/public\/catalog$/u.test(page.normalizedUrl)), true);
+      assert.equal(crawlStatic.pages.some((page) => /\/private\/blocked$/u.test(page.normalizedUrl)), false);
+
+      const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+      assert.equal(buildReport.status, 'success');
+      assert.equal(buildReport.summary.robots.policyClassification, 'partial_allowed');
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('SiteForge build static parser extracts links, forms, buttons, inputs, selects, and text', () => {
   const parsed = parseHtmlDocument(`
     <title>Parser Fixture</title>
     <a href="/products.html">Products</a>
+    <a href="/categories/action/">Action category</a>
+    <a href="/categories/xuanhuan/">玄幻分类</a>
+    <a href="/hot/">Hot ranking</a>
     <button type="button" aria-expanded="false">Menu</button>
     <form id="search" role="search" method="GET" action="/search.html">
       <input name="q" type="search" placeholder="headphones">
@@ -431,10 +505,218 @@ test('SiteForge build static parser extracts links, forms, buttons, inputs, sele
 
   assert.equal(parsed.title, 'Parser Fixture');
   assert.equal(parsed.links[0].href, 'https://fixture.local/products.html');
+  assert.equal(parsed.links.some((link) => link.label === 'Action category' && link.semanticKind === 'category'), true);
+  assert.equal(parsed.links.some((link) => link.label === '玄幻分类' && link.semanticKind === 'category'), true);
+  assert.equal(parsed.links.some((link) => link.label === 'Hot ranking' && link.semanticKind === 'ranking'), true);
+  assert.equal(parsed.elementInstances.some((element) => element.label === '玄幻分类' && element.role === 'category'), true);
+  assert.equal(parsed.elementInstances.every((element) => element.rawDomPersisted === false && element.rawHtmlPersisted === false && element.bodyTextPersisted === false), true);
   assert.equal(parsed.forms[0].method, 'GET');
   assert.equal(parsed.forms[0].inputs.some((input) => input.tagName === 'select'), true);
   assert.equal(parsed.forms[0].inputs.some((input) => input.tagName === 'textarea'), true);
   assert.equal(parsed.controls.some((control) => control.tagName === 'button'), true);
+});
+
+test('runSiteForgeBuild promotes uncrawled semantic links into route-only public capabilities', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-link-route-only-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+      '/': testHtmlPage('Semantic route links', `
+        <main>
+          <h1>Semantic public catalog</h1>
+          <p>Public index with semantic links that are intentionally not crawled in this build.</p>
+          <script>window.bootstrap = { token: 'SECRET_PAGE_TOKEN' }; localStorage.setItem('sf', 'SECRET_PAGE_TOKEN');</script>
+          <input type="hidden" name="csrf_token" value="SECRET_PAGE_TOKEN">
+          <nav>
+            <a href="/categories/action/">Action category</a>
+            <a href="/hot/">Hot ranking</a>
+            <a href="/videos/abc-001/">Video ABC-001</a>
+            <a href="/models/aya/">Model Aya profile</a>
+            <a href="/pay/">Pay center</a>
+          </nav>
+        </main>
+      `),
+      '/categories/action/': testHtmlPage('Action category', '<main><h1>Action category</h1></main>'),
+      '/hot/': testHtmlPage('Hot ranking', '<main><h1>Hot ranking</h1></main>'),
+      '/videos/abc-001/': testHtmlPage('Video ABC-001', '<main><h1>Video ABC-001</h1></main>'),
+      '/models/aya/': testHtmlPage('Model Aya profile', '<main><h1>Model Aya profile</h1></main>'),
+      '/pay/': testHtmlPage('Pay center', '<main><h1>Pay center</h1></main>'),
+    }), async (rootUrl) => {
+      const inputUrl = rootUrl.replace('127.0.0.1', 'localhost');
+      const result = await runSiteForgeBuild(inputUrl, {
+        cwd: workspace,
+        buildId: 'semantic-route-only-build',
+        now: new Date('2026-05-23T02:20:00.000Z'),
+        maxDepth: 1,
+        maxPages: 1,
+        maxSeeds: 10,
+        fetchDelayMs: 0,
+      });
+
+      assert.equal(result.status, 'success');
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.summary.pages, 1);
+      assert.equal(crawlStatic.summary.rawPageMaterial.pages, 1);
+      assert.equal(crawlStatic.pages[0].rawPageMaterial.redacted, true);
+      const rawMaterialManifest = await readJson(path.join(result.artifactDir, 'reports', 'raw_page_material_manifest.json'));
+      assert.equal(rawMaterialManifest.summary.pages, 1);
+      assert.equal(rawMaterialManifest.policy.publicPageHtmlPersisted, true);
+      assert.equal(rawMaterialManifest.policy.cookieMaterialPersisted, false);
+      assert.equal(rawMaterialManifest.policy.tokenMaterialPersisted, false);
+      const rawHtml = await readFile(path.join(result.artifactDir, rawMaterialManifest.pages[0].htmlPath), 'utf8');
+      const rawBodyText = await readFile(path.join(result.artifactDir, rawMaterialManifest.pages[0].bodyTextPath), 'utf8');
+      assert.match(rawHtml, /Semantic public catalog/u);
+      assert.match(rawBodyText, /Semantic public catalog/u);
+      assert.doesNotMatch(rawHtml, /SECRET_PAGE_TOKEN|localStorage|token\s*[:=]|csrf_token\s*=\s*"SECRET_PAGE_TOKEN"/u);
+      assert.doesNotMatch(rawBodyText, /SECRET_PAGE_TOKEN|localStorage|token\s*[:=]/u);
+
+      const graph = await readJson(path.join(result.artifactDir, 'classified_graph.json'));
+      assert.equal(graph.nodes.filter((node) => node.type === 'page').length, 1);
+      const semanticRouteNodes = graph.nodes.filter((node) => node.type === 'route_template' && node.evidenceStatus === 'link_semantic_route_template');
+      assert.equal(semanticRouteNodes.some((node) => node.linkSemanticKind === 'category' && node.classification === 'category_list'), true);
+      assert.equal(semanticRouteNodes.some((node) => node.linkSemanticKind === 'ranking' && node.classification === 'ranking_list'), true);
+      assert.equal(semanticRouteNodes.some((node) => node.linkSemanticKind === 'media' && node.classification === 'entity_detail'), true);
+      assert.equal(semanticRouteNodes.some((node) => node.linkSemanticKind === 'profile' && node.classification === 'profile_detail'), true);
+      const elementNodes = graph.nodes.filter((node) => node.evidenceStatus === 'element_instance_summary_present');
+      const actionCategoryNode = elementNodes.find((node) => node.elementLabel === 'Action category');
+      assert.equal(actionCategoryNode?.classification, 'category_list');
+      assert.equal(actionCategoryNode?.categoryInstance?.kind, 'category');
+      assert.equal(actionCategoryNode?.categoryInstance?.label, 'Action category');
+      assert.equal(actionCategoryNode?.categoryInstance?.routeTemplate, '/categories/action');
+      assert.equal(elementNodes.some((node) => node.elementLabel === 'Hot ranking' && node.classification === 'ranking_list'), true);
+      assert.equal(semanticRouteNodes.some((node) => node.categoryInstance?.label === 'Action category' && node.categoryInstance?.kind === 'category'), true);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const capabilityByName = new Map(capabilities.capabilities.map((capability) => [capability.name, capability]));
+      for (const capabilityName of [
+        'browse public categories',
+        'browse public rankings',
+        'open public detail pages',
+        'open public profiles',
+      ]) {
+        const capability = capabilityByName.get(capabilityName);
+        assert.equal(capability?.status, 'active', `${capabilityName} should be active`);
+        assert.equal(capability?.publicRouteOnly, true, `${capabilityName} should be route-only`);
+        assert.equal(capability?.evidenceModel, 'public_route_navigation', `${capabilityName} should use route navigation evidence`);
+        assert.deepEqual(capability?.outputs, [{ name: 'routes', type: 'route_summary' }]);
+        assert.equal(capability?.executionPlan?.steps?.every((step) => step.kind === 'route_template'), true);
+      }
+      const actionCategoryCapability = capabilityByName.get('open category element action-category');
+      assert.equal(actionCategoryCapability?.status, 'active');
+      assert.equal(actionCategoryCapability?.evidenceModel, 'public_element_summary');
+      assert.equal(actionCategoryCapability?.userValue, '浏览Action category');
+      assert.equal(actionCategoryCapability?.intents?.some((intent) => (
+        intent.utteranceExamples?.includes('打开Action category分类')
+      )), true);
+      assert.equal(actionCategoryCapability?.intents?.some((intent) => (
+        intent.utteranceExamples?.includes('查看Action category分类')
+      )), true);
+      assert.equal(actionCategoryCapability?.raw_dom_saved, false);
+      assert.equal(actionCategoryCapability?.raw_html_saved, false);
+      assert.equal(actionCategoryCapability?.raw_content_saved, false);
+      assert.equal(actionCategoryCapability?.activationEvidence?.observedEvidence?.includes('public_element_instance_present'), true);
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      const graphElementIntent = intents.intents.find((intent) => (
+        intent.intentSource === 'graph_element'
+        && intent.sourceNodeId === actionCategoryNode?.id
+        && /Action category/u.test(intent.canonicalUtterance)
+      ));
+      assert.equal(Boolean(graphElementIntent), true);
+      assert.equal(graphElementIntent?.capabilityId, actionCategoryCapability?.id);
+      assert.equal(graphElementIntent?.categoryInstance?.label, 'Action category');
+      assert.equal(graphElementIntent?.canonicalUtterance, '浏览Action category');
+      assert.equal(graphElementIntent?.utteranceExamples?.includes('打开Action category分类'), true);
+
+      const htmlReport = await readFile(path.join(result.artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8');
+      assert.match(htmlReport, /Element \/ category/u);
+      assert.match(htmlReport, /页面元素覆盖审计/u);
+      assert.match(htmlReport, /covered/u);
+      assert.match(htmlReport, /public_element_summary/u);
+      assert.match(htmlReport, /category: Action category/u);
+      assert.match(htmlReport, /\/categories\/action/u);
+      assert.match(htmlReport, /intentSource/u);
+      assert.match(htmlReport, /graph_element/u);
+      assert.match(htmlReport, /sourceNode/u);
+
+      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+      for (const capabilityName of ['browse public categories', 'browse public rankings', 'open public detail pages', 'open public profiles']) {
+        const capability = capabilityByName.get(capabilityName);
+        const evidenceRoutes = [...(capability?.entryNodeIds ?? []), ...(capability?.requiredNodeIds ?? [])]
+          .map((id) => nodeById.get(id))
+          .map((node) => `${node?.normalizedUrl ?? ''} ${node?.routePattern ?? ''} ${node?.routeTemplate ?? ''}`);
+        assert.equal(evidenceRoutes.some((route) => /\/pay(?:\/|$)/u.test(route)), false, `${capabilityName} should not use payment routes as public evidence`);
+      }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild writes access remediation plan for challenge-blocked partial builds', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-challenge-access-plan-'));
+  try {
+    let failure = /** @type {any} */ (null);
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+      '/': testHtmlPage('Public challenge fixture', `
+        <main>
+          <h1>Public entry</h1>
+          <a href="/categories/action/">Action category</a>
+          <a href="/hot/">Hot ranking</a>
+        </main>
+      `),
+    }), async (rootUrl) => {
+      await assert.rejects(
+        async () => {
+          try {
+            await runSiteForgeBuild(rootUrl, {
+              cwd: workspace,
+              buildId: 'challenge-access-plan-build',
+              now: new Date('2026-05-23T03:00:00.000Z'),
+              renderJs: true,
+              fetchDelayMs: 0,
+              publicRenderedStructureProvider: async () => ({
+                publicRenderedPages: [{
+                  url: rootUrl,
+                  routeTemplate: '/',
+                  pageType: 'security_check',
+                  title: 'Verify challenge',
+                  links: [{ href: '/categories/action/', label: 'Action category' }],
+                }],
+              }),
+            });
+          } catch (error) {
+            failure = error;
+            throw error;
+          }
+        },
+        /Skill verification failed/u,
+      );
+    });
+
+    assert.ok(failure?.artifactDir);
+    const plan = await readJson(path.join(failure.artifactDir, 'access_remediation_plan.json'));
+    assert.equal(plan.artifactFamily, 'siteforge-access-remediation-plan');
+    assert.equal(plan.reasonCode, 'anti-crawl-verify');
+    assert.equal(plan.retryDisposition, 'blocked_no_bypass');
+    assert.equal(plan.workflows.some((workflow) => workflow.kind === 'manual_summary'), true);
+    assert.equal(plan.workflows.every((workflow) => workflow.genericCrawlAllowed === false), true);
+    assert.equal(plan.workflows.every((workflow) => workflow.updatesCurrent === false), true);
+    assert.equal(plan.workflows.every((workflow) => workflow.updatesRegistry === false), true);
+    assert.equal(plan.safety.bypassChallenge, false);
+    assert.equal(plan.safety.saveRawHtml, false);
+    assert.equal(plan.safety.savePrivateBody, false);
+    const buildReport = await readJson(path.join(failure.artifactDir, 'build_report.json'));
+    assert.equal(buildReport.report_index.available_reports.includes('access_remediation_plan'), true);
+    assert.match(buildReport.reports.access_remediation_plan, /access_remediation_plan\.json$/u);
+    const userReport = await readJson(path.join(failure.artifactDir, 'build_report.user.json'));
+    assert.match(userReport.reports.access_remediation_plan, /access_remediation_plan\.json$/u);
+    assert.equal(userReport.next_step_workflows.some((workflow) => workflow.id === 'access-remediation-plan'), true);
+    assert.equal(userReport.next_step_workflows.every((workflow) => workflow.promotionAllowed === false), true);
+    assert.doesNotMatch(JSON.stringify(plan), /SECRET|sid=|uid=|Bearer\s+[A-Za-z0-9]|<html|<body/iu);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('SiteForge static crawl records failed fetches and standalone controls within maxPages', async () => {
@@ -543,6 +825,123 @@ test('runSiteForgeBuild concurrent static crawl keeps all fixture pages, nodes, 
   }
 });
 
+test('runSiteForgeBuild applies robots crawl-delay by serializing static crawl', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-robots-crawl-delay-'));
+  try {
+    await withTestServer((request, response) => {
+      const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1/');
+      if (requestUrl.pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end([
+          'User-agent: *',
+          'Allow: /',
+          'Crawl-delay: 0.1',
+          `Sitemap: http://${request.headers.host}/sitemap.xml`,
+          '',
+        ].join('\n'));
+        return;
+      }
+      if (requestUrl.pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end([
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+          `  <url><loc>http://${request.headers.host}/</loc></url>`,
+          `  <url><loc>http://${request.headers.host}/catalog.html</loc></url>`,
+          '</urlset>',
+        ].join('\n'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html><title>${requestUrl.pathname}</title><main><a href="/catalog.html">Catalog</a><ul><li>Item</li></ul></main>`);
+    }, async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'robots-crawl-delay-build',
+        now: new Date('2026-05-16T01:30:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+      });
+      assert.equal(result.status, 'success');
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.summary.collectionConcurrency, 1);
+      assert.equal(crawlStatic.summary.robotsCrawlDelaySeconds, 0.1);
+      assert.equal(crawlStatic.summary.effectiveCrawlFetchDelayMs, 100);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild keeps distinct Chinese category element capabilities', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-chinese-category-capabilities-'));
+  const fantasy = '\u7384\u5e7b';
+  const city = '\u90fd\u5e02';
+  const ranking = '\u6392\u884c\u699c';
+  const workOne = '\u4f5c\u54c1\u4e00';
+  const workTwo = '\u4f5c\u54c1\u4e8c';
+  try {
+    await withTestServer((request, response) => {
+      const requestUrl = new URL(request.url ?? '/', 'http://localhost/');
+      if (requestUrl.pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end('User-agent: *\nAllow: /\n');
+        return;
+      }
+      const pages = new Map([
+        ['/', testHtmlPage('\u4e2d\u6587\u5206\u7c7b\u9996\u9875', `
+          <main>
+            <nav>
+              <a href="/category/xuanhuan">${fantasy}</a>
+              <a href="/category/dushi">${city}</a>
+              <a href="/rank/hot">${ranking}</a>
+            </nav>
+            <section><a href="/book/one">${workOne}</a></section>
+          </main>
+        `)],
+        ['/category/xuanhuan', testHtmlPage(`${fantasy}\u5206\u7c7b`, `<main><a href="/book/one">${workOne}</a></main>`)],
+        ['/category/dushi', testHtmlPage(`${city}\u5206\u7c7b`, `<main><a href="/book/two">${workTwo}</a></main>`)],
+        ['/rank/hot', testHtmlPage(ranking, `<main><a href="/book/one">${workOne}</a></main>`)],
+        ['/book/one', testHtmlPage(workOne, '<main>\u4f5c\u54c1\u8be6\u60c5</main>')],
+        ['/book/two', testHtmlPage(workTwo, '<main>\u4f5c\u54c1\u8be6\u60c5</main>')],
+      ]);
+      const body = pages.get(requestUrl.pathname);
+      if (!body) {
+        response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end('not found');
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(body);
+    }, async (rootUrl) => {
+      const siteUrl = rootUrl.replace('127.0.0.1', 'localhost');
+      const result = await runSiteForgeBuild(siteUrl, {
+        cwd: workspace,
+        buildId: 'chinese-category-capabilities-build',
+        now: new Date('2026-05-16T02:30:00.000Z'),
+        maxDepth: 1,
+        maxPages: 8,
+        maxSeeds: 8,
+        fetchDelayMs: 0,
+      });
+      assert.equal(result.status, 'success');
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const activeCapabilities = capabilities.capabilities.filter((capability) => capability.status === 'active');
+      const userValues = new Set(activeCapabilities.map((capability) => capability.userValue));
+      assert.equal(userValues.has(`\u6d4f\u89c8${fantasy}`), true);
+      assert.equal(userValues.has(`\u6d4f\u89c8${city}`), true);
+      const categoryCapabilities = activeCapabilities.filter((capability) => capability.elementRole === 'category');
+      assert.equal(categoryCapabilities.some((capability) => capability.object === fantasy), true);
+      assert.equal(categoryCapabilities.some((capability) => capability.object === city), true);
+      assert.equal(new Set(categoryCapabilities.map((capability) => capability.id)).size, categoryCapabilities.length);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('SiteForge full-coverage catalog build generates capabilities from categories, tags, profiles, detail, and ranking routes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-full-catalog-'));
   const fixtureDir = await mkdtemp(path.join(os.tmpdir(), 'siteforge-full-catalog-fixture-'));
@@ -554,6 +953,7 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
     await mkdir(path.join(fixtureDir, 'videos', 'abc-002'), { recursive: true });
     await mkdir(path.join(fixtureDir, 'hot'), { recursive: true });
     await mkdir(path.join(fixtureDir, 'latest-updates'), { recursive: true });
+    await mkdir(path.join(fixtureDir, 'pay'), { recursive: true });
     await mkdir(path.join(fixtureDir, 'page', '2'), { recursive: true });
     await writeFile(path.join(fixtureDir, 'robots.txt'), 'User-agent: *\nAllow: /\nSitemap: /sitemap.xml\n', 'utf8');
     await writeFile(path.join(fixtureDir, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
@@ -566,6 +966,7 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
   <url><loc>https://catalog-fixture.local/models/aya/</loc></url>
   <url><loc>https://catalog-fixture.local/hot/</loc></url>
   <url><loc>https://catalog-fixture.local/latest-updates/</loc></url>
+  <url><loc>https://catalog-fixture.local/pay/</loc></url>
   <url><loc>https://catalog-fixture.local/videos/abc-001/</loc></url>
   <url><loc>https://catalog-fixture.local/videos/abc-002/</loc></url>
   <url><loc>https://catalog-fixture.local/page/2/</loc></url>
@@ -591,6 +992,7 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
       '<a href="/models/aya/">Model Aya</a>',
       '<a href="/hot/">Hot ranking</a>',
       '<a href="/latest-updates/">Latest updates</a>',
+      '<a href="/pay/">Pay center</a>',
       '<a href="/videos/abc-001/">Video ABC-001</a>',
       '<a href="/videos/abc-002/">Video ABC-002</a>',
       '<a href="/page/2/">Page 2</a>',
@@ -604,6 +1006,7 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
     await writeFile(path.join(fixtureDir, 'models', 'aya', 'index.html'), page('Model Aya profile', '<a href="/videos/abc-001/">Video ABC-001</a>'), 'utf8');
     await writeFile(path.join(fixtureDir, 'hot', 'index.html'), page('Hot ranking', '<a href="/videos/abc-001/">Video ABC-001</a>'), 'utf8');
     await writeFile(path.join(fixtureDir, 'latest-updates', 'index.html'), page('Latest updates', '<a href="/videos/abc-002/">Video ABC-002</a>'), 'utf8');
+    await writeFile(path.join(fixtureDir, 'pay', 'index.html'), page('Pay center', '<button>Pay now</button>'), 'utf8');
     await writeFile(path.join(fixtureDir, 'videos', 'abc-001', 'index.html'), page('Video ABC-001 detail'), 'utf8');
     await writeFile(path.join(fixtureDir, 'videos', 'abc-002', 'index.html'), page('Video ABC-002 detail'), 'utf8');
     await writeFile(path.join(fixtureDir, 'page', '2', 'index.html'), page('Catalog page 2', '<a href="/videos/abc-002/">Video ABC-002</a>'), 'utf8');
@@ -654,11 +1057,39 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
     assert.equal(downloadCapability?.status, 'disabled');
     assert.equal(downloadCapability?.activationBlockedReason, 'fixture-native-resolver-required');
     assert.equal(downloadCapability?.risk_level, 'download_high');
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    for (const capabilityName of ['browse public collections', 'browse public rankings', 'read public metadata']) {
+      const capability = capabilities.capabilities.find((candidate) => candidate.name === capabilityName);
+      const evidenceRoutes = [...(capability?.entryNodeIds ?? []), ...(capability?.requiredNodeIds ?? [])]
+        .map((id) => nodeById.get(id))
+        .map((node) => `${node?.normalizedUrl ?? ''} ${node?.routePattern ?? ''} ${node?.routeTemplate ?? ''}`);
+      assert.equal(evidenceRoutes.some((route) => /\/pay(?:\/|$)/u.test(route)), false, `${capabilityName} should not use payment routes as catalog evidence`);
+    }
 
     const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
     assert.equal(capabilities.capabilities.length >= 10, true);
     assert.equal(intents.intents.length >= 24, true);
     assert.equal(intents.intents.some((intent) => /\p{Script=Han}/u.test(intent.canonicalUtterance)), true);
+    const publicNavigationCapability = capabilities.capabilities.find((capability) => capability.name === 'browse public navigation');
+    assert.equal(intents.intents.some((intent) => (
+      intent.capabilityId === publicNavigationCapability?.id
+      && /\p{Script=Han}/u.test(intent.canonicalUtterance)
+    )), true);
+
+    const pageReconciliation = await readJson(path.join(result.artifactDir, 'page_reconciliation_report.json'));
+    assert.equal(pageReconciliation.status, 'passed');
+    assert.equal(pageReconciliation.summary.expectedCategoryLinks >= 2, true);
+    assert.equal(pageReconciliation.summary.missingCategoryLinks, 0);
+    assert.equal(pageReconciliation.summary.categoryCapabilities >= 1, true);
+    assert.equal(pageReconciliation.summary.categoryIntents >= 1, true);
+    assert.equal(pageReconciliation.categoryCapabilities.some((capability) => capability.hasChineseName), true);
+    assert.equal(pageReconciliation.categoryIntents.some((intent) => intent.hasChineseUtterance), true);
+    assert.equal(pageReconciliation.safety.cookiePersisted, false);
+    const indexedBuildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+    const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
+    assert.equal(indexedBuildReport.report_index.available_reports.includes('page_reconciliation_report'), true);
+    assert.match(indexedBuildReport.reports.page_reconciliation_report, /page_reconciliation_report\.json$/u);
+    assert.match(userReport.reports.page_reconciliation_report, /page_reconciliation_report\.json$/u);
 
     const generatedAdapter = await readJson(path.join(result.artifactDir, 'generated_adapter.json'));
     assert.equal(generatedAdapter.adapterKind, 'site_dedicated_generated_profile');
@@ -690,6 +1121,8 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
     assert.equal(crawlCheckpoint.privacy.rawDomSaved, false);
 
     const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+    assert.equal(buildReport.pageReconciliation.summary.status, 'passed');
+    assert.match(buildReport.artifacts['page_reconciliation_report.json'], /page_reconciliation_report\.json$/u);
     assert.equal(buildReport.siteAdapter.adapter_id, `${result.buildContext.siteId}-site-adapter`);
     assert.equal(buildReport.siteAdapter.source_adapter_id, 'generic-navigation');
     assert.equal(buildReport.user_report.site_adapter.adapter_id, `${result.buildContext.siteId}-site-adapter`);
@@ -828,8 +1261,8 @@ test('capability intent HTML report escapes markup and redacts sensitive report 
       buildId: 'escape-build',
       skillId: 'simple-shop',
       crawlMode: 'public_only',
-      authChoice: 'declined',
-      authLevel: 'L0',
+      authMethod: 'none',
+      authVerificationStatus: 'not_requested',
       resultStatus: 'success',
       legacyStatus: 'success',
       verificationStatus: 'passed',
@@ -895,7 +1328,7 @@ test('capability intent HTML report escapes markup and redacts sensitive report 
       callable: 1,
       nonCallable: 0,
       riskLevel: 'read_public_low',
-      authLevel: 'public_verified',
+      authVerificationStatus: 'not_requested',
     }],
     blocked: {
       disabledHighRisk: [],
@@ -912,7 +1345,7 @@ test('capability intent HTML report escapes markup and redacts sensitive report 
   assert.match(html, /A &amp; B/u);
   assert.match(html, /&quot;quote&quot;/u);
   assert.match(html, /&#39;apostrophe&#39;/u);
-  assert.doesNotMatch(html, /synthetic-secret|Authorization|Bearer|\bcookie\b|\btoken\b|\/Users\/example\/profile|raw html|&lt;html&gt;/iu);
+  assert.doesNotMatch(html, /synthetic-secret|Authorization|Bearer|cookie\s*=|token\s*=|sid=|uid=|\/Users\/example\/profile|raw html|&lt;html&gt;/iu);
 });
 
 test('ArtifactStore confines structured artifact writes to the active site build workspace', async () => {
@@ -1021,7 +1454,14 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
 
     const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
     const capabilityIds = new Set(capabilities.capabilities.map((capability) => capability.id));
-    assert.equal(intents.intents.every((intent) => capabilityIds.has(intent.capabilityId)), true);
+    assert.equal(intents.intents.every((intent) => (
+      capabilityIds.has(intent.capabilityId)
+      || (
+        intent.intentSource === 'graph_element'
+        && intent.callable === false
+        && intent.sourceNodeId
+      )
+    )), true);
 
     const htmlReportPath = path.join(result.artifactDir, 'reports', 'capability_intent_summary.html');
     const htmlReport = await readFile(htmlReportPath, 'utf8');
@@ -1040,7 +1480,7 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
     assert.match(htmlReport, /simple-shop/u);
     assert.match(htmlReport, /public_only/u);
     assert.match(htmlReport, /authenticated pages<\/td><td>0/u);
-    assert.doesNotMatch(htmlReport, /\bcookie\b|\btoken\b|\bauthorization\b|\bbearer\b|localStorage|sessionStorage|userDataDir|browser profile|<script\b/iu);
+    assert.doesNotMatch(htmlReport, /cookie\s*=|token\s*=|sid=|uid=|\bauthorization\b|\bbearer\b|localStorage|sessionStorage|userDataDir|browser profile|<script\b/iu);
 
     const lookup = await lookupSkillIntent({
       registryPath: result.workspace.registryPath,
@@ -1085,6 +1525,7 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
       path.join('builds', 'simple-shop-build', 'verification', 'verification_report.json'),
       path.join('builds', 'simple-shop-build', 'reports', 'build_report.json'),
       path.join('builds', 'simple-shop-build', 'reports', 'capability_intent_summary.html'),
+      path.join('builds', 'simple-shop-build', 'reports', 'raw_page_material_manifest.json'),
     ]);
     const lastSuccessful = await readJson(path.join(siteRoot, 'last_successful_build.json'));
     assert.equal(lastSuccessful.buildId, 'simple-shop-build');
@@ -1093,8 +1534,13 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
     const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
     assert.equal(buildReport.reports.user.html_capability_intent_summary, htmlReportPath);
     assert.equal(buildReport.reports.capability_intent_summary_html, htmlReportPath);
+    assert.match(buildReport.reports.raw_page_material_manifest, /raw_page_material_manifest\.json$/u);
     assert.equal(buildReport.report_index.capability_intent_summary_html, 'reports/capability_intent_summary.html');
+    assert.equal(buildReport.report_index.raw_page_material_manifest, 'reports/raw_page_material_manifest.json');
     assert.equal(buildReport.user_report.reports.capability_intent_summary_html.endsWith('reports/capability_intent_summary.html'), true);
+    assert.equal(buildReport.user_report.reports.raw_page_material_manifest.endsWith('reports/raw_page_material_manifest.json'), true);
+    assert.equal(buildReport.user_report.page_source_saved, true);
+    assert.equal(buildReport.user_report.private_content_saved, false);
     assert.match(renderSiteForgeBuildSummary(result, { cwd: workspace }), /capability_intent_summary\.html/u);
     const cliJson = JSON.parse(siteForgeBuildCliJson(result, { report: 'user' }));
     assert.equal(cliJson.reports.capability_intent_summary_html.endsWith('reports/capability_intent_summary.html'), true);
@@ -1104,7 +1550,190 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
   }
 });
 
-test('SiteForge setup first asks for login enhancement and records public_only when declined', async () => {
+test('runSiteForgeBuild maps generic public repository sites without product, news, or book drift', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-repository-site-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl),
+      },
+      '/sitemap.xml': {
+        contentType: 'application/xml; charset=utf-8',
+        body: testSitemapXml(rootUrl, ['/', '/repositories', '/search', '/open-source/toolkit']),
+      },
+      '/': testHtmlPage('Code Host', `
+        <main>
+          <h1>Code Host</h1>
+          <nav>
+            <a href="/repositories">Repositories</a>
+            <a href="/topics/automation">Automation topic</a>
+            <a href="/open-source/toolkit">Toolkit repository</a>
+          </nav>
+          <form method="GET" action="/search" role="search" aria-label="Search repositories">
+            <input name="q" type="search" placeholder="Search repositories">
+            <button type="submit">Search</button>
+          </form>
+        </main>
+      `),
+      '/repositories': testHtmlPage('Repositories', `
+        <main>
+          <h1>Repositories</h1>
+          <ul class="repository-list">
+            <li><a href="/open-source/toolkit">Toolkit repository</a></li>
+            <li><a href="/open-source/runner">Runner repository</a></li>
+            <li><a href="/open-source/actions">Actions repository</a></li>
+          </ul>
+        </main>
+      `),
+      '/search': testHtmlPage('Search repositories', `
+        <main>
+          <h1>Search repositories</h1>
+          <form method="GET" action="/search" role="search" aria-label="Search repositories">
+            <input name="q" type="search" placeholder="Repository keyword">
+            <button type="submit">Search</button>
+          </form>
+        </main>
+      `),
+      '/open-source/toolkit': testHtmlPage('Toolkit repository', `
+        <main>
+          <h1>Toolkit repository</h1>
+          <article class="repository-card">
+            <p>Public source repository metadata and README summary.</p>
+          </article>
+        </main>
+      `),
+      '/open-source/runner': testHtmlPage('Runner repository', '<main><h1>Runner repository</h1></main>'),
+      '/open-source/actions': testHtmlPage('Actions repository', '<main><h1>Actions repository</h1></main>'),
+      '/topics/automation': testHtmlPage('Automation topic', '<main><h1>Automation topic</h1></main>'),
+    }), async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'repository-site-build',
+        now: new Date('2026-05-16T04:08:00.000Z'),
+        fetchDelayMs: 0,
+        maxPages: 20,
+        maxSeeds: 20,
+      });
+      assert.equal(result.status, 'success');
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const activeNames = new Set(capabilities.capabilities
+        .filter((capability) => capability.status === 'active')
+        .map((capability) => capability.name));
+      for (const expected of [
+        'browse public repositories',
+        'open public repository details',
+        'search public content',
+        'browse public navigation',
+      ]) {
+        assert.equal(activeNames.has(expected), true, `${expected} should be active for a generic repository site`);
+      }
+      for (const unexpected of ['search products', 'search books', 'view news homepage', 'browse news channels']) {
+        assert.equal(activeNames.has(unexpected), false, `${unexpected} should not be inferred for a repository site`);
+      }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('SiteForge build preserves non-root input URL as a first-class public seed', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-input-path-seed-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl),
+      },
+      '/sitemap.xml': {
+        contentType: 'application/xml; charset=utf-8',
+        body: testSitemapXml(rootUrl, ['/']),
+      },
+      '/': testHtmlPage('Root Home', `
+        <main>
+          <h1>Root Home</h1>
+          <p>The root page intentionally does not link to the top ranking page.</p>
+        </main>
+      `),
+      '/top': testHtmlPage('Top Ranking', `
+        <main>
+          <h1>Top Ranking</h1>
+          <ol class="ranking-list">
+            <li><a href="/works/item-1">Ranked public work 1</a></li>
+            <li><a href="/works/item-2">Ranked public work 2</a></li>
+          </ol>
+        </main>
+      `),
+      '/works/item-1': testHtmlPage('Ranked Work 1', '<main><h1>Ranked Work 1</h1></main>'),
+      '/works/item-2': testHtmlPage('Ranked Work 2', '<main><h1>Ranked Work 2</h1></main>'),
+    }), async (rootUrl) => {
+      const inputUrl = new URL('/top', rootUrl).toString();
+      const result = await runSiteForgeBuild(inputUrl, {
+        cwd: workspace,
+        buildId: 'input-path-seed-build',
+        now: new Date('2026-05-23T07:10:00.000Z'),
+        fetchDelayMs: 0,
+        maxDepth: 2,
+        maxPages: 10,
+        maxSeeds: 10,
+      });
+      assert.equal(result.status, 'success');
+      const seeds = await readJson(path.join(result.artifactDir, 'seeds.json'));
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const topUrl = normalizeUrl(inputUrl);
+      assert.equal(seeds.seeds.some((seed) => seed.normalizedUrl === topUrl && seed.source === 'input_path'), true);
+      assert.equal(crawlStatic.pages.some((page) => page.normalizedUrl === topUrl), true);
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.status === 'active'
+        && ['browse public rankings', 'browse public collections'].includes(capability.name)
+      )), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('SiteForge setup uses non-root input page evidence when homepage is unavailable', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-input-page-setup-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { sitemap: false }),
+      },
+      '/': {
+        status: 503,
+        body: 'homepage temporarily unavailable',
+      },
+      '/top': testHtmlPage('Top Ranking', `
+        <main>
+          <h1>Top Ranking</h1>
+          <ol class="ranking-list">
+            <li><a href="/works/item-1">Ranked public work 1</a></li>
+          </ol>
+        </main>
+      `),
+      '/works/item-1': testHtmlPage('Ranked Work 1', '<main><h1>Ranked Work 1</h1></main>'),
+    }), async (rootUrl) => {
+      const inputUrl = new URL('/top', rootUrl).toString();
+      const setup = await prepareSiteForgeBuildSetup(inputUrl, {
+        cwd: workspace,
+        buildId: 'input-page-setup',
+        now: new Date('2026-05-23T08:20:00.000Z'),
+        fetchDelayMs: 0,
+        fetchTimeoutMs: 1000,
+      });
+      assert.equal(setup.setupPlan.buildReadiness.buildable, true);
+      assert.equal(setup.setupPlan.evidenceQuality.actualPageEvidenceUrls.includes(normalizeUrl(inputUrl)), true);
+      assert.equal(setup.setupPlan.sourceDiagnostics.some((entry) => entry.label === 'input page'), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('SiteForge setup first asks for authentication mode and records public_only when declined', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-public-only-setup-'));
   try {
     await withTestSite(simpleShopRoutes, async (rootUrl) => {
@@ -1120,7 +1749,8 @@ test('SiteForge setup first asks for login enhancement and records public_only w
       setupOutput: { write() {} },
     });
     assert.equal(setup.profile.crawlContract.crawlMode, 'public_only');
-    assert.equal(setup.profile.crawlContract.authChoice, 'declined');
+    assert.equal(setup.profile.crawlContract.authMethod, 'none');
+    assert.equal(setup.profile.crawlContract.authVerificationStatus, 'not_requested');
     assert.equal(setup.profile.authStateReport.verified, false);
     assert.equal(setup.buildOptions.crawlContract.crawlMode, 'public_only');
     assert.equal(await fileExists(setup.paths.authStateReportPath), true);
@@ -1130,32 +1760,439 @@ test('SiteForge setup first asks for login enhancement and records public_only w
   }
 });
 
-test('SiteForge setup opens only the system default browser path and falls back when auth check fails', async () => {
+test('SiteForge setup uses explicit cookie auth only and falls back when cookie is missing', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-auth-failed-setup-'));
   try {
     await withTestSite(simpleShopRoutes, async (rootUrl) => {
     const opened = [];
-    const answers = ['2', 'n', 'public catalog'];
     const setup = await prepareSiteForgeBuildSetup(rootUrl, {
       cwd: workspace,
       buildId: 'auth-failed-setup',
       now: new Date('2026-05-21T08:10:00.000Z'),
-      setupInteractive: true,
-      interactive: true,
+      authMode: 'cookie',
       fetchDelayMs: 0,
-      setupPrompt: async () => answers.shift() ?? '',
       setupOutput: { write() {} },
       defaultBrowserLauncher: async (url) => {
         opened.push(url);
         return { command: 'test-default-browser', args: [url] };
       },
     });
-    assert.deepEqual(opened, [rootUrl]);
+    assert.deepEqual(opened, []);
     assert.equal(setup.profile.crawlContract.crawlMode, 'public_only');
-    assert.equal(setup.profile.crawlContract.authChoice, 'failed');
+    assert.equal(setup.profile.crawlContract.authMethod, 'cookie');
+    assert.equal(setup.profile.crawlContract.authVerificationStatus, 'cookie_missing');
+    assert.equal(setup.profile.authStateReport.authMethod, 'cookie');
+    assert.equal(setup.profile.authStateReport.authVerificationStatus, 'cookie_missing');
     assert.equal(setup.profile.authStateReport.verified, false);
+    assert.equal(setup.profile.authStateReport.cookieMaterialPersisted, false);
     assert.equal(setup.profile.authStateReport.browserProfilePersisted, false);
     assert.equal(setup.profile.authStateReport.sessionMaterialPersisted, false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('SiteForge setup fails closed when configured cookie authentication fails', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-auth-strict-setup-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      ...simpleShopRoutes(rootUrl),
+      '/account': {
+        status: 403,
+        body: 'Forbidden',
+      },
+    }), async (rootUrl) => {
+      await assert.rejects(
+        () => prepareSiteForgeBuildSetup(rootUrl, {
+          cwd: workspace,
+          buildId: 'auth-strict-setup',
+          now: new Date('2026-05-21T08:12:00.000Z'),
+          authMode: 'cookie',
+          cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+          authCheckUrl: '/account',
+          strictCookieAuth: true,
+          fetchDelayMs: 0,
+          setupOutput: { write() {} },
+        }),
+        (error) => {
+          const setupError = /** @type {any} */ (error);
+          assert.equal(setupError.code, 'setup-evidence-not-buildable');
+          assert.equal(setupError.reasonCode, 'cookie_invalid');
+          assert.doesNotMatch(String(setupError.message), /SECRET_SESSION_VALUE|sid=|uid=123/u);
+          return true;
+        },
+      );
+      const paths = buildSetupAssistantPaths(rootUrl, {
+        cwd: workspace,
+        buildId: 'auth-strict-setup',
+        now: new Date('2026-05-21T08:12:00.000Z'),
+      });
+      const authReport = await readJson(paths.authStateReportPath);
+      const setupPlan = await readJson(paths.setupPlanPath);
+      assert.equal(authReport.authVerificationStatus, 'cookie_invalid');
+      assert.equal(authReport.cookieInput.pairCount, 2);
+      assert.equal(setupPlan.buildReadiness.buildable, false);
+      assert.equal(setupPlan.buildReadiness.reasonCode, 'cookie_invalid');
+      assert.doesNotMatch(JSON.stringify({ authReport, setupPlan }), /SECRET_SESSION_VALUE|sid=|uid=123/u);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('cookie auth state check gates authenticated layer without persisting cookie material', async () => {
+  await withTestSite((rootUrl) => ({
+    '/account': testHtmlPage('Account', '<main><ul><li>item</li></ul></main>'),
+    '/security-check': testHtmlPage('Security check', '<main>Cloudflare challenge <input name="csrf-token" value="SECRET_SESSION_VALUE"></main>'),
+    '/login': testHtmlPage('Login', '<form><input type="password"></form>'),
+    '/redirect-login': {
+      status: 302,
+      headers: { location: '/login' },
+      body: '',
+    },
+    '/forbidden': {
+      status: 403,
+      body: 'Forbidden',
+    },
+  }), async (rootUrl) => {
+    const site = {
+      id: 'cookie-auth-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+
+    const missing = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: { authMode: 'cookie', authCheckUrl: '/account' },
+    });
+    assert.equal(missing.authMethod, 'cookie');
+    assert.equal(missing.authVerificationStatus, 'cookie_missing');
+    assert.equal(missing.verified, false);
+    assert.equal(canRunAuthenticatedLayer(missing), false);
+
+    const verified = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+        authCheckUrl: '/account',
+        fetchTimeoutMs: 1000,
+      },
+    });
+    assert.equal(verified.authMethod, 'cookie');
+    assert.equal(verified.authVerificationStatus, 'cookie_verified');
+    assert.equal(verified.verified, true);
+    assert.equal(verified.crawlMode, 'authenticated_cookie');
+    assert.equal(verified.cookieInput.pairCount, 2);
+    assert.equal(verified.cookieInput.persisted, false);
+    assert.equal(canRunAuthenticatedLayer(verified), true);
+    assert.doesNotMatch(JSON.stringify(verified), /SECRET_SESSION_VALUE|sid=|uid=123/u);
+
+    const redirected = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+        authCheckUrl: '/redirect-login',
+        fetchTimeoutMs: 1000,
+      },
+    });
+    assert.equal(redirected.authVerificationStatus, 'cookie_invalid');
+    assert.deepEqual(redirected.blockingSignals, ['redirected-to-login']);
+
+    const forbidden = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+        authCheckUrl: '/forbidden',
+        fetchTimeoutMs: 1000,
+      },
+    });
+    assert.equal(forbidden.authVerificationStatus, 'cookie_invalid');
+    assert.deepEqual(forbidden.blockingSignals, ['http_403']);
+
+    const crossSite = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+        authCheckUrl: 'https://example.com/account',
+        fetchTimeoutMs: 1000,
+      },
+    });
+    assert.equal(crossSite.authVerificationStatus, 'cookie_blocked');
+    assert.deepEqual(crossSite.blockingSignals, ['auth-check-url-cross-site']);
+
+    const challenge = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+        authCheckUrl: '/security-check',
+        fetchTimeoutMs: 1000,
+      },
+    });
+    assert.equal(challenge.authVerificationStatus, 'cookie_blocked');
+    assert.deepEqual(challenge.blockingSignals, ['js-challenge-or-step-up-detected']);
+    assert.equal(challenge.positiveSignals.includes('csrf-token-signal-redacted'), true);
+    assert.doesNotMatch(JSON.stringify(challenge), /SECRET_SESSION_VALUE|sid=|uid=123/u);
+  });
+});
+
+test('browser auth state check verifies bridge summaries without reading session material', async () => {
+  await withTestServer({
+    '/robots.txt': testRobotsTxt('http://example.test/'),
+    '/': testHtmlPage('Home', '<main>Home</main>'),
+  }, async (rootUrl) => {
+    const site = {
+      id: 'browser-auth-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+
+    const missing = await runBrowserAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserAuthBridgeProvider: async () => ({ authenticatedPages: [] }),
+      },
+    });
+    assert.equal(missing.authMethod, 'browser');
+    assert.equal(missing.authVerificationStatus, 'browser_bridge_missing');
+    assert.equal(missing.verified, false);
+    assert.equal(canRunAuthenticatedLayer(missing), false);
+
+    const verified = await runBrowserAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        authCheckUrl: '/account',
+        browserAuthBridgeProvider: async ({ targetUrl }) => ({
+          authenticatedPages: [{
+            url: targetUrl,
+            routeTemplate: '/account',
+            pageType: 'account_home',
+            visibleItemCount: 5,
+            listPresent: true,
+            controls: [{ kind: 'button', label: 'Open notifications', selector: '[data-action="notifications"]' }],
+          }],
+          authenticatedOverlayPages: [{
+            url: rootUrl,
+            routeTemplate: '/',
+            pageType: 'home_overlay',
+            visibleItemCount: 2,
+            listPresent: true,
+          }],
+        }),
+      },
+    });
+    assert.equal(verified.authMethod, 'browser');
+    assert.equal(verified.authVerificationStatus, 'browser_verified');
+    assert.equal(verified.verified, true);
+    assert.equal(verified.crawlMode, 'authenticated_browser');
+    assert.equal(verified.browserBridge.used, true);
+    assert.equal(verified.browserBridge.persisted, false);
+    assert.equal(canRunAuthenticatedLayer(verified), true);
+    assert.doesNotMatch(JSON.stringify(verified), /sid=SECRET_SESSION_VALUE|uid=123|Bearer synthetic-secret/iu);
+
+    const blocked = await runBrowserAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        authCheckUrl: 'https://example.com/account',
+        browserAuthBridgeProvider: async () => ({ authenticatedPages: [] }),
+      },
+    });
+    assert.equal(blocked.authVerificationStatus, 'browser_blocked');
+    assert.deepEqual(blocked.blockingSignals, ['browser-auth-url-cross-site']);
+  });
+});
+
+test('browser auth bridge serves collector script and rejects sensitive summaries', async () => {
+  await withTestServer({
+    '/robots.txt': testRobotsTxt('http://example.test/'),
+    '/': testHtmlPage('Home', '<main><a href="/rank/hot">热门榜单</a></main>'),
+  }, async (rootUrl) => {
+    const site = {
+      id: 'browser-bridge-server-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    const opened = [];
+    const verified = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: { authMode: 'browser', browserBridgeTimeoutMs: 3000 },
+      openBrowser: async (urlValue) => {
+        opened.push(urlValue);
+        if (!String(urlValue).includes('nonce=')) {
+          return;
+        }
+        const bridgeHtml = await (await fetch(urlValue)).text();
+        assert.match(bridgeHtml, /siteforge-browser-bridge/u);
+        assert.match(bridgeHtml, /session:/u);
+        const collectorUrl = bridgeHtml.match(/collector: (http:\/\/127\.0\.0\.1:\d+\/collector\.js\?[^<\s]+)/u)?.[1]?.replace(/&amp;/gu, '&');
+        assert.ok(collectorUrl);
+        const sessionUrl = bridgeHtml.match(/session: (http:\/\/127\.0\.0\.1:\d+\/session\.json\?[^<\s]+)/u)?.[1]?.replace(/&amp;/gu, '&');
+        assert.ok(sessionUrl);
+        const session = await (await fetch(sessionUrl)).json();
+        assert.equal(session.artifactFamily, 'siteforge-browser-bridge-session');
+        assert.equal(session.nonce, new URL(sessionUrl).searchParams.get('nonce'));
+        assert.equal(session.targetUrl, rootUrl);
+        assert.equal(session.allowedHost, new URL(rootUrl).hostname);
+        assert.equal(session.privacy.cookieRead, false);
+        assert.equal(session.privacy.browserProfilePersisted, false);
+        assert.match(session.extensionStatusUrl, /\/extension-status\?nonce=/u);
+        const extensionStatus = await fetch(`${session.extensionStatusUrl}&stage=test-extension-active`, { method: 'POST' });
+        assert.equal(extensionStatus.ok, true);
+        const collectorScript = await (await fetch(collectorUrl)).text();
+        assert.match(collectorScript, /SITEFORGE_SUBMIT_URL/u);
+        assert.doesNotMatch(collectorScript, /document\.cookie|localStorage|sessionStorage|Authorization/u);
+        const submitUrl = session.submitUrl;
+        assert.ok(submitUrl);
+        await fetch(submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            authenticatedPages: [{
+              url: rootUrl,
+              routeTemplate: '/',
+              pageType: 'authenticated_home',
+              visibleItemCount: 1,
+              listPresent: true,
+              links: [{
+                href: '/rank/hot',
+                label: '热门榜单',
+                semanticKind: 'ranking',
+                routeTemplate: '/rank/hot',
+              }],
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(opened.length, 1);
+    assert.equal(verified.status, 'browser_verified');
+    assert.equal(verified.structureSummary.authenticatedPages[0].links[0].semanticKind, 'ranking');
+    const extensionDir = browserBridgeExtensionDirectory();
+    const manifest = JSON.parse(await readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.manifest_version, 3);
+    assert.deepEqual(manifest.permissions.sort(), ['scripting', 'tabs']);
+    assert.equal((await readFile(path.join(extensionDir, 'bridge-content.js'), 'utf8')).includes('siteforge-bridge-session'), true);
+    assert.equal((await readFile(path.join(extensionDir, 'background.js'), 'utf8')).includes('chrome.scripting.executeScript'), true);
+    assert.equal((await readFile(path.join(extensionDir, 'collector-content.js'), 'utf8')).includes('siteforge-collect-structure'), true);
+
+    const script = browserStructureCollectorScript({
+      nonce: 'nonce-test',
+      submitUrl: 'http://127.0.0.1:1/submit?nonce=nonce-test',
+    });
+    assert.match(script, /semanticKindFor/u);
+    assert.doesNotMatch(script, /document\.cookie|localStorage|sessionStorage/u);
+
+    const blocked = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserAuthBridgeProvider: async () => ({
+          authenticatedPages: [{
+            url: rootUrl,
+            routeTemplate: '/',
+            pageType: 'authenticated_home',
+            links: [{ href: '/account', label: 'cookie=sessionid=SECRET', semanticKind: 'category' }],
+          }],
+        }),
+      },
+    });
+    assert.equal(blocked.status, 'browser_blocked');
+    assert.deepEqual(blocked.blockingSignals, ['browser-bridge-sensitive-payload']);
+  });
+});
+
+test('authenticated crawl reuses verified cookie only at runtime', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-auth-runtime-cookie-'));
+  const accountCookies = [];
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/account']));
+        return;
+      }
+      if (pathname === '/account') {
+        accountCookies.push(String(request.headers.cookie ?? ''));
+        if (!String(request.headers.cookie ?? '').includes('sid=ok')) {
+          response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+          response.end('Forbidden');
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Account', '<main><ul><li>notice</li></ul></main>'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', '<main><a href="/account">Account</a><a href="/catalog">Catalog</a></main>'));
+    }, async (rootUrl) => {
+      const authStateReport = {
+        schemaVersion: 1,
+        artifactFamily: 'siteforge-auth-state-report',
+        crawlMode: 'authenticated_cookie',
+        authMethod: 'cookie',
+        authVerificationStatus: 'cookie_verified',
+        verified: true,
+        source: 'cookie_header_verification',
+        blockingSignals: [],
+        positiveSignals: ['cookie_header_present', 'auth_check_http_success', 'auth_check_not_login_route'],
+        verifiedRoutes: ['/account'],
+        capabilityProofs: [],
+        rawMaterialPersisted: false,
+        sessionMaterialPersisted: false,
+        cookieMaterialPersisted: false,
+        browserProfilePersisted: false,
+      };
+      const crawlContract = createCrawlContract({
+        authStateReport,
+        coverageTargets: {
+          publicRoutes: ['/'],
+          authRoutes: ['/account'],
+          publicRevisitRoutes: ['/'],
+        },
+      });
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'auth-runtime-cookie',
+        now: new Date('2026-05-21T08:16:00.000Z'),
+        fetchDelayMs: 0,
+        authMode: 'cookie',
+        cookieHeader: 'sid=ok; uid=123',
+        authCheckUrl: '/account',
+        authStateReport,
+        crawlContract,
+      });
+      assert.equal(result.status, 'success');
+      assert.ok(accountCookies.length >= 2);
+      assert.ok(accountCookies.filter((cookie) => cookie.includes('sid=ok')).length >= 2);
+      const authReportText = await readFile(path.join(result.artifactDir, 'auth_state_report.json'), 'utf8');
+      const buildReportText = await readFile(path.join(result.artifactDir, 'build_report.json'), 'utf8');
+      assert.doesNotMatch(`${authReportText}\n${buildReportText}`, /sid=ok|uid=123/u);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1169,13 +2206,13 @@ test('runSiteForgeBuild merges public, authenticated, and overlay layers with ev
     const authStateReport = {
       schemaVersion: 1,
       artifactFamily: 'siteforge-auth-state-report',
-      crawlMode: 'enhanced_with_login',
-      authChoice: 'selected',
-      authLevel: 'L3',
+      crawlMode: 'authenticated_cookie',
+      authMethod: 'cookie',
+      authVerificationStatus: 'cookie_verified',
       verified: true,
-      source: 'default_browser_user_confirmed',
+      source: 'cookie_header_verification',
       blockingSignals: [],
-      positiveSignals: ['user_confirmed_terminal_y', 'same_site_final_url', 'not_login_route', 'authenticated_route_candidate'],
+      positiveSignals: ['cookie_header_present', 'auth_check_http_success', 'auth_check_not_login_route'],
       verifiedRoutes: ['/notifications'],
       capabilityProofs: [],
       rawMaterialPersisted: false,
@@ -1183,7 +2220,6 @@ test('runSiteForgeBuild merges public, authenticated, and overlay layers with ev
       browserProfilePersisted: false,
     };
     const crawlContract = createCrawlContract({
-      authChoice: 'selected',
       authStateReport,
       coverageTargets: {
         publicRoutes: ['/'],
@@ -1254,21 +2290,145 @@ test('runSiteForgeBuild merges public, authenticated, and overlay layers with ev
       .every((capability) => capability.status !== 'active' && !capability.executionPlan), true);
 
     const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
-    assert.equal(userReport.crawlMode, 'enhanced_with_login');
+    assert.equal(userReport.crawlMode, 'authenticated_cookie');
     assert.equal(userReport.coverage.public.pages > 0, true);
     assert.equal(userReport.coverage.authenticated.pages, 1);
     assert.equal(userReport.coverage.overlay.pagesRevisited, 1);
     assert.equal(userReport.auth_summary.savedMaterial.rawMaterialPersisted, false);
 
     const htmlReport = await readFile(path.join(result.artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8');
-    assert.match(htmlReport, /enhanced_with_login/u);
+    assert.match(htmlReport, /authenticated_cookie/u);
     assert.match(htmlReport, /authenticated pages<\/td><td>1/u);
     assert.match(htmlReport, /overlay pages revisited<\/td><td>1/u);
     assert.match(htmlReport, /notification/u);
     assert.match(htmlReport, /requiredEvidence/u);
     assert.match(htmlReport, /observedEvidence/u);
     assert.match(htmlReport, /missingEvidence/u);
-    assert.doesNotMatch(htmlReport, /\bcookie\b|\btoken\b|\bauthorization\b|\bbearer\b|localStorage|sessionStorage|userDataDir|browser profile|<script\b/iu);
+    assert.doesNotMatch(htmlReport, /cookie\s*=|token\s*=|sid=|uid=|\bauthorization\b|\bbearer\b|localStorage|sessionStorage|userDataDir|browser profile|<script\b/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild accepts default-browser bridge authenticated summaries', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-auth-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'browser-auth-build',
+        now: new Date('2026-05-21T08:24:00.000Z'),
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        authCheckUrl: '/notifications',
+        browserAuthBridgeProvider: async ({ targetUrl }) => ({
+          authenticatedPages: [{
+            url: targetUrl,
+            routeTemplate: '/notifications',
+            tabState: 'notifications',
+            pageType: 'notifications',
+            visibleItemCount: 4,
+            listPresent: true,
+            unreadMarkerPresent: true,
+          }],
+          authenticatedOverlayPages: [{
+            url: rootUrl,
+            routeTemplate: '/',
+            tabState: 'home',
+            pageType: 'home_overlay',
+            visibleItemCount: 2,
+            listPresent: true,
+            overlayFor: rootUrl,
+            links: [
+              {
+                href: '/genres/xuanhuan',
+                label: '玄幻分类',
+                semanticKind: 'category',
+                routeTemplate: '/genres/xuanhuan',
+              },
+              {
+                href: '/rank/hot',
+                label: '热门榜单',
+                semanticKind: 'ranking',
+                routeTemplate: '/rank/hot',
+              },
+              {
+                href: '/follow',
+                label: '关注频道',
+                semanticKind: 'following_list',
+                routeTemplate: '/follow',
+              },
+            ],
+          }],
+        }),
+      });
+
+      assert.equal(result.status, 'success');
+      const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
+      assert.equal(authReport.authMethod, 'browser');
+      assert.equal(authReport.authVerificationStatus, 'browser_verified');
+      assert.equal(authReport.browserBridge.used, true);
+      assert.equal(authReport.cookieMaterialPersisted, false);
+      assert.equal(authReport.browserProfilePersisted, false);
+
+      const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(crawlAuthenticated.authenticatedPages.length, 1);
+      assert.equal(crawlAuthenticated.authenticatedOverlayPages.length, 1);
+
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.equal(graph.nodes.some((node) => node.sourceLayer === 'authenticated'), true);
+      assert.equal(graph.nodes.some((node) => node.sourceLayer === 'authenticated_overlay'), true);
+      assert.equal(graph.nodes.some((node) => (
+        node.sourceLayer === 'authenticated_overlay'
+        && node.categoryInstance?.kind === 'category'
+        && node.categoryInstance?.label === '玄幻分类'
+      )), true);
+      assert.equal(graph.nodes.some((node) => (
+        node.sourceLayer === 'authenticated_overlay'
+        && node.categoryInstance?.kind === 'ranking'
+        && node.categoryInstance?.label === '热门榜单'
+      )), true);
+      assert.equal(graph.nodes.some((node) => (
+        node.sourceLayer === 'authenticated_overlay'
+        && node.categoryInstance?.kind === 'following_list'
+        && node.categoryInstance?.label === '关注频道'
+      )), true);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.sourceLayer === 'authenticated_overlay'
+        && capability.elementRole === 'category'
+        && capability.object === '玄幻分类'
+        && capability.userValue === '浏览玄幻分类'
+        && capability.enabled_status === 'limited_enabled'
+      )), true);
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.sourceLayer === 'authenticated_overlay'
+        && capability.elementRole === 'ranking'
+        && capability.object === '热门榜单'
+        && capability.userValue === '查看热门榜单'
+        && capability.enabled_status === 'limited_enabled'
+      )), true);
+      const followReadCapability = capabilities.capabilities.find((capability) => (
+        capability.sourceLayer === 'authenticated_overlay'
+        && capability.elementRole === 'following_list'
+        && capability.object === '关注频道'
+      ));
+      assert.ok(followReadCapability);
+      assert.equal(followReadCapability.enabled_status, 'limited_enabled');
+      assert.notEqual(followReadCapability.status, 'disabled');
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.status === 'disabled'
+        && capability.blockedAction === 'follow'
+        && capability.entryNodeIds?.includes(followReadCapability.entryNodeIds[0])
+      )), false);
+
+      const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
+      assert.equal(userReport.crawlMode, 'authenticated_browser');
+      assert.equal(userReport.authMethod, 'browser');
+      assert.equal(userReport.authVerificationStatus, 'browser_verified');
+      assert.doesNotMatch(JSON.stringify(userReport), /sid=SECRET_SESSION_VALUE|uid=123|Bearer synthetic-secret/iu);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1347,7 +2507,18 @@ test('runSiteForgeBuild compiles a local HTTP Tencent News site with robots filt
     const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
     const capabilityIds = new Set(capabilities.capabilities.map((capability) => capability.id));
     assert.equal(intents.intents.length >= 1, true);
-    assert.equal(intents.intents.every((intent) => capabilityIds.has(intent.capabilityId)), true);
+    const newsChannelIntent = intents.intents.find((intent) => intent.canonicalUtterance === 'browse news channels');
+    assert.equal(newsChannelIntent?.utteranceExamples?.includes('浏览新闻频道'), true);
+    const articleIntent = intents.intents.find((intent) => intent.canonicalUtterance === 'view news article details');
+    assert.equal(articleIntent?.utteranceExamples?.includes('打开新闻文章'), true);
+    assert.equal(intents.intents.every((intent) => (
+      capabilityIds.has(intent.capabilityId)
+      || (
+        intent.intentSource === 'graph_element'
+        && intent.callable === false
+        && intent.sourceNodeId
+      )
+    )), true);
 
     const safetyPolicy = await readJson(path.join(result.artifactDir, 'safety_policy.json'));
     assert.equal(safetyPolicy.policy.submitForms, false);
@@ -1359,16 +2530,17 @@ test('runSiteForgeBuild compiles a local HTTP Tencent News site with robots filt
     assert.equal(verificationReport.status, 'passed');
     assert.equal(buildReport.status, 'success');
     assert.equal(Array.isArray(buildReport.warnings), true);
+    assert.equal((buildReport.partial_success_reasons ?? []).some((reason) => /Verification did not pass/u.test(reason)), false);
     assert.equal(buildReport.summary.highRiskAutoExecuted, false);
     assert.equal(Boolean(buildReport.artifacts['build_report.json']), true);
     assert.equal(buildReport.summary.unsuccessfulCollections >= 3, true);
     assert.equal(buildReport.collectionOutcomes.total >= 3, true);
-    assert.ok(buildReport.collectionOutcomes.unsuccessful.find((item) => (
+    assert.equal(buildReport.collectionOutcomes.unsuccessful.some((item) => (
       item.kind === 'capability'
       && item.target === 'capture network APIs'
       && item.status === 'candidate'
       && item.reasonCode === 'capability-evidence-matrix-incomplete'
-    )));
+    )), false);
     assert.ok(buildReport.collectionOutcomes.unsuccessful.find((item) => (
       item.kind === 'stage'
       && item.target === 'crawlRendered'
@@ -1382,10 +2554,10 @@ test('runSiteForgeBuild compiles a local HTTP Tencent News site with robots filt
       && item.reasonCode === 'dynamic-unsupported'
     )));
     const summaryText = renderSiteForgeBuildSummary(result, { cwd: workspace });
-    assert.match(summaryText, /构建完成|构建状态/u);
-    assert.match(summaryText, /自动探索/u);
-    assert.match(summaryText, /能力统计|能力摘要/u);
-    assert.match(summaryText, /建议/u);
+    assert.match(summaryText, /SiteForge build:/u);
+    assert.match(summaryText, /Capabilities:/u);
+    assert.match(summaryText, /Report:/u);
+    assert.doesNotMatch(summaryText, /操作：|搜索：|Space|Enter|自动探索|能力统计|能力摘要|建议/u);
     assert.doesNotMatch(summaryText, /鏈垚鍔熼噰闆唡\| 绫诲瀷 \| 瀵硅薄 \| 鐘舵€?\| 鍘熷洜 \|/u);
 
     const homepageLookup = await lookupSkillIntent({
@@ -1501,8 +2673,9 @@ test('failed SiteForge builds keep current skill, registry, and last success sta
         && item.reasonCode === 'stage-skipped'
       )));
       const failedSummaryText = renderSiteForgeBuildSummary(failedReport, { cwd: workspace });
-      assert.match(failedSummaryText, /构建完成|构建结果|鏋勫缓瀹屾垚|鏋勫缓缁撴灉/u);
-      assert.match(failedSummaryText, /输出结果|结果|杈撳嚭缁撴灉|缁撴灉/u);
+      assert.match(failedSummaryText, /SiteForge build:/u);
+      assert.match(failedSummaryText, /Report:/u);
+      assert.doesNotMatch(failedSummaryText, /操作：|搜索：|Space|Enter|输出结果|建议/u);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1517,10 +2690,10 @@ test('public SiteForge CLI first run without a profile auto-builds from a local 
         env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
       });
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /构建完成|构建结果|鏋勫缓瀹屾垚|鏋勫缓缁撴灉/u);
-      assert.match(result.stdout, /输出结果|杈撳嚭缁撴灉/u);
-      assert.match(result.stdout, /自动探索|鑷姩鎺㈢储/u);
-      assert.match(result.stdout, /能力统计|能力摘要|鑳藉姏缁熻|鑳藉姏鎽樿/u);
+      assert.match(result.stdout, /SiteForge build:/u);
+      assert.match(result.stdout, /Capabilities:/u);
+      assert.match(result.stdout, /Report:/u);
+      assert.doesNotMatch(result.stdout, /操作：|搜索：|Space|Enter|输出结果|自动探索|能力统计|能力摘要|建议/u);
 
       const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
       assert.equal(buildDirs.length, 1);
@@ -1546,6 +2719,489 @@ test('public SiteForge CLI first run without a profile auto-builds from a local 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('public SiteForge CLI records local authorized source contracts without treating them as crawl bypasses', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-authorized-sources-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      await writeFile(
+        path.join(workspace, 'siteforge.local.json'),
+        JSON.stringify({
+          sites: [
+            {
+              url: rootUrl,
+              build: {
+                maxSitemaps: 3,
+              },
+              authorizedSources: [
+                {
+                  id: 'official-feed',
+                  kind: 'rss',
+                  url: '/feed.xml',
+                  accessBasis: 'site_docs',
+                  permissionScope: 'public metadata only',
+                  allowedEvidence: ['response_shape', 'schema_hash'],
+                },
+              ],
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      assert.equal(buildDirs.length, 1);
+      const artifactDir = buildDirs[0];
+      const setupPaths = buildSetupAssistantPaths(rootUrl, {
+        cwd: workspace,
+        buildId: path.basename(artifactDir),
+      });
+      const setupPlan = await readJson(setupPaths.setupPlanPath);
+      assert.equal(setupPlan.localBuildConfig.build.maxSitemaps, 3);
+      assert.equal(setupPlan.localBuildConfig.authorizedSources.length, 1);
+      assert.equal(setupPlan.localBuildConfig.authorizedSources[0].genericCrawlAllowed, false);
+      assert.equal(setupPlan.localBuildConfig.authorizedSources[0].promotionAllowed, false);
+
+      const buildReport = await readJson(path.join(artifactDir, 'build_report.json'));
+      assert.equal(buildReport.summary.authorizedSources.configured, 1);
+      assert.equal(buildReport.summary.authorizedSources.sources[0].kind, 'rss');
+      assert.equal(buildReport.summary.authorizedSources.sources[0].genericCrawlAllowed, false);
+      assert.equal(buildReport.summary.authorizedSources.sources[0].promotionAllowed, false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('authorized source structure summary can build when robots blocks generic crawl', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-authorized-source-only-'));
+  const requestedPaths = [];
+  try {
+    await withTestServer((request, response) => {
+      const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1/');
+      requestedPaths.push(requestUrl.pathname);
+      if (requestUrl.pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain' });
+        response.end('User-agent: *\nDisallow: /\n');
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end('<!doctype html><title>Blocked public page</title><main>robots blocked</main>');
+    }, async (rootUrl) => {
+      await writeFile(
+        path.join(workspace, 'siteforge.local.json'),
+        JSON.stringify({
+          sites: [
+            {
+              url: rootUrl,
+              authorizedSources: [
+                {
+                  id: 'manual-catalog-summary',
+                  kind: 'structure-summary',
+                  url: '/manual/categories',
+                  accessBasis: 'user_redacted_summary',
+                  permissionScope: 'sanitized_summary_only',
+                  allowedEvidence: ['route_template', 'visible_item_count', 'structure_hash'],
+                  structurePages: [
+                    {
+                      url: '/manual/categories',
+                      title: '分类入口摘要',
+                      pageType: 'category_list',
+                      routeTemplate: '/manual/categories',
+                      visibleItemCount: 2,
+                      listPresent: true,
+                      routeTemplates: ['/manual/category/:slug'],
+                      links: [
+                        {
+                          href: '/manual/channel/recommend',
+                          label: '\u63a8\u8350\u9891\u9053',
+                          semanticKind: 'category',
+                          routeTemplate: '/manual/channel/recommend',
+                        },
+                        {
+                          href: '/manual/ranking/hot',
+                          label: '\u70ed\u95e8\u699c\u5355',
+                          semanticKind: 'ranking',
+                          routeTemplate: '/manual/ranking/hot',
+                        },
+                      ],
+                      structureItems: [
+                        {
+                          nodeType: 'component',
+                          structureType: 'category_link_group',
+                          labelSummary: '分类入口',
+                          visibleItemCount: 2,
+                          listPresent: true,
+                          routeTemplates: ['/manual/category/:slug'],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.equal(requestedPaths.includes('/manual/categories'), false);
+
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      assert.equal(buildDirs.length, 1);
+      const artifactDir = buildDirs[0];
+      const setupPaths = buildSetupAssistantPaths(rootUrl, {
+        cwd: workspace,
+        buildId: path.basename(artifactDir),
+      });
+      const setupPlan = await readJson(setupPaths.setupPlanPath);
+      assert.equal(setupPlan.buildReadiness.reasonCode, 'setup-authorized-source-evidence');
+      assert.equal(setupPlan.evidenceQuality.authorizedSourceStructureEvidenceCount, 1);
+
+      const seeds = await readJson(path.join(artifactDir, 'seeds.json'));
+      assert.equal(seeds.status, 'authorized_source_only');
+      const crawlStatic = await readJson(path.join(artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.summary.publicPages, 0);
+      assert.equal(crawlStatic.summary.authorizedSourcePages, 1);
+      assert.equal(await fileExists(path.join(artifactDir, 'reports', 'authorized_source_manifest.json')), true);
+
+      const graph = await readJson(path.join(artifactDir, 'graph.json'));
+      assert.equal(graph.nodes.some((node) => node.sourceLayer === 'authorized_source'), true);
+      assert.equal(graph.nodes.some((node) => (
+        node.sourceLayer === 'authorized_source'
+        && node.categoryInstance?.kind === 'category'
+        && node.categoryInstance?.label === '\u63a8\u8350\u9891\u9053'
+      )), true);
+      assert.equal(graph.nodes.some((node) => (
+        node.sourceLayer === 'authorized_source'
+        && node.categoryInstance?.kind === 'ranking'
+        && node.categoryInstance?.label === '\u70ed\u95e8\u699c\u5355'
+      )), true);
+      const capabilities = await readJson(path.join(artifactDir, 'capabilities.json'));
+      assert.equal(capabilities.capabilities.some((capability) => capability.status === 'active' && capability.sourceLayer === 'authorized_source'), true);
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.status === 'active'
+        && capability.sourceLayer === 'authorized_source'
+        && capability.elementRole === 'category'
+        && capability.object === '\u63a8\u8350\u9891\u9053'
+        && capability.userValue === '\u6d4f\u89c8\u63a8\u8350\u9891\u9053'
+      )), true);
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.status === 'active'
+        && capability.sourceLayer === 'authorized_source'
+        && capability.elementRole === 'ranking'
+        && capability.object === '\u70ed\u95e8\u699c\u5355'
+        && capability.userValue === '\u67e5\u770b\u70ed\u95e8\u699c\u5355'
+      )), true);
+      const intents = await readJson(path.join(artifactDir, 'intents.json'));
+      assert.equal(intents.intents.some((intent) => intent.canonicalUtterance === '\u6d4f\u89c8\u63a8\u8350\u9891\u9053'), true);
+      assert.equal(intents.intents.some((intent) => intent.canonicalUtterance === '\u67e5\u770b\u70ed\u95e8\u699c\u5355'), true);
+      const buildReport = await readJson(path.join(artifactDir, 'build_report.json'));
+      assert.ok(buildReport.artifacts['authorized_source_manifest.json']);
+      assert.equal(buildReport.summary.coverage.authorizedSource.pages, 1);
+      assert.equal(buildReport.summary.coverage.public.pages, 0);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public SiteForge CLI reads local cookie config and fails closed when auth check rejects it', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-cookie-config-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      ...simpleShopRoutes(rootUrl),
+      '/account': {
+        status: 403,
+        body: 'Forbidden',
+      },
+    }), async (rootUrl) => {
+      await writeFile(
+        path.join(workspace, 'siteforge.local.json'),
+        JSON.stringify({
+          sites: [
+            {
+              url: rootUrl,
+              cookie: 'sid=SECRET_SESSION_VALUE; uid=123',
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public SiteForge CLI reads local cookie config auth routes and runs authenticated crawl', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-cookie-config-auth-routes-'));
+  const secretCookie = 'sid=SECRET_SESSION_VALUE; uid=123';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...simpleShopRoutes(rootUrl),
+      '/account': testHtmlPage('Account dashboard', `
+        <main>
+          <h1>Account dashboard</h1>
+          <ul><li>Authenticated summary item</li></ul>
+          <a href="/products.html">Products revisit</a>
+        </main>
+      `),
+    }), async (rootUrl) => {
+      await writeFile(
+        path.join(workspace, 'siteforge.local.json'),
+        JSON.stringify({
+          sites: [
+            {
+              url: rootUrl,
+              auth: {
+                mode: 'cookie',
+                cookieEnv: 'SITEFORGE_TEST_COOKIE',
+                authCheckUrl: '/account',
+                authRoutes: ['/account'],
+                publicRevisitRoutes: ['/'],
+              },
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUTF8: '1',
+          SITEFORGE_TEST_COOKIE: secretCookie,
+        },
+      });
+
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      assert.equal(buildDirs.length, 1);
+      const artifactDir = buildDirs[0];
+      const authState = await readJson(path.join(artifactDir, 'auth_state_report.json'));
+      assert.equal(authState.authMethod, 'cookie');
+      assert.equal(authState.authVerificationStatus, 'cookie_verified');
+      assert.equal(authState.verified, true);
+      assert.equal(authState.cookieInput.persisted, false);
+      assert.equal(authState.cookieInput.redacted, true);
+      const seeds = await readJson(path.join(artifactDir, 'seeds.json'));
+      assert.equal(seeds.authSeeds.some((seed) => /\/account$/u.test(seed.normalizedUrl)), true);
+      const authenticated = await readJson(path.join(artifactDir, 'crawl_authenticated.json'));
+      assert.equal(authenticated.authCoverageSummary.authenticatedPages >= 1, true);
+      assert.equal(authenticated.authenticatedPages.some((page) => /\/account$/u.test(page.normalizedUrl)), true);
+      const buildReport = await readJson(path.join(artifactDir, 'build_report.json'));
+      assert.equal(buildReport.summary.auth.authMethod, 'cookie');
+      assert.equal(buildReport.summary.auth.authVerificationStatus, 'cookie_verified');
+      assert.equal(buildReport.summary.coverage.authenticated.pages >= 1, true);
+      assert.equal(buildReport.summary.coverage.authenticated.capabilities >= 1, true);
+      const capabilities = await readJson(path.join(artifactDir, 'capabilities.json'));
+      const authenticatedSummaryCapability = capabilities.capabilities.find((capability) => capability.name === 'read authenticated route summaries');
+      assert.equal(authenticatedSummaryCapability?.status, 'active');
+      assert.equal(authenticatedSummaryCapability?.enabled_status, 'limited_enabled');
+      assert.equal(authenticatedSummaryCapability?.authRequired, true);
+      assert.equal(authenticatedSummaryCapability?.evidenceMatrix?.missingEvidence?.length, 0);
+      assert.equal(authenticatedSummaryCapability?.executionPlan?.mode, 'limited_read');
+      assert.equal(authenticatedSummaryCapability?.executionPlan?.steps?.every((step) => step.kind === 'read_sanitized_summary'), true);
+      const userReport = await readJson(path.join(artifactDir, 'build_report.user.json'));
+      assert.equal(userReport.limited_enabled_capabilities.some((capability) => capability.name === 'read authenticated route summaries'), true);
+      const reportText = [
+        await readFile(path.join(artifactDir, 'auth_state_report.json'), 'utf8'),
+        await readFile(path.join(artifactDir, 'build_report.json'), 'utf8'),
+        await readFile(path.join(artifactDir, 'build_report.debug.json'), 'utf8'),
+        await readFile(path.join(artifactDir, 'build_report.user.json'), 'utf8'),
+        await readFile(path.join(artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8'),
+      ].join('\n');
+      assert.doesNotMatch(reportText, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public SiteForge CLI enables route-only authenticated capability for configured routes', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-cookie-route-only-'));
+  const secretCookie = 'sid=SECRET_SESSION_VALUE; uid=123';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...simpleShopRoutes(rootUrl),
+      '/account': testHtmlPage('Account dashboard', `
+        <main>
+          <h1>Account dashboard</h1>
+          <p>Authenticated route is reachable.</p>
+        </main>
+      `),
+    }), async (rootUrl) => {
+      await writeFile(
+        path.join(workspace, 'siteforge.local.json'),
+        JSON.stringify({
+          sites: [
+            {
+              url: rootUrl,
+              auth: {
+                mode: 'cookie',
+                cookieEnv: 'SITEFORGE_TEST_COOKIE',
+                authCheckUrl: '/account',
+                authRoutes: ['/account'],
+              },
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUTF8: '1',
+          SITEFORGE_TEST_COOKIE: secretCookie,
+        },
+      });
+
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      assert.equal(buildDirs.length, 1);
+      const artifactDir = buildDirs[0];
+      const capabilities = await readJson(path.join(artifactDir, 'capabilities.json'));
+      const routeOnlyCapability = capabilities.capabilities.find((capability) => capability.name === 'open authenticated configured routes');
+      assert.equal(routeOnlyCapability?.status, 'active');
+      assert.equal(routeOnlyCapability?.enabled_status, 'limited_enabled');
+      assert.equal(routeOnlyCapability?.authRequired, true);
+      assert.equal(routeOnlyCapability?.evidenceModel, 'authenticated_route_only');
+      assert.equal(routeOnlyCapability?.evidenceMatrix?.missingEvidence?.length, 0);
+      assert.equal(routeOnlyCapability?.evidenceMatrix?.requiredEvidence.includes('list_container_present'), false);
+      assert.equal(routeOnlyCapability?.evidenceMatrix?.requiredEvidence.includes('visible_item_count_or_empty_state'), false);
+      assert.equal(routeOnlyCapability?.executionPlan?.mode, 'limited_read');
+      assert.equal(routeOnlyCapability?.executionPlan?.steps?.every((step) => step.kind === 'open_configured_authenticated_route'), true);
+      const reportText = [
+        await readFile(path.join(artifactDir, 'auth_state_report.json'), 'utf8'),
+        await readFile(path.join(artifactDir, 'build_report.json'), 'utf8'),
+        await readFile(path.join(artifactDir, 'build_report.user.json'), 'utf8'),
+      ].join('\n');
+      assert.doesNotMatch(reportText, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public SiteForge CLI writes setup-blocked reports before crawl', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-setup-blocked-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
+      },
+      '/': testHtmlPage('Robots blocked', '<main>Robots blocked.</main>'),
+    }), async (rootUrl) => {
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stdout, /Page reconciliation: blocked/u);
+      assert.match(result.stdout, /page_reconciliation_report\.json/u);
+      assert.match(result.stdout, /robots_remediation_plan\.json/u);
+      assert.match(result.stdout, /capability_intent_summary\.html/u);
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      assert.equal(buildDirs.length, 1);
+      const buildReport = await readJson(path.join(buildDirs[0], 'build_report.json'));
+      const userReport = await readJson(path.join(buildDirs[0], 'build_report.user.json'));
+      const pageReconciliation = await readJson(path.join(buildDirs[0], 'page_reconciliation_report.json'));
+      const reportsPageReconciliation = await readJson(path.join(buildDirs[0], 'reports', 'page_reconciliation_report.json'));
+      const robotsRemediationPlan = await readJson(path.join(buildDirs[0], 'reports', 'robots_remediation_plan.json'));
+      const htmlReport = await readFile(path.join(buildDirs[0], 'reports', 'capability_intent_summary.html'), 'utf8');
+      assert.equal(buildReport.result_status, 'failed');
+      assert.equal(buildReport.failedStage, 'setup');
+      assert.equal(buildReport.reasonCode, 'setup-robots-disallowed');
+      assert.equal(buildReport.failureClass, 'robots');
+      assert.equal(buildReport.summary.pageReconciliation.setupBlocked, true);
+      assert.deepEqual(buildReport.summary.coverage.blockedByAuth, []);
+      assert.equal(buildReport.summary.auth.authMethod, 'none');
+      assert.equal(buildReport.summary.auth.authVerificationStatus, 'not_requested');
+      assert.match(buildReport.artifacts['capability_intent_summary.html'], /capability_intent_summary\.html$/u);
+      assert.match(buildReport.artifacts['robots_remediation_plan.json'], /robots_remediation_plan\.json$/u);
+      assert.equal(buildReport.report_index.available_reports.includes('page_reconciliation_report'), true);
+      assert.equal(buildReport.report_index.available_reports.includes('robots_remediation_plan'), true);
+      assert.equal(userReport.reason_code, 'setup-robots-disallowed');
+      assert.match(userReport.reports.capability_intent_summary_html, /capability_intent_summary\.html$/u);
+      assert.match(userReport.reports.page_reconciliation_report, /page_reconciliation_report\.json$/u);
+      assert.match(userReport.reports.robots_remediation_plan, /robots_remediation_plan\.json$/u);
+      assert.equal(userReport.next_step_workflows.some((workflow) => workflow.id === 'robots-remediation-plan'), true);
+      assert.equal(userReport.next_step_workflows.every((workflow) => workflow.promotionAllowed === false), true);
+      assert.equal(pageReconciliation.summary.setupBlocked, true);
+      assert.equal(pageReconciliation.status, 'blocked');
+      assert.equal(pageReconciliation.summary.reasonCodes.includes('setup_blocked_before_crawl'), true);
+      assert.equal(reportsPageReconciliation.summary.setupBlocked, true);
+      assert.equal(robotsRemediationPlan.status, 'blocked');
+      assert.equal(robotsRemediationPlan.reasonCode, 'setup-robots-disallowed');
+      assert.equal(Array.isArray(robotsRemediationPlan.recommendedPaths), true);
+      assert.equal(robotsRemediationPlan.recommendedPaths.length >= 1, true);
+      assert.equal(Array.isArray(robotsRemediationPlan.workflows), true);
+      assert.equal(robotsRemediationPlan.workflows.length >= 3, true);
+      assert.equal(robotsRemediationPlan.workflows.every((workflow) => workflow.genericCrawlAllowed === false), true);
+      assert.equal(robotsRemediationPlan.workflows.every((workflow) => workflow.updatesCurrent === false), true);
+      assert.equal(robotsRemediationPlan.workflows.every((workflow) => workflow.updatesRegistry === false), true);
+      assert.equal(robotsRemediationPlan.workflows.some((workflow) => workflow.kind === 'manual_summary'), true);
+      assert.equal(robotsRemediationPlan.workflows.some((workflow) => workflow.kind === 'official_api_or_feed'), true);
+      assert.equal(robotsRemediationPlan.workflows.some((workflow) => workflow.kind === 'local_http_validation'), true);
+      assert.doesNotMatch(JSON.stringify(robotsRemediationPlan), /SECRET|sid=|uid=|Authorization|Bearer|userDataDir/iu);
+      assert.equal(pageReconciliation.safety.cookiePersisted, false);
+      assert.match(htmlReport, /<html lang="zh-CN">/u);
+      assert.doesNotMatch(htmlReport, /sid=|uid=|token=|\bauthorization\b|\bbearer\b/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public SiteForge CLI prints machine-readable robots plan JSON', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-robots-plan-json-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
+      },
+      '/': testHtmlPage('Robots blocked', '<main>Robots blocked.</main>'),
+    }), async (rootUrl) => {
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl, '--robots-plan'], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+      assert.notEqual(result.status, 0);
+      const plan = JSON.parse(result.stdout);
+      assert.equal(plan.artifactFamily, 'siteforge-access-remediation-plan');
+      assert.equal(plan.retryDisposition, 'blocked_no_bypass');
+      assert.equal(plan.workflows.some((workflow) => workflow.kind === 'manual_summary'), true);
+      assert.equal(plan.workflows.every((workflow) => workflow.genericCrawlAllowed === false), true);
+      assert.doesNotMatch(result.stdout, /SECRET|sid=|uid=|Authorization|Bearer|userDataDir/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('interactive first-run setup persists profile artifacts with unsafe actions disabled', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-interactive-'));
   try {
@@ -1611,10 +3267,10 @@ test('public SiteForge CLI reuses saved setup profile and then builds the local 
         env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
       });
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /构建完成|构建结果|鏋勫缓瀹屾垚|鏋勫缓缁撴灉/u);
-      assert.match(result.stdout, /输出结果|杈撳嚭缁撴灉/u);
-      assert.match(result.stdout, /自动探索|鑷姩鎺㈢储/u);
-      assert.match(result.stdout, /能力统计|能力摘要|鑳藉姏缁熻|鑳藉姏鎽樿/u);
+      assert.match(result.stdout, /SiteForge build:/u);
+      assert.match(result.stdout, /Capabilities:/u);
+      assert.match(result.stdout, /Report:/u);
+      assert.doesNotMatch(result.stdout, /操作：|搜索：|Space|Enter|输出结果|自动探索|能力统计|能力摘要|建议/u);
       assert.match(result.stdout, /simple-shop/u);
 
       const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
@@ -1659,9 +3315,9 @@ test('public SiteForge CLI builds the local HTTP Tencent News site without extra
         env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
       });
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /构建完成|构建结果|鏋勫缓瀹屾垚|鏋勫缓缁撴灉/u);
-      assert.match(result.stdout, /自动探索|鑷姩鎺㈢储/u);
-      assert.match(result.stdout, /能力统计|能力摘要|鑳藉姏缁熻|鑳藉姏鎽樿/u);
+      assert.match(result.stdout, /SiteForge build:/u);
+      assert.match(result.stdout, /Capabilities:/u);
+      assert.doesNotMatch(result.stdout, /操作：|搜索：|Space|Enter|自动探索|能力统计|能力摘要|建议/u);
       assert.match(result.stdout, /tencent-news/u);
 
       const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
@@ -1699,7 +3355,7 @@ test('SiteForge build_report classifies robots-disallowed static blocks', async 
       '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }) },
       '/': testHtmlPage('Blocked', '<main>Blocked by robots policy.</main>'),
     }), async (rootUrl) => {
-      let capturedError = null;
+      let capturedError = /** @type {any} */ (null);
       await assert.rejects(
         () => runSiteForgeBuild(rootUrl, {
           cwd: workspace,
@@ -1708,8 +3364,8 @@ test('SiteForge build_report classifies robots-disallowed static blocks', async 
           fetchDelayMs: 0,
         }),
         (error) => {
-          capturedError = error;
-          return /robots\.txt disallows all planned seed URLs|Static crawl produced no pages/u.test(error?.message ?? '');
+          capturedError = /** @type {any} */ (error);
+          return /robots\.txt disallows all planned seed URLs|Static crawl produced no pages/u.test(String(capturedError?.message ?? ''));
         },
       );
 
@@ -1730,7 +3386,7 @@ test('SiteForge reports robots unavailable as a live-source blocked build', asyn
     await withTestSite({
       '/': testHtmlPage('Robots unavailable site', '<main><p>Public homepage content.</p></main>'),
     }, async (rootUrl) => {
-      let capturedError = null;
+      let capturedError = /** @type {any} */ (null);
       await assert.rejects(
         () => runSiteForgeBuild(rootUrl, {
           cwd: workspace,
@@ -1739,8 +3395,8 @@ test('SiteForge reports robots unavailable as a live-source blocked build', asyn
           fetchDelayMs: 0,
         }),
         (error) => {
-          capturedError = error;
-          return /robots\.txt unavailable for live SiteForge build/u.test(error?.message ?? '');
+          capturedError = /** @type {any} */ (error);
+          return /robots\.txt unavailable for live SiteForge build/u.test(String(capturedError?.message ?? ''));
         },
       );
       const buildReport = await readJson(path.join(capturedError.artifactDir, 'build_report.json'));
@@ -1764,17 +3420,18 @@ test('SiteForge build_report classifies dynamic-shell static evidence blocks', a
       `,
       '/app.js': 'document.querySelector("#app").textContent = "loaded";',
     }), async (rootUrl) => {
-      let capturedError = null;
+      let capturedError = /** @type {any} */ (null);
       await assert.rejects(
         () => runSiteForgeBuild(rootUrl, {
           cwd: workspace,
           buildId: 'dynamic-shell-build',
           now: new Date('2026-05-16T07:20:00.000Z'),
           fetchDelayMs: 0,
+          renderJs: false,
         }),
         (error) => {
-          capturedError = error;
-          return /dynamic-shell pages/u.test(error?.message ?? '');
+          capturedError = /** @type {any} */ (error);
+          return /dynamic-shell pages/u.test(String(capturedError?.message ?? ''));
         },
       );
 

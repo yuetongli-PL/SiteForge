@@ -204,10 +204,41 @@ test('createBuildSource reads only through live HTTP source', async () => {
   });
 });
 
+test('createBuildSource fails closed on Cloudflare challenge responses', async () => {
+  await withTestSite(() => ({
+    '/': {
+      status: 403,
+      headers: {
+        'cf-mitigated': 'challenge',
+      },
+      body: '<html><body><main>Cloudflare challenge <script src="/cdn-cgi/challenge-platform/h/g/orchestrate/jsch/v1"></script></main></body></html>',
+    },
+  }), async (rootUrl) => {
+    const source = createBuildSource(rootUrl, { fetchDelayMs: 0 });
+    let captured = /** @type {any} */ (null);
+    await assert.rejects(
+      async () => {
+        try {
+          await source.read(rootUrl);
+        } catch (error) {
+          captured = error;
+          throw error;
+        }
+      },
+      /access challenge/u,
+    );
+
+    assert.equal(captured?.reasonCode, 'blocked-by-cloudflare-challenge');
+    assert.equal(captured?.stageStatus, 'blocked');
+    assert.equal(captured?.buildStatus, 'blocked');
+    assert.equal(captured?.retryDisposition, 'blocked_no_bypass');
+  });
+});
+
 test('known social policy generic static build stops at robots Disallow before crawl, skill, or runtime registration', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-robots-build-'));
   try {
-    let failure;
+    let failure = /** @type {any} */ (null);
     let liveRootUrl = '';
     await withTestSite((rootUrl) => ({
       '/robots.txt': testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
@@ -271,7 +302,7 @@ test('known social policy and robots Disallow make noninteractive setup not buil
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-setup-noninteractive-'));
   try {
     let prompted = false;
-    let failure;
+    let failure = /** @type {any} */ (null);
     let liveRootUrl = '';
     await withTestSite((rootUrl) => ({
       '/robots.txt': testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
@@ -332,10 +363,10 @@ test('known social policy and robots Disallow make noninteractive setup not buil
 test('legacy userAuthorizedEvidenceProvider cannot verify login or bypass setup gates', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-legacy-provider-'));
   try {
-    let paths;
+    let paths = /** @type {any} */ (null);
     let liveRootUrl = '';
     let providerCalls = 0;
-    let failure;
+    let failure = /** @type {any} */ (null);
     await withTestSite((rootUrl) => ({
       '/robots.txt': testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
       '/': testHtmlPage('Blocked social provider', '<main>blocked</main>'),
@@ -384,8 +415,11 @@ test('legacy userAuthorizedEvidenceProvider cannot verify login or bypass setup 
     const authReport = await readJson(paths.authStateReportPath);
     assertKnownXPolicy(setupPlan, new URL(liveRootUrl).hostname);
     assert.equal(setupPlan.crawlContract.crawlMode, 'public_only');
-    assert.equal(setupPlan.crawlContract.authChoice, 'declined');
+    assert.equal(setupPlan.crawlContract.authMethod, 'none');
+    assert.equal(setupPlan.crawlContract.authVerificationStatus, 'not_requested');
     assert.equal(setupPlan.authStateReport.verified, false);
+    assert.equal(setupPlan.authStateReport.authMethod, 'none');
+    assert.equal(setupPlan.authStateReport.authVerificationStatus, 'not_requested');
     assert.equal(authReport.verified, false);
     assert.equal(authReport.rawMaterialPersisted, false);
     assert.equal(authReport.sessionMaterialPersisted, false);
@@ -399,7 +433,7 @@ test('legacy userAuthorizedEvidenceProvider cannot verify login or bypass setup 
 test('retired saved setup profile cannot bypass current evidence gates or create runtime lookup', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-legacy-profile-'));
   try {
-    let failure;
+    let failure = /** @type {any} */ (null);
     let liveRootUrl = '';
     await withTestSite((rootUrl) => ({
       '/robots.txt': testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
@@ -481,7 +515,7 @@ test('retired saved setup profile cannot bypass current evidence gates or create
 test('saved profile with user hints must include userIntentCoverage before reuse', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-legacy-hint-profile-'));
   try {
-    let failure;
+    let failure = /** @type {any} */ (null);
     await withTestSite((rootUrl) => ({
       '/robots.txt': testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }),
       '/': testHtmlPage('Blocked social hint profile', '<main>blocked</main>'),

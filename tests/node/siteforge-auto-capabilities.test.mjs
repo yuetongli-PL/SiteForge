@@ -195,7 +195,7 @@ function xAuthenticatedStructureSummary(rootUrl = X_URL) {
   };
 }
 
-test('x.com enhanced login capability generation covers social intents, disabled writes, and draft-only writes', async () => {
+test('x.com cookie-auth capability generation covers social intents, disabled writes, and draft-only writes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-x-auto-capabilities-'));
   try {
     await withTestSite(xPublicRoutes, async (rootUrl) => {
@@ -207,15 +207,15 @@ test('x.com enhanced login capability generation covers social intents, disabled
       setupInteractive: true,
       interactive: true,
       fetchDelayMs: 0,
-      loginEnhanced: true,
+      authMode: 'cookie',
       setupPrompt: async () => '',
       setupOutput: { write() {} },
       authStateProvider: async () => ({
-        crawlMode: 'enhanced_with_login',
-        authChoice: 'verified',
-        authLevel: 'L3',
+        crawlMode: 'authenticated_cookie',
+        authMethod: 'cookie',
+        authVerificationStatus: 'cookie_verified',
         verified: true,
-        source: 'test_sanitized_default_browser_summary',
+        source: 'cookie_header_verification',
         finalUrl: new URL('/home', rootUrl).toString(),
         positiveSignals: ['test_verified_sanitized_bridge', 'same_site_final_url', 'not_login_route'],
         blockingSignals: [],

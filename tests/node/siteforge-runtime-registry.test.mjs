@@ -36,6 +36,12 @@ async function pathExists(filePath) {
   }
 }
 
+function localServerPort(server) {
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return address.port;
+}
+
 function passedRecord(overrides = /** @type {any} */ ({})) {
   return {
     skillId: 'simple-shop',
@@ -157,9 +163,9 @@ test('runtime registry lookup does not map profile-edit write intents to read-pr
       utterance,
     });
     assert.equal(lookup.status, 'not_found', utterance);
-    // @ts-ignore
-    if (lookup.reason !== undefined) {
-      assert.equal(lookup.reason, 'action_mismatch', utterance);
+    const missedLookup = /** @type {any} */ (lookup);
+    if (missedLookup.reason !== undefined) {
+      assert.equal(missedLookup.reason, 'action_mismatch', utterance);
     }
   }
 });
@@ -283,7 +289,7 @@ test('failed verification is not registered and does not replace active current 
         response.end(route.body ?? route);
       });
       server.listen(0, '127.0.0.1', async () => {
-        const { port } = server.address();
+        const port = localServerPort(server);
         const rootUrl = `http://127.0.0.1:${port}/`;
         routes = simpleShopRoutes(rootUrl);
         try {
@@ -299,7 +305,7 @@ test('failed verification is not registered and does not replace active current 
           const lastSuccessfulBefore = await readJson(path.join(siteDir, 'last_successful_build.json'));
 
           mode = 'failed';
-          let failure;
+          let failure = /** @type {any} */ (null);
           await assert.rejects(
             async () => {
               try {
@@ -356,7 +362,7 @@ test('robots-blocked setup cannot create runtime-loadable current skill or regis
         now: new Date('2026-05-16T04:00:00.000Z'),
       });
 
-      let setupFailure = null;
+      let setupFailure = /** @type {any} */ (null);
       await assert.rejects(
         () => prepareSiteForgeBuildSetup(rootUrl, {
           cwd: workspace,
@@ -369,9 +375,9 @@ test('robots-blocked setup cannot create runtime-loadable current skill or regis
           fetchDelayMs: 0,
         }),
         (error) => {
-          setupFailure = error;
-          return error?.code === 'setup-evidence-not-buildable'
-            && error?.reasonCode === 'setup-robots-disallowed';
+          setupFailure = /** @type {any} */ (error);
+          return setupFailure?.code === 'setup-evidence-not-buildable'
+            && setupFailure?.reasonCode === 'setup-robots-disallowed';
         },
       );
 
@@ -413,7 +419,7 @@ test('robots-blocked build preserves blocked artifacts without promotion or runt
       '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }) },
       '/': testHtmlPage('Blocked', '<main>Public content is blocked by robots policy.</main>'),
     }), async (rootUrl) => {
-      let buildFailure = null;
+      let buildFailure = /** @type {any} */ (null);
       await assert.rejects(
         () => runSiteForgeBuild(rootUrl, {
           cwd: workspace,
@@ -422,9 +428,9 @@ test('robots-blocked build preserves blocked artifacts without promotion or runt
           fetchDelayMs: 0,
         }),
         (error) => {
-          buildFailure = error;
-          return error?.reasonCode === 'robots-disallowed'
-            && /robots-disallowed/u.test(error?.message ?? '');
+          buildFailure = /** @type {any} */ (error);
+          return buildFailure?.reasonCode === 'robots-disallowed'
+            && /robots-disallowed/u.test(String(buildFailure?.message ?? ''));
         },
       );
 

@@ -1,8 +1,6 @@
 // @ts-check
 
 import path from 'node:path';
-import { createInterface } from 'node:readline/promises';
-
 import {
   capabilityConfirmationGroup,
   decorateCapabilityConfirmation,
@@ -24,27 +22,12 @@ import {
   findUnsafeExecutionPlanMaterialFlags,
   publicSafeRemediation,
 } from './risk-policy.mjs';
-import {
-  completionCurrentOutputLabel,
-  completionRegistryLabel,
-  completionVerificationLabel,
-  resultBuildStatusLabel,
-} from '../../../infra/cli/status-labels.mjs';
-import {
-  enterTerminalTui,
-  isTerminalCharacterKey,
-  isTerminalReturnKey,
-  isTerminalSlashKey,
-  isTerminalSpaceKey,
-  readTerminalKeys,
-} from './terminal-tui.mjs';
 
 export const CAPABILITY_INTERACTION_SCHEMA_VERSION = 1;
 export const CAPABILITY_REMEDIATION_PLAN_FILE = 'capability_remediation_plan.json';
 
 const CONFIRMABLE_STATUSES = new Set(['limited_enabled', 'confirmation_required', 'draft_only']);
 const USABLE_EVIDENCE_STATUSES = new Set(['verified', 'inferred', 'confirmation_required']);
-const MAX_INLINE_CAPABILITIES = 12;
 const ALLOWED_REMEDIATION_TYPES = Object.freeze([
   'limited_sanitized_summary_path',
   'draft_only_preview_path',
@@ -540,14 +523,14 @@ function remediationTerminalFields(remediation = /** @type {any} */ ({})) {
     })
     .filter((item) => item && !hasUnsafeTerminalText(item))
     .slice(0, 3)
-    .join('、');
+    .join(',');
   const useReadiness = remediation.useReadiness ?? remediationUseReadiness(
     normalizeRemediationPathType(remediation.path ?? remediation.type),
     remediation.canAutoPrepare === true,
   );
   const safePath = remediation.canAutoPrepare === true
-    ? `${label}；选择后生成可用安全路径，最终敏感动作仍由用户确认。`
-    : `${label}；需要补齐验证材料后使用${requiredEvidence ? `：${requiredEvidence}` : ''}。`;
+    ? `${label}; safe path can be prepared, final sensitive actions remain user-controlled.`
+    : `${label}; more verification is required${requiredEvidence ? `: ${requiredEvidence}` : ''}.`;
   const reason = asText(remediation.reason);
   const nextStep = asText(remediation.nextStep);
   return {
@@ -555,10 +538,10 @@ function remediationTerminalFields(remediation = /** @type {any} */ ({})) {
     use_readiness: useReadiness,
     blocked_reason: reason && !hasUnsafeTerminalText(reason)
       ? reason
-      : '当前能力没有满足门禁的安全执行路径。',
+      : 'No gated safe execution path is available.',
     next_step: nextStep && !hasUnsafeTerminalText(nextStep)
       ? nextStep
-      : '下一步：先实现站点专用安全路径和验证计划，再重新运行构建。',
+      : 'Implement a site-specific safe path and verification plan, then rebuild.',
   };
 }
 
@@ -669,7 +652,7 @@ export function capabilityInteractionState(result = /** @type {any} */ ({})) {
   const disabledReviewForRemediation = disabled.map((capability) => attachRemediation({
     ...capability,
     interaction_blocked_reason: capability.confirmation_blocked_reason
-      ?? '已禁用能力不会在普通确认流程中启用；需要额外证据、专用安全路径和重新验证。',
+      ?? '禁用项不会在普通确认流程中启用；需要额外证据、专用安全路径和重新验证。',
   }));
   const remediationCandidates = [...confirmable.blocked, ...disabledReviewForRemediation];
   return {
@@ -687,101 +670,6 @@ export function capabilityInteractionState(result = /** @type {any} */ ({})) {
     remediationCandidates,
     remediationSummary: remediationSummary(remediationCandidates),
   };
-}
-
-export function shouldOfferCapabilityInteraction(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
-  if (options.interactive !== true || options.json === true || options.quiet === true) return false;
-  if (options.debug === true || options.verbose === true) return false;
-  if (options.manual === true) return false;
-  if (!resultStatusAllowsInteraction(result)) return false;
-  const state = capabilityInteractionState(result);
-  return state.safeConfirmable.length > 0 || state.disabledReview.length > 0 || state.blockedConfirmable.length > 0;
-}
-
-function modeLabel(capability = /** @type {any} */ ({})) {
-  const mode = modeForCapability(capability);
-  if (mode === 'limited') return '有限只读';
-  if (mode === 'draft_only') return '草稿模式';
-  return '确认启用';
-}
-
-function capabilityLine(capability, index = null) {
-  const prefix = index === null ? '  -' : `  [${index}]`;
-  return `${prefix} ${capabilityName(capability)}（${modeLabel(capability)}）`;
-}
-
-function firstItems(capabilities, limit = MAX_INLINE_CAPABILITIES) {
-  const lines = capabilities.slice(0, limit).map((capability, index) => capabilityLine(capability, index + 1));
-  if (capabilities.length > limit) {
-    lines.push(`  ... 另有 ${capabilities.length - limit} 项可在报告中查看`);
-  }
-  return lines;
-}
-
-export function renderCapabilityInteractionPrompt(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
-  const state = capabilityInteractionState(result);
-  const lines = [
-    '',
-    '能力启用选择',
-    '',
-    `  可安全确认：${state.safeConfirmable.length} 项`,
-    `  可自动补安全路径计划：${state.remediationCandidates.length} 项`,
-    `  需保持禁用或补证据：${state.blockedConfirmable.length + state.disabledReview.length} 项`,
-    '',
-    '说明',
-    '  - 只有已有证据、且有安全执行计划的能力可以确认启用。',
-    '  - 自动补的是安全路径和验证计划，不是绕过禁用直接启用。',
-    '  - 有限只读只保存脱敏结构摘要，不保存正文或身份材料。',
-    '  - 草稿能力只允许生成草稿，不会提交、发送、删除、支付或上传。',
-    '  - 高风险写入、私信正文、账号安全操作不会通过这里启用。',
-    '  - 自动补安全路径只生成计划和安全替代路径，不会直接更新当前输出或本地索引。',
-    '  - 真实可用前仍需补实现、跑验证，并由报告显示通过后才算可用。',
-  ];
-
-  if (state.safeConfirmable.length) {
-    lines.push('', '可确认能力预览', ...firstItems(state.safeConfirmable, options.limit ?? MAX_INLINE_CAPABILITIES));
-  }
-
-  lines.push(
-    '',
-    '可选操作',
-    '  1. 保持当前策略（默认）',
-    '  2. 确认启用所有可安全确认能力',
-    '  3. 逐项选择可安全确认能力',
-    '  4. 查看已禁用/已阻断能力的安全路径、不可补原因和下一步',
-    '  5. 自动生成安全补路径计划',
-    '  6. 全部保持禁用',
-    '',
-  );
-  return `${lines.join('\n')}`;
-}
-
-export function parseCapabilitySelection(input, count) {
-  const value = lower(input);
-  if (!value) return [];
-  if (['all', 'a', '全部', '全选'].includes(value)) {
-    return Array.from({ length: count }, (_, index) => index);
-  }
-  const selected = new Set();
-  const parts = value.split(/[\s,，;；]+/u).filter(Boolean);
-  for (const part of parts) {
-    const range = part.match(/^(\d+)-(\d+)$/u);
-    if (range) {
-      const start = Number(range[1]);
-      const end = Number(range[2]);
-      if (Number.isInteger(start) && Number.isInteger(end)) {
-        for (let valueIndex = Math.min(start, end); valueIndex <= Math.max(start, end); valueIndex += 1) {
-          if (valueIndex >= 1 && valueIndex <= count) selected.add(valueIndex - 1);
-        }
-      }
-      continue;
-    }
-    const numeric = Number(part);
-    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= count) {
-      selected.add(numeric - 1);
-    }
-  }
-  return [...selected].sort((left, right) => left - right);
 }
 
 async function readExistingDecisionFile(filePath, skillId) {
@@ -837,8 +725,8 @@ export async function writeCapabilityInteractionDecisions(result = /** @type {an
     return buildCapabilityConfirmationDecisionRecord({
       capability,
       mode,
-      command: options.interactionCommand ?? 'siteforge build interactive capability selection',
-      source: options.interactionSource ?? 'post_build_terminal_interaction',
+      command: options.interactionCommand ?? 'siteforge build capability decision record',
+      source: options.interactionSource ?? 'siteforge_build_capability_record',
       sourceBuildId: state.buildId || null,
       targetRoute: routeTemplateFromCapability(capability, result),
       updatedAt: now,
@@ -968,502 +856,4 @@ export async function writeCapabilityRemediationPlan(result = /** @type {any} */
     plans,
     summary: payload.summary,
   };
-}
-
-function displayInteractionPath(filePath, cwd = process.cwd()) {
-  const value = asText(filePath);
-  if (!value) return '-';
-  const relativePath = path.relative(cwd, value).replace(/\\/gu, '/');
-  if (relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-    return relativePath;
-  }
-  return path.basename(value);
-}
-
-function renderDecisionResult(result, cwd = process.cwd()) {
-  if (result.status !== 'recorded') {
-    return '\n已保持当前能力策略。\n原因：没有可记录的安全确认项，或所选能力未通过证据与安全计划校验。\n';
-  }
-  return [
-    '',
-    `已记录 ${result.count} 项安全确认。`,
-    '这些能力将复用系统浏览器里的既有登录态完成受限验证；不会保存 cookie、token、浏览器 profile、正文或原始页面源码。',
-    '这些能力仍受执行计划和安全策略约束：不会执行写入动作。',
-    `确认记录：${displayInteractionPath(result.filePath, cwd)}`,
-    '',
-  ].join('\n');
-}
-
-function renderRemediationResult(result, cwd = process.cwd()) {
-  if (result.status !== 'recorded') {
-    return '\n未生成安全补路径。\n原因：没有可补的安全路径候选，或构建目录不可用于记录计划。\n';
-  }
-  return [
-    '',
-    `已生成 ${result.count} 项安全补路径。`,
-    `其中 ${result.summary?.immediateLimitedUse ?? result.summary?.autoPreparable ?? 0} 项可立即准备为受限可用路径；${result.summary?.requiresSiteAdapterVerification ?? 0} 项需要站点专用适配器验证后使用。`,
-    '安全边界：不会自动执行高风险最终动作，不保存正文或私密材料；删除、上传、关注、发帖、发送私信、账号修改等必须由用户最终确认。',
-    '这些能力会以安全替代方式进入可用路径：受限读取、草稿预览、用户介入安全路径，或显式站点适配器补路径。',
-    `补路径计划：${displayInteractionPath(result.filePath, cwd)}`,
-    '',
-  ].join('\n');
-}
-
-function renderDisabledReview(state) {
-  const blocked = [...state.blockedConfirmable, ...state.disabledReview];
-  const lines = [
-    '',
-    '已禁用/已阻断能力',
-    '  自动补的是安全路径和验证计划，不是绕过禁用直接启用。',
-  ];
-  for (const capability of blocked.slice(0, MAX_INLINE_CAPABILITIES)) {
-    const terminalRemediation = capability.terminal_remediation ?? remediationTerminalFields(
-      capability.safe_remediation ?? buildCapabilityRemediationPath(capability),
-    );
-    lines.push(`  - ${capabilityName(capability)}`);
-    lines.push(`    可补安全路径：${terminalRemediation.safe_path}`);
-    lines.push(`    不可补原因：${terminalRemediation.blocked_reason}`);
-    lines.push(`    下一步：${terminalRemediation.next_step}`);
-  }
-  if (blocked.length > MAX_INLINE_CAPABILITIES) {
-    lines.push(`  ... 另有 ${blocked.length - MAX_INLINE_CAPABILITIES} 项已写入报告`);
-  }
-  lines.push('');
-  return lines.join('\n');
-}
-
-async function ask(rl, prompt) {
-  return await rl.question(prompt);
-}
-
-function wantsRemediationPlan(value) {
-  return ['y', 'yes', '是', '生成', '自动生成', '补路径', 'plan', '5'].includes(lower(value));
-}
-
-function treePad(value, width = 34) {
-  const text = String(value ?? '');
-  const length = [...text].length;
-  if (length >= width) return text;
-  return `${text}${' '.repeat(width - length)}`;
-}
-
-function treeRow(left, right = '') {
-  return right ? `${treePad(left)} │ ${right}` : left;
-}
-
-function isTreeSpaceKey(key = /** @type {any} */ ({})) {
-  return isTerminalSpaceKey(key);
-}
-
-function isTreeSlashKey(key = /** @type {any} */ ({})) {
-  return isTerminalSlashKey(key);
-}
-
-function isTreeCharacterKey(key = /** @type {any} */ ({}), character) {
-  return isTerminalCharacterKey(key, character);
-}
-
-function compactTreeText(value, maxLength = 52) {
-  const text = String(value ?? '-').replace(/\s+/gu, ' ').replace(/\|/gu, '/').trim();
-  const chars = [...text];
-  if (chars.length <= maxLength) return text || '-';
-  return `${chars.slice(0, Math.max(0, maxLength - 1)).join('')}…`;
-}
-
-function resultUserReport(result = /** @type {any} */ ({})) {
-  return result.user_report ?? result.userReport ?? {};
-}
-
-function treeBuildStatus(result = /** @type {any} */ ({})) {
-  return resultBuildStatusLabel(result);
-}
-
-function capabilityTreeRightText(capability = /** @type {any} */ ({}), state = /** @type {any} */ ({})) {
-  const id = capabilityId(capability);
-  if (state.safeById?.has(id)) {
-    const group = capabilityConfirmationGroup(capability);
-    if (group === 'sensitive-read') {
-      return '确认后复用登录态有限启用：只保存脱敏结构摘要';
-    }
-    if (group === 'draft-write') {
-      return '确认后复用登录态进入草稿模式：不会提交或发送';
-    }
-    return '确认后复用登录态启用已有安全能力';
-  }
-  if (state.remediationById?.has(id)) {
-    const terminalRemediation = capability.terminal_remediation ?? remediationTerminalFields(
-      capability.safe_remediation ?? buildCapabilityRemediationPath(capability),
-    );
-    return compactTreeText(terminalRemediation.safe_path, 64);
-  }
-  return compactTreeText(capability.reason ?? capability.default_policy ?? capability.enabled_status, 64);
-}
-
-function capabilityTreeBox(capability = /** @type {any} */ ({}), state = /** @type {any} */ ({}), ui = /** @type {any} */ ({})) {
-  const id = capabilityId(capability);
-  if (state.safeById?.has(id) || state.remediationById?.has(id)) {
-    return ui.selected.has(id) ? '[x]' : '[ ]';
-  }
-  return '[ ]';
-}
-
-function treeSections(result, state, ui) {
-  const report = resultUserReport(result);
-  const nodes = report.discovered_nodes_summary ?? {};
-  const counts = report.counts ?? result.summary ?? {};
-  const completion = report.build_completion ?? {};
-  const pending = [...state.safeConfirmable, ...state.blockedConfirmable];
-  const disabled = state.disabledReview;
-  const allCapabilities = [
-    ...state.enabled,
-    ...state.limited,
-    ...state.confirmation,
-    ...state.disabled,
-  ];
-  const debugCount = Number(report.debug_candidate_summary?.count ?? report.capability_summary?.debug_only ?? 0);
-  return [
-    {
-      id: 'stats',
-      title: '能力统计',
-      count: null,
-      right: `全部 ${allCapabilities.length} / 可用 ${state.enabled.length} / 有限脱敏 ${state.limited.length} / 待确认 ${pending.length} / 禁用阻止 ${disabled.length}`,
-      children: [
-        { left: '    全部用户能力', right: `${allCapabilities.length} 项` },
-        { left: '    可用', right: `${state.enabled.length} 项` },
-        { left: '    有限/脱敏', right: `${state.limited.length} 项` },
-        { left: '    待确认', right: `${pending.length} 项` },
-        { left: '    禁用/阻止', right: `${disabled.length} 项` },
-        { left: '    可安全确认', right: `${state.safeConfirmable.length} 项` },
-        { left: '    可补安全路径', right: `${state.remediationCandidates.length} 项` },
-      ],
-    },
-    {
-      id: 'enabled',
-      title: '可用能力',
-      count: state.enabled.length,
-      right: '已进入当前 Skill',
-      capabilities: state.enabled,
-      readonly: true,
-    },
-    {
-      id: 'limited',
-      title: '有限/脱敏能力',
-      count: state.limited.length,
-      right: 'Space 选择确认边界；只保存脱敏结构摘要',
-      capabilities: state.limited,
-    },
-    {
-      id: 'discovery',
-      title: '自动探索',
-      count: null,
-      right: `页面 ${nodes.page_nodes ?? 0} / 内容 ${nodes.content_nodes ?? 0} / 操作 ${nodes.operation_nodes ?? 0}`,
-      children: [
-        { left: '    页面/区域', right: `${nodes.page_nodes ?? 0}` },
-        { left: '    内容节点', right: `${nodes.content_nodes ?? 0}` },
-        { left: '    操作节点', right: `${nodes.operation_nodes ?? 0}` },
-        { left: '    可操作元素', right: `${counts.actionable_elements ?? nodes.actionable_elements ?? 0}` },
-      ],
-    },
-    {
-      id: 'pending',
-      title: '待确认能力',
-      count: pending.length,
-      right: 'Space 勾选确认或补安全路径；q 保存退出',
-      capabilities: pending,
-    },
-    {
-      id: 'disabled',
-      title: '禁用/阻止能力',
-      count: disabled.length,
-      right: 'Space 勾选补安全路径；不会强行启用高风险动作',
-      capabilities: disabled,
-      disabled: true,
-    },
-    {
-      id: 'output',
-      title: '输出结果',
-      count: null,
-      right: `验证 ${completionVerificationLabel(completion.verification_status)}`,
-      children: [
-        { left: '    当前输出 current/', right: completionCurrentOutputLabel(completion.current_updated) },
-        { left: '    本地索引 registry.json', right: completionRegistryLabel(completion.registry_registered) },
-        { left: '    Skill 标识', right: report.skill_id ?? result.skillId ?? '-' },
-      ],
-    },
-    {
-      id: 'debug',
-      title: '调试信息',
-      count: null,
-      right: `${debugCount} 项开发者候选`,
-      children: [
-        { left: '    开发者候选', right: `${debugCount}` },
-        { left: '    build 报告', right: result.artifacts?.['build_report.json'] ?? 'build_report.json' },
-      ],
-    },
-  ].filter((section) => {
-    if (!ui.search) return true;
-    const needle = ui.search.toLowerCase();
-    return section.title.toLowerCase().includes(needle)
-      || (section.capabilities ?? []).some((capability) => capabilityName(capability).toLowerCase().includes(needle));
-  });
-}
-
-function visibleTreeRows(result, state, ui) {
-  const rows = /** @type {any[]} */ ([]);
-  for (const section of treeSections(result, state, ui)) {
-    rows.push({ type: 'section', section });
-    if (!ui.expanded.has(section.id)) continue;
-    if (Array.isArray(section.children)) {
-      for (const child of section.children) {
-        rows.push({ type: 'detail', section, child });
-      }
-      continue;
-    }
-    const capabilities = section.capabilities ?? [];
-    for (const capability of capabilities) {
-      if (ui.search && !capabilityName(capability).toLowerCase().includes(ui.search.toLowerCase())) {
-        continue;
-      }
-      rows.push({ type: 'capability', section, capability });
-    }
-  }
-  return rows;
-}
-
-function firstSelectableTreeRowIndex(result, state, ui) {
-  const rows = visibleTreeRows(result, state, ui);
-  const index = rows.findIndex((row) => (
-    row.type === 'capability'
-    && (
-      state.safeById?.has(capabilityId(row.capability))
-      || state.remediationById?.has(capabilityId(row.capability))
-    )
-  ));
-  return index >= 0 ? index : 0;
-}
-
-function renderCapabilityTreeTui(result, state, ui) {
-  const rows = visibleTreeRows(result, state, ui);
-  const lines = [
-    `✓ 构建完成（${treeBuildStatus(result)}）`,
-    '',
-    '↑↓ 移动  Enter 展开/折叠  Space 勾选/取消  / 搜索  q 保存退出  Esc 退出',
-    `搜索：${ui.searchMode ? `${ui.search}_` : (ui.search || '-')}`,
-    '',
-  ];
-  rows.forEach((row, index) => {
-    const focused = index === ui.focus ? '› ' : '  ';
-    if (row.type === 'section') {
-      const expanded = ui.expanded.has(row.section.id) ? '▼' : '▶';
-      const countText = Number.isInteger(row.section.count) ? ` (${row.section.count})` : '';
-      lines.push(treeRow(`${focused}${expanded} ${row.section.title}${countText}`, row.section.right));
-      return;
-    }
-    if (row.type === 'capability') {
-      const id = capabilityId(row.capability);
-      const box = capabilityTreeBox(row.capability, state, ui);
-      lines.push(treeRow(`${focused}  ${box} ${capabilityName(row.capability)}`, capabilityTreeRightText(row.capability, state)));
-      return;
-    }
-    lines.push(treeRow(`${focused}${row.child.left}`, row.child.right));
-  });
-  const selectedConfirm = [...ui.selected].filter((id) => state.safeById?.has(id)).length;
-  const selectedRemediation = [...ui.selected].filter((id) => state.remediationById?.has(id)).length;
-  lines.push('', `已选择：确认 ${selectedConfirm} 项；补安全路径 ${selectedRemediation} 项`);
-  return `${lines.join('\n')}\n`;
-}
-
-function toggleTreeCapabilitySelection(row, ui, safeById, remediationById) {
-  if (row?.type !== 'capability') {
-    return false;
-  }
-  const id = capabilityId(row.capability);
-  if (!safeById.has(id) && !remediationById.has(id)) {
-    return false;
-  }
-  if (ui.selected.has(id)) {
-    ui.selected.delete(id);
-  } else {
-    ui.selected.add(id);
-  }
-  return true;
-}
-
-async function promptCapabilityTreeInteraction(result, options, state) {
-  const input = options.input;
-  const output = options.output;
-  if (!input?.isTTY || !output?.isTTY || typeof input.setRawMode !== 'function') {
-    return null;
-  }
-  const ui = {
-    expanded: new Set(['enabled', 'limited', 'pending', 'disabled']),
-    focus: 0,
-    selected: new Set(),
-    search: '',
-    searchMode: false,
-  };
-  let save = true;
-  const safeById = new Map(state.safeConfirmable.map((capability) => [capabilityId(capability), capability]));
-  const remediationById = new Map(state.remediationCandidates.map((capability) => [capabilityId(capability), capability]));
-  const treeState = {
-    ...state,
-    safeById,
-    remediationById,
-  };
-  ui.focus = firstSelectableTreeRowIndex(result, treeState, ui);
-  const terminal = enterTerminalTui(input, output);
-  if (!terminal) {
-    return null;
-  }
-  const render = () => {
-    const rows = visibleTreeRows(result, treeState, ui);
-    if (ui.focus >= rows.length) ui.focus = Math.max(0, rows.length - 1);
-    terminal.render(renderCapabilityTreeTui(result, treeState, ui));
-  };
-  render();
-  try {
-    for await (const key of readTerminalKeys(input)) {
-      const rows = visibleTreeRows(result, treeState, ui);
-      if (key.ctrl && key.name === 'c') {
-        save = false;
-        break;
-      }
-      if (ui.searchMode) {
-        if (isTerminalReturnKey(key)) {
-          ui.searchMode = false;
-        } else if (key.name === 'escape') {
-          ui.searchMode = false;
-          ui.search = '';
-        } else if (key.name === 'backspace') {
-          ui.search = [...ui.search].slice(0, -1).join('');
-        } else if (key.text && [...key.text].length === 1 && !key.ctrl && !key.meta) {
-          ui.search += key.text;
-        }
-        render();
-        continue;
-      }
-      if (isTreeCharacterKey(key, 'q')) break;
-      if (key.name === 'escape') {
-        save = false;
-        break;
-      }
-      if (key.name === 'up') {
-        ui.focus = Math.max(0, ui.focus - 1);
-      } else if (key.name === 'down') {
-        ui.focus = Math.min(Math.max(0, rows.length - 1), ui.focus + 1);
-      } else if (isTerminalReturnKey(key)) {
-        const row = rows[ui.focus];
-        if (row?.type === 'section') {
-          if (ui.expanded.has(row.section.id)) ui.expanded.delete(row.section.id);
-          else ui.expanded.add(row.section.id);
-        } else {
-          toggleTreeCapabilitySelection(row, ui, safeById, remediationById);
-        }
-      } else if (isTreeSpaceKey(key)) {
-        toggleTreeCapabilitySelection(rows[ui.focus], ui, safeById, remediationById);
-      } else if (isTreeSlashKey(key)) {
-        ui.searchMode = true;
-        ui.search = '';
-      }
-      render();
-    }
-  } finally {
-    terminal.close();
-  }
-  if (!save) {
-    output.write('已退出交互树，未写入新的能力确认。\n');
-    return { status: 'cancelled', count: 0 };
-  }
-  const selectedConfirmations = [...ui.selected].map((id) => safeById.get(id)).filter(Boolean);
-  const selectedRemediations = [...ui.selected].map((id) => remediationById.get(id)).filter(Boolean);
-  if (!selectedConfirmations.length && !selectedRemediations.length) {
-    output.write('已保持当前能力策略。\n');
-    return { status: 'kept', count: 0 };
-  }
-  const results = /** @type {any[]} */ ([]);
-  if (selectedConfirmations.length) {
-    const recorded = await writeCapabilityInteractionDecisions(result, selectedConfirmations, options);
-    output.write(renderDecisionResult(recorded, options.cwd ?? process.cwd()));
-    results.push(recorded);
-  }
-  if (selectedRemediations.length) {
-    const recorded = await writeCapabilityRemediationPlan(result, selectedRemediations, options);
-    output.write(renderRemediationResult(recorded, options.cwd ?? process.cwd()));
-    results.push(recorded);
-  }
-  return {
-    status: results.some((entry) => entry.status === 'recorded') ? 'recorded' : 'skipped',
-    count: results.reduce((sum, entry) => sum + (entry.count ?? 0), 0),
-    results,
-  };
-}
-
-export async function promptForCapabilityInteraction(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
-  if (!shouldOfferCapabilityInteraction(result, options)) {
-    return null;
-  }
-  const input = options.input;
-  const output = options.output;
-  if (!input || !output) return null;
-
-  const state = capabilityInteractionState(result);
-  if (options.treeUi !== false) {
-    const treeResult = await promptCapabilityTreeInteraction(result, options, state);
-    if (treeResult) return treeResult;
-  }
-  output.write(renderCapabilityInteractionPrompt(result, options));
-  const rl = createInterface({ input, output });
-  try {
-    const answer = lower(await ask(rl, '选择：'));
-    if (!answer || answer === '1') {
-      output.write('\n已保持当前能力策略。\n');
-      return { status: 'kept', count: 0 };
-    }
-    if (answer === '2') {
-      const recorded = await writeCapabilityInteractionDecisions(result, state.safeConfirmable, options);
-      output.write(renderDecisionResult(recorded, options.cwd ?? process.cwd()));
-      return recorded;
-    }
-    if (answer === '3') {
-      if (!state.safeConfirmable.length) {
-        output.write('\n当前没有可安全确认的能力。\n');
-        return { status: 'skipped', count: 0 };
-      }
-      output.write('\n请选择要确认启用的能力。输入编号、范围或 all；直接按 Enter 保持不变。\n');
-      output.write(firstItems(state.safeConfirmable, Math.max(state.safeConfirmable.length, MAX_INLINE_CAPABILITIES)).join('\n'));
-      output.write('\n');
-      const selectedAnswer = await ask(rl, '能力编号：');
-      const indexes = parseCapabilitySelection(selectedAnswer, state.safeConfirmable.length);
-      const selected = indexes.map((index) => state.safeConfirmable[index]).filter(Boolean);
-      const recorded = await writeCapabilityInteractionDecisions(result, selected, options);
-      output.write(renderDecisionResult(recorded, options.cwd ?? process.cwd()));
-      return recorded;
-    }
-    if (answer === '4') {
-      output.write(renderDisabledReview(state));
-      if (state.remediationCandidates.length) {
-        const remediationAnswer = await ask(rl, '是否自动生成安全补路径计划？输入 y 生成，直接回车保持当前策略：');
-        if (wantsRemediationPlan(remediationAnswer)) {
-          const recorded = await writeCapabilityRemediationPlan(result, state.remediationCandidates, options);
-          output.write(renderRemediationResult(recorded, options.cwd ?? process.cwd()));
-          return recorded;
-        }
-      }
-      output.write('已保持当前能力策略。\n');
-      return { status: 'reviewed_disabled', count: 0 };
-    }
-    if (answer === '5') {
-      const recorded = await writeCapabilityRemediationPlan(result, state.remediationCandidates, options);
-      output.write(renderRemediationResult(recorded, options.cwd ?? process.cwd()));
-      return recorded;
-    }
-    if (answer === '6') {
-      output.write('\n已保持禁用和需确认状态；未启用额外能力。\n');
-      return { status: 'disabled_kept', count: 0 };
-    }
-    output.write('\n未识别的选择，已保持当前能力策略。\n');
-    return { status: 'invalid_choice', count: 0 };
-  } finally {
-    rl.close();
-  }
 }

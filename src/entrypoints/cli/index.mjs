@@ -11,14 +11,16 @@ import {
   PUBLIC_BUILD_COMMAND,
   PUBLIC_BUILD_HELP,
   publicBooleanBuildFlagSet,
-  publicValueBuildFlagMap,
+  publicEnumValueBuildFlagMap,
+  publicStringValueBuildFlagSet,
 } from './public-build-contract.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const HELP = PUBLIC_BUILD_HELP;
 const PUBLIC_BOOLEAN_BUILD_FLAGS = publicBooleanBuildFlagSet();
-const PUBLIC_VALUE_BUILD_FLAGS = publicValueBuildFlagMap();
+const PUBLIC_ENUM_VALUE_BUILD_FLAGS = publicEnumValueBuildFlagMap();
+const PUBLIC_STRING_VALUE_BUILD_FLAGS = publicStringValueBuildFlagSet();
 
 function scriptPath(...segments) {
   return path.resolve(MODULE_DIR, ...segments);
@@ -97,11 +99,15 @@ function validatePublicBuildUrl(input) {
   }
 }
 
-function validateBuildFlagValue(flagName, value) {
+function validateBuildFlagValuePresence(flagName, value) {
   if (!value || value.startsWith('-')) {
     errorWithHelp(`Missing value for ${flagName}`);
   }
-  const allowedValues = PUBLIC_VALUE_BUILD_FLAGS.get(flagName);
+}
+
+function validateBuildEnumFlagValue(flagName, value) {
+  validateBuildFlagValuePresence(flagName, value);
+  const allowedValues = PUBLIC_ENUM_VALUE_BUILD_FLAGS.get(flagName);
   if (!allowedValues.includes(value)) {
     errorWithHelp(`${flagName} must be one of: ${allowedValues.join(', ')}`);
   }
@@ -122,16 +128,28 @@ function validateBuildArgs(args) {
         }
         continue;
       }
-      if (PUBLIC_VALUE_BUILD_FLAGS.has(flagName)) {
+      if (PUBLIC_ENUM_VALUE_BUILD_FLAGS.has(flagName)) {
         if (String(token).includes('=')) {
-          validateBuildFlagValue(flagName, String(token).slice(flagName.length + 1));
+          validateBuildEnumFlagValue(flagName, String(token).slice(flagName.length + 1));
           continue;
         }
         index += 1;
         if (index >= args.length) {
           errorWithHelp(`Missing value for ${flagName}`);
         }
-        validateBuildFlagValue(flagName, String(args[index]));
+        validateBuildEnumFlagValue(flagName, String(args[index]));
+        continue;
+      }
+      if (PUBLIC_STRING_VALUE_BUILD_FLAGS.has(flagName)) {
+        if (String(token).includes('=')) {
+          validateBuildFlagValuePresence(flagName, String(token).slice(flagName.length + 1));
+          continue;
+        }
+        index += 1;
+        if (index >= args.length) {
+          errorWithHelp(`Missing value for ${flagName}`);
+        }
+        validateBuildFlagValuePresence(flagName, String(args[index]));
         continue;
       }
       errorWithHelp(`Unknown flag: ${flagName}`);

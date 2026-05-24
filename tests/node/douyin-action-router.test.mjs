@@ -536,7 +536,7 @@ test('runDouyinAction resolves followed updates and author pages into concrete d
   assert.equal(typeof capturedInputPayload, 'string');
   assert.ok(Array.isArray(capturedArgs));
   // @ts-ignore
-  assert.match(String(capturedArgs[0]).replace(/\\/gu, '/'), /\/src\/sites\/douyin\/download\/python\/douyin\.py$/u);
+  assert.match(String(capturedArgs[0]).replace(/\\/gu, '/'), /\/src\/sites\/known-sites\/douyin\/download\/python\/douyin\.py$/u);
   // @ts-ignore
   assert.ok(capturedArgs.includes('--browser-timeout'));
   // @ts-ignore
@@ -612,7 +612,7 @@ test('runDouyinAction pre-resolves direct douyin video inputs before spawning py
   assert.equal(result.mediaResolution?.resolvedCount, 1);
   assert.equal(typeof capturedInputPayload, 'string');
   // @ts-ignore
-  assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/douyin\/download\/python\/douyin\.py$/u);
+  assert.match(String(capturedArgs?.[0] ?? '').replace(/\\/gu, '/'), /\/src\/sites\/known-sites\/douyin\/download\/python\/douyin\.py$/u);
   assert.match(capturedInputPayload, /"resolvedMediaUrl":"https:\/\/v26-web\.douyinvod\.com\/example\/direct\.mp4"/u);
   assert.match(capturedInputPayload, /"videoId":"7592547346870620763"/u);
 });

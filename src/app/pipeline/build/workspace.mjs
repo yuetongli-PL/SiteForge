@@ -77,6 +77,31 @@ const BUILD_ARTIFACT_DIR_BY_NAME = Object.freeze({
 });
 
 const SAFE_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const FS_RETRY_DELAYS_MS = Object.freeze([50, 150, 350, 750]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFsError(error) {
+  return ['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(String(error?.code ?? ''));
+}
+
+async function retryFsOperation(operation) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= FS_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableFsError(error) || attempt >= FS_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+      await sleep(FS_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
 
 function comparePath(value) {
   const resolved = path.resolve(value);
@@ -115,8 +140,8 @@ async function atomicWriteJson(filePath, payload) {
     `.${path.basename(resolvedPath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`,
   );
   try {
-    await writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-    await rename(tempPath, resolvedPath);
+    await retryFsOperation(async () => writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8'));
+    await retryFsOperation(async () => rename(tempPath, resolvedPath));
   } catch (error) {
     await rm(tempPath, { force: true }).catch(() => {});
     throw error;
@@ -305,14 +330,14 @@ export async function promoteVerifiedBuild(context, stageResults) {
   const generatedSkill = stageResults.generateSkill;
   if (generatedSkill?.skillDir) {
     assertInside(paths.buildSkillDir, generatedSkill.skillDir, 'generatedSkill.skillDir');
-    await cp(generatedSkill.skillDir, tempCurrentDir, { recursive: true });
+    await retryFsOperation(async () => cp(generatedSkill.skillDir, tempCurrentDir, { recursive: true }));
   }
   for (const fileName of CURRENT_PROMOTION_FILES) {
     const sourcePath = path.join(context.artifactDir, fileName);
     assertInside(paths.buildDir, sourcePath, `promotion source ${fileName}`);
     if (await pathExists(sourcePath)) {
       const targetPath = assertInside(tempCurrentDir, path.join(tempCurrentDir, fileName), `promotion target ${fileName}`);
-      await cp(sourcePath, targetPath);
+      await retryFsOperation(async () => cp(sourcePath, targetPath));
     }
   }
 
@@ -323,16 +348,16 @@ export async function promoteVerifiedBuild(context, stageResults) {
   let backupCreated = false;
   try {
     if (await pathExists(paths.currentDir)) {
-      await rename(paths.currentDir, backupCurrentDir);
+      await retryFsOperation(async () => rename(paths.currentDir, backupCurrentDir));
       backupCreated = true;
     }
-    await rename(tempCurrentDir, paths.currentDir);
+    await retryFsOperation(async () => rename(tempCurrentDir, paths.currentDir));
     await rm(backupCurrentDir, { recursive: true, force: true }).catch(() => {});
   } catch (error) {
     await rm(paths.currentDir, { recursive: true, force: true }).catch(() => {});
     if (backupCreated && await pathExists(backupCurrentDir)) {
       try {
-        await rename(backupCurrentDir, paths.currentDir);
+        await retryFsOperation(async () => rename(backupCurrentDir, paths.currentDir));
       } catch (restoreError) {
         error.restoreError = restoreError?.message ?? String(restoreError);
       }

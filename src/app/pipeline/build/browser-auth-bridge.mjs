@@ -91,14 +91,14 @@ function browserBridgeMaxRetryPasses(options = /** @type {any} */ ({})) {
   return Math.max(0, Number(options.browserBridgeMaxRetryPasses ?? 2) || 0);
 }
 
-function browserBridgePlannedPassCount(options = /** @type {any} */ ({})) {
-  return Math.max(1, Number(options.browserBridgePlannedPassCount ?? browserBridgeMaxRetryPasses(options) + 1) || 1);
+function browserBridgePerPassTimeoutMs(options = /** @type {any} */ ({})) {
+  return Math.max(1000, Number(options.browserBridgePerPassTimeoutMs ?? browserBridgeRequestedTimeoutMs(options)) || 30000);
 }
 
-function browserBridgePerPassTimeoutMs(options = /** @type {any} */ ({})) {
+function browserBridgeRetryPassTimeoutMs(options = /** @type {any} */ ({}), routeCount = 1) {
   const requestedTimeoutMs = browserBridgeRequestedTimeoutMs(options);
-  const plannedPassCount = browserBridgePlannedPassCount(options);
-  return Math.max(1000, Number(options.browserBridgePerPassTimeoutMs ?? Math.floor(requestedTimeoutMs / plannedPassCount)) || requestedTimeoutMs);
+  const routeBudgetMs = Math.max(15000, Math.min(requestedTimeoutMs, Math.max(1, Number(routeCount) || 1) * 9000));
+  return Math.max(1000, Number(options.browserBridgeRetryPassTimeoutMs ?? routeBudgetMs) || routeBudgetMs);
 }
 
 function routeStatusCaptured(value) {
@@ -797,8 +797,6 @@ async function maybeRetryBrowserBridge(baseResult, {
   const extensionStages = new Set(baseResult.bridgeSummary?.extensionStages ?? []);
   const retryAttemptCounts = new Map();
   let retryPasses = 0;
-  const plannedPassCount = browserBridgePlannedPassCount(options);
-  const perPassTimeoutMs = browserBridgePerPassTimeoutMs(options);
 
   for (let passIndex = 1; passIndex <= maxRetryPasses; passIndex += 1) {
     const current = finalizeStructureSummary(routes, aggregateSummary, site);
@@ -821,8 +819,7 @@ async function maybeRetryBrowserBridge(baseResult, {
         browserBridgeRouteIds: retryRouteIds,
         browserBridgeRetryRouteIds: retryRouteIds,
         browserBridgeMaxRetryPasses: 0,
-        browserBridgePlannedPassCount: plannedPassCount,
-        browserBridgePerPassTimeoutMs: perPassTimeoutMs,
+        browserBridgePerPassTimeoutMs: browserBridgeRetryPassTimeoutMs(options, retryRouteIds.length),
         browserBridgePassIndex: passIndex,
         browserBridgeRetryPass: true,
       },

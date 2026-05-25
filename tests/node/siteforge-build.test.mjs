@@ -2316,16 +2316,17 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     const extensionDir = browserBridgeExtensionDirectory();
     const manifest = JSON.parse(await readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.manifest_version, 3);
-    assert.equal(manifest.version, '0.1.4');
-    assert.match(manifest.name, /v0\.1\.4/u);
+    assert.equal(manifest.version, '0.1.5');
+    assert.match(manifest.name, /v0\.1\.5/u);
     assert.deepEqual(manifest.permissions.sort(), ['scripting', 'tabs']);
     const extensionContent = await readFile(path.join(extensionDir, 'bridge-content.js'), 'utf8');
     assert.equal(extensionContent.includes('siteforge-bridge-session'), true);
     assert.equal(extensionContent.includes('bridge-content-version:'), true);
-    assert.equal(extensionContent.includes('route-queue-settled-handshake-v4'), true);
+    assert.equal(extensionContent.includes('route-queue-loading-dom-fallback-v5'), true);
     const extensionBackground = await readFile(path.join(extensionDir, 'background.js'), 'utf8');
     assert.equal(extensionBackground.includes('chrome.scripting.executeScript'), true);
-    assert.equal(extensionBackground.includes('route-queue-settled-handshake-v4'), true);
+    assert.equal(extensionBackground.includes('route-queue-loading-dom-fallback-v5'), true);
+    assert.equal(extensionBackground.includes('route-tab-usable-while-loading'), true);
     assert.equal(extensionBackground.includes('route-load-fallback'), true);
     assert.equal(extensionBackground.includes('route-tab-stable'), true);
     assert.equal(extensionBackground.includes('collector-reinjecting'), true);
@@ -2441,6 +2442,53 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(retryRecovered.bridgeSummary.retryCapturedRouteCount, 1);
     assert.equal(retryRecovered.bridgeSummary.routeResults.find((route) => route.targetRoute === '/messages')?.retryOutcome, 'captured_after_retry');
 
+    const saturatedRetryResults = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: Array.from({ length: 32 }, (_, index) => `/route-${index + 1}`),
+        },
+        browserAuthBridgeProvider: async ({ routes, passIndex }) => {
+          if (passIndex === 0) {
+            return {
+              authenticatedPages: [{
+                routeId: routes[0].id,
+                url: routes[0].targetUrl,
+                routeTemplate: routes[0].routeTemplate,
+                sourceLayer: routes[0].sourceLayer,
+                pageType: 'authenticated_home',
+                visibleItemCount: 1,
+                listPresent: true,
+              }],
+              routeResults: routes.slice(1).map((route) => ({
+                routeId: route.id,
+                targetUrl: route.targetUrl,
+                sourceLayer: route.sourceLayer,
+                status: 'blocked',
+                reasonCode: 'navigation-in-progress',
+              })),
+            };
+          }
+          return {
+            routeResults: routes.map((route) => ({
+              routeId: route.id,
+              targetUrl: route.targetUrl,
+              sourceLayer: route.sourceLayer,
+              status: passIndex === 1 ? 'blocked' : 'challenge_detected',
+              reasonCode: passIndex === 1
+                ? 'collector-message-failed'
+                : 'browser-bridge-definite-challenge',
+            })),
+          };
+        },
+      },
+    });
+    assert.equal(saturatedRetryResults.bridgeSummary.routeCount, 32);
+    assert.equal(saturatedRetryResults.bridgeSummary.retryPasses, 2);
+    assert.equal(saturatedRetryResults.bridgeSummary.routeResults.find((route) => route.targetRoute === '/route-32')?.finalReasonCode, 'browser-bridge-definite-challenge');
+
     const capturedWithoutSummary = await runBrowserAuthBridge({
       inputUrl: rootUrl,
       site,
@@ -2523,7 +2571,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
           statusUrl.searchParams.set('stage', stage);
           await fetch(statusUrl, { method: 'POST' });
         };
-        await signalStage('bridge-content-version:route-queue-settled-handshake-v4');
+        await signalStage('bridge-content-version:route-queue-loading-dom-fallback-v5');
         await signalStage('bridge-version:route-queue-retry-stability-v3');
         await fetch(session.submitUrl, {
           method: 'POST',

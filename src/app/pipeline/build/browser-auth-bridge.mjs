@@ -14,7 +14,7 @@ import { browserStructureCollectorScript } from './browser-structure-collector.m
 
 const MAX_BRIDGE_BODY_BYTES = 256 * 1024;
 const MAX_BRIDGE_ROUTES = 32;
-const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-settled-handshake-v4';
+const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-loading-dom-fallback-v5';
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
 const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-origin': '*',
@@ -438,6 +438,63 @@ function sanitizeRouteResults(value, site) {
     .slice(0, MAX_BRIDGE_ROUTES * 2);
 }
 
+function routeResultMergeKey(result) {
+  if (result?.routeId) {
+    return `id:${result.routeId}`;
+  }
+  if (result?.sourceLayer || result?.targetRoute) {
+    return `route:${routeSourceLayer(result.sourceLayer)}:${String(result.targetRoute ?? '').trim()}`;
+  }
+  return null;
+}
+
+function routeResultSpecificity(result) {
+  const status = routeStatus(result?.status, 'timeout');
+  if (routeResultCaptured(result)) {
+    return 5;
+  }
+  if (status === 'challenge_detected') {
+    return 4;
+  }
+  if (status === 'thin_capture') {
+    return 3;
+  }
+  if (status === 'blocked') {
+    return 2;
+  }
+  return 1;
+}
+
+function mergeRouteResults(results = []) {
+  const byKey = new Map();
+  const unkeyed = [];
+  for (const result of results) {
+    if (!result) {
+      continue;
+    }
+    const key = routeResultMergeKey(result);
+    if (!key) {
+      unkeyed.push(result);
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, result);
+      continue;
+    }
+    if (routeResultCaptured(existing) && !routeResultCaptured(result)) {
+      continue;
+    }
+    if (
+      routeResultCaptured(result)
+      || routeResultSpecificity(result) >= routeResultSpecificity(existing)
+    ) {
+      byKey.set(key, result);
+    }
+  }
+  return [...byKey.values(), ...unkeyed].slice(0, MAX_BRIDGE_ROUTES * 4);
+}
+
 function sanitizeBridgePage(page, site, fallbackUrl) {
   if (!page || typeof page !== 'object') {
     return null;
@@ -619,10 +676,12 @@ function mergeStructureSummary(base, next) {
   base.authenticatedPages.push(...(next.authenticatedPages ?? []));
   base.authenticatedOverlayPages.push(...(next.authenticatedOverlayPages ?? []));
   base.warnings.push(...(next.warnings ?? []));
-  base.routeResults.push(...(next.routeResults ?? []));
+  base.routeResults = mergeRouteResults([
+    ...(base.routeResults ?? []),
+    ...(next.routeResults ?? []),
+  ]);
   base.authenticatedPages = base.authenticatedPages.slice(0, 80);
   base.authenticatedOverlayPages = base.authenticatedOverlayPages.slice(0, 80);
-  base.routeResults = base.routeResults.slice(0, MAX_BRIDGE_ROUTES * 2);
   base.warnings = uniqueStrings(base.warnings).slice(0, 20);
   return base;
 }

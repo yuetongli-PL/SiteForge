@@ -1,5 +1,5 @@
 const activeTabs = new Map();
-const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-settled-handshake-v4';
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-loading-dom-fallback-v5';
 const ROUTE_COLLECT_FALLBACK_DELAY_MS = 6500;
 const ROUTE_STABLE_AFTER_COMPLETE_MS = 1500;
 const TAB_STABLE_MAX_POLLS = 16;
@@ -143,6 +143,11 @@ async function waitForStableTab(tabId, session, route) {
     return { ok: true, reasonCode: null, tab: stableTab, currentUrl: stableUrl };
   }
   const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const committedUrl = tab?.url || '';
+  if (tab?.id && sameAllowedHost(committedUrl, route.allowedHost) && sameRoutePath(committedUrl, route.targetUrl)) {
+    signal(session, `route-tab-usable-while-loading:${route.id}`);
+    return { ok: true, reasonCode: 'navigation-in-progress', tab, currentUrl: committedUrl };
+  }
   return { ok: false, reasonCode: 'navigation-in-progress', tab };
 }
 

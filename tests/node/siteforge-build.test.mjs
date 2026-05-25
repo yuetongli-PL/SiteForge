@@ -2442,6 +2442,52 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(retryRecovered.bridgeSummary.retryCapturedRouteCount, 1);
     assert.equal(retryRecovered.bridgeSummary.routeResults.find((route) => route.targetRoute === '/messages')?.retryOutcome, 'captured_after_retry');
 
+    const retrySkipsDefiniteChallenge = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: ['/blocked-challenge', '/late-route'],
+        },
+        browserAuthBridgeProvider: async ({ routes, passIndex }) => {
+          if (passIndex === 0) {
+            return {
+              routeResults: [{
+                routeId: routes[0].id,
+                targetUrl: routes[0].targetUrl,
+                sourceLayer: routes[0].sourceLayer,
+                status: 'challenge_detected',
+                reasonCode: 'browser-bridge-definite-challenge',
+              }, {
+                routeId: routes[1].id,
+                targetUrl: routes[1].targetUrl,
+                sourceLayer: routes[1].sourceLayer,
+                status: 'timeout',
+                reasonCode: 'browser-bridge-route-timeout',
+              }],
+            };
+          }
+          assert.equal(routes.length, 1);
+          assert.equal(routes[0].routeTemplate, '/late-route');
+          return {
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: '/late-route',
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_browser_summary',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(retrySkipsDefiniteChallenge.status, 'browser_verified');
+    assert.equal(retrySkipsDefiniteChallenge.bridgeSummary.routeResults.find((route) => route.targetRoute === '/blocked-challenge')?.retryAttemptCount, 0);
+    assert.equal(retrySkipsDefiniteChallenge.bridgeSummary.routeResults.find((route) => route.targetRoute === '/late-route')?.retryOutcome, 'captured_after_retry');
+
     const saturatedRetryResults = await runBrowserAuthBridge({
       inputUrl: rootUrl,
       site,

@@ -111,13 +111,35 @@ function routeResultCaptured(result) {
 
 function routeResultRetryable(result) {
   const status = routeStatus(result?.status, 'timeout');
+  const reasonCode = String(result?.reasonCode ?? '').trim();
+  if (status === 'challenge_detected' && reasonCode === 'browser-bridge-definite-challenge') {
+    return false;
+  }
   if (RETRYABLE_ROUTE_STATUSES.has(status)) {
     return true;
   }
   if (status !== 'blocked') {
     return false;
   }
-  return RETRYABLE_BLOCKED_REASON_CODES.has(String(result?.reasonCode ?? '').trim());
+  return RETRYABLE_BLOCKED_REASON_CODES.has(reasonCode);
+}
+
+function routeRetryPriority(result) {
+  const status = routeStatus(result?.status, 'timeout');
+  const reasonCode = String(result?.reasonCode ?? '').trim();
+  if (status === 'timeout' || reasonCode === 'navigation-in-progress') {
+    return 0;
+  }
+  if (/open-failed|execute-script-failed|collector-message-failed|injection-failed|tab-missing/u.test(reasonCode)) {
+    return 1;
+  }
+  if (status === 'thin_capture') {
+    return 2;
+  }
+  if (status === 'challenge_detected') {
+    return 3;
+  }
+  return 4;
 }
 
 function routeSourceLayer(value) {
@@ -861,6 +883,7 @@ async function maybeRetryBrowserBridge(baseResult, {
     const current = finalizeStructureSummary(routes, aggregateSummary, site);
     const retryRouteIds = current.routeResults
       .filter((result) => !routeResultCaptured(result) && routeResultRetryable(result))
+      .sort((left, right) => routeRetryPriority(left) - routeRetryPriority(right))
       .map((result) => result.routeId)
       .filter(Boolean);
     if (!retryRouteIds.length) {

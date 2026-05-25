@@ -127,7 +127,7 @@ function hasActionMismatch(best, utterance) {
 }
 
 function isCallableSkillRecord(skill) {
-  return skill?.verificationStatus === 'passed';
+  return skill?.verificationStatus === 'passed' || skill?.verificationStatus === 'bridge_runtime_passed';
 }
 
 export function createEmptySkillRegistry(nowIso = new Date().toISOString()) {
@@ -183,6 +183,12 @@ export function lookupSkillIntentFromRegistry(registry, {
           canonicalUtterance: intent.canonicalUtterance,
           utteranceExamples: intent.utteranceExamples ?? [],
           safetyLevel: intent.safetyLevel,
+          promotionClass: intent.promotionClass ?? skill.promotionClass ?? null,
+          runtimeMode: intent.runtimeMode ?? skill.runtimeMode ?? null,
+          requiresFreshBridgeEvidence: intent.requiresFreshBridgeEvidence ?? skill.requiresFreshBridgeEvidence ?? false,
+          genericHttpRuntimeAllowed: intent.genericHttpRuntimeAllowed ?? skill.genericHttpRuntimeAllowed ?? null,
+          coverageStatus: intent.coverageStatus ?? skill.coverageStatus ?? null,
+          runtimeRequirements: intent.runtimeRequirements ?? skill.runtimeRequirements ?? null,
         };
       }
     }

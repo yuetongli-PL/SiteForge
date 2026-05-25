@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "SiteForge Browser Bridge",
-  "version": "0.1.0",
+  "name": "SiteForge Browser Bridge v0.1.2",
+  "version": "0.1.2",
   "description": "Submits sanitized SiteForge page structure summaries to a local one-time bridge.",
   "permissions": [
     "scripting",

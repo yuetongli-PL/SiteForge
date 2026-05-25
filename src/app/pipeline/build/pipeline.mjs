@@ -184,6 +184,7 @@ const COLLECTION_OUTCOME_STAGE_KINDS = Object.freeze({
   generateIntents: 'capability',
 });
 const SETUP_COLLECTION_REVIEW_KINDS = Object.freeze(['seeds', 'nodes', 'affordances', 'capabilities', 'intents']);
+const ROUTE_CAPTURE_PLAN_FILE = 'route_capture_plan.json';
 
 const clone = jsonClone;
 
@@ -358,6 +359,8 @@ const SAFE_BUILD_WARNING_PATTERNS = Object.freeze([
   /^seed discovery truncated at maxSeeds=\d+; \d+ seeds were left out\.$/u,
   /^sitemap discovery truncated at maxSitemaps=\d+; \d+ sitemap URLs were left out\.$/u,
   /^crawl truncated at maxPages=\d+; \d+ queued URLs were not fetched\.$/u,
+  /^browser-auth-route-coverage-partial$/u,
+  /^Report-only partial success: generated capabilities and intents are available, but promotion is blocked by external access policy\.$/u,
   /^Skipped because [a-zA-Z0-9]+ (?:skipped|failed|blocked)\.$/u,
 ]);
 
@@ -1203,6 +1206,7 @@ function setupProfileSummary(profile = null) {
       pageSourcePersisted: profile.userAuthorizedEvidence.rawHtmlPersisted === true,
     } : null,
     buildReadiness: profile.buildReadiness ? clone(profile.buildReadiness) : null,
+    partialCoverage: profile.partialCoverage ? clone(profile.partialCoverage) : null,
     profileUsability: profile.profileUsability ? clone(profile.profileUsability) : null,
     scope: profile.scope ?? null,
     safety: profile.safety ? {
@@ -3697,6 +3701,49 @@ async function crawlStaticStage(context, stageResults) {
   };
 }
 
+function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any} */ ({})) {
+  const bridge = authStateReport?.browserBridge ?? {};
+  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
+  const missingRoutes = routeResults
+    .filter((result) => result?.status !== 'captured')
+    .map((result) => ({
+      routeId: result?.routeId ?? null,
+      sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
+      targetRoute: result?.targetRoute ?? null,
+      status: result?.status ?? 'timeout',
+      reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+      recommendedRetryMode: 'browser_bridge_missing_route_retry',
+      retryable: ['blocked', 'timeout', 'challenge_detected'].includes(String(result?.status ?? '')),
+    }));
+  if (
+    authStateReport?.authMethod !== 'browser'
+    || authStateReport?.authVerificationStatus !== 'browser_verified'
+    || Number(bridge.capturedRouteCount ?? 0) <= 0
+    || missingRoutes.length === 0
+  ) {
+    return null;
+  }
+  return sanitizeReportPublicValue({
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-route-capture-plan',
+    siteId: context.site.id,
+    buildId: context.buildId,
+    status: 'partial',
+    routeCount: Number(bridge.routeCount ?? routeResults.length ?? 0) || 0,
+    capturedRouteCount: Number(bridge.capturedRouteCount ?? 0) || 0,
+    missingRouteCount: missingRoutes.length,
+    missingRoutes,
+    safety: {
+      cookiePersisted: false,
+      browserProfilePersisted: false,
+      storageRead: false,
+      rawDomPersisted: false,
+      rawHtmlPersisted: false,
+      privateBodyPersisted: false,
+    },
+  });
+}
+
 async function authStateCheckStage(context) {
   const needsAuthCheck = ['cookie', 'browser'].includes(context.options.authMode) && (
     !canRunAuthenticatedLayer(context.authStateReport)
@@ -3780,13 +3827,52 @@ async function authStateCheckStage(context) {
     error.summary = authSummaryForReport(nextContract, normalizedReport);
     throw error;
   }
+  if (
+    context.options.strictBrowserAuth === true
+    && context.options.authMode === 'browser'
+    && canRunAuthenticatedLayer(normalizedReport)
+    && Number(normalizedReport.browserBridge?.missingRouteCount ?? 0) > 0
+  ) {
+    normalizedReport.blockingSignals = uniqueSortedStrings([
+      ...(normalizedReport.blockingSignals ?? []),
+      ...((normalizedReport.browserBridge?.routeResults ?? [])
+        .filter((result) => result?.status !== 'captured')
+        .map((result) => result.reasonCode ?? result.status)
+        .filter(Boolean)),
+    ]);
+  }
+  const partialBrowserRouteCoverage = context.options.authMode === 'browser'
+    && canRunAuthenticatedLayer(normalizedReport)
+    && Number(normalizedReport.browserBridge?.capturedRouteCount ?? 0) > 0
+    && Number(normalizedReport.browserBridge?.missingRouteCount ?? 0) > 0;
+  const partialBrowserRouteReasonCodes = partialBrowserRouteCoverage
+    ? uniqueSortedStrings([
+      'browser-auth-route-coverage-partial',
+      ...((normalizedReport.browserBridge?.routeResults ?? [])
+        .filter((result) => result?.status !== 'captured')
+        .map((result) => result.reasonCode ?? result.status)
+        .filter(Boolean)),
+    ])
+    : [];
+  const routeCapturePlan = routeCapturePlanFromAuthState(context, normalizedReport);
+  const routeCapturePlanPath = routeCapturePlan
+    ? await writeArtifactJson(context, ROUTE_CAPTURE_PLAN_FILE, routeCapturePlan)
+    : null;
   return {
     authStateReport: normalizedReport,
     crawlContract: nextContract,
-    artifactPaths: { authStateReport: authStateReportPath },
-    reasonCodes: normalizedReport.verified === true ? [] : uniqueSortedStrings(normalizedReport.blockingSignals ?? []),
+    routeCapturePlan,
+    artifactPaths: {
+      authStateReport: authStateReportPath,
+      ...(routeCapturePlanPath ? { routeCapturePlan: routeCapturePlanPath } : {}),
+    },
+    reasonCodes: normalizedReport.verified === true
+      ? partialBrowserRouteReasonCodes
+      : uniqueSortedStrings(normalizedReport.blockingSignals ?? []),
     warnings: normalizedReport.verified === true
-      ? []
+      ? (partialBrowserRouteCoverage
+        ? ['browser-auth-route-coverage-partial']
+        : [])
       : [context.options.authMode === 'browser'
         ? 'Default-browser authentication bridge did not verify successfully; authenticated crawl remains disabled for this build.'
         : 'Cookie authentication did not verify successfully; authenticated crawl remains disabled for this build.'],
@@ -8372,9 +8458,16 @@ async function discoverCapabilitiesStage(context, stageResults) {
     .map((capability) => applyCapabilityEvidenceMatrix(context, capability, graph)))
     .sort((left, right) => left.id.localeCompare(right.id, 'en'));
   const privacyMode = context.options?.privacyMode ?? context.options?.privacy ?? 'limited';
-  const merged = privacyMode === 'strict'
+  const privacyFiltered = privacyMode === 'strict'
     ? policyApplied.filter((capability) => !shouldSkipInStrictPrivacy(capability))
     : policyApplied;
+  const merged = privacyFiltered
+    .map((capability) => decorateCapabilityRuntime(
+      context,
+      capability,
+      graph,
+      stageResults.discoverSeeds?.robotsPolicy ?? null,
+    ));
   for (const capability of merged) {
     assertCapability(capability);
   }
@@ -8648,20 +8741,29 @@ function graphIntentExamples(node = /** @type {any} */ ({})) {
 
 function graphIntentCandidateNodes(context, graph, robotsPolicy = null) {
   return (graph?.nodes ?? [])
-    .filter((node) => (
-      (
-        isStructureElementInstanceNode(node)
-        || (
-          ['route', 'route_template'].includes(node.type)
-          && node.authRequired !== true
-          && isPublicReadSourceLayer(nodeSourceLayer(node))
-          && (node.categoryInstance || node.linkLabel || node.routeTemplate || node.routePattern)
-          && !isPublicUtilityRouteNode(node)
+    .filter((node) => {
+      const layer = nodeSourceLayer(node);
+      const routeNode = ['route', 'route_template'].includes(node.type);
+      const publicRouteNode = routeNode
+        && node.authRequired !== true
+        && isPublicReadSourceLayer(layer);
+      const authenticatedRouteNode = routeNode
+        && isAuthenticatedSourceLayer(layer)
+        && canRunAuthenticatedLayer(context.authStateReport)
+        && !isAuthenticatedReadRiskRoute(node);
+      return (
+        (
+          isStructureElementInstanceNode(node)
+          || (
+            (publicRouteNode || authenticatedRouteNode)
+            && (node.categoryInstance || node.linkLabel || node.routeTemplate || node.routePattern)
+            && !isPublicUtilityRouteNode(node)
+          )
         )
-      )
-      && (hasMeaningfulElementLabel(node) || node.categoryInstance || node.routeTemplate || node.routePattern)
-      && nodeTargetAllowedByRobots(context, node, robotsPolicy)
-    ))
+        && (hasMeaningfulElementLabel(node) || node.categoryInstance || node.routeTemplate || node.routePattern)
+        && nodeTargetAllowedByRobots(context, node, robotsPolicy)
+      );
+    })
     .sort((left, right) => (
       graphIntentRoleForNode(left).localeCompare(graphIntentRoleForNode(right), 'en')
       || graphIntentLabelForNode(left).localeCompare(graphIntentLabelForNode(right), 'zh-Hans-CN')
@@ -8717,8 +8819,16 @@ async function generateIntentsStage(context, stageResults) {
     ...generateAutoIntentRecords(context, capabilities, { includeCandidateDebug: true }),
     ...generateGraphElementIntentRecords(context, graph, capabilities, stageResults.discoverSeeds?.robotsPolicy ?? null),
   ], (intent) => `${intent.id}:${intent.capabilityId ?? intent.sourceNodeId ?? ''}`);
+  const capabilitiesById = new Map(capabilities.map((capability) => [capability.id, capability]));
+  const runtimeDecoratedIntents = intents.map((intent) => {
+    const capability = capabilitiesById.get(intent.capabilityId);
+    const runtimeMetadata = registryIntentRuntimeMetadata(intent, capability);
+    return runtimeMetadata && intent.callable !== false
+      ? { ...intent, ...runtimeMetadata }
+      : intent;
+  });
   const capabilityIds = new Set(capabilities.map((capability) => capability.id));
-  for (const intent of intents) {
+  for (const intent of runtimeDecoratedIntents) {
     assertUserIntent(intent, capabilityIds);
   }
   const payload = {
@@ -8726,23 +8836,23 @@ async function generateIntentsStage(context, stageResults) {
     buildId: context.buildId,
     siteId: context.site.id,
     skillId: context.skillId,
-    intents,
+    intents: runtimeDecoratedIntents,
     summary: {
-      intents: intents.length,
+      intents: runtimeDecoratedIntents.length,
       activeCapabilities: activeCapabilities.length,
-      callableIntents: intents.filter((intent) => intent.callable !== false).length,
-      nonCallableIntents: intents.filter((intent) => intent.callable === false).length,
+      callableIntents: runtimeDecoratedIntents.filter((intent) => intent.callable !== false).length,
+      nonCallableIntents: runtimeDecoratedIntents.filter((intent) => intent.callable === false).length,
     },
   };
   const intentsPath = await writeArtifactJson(context, 'intents.json', payload);
   return {
-    intents,
+    intents: runtimeDecoratedIntents,
     artifactPaths: { intents: intentsPath },
     summary: payload.summary,
   };
 }
 
-function selectInvocationProbe(context, capabilities = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
+function selectInvocationProbe(context, capabilities = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([]), options = /** @type {any} */ ({})) {
   const priorityNames = [
     'list followed users',
     'list followed updates',
@@ -8763,6 +8873,11 @@ function selectInvocationProbe(context, capabilities = /** @type {any[]} */ ([])
   const activeCapabilityIds = new Set(
     capabilities
       .filter((capability) => capability.status === 'active')
+      .filter((capability) => (
+        !options.capabilityIds
+        || options.capabilityIds.has?.(capability.id)
+        || (Array.isArray(options.capabilityIds) && options.capabilityIds.includes(capability.id))
+      ))
       .map((capability) => capability.id),
   );
   const activeIntents = intents.filter((intent) => activeCapabilityIds.has(intent.capabilityId) && intent.callable !== false);
@@ -8895,19 +9010,298 @@ async function generateSkillStage(context, stageResults) {
   };
 }
 
-function buildRegistryRecord(context, stageResults) {
+const BRIDGE_RUNTIME_PROMOTION_CLASS = 'browser_bridge_runtime';
+const BRIDGE_RUNTIME_MODE = 'browser_bridge_required';
+const HTTP_RUNTIME_PROMOTION_CLASS = 'generic_http_read_runtime';
+const HTTP_RUNTIME_MODE = 'generic_http_read';
+
+function browserBridgeCoverageStatus(context) {
+  const bridge = context.authStateReport?.browserBridge ?? {};
+  const routeCount = Number(bridge.routeCount ?? 0);
+  const missingRouteCount = Number(bridge.missingRouteCount ?? 0);
+  if (routeCount > 0 && missingRouteCount === 0) {
+    return 'complete';
+  }
+  return 'partial';
+}
+
+function browserBridgeRuntimeRequirements(context) {
+  const bridge = context.authStateReport?.browserBridge ?? {};
+  return sanitizeReportPublicValue({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified',
+    requiresFreshBridgeEvidence: true,
+    defaultBrowserBridgeRequired: true,
+    genericHttpRuntimeAllowed: false,
+    savedMaterial: SANITIZED_SUMMARY_ONLY,
+    routeCount: Number(bridge.routeCount ?? 0),
+    capturedRouteCount: Number(bridge.capturedRouteCount ?? 0),
+    missingRouteCount: Number(bridge.missingRouteCount ?? 0),
+  });
+}
+
+function bridgeRuntimeMetadata(context) {
+  return {
+    promotionClass: BRIDGE_RUNTIME_PROMOTION_CLASS,
+    runtimeMode: BRIDGE_RUNTIME_MODE,
+    requiresFreshBridgeEvidence: true,
+    genericHttpRuntimeAllowed: false,
+    coverageStatus: browserBridgeCoverageStatus(context),
+    runtimeRequirements: browserBridgeRuntimeRequirements(context),
+  };
+}
+
+function genericHttpRuntimeMetadata() {
+  return {
+    promotionClass: HTTP_RUNTIME_PROMOTION_CLASS,
+    runtimeMode: HTTP_RUNTIME_MODE,
+    requiresFreshBridgeEvidence: false,
+    genericHttpRuntimeAllowed: true,
+    coverageStatus: 'complete',
+    runtimeRequirements: {
+      authMethod: 'none',
+      robotsAllowed: true,
+      readOnly: true,
+      allowedMethods: ['GET'],
+      cookieMaterialAllowed: false,
+      savedMaterial: SANITIZED_SUMMARY_ONLY,
+      crossSiteNavigationAllowed: false,
+      formSubmissionAllowed: false,
+    },
+  };
+}
+
+function isBrowserBridgeSourceCapability(capability = /** @type {any} */ ({})) {
+  return ['authenticated', 'authenticated_overlay'].includes(nodeSourceLayer(capability));
+}
+
+function isBridgeRuntimeSafeCapability(capability = /** @type {any} */ ({})) {
+  if (capability.status !== 'active' || !isBrowserBridgeSourceCapability(capability)) {
+    return false;
+  }
+  const safetyLevel = normalizeStatusToken(capability.safetyLevel ?? capability.safety);
+  if (safetyLevel && !['read_only', 'safe'].includes(safetyLevel)) {
+    return false;
+  }
+  const riskLevel = normalizeStatusToken(capability.risk_level ?? capability.riskLevel ?? capability.riskPolicy?.riskLevel);
+  if (['write_low', 'write_high', 'account_security_critical', 'read_private_high'].includes(riskLevel)) {
+    return false;
+  }
+  if (isHighRiskCapability(capability)) {
+    return false;
+  }
+  const plan = capability.executionPlan;
+  if (!plan || plan.autoExecute === true || plan.requiresConfirmation === true) {
+    return false;
+  }
+  const mode = normalizeStatusToken(plan.mode);
+  return !mode || ['read_only', 'limited_read', 'limited_read_summary'].includes(mode);
+}
+
+function graphNodeById(graph = /** @type {any} */ ({})) {
+  return new Map((graph.nodes ?? []).map((node) => [node.id, node]));
+}
+
+function capabilityNodes(capability = /** @type {any} */ ({}), graph = /** @type {any} */ ({})) {
+  const nodesById = graphNodeById(graph);
+  return uniqueSortedStrings([
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+    ...(capability.executionPlan?.steps ?? []).map((step) => step?.nodeId).filter(Boolean),
+  ]).map((id) => nodesById.get(id)).filter(Boolean);
+}
+
+function capabilitySourceLayers(capability = /** @type {any} */ ({}), graph = /** @type {any} */ ({})) {
+  const layers = uniqueSortedStrings([
+    capability.sourceLayer,
+    ...capabilityNodes(capability, graph).map((node) => nodeSourceLayer(node)),
+  ].filter(Boolean));
+  return layers.length ? layers : [nodeSourceLayer(capability)];
+}
+
+function planStepTargetAllowedByRobots(context, step = /** @type {any} */ ({}), graph = /** @type {any} */ ({}), robotsPolicy = null) {
+  const nodesById = graphNodeById(graph);
+  const node = step.nodeId ? nodesById.get(step.nodeId) : null;
+  if (node && !nodeTargetAllowedByRobots(context, node, robotsPolicy)) {
+    return false;
+  }
+  const targets = uniqueSortedStrings([
+    step.url,
+    step.routePath,
+    step.endpoint,
+  ].filter(Boolean));
+  if (!targets.length) {
+    return true;
+  }
+  return targets.every((target) => {
+    try {
+      const normalized = normalizeUrl(target, context.site.rootUrl);
+      return isInternalUrl(normalized, context.site.allowedDomains)
+        && isUrlAllowedByRobots(normalized, robotsPolicy ?? setupProfileRobotsPolicy(context));
+    } catch {
+      return false;
+    }
+  });
+}
+
+function isGenericHttpReadSafeCapability(context, capability = /** @type {any} */ ({}), graph = /** @type {any} */ ({}), robotsPolicy = null) {
+  if (capability.status !== 'active' || capability.authRequired === true || isHighRiskCapability(capability)) {
+    return false;
+  }
+  const layers = capabilitySourceLayers(capability, graph);
+  if (!layers.length || !layers.every((layer) => layer === 'public')) {
+    return false;
+  }
+  const safetyLevel = normalizeStatusToken(capability.safetyLevel ?? capability.safety);
+  if (safetyLevel && !['read_only', 'safe'].includes(safetyLevel)) {
+    return false;
+  }
+  const riskLevel = normalizeStatusToken(capability.risk_level ?? capability.riskLevel ?? capability.riskPolicy?.riskLevel);
+  if (['write_low', 'write_high', 'account_security_critical', 'read_private_high'].includes(riskLevel)) {
+    return false;
+  }
+  const plan = capability.executionPlan;
+  if (!plan || plan.autoExecute === true || plan.requiresConfirmation === true) {
+    return false;
+  }
+  const mode = normalizeStatusToken(plan.mode);
+  if (mode && !['read_only', 'limited_read'].includes(mode)) {
+    return false;
+  }
+  const steps = Array.isArray(plan.steps) ? plan.steps : [];
+  if (!steps.length) {
+    return false;
+  }
+  return steps.every((step) => {
+    const kind = normalizeStatusToken(step.kind);
+    if (!['navigate', 'route_template', 'form_get'].includes(kind)) {
+      return false;
+    }
+    if (kind === 'form_get' && String(step.method ?? 'GET').toUpperCase() !== 'GET') {
+      return false;
+    }
+    return planStepTargetAllowedByRobots(context, step, graph, robotsPolicy);
+  });
+}
+
+function capabilityRuntimeMetadata(context, capability = /** @type {any} */ ({}), graph = /** @type {any} */ ({}), robotsPolicy = null) {
+  if (isBridgeRuntimeSafeCapability(capability)) {
+    return bridgeRuntimeMetadata(context);
+  }
+  if (isGenericHttpReadSafeCapability(context, capability, graph, robotsPolicy)) {
+    return genericHttpRuntimeMetadata();
+  }
+  return null;
+}
+
+function decorateCapabilityRuntime(context, capability = /** @type {any} */ ({}), graph = /** @type {any} */ ({}), robotsPolicy = null) {
+  const metadata = capabilityRuntimeMetadata(context, capability, graph, robotsPolicy);
+  if (!metadata) {
+    return capability;
+  }
+  const next = {
+    ...capability,
+    ...metadata,
+  };
+  if (next.executionPlan) {
+    next.executionPlan = {
+      ...next.executionPlan,
+      ...metadata,
+      runtimeSafety: {
+        readOnly: true,
+        cookieMaterialAllowed: false,
+        savedMaterial: SANITIZED_SUMMARY_ONLY,
+      },
+    };
+  }
+  return next;
+}
+
+function bridgeRuntimeCapabilityIds(stageResults = /** @type {any} */ ({})) {
+  return new Set((stageResults.discoverCapabilities?.capabilities ?? [])
+    .filter(isBridgeRuntimeSafeCapability)
+    .map((capability) => capability.id)
+    .filter(Boolean));
+}
+
+function promotableRuntimeCapabilityIds(context, stageResults = /** @type {any} */ ({})) {
+  const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? {};
+  const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? setupProfileRobotsPolicy(context);
+  return new Set((stageResults.discoverCapabilities?.capabilities ?? [])
+    .filter((capability) => (
+      isBridgeRuntimeSafeCapability(capability)
+      || isGenericHttpReadSafeCapability(context, capability, graph, robotsPolicy)
+    ))
+    .map((capability) => capability.id)
+    .filter(Boolean));
+}
+
+function bridgeRuntimeRegistryOptions(context, stageResults) {
+  return {
+    ...bridgeRuntimeMetadata(context),
+    verificationStatus: 'bridge_runtime_passed',
+    capabilityIds: promotableRuntimeCapabilityIds(context, stageResults),
+  };
+}
+
+function registryIntentRuntimeMetadata(intent = /** @type {any} */ ({}), capability = /** @type {any} */ ({}), fallback = /** @type {any} */ (null)) {
+  const runtimeMode = intent.runtimeMode ?? capability.runtimeMode ?? fallback?.runtimeMode ?? null;
+  if (!runtimeMode) {
+    return null;
+  }
+  return {
+    promotionClass: intent.promotionClass ?? capability.promotionClass ?? fallback?.promotionClass ?? null,
+    runtimeMode,
+    requiresFreshBridgeEvidence: Boolean(intent.requiresFreshBridgeEvidence ?? capability.requiresFreshBridgeEvidence ?? fallback?.requiresFreshBridgeEvidence),
+    genericHttpRuntimeAllowed: Boolean(intent.genericHttpRuntimeAllowed ?? capability.genericHttpRuntimeAllowed ?? fallback?.genericHttpRuntimeAllowed),
+    coverageStatus: intent.coverageStatus ?? capability.coverageStatus ?? fallback?.coverageStatus ?? null,
+    runtimeRequirements: intent.runtimeRequirements ?? capability.runtimeRequirements ?? fallback?.runtimeRequirements ?? null,
+  };
+}
+
+function buildRegistryRecord(context, stageResults, options = /** @type {any} */ ({})) {
   const { capabilities } = requireStage(stageResults, 'discoverCapabilities');
   const { intents } = requireStage(stageResults, 'generateIntents');
-  const activeCapabilitiesById = new Map(capabilities.filter((capability) => capability.status === 'active').map((capability) => [capability.id, capability]));
+  const allowedCapabilityIds = options.capabilityIds instanceof Set
+    ? options.capabilityIds
+    : Array.isArray(options.capabilityIds)
+      ? new Set(options.capabilityIds)
+      : null;
+  const activeCapabilitiesById = new Map(capabilities
+    .filter((capability) => capability.status === 'active')
+    .filter((capability) => !allowedCapabilityIds || allowedCapabilityIds.has(capability.id))
+    .map((capability) => [capability.id, capability]));
   const callableIntents = intents.filter((intent) => activeCapabilitiesById.has(intent.capabilityId) && intent.callable !== false);
+  const runtimeMetadata = options.runtimeMode ? {
+    promotionClass: options.promotionClass ?? null,
+    runtimeMode: options.runtimeMode,
+    requiresFreshBridgeEvidence: options.requiresFreshBridgeEvidence === true,
+    genericHttpRuntimeAllowed: options.genericHttpRuntimeAllowed === true,
+    coverageStatus: options.coverageStatus ?? null,
+    runtimeRequirements: options.runtimeRequirements ?? null,
+  } : null;
+  const intentRuntimeRows = callableIntents.map((intent) => {
+    const capability = activeCapabilitiesById.get(intent.capabilityId);
+    return registryIntentRuntimeMetadata(intent, capability, runtimeMetadata);
+  });
+  const runtimeModes = uniqueSortedStrings(intentRuntimeRows.map((metadata) => metadata?.runtimeMode).filter(Boolean));
+  const runtimeSummary = {
+    genericHttpReadIntents: intentRuntimeRows.filter((metadata) => metadata?.runtimeMode === HTTP_RUNTIME_MODE).length,
+    browserBridgeRequiredIntents: intentRuntimeRows.filter((metadata) => metadata?.runtimeMode === BRIDGE_RUNTIME_MODE).length,
+    runtimeIneligibleIntents: intentRuntimeRows.filter((metadata) => !metadata?.runtimeMode).length,
+  };
   return {
     skillId: context.skillId,
     siteId: context.site.id,
     domains: context.site.allowedDomains,
     skillDir: path.relative(context.cwd, context.skillDir).replace(/\\/gu, '/'),
     artifactDir: path.relative(context.cwd, context.artifactDir).replace(/\\/gu, '/'),
+    ...(runtimeMetadata ? runtimeMetadata : {}),
+    runtimeModes,
+    runtimeSummary,
     intents: callableIntents.map((intent) => {
       const capability = activeCapabilitiesById.get(intent.capabilityId);
+      const perIntentRuntimeMetadata = registryIntentRuntimeMetadata(intent, capability, runtimeMetadata);
       return {
         intentId: intent.id,
         name: intent.name,
@@ -8919,10 +9313,53 @@ function buildRegistryRecord(context, stageResults) {
         utteranceExamples: intent.utteranceExamples,
         safetyLevel: intent.safetyLevel,
         invocationScore: intent.invocationScore,
+        ...(perIntentRuntimeMetadata ? perIntentRuntimeMetadata : {}),
       };
     }),
-    verificationStatus: 'passed',
+    verificationStatus: options.verificationStatus ?? 'passed',
   };
+}
+
+const REPORT_ONLY_VERIFICATION_REASON_CODES = Object.freeze(new Set([
+  'anti-crawl-verify',
+  'robots-disallowed',
+]));
+
+function canUseReportOnlyVerification(report = /** @type {any} */ ({}), stageResults = /** @type {any} */ ({})) {
+  const reasonCode = String(report.reasonCode ?? '').trim();
+  if (!REPORT_ONLY_VERIFICATION_REASON_CODES.has(reasonCode)) {
+    return false;
+  }
+  const graphNodes = stageResults.classifyNodes?.graph?.nodes
+    ?? stageResults.buildSiteGraph?.graph?.nodes
+    ?? [];
+  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
+  const intents = stageResults.generateIntents?.intents ?? [];
+  return graphNodes.length > 0 && capabilities.length > 0 && intents.length > 0;
+}
+
+function canUseBridgeRuntimePromotion(report = /** @type {any} */ ({}), stageResults = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
+  if (!canUseReportOnlyVerification(report, stageResults)) {
+    return false;
+  }
+  const authState = context.authStateReport ?? {};
+  if (
+    authState.authMethod !== 'browser'
+    || authState.authVerificationStatus !== 'browser_verified'
+    || authState.verified !== true
+  ) {
+    return false;
+  }
+  const bridge = authState.browserBridge ?? {};
+  if (bridge.used !== true || Number(bridge.capturedRouteCount ?? 0) <= 0) {
+    return false;
+  }
+  const allowedCapabilityIds = bridgeRuntimeCapabilityIds(stageResults);
+  if (allowedCapabilityIds.size === 0) {
+    return false;
+  }
+  const intents = stageResults.generateIntents?.intents ?? [];
+  return intents.some((intent) => allowedCapabilityIds.has(intent.capabilityId) && intent.callable !== false);
 }
 
 async function verifySkillStage(context, stageResults) {
@@ -8972,8 +9409,31 @@ async function verifySkillStage(context, stageResults) {
       `Page reconciliation warning: ${pageReconciliation.summary.reasonCodes.join(',') || pageReconciliation.status}.`,
     ]);
   }
+  if (report.status !== 'passed' && canUseBridgeRuntimePromotion(report, stageResults, context)) {
+    const metadata = bridgeRuntimeMetadata(context);
+    report.originalStatus = report.status;
+    report.status = 'bridge_runtime_passed';
+    report.promotionAllowed = true;
+    report.reportOnly = false;
+    report.reasonAction = 'browser-bridge-runtime-required';
+    Object.assign(report, metadata);
+    report.warnings = uniqueSortedStrings([
+      ...(report.warnings ?? []),
+      'Browser bridge runtime promotion: generated read-only capabilities can be registered, but live use requires fresh default-browser bridge evidence.',
+    ]);
+  } else if (report.status !== 'passed' && canUseReportOnlyVerification(report, stageResults)) {
+    report.originalStatus = report.status;
+    report.status = 'report_only_blocked';
+    report.promotionAllowed = false;
+    report.reportOnly = true;
+    report.reasonAction = report.reasonAction ?? 'report-only-no-promotion';
+    report.warnings = uniqueSortedStrings([
+      ...(report.warnings ?? []),
+      'Report-only partial success: generated capabilities and intents are available, but promotion is blocked by external access policy.',
+    ]);
+  }
   const verificationPath = await writeArtifactJson(context, 'verification_report.json', report);
-  if (report.status !== 'passed') {
+  if (report.status !== 'passed' && report.status !== 'report_only_blocked' && report.status !== 'bridge_runtime_passed') {
     const error = /** @type {Error & Record<string, any>} */ (new Error(`Skill verification failed [${report.reasonCode ?? 'validation-failed'}]: ${report.errors?.[0] ?? 'unknown error'}`));
     error.code = 'skill-verification-failed';
     error.failureClass = report.failureClass ?? 'validation';
@@ -8987,10 +9447,25 @@ async function verifySkillStage(context, stageResults) {
   }
   const generatedSkill = requireStage(stageResults, 'generateSkill');
   generatedSkill.manifest.verification = {
-    status: 'passed',
+    status: report.status === 'bridge_runtime_passed' ? 'bridge_runtime_passed' : 'passed',
     report: 'verification_report.json',
     invocationLookup: report.gates.registryLookup,
+    ...(report.status === 'bridge_runtime_passed' ? bridgeRuntimeMetadata(context) : {}),
   };
+  if (report.status === 'bridge_runtime_passed') {
+    const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
+    generatedSkill.manifest.executionEngine = {
+      ...(generatedSkill.manifest.executionEngine ?? {}),
+      type: 'siteforge-runtime-router',
+      browserBridgeRequired: true,
+      genericHttpRuntimeAllowed: false,
+      runtimeRouting: {
+        genericHttpReadCapabilities: capabilities.filter((capability) => capability.runtimeMode === HTTP_RUNTIME_MODE).length,
+        browserBridgeRequiredCapabilities: capabilities.filter((capability) => capability.runtimeMode === BRIDGE_RUNTIME_MODE).length,
+      },
+      savedMaterial: SANITIZED_SUMMARY_ONLY,
+    };
+  }
   const verifiedSkillYaml = `${toYaml(generatedSkill.manifest)}\n`;
   await writeArtifactText(context, 'skill.yaml', verifiedSkillYaml);
   generatedSkill.skillPaths.skillYaml = await writeSkillText(context, 'skill.yaml', verifiedSkillYaml);
@@ -9046,16 +9521,26 @@ async function writeNonRegisteredRegistryReport(context, status, reasonCode, ext
 
 async function registerSkillStage(context, stageResults) {
   const verification = requireStage(stageResults, 'verifySkill').verificationReport;
-  if (verification.status !== 'passed') {
+  if (verification.status === 'report_only_blocked') {
+    return await writeNonRegisteredRegistryReport(context, 'promotion-blocked', verification.reasonCode ?? 'verification-report-only-blocked', {
+      reportOnly: true,
+      verificationStatus: verification.status,
+      promotionAllowed: false,
+      writeMode: siteForgeWriteMode(context),
+    });
+  }
+  if (verification.status !== 'passed' && verification.status !== 'bridge_runtime_passed') {
     throw new Error('Registry update blocked because verification did not pass.');
   }
+  const bridgeRuntime = verification.status === 'bridge_runtime_passed';
+  const registryOptions = bridgeRuntime ? bridgeRuntimeRegistryOptions(context, stageResults) : {};
   const writeMode = siteForgeWriteMode(context);
   if (writeMode === 'preview_only' || writeMode === 'draft_only') {
     return await writeNonRegisteredRegistryReport(
       context,
       writeMode === 'draft_only' ? 'draft' : 'preview',
       writeMode === 'draft_only' ? 'write-mode-draft-only' : 'write-mode-preview-only',
-      { writeMode },
+      { writeMode, ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}) },
     );
   }
   const promotion = await promoteVerifiedBuild(context, stageResults);
@@ -9066,14 +9551,17 @@ async function registerSkillStage(context, stageResults) {
       writeMode,
       lastSuccessfulBuildPath,
       promotion,
+      ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
     });
   }
   const registry = await readSkillRegistry(context.registryPath);
-  const record = buildRegistryRecord(context, stageResults);
+  const record = buildRegistryRecord(context, stageResults, registryOptions);
   const nextRegistry = upsertSkillRegistryRecord(registry, record, new Date().toISOString());
   const capabilities = requireStage(stageResults, 'discoverCapabilities').capabilities;
   const intents = requireStage(stageResults, 'generateIntents').intents;
-  const invocationProbe = selectInvocationProbe(context, capabilities, intents);
+  const invocationProbe = selectInvocationProbe(context, capabilities, intents, {
+    capabilityIds: registryOptions.capabilityIds,
+  });
   const lookup = lookupSkillIntentFromRegistry(nextRegistry, {
     domain: invocationProbe.domain,
     utterance: invocationProbe.utterance,
@@ -9093,6 +9581,7 @@ async function registerSkillStage(context, stageResults) {
     lastSuccessfulBuildPath,
     lookup,
     promotion,
+    ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
   };
   const registryReportPath = await writeArtifactJson(context, 'registry_report.json', registryReport);
   return {
@@ -9622,6 +10111,9 @@ function partialSuccessReasonFromWarning(warning) {
   if (reasonCode === 'validation-failed') {
     return 'Verification did not pass; see verification_report.json for gate details.';
   }
+  if (reasonCode === 'report-only-verification-blocked' || /report-only|report_only_blocked/iu.test(text)) {
+    return 'Generated capabilities and intents are available as a report-only partial result; promotion was blocked by external access policy.';
+  }
   if (/maxSeeds=/u.test(text)) {
     return 'Seed discovery reached its configured limit; remaining entry points were not collected.';
   }
@@ -9630,6 +10122,9 @@ function partialSuccessReasonFromWarning(warning) {
   }
   if (/maxPages=/u.test(text)) {
     return 'Static crawl reached its configured page limit; remaining pages were not collected.';
+  }
+  if (reasonCode === 'browser-auth-route-coverage-partial' || /browser-auth-route-coverage-partial/iu.test(text)) {
+    return 'Default-browser bridge captured only reachable configured routes; missing routes are reported as authenticated coverage gaps.';
   }
   if (/user-authorized browser evidence|sanitized user-authorized browser evidence/iu.test(text)) {
     return 'Only limited sanitized user-authorized browser evidence summaries were used.';
@@ -9654,6 +10149,16 @@ function buildPartialSuccessReasons({
   const verificationPassed = report?.summary?.verificationStatus === 'passed'
     || report?.verificationStatus === 'passed'
     || report?.verificationReport?.status === 'passed';
+  if (report?.summary?.verificationStatus === 'report_only_blocked'
+    || report?.verificationStatus === 'report_only_blocked'
+    || report?.verificationReport?.status === 'report_only_blocked') {
+    reasons.push('Generated capabilities and intents are available as a report-only partial result; promotion was blocked by external access policy.');
+  }
+  if (report?.summary?.verificationStatus === 'bridge_runtime_passed'
+    || report?.verificationStatus === 'bridge_runtime_passed'
+    || report?.verificationReport?.status === 'bridge_runtime_passed') {
+    reasons.push('Registered as a runtime-routed Skill: captured authenticated capabilities require fresh default-browser bridge evidence; eligible public read-only capabilities can use generic HTTP read.');
+  }
   const reportReasonCode = safePublicReasonCode(report?.reasonCode);
   if (reportReasonCode && !(verificationPassed && reportReasonCode === 'validation-failed')) {
     const publicReason = partialSuccessReasonFromWarning(reportReasonCode);
@@ -9723,6 +10228,23 @@ function resultStatusFromBuild({
     setupCollectionReview,
     capabilityState,
   }).length ? 'partial_success' : 'success';
+}
+
+function browserBridgeCoverageGaps(authStateReport = /** @type {any} */ ({})) {
+  const bridge = authStateReport?.browserBridge ?? {};
+  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
+  return routeResults
+    .filter((result) => result?.status !== 'captured')
+    .map((result) => ({
+      id: result?.routeId ?? null,
+      name: result?.targetRoute ?? result?.routeId ?? 'browser-auth-route',
+      authRequired: true,
+      routeTemplate: result?.targetRoute ?? null,
+      sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
+      status: result?.status ?? 'timeout',
+      reason: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+      missingEvidence: ['browser_structure_summary'],
+    }));
 }
 
 function summarizeNodes(stageResults = /** @type {any} */ ({})) {
@@ -9809,7 +10331,13 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
   if (resultStatus === 'success') {
     steps.push('Use the generated skill for the enabled read-only capabilities.');
   } else if (resultStatus === 'partial_success') {
-    steps.push('Use the enabled low-risk read-only capabilities now.');
+    if (report.summary?.verificationStatus === 'bridge_runtime_passed') {
+      steps.push('Use the registered runtime-routed Skill: public read-only capabilities can use generic HTTP read, while captured authenticated capabilities require the SiteForge Browser Bridge extension.');
+    } else if (report.summary?.verificationStatus === 'report_only_blocked') {
+      steps.push('Review the report-only capabilities and intents; promotion was blocked by external access policy and runtime registry/current outputs were not updated.');
+    } else {
+      steps.push('Use the enabled low-risk read-only capabilities now.');
+    }
     if (confirmationRequired.length) {
       if (confirmationPaths?.view_confirmation_required_command) {
         steps.push(`Review confirmation-required capabilities: ${confirmationPaths.view_confirmation_required_command}.`);
@@ -9857,6 +10385,44 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
 
 function buildNextStepWorkflows({ resultStatus, report }) {
   const workflows = /** @type {any[]} */ ([]);
+  const routeCapturePlanPath = report.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? ROUTE_CAPTURE_PLAN_FILE : null;
+  if (report.summary?.verificationStatus === 'bridge_runtime_passed') {
+    workflows.push({
+      id: 'browser-bridge-runtime',
+      status: 'registered',
+      purpose: 'Invoke captured read-only capabilities through the default-browser Bridge with fresh sanitized structure evidence.',
+      promotionAllowed: true,
+      updatesCurrent: true,
+      updatesRegistry: true,
+      runtimeMode: BRIDGE_RUNTIME_MODE,
+      requiresFreshBridgeEvidence: true,
+      genericHttpRuntimeAllowed: false,
+    });
+    workflows.push({
+      id: 'generic-http-read-runtime',
+      status: 'registered-when-eligible',
+      purpose: 'Invoke eligible public read-only capabilities through same-site GET or route navigation without cookies or form submission.',
+      promotionAllowed: true,
+      updatesCurrent: true,
+      updatesRegistry: true,
+      runtimeMode: HTTP_RUNTIME_MODE,
+      requiresFreshBridgeEvidence: false,
+      genericHttpRuntimeAllowed: true,
+    });
+  }
+  if (routeCapturePlanPath) {
+    workflows.push({
+      id: 'browser-bridge-route-retry',
+      status: 'available-for-missing-routes',
+      report: routeCapturePlanPath,
+      purpose: 'Retry only the browser-bridge routes that were not captured; successful retries can update coverage without fabricating blocked routes.',
+      promotionAllowed: false,
+      updatesCurrent: false,
+      updatesRegistry: false,
+      runtimeMode: BRIDGE_RUNTIME_MODE,
+      requiresFreshBridgeEvidence: true,
+    });
+  }
   const accessPlanPath = report.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? ACCESS_REMEDIATION_PLAN_FILE : null;
   if (accessPlanPath) {
     workflows.push(
@@ -9931,7 +10497,9 @@ function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), ca
       enabledStatus: capability.enabled_status ?? null,
       reason: capability.activationBlockedReason ?? capability.disabledReason ?? null,
     }));
-  const blockedByAuth = authCapabilities
+  const blockedByAuth = [
+    ...browserBridgeCoverageGaps(context.authStateReport),
+    ...authCapabilities
     .filter((capability) => capability.status !== 'active')
     .filter((capability) => !(
       isHighRiskCapability(capability)
@@ -9944,11 +10512,28 @@ function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), ca
       authRequired: true,
       missingEvidence: capability.evidenceMatrix?.missingEvidence ?? [],
       reason: capability.activationBlockedReason ?? null,
-    }));
+    })),
+  ];
+  const browserBridge = authSummaryForReport(context.crawlContract, context.authStateReport).browserBridge;
+  const runtimeCapabilities = {
+    httpRuntimeCapabilities: capabilities.filter((capability) => capability.runtimeMode === HTTP_RUNTIME_MODE).length,
+    browserBridgeRuntimeCapabilities: capabilities.filter((capability) => capability.runtimeMode === BRIDGE_RUNTIME_MODE).length,
+    runtimeIneligibleCapabilities: capabilities.filter((capability) => (
+      capability.status === 'active'
+      && !capability.runtimeMode
+    )).length,
+    blockedChallengeOrRuntimeIneligible: blockedByAuth.length + capabilities.filter((capability) => (
+      capability.status === 'active'
+      && !capability.runtimeMode
+      && ['authenticated', 'authenticated_overlay', 'public_rendered', 'authorized_source'].includes(nodeSourceLayer(capability))
+    )).length,
+  };
   return {
     crawlMode: context.crawlContract?.crawlMode ?? 'public_only',
     authMethod: context.crawlContract?.authMethod ?? context.authStateReport?.authMethod ?? 'none',
     authVerificationStatus: context.crawlContract?.authVerificationStatus ?? context.authStateReport?.authVerificationStatus ?? null,
+    browserBridge,
+    runtime: runtimeCapabilities,
     public: {
       pages: stageResults.crawlStatic?.summary?.publicPages
         ?? (stageResults.crawlStatic?.pages ?? []).filter((page) => pageSourceLayer(page) === 'public').length,
@@ -10073,6 +10658,9 @@ function buildUserReport(context, stageResults, report) {
   const authorizedSourceManifestPath = report.artifacts?.[AUTHORIZED_SOURCE_MANIFEST_FILE]
     ? relativeReportPath(context.cwd, report.artifacts[AUTHORIZED_SOURCE_MANIFEST_FILE])
     : null;
+  const routeCapturePlanPath = report.artifacts?.[ROUTE_CAPTURE_PLAN_FILE]
+    ? relativeReportPath(context.cwd, report.artifacts[ROUTE_CAPTURE_PLAN_FILE])
+    : null;
   const rawPageMaterialSummary = report.summary?.rawPageMaterial ?? null;
   return {
     // Migration: status remains the legacy stage/build field; result_status is the stable user-facing outcome.
@@ -10134,6 +10722,15 @@ function buildUserReport(context, stageResults, report) {
         : authSummary.crawlMode === 'authenticated_cookie'
         ? `Cookie-authenticated crawl was used; auth verification status is ${authSummary.authVerificationStatus}.`
         : 'Authenticated crawl was not used; only public pages and public capabilities were built.',
+      authSummary.browserBridge?.missingRouteCount > 0
+        ? `Default-browser bridge captured ${authSummary.browserBridge.capturedRouteCount} of ${authSummary.browserBridge.routeCount} configured routes; capabilities were generated only for captured routes.`
+        : null,
+      report.summary?.verificationStatus === 'bridge_runtime_passed'
+        ? `This build was registered with runtime routing: ${coverage.runtime.httpRuntimeCapabilities} public read-only capabilities use generic HTTP read, and ${coverage.runtime.browserBridgeRuntimeCapabilities} authenticated or overlay capabilities require fresh default-browser bridge evidence.`
+        : null,
+      report.summary?.verificationStatus === 'report_only_blocked'
+        ? 'This build is report-only: capabilities and intents were generated, but current skill promotion and registry registration were blocked by external access policy.'
+        : null,
       coverage.requiresLoginButMissing.length
         ? `${coverage.requiresLoginButMissing.length} login-related capabilities remain candidates because auth evidence is missing.`
         : 'No login-evidence candidate capabilities were found.',
@@ -10147,7 +10744,7 @@ function buildUserReport(context, stageResults, report) {
         ? `Public page HTML/DOM/body text material was saved with sensitive assignments and script bodies redacted: ${rawPageMaterialSummary.pages} pages.`
         : 'No public page raw material was saved.',
       'No cookies, tokens, Authorization headers, browser profiles, storage material, raw network payloads, or private content were saved.',
-    ],
+    ].filter(Boolean),
     debug_candidate_summary: {
       count: debugOnlyCapabilities.length,
       report: 'debug',
@@ -10161,14 +10758,22 @@ function buildUserReport(context, stageResults, report) {
       registry_registered: report.summary?.registryRegistered === true,
       registry_status: report.summary?.registryStatus ?? null,
       registry_path: relativeReportPath(context.cwd, report.summary?.registryPath ?? context.registryPath),
+      promotion_class: report.summary?.promotionClass ?? null,
+      runtime_mode: report.summary?.runtimeMode ?? null,
+      runtime_counts: coverage.runtime,
+      requires_fresh_bridge_evidence: report.summary?.requiresFreshBridgeEvidence === true,
+      generic_http_runtime_allowed: report.summary?.genericHttpRuntimeAllowed === true,
+      coverage_status: report.summary?.coverageStatus ?? null,
       skill_id: skillId,
       report_path: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_FILE] ?? path.join(context.artifactDir, USER_REPORT_FILE)),
       capability_intent_summary_html: htmlReportPath,
+      ...(routeCapturePlanPath ? { route_capture_plan: routeCapturePlanPath } : {}),
       ...(rawPageMaterialManifestPath ? { raw_page_material_manifest: rawPageMaterialManifestPath } : {}),
       ...(authorizedSourceManifestPath ? { authorized_source_manifest: authorizedSourceManifestPath } : {}),
     },
     reports: {
       capability_intent_summary_html: htmlReportPath,
+      ...(routeCapturePlanPath ? { route_capture_plan: routeCapturePlanPath } : {}),
       ...(rawPageMaterialManifestPath ? { raw_page_material_manifest: rawPageMaterialManifestPath } : {}),
       ...(authorizedSourceManifestPath ? { authorized_source_manifest: authorizedSourceManifestPath } : {}),
     },
@@ -10841,6 +11446,9 @@ function buildCapabilityIntentHtmlPayload(context, stageResults, report, userRep
       legacyStatus: userReport.legacy_status ?? report.legacy_status ?? report.status ?? null,
       verificationStatus: verification?.status ?? report.summary?.verificationStatus ?? null,
       registryStatus: registry?.status ?? report.summary?.registryStatus ?? null,
+      promotionClass: verification?.promotionClass ?? registry?.promotionClass ?? report.summary?.promotionClass ?? null,
+      runtimeMode: verification?.runtimeMode ?? registry?.runtimeMode ?? report.summary?.runtimeMode ?? null,
+      coverageStatus: verification?.coverageStatus ?? registry?.coverageStatus ?? report.summary?.coverageStatus ?? null,
       generatedAt: new Date().toISOString(),
       completedAt: report.completedAt ?? null,
       paths,
@@ -10956,6 +11564,9 @@ function renderCoverageTable(coverage = /** @type {any} */ ({})) {
     ['authenticated pages', coverage.authenticated?.pages ?? 0],
     ['authenticated nodes', coverage.authenticated?.nodes ?? 0],
     ['authenticated capabilities', coverage.authenticated?.capabilities ?? 0],
+    ['browser bridge routes', coverage.browserBridge?.routeCount ?? 0],
+    ['browser bridge captured routes', coverage.browserBridge?.capturedRouteCount ?? 0],
+    ['browser bridge missing routes', coverage.browserBridge?.missingRouteCount ?? 0],
     ['overlay pages revisited', coverage.overlay?.pagesRevisited ?? 0],
     ['overlay new nodes', coverage.overlay?.newNodes ?? 0],
     ['overlay new affordances', coverage.overlay?.newAffordances ?? 0],
@@ -11172,6 +11783,9 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
           ['result_status', meta.resultStatus],
           ['legacy_status', meta.legacyStatus],
           ['verification status', meta.verificationStatus],
+          ['promotionClass', meta.promotionClass],
+          ['runtimeMode', meta.runtimeMode],
+          ['coverageStatus', meta.coverageStatus],
           ['generatedAt', meta.generatedAt],
           ['completedAt', meta.completedAt],
           ['user report', meta.paths?.userReport],
@@ -11678,6 +12292,7 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       reasonCode: failureReason?.reasonCode ?? null,
       summary: {
         verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
+        verificationReasonCode: stageResults.verifySkill?.verificationReport?.reasonCode ?? null,
       },
     },
     setupCollectionReview,
@@ -11692,6 +12307,7 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       reasonCode: failureReason?.reasonCode ?? null,
       summary: {
         verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
+        verificationReasonCode: stageResults.verifySkill?.verificationReport?.reasonCode ?? null,
       },
     },
     setupCollectionReview,
@@ -11699,6 +12315,15 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
   });
   const registryReport = stageResults.registerSkill?.registryReport ?? null;
   const promotion = stageResults.registerSkill?.promotion ?? registryReport?.promotion ?? null;
+  const verificationReport = stageResults.verifySkill?.verificationReport ?? null;
+  const runtimeMetadata = verificationReport?.runtimeMode ? {
+    promotionClass: verificationReport.promotionClass ?? null,
+    runtimeMode: verificationReport.runtimeMode ?? null,
+    requiresFreshBridgeEvidence: verificationReport.requiresFreshBridgeEvidence === true,
+    genericHttpRuntimeAllowed: verificationReport.genericHttpRuntimeAllowed === true,
+    coverageStatus: verificationReport.coverageStatus ?? null,
+    runtimeRequirements: verificationReport.runtimeRequirements ?? null,
+  } : null;
   const coverage = buildCoverageReport(context, stageResults, capabilities);
   const authSummary = authSummaryForReport(context.crawlContract, context.authStateReport);
   return {
@@ -11760,6 +12385,7 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       verificationReasonCode: stageResults.verifySkill?.verificationReport?.reasonCode ?? error?.verificationReport?.reasonCode ?? null,
       registryStatus: stageResults.registerSkill?.registryReport?.status ?? null,
       registryRegistered: registryReport?.status === 'registered',
+      ...(runtimeMetadata ? runtimeMetadata : {}),
       registryPath: context.registryPath,
       currentUpdated: Boolean(promotion?.currentDir),
       currentDir: promotion?.currentDir ?? context.workspace.paths.currentDir,
@@ -11806,6 +12432,16 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
     report.accessRemediationPlan = accessRemediationWrite.value;
     report.artifacts[ACCESS_REMEDIATION_PLAN_FILE] = accessRemediationWrite.artifactPath;
   }
+  if (stageResults.authStateCheck?.artifactPaths?.routeCapturePlan) {
+    report.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ?? null;
+    report.summary.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
+      status: stageResults.authStateCheck.routeCapturePlan.status,
+      routeCount: stageResults.authStateCheck.routeCapturePlan.routeCount,
+      capturedRouteCount: stageResults.authStateCheck.routeCapturePlan.capturedRouteCount,
+      missingRouteCount: stageResults.authStateCheck.routeCapturePlan.missingRouteCount,
+    } : null;
+    report.artifacts[ROUTE_CAPTURE_PLAN_FILE] = stageResults.authStateCheck.artifactPaths.routeCapturePlan;
+  }
   if (pageReconciliationWrite.value.status !== 'passed') {
     report.warnings = uniqueSortedStrings([
       ...(report.warnings ?? []),
@@ -11817,11 +12453,13 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
     ...(/** @type {any} */ (userReport).reports ?? {}),
     page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
     ...(accessRemediationWrite ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+    ...(report.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? { route_capture_plan: ROUTE_CAPTURE_PLAN_FILE } : {}),
   };
   /** @type {any} */ (userReport).build_completion = {
     ...(/** @type {any} */ (userReport).build_completion ?? {}),
     page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
     ...(accessRemediationWrite ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+    ...(report.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? { route_capture_plan: ROUTE_CAPTURE_PLAN_FILE } : {}),
   };
   report.result_status = userReport.result_status;
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
@@ -11890,6 +12528,16 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
       failedReport.accessRemediationPlan = accessRemediationWrite.value;
       failedReport.artifacts[ACCESS_REMEDIATION_PLAN_FILE] = accessRemediationWrite.artifactPath;
     }
+    if (stageResults.authStateCheck?.artifactPaths?.routeCapturePlan) {
+      failedReport.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ?? null;
+      failedReport.summary.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
+        status: stageResults.authStateCheck.routeCapturePlan.status,
+        routeCount: stageResults.authStateCheck.routeCapturePlan.routeCount,
+        capturedRouteCount: stageResults.authStateCheck.routeCapturePlan.capturedRouteCount,
+        missingRouteCount: stageResults.authStateCheck.routeCapturePlan.missingRouteCount,
+      } : null;
+      failedReport.artifacts[ROUTE_CAPTURE_PLAN_FILE] = stageResults.authStateCheck.artifactPaths.routeCapturePlan;
+    }
     if (pageReconciliationWrite.value.status !== 'passed') {
       failedReport.warnings = uniqueSortedStrings([
         ...(failedReport.warnings ?? []),
@@ -11907,11 +12555,13 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
     ...(/** @type {any} */ (userReport).reports ?? {}),
     page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
     ...(failedReport.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+    ...(failedReport.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? { route_capture_plan: ROUTE_CAPTURE_PLAN_FILE } : {}),
   };
   /** @type {any} */ (userReport).build_completion = {
     ...(/** @type {any} */ (userReport).build_completion ?? {}),
     page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
     ...(failedReport.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
+    ...(failedReport.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? { route_capture_plan: ROUTE_CAPTURE_PLAN_FILE } : {}),
   };
   failedReport.result_status = userReport.result_status;
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
@@ -12139,6 +12789,7 @@ function displayBuildWarning(value) {
     ['robots-unavailable', 'robots.txt could not be fetched, so the live build stopped safely.'],
     ['robots-disallowed', 'robots.txt blocked the candidate crawl scope.'],
     ['dynamic-unsupported', 'The route appears to require dynamic collection, which was not enabled.'],
+    ['browser-auth-route-coverage-partial', 'Default-browser bridge captured only reachable configured routes; missing routes are reported as authenticated coverage gaps.'],
     ['Skipped because setup profile is not buildable.', 'Skipped because the setup profile is not buildable.'],
   ]);
   if (translations.has(text)) {

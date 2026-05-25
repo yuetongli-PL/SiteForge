@@ -115,6 +115,42 @@ test('runtime registry lookup ignores stale failed generated skill records', () 
   );
 });
 
+test('runtime registry lookup returns browser bridge runtime restrictions', () => {
+  let registry = createEmptySkillRegistry('2026-05-24T00:00:00.000Z');
+  registry = upsertSkillRegistryRecord(registry, passedRecord({
+    verificationStatus: 'bridge_runtime_passed',
+    promotionClass: 'browser_bridge_runtime',
+    runtimeMode: 'browser_bridge_required',
+    requiresFreshBridgeEvidence: true,
+    genericHttpRuntimeAllowed: false,
+    coverageStatus: 'partial',
+    runtimeRequirements: {
+      authMethod: 'browser',
+      authVerificationStatus: 'browser_verified',
+      requiresFreshBridgeEvidence: true,
+      genericHttpRuntimeAllowed: false,
+      routeCount: 3,
+      capturedRouteCount: 2,
+      missingRouteCount: 1,
+    },
+    intents: [passedRecord().intents[0]],
+  }), '2026-05-24T00:00:01.000Z');
+
+  const lookup = lookupSkillIntentFromRegistry(registry, {
+    domain: 'fixture.local',
+    utterance: 'search for wireless headphones',
+  });
+
+  assert.equal(lookup.status, 'found');
+  assert.equal(lookup.verificationStatus, undefined);
+  assert.equal(lookup.runtimeMode, 'browser_bridge_required');
+  assert.equal(lookup.promotionClass, 'browser_bridge_runtime');
+  assert.equal(lookup.requiresFreshBridgeEvidence, true);
+  assert.equal(lookup.genericHttpRuntimeAllowed, false);
+  assert.equal(lookup.coverageStatus, 'partial');
+  assert.equal(lookup.runtimeRequirements.capturedRouteCount, 2);
+});
+
 test('runtime registry lookup does not resolve unrelated utterances from invocation score alone', () => {
   let registry = createEmptySkillRegistry('2026-05-16T00:00:04.000Z');
   registry = upsertSkillRegistryRecord(registry, passedRecord({
@@ -211,6 +247,8 @@ test('generated skill is callable from domain and utterance through active curre
     assert.equal(record.artifactDir, `.siteforge/sites/${result.siteId}/builds/runtime-registry-success`);
     assert.equal(record.domains.includes(new URL(rootUrl).hostname), true);
     assert.equal(record.skillDir.includes('/builds/'), false);
+    assert.equal(record.runtimeModes.includes('generic_http_read'), true);
+    assert.equal(record.runtimeSummary.genericHttpReadIntents > 0, true);
 
     const activeSkillDir = path.join(workspace, record.skillDir);
     const intents = await readJson(path.join(activeSkillDir, 'intents.json'));
@@ -238,6 +276,17 @@ test('generated skill is callable from domain and utterance through active curre
     assert.equal(plan.capabilityId, capability.id);
     assert.equal(plan.autoExecute, false);
     assert.equal(plan.steps.every((step) => step.autoExecute !== true), true);
+
+    const httpCapability = capabilities.capabilities.find((candidate) => candidate.runtimeMode === 'generic_http_read');
+    assert.ok(httpCapability);
+    assert.equal(httpCapability.genericHttpRuntimeAllowed, true);
+    assert.equal(httpCapability.requiresFreshBridgeEvidence, false);
+    const httpIntent = intents.intents.find((candidate) => candidate.capabilityId === httpCapability.id && candidate.runtimeMode === 'generic_http_read');
+    assert.ok(httpIntent);
+    const httpPlan = plans.executionPlans.find((candidate) => candidate.capabilityId === httpCapability.id);
+    assert.ok(httpPlan);
+    assert.equal(httpPlan.runtimeMode, 'generic_http_read');
+    assert.equal(httpPlan.runtimeRequirements.cookieMaterialAllowed, false);
 
     assert.equal(safetyPolicy.policy.submitForms, false);
     assert.equal(safetyPolicy.policy.allowDestructiveActions, false);

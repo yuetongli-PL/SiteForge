@@ -1,4 +1,5 @@
 (() => {
+  const SITEFORGE_BRIDGE_CONTENT_VERSION = 'route-queue-fallback-canonical-v2';
   const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.getAttribute('content') || '';
   if (meta('siteforge-browser-bridge') !== '1') {
     return;
@@ -20,6 +21,7 @@
         return;
       }
       signal(session, 'bridge-content-active');
+      signal(session, `bridge-content-version:${SITEFORGE_BRIDGE_CONTENT_VERSION}`);
       chrome.runtime.sendMessage({ type: 'siteforge-bridge-session', session }, (response) => {
         signal(session, response?.ok ? 'background-session-accepted' : 'background-session-rejected');
       });

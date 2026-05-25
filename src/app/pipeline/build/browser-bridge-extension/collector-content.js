@@ -81,6 +81,23 @@
     profile: 'profile_link_group',
     detail: 'detail_link_group',
   }[kind] || 'navigation_link_group');
+  const postPayload = async (session, payload) => {
+    const response = await fetch(session.submitUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'omit',
+      body: JSON.stringify(payload),
+    });
+    return { ok: response.ok, status: response.status };
+  };
+  const challengeDetected = () => {
+    const sample = [
+      document.title,
+      document.querySelector('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [data-verify], [class*="verify"]') ? 'challenge-node' : '',
+      document.body?.innerText?.slice(0, 5000) || '',
+    ].join(' ');
+    return /captcha|recaptcha|hcaptcha|turnstile|challenge|verify you are human|\u9a8c\u8bc1|\u5b89\u5168\u6821\u9a8c|\u767b\u5f55\u9a8c\u8bc1|\u8bf7\u5b8c\u6210\u9a8c\u8bc1/iu.test(sample);
+  };
 
   async function collect(session) {
     const current = new URL(window.location.href);
@@ -88,6 +105,18 @@
       return { ok: false, reason: 'host-mismatch' };
     }
     const sourceLayer = String(session?.sourceLayer || 'authenticated');
+    if (challengeDetected()) {
+      return await postPayload(session, {
+        nonce: session.nonce,
+        routeResults: [{
+          routeId: session.routeId,
+          targetUrl: window.location.href,
+          sourceLayer,
+          status: 'challenge_detected',
+          reasonCode: 'browser-bridge-challenge-detected',
+        }],
+      });
+    }
     const links = [...document.querySelectorAll('a[href], area[href]')]
       .filter(visible)
       .map((node, index) => {
@@ -166,6 +195,7 @@
       hash = ((hash << 5) - hash + signature.charCodeAt(index)) | 0;
     }
     const page = {
+      routeId: session.routeId,
       url: window.location.href,
       normalizedUrl: window.location.href,
       routeTemplate: routeTemplateFor(window.location.href),
@@ -187,13 +217,13 @@
     const payload = sourceLayer === 'authenticated_overlay'
       ? { nonce: session.nonce, authenticatedOverlayPages: [page] }
       : { nonce: session.nonce, authenticatedPages: [page] };
-    const response = await fetch(session.submitUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      credentials: 'omit',
-      body: JSON.stringify(payload),
-    });
-    return { ok: response.ok, status: response.status };
+    payload.routeResults = [{
+      routeId: session.routeId,
+      targetUrl: window.location.href,
+      sourceLayer,
+      status: 'captured',
+    }];
+    return await postPayload(session, payload);
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

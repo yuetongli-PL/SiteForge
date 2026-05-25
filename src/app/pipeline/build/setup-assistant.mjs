@@ -2210,6 +2210,33 @@ function applyBuildReadinessToCapabilities(capabilities, buildReadiness) {
   }));
 }
 
+function browserRoutePartialCoverage(authStateReport = /** @type {any} */ ({})) {
+  const bridge = authStateReport?.browserBridge ?? {};
+  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
+  const capturedRouteCount = Math.max(0, Number(bridge.capturedRouteCount ?? 0) || 0);
+  const routeCount = Math.max(0, Number(bridge.routeCount ?? routeResults.length) || 0);
+  const missingRouteCount = Math.max(0, Number(bridge.missingRouteCount ?? Math.max(0, routeCount - capturedRouteCount)) || 0);
+  if (authStateReport?.authMethod !== 'browser' || capturedRouteCount <= 0 || missingRouteCount <= 0) {
+    return null;
+  }
+  return {
+    schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+    reasonCode: 'browser-auth-route-coverage-partial',
+    routeCount,
+    capturedRouteCount,
+    missingRouteCount,
+    missingRoutes: routeResults
+      .filter((result) => result?.status !== 'captured')
+      .map((result) => ({
+        routeId: result?.routeId ?? null,
+        targetRoute: result?.targetRoute ?? null,
+        sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
+        status: result?.status ?? 'timeout',
+        reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+      })),
+  };
+}
+
 function isSetupPlanBuildable(setupPlan) {
   return setupPlan?.buildReadiness?.buildable !== false;
 }
@@ -3029,6 +3056,40 @@ async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options })
       nextPlan.buildReadiness,
     );
   }
+  if (
+    authMode === 'browser'
+    && options.strictBrowserAuth === true
+    && canRunAuthenticatedLayer(authStateReport)
+    && Number(authStateReport?.browserBridge?.missingRouteCount ?? 0) > 0
+  ) {
+    const partialCoverage = browserRoutePartialCoverage(authStateReport);
+    nextPlan.partialCoverage = partialCoverage;
+    nextPlan.buildReadiness = nextPlan.buildReadiness ? {
+      ...nextPlan.buildReadiness,
+      partialCoverage,
+    } : {
+      schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+      status: 'ready',
+      buildable: true,
+      reasonCode: null,
+      reason: null,
+      guidance: [],
+      partialCoverage,
+    };
+    nextPlan.summary = {
+      ...nextPlan.summary,
+      buildable: nextPlan.buildReadiness.buildable !== false,
+      readinessStatus: nextPlan.buildReadiness.status ?? 'ready',
+      partialCoverage,
+    };
+    nextPlan.warnings = uniqueSortedStrings([
+      ...(nextPlan.warnings ?? []),
+      'browser-auth-route-coverage-partial',
+      ...((partialCoverage?.missingRoutes ?? [])
+        .map((route) => route.reasonCode)
+        .filter(Boolean)),
+    ]);
+  }
   nextPlan.crawlContract = createCrawlContract({
     site: nextPlan.site,
     authStateReport,
@@ -3467,6 +3528,7 @@ function createBuildProfile(setupPlan, userChoices, capabilityHints, paths) {
     sourceDiagnostics: clone(setupPlan.sourceDiagnostics ?? []),
     evidenceQuality: clone(setupPlan.evidenceQuality ?? null),
     buildReadiness: clone(setupPlan.buildReadiness ?? null),
+    partialCoverage: clone(setupPlan.partialCoverage ?? setupPlan.summary?.partialCoverage ?? null),
     crawlContract: clone(setupPlan.crawlContract ?? createCrawlContract({
       site: setupPlan.site,
       coverageTargets: coverageTargetsFromSetupPlan(setupPlan),

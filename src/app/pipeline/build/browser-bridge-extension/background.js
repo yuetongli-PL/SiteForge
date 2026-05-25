@@ -1,4 +1,6 @@
-const activeSessions = new Map();
+const activeTabs = new Map();
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-fallback-canonical-v2';
+const ROUTE_COLLECT_FALLBACK_DELAY_MS = 4500;
 
 function safeUrl(value) {
   try {
@@ -14,6 +16,28 @@ function sameAllowedHost(urlValue, allowedHost) {
   return Boolean(parsed && parsed.hostname === String(allowedHost || ''));
 }
 
+function routePath(urlValue) {
+  const parsed = safeUrl(urlValue);
+  if (!parsed) {
+    return '';
+  }
+  return parsed.pathname.replace(/\/+$/u, '') || '/';
+}
+
+function sameRoutePath(urlValue, targetUrl) {
+  const parsed = safeUrl(urlValue);
+  const target = safeUrl(targetUrl);
+  return Boolean(parsed && target && parsed.hostname === target.hostname && routePath(parsed.toString()) === routePath(target.toString()));
+}
+
+function loginLikeUrl(urlValue) {
+  const parsed = safeUrl(urlValue);
+  if (!parsed) {
+    return false;
+  }
+  return /\/(?:login|signin|sign-in|auth|account\/login|passport)(?:\/|$)/iu.test(parsed.pathname);
+}
+
 function sessionKey(session) {
   return String(session?.nonce || '');
 }
@@ -27,21 +51,202 @@ function signal(session, stage) {
     url.searchParams.set('stage', stage);
     fetch(url.toString(), { method: 'POST', credentials: 'omit', cache: 'no-store' }).catch(() => {});
   } catch {
-    // Ignore bridge diagnostics failures; structure submission remains authoritative.
+    // Diagnostics are best-effort; structure submission remains authoritative.
   }
 }
 
-async function injectCollector(tabId, session) {
-  signal(session, 'collector-injecting');
+function normalizedRoutes(session) {
+  const baseTarget = safeUrl(session?.targetUrl);
+  const routes = Array.isArray(session?.routes) && session.routes.length
+    ? session.routes
+    : [{
+      id: 'route-1',
+      targetUrl: session?.targetUrl,
+      sourceLayer: session?.sourceLayer || 'authenticated',
+      allowedHost: session?.allowedHost,
+      allowedOrigin: session?.allowedOrigin,
+    }];
+  return routes
+    .map((route, index) => {
+      const target = safeUrl(route?.targetUrl);
+      const allowedHost = String(route?.allowedHost || session?.allowedHost || baseTarget?.hostname || '');
+      if (!target || target.hostname !== allowedHost) {
+        return null;
+      }
+      return {
+        id: String(route?.id || `route-${index + 1}`),
+        targetUrl: target.toString(),
+        sourceLayer: route?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
+        allowedHost,
+        allowedOrigin: String(route?.allowedOrigin || target.origin),
+      };
+    })
+    .filter(Boolean);
+}
+
+function routeSession(session, route) {
+  return {
+    ...session,
+    routeId: route.id,
+    targetUrl: route.targetUrl,
+    sourceLayer: route.sourceLayer,
+    allowedHost: route.allowedHost,
+    allowedOrigin: route.allowedOrigin,
+  };
+}
+
+function clearFallbackTimer(state) {
+  if (state?.fallbackTimerId) {
+    clearTimeout(state.fallbackTimerId);
+    state.fallbackTimerId = null;
+  }
+}
+
+async function submitRouteStatus(session, route, status, reasonCode, targetUrl = route?.targetUrl) {
+  if (!session?.submitUrl || !route?.id) {
+    return;
+  }
+  try {
+    await fetch(session.submitUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'omit',
+      cache: 'no-store',
+      body: JSON.stringify({
+        nonce: session.nonce,
+        routeResults: [{
+          routeId: route.id,
+          targetUrl,
+          sourceLayer: route.sourceLayer,
+          status,
+          reasonCode,
+        }],
+      }),
+    });
+  } catch {
+    signal(session, `route-status-submit-failed:${route.id}`);
+  }
+}
+
+async function injectCollector(tabId, session, route) {
+  const currentSession = routeSession(session, route);
+  signal(session, `collector-injecting:${route.id}`);
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ['collector-content.js'],
   });
   const result = await chrome.tabs.sendMessage(tabId, {
     type: 'siteforge-collect-structure',
-    session,
+    session: currentSession,
   });
-  signal(session, result?.ok ? 'collector-submit-ok' : `collector-submit-failed-${result?.reason || result?.status || 'unknown'}`);
+  signal(session, result?.ok ? `collector-submit-ok:${route.id}` : `collector-submit-failed:${route.id}:${result?.reason || result?.status || 'unknown'}`);
+}
+
+function finishRoute(tabId, state, route) {
+  clearFallbackTimer(state);
+  signal(state.session, `route-complete:${route.id}`);
+  state.index += 1;
+  state.collecting = false;
+  openRoute(state);
+}
+
+function collectRoute(tabId, state, route, triggerStage) {
+  if (!state || state.collecting || state.routes[state.index]?.id !== route?.id) {
+    return;
+  }
+  state.collecting = true;
+  clearFallbackTimer(state);
+  if (triggerStage) {
+    signal(state.session, `${triggerStage}:${route.id}`);
+  }
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab?.id) {
+      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-tab-missing')
+        .finally(() => finishRoute(tabId, state, route));
+      return;
+    }
+    const currentUrl = tab.url || tab.pendingUrl || route.targetUrl;
+    if (!sameAllowedHost(currentUrl, route.allowedHost)) {
+      signal(state.session, `route-host-mismatch:${route.id}`);
+      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-host-mismatch', currentUrl)
+        .finally(() => finishRoute(tabId, state, route));
+      return;
+    }
+    if (loginLikeUrl(currentUrl)) {
+      signal(state.session, `route-login-wall:${route.id}`);
+      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-login-wall', currentUrl)
+        .finally(() => finishRoute(tabId, state, route));
+      return;
+    }
+    if (!sameRoutePath(currentUrl, route.targetUrl)) {
+      signal(state.session, `route-url-canonicalized:${route.id}`);
+    }
+    injectCollector(tabId, state.session, route)
+      .then(() => finishRoute(tabId, state, route))
+      .catch(() => {
+        signal(state.session, `route-collect-failed:${route.id}`);
+        submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-collector-injection-failed', currentUrl)
+          .finally(() => finishRoute(tabId, state, route));
+      });
+  });
+}
+
+function scheduleFallbackCollection(state, route) {
+  clearFallbackTimer(state);
+  const tabId = state.tabId;
+  if (!tabId) {
+    return;
+  }
+  state.fallbackTimerId = setTimeout(() => {
+    const latestState = activeTabs.get(tabId);
+    if (!latestState || latestState !== state || latestState.collecting || latestState.routes[latestState.index]?.id !== route.id) {
+      return;
+    }
+    collectRoute(tabId, latestState, route, 'route-load-fallback');
+  }, ROUTE_COLLECT_FALLBACK_DELAY_MS);
+}
+
+function openRoute(state) {
+  const route = state.routes[state.index];
+  if (!route) {
+    clearFallbackTimer(state);
+    activeTabs.delete(state.tabId);
+    signal(state.session, 'session-complete');
+    return;
+  }
+  state.collecting = false;
+  clearFallbackTimer(state);
+  signal(state.session, `route-opened:${route.id}`);
+  if (state.tabId) {
+    chrome.tabs.update(state.tabId, { url: route.targetUrl }, (tab) => {
+      if (!tab?.id) {
+        activeTabs.delete(state.tabId);
+        signal(state.session, `route-open-failed:${route.id}`);
+        submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-open-failed')
+          .finally(() => {
+            state.index += 1;
+            openRoute(state);
+          });
+        return;
+      }
+      scheduleFallbackCollection(state, route);
+    });
+    return;
+  }
+  chrome.tabs.create({ url: route.targetUrl, active: true }, (tab) => {
+    if (!tab?.id) {
+      signal(state.session, `route-open-failed:${route.id}`);
+      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-open-failed')
+        .finally(() => {
+          state.index += 1;
+          openRoute(state);
+        });
+      return;
+    }
+    state.tabId = tab.id;
+    activeTabs.set(tab.id, state);
+    scheduleFallbackCollection(state, route);
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -50,37 +255,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const session = message.session;
-  const target = safeUrl(session?.targetUrl);
-  if (!target || !sessionKey(session) || target.hostname !== String(session?.allowedHost || '')) {
+  const routes = normalizedRoutes(session);
+  if (!sessionKey(session) || !routes.length) {
     sendResponse?.({ ok: false });
     return false;
   }
 
-  chrome.tabs.create({ url: target.toString(), active: true }, (tab) => {
-    if (!tab?.id) {
-      sendResponse?.({ ok: false });
-      return;
-    }
-    activeSessions.set(tab.id, session);
-    signal(session, 'target-tab-created');
-    sendResponse?.({ ok: true, tabId: tab.id });
-  });
-  return true;
+  const state = {
+    session,
+    routes,
+    index: 0,
+    tabId: null,
+    collecting: false,
+  };
+  signal(session, `bridge-version:${SITEFORGE_BRIDGE_EXTENSION_VERSION}`);
+  openRoute(state);
+  signal(session, 'target-route-queue-started');
+  sendResponse?.({ ok: true, routeCount: routes.length });
+  return false;
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') {
     return;
   }
-  const session = activeSessions.get(tabId);
-  if (!session) {
+  const state = activeTabs.get(tabId);
+  if (!state || state.collecting) {
     return;
   }
-  if (!sameAllowedHost(tab?.url, session.allowedHost)) {
-    activeSessions.delete(tabId);
+  const route = state.routes[state.index];
+  if (!route) {
+    activeTabs.delete(tabId);
     return;
   }
-  injectCollector(tabId, session)
-    .then(() => activeSessions.delete(tabId))
-    .catch(() => activeSessions.delete(tabId));
+  if (!sameAllowedHost(tab?.url, route.allowedHost)) {
+    signal(state.session, `route-host-mismatch:${route.id}`);
+    submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-host-mismatch', tab?.url || route.targetUrl)
+      .finally(() => finishRoute(tabId, state, route));
+    return;
+  }
+  if (loginLikeUrl(tab?.url)) {
+    signal(state.session, `route-login-wall:${route.id}`);
+    submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-login-wall', tab?.url || route.targetUrl)
+      .finally(() => finishRoute(tabId, state, route));
+    return;
+  }
+  if (!sameRoutePath(tab?.url, route.targetUrl)) {
+    signal(state.session, `route-url-canonicalized:${route.id}`);
+  }
+  collectRoute(tabId, state, route, null);
 });

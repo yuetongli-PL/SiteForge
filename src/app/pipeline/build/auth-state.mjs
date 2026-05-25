@@ -274,14 +274,39 @@ function browserBridgeSummary({
   used = false,
   pageCount = 0,
   overlayPageCount = 0,
+  routeCount = 0,
+  capturedRouteCount = 0,
+  missingRouteCount = 0,
+  routeResults = [],
   extensionStages = [],
 } = /** @type {any} */ ({})) {
+  const sanitizedRouteResults = (Array.isArray(routeResults) ? routeResults : []).slice(0, 40).map((result) => ({
+    routeId: String(result?.routeId ?? '').trim().slice(0, 80) || null,
+    sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
+    targetRoute: String(result?.targetRoute ?? '').trim().slice(0, 240) || null,
+    status: ['captured', 'blocked', 'timeout', 'challenge_detected'].includes(String(result?.status ?? '').trim())
+      ? String(result.status).trim()
+      : 'timeout',
+    reasonCode: String(result?.reasonCode ?? '').trim().slice(0, 80) || null,
+    captured: result?.captured === true,
+  }));
+  const inferredRouteCount = Number(routeCount) > 0 ? Number(routeCount) : sanitizedRouteResults.length;
+  const inferredCapturedRouteCount = Number(capturedRouteCount) > 0
+    ? Number(capturedRouteCount)
+    : sanitizedRouteResults.filter((result) => result.status === 'captured').length;
+  const inferredMissingRouteCount = Number(missingRouteCount) > 0
+    ? Number(missingRouteCount)
+    : Math.max(0, inferredRouteCount - inferredCapturedRouteCount);
   return {
     used: used === true,
     persisted: false,
     redacted: true,
     pageCount: Math.max(0, Number(pageCount ?? 0) || 0),
     overlayPageCount: Math.max(0, Number(overlayPageCount ?? 0) || 0),
+    routeCount: Math.max(0, inferredRouteCount || 0),
+    capturedRouteCount: Math.max(0, inferredCapturedRouteCount || 0),
+    missingRouteCount: Math.max(0, inferredMissingRouteCount || 0),
+    routeResults: sanitizedRouteResults,
     extensionStages: uniqueStrings(extensionStages).slice(0, 20),
   };
 }

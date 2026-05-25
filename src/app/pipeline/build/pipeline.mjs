@@ -3701,19 +3701,48 @@ async function crawlStaticStage(context, stageResults) {
   };
 }
 
+function browserBridgeRouteCaptured(result = /** @type {any} */ ({})) {
+  return ['captured', 'captured_with_warning'].includes(String(result?.status ?? '').trim())
+    && result?.captured !== false;
+}
+
+function browserBridgeRouteRetryable(result = /** @type {any} */ ({})) {
+  const status = String(result?.status ?? '').trim();
+  if (['timeout', 'challenge_detected', 'thin_capture'].includes(status)) {
+    return true;
+  }
+  if (status !== 'blocked') {
+    return false;
+  }
+  return [
+    'browser-bridge-collector-injection-failed',
+    'browser-bridge-route-open-failed',
+    'execute-script-failed',
+    'collector-message-failed',
+    'navigation-in-progress',
+    'tab-missing',
+  ].includes(String(result?.reasonCode ?? '').trim());
+}
+
 function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any} */ ({})) {
   const bridge = authStateReport?.browserBridge ?? {};
   const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
   const missingRoutes = routeResults
-    .filter((result) => result?.status !== 'captured')
+    .filter((result) => !browserBridgeRouteCaptured(result))
     .map((result) => ({
       routeId: result?.routeId ?? null,
       sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
       targetRoute: result?.targetRoute ?? null,
       status: result?.status ?? 'timeout',
       reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+      initialStatus: result?.initialStatus ?? result?.status ?? 'timeout',
+      finalStatus: result?.finalStatus ?? result?.status ?? 'timeout',
+      finalReasonCode: result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+      retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
+      retryOutcome: result?.retryOutcome ?? 'not_attempted',
       recommendedRetryMode: 'browser_bridge_missing_route_retry',
-      retryable: ['blocked', 'timeout', 'challenge_detected'].includes(String(result?.status ?? '')),
+      retryable: browserBridgeRouteRetryable(result),
+      capabilityGenerated: false,
     }));
   if (
     authStateReport?.authMethod !== 'browser'
@@ -3729,6 +3758,14 @@ function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any
     siteId: context.site.id,
     buildId: context.buildId,
     status: 'partial',
+    routeCoverageStatus: bridge.routeCoverageStatus ?? 'partial',
+    retryStatus: bridge.retryStatus ?? 'not_attempted',
+    retryPasses: Math.max(0, Number(bridge.retryPasses ?? 0) || 0),
+    initialCapturedRouteCount: Math.max(0, Number(bridge.initialCapturedRouteCount ?? 0) || 0),
+    retryAttemptedRouteCount: Math.max(0, Number(bridge.retryAttemptedRouteCount ?? 0) || 0),
+    retryCapturedRouteCount: Math.max(0, Number(bridge.retryCapturedRouteCount ?? 0) || 0),
+    finalCapturedRouteCount: Math.max(0, Number(bridge.finalCapturedRouteCount ?? bridge.capturedRouteCount ?? 0) || 0),
+    finalMissingRouteCount: missingRoutes.length,
     routeCount: Number(bridge.routeCount ?? routeResults.length ?? 0) || 0,
     capturedRouteCount: Number(bridge.capturedRouteCount ?? 0) || 0,
     missingRouteCount: missingRoutes.length,
@@ -3836,7 +3873,7 @@ async function authStateCheckStage(context) {
     normalizedReport.blockingSignals = uniqueSortedStrings([
       ...(normalizedReport.blockingSignals ?? []),
       ...((normalizedReport.browserBridge?.routeResults ?? [])
-        .filter((result) => result?.status !== 'captured')
+        .filter((result) => !browserBridgeRouteCaptured(result))
         .map((result) => result.reasonCode ?? result.status)
         .filter(Boolean)),
     ]);
@@ -3849,7 +3886,7 @@ async function authStateCheckStage(context) {
     ? uniqueSortedStrings([
       'browser-auth-route-coverage-partial',
       ...((normalizedReport.browserBridge?.routeResults ?? [])
-        .filter((result) => result?.status !== 'captured')
+        .filter((result) => !browserBridgeRouteCaptured(result))
         .map((result) => result.reasonCode ?? result.status)
         .filter(Boolean)),
     ])
@@ -9017,6 +9054,9 @@ const HTTP_RUNTIME_MODE = 'generic_http_read';
 
 function browserBridgeCoverageStatus(context) {
   const bridge = context.authStateReport?.browserBridge ?? {};
+  if (['complete', 'partial', 'none'].includes(String(bridge.routeCoverageStatus ?? '').trim())) {
+    return bridge.routeCoverageStatus;
+  }
   const routeCount = Number(bridge.routeCount ?? 0);
   const missingRouteCount = Number(bridge.missingRouteCount ?? 0);
   if (routeCount > 0 && missingRouteCount === 0) {
@@ -9037,6 +9077,11 @@ function browserBridgeRuntimeRequirements(context) {
     routeCount: Number(bridge.routeCount ?? 0),
     capturedRouteCount: Number(bridge.capturedRouteCount ?? 0),
     missingRouteCount: Number(bridge.missingRouteCount ?? 0),
+    routeCoverageStatus: bridge.routeCoverageStatus ?? browserBridgeCoverageStatus(context),
+    retryStatus: bridge.retryStatus ?? 'not_attempted',
+    retryPasses: Number(bridge.retryPasses ?? 0),
+    retryAttemptedRouteCount: Number(bridge.retryAttemptedRouteCount ?? 0),
+    retryCapturedRouteCount: Number(bridge.retryCapturedRouteCount ?? 0),
   });
 }
 
@@ -10234,7 +10279,7 @@ function browserBridgeCoverageGaps(authStateReport = /** @type {any} */ ({})) {
   const bridge = authStateReport?.browserBridge ?? {};
   const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
   return routeResults
-    .filter((result) => result?.status !== 'captured')
+    .filter((result) => !browserBridgeRouteCaptured(result))
     .map((result) => ({
       id: result?.routeId ?? null,
       name: result?.targetRoute ?? result?.routeId ?? 'browser-auth-route',
@@ -10718,32 +10763,32 @@ function buildUserReport(context, stageResults, report) {
     } : null,
     auth_explanation_zh: [
       authSummary.crawlMode === 'authenticated_browser'
-        ? `Default-browser bridge authenticated crawl was used; auth verification status is ${authSummary.authVerificationStatus}.`
+        ? `本次使用默认浏览器 Bridge 认证采集；认证状态为 ${authSummary.authVerificationStatus}。`
         : authSummary.crawlMode === 'authenticated_cookie'
-        ? `Cookie-authenticated crawl was used; auth verification status is ${authSummary.authVerificationStatus}.`
-        : 'Authenticated crawl was not used; only public pages and public capabilities were built.',
+        ? `本次使用 Cookie 认证采集；认证状态为 ${authSummary.authVerificationStatus}。`
+        : '本次未使用认证采集，只构建公开页面和公开能力。',
       authSummary.browserBridge?.missingRouteCount > 0
-        ? `Default-browser bridge captured ${authSummary.browserBridge.capturedRouteCount} of ${authSummary.browserBridge.routeCount} configured routes; capabilities were generated only for captured routes.`
+        ? `默认浏览器 Bridge 最终采集 ${authSummary.browserBridge.capturedRouteCount}/${authSummary.browserBridge.routeCount} 条配置路由；已自动温和重试 ${authSummary.browserBridge.retryAttemptedRouteCount ?? 0} 条路由，未采集路由不生成能力。`
         : null,
       report.summary?.verificationStatus === 'bridge_runtime_passed'
-        ? `This build was registered with runtime routing: ${coverage.runtime.httpRuntimeCapabilities} public read-only capabilities use generic HTTP read, and ${coverage.runtime.browserBridgeRuntimeCapabilities} authenticated or overlay capabilities require fresh default-browser bridge evidence.`
+        ? `本次已注册为运行态分流 Skill：${coverage.runtime.httpRuntimeCapabilities} 个公开只读能力使用普通 HTTP 只读运行态，${coverage.runtime.browserBridgeRuntimeCapabilities} 个认证或 overlay 能力需要重新通过默认浏览器 Bridge 提交脱敏结构证据。`
         : null,
       report.summary?.verificationStatus === 'report_only_blocked'
-        ? 'This build is report-only: capabilities and intents were generated, but current skill promotion and registry registration were blocked by external access policy.'
+        ? '本次仅生成报告：能力和意图已产出，但 current/ 更新和 registry 注册被外部访问策略阻断。'
         : null,
       coverage.requiresLoginButMissing.length
-        ? `${coverage.requiresLoginButMissing.length} login-related capabilities remain candidates because auth evidence is missing.`
-        : 'No login-evidence candidate capabilities were found.',
+        ? `${coverage.requiresLoginButMissing.length} 个登录相关能力因为缺少认证结构证据保留为候选。`
+        : '未发现缺少登录证据的候选能力。',
       coverage.authenticated.capabilities
-        ? `${coverage.authenticated.capabilities} authenticated capabilities were limited-enabled.`
-        : 'No authenticated capabilities were limited-enabled.',
+        ? `${coverage.authenticated.capabilities} 个认证能力已有限启用。`
+        : '没有认证能力被有限启用。',
       coverage.blockedByRisk.length
-        ? `${coverage.blockedByRisk.length} capabilities were disabled or limited by risk policy.`
-        : 'No additional high-risk capabilities were enabled.',
+        ? `${coverage.blockedByRisk.length} 个能力因风险策略被禁用或限制。`
+        : '未额外启用高风险能力。',
       rawPageMaterialSummary?.pages
-        ? `Public page HTML/DOM/body text material was saved with sensitive assignments and script bodies redacted: ${rawPageMaterialSummary.pages} pages.`
-        : 'No public page raw material was saved.',
-      'No cookies, tokens, Authorization headers, browser profiles, storage material, raw network payloads, or private content were saved.',
+        ? `已保存 ${rawPageMaterialSummary.pages} 个公开页面的受控页面材料，并已脱敏敏感赋值和脚本正文。`
+        : '未保存公开页面原始材料。',
+      '没有保存 cookie、token、Authorization header、浏览器 profile、storage 材料、原始网络 payload 或私密正文。',
     ].filter(Boolean),
     debug_candidate_summary: {
       count: debugOnlyCapabilities.length,
@@ -11553,6 +11598,56 @@ function renderMappingRows(rows = /** @type {any[]} */ ([])) {
   </table></div>`;
 }
 
+function renderBrowserBridgeRouteCoverage(coverage = /** @type {any} */ ({})) {
+  const bridge = coverage.browserBridge ?? {};
+  if (bridge.used !== true && Number(bridge.routeCount ?? 0) <= 0) {
+    return '<p class="empty">本次没有使用默认浏览器 Bridge 路由采集。</p>';
+  }
+  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
+  const missing = routeResults.filter((result) => !['captured', 'captured_with_warning'].includes(String(result?.status ?? '')));
+  const notes = [
+    `默认浏览器 Bridge 最终采集 ${bridge.capturedRouteCount ?? 0}/${bridge.routeCount ?? 0} 条配置路由。`,
+    `系统已自动温和重试 ${bridge.retryAttemptedRouteCount ?? 0} 条路由，重试后新增采集 ${bridge.retryCapturedRouteCount ?? 0} 条。`,
+    '未采集路由只进入覆盖缺口和 route_capture_plan.json，不生成能力或意图，不声明全覆盖。',
+    '系统不会绕过 robots、验证码、MFA、JS challenge、登录墙或访问控制。',
+  ];
+  const rows = [
+    ['routeCoverageStatus', bridge.routeCoverageStatus ?? '-'],
+    ['retryStatus', bridge.retryStatus ?? '-'],
+    ['retryPasses', bridge.retryPasses ?? 0],
+    ['initialCapturedRouteCount', bridge.initialCapturedRouteCount ?? 0],
+    ['finalCapturedRouteCount', bridge.finalCapturedRouteCount ?? bridge.capturedRouteCount ?? 0],
+    ['finalMissingRouteCount', bridge.finalMissingRouteCount ?? bridge.missingRouteCount ?? 0],
+  ];
+  const missingTable = missing.length
+    ? `<h3>未采集路由</h3><div class="table-wrapper"><table>
+      <thead><tr><th>Route</th><th>Layer</th><th>Initial</th><th>Final</th><th>Reason</th><th>Retry</th></tr></thead>
+      <tbody>${missing.slice(0, 40).map((route) => `<tr>
+        <td>${htmlCell(route.targetRoute ?? route.routeId ?? '-', { code: true })}</td>
+        <td>${htmlCell(route.sourceLayer ?? '-', { code: true })}</td>
+        <td>${htmlStatusBadge(route.initialStatus ?? route.status ?? '-')}</td>
+        <td>${htmlStatusBadge(route.finalStatus ?? route.status ?? '-')}</td>
+        <td>${htmlCell(route.finalReasonCode ?? route.reasonCode ?? '-')}</td>
+        <td>${htmlCell(`${route.retryAttemptCount ?? 0} / ${route.retryOutcome ?? 'not_attempted'}`)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`
+    : '<p class="empty">没有未采集的 Browser Bridge 路由。</p>';
+  return `
+    <div class="summary-row">
+      ${htmlBadge(`captured ${bridge.capturedRouteCount ?? 0}/${bridge.routeCount ?? 0}`, bridge.missingRouteCount ? 'warning' : 'success')}
+      ${htmlBadge(`retry ${bridge.retryStatus ?? 'not_attempted'}`, bridge.retryCapturedRouteCount ? 'limited' : 'muted')}
+      ${htmlBadge(`missing ${bridge.missingRouteCount ?? 0}`, bridge.missingRouteCount ? 'warning' : 'success')}
+    </div>
+    <div class="notice-list">
+      ${notes.map((note) => `<div class="notice"><p>${htmlCell(note)}</p></div>`).join('')}
+    </div>
+    <div class="table-wrapper compact"><table>
+      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+      <tbody>${rows.map(([metric, value]) => `<tr><td>${htmlCell(metric)}</td><td>${htmlCell(value)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    ${missingTable}`;
+}
+
 function renderCoverageTable(coverage = /** @type {any} */ ({})) {
   const rows = [
     ['public pages', coverage.public?.pages ?? 0],
@@ -11567,6 +11662,11 @@ function renderCoverageTable(coverage = /** @type {any} */ ({})) {
     ['browser bridge routes', coverage.browserBridge?.routeCount ?? 0],
     ['browser bridge captured routes', coverage.browserBridge?.capturedRouteCount ?? 0],
     ['browser bridge missing routes', coverage.browserBridge?.missingRouteCount ?? 0],
+    ['browser bridge route coverage status', coverage.browserBridge?.routeCoverageStatus ?? '-'],
+    ['browser bridge retry status', coverage.browserBridge?.retryStatus ?? '-'],
+    ['browser bridge retry passes', coverage.browserBridge?.retryPasses ?? 0],
+    ['browser bridge retry attempted routes', coverage.browserBridge?.retryAttemptedRouteCount ?? 0],
+    ['browser bridge retry captured routes', coverage.browserBridge?.retryCapturedRouteCount ?? 0],
     ['overlay pages revisited', coverage.overlay?.pagesRevisited ?? 0],
     ['overlay new nodes', coverage.overlay?.newNodes ?? 0],
     ['overlay new affordances', coverage.overlay?.newAffordances ?? 0],
@@ -11753,6 +11853,7 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
       <nav>
         <a href="#overview">Overview</a>
         <a href="#coverage">Coverage</a>
+        <a href="#browser-bridge-route-coverage">Browser Bridge route coverage</a>
         <a href="#element-coverage">Element coverage</a>
         <a href="#capabilities">Capabilities</a>
         <a href="#intents">Intents</a>
@@ -11798,6 +11899,10 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
     <section id="coverage">
       <h2>覆盖率概览</h2>
       ${renderCoverageTable(safe.coverage ?? {})}
+    </section>
+    <section id="browser-bridge-route-coverage">
+      <h2>Browser Bridge Route Coverage</h2>
+      ${renderBrowserBridgeRouteCoverage(safe.coverage ?? {})}
     </section>
     <section id="element-coverage">
       <h2>页面元素覆盖审计</h2>
@@ -12436,6 +12541,9 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
     report.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ?? null;
     report.summary.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
       status: stageResults.authStateCheck.routeCapturePlan.status,
+      routeCoverageStatus: stageResults.authStateCheck.routeCapturePlan.routeCoverageStatus,
+      retryStatus: stageResults.authStateCheck.routeCapturePlan.retryStatus,
+      retryPasses: stageResults.authStateCheck.routeCapturePlan.retryPasses,
       routeCount: stageResults.authStateCheck.routeCapturePlan.routeCount,
       capturedRouteCount: stageResults.authStateCheck.routeCapturePlan.capturedRouteCount,
       missingRouteCount: stageResults.authStateCheck.routeCapturePlan.missingRouteCount,
@@ -12532,6 +12640,9 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
       failedReport.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ?? null;
       failedReport.summary.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
         status: stageResults.authStateCheck.routeCapturePlan.status,
+        routeCoverageStatus: stageResults.authStateCheck.routeCapturePlan.routeCoverageStatus,
+        retryStatus: stageResults.authStateCheck.routeCapturePlan.retryStatus,
+        retryPasses: stageResults.authStateCheck.routeCapturePlan.retryPasses,
         routeCount: stageResults.authStateCheck.routeCapturePlan.routeCount,
         capturedRouteCount: stageResults.authStateCheck.routeCapturePlan.capturedRouteCount,
         missingRouteCount: stageResults.authStateCheck.routeCapturePlan.missingRouteCount,

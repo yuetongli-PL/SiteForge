@@ -277,26 +277,52 @@ function browserBridgeSummary({
   routeCount = 0,
   capturedRouteCount = 0,
   missingRouteCount = 0,
+  routeCoverageStatus = null,
+  retryStatus = null,
+  retryPasses = 0,
+  initialCapturedRouteCount = 0,
+  retryAttemptedRouteCount = 0,
+  retryCapturedRouteCount = 0,
+  finalCapturedRouteCount = 0,
+  finalMissingRouteCount = 0,
   routeResults = [],
   extensionStages = [],
 } = /** @type {any} */ ({})) {
+  const capturedStatuses = new Set(['captured', 'captured_with_warning']);
+  const routeStatuses = ['captured', 'captured_with_warning', 'thin_capture', 'blocked', 'timeout', 'challenge_detected'];
   const sanitizedRouteResults = (Array.isArray(routeResults) ? routeResults : []).slice(0, 40).map((result) => ({
     routeId: String(result?.routeId ?? '').trim().slice(0, 80) || null,
     sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
     targetRoute: String(result?.targetRoute ?? '').trim().slice(0, 240) || null,
-    status: ['captured', 'blocked', 'timeout', 'challenge_detected'].includes(String(result?.status ?? '').trim())
+    status: routeStatuses.includes(String(result?.status ?? '').trim())
       ? String(result.status).trim()
       : 'timeout',
     reasonCode: String(result?.reasonCode ?? '').trim().slice(0, 80) || null,
-    captured: result?.captured === true,
+    captured: capturedStatuses.has(String(result?.status ?? '').trim()) && result?.captured !== false,
+    initialStatus: routeStatuses.includes(String(result?.initialStatus ?? '').trim()) ? String(result.initialStatus).trim() : null,
+    initialReasonCode: String(result?.initialReasonCode ?? '').trim().slice(0, 80) || null,
+    finalStatus: routeStatuses.includes(String(result?.finalStatus ?? '').trim()) ? String(result.finalStatus).trim() : null,
+    finalReasonCode: String(result?.finalReasonCode ?? '').trim().slice(0, 80) || null,
+    retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
+    retryOutcome: String(result?.retryOutcome ?? '').trim().slice(0, 80) || null,
   }));
   const inferredRouteCount = Number(routeCount) > 0 ? Number(routeCount) : sanitizedRouteResults.length;
   const inferredCapturedRouteCount = Number(capturedRouteCount) > 0
     ? Number(capturedRouteCount)
-    : sanitizedRouteResults.filter((result) => result.status === 'captured').length;
+    : sanitizedRouteResults.filter((result) => result.captured === true).length;
   const inferredMissingRouteCount = Number(missingRouteCount) > 0
     ? Number(missingRouteCount)
     : Math.max(0, inferredRouteCount - inferredCapturedRouteCount);
+  const safeRouteCoverageStatus = ['complete', 'partial', 'none'].includes(String(routeCoverageStatus ?? '').trim())
+    ? String(routeCoverageStatus).trim()
+    : inferredRouteCount > 0 && inferredMissingRouteCount === 0
+    ? 'complete'
+    : inferredCapturedRouteCount > 0
+    ? 'partial'
+    : 'none';
+  const safeRetryStatus = ['not_attempted', 'captured_after_retry', 'attempted_no_gain'].includes(String(retryStatus ?? '').trim())
+    ? String(retryStatus).trim()
+    : 'not_attempted';
   return {
     used: used === true,
     persisted: false,
@@ -306,6 +332,14 @@ function browserBridgeSummary({
     routeCount: Math.max(0, inferredRouteCount || 0),
     capturedRouteCount: Math.max(0, inferredCapturedRouteCount || 0),
     missingRouteCount: Math.max(0, inferredMissingRouteCount || 0),
+    routeCoverageStatus: safeRouteCoverageStatus,
+    retryStatus: safeRetryStatus,
+    retryPasses: Math.max(0, Number(retryPasses ?? 0) || 0),
+    initialCapturedRouteCount: Math.max(0, Number(initialCapturedRouteCount ?? 0) || 0),
+    retryAttemptedRouteCount: Math.max(0, Number(retryAttemptedRouteCount ?? 0) || 0),
+    retryCapturedRouteCount: Math.max(0, Number(retryCapturedRouteCount ?? 0) || 0),
+    finalCapturedRouteCount: Math.max(0, Number(finalCapturedRouteCount ?? inferredCapturedRouteCount) || 0),
+    finalMissingRouteCount: Math.max(0, Number(finalMissingRouteCount ?? inferredMissingRouteCount) || 0),
     routeResults: sanitizedRouteResults,
     extensionStages: uniqueStrings(extensionStages).slice(0, 20),
   };

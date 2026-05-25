@@ -2210,6 +2210,11 @@ function applyBuildReadinessToCapabilities(capabilities, buildReadiness) {
   }));
 }
 
+function browserBridgeRouteCaptured(result = /** @type {any} */ ({})) {
+  return ['captured', 'captured_with_warning'].includes(String(result?.status ?? '').trim())
+    && result?.captured !== false;
+}
+
 function browserRoutePartialCoverage(authStateReport = /** @type {any} */ ({})) {
   const bridge = authStateReport?.browserBridge ?? {};
   const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
@@ -2226,13 +2231,19 @@ function browserRoutePartialCoverage(authStateReport = /** @type {any} */ ({})) 
     capturedRouteCount,
     missingRouteCount,
     missingRoutes: routeResults
-      .filter((result) => result?.status !== 'captured')
+      .filter((result) => !browserBridgeRouteCaptured(result))
       .map((result) => ({
         routeId: result?.routeId ?? null,
         targetRoute: result?.targetRoute ?? null,
         sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
         status: result?.status ?? 'timeout',
         reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+        initialStatus: result?.initialStatus ?? result?.status ?? 'timeout',
+        finalStatus: result?.finalStatus ?? result?.status ?? 'timeout',
+        finalReasonCode: result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+        retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
+        retryOutcome: result?.retryOutcome ?? 'not_attempted',
+        capabilityGenerated: false,
       })),
   };
 }

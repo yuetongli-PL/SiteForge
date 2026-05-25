@@ -8,6 +8,31 @@ import { ensureDir, pathExists, readJsonFile } from '../../../infra/io.mjs';
 import { buildWorkspaceArtifactPath } from './workspace.mjs';
 
 const SAFE_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const ATOMIC_WRITE_RETRY_DELAYS_MS = Object.freeze([50, 150, 350]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableAtomicWriteError(error) {
+  return ['EPERM', 'EBUSY'].includes(String(error?.code ?? ''));
+}
+
+async function retryAtomicWriteOperation(operation) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= ATOMIC_WRITE_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableAtomicWriteError(error) || attempt >= ATOMIC_WRITE_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+      await sleep(ATOMIC_WRITE_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
 
 function comparePath(value) {
   const resolved = path.resolve(value);
@@ -62,8 +87,8 @@ async function atomicWriteText(filePath, value) {
     `.${path.basename(resolvedPath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`,
   );
   try {
-    await writeFile(tempPath, `${String(value).trimEnd()}\n`, 'utf8');
-    await rename(tempPath, resolvedPath);
+    await retryAtomicWriteOperation(async () => writeFile(tempPath, `${String(value).trimEnd()}\n`, 'utf8'));
+    await retryAtomicWriteOperation(async () => rename(tempPath, resolvedPath));
   } catch (error) {
     await rm(tempPath, { force: true }).catch(() => {});
     throw error;

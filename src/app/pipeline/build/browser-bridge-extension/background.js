@@ -1,6 +1,8 @@
 const activeTabs = new Map();
-const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-fallback-canonical-v2';
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-retry-stability-v3';
 const ROUTE_COLLECT_FALLBACK_DELAY_MS = 4500;
+const ROUTE_STABLE_AFTER_COMPLETE_MS = 1500;
+const COLLECTOR_RETRY_BACKOFF_MS = [1000, 3000, 7000];
 
 function safeUrl(value) {
   try {
@@ -102,6 +104,33 @@ function clearFallbackTimer(state) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForStableTab(tabId, session, route) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab?.id) {
+      return { ok: false, reasonCode: 'tab-missing', tab: null };
+    }
+    const currentUrl = tab.url || tab.pendingUrl || route.targetUrl;
+    if (tab.status === 'loading' || tab.pendingUrl) {
+      signal(session, `navigation-in-progress:${route.id}`);
+      await sleep(250);
+      continue;
+    }
+    await sleep(ROUTE_STABLE_AFTER_COMPLETE_MS);
+    const stableTab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!stableTab?.id) {
+      return { ok: false, reasonCode: 'tab-missing', tab: null };
+    }
+    return { ok: true, reasonCode: null, tab: stableTab, currentUrl };
+  }
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  return { ok: false, reasonCode: 'navigation-in-progress', tab };
+}
+
 async function submitRouteStatus(session, route, status, reasonCode, targetUrl = route?.targetUrl) {
   if (!session?.submitUrl || !route?.id) {
     return;
@@ -131,15 +160,47 @@ async function submitRouteStatus(session, route, status, reasonCode, targetUrl =
 async function injectCollector(tabId, session, route) {
   const currentSession = routeSession(session, route);
   signal(session, `collector-injecting:${route.id}`);
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ['collector-content.js'],
-  });
-  const result = await chrome.tabs.sendMessage(tabId, {
-    type: 'siteforge-collect-structure',
-    session: currentSession,
-  });
-  signal(session, result?.ok ? `collector-submit-ok:${route.id}` : `collector-submit-failed:${route.id}:${result?.reason || result?.status || 'unknown'}`);
+  let executeOk = false;
+  let executeError = null;
+  for (let attempt = 0; attempt < COLLECTOR_RETRY_BACKOFF_MS.length; attempt += 1) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['collector-content.js'],
+      });
+      executeOk = true;
+      break;
+    } catch (error) {
+      executeError = error;
+      signal(session, `execute-script-failed:${route.id}:attempt-${attempt + 1}`);
+      await sleep(COLLECTOR_RETRY_BACKOFF_MS[attempt]);
+    }
+  }
+  if (!executeOk) {
+    throw Object.assign(new Error('execute-script-failed'), { reasonCode: 'execute-script-failed', cause: executeError });
+  }
+  let result = null;
+  let messageError = null;
+  for (let attempt = 0; attempt < COLLECTOR_RETRY_BACKOFF_MS.length; attempt += 1) {
+    try {
+      result = await chrome.tabs.sendMessage(tabId, {
+        type: 'siteforge-collect-structure',
+        session: currentSession,
+      });
+      if (result?.ok) {
+        signal(session, `collector-submit-ok:${route.id}`);
+        return;
+      }
+      messageError = new Error(result?.reason || result?.status || 'collector-message-failed');
+      signal(session, `collector-message-failed:${route.id}:${result?.reason || result?.status || 'unknown'}:attempt-${attempt + 1}`);
+      await sleep(COLLECTOR_RETRY_BACKOFF_MS[attempt]);
+    } catch (error) {
+      messageError = error;
+      signal(session, `collector-message-failed:${route.id}:attempt-${attempt + 1}`);
+      await sleep(COLLECTOR_RETRY_BACKOFF_MS[attempt]);
+    }
+  }
+  throw Object.assign(new Error('collector-message-failed'), { reasonCode: 'collector-message-failed', cause: messageError });
 }
 
 function finishRoute(tabId, state, route) {
@@ -159,22 +220,22 @@ function collectRoute(tabId, state, route, triggerStage) {
   if (triggerStage) {
     signal(state.session, `${triggerStage}:${route.id}`);
   }
-  chrome.tabs.get(tabId, (tab) => {
-    if (chrome.runtime.lastError || !tab?.id) {
-      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-tab-missing')
+  waitForStableTab(tabId, state.session, route).then(({ ok, reasonCode, tab, currentUrl: stableCurrentUrl }) => {
+    if (!ok || !tab?.id) {
+      submitRouteStatus(state.session, route, 'blocked', reasonCode || 'tab-missing')
         .finally(() => finishRoute(tabId, state, route));
       return;
     }
-    const currentUrl = tab.url || tab.pendingUrl || route.targetUrl;
+    const currentUrl = stableCurrentUrl || tab.url || tab.pendingUrl || route.targetUrl;
     if (!sameAllowedHost(currentUrl, route.allowedHost)) {
       signal(state.session, `route-host-mismatch:${route.id}`);
-      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-host-mismatch', currentUrl)
+      submitRouteStatus(state.session, route, 'blocked', 'host-mismatch', currentUrl)
         .finally(() => finishRoute(tabId, state, route));
       return;
     }
     if (loginLikeUrl(currentUrl)) {
       signal(state.session, `route-login-wall:${route.id}`);
-      submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-login-wall', currentUrl)
+      submitRouteStatus(state.session, route, 'blocked', 'login-wall', currentUrl)
         .finally(() => finishRoute(tabId, state, route));
       return;
     }
@@ -183,9 +244,10 @@ function collectRoute(tabId, state, route, triggerStage) {
     }
     injectCollector(tabId, state.session, route)
       .then(() => finishRoute(tabId, state, route))
-      .catch(() => {
-        signal(state.session, `route-collect-failed:${route.id}`);
-        submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-collector-injection-failed', currentUrl)
+      .catch((error) => {
+        const reasonCode = error?.reasonCode || 'browser-bridge-collector-injection-failed';
+        signal(state.session, `route-collect-failed:${route.id}:${reasonCode}`);
+        submitRouteStatus(state.session, route, 'blocked', reasonCode, currentUrl)
           .finally(() => finishRoute(tabId, state, route));
       });
   });
@@ -290,13 +352,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
   if (!sameAllowedHost(tab?.url, route.allowedHost)) {
     signal(state.session, `route-host-mismatch:${route.id}`);
-    submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-host-mismatch', tab?.url || route.targetUrl)
+    submitRouteStatus(state.session, route, 'blocked', 'host-mismatch', tab?.url || route.targetUrl)
       .finally(() => finishRoute(tabId, state, route));
     return;
   }
   if (loginLikeUrl(tab?.url)) {
     signal(state.session, `route-login-wall:${route.id}`);
-    submitRouteStatus(state.session, route, 'blocked', 'browser-bridge-route-login-wall', tab?.url || route.targetUrl)
+    submitRouteStatus(state.session, route, 'blocked', 'login-wall', tab?.url || route.targetUrl)
       .finally(() => finishRoute(tabId, state, route));
     return;
   }

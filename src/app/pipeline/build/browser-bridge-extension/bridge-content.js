@@ -1,5 +1,5 @@
 (() => {
-  const SITEFORGE_BRIDGE_CONTENT_VERSION = 'route-queue-fallback-canonical-v2';
+  const SITEFORGE_BRIDGE_CONTENT_VERSION = 'route-queue-retry-stability-v3';
   const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.getAttribute('content') || '';
   if (meta('siteforge-browser-bridge') !== '1') {
     return;

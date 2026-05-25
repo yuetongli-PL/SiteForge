@@ -55,6 +55,7 @@
     fallback,
     80,
   );
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const semanticKindFor = (href, label, node) => {
     const text = [href, label, attr(node, 'class'), attr(node, 'id'), attr(node, 'role')].join(' ').toLowerCase();
     if (/search|query|keyword|find|\u641c\u7d22|\u641c\u4e66|\u68c0\u7d22/u.test(text)) return 'search';
@@ -90,13 +91,56 @@
     });
     return { ok: response.ok, status: response.status };
   };
-  const challengeDetected = () => {
+  const structureCountSnapshot = () => ({
+    links: [...document.querySelectorAll('a[href], area[href]')].filter(visible).length,
+    lists: [...document.querySelectorAll('ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]')].filter(visible).length,
+    items: [...document.querySelectorAll('article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]')].filter(visible).length,
+    controls: [...document.querySelectorAll('button, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"]')].filter(visible).length,
+  });
+  const waitForStructureStability = async () => {
+    let previous = null;
+    let stableTicks = 0;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const current = structureCountSnapshot();
+      const signature = JSON.stringify(current);
+      if (signature === previous && (current.links || current.lists || current.items || current.controls)) {
+        stableTicks += 1;
+      } else {
+        stableTicks = 0;
+      }
+      if (stableTicks >= 2) {
+        return current;
+      }
+      previous = signature;
+      await sleep(500);
+    }
+    return structureCountSnapshot();
+  };
+  const challengeAssessment = () => {
+    const definiteNode = document.querySelector([
+      'iframe[src*="captcha" i]',
+      'iframe[src*="challenge" i]',
+      '[class*="captcha" i]',
+      '[id*="captcha" i]',
+      '[class*="slider" i]',
+      '[id*="slider" i]',
+      '[class*="security" i][class*="check" i]',
+      '[id*="security" i][id*="check" i]',
+      '[data-verify][class*="captcha" i]',
+      '[data-verify][class*="slider" i]',
+    ].join(', '));
+    if (definiteNode && visible(definiteNode)) {
+      return { level: 'definite_challenge', reasonCode: 'browser-bridge-definite-challenge' };
+    }
     const sample = [
       document.title,
-      document.querySelector('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [data-verify], [class*="verify"]') ? 'challenge-node' : '',
+      document.querySelector('[class*="challenge" i], [id*="challenge" i], [data-verify], [class*="verify" i]') ? 'challenge-node' : '',
       document.body?.innerText?.slice(0, 5000) || '',
     ].join(' ');
-    return /captcha|recaptcha|hcaptcha|turnstile|challenge|verify you are human|\u9a8c\u8bc1|\u5b89\u5168\u6821\u9a8c|\u767b\u5f55\u9a8c\u8bc1|\u8bf7\u5b8c\u6210\u9a8c\u8bc1/iu.test(sample);
+    if (/captcha|recaptcha|hcaptcha|turnstile|challenge|verify you are human|\u9a8c\u8bc1|\u5b89\u5168\u6821\u9a8c|\u767b\u5f55\u9a8c\u8bc1|\u8bf7\u5b8c\u6210\u9a8c\u8bc1/iu.test(sample)) {
+      return { level: 'possible_challenge', reasonCode: 'browser-bridge-possible-challenge' };
+    }
+    return { level: 'none', reasonCode: null };
   };
 
   async function collect(session) {
@@ -105,7 +149,9 @@
       return { ok: false, reason: 'host-mismatch' };
     }
     const sourceLayer = String(session?.sourceLayer || 'authenticated');
-    if (challengeDetected()) {
+    await waitForStructureStability();
+    const challenge = challengeAssessment();
+    if (challenge.level === 'definite_challenge') {
       return await postPayload(session, {
         nonce: session.nonce,
         routeResults: [{
@@ -113,7 +159,7 @@
           targetUrl: window.location.href,
           sourceLayer,
           status: 'challenge_detected',
-          reasonCode: 'browser-bridge-challenge-detected',
+          reasonCode: 'browser-bridge-definite-challenge',
         }],
       });
     }
@@ -208,7 +254,9 @@
       modalPresence: document.querySelector('[role="dialog"], dialog, [class*="modal"]') !== null,
       structureHash: `browser-structure:${Math.abs(hash).toString(16)}`,
       evidenceLevel: 'browser_structure_verified',
-      evidenceStatus: 'structure_summary_present',
+      evidenceStatus: challenge.level === 'possible_challenge'
+        ? 'possible_challenge_structure_summary_present'
+        : 'structure_summary_present',
       links,
       forms,
       controls,
@@ -217,11 +265,28 @@
     const payload = sourceLayer === 'authenticated_overlay'
       ? { nonce: session.nonce, authenticatedOverlayPages: [page] }
       : { nonce: session.nonce, authenticatedPages: [page] };
+    const hasStructure = Boolean(
+      links.length
+      || routeTemplates.length
+      || controls.length
+      || forms.length
+      || structureItems.length
+      || itemNodes.length
+      || listContainers.length
+    );
+    const routeStatus = hasStructure
+      ? (challenge.level === 'possible_challenge' ? 'captured_with_warning' : 'captured')
+      : 'thin_capture';
     payload.routeResults = [{
       routeId: session.routeId,
       targetUrl: window.location.href,
       sourceLayer,
-      status: 'captured',
+      status: routeStatus,
+      reasonCode: routeStatus === 'captured_with_warning'
+        ? 'browser-bridge-possible-challenge-with-structure'
+        : routeStatus === 'thin_capture'
+        ? 'browser-bridge-low-structure-evidence'
+        : null,
     }];
     return await postPayload(session, payload);
   }

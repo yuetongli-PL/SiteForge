@@ -20,7 +20,24 @@ const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-methods': 'GET,POST,OPTIONS',
   'access-control-allow-headers': 'content-type',
 });
-const ROUTE_CAPTURE_STATUSES = new Set(['captured', 'blocked', 'timeout', 'challenge_detected']);
+const ROUTE_CAPTURE_STATUSES = new Set([
+  'captured',
+  'captured_with_warning',
+  'thin_capture',
+  'blocked',
+  'timeout',
+  'challenge_detected',
+]);
+const ROUTE_CAPTURED_STATUSES = new Set(['captured', 'captured_with_warning']);
+const RETRYABLE_ROUTE_STATUSES = new Set(['timeout', 'challenge_detected', 'thin_capture']);
+const RETRYABLE_BLOCKED_REASON_CODES = new Set([
+  'browser-bridge-collector-injection-failed',
+  'browser-bridge-route-open-failed',
+  'execute-script-failed',
+  'collector-message-failed',
+  'navigation-in-progress',
+  'tab-missing',
+]);
 
 export function browserBridgeExtensionDirectory() {
   return BROWSER_BRIDGE_EXTENSION_DIR;
@@ -34,6 +51,25 @@ function uniqueStrings(values) {
 function routeStatus(value, fallback = 'timeout') {
   const status = String(value ?? '').trim();
   return ROUTE_CAPTURE_STATUSES.has(status) ? status : fallback;
+}
+
+function routeStatusCaptured(value) {
+  return ROUTE_CAPTURED_STATUSES.has(routeStatus(value, 'timeout'));
+}
+
+function routeResultCaptured(result) {
+  return routeStatusCaptured(result?.status) && result?.captured !== false;
+}
+
+function routeResultRetryable(result) {
+  const status = routeStatus(result?.status, 'timeout');
+  if (RETRYABLE_ROUTE_STATUSES.has(status)) {
+    return true;
+  }
+  if (status !== 'blocked') {
+    return false;
+  }
+  return RETRYABLE_BLOCKED_REASON_CODES.has(String(result?.reasonCode ?? '').trim());
 }
 
 function routeSourceLayer(value) {
@@ -312,17 +348,39 @@ function sanitizeRouteResult(result, site, fallback = /** @type {any} */ ({})) {
   const routeId = boundedText(result.routeId ?? result.id ?? fallback.routeId, null, 80);
   const sourceLayer = routeSourceLayer(result.sourceLayer ?? fallback.sourceLayer);
   const status = routeStatus(result.status ?? fallback.status);
-  const reasonCode = boundedText(result.reasonCode ?? result.reason ?? fallback.reasonCode, status === 'captured' ? null : status, 80);
+  const reasonCode = boundedText(
+    result.reasonCode ?? result.reason ?? fallback.reasonCode,
+    routeStatusCaptured(status) ? null : status,
+    80,
+  );
   const targetRoute = safeRouteStatusRef(result.targetUrl ?? result.url ?? fallback.targetUrl, site)
     ?? sanitizeRouteTemplate(result.routeTemplate ?? fallback.routeTemplate);
-  return {
+  const retryAttemptCount = safeNumber(result.retryAttemptCount ?? fallback.retryAttemptCount);
+  const sanitized = {
     routeId,
     sourceLayer,
     targetRoute,
     status,
     reasonCode,
-    captured: status === 'captured',
+    captured: routeStatusCaptured(status),
   };
+  if (result.initialStatus ?? fallback.initialStatus) {
+    sanitized.initialStatus = routeStatus(result.initialStatus ?? fallback.initialStatus, status);
+  }
+  if (result.initialReasonCode ?? fallback.initialReasonCode) {
+    sanitized.initialReasonCode = boundedText(result.initialReasonCode ?? fallback.initialReasonCode, null, 80);
+  }
+  if (result.finalStatus ?? fallback.finalStatus) {
+    sanitized.finalStatus = routeStatus(result.finalStatus ?? fallback.finalStatus, status);
+  }
+  if (result.finalReasonCode ?? fallback.finalReasonCode) {
+    sanitized.finalReasonCode = boundedText(result.finalReasonCode ?? fallback.finalReasonCode, null, 80);
+  }
+  if (retryAttemptCount > 0) {
+    sanitized.retryAttemptCount = retryAttemptCount;
+    sanitized.retryOutcome = boundedText(result.retryOutcome ?? fallback.retryOutcome, null, 80);
+  }
+  return sanitized;
 }
 
 function sanitizeRouteResults(value, site) {
@@ -405,6 +463,43 @@ export function sanitizeBrowserAuthBridgePayload(payload = /** @type {any} */ ({
   return sanitized;
 }
 
+function pageStructureScore(page = /** @type {any} */ ({})) {
+  return [
+    page.links?.length ?? 0,
+    page.routeTemplates?.length ?? 0,
+    page.controls?.length ?? 0,
+    page.forms?.length ?? 0,
+    page.structureItems?.length ?? 0,
+    Number(page.visibleItemCount ?? 0) || 0,
+    page.listPresent === true ? 1 : 0,
+  ].reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
+}
+
+function pageRouteCaptureStatus(page = /** @type {any} */ ({})) {
+  if (pageStructureScore(page) <= 0) {
+    return {
+      status: 'thin_capture',
+      reasonCode: 'browser-bridge-low-structure-evidence',
+    };
+  }
+  const evidenceText = [
+    page.evidenceStatus,
+    page.evidenceLevel,
+    page.routeCaptureStatus,
+    page.captureStatus,
+  ].join(' ');
+  if (/captured_with_warning|possible[_-]challenge|warning/iu.test(evidenceText)) {
+    return {
+      status: 'captured_with_warning',
+      reasonCode: 'browser-bridge-possible-challenge-with-structure',
+    };
+  }
+  return {
+    status: 'captured',
+    reasonCode: null,
+  };
+}
+
 function routeResultsFromSummary(routes, structureSummary, site) {
   const expected = routes.map((route) => ({
     ...route,
@@ -421,15 +516,7 @@ function routeResultsFromSummary(routes, structureSummary, site) {
     reasonCode: 'browser-bridge-route-timeout',
   }, site)]));
 
-  for (const explicit of structureSummary.routeResults ?? []) {
-    const matched = explicit.routeId ? byId.get(explicit.routeId) : null;
-    const fallback = matched ?? {};
-    const sanitized = sanitizeRouteResult(explicit, site, fallback);
-    if (sanitized?.routeId) {
-      results.set(sanitized.routeId, sanitized);
-    }
-  }
-
+  const pageResults = new Map();
   for (const page of [
     ...(structureSummary.authenticatedPages ?? []),
     ...(structureSummary.authenticatedOverlayPages ?? []),
@@ -441,13 +528,41 @@ function routeResultsFromSummary(routes, structureSummary, site) {
     if (!matched) {
       continue;
     }
-    results.set(matched.id, sanitizeRouteResult({
+    const capture = pageRouteCaptureStatus(page);
+    pageResults.set(matched.id, sanitizeRouteResult({
       routeId: matched.id,
       sourceLayer: matched.sourceLayer,
       targetUrl: matched.targetUrl,
       routeTemplate: matched.routeTemplate,
-      status: 'captured',
+      status: capture.status,
+      reasonCode: capture.reasonCode,
     }, site));
+  }
+
+  for (const explicit of structureSummary.routeResults ?? []) {
+    const matched = explicit.routeId ? byId.get(explicit.routeId) : null;
+    const fallback = matched ?? {};
+    const sanitized = sanitizeRouteResult(explicit, site, fallback);
+    if (sanitized?.routeId) {
+      const pageResult = pageResults.get(sanitized.routeId);
+      if (routeResultCaptured(sanitized) && !routeResultCaptured(pageResult)) {
+        results.set(sanitized.routeId, pageResult ?? sanitizeRouteResult({
+          ...sanitized,
+          status: 'blocked',
+          reasonCode: 'browser-bridge-captured-without-summary',
+          captured: false,
+        }, site, fallback));
+        continue;
+      }
+      results.set(sanitized.routeId, sanitized);
+    }
+  }
+
+  for (const [routeId, pageResult] of pageResults) {
+    const current = results.get(routeId);
+    if (!routeResultCaptured(current)) {
+      results.set(routeId, pageResult);
+    }
   }
   return [...results.values()].filter(Boolean);
 }
@@ -466,24 +581,31 @@ function mergeStructureSummary(base, next) {
 
 function finalizeStructureSummary(routes, structureSummary, site) {
   const dedupedPages = (pages) => {
-    const seen = new Set();
-    return pages.filter((page) => {
+    const byKey = new Map();
+    for (const page of pages) {
       const key = `${page.sourceLayer}\u0000${page.routeId ?? page.normalizedUrl ?? page.url ?? page.routeTemplate}`;
-      if (seen.has(key)) {
-        return false;
+      const existing = byKey.get(key);
+      if (!existing || pageStructureScore(page) > pageStructureScore(existing)) {
+        byKey.set(key, page);
       }
-      seen.add(key);
-      return true;
-    });
+    }
+    return [...byKey.values()];
   };
+  const allAuthenticatedPages = dedupedPages(structureSummary.authenticatedPages ?? []).slice(0, 80);
+  const allAuthenticatedOverlayPages = dedupedPages(structureSummary.authenticatedOverlayPages ?? []).slice(0, 80);
   const finalized = {
-    authenticatedPages: dedupedPages(structureSummary.authenticatedPages ?? []).slice(0, 80),
-    authenticatedOverlayPages: dedupedPages(structureSummary.authenticatedOverlayPages ?? []).slice(0, 80),
+    authenticatedPages: allAuthenticatedPages
+      .filter((page) => pageRouteCaptureStatus(page).status !== 'thin_capture')
+      .slice(0, 80),
+    authenticatedOverlayPages: allAuthenticatedOverlayPages
+      .filter((page) => pageRouteCaptureStatus(page).status !== 'thin_capture')
+      .slice(0, 80),
     routeResults: [],
     warnings: uniqueStrings(structureSummary.warnings ?? []).slice(0, 20),
   };
   finalized.routeResults = routeResultsFromSummary(routes, {
-    ...finalized,
+    authenticatedPages: allAuthenticatedPages,
+    authenticatedOverlayPages: allAuthenticatedOverlayPages,
     routeResults: structureSummary.routeResults ?? [],
   }, site);
   return finalized;
@@ -493,11 +615,15 @@ function bridgeSummaryFromRoutes(structureSummary, {
   routes = [],
   used = true,
   extensionStages = [],
+  retrySummary = {},
 } = /** @type {any} */ ({})) {
   const routeResults = structureSummary?.routeResults ?? [];
   const routeCount = routes.length || routeResults.length;
-  const capturedRouteCount = routeResults.filter((result) => result.status === 'captured').length;
+  const capturedRouteCount = routeResults.filter(routeResultCaptured).length;
   const missingRouteCount = Math.max(0, routeCount - capturedRouteCount);
+  const retryPasses = Math.max(0, Number(retrySummary.retryPasses ?? 0) || 0);
+  const retryAttemptedRouteCount = Math.max(0, Number(retrySummary.retryAttemptedRouteCount ?? 0) || 0);
+  const retryCapturedRouteCount = Math.max(0, Number(retrySummary.retryCapturedRouteCount ?? 0) || 0);
   return {
     used: used === true,
     persisted: false,
@@ -507,6 +633,24 @@ function bridgeSummaryFromRoutes(structureSummary, {
     routeCount,
     capturedRouteCount,
     missingRouteCount,
+    routeCoverageStatus: routeCount > 0 && missingRouteCount === 0
+      ? 'complete'
+      : capturedRouteCount > 0
+      ? 'partial'
+      : 'none',
+    retryStatus: retryPasses <= 0
+      ? 'not_attempted'
+      : retryCapturedRouteCount > 0
+      ? 'captured_after_retry'
+      : retryAttemptedRouteCount > 0
+      ? 'attempted_no_gain'
+      : 'not_attempted',
+    retryPasses,
+    initialCapturedRouteCount: Math.max(0, Number(retrySummary.initialCapturedRouteCount ?? capturedRouteCount) || 0),
+    retryAttemptedRouteCount,
+    retryCapturedRouteCount,
+    finalCapturedRouteCount: capturedRouteCount,
+    finalMissingRouteCount: missingRouteCount,
     routeResults: routeResults.slice(0, MAX_BRIDGE_ROUTES),
     extensionStages: uniqueStrings(extensionStages).slice(0, 20),
   };
@@ -515,13 +659,18 @@ function bridgeSummaryFromRoutes(structureSummary, {
 function missingRouteSignals(routeResults) {
   const signals = [];
   for (const result of routeResults ?? []) {
-    if (result.status === 'captured') {
+    if (routeResultCaptured(result)) {
       continue;
     }
     if (result.status === 'challenge_detected') {
       signals.push('browser-bridge-route-challenge-detected');
+    } else if (result.status === 'thin_capture') {
+      signals.push('browser-bridge-low-structure-evidence');
     } else if (result.status === 'blocked') {
       signals.push('browser-bridge-route-blocked');
+      if (result.reasonCode) {
+        signals.push(result.reasonCode);
+      }
       if (result.reasonCode === 'browser-bridge-route-url-mismatch') {
         signals.push('browser-bridge-extension-stale-or-incompatible');
       }
@@ -530,6 +679,146 @@ function missingRouteSignals(routeResults) {
     }
   }
   return uniqueStrings(signals);
+}
+
+function emptyStructureSummary(routeResults = []) {
+  return {
+    authenticatedPages: [],
+    authenticatedOverlayPages: [],
+    routeResults,
+    warnings: [],
+  };
+}
+
+function routeResultsById(routeResults = []) {
+  return new Map((Array.isArray(routeResults) ? routeResults : [])
+    .filter((result) => result?.routeId)
+    .map((result) => [result.routeId, result]));
+}
+
+function annotateRetryResults(finalSummary, {
+  initialRouteResults = [],
+  retryAttemptCounts = new Map(),
+} = /** @type {any} */ ({})) {
+  const initialById = routeResultsById(initialRouteResults);
+  finalSummary.routeResults = (finalSummary.routeResults ?? []).map((result) => {
+    const initial = initialById.get(result.routeId) ?? result;
+    const retryAttemptCount = Math.max(0, Number(retryAttemptCounts.get(result.routeId) ?? 0) || 0);
+    return {
+      ...result,
+      initialStatus: initial.status ?? result.status,
+      initialReasonCode: initial.reasonCode ?? null,
+      finalStatus: result.status,
+      finalReasonCode: result.reasonCode ?? null,
+      ...(retryAttemptCount > 0 ? {
+        retryAttemptCount,
+        retryOutcome: routeResultCaptured(result) ? 'captured_after_retry' : 'still_missing',
+      } : {
+        retryAttemptCount: 0,
+        retryOutcome: routeResultCaptured(result) ? 'not_needed' : 'not_attempted',
+      }),
+    };
+  });
+  return finalSummary;
+}
+
+async function maybeRetryBrowserBridge(baseResult, {
+  inputUrl,
+  site,
+  options,
+  openBrowser,
+  routes,
+  targetUrl,
+} = /** @type {any} */ ({})) {
+  const maxRetryPasses = Math.max(0, Number(options.browserBridgeMaxRetryPasses ?? 2) || 0);
+  if (maxRetryPasses <= 0 || options.browserBridgeRetryPass === true) {
+    return baseResult;
+  }
+  if ((baseResult.blockingSignals ?? []).some((signal) => /extension-missing|stale-or-incompatible|sensitive-payload|cross-site|nonce|login-wall|host-mismatch/iu.test(signal))) {
+    return baseResult;
+  }
+  const initialSummary = baseResult.structureSummary ?? emptyStructureSummary(baseResult.bridgeSummary?.routeResults ?? []);
+  const initialRouteResults = initialSummary.routeResults ?? [];
+  const initialCapturedIds = new Set(initialRouteResults.filter(routeResultCaptured).map((result) => result.routeId));
+  const aggregateSummary = {
+    authenticatedPages: [...(initialSummary.authenticatedPages ?? [])],
+    authenticatedOverlayPages: [...(initialSummary.authenticatedOverlayPages ?? [])],
+    routeResults: [...initialRouteResults],
+    warnings: [...(initialSummary.warnings ?? [])],
+  };
+  const extensionStages = new Set(baseResult.bridgeSummary?.extensionStages ?? []);
+  const retryAttemptCounts = new Map();
+  let retryPasses = 0;
+
+  for (let passIndex = 1; passIndex <= maxRetryPasses; passIndex += 1) {
+    const current = finalizeStructureSummary(routes, aggregateSummary, site);
+    const retryRouteIds = current.routeResults
+      .filter((result) => !routeResultCaptured(result) && routeResultRetryable(result))
+      .map((result) => result.routeId)
+      .filter(Boolean);
+    if (!retryRouteIds.length) {
+      break;
+    }
+    retryPasses = passIndex;
+    for (const routeId of retryRouteIds) {
+      retryAttemptCounts.set(routeId, (retryAttemptCounts.get(routeId) ?? 0) + 1);
+    }
+    const retryResult = await runBrowserAuthBridge({
+      inputUrl,
+      site,
+      options: {
+        ...options,
+        browserBridgeRouteIds: retryRouteIds,
+        browserBridgeRetryRouteIds: retryRouteIds,
+        browserBridgeMaxRetryPasses: 0,
+        browserBridgePassIndex: passIndex,
+        browserBridgeRetryPass: true,
+      },
+      openBrowser,
+    });
+    for (const stage of retryResult.bridgeSummary?.extensionStages ?? []) {
+      extensionStages.add(stage);
+    }
+    const retrySummary = retryResult.structureSummary
+      ?? emptyStructureSummary(retryResult.bridgeSummary?.routeResults ?? []);
+    mergeStructureSummary(aggregateSummary, retrySummary);
+  }
+
+  const finalSummary = annotateRetryResults(
+    finalizeStructureSummary(routes, aggregateSummary, site),
+    { initialRouteResults, retryAttemptCounts },
+  );
+  const finalCapturedIds = new Set(finalSummary.routeResults.filter(routeResultCaptured).map((result) => result.routeId));
+  const retryCapturedRouteCount = [...finalCapturedIds].filter((routeId) => !initialCapturedIds.has(routeId)).length;
+  const retryAttemptedRouteCount = retryAttemptCounts.size;
+  const bridgeSummary = bridgeSummaryFromRoutes(finalSummary, {
+    routes,
+    extensionStages: [...extensionStages].sort(),
+    retrySummary: {
+      retryPasses,
+      initialCapturedRouteCount: initialCapturedIds.size,
+      retryAttemptedRouteCount,
+      retryCapturedRouteCount,
+    },
+  });
+  const pageCount = finalSummary.authenticatedPages.length;
+  const overlayPageCount = finalSummary.authenticatedOverlayPages.length;
+  const hasStructure = Boolean(pageCount || overlayPageCount);
+  const missingSignals = missingRouteSignals(finalSummary.routeResults);
+  const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
+  return {
+    ...baseResult,
+    status: hasStructure ? 'browser_verified' : challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing',
+    verified: hasStructure,
+    finalUrl: targetUrl,
+    positiveSignals: hasStructure
+      ? uniqueStrings([...(baseResult.positiveSignals ?? []), 'browser_bridge_retry_completed', 'browser_structure_summary_present'])
+      : uniqueStrings(baseResult.positiveSignals ?? []),
+    blockingSignals: hasStructure ? missingSignals : uniqueStrings(['browser-bridge-empty-summary', ...missingSignals]),
+    verifiedRoutes: uniqueStrings([...finalSummary.authenticatedPages, ...finalSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean)),
+    structureSummary: hasStructure ? finalSummary : null,
+    bridgeSummary,
+  };
 }
 
 function bridgeSession({
@@ -664,7 +953,16 @@ export async function runBrowserAuthBridge({
   const nonce = randomBytes(16).toString('hex');
   if (typeof options.browserAuthBridgeProvider === 'function') {
     try {
-      const provided = await options.browserAuthBridgeProvider({ inputUrl, site, targetUrl, routes, nonce, options });
+      const provided = await options.browserAuthBridgeProvider({
+        inputUrl,
+        site,
+        targetUrl,
+        routes,
+        nonce,
+        options,
+        passIndex: Math.max(0, Number(options.browserBridgePassIndex ?? 0) || 0),
+        retryPass: options.browserBridgeRetryPass === true,
+      });
       const structureSummary = finalizeStructureSummary(
         routes,
         sanitizeBrowserAuthBridgePayload(provided ?? {}, { site, fallbackUrl: targetUrl }),
@@ -676,7 +974,7 @@ export async function runBrowserAuthBridge({
       const missingSignals = missingRouteSignals(structureSummary.routeResults);
       const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
       const hasStructure = Boolean(pageCount || overlayPageCount);
-      return {
+      return await maybeRetryBrowserBridge({
         status: hasStructure ? 'browser_verified' : challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing',
         verified: hasStructure,
         finalUrl: targetUrl,
@@ -685,7 +983,7 @@ export async function runBrowserAuthBridge({
         verifiedRoutes: uniqueStrings([...structureSummary.authenticatedPages, ...structureSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean)),
         structureSummary,
         bridgeSummary,
-      };
+      }, { inputUrl, site, options, openBrowser, routes, targetUrl });
     } catch (error) {
       return {
         status: error?.code === 'redaction-failed' ? 'browser_blocked' : 'browser_check_failed',
@@ -838,7 +1136,7 @@ export async function runBrowserAuthBridge({
         const extensionActive = extensionStageList.length > 0;
         const staleExtension = extensionStageList.includes('target-tab-created')
           && !extensionStageList.some((stage) => stage === 'target-route-queue-started' || stage.startsWith('route-opened:'));
-        return {
+        return await maybeRetryBrowserBridge({
           status: 'browser_bridge_missing',
           verified: false,
           finalUrl: targetUrl,
@@ -854,7 +1152,7 @@ export async function runBrowserAuthBridge({
             routeResults: routeResultsFromSummary(routes, { authenticatedPages: [], authenticatedOverlayPages: [], routeResults: [], warnings: [] }, site),
             warnings: [],
           }, { routes, extensionStages: extensionStageList }),
-        };
+        }, { inputUrl, site, options, openBrowser, routes, targetUrl });
     }
     const pageCount = structureSummary.authenticatedPages.length;
     const overlayPageCount = structureSummary.authenticatedOverlayPages.length;
@@ -862,7 +1160,7 @@ export async function runBrowserAuthBridge({
     const missingSignals = missingRouteSignals(structureSummary.routeResults);
     const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
     const hasStructure = Boolean(pageCount || overlayPageCount);
-    return {
+    return await maybeRetryBrowserBridge({
       status: hasStructure ? 'browser_verified' : challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing',
       verified: hasStructure,
       finalUrl: targetUrl,
@@ -873,7 +1171,7 @@ export async function runBrowserAuthBridge({
       verifiedRoutes: uniqueStrings([...structureSummary.authenticatedPages, ...structureSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean)),
       structureSummary,
       bridgeSummary,
-    };
+    }, { inputUrl, site, options, openBrowser, routes, targetUrl });
   } catch (error) {
     return {
       status: error?.code === 'redaction-failed' ? 'browser_blocked' : 'browser_check_failed',

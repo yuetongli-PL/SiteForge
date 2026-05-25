@@ -795,6 +795,63 @@ test('Setup Assistant regenerates legacy saved profiles without reusing missing 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('Setup Assistant uses Douyin /follow for known social relation auth routes', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-douyin-follow-route-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const host = new URL(rootUrl).hostname;
+      const configDir = path.join(workspace, 'config');
+      await mkdir(configDir, { recursive: true });
+      await writeFile(path.join(configDir, 'site-registry.json'), `${JSON.stringify({
+        version: 1,
+        sites: {
+          [host]: {
+            canonicalBaseUrl: rootUrl,
+            host,
+            siteKey: 'douyin',
+            adapterId: 'douyin',
+            siteArchetype: 'social-content',
+          },
+        },
+      }, null, 2)}\n`);
+      await writeFile(path.join(configDir, 'site-capabilities.json'), `${JSON.stringify({
+        version: 1,
+        sites: {
+          [host]: {
+            baseUrl: rootUrl,
+            host,
+            siteKey: 'douyin',
+            adapterId: 'douyin',
+            primaryArchetype: 'social-content',
+            capabilityFamilies: ['query-social-content', 'query-social-relations'],
+            supportedIntents: ['list-followed-users', 'list-followed-updates', 'search-posts'],
+          },
+        },
+      }, null, 2)}\n`);
+
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'setup-douyin-follow-route',
+        now: new Date('2026-05-25T17:10:00.000Z'),
+        setupInteractive: true,
+        setupPrompt: async () => '',
+        setupOutput: createWritableBuffer(),
+        fetchDelayMs: 0,
+      });
+
+      const authRoutes = setup.profile.crawlContract.coverageTargets.authRoutes;
+      assert.equal(setup.setupPlan.knownSitePolicy.siteKey, 'douyin');
+      assert.equal(authRoutes.includes('/follow'), true);
+      assert.equal(authRoutes.includes('/following'), false);
+      assert.equal(authRoutes.includes('/search/'), true);
+      assert.equal(authRoutes.includes('/search'), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('Setup Assistant robots-disallowed known-policy guidance is explicit in non-interactive and interactive modes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-robots-guidance-'));
   try {

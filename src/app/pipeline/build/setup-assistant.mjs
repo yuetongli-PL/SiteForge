@@ -1136,12 +1136,27 @@ function socialUtilityRouteCapability(pathName) {
   return null;
 }
 
+function isFollowingRoutePath(pathName) {
+  const normalized = normalizedPathName(pathName);
+  return /(?:^|\/)(?:follow|following)(?:\/|$)/u.test(normalized);
+}
+
+function knownPolicyFollowingRoutePath(knownSitePolicy = null) {
+  const siteKey = String(knownSitePolicy?.siteKey ?? knownSitePolicy?.adapterId ?? '').toLowerCase();
+  return siteKey === 'douyin' ? '/follow' : '/following';
+}
+
+function knownPolicySearchRoutePath(knownSitePolicy = null) {
+  const siteKey = String(knownSitePolicy?.siteKey ?? knownSitePolicy?.adapterId ?? '').toLowerCase();
+  return siteKey === 'douyin' ? '/search/' : '/search';
+}
+
 function authorizedBrowserRouteKindFromPath(pathName) {
   const normalized = normalizedPathName(pathName);
   if (normalized === '/home' || /\/(?:timeline|feed)(?:\/|$)/u.test(normalized)) {
     return 'home-timeline';
   }
-  if (/(?:^|\/)following(?:\/|$)/u.test(normalized)) {
+  if (isFollowingRoutePath(normalized)) {
     return 'following';
   }
   if (/\/(?:search|explore)(?:\/|$)/u.test(normalized)) {
@@ -1168,10 +1183,10 @@ function capabilityIdsFromAuthorizedBrowserSeedSummary(summary = /** @type {any}
   if ((pathName === '/home' || /\/(?:home|timeline|feed)(?:\/|$)/u.test(pathName)) && (articleLikeCount > 0 || feedLikeCount > 0)) {
     capabilities.add('recommended-timeline-posts');
   }
-  if (followingLinkCount > 0 || (/(?:^|\/)following(?:\/|$)/u.test(pathName) && profileLinkCount > 0)) {
+  if (followingLinkCount > 0 || (isFollowingRoutePath(pathName) && profileLinkCount > 0)) {
     capabilities.add('list-followed-users');
   }
-  if (articleLikeCount > 0 && /(?:^|\/)following(?:\/|$)/u.test(pathName)) {
+  if (articleLikeCount > 0 && isFollowingRoutePath(pathName)) {
     capabilities.add('list-followed-updates');
   }
   if (profileLinkCount > 0 || (isKnownSocialProfilePath(pathName) && articleLikeCount > 0)) {
@@ -1230,7 +1245,7 @@ async function collectAuthorizedBrowserSeedsFromSession(session, site) {
         return String(element.href || element.getAttribute('href') || '');
       });
       const profileLinkCount = links.filter(isAllowedProfileUrl).length;
-      const followingLinkCount = links.filter((url) => /\/following(?:[/?#]|$)/i.test(url)).length;
+      const followingLinkCount = links.filter((url) => /\/(?:follow|following)(?:[/?#]|$)/i.test(url)).length;
       return {
         href,
         pathName,
@@ -1349,7 +1364,7 @@ function authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, site, knownSitePolicy
       routeKind: 'home-timeline',
       capabilityIds: ['recommended-timeline-posts'],
     });
-  } else if (/(?:^|\/)following(?:\/|$)/u.test(pathName) && hasSocialRelations) {
+  } else if (isFollowingRoutePath(pathName) && hasSocialRelations) {
     addSeed(normalizedUrl, {
       routeKind: 'following',
       capabilityIds: ['list-followed-users'],
@@ -1382,13 +1397,13 @@ function authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, site, knownSitePolicy
       routeKind: 'social-discovery',
       capabilityIds: ['search-posts'],
     });
-    addSeed(new URL('/search', site.rootUrl).toString(), {
+    addSeed(new URL(knownPolicySearchRoutePath(knownSitePolicy), site.rootUrl).toString(), {
       routeKind: 'search',
       capabilityIds: ['search-posts'],
     });
   }
   if (hasSocialRelations) {
-    addSeed(new URL('/following', site.rootUrl).toString(), {
+    addSeed(new URL(knownPolicyFollowingRoutePath(knownSitePolicy), site.rootUrl).toString(), {
       routeKind: 'following',
       capabilityIds: ['list-followed-users'],
     });
@@ -3329,18 +3344,19 @@ function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
   }
   const supported = new Set(knownSitePolicy.supportedIntents ?? []);
   const families = new Set(knownSitePolicy.capabilityFamilies ?? []);
+  const followingRoutePath = knownPolicyFollowingRoutePath(knownSitePolicy);
   const routes = new Set();
   if (supported.has('recommended-timeline-posts') || supported.has('list-recommended-timeline-posts') || families.has('query-social-content')) {
     routes.add('/home');
   }
   if (supported.has('list-followed-updates') || families.has('query-social-content')) {
-    routes.add('/following');
+    routes.add(followingRoutePath);
   }
   if (supported.has('search-posts') || supported.has('search-content')) {
-    routes.add('/search');
+    routes.add(knownPolicySearchRoutePath(knownSitePolicy));
   }
   if (supported.has('list-followed-users') || families.has('query-social-relations')) {
-    routes.add('/following');
+    routes.add(followingRoutePath);
   }
   if (supported.has('list-notifications')) {
     routes.add('/notifications');

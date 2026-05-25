@@ -2388,6 +2388,39 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(challenge.bridgeSummary.routeResults[0].status, 'challenge_detected');
     assert.equal(challenge.blockingSignals.includes('browser-bridge-route-challenge-detected'), true);
 
+    const trailingSlashRoute = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: ['/search/'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          assert.equal(routes[0].targetUrl, new URL('/search/', rootUrl).toString());
+          return {
+            routeResults: [{
+              routeId: routes[0].id,
+              targetUrl: routes[0].targetUrl,
+              sourceLayer: routes[0].sourceLayer,
+              status: 'captured',
+            }],
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: '/search/',
+              sourceLayer: 'authenticated',
+              pageType: 'search',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(trailingSlashRoute.status, 'browser_verified');
+    assert.equal(trailingSlashRoute.bridgeSummary.routeResults[0].targetRoute, '/search/');
+
     const retryRecovered = await runBrowserAuthBridge({
       inputUrl: rootUrl,
       site,

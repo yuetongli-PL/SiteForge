@@ -259,7 +259,7 @@ function routeKey(route) {
 function safeRouteStatusRef(urlValue, site) {
   try {
     const normalized = normalizeRouteUrl(urlValue, site);
-    return routeTemplateFromUrl(normalized);
+    return new URL(normalized).pathname || '/';
   } catch {
     return null;
   }

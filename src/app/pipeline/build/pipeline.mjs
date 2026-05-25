@@ -3708,6 +3708,10 @@ function browserBridgeRouteCaptured(result = /** @type {any} */ ({})) {
 
 function browserBridgeRouteRetryable(result = /** @type {any} */ ({})) {
   const status = String(result?.status ?? '').trim();
+  const reasonCode = String(result?.reasonCode ?? '').trim();
+  if (status === 'challenge_detected' && reasonCode === 'browser-bridge-definite-challenge') {
+    return false;
+  }
   if (['timeout', 'challenge_detected', 'thin_capture'].includes(status)) {
     return true;
   }
@@ -3721,7 +3725,7 @@ function browserBridgeRouteRetryable(result = /** @type {any} */ ({})) {
     'collector-message-failed',
     'navigation-in-progress',
     'tab-missing',
-  ].includes(String(result?.reasonCode ?? '').trim());
+  ].includes(reasonCode);
 }
 
 function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any} */ ({})) {
@@ -3729,21 +3733,24 @@ function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any
   const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
   const missingRoutes = routeResults
     .filter((result) => !browserBridgeRouteCaptured(result))
-    .map((result) => ({
-      routeId: result?.routeId ?? null,
-      sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
-      targetRoute: result?.targetRoute ?? null,
-      status: result?.status ?? 'timeout',
-      reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
-      initialStatus: result?.initialStatus ?? result?.status ?? 'timeout',
-      finalStatus: result?.finalStatus ?? result?.status ?? 'timeout',
-      finalReasonCode: result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
-      retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
-      retryOutcome: result?.retryOutcome ?? 'not_attempted',
-      recommendedRetryMode: 'browser_bridge_missing_route_retry',
-      retryable: browserBridgeRouteRetryable(result),
-      capabilityGenerated: false,
-    }));
+    .map((result) => {
+      const retryable = browserBridgeRouteRetryable(result);
+      return {
+        routeId: result?.routeId ?? null,
+        sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
+        targetRoute: result?.targetRoute ?? null,
+        status: result?.status ?? 'timeout',
+        reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+        initialStatus: result?.initialStatus ?? result?.status ?? 'timeout',
+        finalStatus: result?.finalStatus ?? result?.status ?? 'timeout',
+        finalReasonCode: result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+        retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
+        retryOutcome: result?.retryOutcome ?? 'not_attempted',
+        recommendedRetryMode: retryable ? 'browser_bridge_missing_route_retry' : 'access_boundary_no_automatic_retry',
+        retryable,
+        capabilityGenerated: false,
+      };
+    });
   if (
     authStateReport?.authMethod !== 'browser'
     || authStateReport?.authVerificationStatus !== 'browser_verified'

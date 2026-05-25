@@ -14,6 +14,7 @@ import { browserStructureCollectorScript } from './browser-structure-collector.m
 
 const MAX_BRIDGE_BODY_BYTES = 256 * 1024;
 const MAX_BRIDGE_ROUTES = 32;
+const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-settled-handshake-v4';
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
 const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-origin': '*',
@@ -48,9 +49,56 @@ function uniqueStrings(values) {
     .sort((left, right) => left.localeCompare(right, 'en'));
 }
 
+function bridgeExtensionVersionSignals(extensionStages = []) {
+  const stages = Array.isArray(extensionStages) ? extensionStages : [];
+  const contentVersions = stages
+    .map((stage) => /^bridge-content-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
+    .filter(Boolean);
+  const backgroundVersions = stages
+    .map((stage) => /^bridge-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
+    .filter(Boolean);
+  return {
+    contentVersions: uniqueStrings(contentVersions),
+    backgroundVersions: uniqueStrings(backgroundVersions),
+  };
+}
+
+function bridgeExtensionVersionBlockingSignals(extensionStages = []) {
+  const stages = uniqueStrings(extensionStages);
+  if (!stages.length || !stages.some((stage) => /^bridge(?:-content)?-version:/u.test(stage))) {
+    return [];
+  }
+  const { contentVersions, backgroundVersions } = bridgeExtensionVersionSignals(stages);
+  if (
+    contentVersions.includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
+    && backgroundVersions.includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
+  ) {
+    return [];
+  }
+  return ['browser-bridge-extension-stale-or-incompatible'];
+}
+
 function routeStatus(value, fallback = 'timeout') {
   const status = String(value ?? '').trim();
   return ROUTE_CAPTURE_STATUSES.has(status) ? status : fallback;
+}
+
+function browserBridgeRequestedTimeoutMs(options = /** @type {any} */ ({})) {
+  return Math.max(1000, Number(options.browserBridgeTimeoutMs ?? options.timeoutMs ?? 30000) || 30000);
+}
+
+function browserBridgeMaxRetryPasses(options = /** @type {any} */ ({})) {
+  return Math.max(0, Number(options.browserBridgeMaxRetryPasses ?? 2) || 0);
+}
+
+function browserBridgePlannedPassCount(options = /** @type {any} */ ({})) {
+  return Math.max(1, Number(options.browserBridgePlannedPassCount ?? browserBridgeMaxRetryPasses(options) + 1) || 1);
+}
+
+function browserBridgePerPassTimeoutMs(options = /** @type {any} */ ({})) {
+  const requestedTimeoutMs = browserBridgeRequestedTimeoutMs(options);
+  const plannedPassCount = browserBridgePlannedPassCount(options);
+  return Math.max(1000, Number(options.browserBridgePerPassTimeoutMs ?? Math.floor(requestedTimeoutMs / plannedPassCount)) || requestedTimeoutMs);
 }
 
 function routeStatusCaptured(value) {
@@ -730,7 +778,7 @@ async function maybeRetryBrowserBridge(baseResult, {
   routes,
   targetUrl,
 } = /** @type {any} */ ({})) {
-  const maxRetryPasses = Math.max(0, Number(options.browserBridgeMaxRetryPasses ?? 2) || 0);
+  const maxRetryPasses = browserBridgeMaxRetryPasses(options);
   if (maxRetryPasses <= 0 || options.browserBridgeRetryPass === true) {
     return baseResult;
   }
@@ -749,6 +797,8 @@ async function maybeRetryBrowserBridge(baseResult, {
   const extensionStages = new Set(baseResult.bridgeSummary?.extensionStages ?? []);
   const retryAttemptCounts = new Map();
   let retryPasses = 0;
+  const plannedPassCount = browserBridgePlannedPassCount(options);
+  const perPassTimeoutMs = browserBridgePerPassTimeoutMs(options);
 
   for (let passIndex = 1; passIndex <= maxRetryPasses; passIndex += 1) {
     const current = finalizeStructureSummary(routes, aggregateSummary, site);
@@ -771,6 +821,8 @@ async function maybeRetryBrowserBridge(baseResult, {
         browserBridgeRouteIds: retryRouteIds,
         browserBridgeRetryRouteIds: retryRouteIds,
         browserBridgeMaxRetryPasses: 0,
+        browserBridgePlannedPassCount: plannedPassCount,
+        browserBridgePerPassTimeoutMs: perPassTimeoutMs,
         browserBridgePassIndex: passIndex,
         browserBridgeRetryPass: true,
       },
@@ -998,7 +1050,7 @@ export async function runBrowserAuthBridge({
     }
   }
 
-  const timeoutMs = Math.max(1000, Number(options.browserBridgeTimeoutMs ?? options.timeoutMs ?? 30000) || 30000);
+  const timeoutMs = browserBridgePerPassTimeoutMs(options);
   const extensionStages = new Set();
   const aggregateSummary = {
     authenticatedPages: [],
@@ -1134,6 +1186,7 @@ export async function runBrowserAuthBridge({
     if (!structureSummary) {
         const extensionStageList = [...extensionStages].sort();
         const extensionActive = extensionStageList.length > 0;
+        const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList);
         const staleExtension = extensionStageList.includes('target-tab-created')
           && !extensionStageList.some((stage) => stage === 'target-route-queue-started' || stage.startsWith('route-opened:'));
         return await maybeRetryBrowserBridge({
@@ -1142,7 +1195,10 @@ export async function runBrowserAuthBridge({
           finalUrl: targetUrl,
           positiveSignals: ['default_browser_opened'],
           blockingSignals: extensionActive
-            ? ['browser-bridge-timeout', staleExtension ? 'browser-bridge-extension-stale-or-incompatible' : 'browser-bridge-extension-active-no-summary']
+            ? uniqueStrings([
+              'browser-bridge-timeout',
+              ...(versionBlockingSignals.length ? versionBlockingSignals : [staleExtension ? 'browser-bridge-extension-stale-or-incompatible' : 'browser-bridge-extension-active-no-summary']),
+            ])
             : ['browser-bridge-timeout', 'browser-bridge-extension-missing-or-inactive'],
           verifiedRoutes: [],
           structureSummary: null,
@@ -1156,7 +1212,21 @@ export async function runBrowserAuthBridge({
     }
     const pageCount = structureSummary.authenticatedPages.length;
     const overlayPageCount = structureSummary.authenticatedOverlayPages.length;
-    const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes, extensionStages: [...extensionStages].sort() });
+    const extensionStageList = [...extensionStages].sort();
+    const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes, extensionStages: extensionStageList });
+    const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList);
+    if (versionBlockingSignals.length) {
+      return await maybeRetryBrowserBridge({
+        status: 'browser_bridge_missing',
+        verified: false,
+        finalUrl: targetUrl,
+        positiveSignals: ['default_browser_opened', 'browser_bridge_payload_received'],
+        blockingSignals: versionBlockingSignals,
+        verifiedRoutes: [],
+        structureSummary: null,
+        bridgeSummary,
+      }, { inputUrl, site, options, openBrowser, routes, targetUrl });
+    }
     const missingSignals = missingRouteSignals(structureSummary.routeResults);
     const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
     const hasStructure = Boolean(pageCount || overlayPageCount);

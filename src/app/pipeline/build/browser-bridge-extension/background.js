@@ -1,7 +1,10 @@
 const activeTabs = new Map();
-const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-retry-stability-v3';
-const ROUTE_COLLECT_FALLBACK_DELAY_MS = 4500;
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-settled-handshake-v4';
+const ROUTE_COLLECT_FALLBACK_DELAY_MS = 6500;
 const ROUTE_STABLE_AFTER_COMPLETE_MS = 1500;
+const TAB_STABLE_MAX_POLLS = 16;
+const TAB_STABLE_POLL_MS = 500;
+const COLLECTOR_READY_DELAY_MS = 250;
 const COLLECTOR_RETRY_BACKOFF_MS = [1000, 3000, 7000];
 
 function safeUrl(value) {
@@ -109,7 +112,7 @@ function sleep(ms) {
 }
 
 async function waitForStableTab(tabId, session, route) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  for (let attempt = 0; attempt < TAB_STABLE_MAX_POLLS; attempt += 1) {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
     if (!tab?.id) {
       return { ok: false, reasonCode: 'tab-missing', tab: null };
@@ -117,7 +120,7 @@ async function waitForStableTab(tabId, session, route) {
     const currentUrl = tab.url || tab.pendingUrl || route.targetUrl;
     if (tab.status === 'loading' || tab.pendingUrl) {
       signal(session, `navigation-in-progress:${route.id}`);
-      await sleep(250);
+      await sleep(TAB_STABLE_POLL_MS);
       continue;
     }
     await sleep(ROUTE_STABLE_AFTER_COMPLETE_MS);
@@ -125,7 +128,19 @@ async function waitForStableTab(tabId, session, route) {
     if (!stableTab?.id) {
       return { ok: false, reasonCode: 'tab-missing', tab: null };
     }
-    return { ok: true, reasonCode: null, tab: stableTab, currentUrl };
+    const stableUrl = stableTab.url || stableTab.pendingUrl || currentUrl;
+    if (stableTab.status === 'loading' || stableTab.pendingUrl) {
+      signal(session, `navigation-in-progress:${route.id}`);
+      await sleep(TAB_STABLE_POLL_MS);
+      continue;
+    }
+    if (stableUrl !== currentUrl) {
+      signal(session, `route-tab-settling:${route.id}`);
+      await sleep(TAB_STABLE_POLL_MS);
+      continue;
+    }
+    signal(session, `route-tab-stable:${route.id}`);
+    return { ok: true, reasonCode: null, tab: stableTab, currentUrl: stableUrl };
   }
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   return { ok: false, reasonCode: 'navigation-in-progress', tab };
@@ -157,9 +172,8 @@ async function submitRouteStatus(session, route, status, reasonCode, targetUrl =
   }
 }
 
-async function injectCollector(tabId, session, route) {
-  const currentSession = routeSession(session, route);
-  signal(session, `collector-injecting:${route.id}`);
+async function executeCollectorScript(tabId, session, route, stage = 'collector-injecting') {
+  signal(session, `${stage}:${route.id}`);
   let executeOk = false;
   let executeError = null;
   for (let attempt = 0; attempt < COLLECTOR_RETRY_BACKOFF_MS.length; attempt += 1) {
@@ -179,6 +193,12 @@ async function injectCollector(tabId, session, route) {
   if (!executeOk) {
     throw Object.assign(new Error('execute-script-failed'), { reasonCode: 'execute-script-failed', cause: executeError });
   }
+  await sleep(COLLECTOR_READY_DELAY_MS);
+}
+
+async function injectCollector(tabId, session, route) {
+  const currentSession = routeSession(session, route);
+  await executeCollectorScript(tabId, session, route);
   let result = null;
   let messageError = null;
   for (let attempt = 0; attempt < COLLECTOR_RETRY_BACKOFF_MS.length; attempt += 1) {
@@ -193,11 +213,13 @@ async function injectCollector(tabId, session, route) {
       }
       messageError = new Error(result?.reason || result?.status || 'collector-message-failed');
       signal(session, `collector-message-failed:${route.id}:${result?.reason || result?.status || 'unknown'}:attempt-${attempt + 1}`);
-      await sleep(COLLECTOR_RETRY_BACKOFF_MS[attempt]);
     } catch (error) {
       messageError = error;
       signal(session, `collector-message-failed:${route.id}:attempt-${attempt + 1}`);
+    }
+    if (attempt < COLLECTOR_RETRY_BACKOFF_MS.length - 1) {
       await sleep(COLLECTOR_RETRY_BACKOFF_MS[attempt]);
+      await executeCollectorScript(tabId, session, route, 'collector-reinjecting');
     }
   }
   throw Object.assign(new Error('collector-message-failed'), { reasonCode: 'collector-message-failed', cause: messageError });

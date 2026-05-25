@@ -2316,17 +2316,19 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     const extensionDir = browserBridgeExtensionDirectory();
     const manifest = JSON.parse(await readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.manifest_version, 3);
-    assert.equal(manifest.version, '0.1.3');
-    assert.match(manifest.name, /v0\.1\.3/u);
+    assert.equal(manifest.version, '0.1.4');
+    assert.match(manifest.name, /v0\.1\.4/u);
     assert.deepEqual(manifest.permissions.sort(), ['scripting', 'tabs']);
     const extensionContent = await readFile(path.join(extensionDir, 'bridge-content.js'), 'utf8');
     assert.equal(extensionContent.includes('siteforge-bridge-session'), true);
     assert.equal(extensionContent.includes('bridge-content-version:'), true);
-    assert.equal(extensionContent.includes('route-queue-retry-stability-v3'), true);
+    assert.equal(extensionContent.includes('route-queue-settled-handshake-v4'), true);
     const extensionBackground = await readFile(path.join(extensionDir, 'background.js'), 'utf8');
     assert.equal(extensionBackground.includes('chrome.scripting.executeScript'), true);
-    assert.equal(extensionBackground.includes('route-queue-retry-stability-v3'), true);
+    assert.equal(extensionBackground.includes('route-queue-settled-handshake-v4'), true);
     assert.equal(extensionBackground.includes('route-load-fallback'), true);
+    assert.equal(extensionBackground.includes('route-tab-stable'), true);
+    assert.equal(extensionBackground.includes('collector-reinjecting'), true);
     assert.equal(extensionBackground.includes('route-url-canonicalized'), true);
     assert.equal(extensionBackground.includes('login-wall'), true);
     assert.equal(extensionBackground.includes('browser-bridge-collector-injection-failed'), true);
@@ -2337,6 +2339,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(extensionCollector.includes('captured_with_warning'), true);
     assert.equal(extensionCollector.includes('definite_challenge'), true);
     assert.equal(extensionCollector.includes('thin_capture'), true);
+    assert.equal(extensionCollector.includes('media_surface'), true);
 
     const script = browserStructureCollectorScript({
       nonce: 'nonce-test',
@@ -2502,6 +2505,53 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     });
     assert.equal(staleExtension.status, 'browser_bridge_missing');
     assert.equal(staleExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), true);
+
+    const mixedVersionExtension = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeTimeoutMs: 1000,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
+        await signalStage('bridge-content-version:route-queue-settled-handshake-v4');
+        await signalStage('bridge-version:route-queue-retry-stability-v3');
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [{
+              routeId: session.routes[0].id,
+              targetUrl: session.routes[0].targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+            }],
+            authenticatedPages: [{
+              routeId: session.routes[0].id,
+              url: session.routes[0].targetUrl,
+              routeTemplate: '/',
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(mixedVersionExtension.status, 'browser_bridge_missing');
+    assert.equal(mixedVersionExtension.verified, false);
+    assert.equal(mixedVersionExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), true);
+    assert.equal(mixedVersionExtension.bridgeSummary.capturedRouteCount, 1);
 
     const retryOnly = await runBrowserAuthBridge({
       inputUrl: rootUrl,

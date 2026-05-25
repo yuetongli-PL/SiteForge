@@ -91,11 +91,36 @@
     });
     return { ok: response.ok, status: response.status };
   };
+  const listSelector = 'ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]';
+  const itemSelector = 'article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]';
+  const mediaSelector = [
+    'video',
+    'canvas',
+    '[role="article"]',
+    '[class*="video" i]',
+    '[class*="player" i]',
+    '[class*="feed" i]',
+    '[class*="aweme" i]',
+    '[data-e2e*="video" i]',
+    '[data-e2e*="feed" i]',
+  ].join(', ');
+  const landmarkSelector = [
+    'main',
+    'nav',
+    'section',
+    '[role="main"]',
+    '[role="navigation"]',
+    '[role="tablist"]',
+    '[data-e2e*="tab" i]',
+    '[class*="tabs" i]',
+  ].join(', ');
   const structureCountSnapshot = () => ({
     links: [...document.querySelectorAll('a[href], area[href]')].filter(visible).length,
-    lists: [...document.querySelectorAll('ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]')].filter(visible).length,
-    items: [...document.querySelectorAll('article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]')].filter(visible).length,
+    lists: [...document.querySelectorAll(listSelector)].filter(visible).length,
+    items: [...document.querySelectorAll(itemSelector)].filter(visible).length,
     controls: [...document.querySelectorAll('button, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"]')].filter(visible).length,
+    media: [...document.querySelectorAll(mediaSelector)].filter(visible).length,
+    landmarks: [...document.querySelectorAll(landmarkSelector)].filter(visible).length,
   });
   const waitForStructureStability = async () => {
     let previous = null;
@@ -103,7 +128,7 @@
     for (let attempt = 0; attempt < 16; attempt += 1) {
       const current = structureCountSnapshot();
       const signature = JSON.stringify(current);
-      if (signature === previous && (current.links || current.lists || current.items || current.controls)) {
+      if (signature === previous && (current.links || current.lists || current.items || current.controls || current.media || current.landmarks)) {
         stableTicks += 1;
       } else {
         stableTicks = 0;
@@ -209,14 +234,16 @@
         })),
       }))
       .slice(0, MAX_FORMS);
-    const listContainers = [...document.querySelectorAll('ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]')].filter(visible);
-    const itemNodes = [...document.querySelectorAll('article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]')].filter(visible);
+    const listContainers = [...document.querySelectorAll(listSelector)].filter(visible);
+    const itemNodes = [...document.querySelectorAll(itemSelector)].filter(visible);
+    const mediaNodes = [...document.querySelectorAll(mediaSelector)].filter(visible);
+    const landmarkNodes = [...document.querySelectorAll(landmarkSelector)].filter(visible);
     const semanticCounts = links.reduce((counts, link) => {
       counts[link.semanticKind] = (counts[link.semanticKind] || 0) + 1;
       return counts;
     }, {});
     const routeTemplates = [...new Set(links.map((link) => link.routeTemplate).filter(Boolean))].slice(0, 80);
-    const structureItems = Object.entries(semanticCounts)
+    const linkStructureItems = Object.entries(semanticCounts)
       .filter(([, count]) => Number(count) > 0)
       .slice(0, MAX_ITEMS)
       .map(([kind, count]) => ({
@@ -227,6 +254,25 @@
         listPresent: true,
         routeTemplates: links.filter((link) => link.semanticKind === kind).map((link) => link.routeTemplate).filter(Boolean).slice(0, 20),
       }));
+    const structureItems = [
+      ...linkStructureItems,
+      ...(mediaNodes.length ? [{
+        nodeType: 'content',
+        structureType: 'media_surface',
+        labelSummary: 'media structure group',
+        visibleItemCount: Math.min(mediaNodes.length, 999),
+        listPresent: mediaNodes.length > 1,
+        routeTemplates: [routeTemplateFor(window.location.href)].filter(Boolean),
+      }] : []),
+      ...(landmarkNodes.length && (links.length || controls.length || forms.length || mediaNodes.length) ? [{
+        nodeType: 'layout',
+        structureType: 'authenticated_landmark_group',
+        labelSummary: 'page landmark group',
+        visibleItemCount: Math.min(landmarkNodes.length, 999),
+        listPresent: false,
+        routeTemplates: [routeTemplateFor(window.location.href)].filter(Boolean),
+      }] : []),
+    ].slice(0, MAX_ITEMS);
     const signature = JSON.stringify({
       path: window.location.pathname,
       sourceLayer,
@@ -235,6 +281,8 @@
       controls: controls.length,
       forms: forms.length,
       itemCount: itemNodes.length,
+      mediaCount: mediaNodes.length,
+      landmarkCount: landmarkNodes.length,
     });
     let hash = 0;
     for (let index = 0; index < signature.length; index += 1) {
@@ -247,9 +295,9 @@
       routeTemplate: routeTemplateFor(window.location.href),
       pageType: window.location.pathname === '/' ? 'authenticated_home' : 'authenticated_browser_summary',
       sourceLayer,
-      visibleItemCount: Math.min(itemNodes.length, 999),
-      listPresent: listContainers.length > 0 || itemNodes.length > 0,
-      emptyStatePresent: itemNodes.length === 0 && listContainers.length > 0,
+      visibleItemCount: Math.min(Math.max(itemNodes.length, mediaNodes.length), 999),
+      listPresent: listContainers.length > 0 || itemNodes.length > 0 || mediaNodes.length > 1,
+      emptyStatePresent: itemNodes.length === 0 && mediaNodes.length === 0 && listContainers.length > 0,
       unreadMarkerPresent: document.querySelector('[class*="unread"], [aria-label*="unread" i], [data-unread]') !== null,
       modalPresence: document.querySelector('[role="dialog"], dialog, [class*="modal"]') !== null,
       structureHash: `browser-structure:${Math.abs(hash).toString(16)}`,
@@ -273,6 +321,7 @@
       || structureItems.length
       || itemNodes.length
       || listContainers.length
+      || mediaNodes.length
     );
     const routeStatus = hasStructure
       ? (challenge.level === 'possible_challenge' ? 'captured_with_warning' : 'captured')

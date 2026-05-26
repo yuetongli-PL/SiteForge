@@ -131,6 +131,10 @@ import {
   normalizeAuthStateReport,
   runDefaultBrowserAuthStateCheck,
 } from './auth-state.mjs';
+import {
+  RUNTIME_MODES,
+  runtimeProviderPromotionMetadata,
+} from './runtime-provider.mjs';
 
 export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
   'registerSite',
@@ -9060,73 +9064,17 @@ async function generateSkillStage(context, stageResults) {
   };
 }
 
-const BRIDGE_RUNTIME_PROMOTION_CLASS = 'browser_bridge_runtime';
-const BRIDGE_RUNTIME_MODE = 'browser_bridge_required';
-const HTTP_RUNTIME_PROMOTION_CLASS = 'generic_http_read_runtime';
-const HTTP_RUNTIME_MODE = 'generic_http_read';
+const BRIDGE_RUNTIME_MODE = RUNTIME_MODES.browserBridgeRequired;
+const HTTP_RUNTIME_MODE = RUNTIME_MODES.genericHttpRead;
 
-function browserBridgeCoverageStatus(context) {
-  const bridge = context.authStateReport?.browserBridge ?? {};
-  if (['complete', 'partial', 'none'].includes(String(bridge.routeCoverageStatus ?? '').trim())) {
-    return bridge.routeCoverageStatus;
-  }
-  const routeCount = Number(bridge.routeCount ?? 0);
-  const missingRouteCount = Number(bridge.missingRouteCount ?? 0);
-  if (routeCount > 0 && missingRouteCount === 0) {
-    return 'complete';
-  }
-  return 'partial';
-}
-
-function browserBridgeRuntimeRequirements(context) {
-  const bridge = context.authStateReport?.browserBridge ?? {};
-  return sanitizeReportPublicValue({
-    authMethod: 'browser',
-    authVerificationStatus: 'browser_verified',
-    requiresFreshBridgeEvidence: true,
-    defaultBrowserBridgeRequired: true,
-    genericHttpRuntimeAllowed: false,
-    savedMaterial: SANITIZED_SUMMARY_ONLY,
-    routeCount: Number(bridge.routeCount ?? 0),
-    capturedRouteCount: Number(bridge.capturedRouteCount ?? 0),
-    missingRouteCount: Number(bridge.missingRouteCount ?? 0),
-    routeCoverageStatus: bridge.routeCoverageStatus ?? browserBridgeCoverageStatus(context),
-    retryStatus: bridge.retryStatus ?? 'not_attempted',
-    retryPasses: Number(bridge.retryPasses ?? 0),
-    retryAttemptedRouteCount: Number(bridge.retryAttemptedRouteCount ?? 0),
-    retryCapturedRouteCount: Number(bridge.retryCapturedRouteCount ?? 0),
+function bridgeRuntimeMetadata(context) {
+  return runtimeProviderPromotionMetadata('browser_bridge', {
+    authStateReport: context.authStateReport,
   });
 }
 
-function bridgeRuntimeMetadata(context) {
-  return {
-    promotionClass: BRIDGE_RUNTIME_PROMOTION_CLASS,
-    runtimeMode: BRIDGE_RUNTIME_MODE,
-    requiresFreshBridgeEvidence: true,
-    genericHttpRuntimeAllowed: false,
-    coverageStatus: browserBridgeCoverageStatus(context),
-    runtimeRequirements: browserBridgeRuntimeRequirements(context),
-  };
-}
-
 function genericHttpRuntimeMetadata() {
-  return {
-    promotionClass: HTTP_RUNTIME_PROMOTION_CLASS,
-    runtimeMode: HTTP_RUNTIME_MODE,
-    requiresFreshBridgeEvidence: false,
-    genericHttpRuntimeAllowed: true,
-    coverageStatus: 'complete',
-    runtimeRequirements: {
-      authMethod: 'none',
-      robotsAllowed: true,
-      readOnly: true,
-      allowedMethods: ['GET'],
-      cookieMaterialAllowed: false,
-      savedMaterial: SANITIZED_SUMMARY_ONLY,
-      crossSiteNavigationAllowed: false,
-      formSubmissionAllowed: false,
-    },
-  };
+  return runtimeProviderPromotionMetadata('public_http');
 }
 
 function isBrowserBridgeSourceCapability(capability = /** @type {any} */ ({})) {

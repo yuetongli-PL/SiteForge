@@ -6,10 +6,19 @@ import path from 'node:path';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import {
+  EVIDENCE_PROVIDER_IDS,
+  RUNTIME_MODES,
+  RUNTIME_PROMOTION_CLASSES,
+  RUNTIME_PROVIDER_IDS,
   createEmptySkillRegistry,
   lookupSkillIntent,
   lookupSkillIntentFromRegistry,
+  providerRuntimeMode,
+  providerRuntimeRequirements,
   runSiteForgeBuild,
+  runtimeProviderBundleRequirements,
+  runtimeProviderDescriptor,
+  runtimeProviderPromotionMetadata,
   upsertSkillRegistryRecord,
 } from '../../src/app/pipeline/build/index.mjs';
 import {
@@ -65,6 +74,97 @@ function passedRecord(overrides = /** @type {any} */ ({})) {
     ...overrides,
   };
 }
+
+test('runtime provider descriptors cover evidence provider compatibility surface', () => {
+  assert.deepEqual(RUNTIME_PROVIDER_IDS, [
+    'public_http',
+    'cookie_http',
+    'browser_bridge',
+    'authorized_summary',
+    'public_rendered',
+  ]);
+  assert.deepEqual(EVIDENCE_PROVIDER_IDS, RUNTIME_PROVIDER_IDS);
+
+  const descriptors = Object.fromEntries(
+    RUNTIME_PROVIDER_IDS.map((providerId) => [providerId, runtimeProviderDescriptor(providerId)]),
+  );
+
+  assert.equal(descriptors.public_http.runtimeMode, RUNTIME_MODES.genericHttpRead);
+  assert.equal(descriptors.public_http.promotionClass, RUNTIME_PROMOTION_CLASSES.genericHttpRead);
+  assert.equal(descriptors.public_http.sourceLayer, 'public');
+  assert.equal(descriptors.public_rendered.runtimeMode, RUNTIME_MODES.genericHttpRead);
+  assert.equal(descriptors.public_rendered.sourceLayer, 'public_rendered');
+  assert.equal(descriptors.browser_bridge.runtimeMode, RUNTIME_MODES.browserBridgeRequired);
+  assert.equal(descriptors.browser_bridge.promotionClass, RUNTIME_PROMOTION_CLASSES.browserBridge);
+  assert.equal(descriptors.browser_bridge.authMethod, 'browser');
+  assert.equal(descriptors.cookie_http.runtimeMode, null);
+  assert.equal(descriptors.authorized_summary.runtimeMode, null);
+});
+
+test('runtime provider preserves legacy evidence provider requirements', () => {
+  assert.equal(providerRuntimeMode('public_http'), 'generic_http_read');
+  assert.equal(providerRuntimeMode('public_rendered'), 'generic_http_read');
+  assert.equal(providerRuntimeMode('browser_bridge'), 'browser_bridge_required');
+  assert.equal(providerRuntimeMode('authorized_summary'), null);
+  assert.equal(providerRuntimeMode('public_http', { runtimeMode: 'custom_runtime' }), 'custom_runtime');
+
+  assert.deepEqual(providerRuntimeRequirements('public_http'), {
+    runtimeMode: 'generic_http_read',
+    readOnly: true,
+    allowedMethods: ['GET'],
+    cookieMaterialAllowed: false,
+    crossSiteNavigationAllowed: false,
+    formSubmissionAllowed: false,
+  });
+  assert.deepEqual(runtimeProviderBundleRequirements('public_http'), providerRuntimeRequirements('public_http'));
+  assert.deepEqual(providerRuntimeRequirements('browser_bridge'), {
+    runtimeMode: 'browser_bridge_required',
+    readOnly: true,
+    requiresFreshBridgeEvidence: true,
+    cookieMaterialAllowed: false,
+    browserProfileMaterialAllowed: false,
+    storageMaterialAllowed: false,
+  });
+  assert.deepEqual(providerRuntimeRequirements('cookie_http'), {
+    runtimeMode: null,
+    readOnly: true,
+    requiresFreshCookieInput: true,
+    cookieMaterialPersisted: false,
+    crossSiteCookieAllowed: false,
+  });
+});
+
+test('runtime provider promotion metadata preserves registry wire shape', () => {
+  const bridgeMetadata = runtimeProviderPromotionMetadata('browser_bridge', {
+    authStateReport: {
+      authVerificationStatus: 'browser_verified_partial',
+      browserBridge: {
+        routeCount: 3,
+        capturedRouteCount: 2,
+        missingRouteCount: 1,
+        routeCoverageStatus: 'partial',
+      },
+    },
+  });
+
+  assert.equal(bridgeMetadata.promotionClass, 'browser_bridge_runtime');
+  assert.equal(bridgeMetadata.runtimeMode, 'browser_bridge_required');
+  assert.equal(bridgeMetadata.requiresFreshBridgeEvidence, true);
+  assert.equal(bridgeMetadata.genericHttpRuntimeAllowed, false);
+  assert.equal(bridgeMetadata.coverageStatus, 'partial');
+  assert.equal(bridgeMetadata.runtimeRequirements.authMethod, 'browser');
+  assert.equal(bridgeMetadata.runtimeRequirements.authVerificationStatus, 'browser_verified_partial');
+  assert.equal(bridgeMetadata.runtimeRequirements.savedMaterial, 'sanitized_summary_only');
+  assert.equal(bridgeMetadata.runtimeRequirements.capturedRouteCount, 2);
+
+  const httpMetadata = runtimeProviderPromotionMetadata('public_http');
+  assert.equal(httpMetadata.promotionClass, 'generic_http_read_runtime');
+  assert.equal(httpMetadata.runtimeMode, 'generic_http_read');
+  assert.equal(httpMetadata.requiresFreshBridgeEvidence, false);
+  assert.equal(httpMetadata.genericHttpRuntimeAllowed, true);
+  assert.equal(httpMetadata.runtimeRequirements.cookieMaterialAllowed, false);
+  assert.equal(runtimeProviderPromotionMetadata('authorized_summary'), null);
+});
 
 test('runtime registry lookup ignores stale failed generated skill records', () => {
   let registry = createEmptySkillRegistry('2026-05-16T00:00:00.000Z');
@@ -142,13 +242,14 @@ test('runtime registry lookup returns browser bridge runtime restrictions', () =
   });
 
   assert.equal(lookup.status, 'found');
-  assert.equal(lookup.verificationStatus, undefined);
-  assert.equal(lookup.runtimeMode, 'browser_bridge_required');
-  assert.equal(lookup.promotionClass, 'browser_bridge_runtime');
-  assert.equal(lookup.requiresFreshBridgeEvidence, true);
-  assert.equal(lookup.genericHttpRuntimeAllowed, false);
-  assert.equal(lookup.coverageStatus, 'partial');
-  assert.equal(lookup.runtimeRequirements.capturedRouteCount, 2);
+  const foundLookup = /** @type {any} */ (lookup);
+  assert.equal(foundLookup.verificationStatus, undefined);
+  assert.equal(foundLookup.runtimeMode, 'browser_bridge_required');
+  assert.equal(foundLookup.promotionClass, 'browser_bridge_runtime');
+  assert.equal(foundLookup.requiresFreshBridgeEvidence, true);
+  assert.equal(foundLookup.genericHttpRuntimeAllowed, false);
+  assert.equal(foundLookup.coverageStatus, 'partial');
+  assert.equal(foundLookup.runtimeRequirements.capturedRouteCount, 2);
 });
 
 test('runtime registry lookup does not resolve unrelated utterances from invocation score alone', () => {

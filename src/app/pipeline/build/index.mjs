@@ -10,6 +10,8 @@ export * from './confirmation-flow.mjs';
 export * from './capability-interaction.mjs';
 export * from './artifact-contract.mjs';
 export * from './auth-state.mjs';
+export * from './runtime-provider.mjs';
+export * from './evidence-provider.mjs';
 export * from './output-validation.mjs';
 export * from './auto-capabilities.mjs';
 export * from './auto-discovery.mjs';

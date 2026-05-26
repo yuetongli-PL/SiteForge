@@ -11,11 +11,14 @@ import {
 } from '../../../domain/sessions/security-guard.mjs';
 import { isInternalUrl, normalizeUrl } from './models.mjs';
 import { browserStructureCollectorScript } from './browser-structure-collector.mjs';
+import { isUrlAllowedByRobots } from './html.mjs';
 
 const MAX_BRIDGE_BODY_BYTES = 256 * 1024;
 const MAX_BRIDGE_ROUTES = 32;
-const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-loading-dom-fallback-v5';
+const MAX_EXTENSION_STAGE_TIMELINE = MAX_BRIDGE_ROUTES * 12;
+const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v6';
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
+const ROUTE_RESULT_MATCH_URL_SYMBOL = Symbol('siteforge.browserBridge.routeResultMatchUrl');
 const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -57,21 +60,66 @@ function bridgeExtensionVersionSignals(extensionStages = []) {
   const backgroundVersions = stages
     .map((stage) => /^bridge-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
     .filter(Boolean);
+  const collectorVersionsByRouteId = new Map();
+  for (const stage of stages) {
+    const match = /^collector-version:([^:]+):(.+)$/u.exec(String(stage ?? '').trim());
+    if (!match) {
+      continue;
+    }
+    const routeId = String(match[1] ?? '').trim();
+    const version = String(match[2] ?? '').trim();
+    if (!routeId || !version) {
+      continue;
+    }
+    collectorVersionsByRouteId.set(routeId, uniqueStrings([
+      ...(collectorVersionsByRouteId.get(routeId) ?? []),
+      version,
+    ]));
+  }
+  const collectorVersions = stages
+    .map((stage) => /^collector-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
+    .filter(Boolean);
   return {
     contentVersions: uniqueStrings(contentVersions),
     backgroundVersions: uniqueStrings(backgroundVersions),
+    collectorVersions: uniqueStrings(collectorVersions),
+    collectorVersionsByRouteId,
   };
 }
 
-function bridgeExtensionVersionBlockingSignals(extensionStages = []) {
+function collectorVersionMatches(routeResult = /** @type {any} */ ({}), collectorVersionsByRouteId = new Map()) {
+  const routeId = String(routeResult?.routeId ?? '').trim();
+  const payloadVersion = String(routeResult?.collectorVersion ?? '').trim();
+  if (payloadVersion === EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION) {
+    return true;
+  }
+  return routeId
+    ? (collectorVersionsByRouteId.get(routeId) ?? []).includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
+    : false;
+}
+
+function bridgeExtensionVersionBlockingSignals(extensionStages = [], routeResults = []) {
   const stages = uniqueStrings(extensionStages);
   if (!stages.length || !stages.some((stage) => /^bridge(?:-content)?-version:/u.test(stage))) {
     return [];
   }
-  const { contentVersions, backgroundVersions } = bridgeExtensionVersionSignals(stages);
+  const { contentVersions, backgroundVersions, collectorVersionsByRouteId } = bridgeExtensionVersionSignals(stages);
+  const submittedRouteIds = stages
+    .map((stage) => /^collector-submit-ok:([^:]+)$/u.exec(String(stage ?? '').trim())?.[1])
+    .filter(Boolean);
+  const capturedRouteResults = (Array.isArray(routeResults) ? routeResults : [])
+    .filter((result) => routeResultCaptured(result) && result?.routeId);
+  const routeIdsRequiringCollectorVersion = uniqueStrings([
+    ...submittedRouteIds,
+    ...capturedRouteResults.map((result) => result.routeId),
+  ]);
   if (
     contentVersions.includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
     && backgroundVersions.includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
+    && routeIdsRequiringCollectorVersion.every((routeId) => collectorVersionMatches(
+      (Array.isArray(routeResults) ? routeResults : []).find((result) => result?.routeId === routeId) ?? { routeId },
+      collectorVersionsByRouteId,
+    ))
   ) {
     return [];
   }
@@ -170,6 +218,24 @@ function normalizeRouteUrl(value, site) {
   return parsed.toString();
 }
 
+function browserBridgeRouteAllowedByRobots(urlValue, options = /** @type {any} */ ({})) {
+  const robotsPolicy = options.browserBridgeRobotsPolicy ?? null;
+  return !robotsPolicy || isUrlAllowedByRobots(urlValue, robotsPolicy);
+}
+
+function browserBridgeRouteDescriptor(urlValue, sourceLayer, id, reasonCode = null) {
+  const parsed = new URL(urlValue);
+  return {
+    id,
+    targetUrl: urlValue,
+    sourceLayer,
+    allowedHost: parsed.hostname,
+    allowedOrigin: parsed.origin,
+    routeTemplate: routeTemplateFromUrl(urlValue),
+    reasonCode,
+  };
+}
+
 function routeQueueFromConfiguredRoutes({
   site,
   inputUrl,
@@ -197,6 +263,7 @@ function routeQueueFromConfiguredRoutes({
 
   const seen = new Set();
   const routes = [];
+  const blockedRoutes = [];
   for (const entry of routeEntries) {
     let normalizedUrl = null;
     try {
@@ -213,20 +280,27 @@ function routeQueueFromConfiguredRoutes({
       continue;
     }
     seen.add(key);
-    const parsed = new URL(normalizedUrl);
-    routes.push({
-      id: `route-${routes.length + 1}`,
-      targetUrl: normalizedUrl,
-      sourceLayer,
-      allowedHost: parsed.hostname,
-      allowedOrigin: parsed.origin,
-      routeTemplate: routeTemplateFromUrl(normalizedUrl),
-    });
-    if (routes.length >= MAX_BRIDGE_ROUTES) {
-      break;
+    if (!browserBridgeRouteAllowedByRobots(normalizedUrl, options)) {
+      blockedRoutes.push(browserBridgeRouteDescriptor(
+        normalizedUrl,
+        sourceLayer,
+        `robots-blocked-route-${blockedRoutes.length + 1}`,
+        'robots-disallowed',
+      ));
+      continue;
     }
+    if (routes.length >= MAX_BRIDGE_ROUTES) {
+      blockedRoutes.push(browserBridgeRouteDescriptor(
+        normalizedUrl,
+        sourceLayer,
+        `route-limit-exceeded-${blockedRoutes.length + 1}`,
+        'browser-bridge-route-limit-exceeded',
+      ));
+      continue;
+    }
+    routes.push(browserBridgeRouteDescriptor(normalizedUrl, sourceLayer, `route-${routes.length + 1}`));
   }
-  return routes;
+  return { routes, blockedRoutes };
 }
 
 function requestedRouteMatchers(options = /** @type {any} */ ({})) {
@@ -265,6 +339,14 @@ function safeRouteStatusRef(urlValue, site) {
   }
 }
 
+function routeResultMatchUrl(value, site) {
+  try {
+    return normalizeRouteUrl(value, site);
+  } catch {
+    return null;
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/gu, '&amp;')
@@ -274,10 +356,45 @@ function escapeHtml(value) {
     .replace(/'/gu, '&#39;');
 }
 
+const BRIDGE_STAGE_TOKEN_PATTERN = '[a-z0-9][a-z0-9._-]{0,79}';
+const BRIDGE_EXTENSION_STAGE_PATTERNS = Object.freeze([
+  /^(?:bridge-content-active|background-session-accepted|background-session-rejected|target-route-queue-started|target-tab-created|session-complete|extension-active)$/u,
+  new RegExp(`^(?:bridge-content-version|bridge-version):${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^(?:route-opened|route-complete|route-open-failed|route-load-fallback|route-tab-settling|route-tab-stable|route-tab-usable-while-loading|navigation-in-progress|route-host-mismatch|route-login-wall|route-url-canonicalized|route-status-submit-failed|collector-injecting|collector-reinjecting):${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^collector-version:${BRIDGE_STAGE_TOKEN_PATTERN}:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^collector-submit-ok:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^execute-script-failed:${BRIDGE_STAGE_TOKEN_PATTERN}:attempt-[0-9]{1,2}$`, 'u'),
+  new RegExp(`^collector-message-failed:${BRIDGE_STAGE_TOKEN_PATTERN}(?::${BRIDGE_STAGE_TOKEN_PATTERN})?:attempt-[0-9]{1,2}$`, 'u'),
+  new RegExp(`^route-collect-failed:${BRIDGE_STAGE_TOKEN_PATTERN}:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+]);
+
+function bridgeDiagnosticLooksSensitive(raw) {
+  return /[<>{}=]|\b(?:authorization|bearer|cookie|sid|uid|user[_-]?id|account[_-]?id|token|secret|password|localStorage|sessionStorage|userDataDir|raw\s+dom|raw\s+html)\b/iu.test(raw);
+}
+
+function sanitizeBridgeExtensionStage(value, fallback = null, maxLength = 160) {
+  const raw = String(value ?? '').replace(/\s+/gu, ' ').trim();
+  if (!raw || raw.length > maxLength || bridgeDiagnosticLooksSensitive(raw)) {
+    return fallback;
+  }
+  if (!BRIDGE_EXTENSION_STAGE_PATTERNS.some((pattern) => pattern.test(raw))) {
+    return fallback;
+  }
+  try {
+    assertNoForbiddenPatterns(raw);
+  } catch {
+    return fallback;
+  }
+  return raw.slice(0, maxLength);
+}
+
 function boundedText(value, fallback = null, maxLength = 160) {
   const raw = String(value ?? '').replace(/\s+/gu, ' ').trim();
   if (!raw) {
     return fallback;
+  }
+  if (sanitizeBridgeExtensionStage(raw, null, maxLength)) {
+    return raw.slice(0, maxLength);
   }
   if (/[<>{}]|=|\b(?:authorization|bearer|cookie|sid|uid|user[_-]?id|account[_-]?id|token|secret|session|password|localStorage|sessionStorage|userDataDir|raw\s+dom|raw\s+html|script)\b/iu.test(raw)) {
     return fallback;
@@ -449,6 +566,26 @@ function sanitizeRouteResult(result, site, fallback = /** @type {any} */ ({})) {
   if (retryAttemptCount > 0) {
     sanitized.retryAttemptCount = retryAttemptCount;
     sanitized.retryOutcome = boundedText(result.retryOutcome ?? fallback.retryOutcome, null, 80);
+  }
+  if (result.collectorVersion ?? fallback.collectorVersion) {
+    sanitized.collectorVersion = boundedText(result.collectorVersion ?? fallback.collectorVersion, null, 120);
+  }
+  const matchUrl = routeResultMatchUrl(
+    result.normalizedUrl
+      ?? result.targetUrl
+      ?? result.url
+      ?? result.targetRoute
+      ?? result.routeTemplate
+      ?? result.path
+      ?? result.route,
+    site,
+  );
+  if (matchUrl) {
+    Object.defineProperty(sanitized, ROUTE_RESULT_MATCH_URL_SYMBOL, {
+      value: matchUrl,
+      enumerable: false,
+      configurable: false,
+    });
   }
   return sanitized;
 }
@@ -627,13 +764,55 @@ function pageRouteCaptureStatus(page = /** @type {any} */ ({})) {
   };
 }
 
-function routeResultsFromSummary(routes, structureSummary, site) {
+function expectedRouteMaps(routes) {
   const expected = routes.map((route) => ({
     ...route,
     key: routeKey(route),
   }));
-  const byId = new Map(expected.map((route) => [route.id, route]));
-  const byKey = new Map(expected.map((route) => [route.key, route]));
+  return {
+    expected,
+    byId: new Map(expected.map((route) => [route.id, route])),
+    byKey: new Map(expected.map((route) => [route.key, route])),
+  };
+}
+
+function matchedRouteForPayload(payload, site, routeMaps) {
+  const rawUrl = payload?.[ROUTE_RESULT_MATCH_URL_SYMBOL]
+    ?? payload?.normalizedUrl
+    ?? payload?.targetUrl
+    ?? payload?.url
+    ?? payload?.href
+    ?? payload?.targetRoute
+    ?? payload?.routeTemplate
+    ?? payload?.path
+    ?? payload?.route;
+  const hasPayloadUrl = typeof rawUrl === 'string' && rawUrl.trim() !== '';
+  let normalizedUrl = null;
+  if (hasPayloadUrl) {
+    try {
+      normalizedUrl = normalizeRouteUrl(rawUrl, site);
+    } catch {
+      normalizedUrl = null;
+    }
+  }
+  const routeById = payload?.routeId ? routeMaps.byId.get(payload.routeId) : null;
+  if (routeById && !hasPayloadUrl) {
+    return routeById;
+  }
+  if (routeById && normalizedUrl) {
+    return routeById.key === `${routeSourceLayer(payload?.sourceLayer)}\u0000${normalizedUrl}`
+      ? routeById
+      : null;
+  }
+  if (!normalizedUrl) {
+    return null;
+  }
+  return routeMaps.byKey.get(`${routeSourceLayer(payload?.sourceLayer)}\u0000${normalizedUrl}`) ?? null;
+}
+
+function routeResultsFromSummary(routes, structureSummary, site) {
+  const routeMaps = expectedRouteMaps(routes);
+  const { expected } = routeMaps;
   const results = new Map(expected.map((route) => [route.id, sanitizeRouteResult({
     routeId: route.id,
     sourceLayer: route.sourceLayer,
@@ -648,10 +827,7 @@ function routeResultsFromSummary(routes, structureSummary, site) {
     ...(structureSummary.authenticatedPages ?? []),
     ...(structureSummary.authenticatedOverlayPages ?? []),
   ]) {
-    const pageLayer = routeSourceLayer(page.sourceLayer);
-    const pageUrl = page.normalizedUrl ?? page.url;
-    const pageKey = `${pageLayer}\u0000${pageUrl}`;
-    const matched = page.routeId ? byId.get(page.routeId) : byKey.get(pageKey);
+    const matched = matchedRouteForPayload(page, site, routeMaps);
     if (!matched) {
       continue;
     }
@@ -666,11 +842,21 @@ function routeResultsFromSummary(routes, structureSummary, site) {
     }, site));
   }
 
+  const explicitRouteIds = new Set();
   for (const explicit of structureSummary.routeResults ?? []) {
-    const matched = explicit.routeId ? byId.get(explicit.routeId) : null;
-    const fallback = matched ?? {};
-    const sanitized = sanitizeRouteResult(explicit, site, fallback);
+    const matched = matchedRouteForPayload(explicit, site, routeMaps);
+    if (!matched) {
+      continue;
+    }
+    const sanitized = sanitizeRouteResult({
+      ...explicit,
+      routeId: matched.id,
+      sourceLayer: matched.sourceLayer,
+      targetUrl: matched.targetUrl,
+      routeTemplate: matched.routeTemplate,
+    }, site, matched);
     if (sanitized?.routeId) {
+      explicitRouteIds.add(sanitized.routeId);
       const pageResult = pageResults.get(sanitized.routeId);
       if (routeResultCaptured(sanitized) && !routeResultCaptured(pageResult)) {
         results.set(sanitized.routeId, pageResult ?? sanitizeRouteResult({
@@ -678,7 +864,7 @@ function routeResultsFromSummary(routes, structureSummary, site) {
           status: 'blocked',
           reasonCode: 'browser-bridge-captured-without-summary',
           captured: false,
-        }, site, fallback));
+        }, site, matched));
         continue;
       }
       results.set(sanitized.routeId, sanitized);
@@ -686,6 +872,9 @@ function routeResultsFromSummary(routes, structureSummary, site) {
   }
 
   for (const [routeId, pageResult] of pageResults) {
+    if (explicitRouteIds.has(routeId)) {
+      continue;
+    }
     const current = results.get(routeId);
     if (!routeResultCaptured(current)) {
       results.set(routeId, pageResult);
@@ -709,6 +898,7 @@ function mergeStructureSummary(base, next) {
 }
 
 function finalizeStructureSummary(routes, structureSummary, site) {
+  const routeMaps = expectedRouteMaps(routes);
   const dedupedPages = (pages) => {
     const byKey = new Map();
     for (const page of pages) {
@@ -720,8 +910,9 @@ function finalizeStructureSummary(routes, structureSummary, site) {
     }
     return [...byKey.values()];
   };
-  const allAuthenticatedPages = dedupedPages(structureSummary.authenticatedPages ?? []).slice(0, 80);
-  const allAuthenticatedOverlayPages = dedupedPages(structureSummary.authenticatedOverlayPages ?? []).slice(0, 80);
+  const routeMatched = (page) => Boolean(matchedRouteForPayload(page, site, routeMaps));
+  const allAuthenticatedPages = dedupedPages(structureSummary.authenticatedPages ?? []).filter(routeMatched).slice(0, 80);
+  const allAuthenticatedOverlayPages = dedupedPages(structureSummary.authenticatedOverlayPages ?? []).filter(routeMatched).slice(0, 80);
   const finalized = {
     authenticatedPages: allAuthenticatedPages
       .filter((page) => pageRouteCaptureStatus(page).status !== 'thin_capture')
@@ -740,19 +931,70 @@ function finalizeStructureSummary(routes, structureSummary, site) {
   return finalized;
 }
 
+function stripCollectorVersionFromRouteResult(result = /** @type {any} */ ({})) {
+  const { collectorVersion, ...publicResult } = result;
+  return publicResult;
+}
+
+function stripCollectorVersionsFromSummary(summary = null) {
+  if (!summary) {
+    return summary;
+  }
+  return {
+    ...summary,
+    routeResults: (summary.routeResults ?? []).map(stripCollectorVersionFromRouteResult),
+  };
+}
+
+function stripCollectorVersionsFromResult(result = /** @type {any} */ ({})) {
+  return {
+    ...result,
+    structureSummary: stripCollectorVersionsFromSummary(result.structureSummary),
+    bridgeSummary: result.bridgeSummary
+      ? {
+        ...result.bridgeSummary,
+        routeResults: (result.bridgeSummary.routeResults ?? []).map(stripCollectorVersionFromRouteResult),
+      }
+      : result.bridgeSummary,
+  };
+}
+
 function bridgeSummaryFromRoutes(structureSummary, {
   routes = [],
   used = true,
   extensionStages = [],
+  extensionStageTimeline = [],
   retrySummary = {},
 } = /** @type {any} */ ({})) {
   const routeResults = structureSummary?.routeResults ?? [];
   const routeCount = routes.length || routeResults.length;
   const capturedRouteCount = routeResults.filter(routeResultCaptured).length;
   const missingRouteCount = Math.max(0, routeCount - capturedRouteCount);
+  const scheduledRouteCount = routes.filter((route) => !route?.reasonCode).length;
+  const overflowRouteCount = routes.filter((route) => route?.reasonCode === 'browser-bridge-route-limit-exceeded').length;
   const retryPasses = Math.max(0, Number(retrySummary.retryPasses ?? 0) || 0);
   const retryAttemptedRouteCount = Math.max(0, Number(retrySummary.retryAttemptedRouteCount ?? 0) || 0);
   const retryCapturedRouteCount = Math.max(0, Number(retrySummary.retryCapturedRouteCount ?? 0) || 0);
+  const sanitizedExtensionStages = uniqueStrings((Array.isArray(extensionStages) ? extensionStages : [])
+    .map((stage) => sanitizeBridgeExtensionStage(stage))
+    .filter(Boolean));
+  const sanitizedExtensionStageTimeline = (Array.isArray(extensionStageTimeline) ? extensionStageTimeline : [])
+    .map((entry, index) => {
+      const stage = sanitizeBridgeExtensionStage(entry?.stage);
+      if (!stage) {
+        return null;
+      }
+      const eventIndex = Math.max(0, Number(entry?.eventIndex ?? entry?.index ?? index) || 0);
+      return {
+        index: eventIndex,
+        eventIndex,
+        passIndex: Math.max(0, Number(entry?.passIndex ?? 0) || 0),
+        stage,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.eventIndex - right.eventIndex);
+  const persistedExtensionStageTimeline = sanitizedExtensionStageTimeline.slice(0, MAX_EXTENSION_STAGE_TIMELINE);
   return {
     used: used === true,
     persisted: false,
@@ -760,6 +1002,15 @@ function bridgeSummaryFromRoutes(structureSummary, {
     pageCount: Math.max(0, Number(structureSummary?.authenticatedPages?.length ?? 0) || 0),
     overlayPageCount: Math.max(0, Number(structureSummary?.authenticatedOverlayPages?.length ?? 0) || 0),
     routeCount,
+    configuredRouteCount: routeCount,
+    eligibleRouteCount: routeCount,
+    scheduledRouteCount,
+    routeQueueLimit: MAX_BRIDGE_ROUTES,
+    overflowRouteCount,
+    unattemptedRouteCount: overflowRouteCount,
+    routeQueueTruncated: overflowRouteCount > 0,
+    routeQueueStatus: overflowRouteCount > 0 ? 'truncated' : 'complete',
+    routeLimitReasonCode: overflowRouteCount > 0 ? 'browser-bridge-route-limit-exceeded' : null,
     capturedRouteCount,
     missingRouteCount,
     routeCoverageStatus: routeCount > 0 && missingRouteCount === 0
@@ -780,8 +1031,14 @@ function bridgeSummaryFromRoutes(structureSummary, {
     retryCapturedRouteCount,
     finalCapturedRouteCount: capturedRouteCount,
     finalMissingRouteCount: missingRouteCount,
-    routeResults: routeResults.slice(0, MAX_BRIDGE_ROUTES),
-    extensionStages: uniqueStrings(extensionStages).slice(0, 20),
+    routeResults: routeResults.map(stripCollectorVersionFromRouteResult),
+    extensionStageCount: sanitizedExtensionStages.length,
+    extensionStageOmittedCount: 0,
+    extensionStages: sanitizedExtensionStages,
+    extensionStageTimelineLimit: MAX_EXTENSION_STAGE_TIMELINE,
+    extensionStageTimelineCount: sanitizedExtensionStageTimeline.length,
+    extensionStageTimelineOmittedCount: Math.max(0, sanitizedExtensionStageTimeline.length - persistedExtensionStageTimeline.length),
+    extensionStageTimeline: persistedExtensionStageTimeline,
   };
 }
 
@@ -808,6 +1065,19 @@ function missingRouteSignals(routeResults) {
     }
   }
   return uniqueStrings(signals);
+}
+
+function browserBridgeHasCapturedRoute(bridgeSummary) {
+  return Number(bridgeSummary?.capturedRouteCount ?? 0) > 0;
+}
+
+function browserBridgeVerificationStatus({ challengeBlocked, bridgeSummary }) {
+  if (!browserBridgeHasCapturedRoute(bridgeSummary)) {
+    return challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing';
+  }
+  return bridgeSummary?.routeCoverageStatus === 'partial' && Number(bridgeSummary?.missingRouteCount ?? 0) > 0
+    ? 'browser_verified_partial'
+    : 'browser_verified';
 }
 
 function emptyStructureSummary(routeResults = []) {
@@ -861,10 +1131,10 @@ async function maybeRetryBrowserBridge(baseResult, {
 } = /** @type {any} */ ({})) {
   const maxRetryPasses = browserBridgeMaxRetryPasses(options);
   if (maxRetryPasses <= 0 || options.browserBridgeRetryPass === true) {
-    return baseResult;
+    return stripCollectorVersionsFromResult(baseResult);
   }
   if ((baseResult.blockingSignals ?? []).some((signal) => /extension-missing|stale-or-incompatible|sensitive-payload|cross-site|nonce|login-wall|host-mismatch/iu.test(signal))) {
-    return baseResult;
+    return stripCollectorVersionsFromResult(baseResult);
   }
   const initialSummary = baseResult.structureSummary ?? emptyStructureSummary(baseResult.bridgeSummary?.routeResults ?? []);
   const initialRouteResults = initialSummary.routeResults ?? [];
@@ -876,6 +1146,7 @@ async function maybeRetryBrowserBridge(baseResult, {
     warnings: [...(initialSummary.warnings ?? [])],
   };
   const extensionStages = new Set(baseResult.bridgeSummary?.extensionStages ?? []);
+  const extensionStageTimeline = [...(baseResult.bridgeSummary?.extensionStageTimeline ?? [])];
   const retryAttemptCounts = new Map();
   let retryPasses = 0;
 
@@ -910,6 +1181,16 @@ async function maybeRetryBrowserBridge(baseResult, {
     for (const stage of retryResult.bridgeSummary?.extensionStages ?? []) {
       extensionStages.add(stage);
     }
+    const currentTimelineLength = extensionStageTimeline.length;
+    for (const [index, entry] of (retryResult.bridgeSummary?.extensionStageTimeline ?? []).entries()) {
+      const eventIndex = currentTimelineLength + index;
+      extensionStageTimeline.push({
+        index: eventIndex,
+        eventIndex,
+        passIndex,
+        stage: entry?.stage,
+      });
+    }
     const retrySummary = retryResult.structureSummary
       ?? emptyStructureSummary(retryResult.bridgeSummary?.routeResults ?? []);
     mergeStructureSummary(aggregateSummary, retrySummary);
@@ -925,6 +1206,7 @@ async function maybeRetryBrowserBridge(baseResult, {
   const bridgeSummary = bridgeSummaryFromRoutes(finalSummary, {
     routes,
     extensionStages: [...extensionStages].sort(),
+    extensionStageTimeline,
     retrySummary: {
       retryPasses,
       initialCapturedRouteCount: initialCapturedIds.size,
@@ -937,17 +1219,24 @@ async function maybeRetryBrowserBridge(baseResult, {
   const hasStructure = Boolean(pageCount || overlayPageCount);
   const missingSignals = missingRouteSignals(finalSummary.routeResults);
   const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
+  const hasCapturedRoute = browserBridgeHasCapturedRoute(bridgeSummary);
   return {
     ...baseResult,
-    status: hasStructure ? 'browser_verified' : challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing',
-    verified: hasStructure,
+    status: browserBridgeVerificationStatus({ challengeBlocked, bridgeSummary }),
+    verified: hasCapturedRoute,
     finalUrl: targetUrl,
-    positiveSignals: hasStructure
+    positiveSignals: hasCapturedRoute
       ? uniqueStrings([...(baseResult.positiveSignals ?? []), 'browser_bridge_retry_completed', 'browser_structure_summary_present'])
       : uniqueStrings(baseResult.positiveSignals ?? []),
-    blockingSignals: hasStructure ? missingSignals : uniqueStrings(['browser-bridge-empty-summary', ...missingSignals]),
-    verifiedRoutes: uniqueStrings([...finalSummary.authenticatedPages, ...finalSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean)),
-    structureSummary: hasStructure ? finalSummary : null,
+    blockingSignals: hasCapturedRoute ? missingSignals : uniqueStrings([
+      'browser-bridge-no-captured-route',
+      ...(hasStructure ? [] : ['browser-bridge-empty-summary']),
+      ...missingSignals,
+    ]),
+    verifiedRoutes: hasCapturedRoute
+      ? uniqueStrings([...finalSummary.authenticatedPages, ...finalSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean))
+      : [],
+    structureSummary: hasCapturedRoute ? stripCollectorVersionsFromSummary(finalSummary) : null,
     bridgeSummary,
   };
 }
@@ -1054,12 +1343,24 @@ function bridgeHeaders(extra = /** @type {Record<string, string>} */ ({})) {
   };
 }
 
+function browserBridgeServerPort(server) {
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Browser bridge server did not bind to a TCP port.');
+  }
+  return address.port;
+}
+
 export async function runBrowserAuthBridge({
   inputUrl,
   site,
   options = /** @type {any} */ ({}),
   openBrowser,
+  robotsPolicy = null,
 } = /** @type {any} */ ({})) {
+  const effectiveOptions = robotsPolicy && !options.browserBridgeRobotsPolicy
+    ? { ...options, browserBridgeRobotsPolicy: robotsPolicy }
+    : options;
   const requestedTargetUrl = normalizeUrl(options.authCheckUrl ?? inputUrl ?? site?.rootUrl, site.rootUrl);
   if (!isInternalUrl(requestedTargetUrl, site.allowedDomains)) {
     return {
@@ -1073,48 +1374,80 @@ export async function runBrowserAuthBridge({
       bridgeSummary: { used: false, persisted: false, redacted: true, pageCount: 0, overlayPageCount: 0 },
     };
   }
-  const routes = filterRoutesForRetry(routeQueueFromConfiguredRoutes({
+  const routeQueue = routeQueueFromConfiguredRoutes({
     site,
     inputUrl,
     targetUrl: requestedTargetUrl,
-    options,
-  }), options);
+    options: effectiveOptions,
+  });
+  const routes = filterRoutesForRetry(routeQueue.routes, effectiveOptions);
+  const blockedRoutes = routeQueue.blockedRoutes ?? [];
+  const coverageRoutes = [...routes, ...blockedRoutes];
+  const blockedRouteResults = blockedRoutes.map((route) => sanitizeRouteResult({
+    routeId: route.id,
+    sourceLayer: route.sourceLayer,
+    targetUrl: route.targetUrl,
+    status: 'blocked',
+    reasonCode: route.reasonCode ?? 'robots-disallowed',
+    finalStatus: 'blocked',
+    finalReasonCode: route.reasonCode ?? 'robots-disallowed',
+  }, site)).filter(Boolean);
+  if (!routes.length && blockedRoutes.length) {
+    const blockedSummary = finalizeStructureSummary(blockedRoutes, emptyStructureSummary(blockedRouteResults), site);
+    return {
+      status: 'browser_blocked',
+      verified: false,
+      finalUrl: null,
+      positiveSignals: [],
+      blockingSignals: ['robots-disallowed', 'browser-bridge-robots-disallowed', 'browser-bridge-all-routes-robots-disallowed'],
+      verifiedRoutes: [],
+      structureSummary: null,
+      bridgeSummary: bridgeSummaryFromRoutes(blockedSummary, { routes: blockedRoutes, used: false }),
+    };
+  }
   const targetUrl = routes[0]?.targetUrl ?? requestedTargetUrl;
 
   const nonce = randomBytes(16).toString('hex');
-  if (typeof options.browserAuthBridgeProvider === 'function') {
+  if (typeof effectiveOptions.browserAuthBridgeProvider === 'function') {
     try {
-      const provided = await options.browserAuthBridgeProvider({
+      const provided = await effectiveOptions.browserAuthBridgeProvider({
         inputUrl,
         site,
         targetUrl,
         routes,
         nonce,
-        options,
-        passIndex: Math.max(0, Number(options.browserBridgePassIndex ?? 0) || 0),
-        retryPass: options.browserBridgeRetryPass === true,
+        options: effectiveOptions,
+        passIndex: Math.max(0, Number(effectiveOptions.browserBridgePassIndex ?? 0) || 0),
+        retryPass: effectiveOptions.browserBridgeRetryPass === true,
       });
-      const structureSummary = finalizeStructureSummary(
-        routes,
+      const aggregateSummary = mergeStructureSummary(
+        emptyStructureSummary(blockedRouteResults),
         sanitizeBrowserAuthBridgePayload(provided ?? {}, { site, fallbackUrl: targetUrl }),
-        site,
       );
+      const structureSummary = finalizeStructureSummary(coverageRoutes, aggregateSummary, site);
       const pageCount = structureSummary.authenticatedPages.length;
       const overlayPageCount = structureSummary.authenticatedOverlayPages.length;
-      const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes });
+      const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes: coverageRoutes });
       const missingSignals = missingRouteSignals(structureSummary.routeResults);
       const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
       const hasStructure = Boolean(pageCount || overlayPageCount);
+      const hasCapturedRoute = browserBridgeHasCapturedRoute(bridgeSummary);
       return await maybeRetryBrowserBridge({
-        status: hasStructure ? 'browser_verified' : challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing',
-        verified: hasStructure,
+        status: browserBridgeVerificationStatus({ challengeBlocked, bridgeSummary }),
+        verified: hasCapturedRoute,
         finalUrl: targetUrl,
-        positiveSignals: hasStructure ? ['browser_bridge_payload_received', 'browser_structure_summary_present'] : [],
-        blockingSignals: hasStructure ? missingSignals : ['browser-bridge-empty-summary', ...missingSignals],
-        verifiedRoutes: uniqueStrings([...structureSummary.authenticatedPages, ...structureSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean)),
-        structureSummary,
+        positiveSignals: hasCapturedRoute ? ['browser_bridge_payload_received', 'browser_structure_summary_present'] : [],
+        blockingSignals: hasCapturedRoute ? missingSignals : uniqueStrings([
+          'browser-bridge-no-captured-route',
+          ...(hasStructure ? [] : ['browser-bridge-empty-summary']),
+          ...missingSignals,
+        ]),
+        verifiedRoutes: hasCapturedRoute
+          ? uniqueStrings([...structureSummary.authenticatedPages, ...structureSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean))
+          : [],
+        structureSummary: hasCapturedRoute ? structureSummary : null,
         bridgeSummary,
-      }, { inputUrl, site, options, openBrowser, routes, targetUrl });
+      }, { inputUrl, site, options: effectiveOptions, openBrowser, routes: coverageRoutes, targetUrl });
     } catch (error) {
       return {
         status: error?.code === 'redaction-failed' ? 'browser_blocked' : 'browser_check_failed',
@@ -1124,17 +1457,34 @@ export async function runBrowserAuthBridge({
         blockingSignals: [error?.code === 'redaction-failed' ? 'browser-bridge-sensitive-payload' : 'browser-bridge-request-failed'],
         verifiedRoutes: [],
         structureSummary: null,
-        bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: [], warnings: [] }, { routes }),
+        bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes }),
       };
     }
   }
 
-  const timeoutMs = browserBridgePerPassTimeoutMs(options);
+  const timeoutMs = browserBridgePerPassTimeoutMs(effectiveOptions);
   const extensionStages = new Set();
+  const extensionStageTimeline = [];
+  const passIndex = Math.max(0, Number(effectiveOptions.browserBridgePassIndex ?? 0) || 0);
+  const recordExtensionStage = (stageValue) => {
+    const stage = sanitizeBridgeExtensionStage(stageValue);
+    if (!stage) {
+      return null;
+    }
+    extensionStages.add(stage);
+    const eventIndex = extensionStageTimeline.length;
+    extensionStageTimeline.push({
+      index: eventIndex,
+      eventIndex,
+      passIndex,
+      stage,
+    });
+    return stage;
+  };
   const aggregateSummary = {
     authenticatedPages: [],
     authenticatedOverlayPages: [],
-    routeResults: [],
+    routeResults: [...blockedRouteResults],
     warnings: [],
   };
   let resolveSubmission = /** @type {null | ((value: any) => void)} */ (null);
@@ -1156,10 +1506,11 @@ export async function runBrowserAuthBridge({
         const sourceLayer = requestUrl.searchParams.get('sourceLayer') === 'authenticated_overlay'
           ? 'authenticated_overlay'
           : 'authenticated';
-        const submitUrl = `http://127.0.0.1:${server.address().port}/submit?nonce=${nonce}`;
-        const collectorUrl = `http://127.0.0.1:${server.address().port}/collector.js?nonce=${nonce}&sourceLayer=${sourceLayer}`;
-        const sessionUrl = `http://127.0.0.1:${server.address().port}/session.json?nonce=${nonce}`;
-        const extensionStatusUrl = `http://127.0.0.1:${server.address().port}/extension-status?nonce=${nonce}`;
+        const serverPort = browserBridgeServerPort(server);
+        const submitUrl = `http://127.0.0.1:${serverPort}/submit?nonce=${nonce}`;
+        const collectorUrl = `http://127.0.0.1:${serverPort}/collector.js?nonce=${nonce}&sourceLayer=${sourceLayer}`;
+        const sessionUrl = `http://127.0.0.1:${serverPort}/session.json?nonce=${nonce}`;
+        const extensionStatusUrl = `http://127.0.0.1:${serverPort}/extension-status?nonce=${nonce}`;
         if (requestUrl.pathname === '/collector.js') {
           response.writeHead(200, bridgeHeaders({
             'content-type': 'application/javascript; charset=utf-8',
@@ -1187,8 +1538,7 @@ export async function runBrowserAuthBridge({
             response.end(JSON.stringify({ ok: false }));
             return;
           }
-          const stage = boundedText(requestUrl.searchParams.get('stage'), 'extension-active', 80);
-          extensionStages.add(stage);
+          recordExtensionStage(requestUrl.searchParams.get('stage')) ?? recordExtensionStage('extension-active');
           response.writeHead(200, bridgeHeaders({ 'content-type': 'application/json; charset=utf-8' }));
           response.end(JSON.stringify({ ok: true }));
           return;
@@ -1211,8 +1561,7 @@ export async function runBrowserAuthBridge({
           response.end(JSON.stringify({ ok: false }));
           return;
         }
-        const stage = boundedText(requestUrl.searchParams.get('stage'), 'extension-active', 80);
-        extensionStages.add(stage);
+        recordExtensionStage(requestUrl.searchParams.get('stage')) ?? recordExtensionStage('extension-active');
         response.writeHead(200, bridgeHeaders({ 'content-type': 'application/json; charset=utf-8' }));
         response.end(JSON.stringify({ ok: true }));
         return;
@@ -1225,10 +1574,10 @@ export async function runBrowserAuthBridge({
         }
         const structureSummary = sanitizeBrowserAuthBridgePayload(payload, { site, fallbackUrl: targetUrl });
         mergeStructureSummary(aggregateSummary, structureSummary);
-        const finalized = finalizeStructureSummary(routes, aggregateSummary, site);
+        const finalized = finalizeStructureSummary(coverageRoutes, aggregateSummary, site);
         response.writeHead(200, bridgeHeaders({ 'content-type': 'application/json; charset=utf-8' }));
         response.end(JSON.stringify({ ok: true }));
-        const allRoutesSettled = finalized.routeResults.length >= routes.length
+        const allRoutesSettled = finalized.routeResults.length >= coverageRoutes.length
           && finalized.routeResults.every((result) => result.status !== 'timeout');
         if (allRoutesSettled) {
           resolveSubmission?.(finalized);
@@ -1246,10 +1595,10 @@ export async function runBrowserAuthBridge({
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen({ port: 0, host: '127.0.0.1' }, () => resolve(undefined));
   });
 
-  const bridgeUrl = `http://127.0.0.1:${server.address().port}/?nonce=${nonce}`;
+  const bridgeUrl = `http://127.0.0.1:${browserBridgeServerPort(server)}/?nonce=${nonce}`;
   try {
     if (typeof openBrowser === 'function') {
       await openBrowser(bridgeUrl);
@@ -1257,7 +1606,7 @@ export async function runBrowserAuthBridge({
     const structureSummary = await Promise.race([
       submission,
       new Promise((resolve) => setTimeout(() => {
-        const finalized = finalizeStructureSummary(routes, aggregateSummary, site);
+        const finalized = finalizeStructureSummary(coverageRoutes, aggregateSummary, site);
         const hasAnyPage = finalized.authenticatedPages.length || finalized.authenticatedOverlayPages.length;
         resolve(hasAnyPage ? finalized : null);
       }, timeoutMs)),
@@ -1265,7 +1614,12 @@ export async function runBrowserAuthBridge({
     if (!structureSummary) {
         const extensionStageList = [...extensionStages].sort();
         const extensionActive = extensionStageList.length > 0;
-        const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList);
+        const emptyRouteResults = routeResultsFromSummary(
+          coverageRoutes,
+          { authenticatedPages: [], authenticatedOverlayPages: [], routeResults: [], warnings: [] },
+          site,
+        );
+        const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList, emptyRouteResults);
         const staleExtension = extensionStageList.includes('target-tab-created')
           && !extensionStageList.some((stage) => stage === 'target-route-queue-started' || stage.startsWith('route-opened:'));
         return await maybeRetryBrowserBridge({
@@ -1284,16 +1638,16 @@ export async function runBrowserAuthBridge({
           bridgeSummary: bridgeSummaryFromRoutes({
             authenticatedPages: [],
             authenticatedOverlayPages: [],
-            routeResults: routeResultsFromSummary(routes, { authenticatedPages: [], authenticatedOverlayPages: [], routeResults: [], warnings: [] }, site),
+            routeResults: emptyRouteResults,
             warnings: [],
-          }, { routes, extensionStages: extensionStageList }),
-        }, { inputUrl, site, options, openBrowser, routes, targetUrl });
+          }, { routes: coverageRoutes, extensionStages: extensionStageList, extensionStageTimeline }),
+        }, { inputUrl, site, options: effectiveOptions, openBrowser, routes: coverageRoutes, targetUrl });
     }
     const pageCount = structureSummary.authenticatedPages.length;
     const overlayPageCount = structureSummary.authenticatedOverlayPages.length;
     const extensionStageList = [...extensionStages].sort();
-    const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes, extensionStages: extensionStageList });
-    const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList);
+    const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes: coverageRoutes, extensionStages: extensionStageList, extensionStageTimeline });
+    const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList, structureSummary.routeResults);
     if (versionBlockingSignals.length) {
       return await maybeRetryBrowserBridge({
         status: 'browser_bridge_missing',
@@ -1304,23 +1658,30 @@ export async function runBrowserAuthBridge({
         verifiedRoutes: [],
         structureSummary: null,
         bridgeSummary,
-      }, { inputUrl, site, options, openBrowser, routes, targetUrl });
+      }, { inputUrl, site, options: effectiveOptions, openBrowser, routes: coverageRoutes, targetUrl });
     }
     const missingSignals = missingRouteSignals(structureSummary.routeResults);
     const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
     const hasStructure = Boolean(pageCount || overlayPageCount);
+    const hasCapturedRoute = browserBridgeHasCapturedRoute(bridgeSummary);
     return await maybeRetryBrowserBridge({
-      status: hasStructure ? 'browser_verified' : challengeBlocked ? 'browser_blocked' : 'browser_bridge_missing',
-      verified: hasStructure,
+      status: browserBridgeVerificationStatus({ challengeBlocked, bridgeSummary }),
+      verified: hasCapturedRoute,
       finalUrl: targetUrl,
-      positiveSignals: hasStructure
+      positiveSignals: hasCapturedRoute
         ? ['default_browser_opened', 'browser_bridge_payload_received', 'browser_structure_summary_present']
         : ['default_browser_opened', 'browser_bridge_payload_received'],
-      blockingSignals: hasStructure ? missingSignals : ['browser-bridge-empty-summary', ...missingSignals],
-      verifiedRoutes: uniqueStrings([...structureSummary.authenticatedPages, ...structureSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean)),
-      structureSummary,
+      blockingSignals: hasCapturedRoute ? missingSignals : uniqueStrings([
+        'browser-bridge-no-captured-route',
+        ...(hasStructure ? [] : ['browser-bridge-empty-summary']),
+        ...missingSignals,
+      ]),
+      verifiedRoutes: hasCapturedRoute
+        ? uniqueStrings([...structureSummary.authenticatedPages, ...structureSummary.authenticatedOverlayPages].map((page) => page.routeTemplate).filter(Boolean))
+        : [],
+      structureSummary: hasCapturedRoute ? structureSummary : null,
       bridgeSummary,
-    }, { inputUrl, site, options, openBrowser, routes, targetUrl });
+    }, { inputUrl, site, options: effectiveOptions, openBrowser, routes: coverageRoutes, targetUrl });
   } catch (error) {
     return {
       status: error?.code === 'redaction-failed' ? 'browser_blocked' : 'browser_check_failed',
@@ -1330,7 +1691,7 @@ export async function runBrowserAuthBridge({
       blockingSignals: [error?.code === 'redaction-failed' ? 'browser-bridge-sensitive-payload' : 'browser-bridge-request-failed'],
       verifiedRoutes: [],
       structureSummary: null,
-      bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: [], warnings: [] }, { routes, extensionStages: [...extensionStages].sort() }),
+      bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes, extensionStages: [...extensionStages].sort(), extensionStageTimeline }),
     };
   } finally {
     server.closeAllConnections?.();

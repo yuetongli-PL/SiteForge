@@ -1,5 +1,6 @@
 const activeTabs = new Map();
-const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-loading-dom-fallback-v5';
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v6';
+const SITEFORGE_COLLECT_MESSAGE_TYPE = `siteforge-collect-structure:${SITEFORGE_BRIDGE_EXTENSION_VERSION}`;
 const ROUTE_COLLECT_FALLBACK_DELAY_MS = 6500;
 const ROUTE_STABLE_AFTER_COMPLETE_MS = 1500;
 const TAB_STABLE_MAX_POLLS = 16;
@@ -47,14 +48,14 @@ function sessionKey(session) {
   return String(session?.nonce || '');
 }
 
-function signal(session, stage) {
+async function signal(session, stage) {
   if (!session?.extensionStatusUrl) {
     return;
   }
   try {
     const url = new URL(session.extensionStatusUrl);
     url.searchParams.set('stage', stage);
-    fetch(url.toString(), { method: 'POST', credentials: 'omit', cache: 'no-store' }).catch(() => {});
+    await fetch(url.toString(), { method: 'POST', credentials: 'omit', cache: 'no-store' });
   } catch {
     // Diagnostics are best-effort; structure submission remains authoritative.
   }
@@ -209,11 +210,14 @@ async function injectCollector(tabId, session, route) {
   for (let attempt = 0; attempt < COLLECTOR_RETRY_BACKOFF_MS.length; attempt += 1) {
     try {
       result = await chrome.tabs.sendMessage(tabId, {
-        type: 'siteforge-collect-structure',
+        type: SITEFORGE_COLLECT_MESSAGE_TYPE,
         session: currentSession,
       });
       if (result?.ok) {
-        signal(session, `collector-submit-ok:${route.id}`);
+        if (result.collectorVersion) {
+          await signal(session, `collector-version:${route.id}:${result.collectorVersion}`);
+        }
+        await signal(session, `collector-submit-ok:${route.id}`);
         return;
       }
       messageError = new Error(result?.reason || result?.status || 'collector-message-failed');

@@ -1,4 +1,4 @@
-﻿// @ts-check
+// @ts-check
 
 import path from 'node:path';
 import process, { stderr as defaultStderr, stdout as defaultStdout } from 'node:process';
@@ -23,11 +23,14 @@ import {
 } from './models.mjs';
 import {
   AUTH_STATE_REPORT_FILE,
+  attachAuthRuntimeMaterial,
+  authRuntimeMaterialFrom,
   canRunAuthenticatedLayer,
   createCrawlContract,
   createPublicOnlyAuthStateReport,
   normalizeAuthStateReport,
   runDefaultBrowserAuthStateCheck,
+  sanitizeRouteTargetForPersistence,
 } from './auth-state.mjs';
 import {
   assertBuildProfileSafe,
@@ -860,7 +863,7 @@ async function persistAutoAuthorizedKnownSiteProfile({ inputUrl, paths, setupPla
     paths,
     setupPlan: proofedSetupPlan,
     ...persisted,
-    buildOptions: buildOptionsFromProfile(options, paths, persisted.profile),
+    buildOptions: buildOptionsFromFreshSetupProfile(options, paths, persisted.profile, proofedSetupPlan),
   };
 }
 
@@ -3027,16 +3030,22 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
   await ensureDir(paths.artifactDir);
   await ensureDir(path.dirname(paths.setupPlanPath));
   await writeJsonFile(paths.setupPlanPath, setupPlan);
-  return { paths, setupPlan };
+  return { paths, setupPlan, robotsPolicy };
 }
 
-async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options }) {
+async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, robotsPolicy = null }) {
   const authMode = options.authMode === 'cookie' || options.authMode === 'browser' ? options.authMode : 'none';
   options.authMode = authMode;
+  const authOptions = {
+    ...options,
+  };
+  delete authOptions.authRuntime;
+  delete authOptions.authenticatedStructureSummary;
   const authStateReport = await runDefaultBrowserAuthStateCheck({
     inputUrl,
     site: setupPlan.site,
-    options,
+    options: authOptions,
+    robotsPolicy,
   });
   const nextPlan = {
     ...setupPlan,
@@ -3410,12 +3419,10 @@ function knownPolicyRequiresLoginCapabilityIds(knownSitePolicy = null) {
 function normalizeConfiguredRouteTargets(site, values = /** @type {any[]} */ ([])) {
   const targets = [];
   for (const value of Array.isArray(values) ? values : []) {
-    try {
-      const normalized = normalizeUrl(value, site.rootUrl);
-      if (isInternalUrl(normalized, site.allowedDomains)) {
-        targets.push(normalized);
-      }
-    } catch {
+    const normalized = sanitizeRouteTargetForPersistence(value, site, { preserveRelative: false });
+    if (normalized && isInternalUrl(normalized, site.allowedDomains)) {
+      targets.push(normalized);
+    } else {
       // Ignore malformed local route hints; they cannot become crawl seeds.
     }
   }
@@ -4089,6 +4096,16 @@ function buildOptionsFromProfile(options, paths, profile) {
   };
 }
 
+function buildOptionsFromFreshSetupProfile(options, paths, profile, setupPlan) {
+  const buildOptions = buildOptionsFromProfile({
+    ...options,
+    authStateReport: setupPlan.authStateReport ?? profile.authStateReport ?? null,
+    crawlContract: setupPlan.crawlContract ?? profile.crawlContract ?? null,
+  }, paths, profile);
+  attachAuthRuntimeMaterial(buildOptions, authRuntimeMaterialFrom(setupPlan.authStateReport));
+  return buildOptions;
+}
+
 function firstTimeSetupRequiredError(paths, setupPlan) {
   const error = /** @type {Error & Record<string, any>} */ (new Error(
     `first-time-setup-required: ${setupPlan.site.rootUrl} has no saved build_profile.json. setup_plan.json: ${paths.setupPlanPath}`,
@@ -4141,8 +4158,8 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
     : isUsableSavedBuildProfile(savedProfileCandidate) ? savedProfileCandidate : null;
 
   if (!savedProfile) {
-    let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
-    setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options });
+    let { setupPlan, robotsPolicy } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
+    setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, robotsPolicy });
     let setupReview = { continueUncollected: true, nextChoiceHint: null };
     let setupPlanRendered = false;
     if (!isSetupPlanBuildable(setupPlan)) {
@@ -4177,7 +4194,7 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
         paths,
         setupPlan,
         ...persisted,
-        buildOptions: buildOptionsFromProfile(options, paths, persisted.profile),
+        buildOptions: buildOptionsFromFreshSetupProfile(options, paths, persisted.profile, setupPlan),
       };
     }
     let userChoices = await promptFirstRunChoices(setupPlan, options, 'first-run', setupReview.nextChoiceHint, {
@@ -4201,7 +4218,7 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
       paths,
       setupPlan,
       ...persisted,
-      buildOptions: buildOptionsFromProfile(options, paths, persisted.profile),
+      buildOptions: buildOptionsFromFreshSetupProfile(options, paths, persisted.profile, setupPlan),
     };
   }
 
@@ -4209,8 +4226,8 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
     renderSavedProfileSummary(savedProfile, options);
     const answer = await askSetupQuestion('1/2: ', options);
     if (/^(?:edit|e|编辑)$/iu.test(answer) || answer.length > 0 && !/^(?:reset|r|重置)$/iu.test(answer)) {
-      let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
-      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options });
+      let { setupPlan, robotsPolicy } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
+      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, robotsPolicy });
       let setupReview = { continueUncollected: true, nextChoiceHint: null };
       let setupPlanRendered = false;
       if (!isSetupPlanBuildable(setupPlan)) {
@@ -4244,12 +4261,12 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
         paths,
         setupPlan,
         ...persisted,
-        buildOptions: buildOptionsFromProfile(options, paths, persisted.profile),
+        buildOptions: buildOptionsFromFreshSetupProfile(options, paths, persisted.profile, setupPlan),
       };
     }
     if (/^(?:reset|r|重置)$/iu.test(answer)) {
-      let { setupPlan } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
-      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options });
+      let { setupPlan, robotsPolicy } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });
+      setupPlan = await applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, robotsPolicy });
       let setupReview = { continueUncollected: true, nextChoiceHint: null };
       let setupPlanRendered = false;
       if (!isSetupPlanBuildable(setupPlan)) {
@@ -4278,7 +4295,7 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
         paths,
         setupPlan,
         ...persisted,
-        buildOptions: buildOptionsFromProfile(options, paths, persisted.profile),
+        buildOptions: buildOptionsFromFreshSetupProfile(options, paths, persisted.profile, setupPlan),
       };
     }
   }

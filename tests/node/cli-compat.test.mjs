@@ -53,6 +53,8 @@ test('public SiteForge CLI exposes only build help', () => {
   for (const flag of PUBLIC_BUILD_HELP_FLAGS) {
     assert.match(help.stdout, new RegExp(flag.replace(/[|]/gu, '\\$&'), 'u'));
   }
+  assert.doesNotMatch(help.stdout, /--auth\b|--cookie-env\b|--cookie-file\b|--cookie-stdin\b|--auth-check-url\b|--login-enhanced\b|--public-only\b/u);
+  assert.match(help.stdout, /siteforge\.local\.json/u);
   assert.doesNotMatch(help.stdout, /siteforge capabilities/u);
   assert.doesNotMatch(help.stdout, /site doctor|site scaffold|download plan|generate-skill/u);
 });

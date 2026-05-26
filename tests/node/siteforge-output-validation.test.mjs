@@ -12,6 +12,7 @@ import {
   buildCapabilitySafeRemediationPath,
   createEmptySkillRegistry,
   createSiteForgeOutputValidationReport,
+  findForcedDisabledActions,
   inferCapabilityRiskLevel,
   lookupSkillIntent,
   normalizeEvidenceObject,
@@ -334,6 +335,29 @@ test('risk policy defaults encode privacy and forced-disabled action boundaries'
     'select_sensitive_recipient',
   ]) {
     assert.equal(FORCED_DISABLED_ACTIONS.includes(action), true);
+  }
+});
+
+test('risk policy recognizes Chinese forced-disabled action labels', () => {
+  const cases = [
+    ['\u53d1\u5e03', 'publish'],
+    ['\u8bc4\u8bba', 'publish_reply'],
+    ['\u53d1\u9001\u79c1\u4fe1', 'send_dm'],
+    ['\u5220\u9664', 'delete'],
+    ['\u4e0a\u4f20', 'upload'],
+    ['\u652f\u4ed8', 'pay'],
+    ['\u5173\u6ce8', 'follow'],
+    ['\u53d6\u5173', 'unfollow'],
+    ['\u70b9\u8d5e', 'like'],
+    ['\u8f6c\u53d1', 'repost'],
+    ['\u4fee\u6539\u5bc6\u7801', 'change_password'],
+    ['\u4fee\u6539\u90ae\u7bb1', 'change_email'],
+    ['\u4fee\u65392FA', 'change_2fa'],
+    ['\u4fee\u6539\u4ed8\u6b3e\u65b9\u5f0f', 'change_payment'],
+    ['\u4fee\u6539\u8d44\u6599', 'edit_profile'],
+  ];
+  for (const [label, action] of cases) {
+    assert.equal(findForcedDisabledActions(label).includes(action), true, `${label} should map to ${action}`);
   }
 });
 

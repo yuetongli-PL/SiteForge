@@ -64,12 +64,16 @@ export function browserStructureCollectorScript({
       attr(node, 'class'),
       attr(node, 'id'),
       attr(node, 'role'),
+      attr(node, 'aria-label'),
+      attr(node, 'title'),
+      attr(node, 'data-testid'),
+      attr(node, 'data-e2e'),
     ].join(' ').toLowerCase();
+    if (/(?:^|[\\/?#:_\\s-])(?:follow|following|followed|followers)(?=$|[\\/?#:_\\s-])|\\u5173\\u6ce8|\\u7c89\\u4e1d/u.test(text)) return 'following_list';
     if (/search|query|keyword|find|\\u641c\\u7d22|\\u641c\\u4e66|\\u68c0\\u7d22/u.test(text)) return 'search';
     if (/categor|category|categories|genre|genres|channel|channels|section|classify|bookstore|library|\\u5206\\u7c7b|\\u7c7b\\u522b|\\u9891\\u9053|\\u4e66\\u5e93|\\u4e66\\u57ce/u.test(text)) return 'category';
     if (/tag|topic|\\u6807\\u7b7e|\\u8bdd\\u9898/u.test(text)) return 'tag';
     if (/rank|ranking|top|hot|popular|trending|latest|recent|\\u699c\\u5355|\\u6392\\u884c|\\u70ed\\u95e8|\\u6700\\u65b0|\\u65b0\\u4e66/u.test(text)) return 'ranking';
-    if (/follow(?:ing|ed)?|followers|\\u5173\\u6ce8|\\u7c89\\u4e1d/u.test(text)) return 'following_list';
     if (/article|story|news|post|blog|\\u6587\\u7ae0|\\u8d44\\u8baf|\\u65b0\\u95fb/u.test(text)) return 'article';
     if (/book|books|novel|fiction|chapter|reader|work|works|\\u5c0f\\u8bf4|\\u4e66\\u7c4d|\\u4f5c\\u54c1|\\u7ae0\\u8282|\\u9605\\u8bfb/u.test(text)) return 'work';
     if (/video|watch|movie|media/u.test(text)) return 'media';

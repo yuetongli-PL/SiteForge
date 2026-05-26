@@ -4,6 +4,7 @@ import http from 'node:http';
 import net from 'node:net';
 import tls from 'node:tls';
 import { isInternalUrl, normalizeUrl } from './models.mjs';
+import { isUrlAllowedByRobots } from './html.mjs';
 
 const STATIC_FETCH_HEADERS = Object.freeze({
   accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1',
@@ -777,6 +778,9 @@ async function readLiveUrlWithManualRedirect(urlValue, options = /** @type {any}
   if (!isInternalUrl(urlValue, options.allowedDomains ?? [])) {
     throw reasonedError('Cookie-authenticated static fetch blocked a cross-site URL.', 'static-fetch-auth-cross-site-blocked');
   }
+  if (options.robotsPolicy && !isUrlAllowedByRobots(urlValue, options.robotsPolicy)) {
+    throw reasonedError('Cookie-authenticated static fetch blocked a robots-disallowed URL.', 'static-fetch-auth-robots-disallowed');
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(options.fetchTimeoutMs ?? 10000)));
   let response;
@@ -798,6 +802,9 @@ async function readLiveUrlWithManualRedirect(urlValue, options = /** @type {any}
     const nextUrl = normalizeUrl(response.headers.get('location'), urlValue);
     if (!isInternalUrl(nextUrl, options.allowedDomains ?? [])) {
       throw reasonedError('Cookie-authenticated static fetch blocked a cross-site redirect.', 'static-fetch-auth-cross-site-redirect-blocked');
+    }
+    if (options.robotsPolicy && !isUrlAllowedByRobots(nextUrl, options.robotsPolicy)) {
+      throw reasonedError('Cookie-authenticated static fetch blocked a robots-disallowed redirect.', 'static-fetch-auth-redirect-robots-disallowed');
     }
     return await readLiveUrlWithManualRedirect(nextUrl, options, redirectCount + 1);
   }
@@ -949,6 +956,7 @@ export function createBuildSource(inputUrl, options = /** @type {any} */ ({})) {
         env: options.env,
         requestHeaders,
         allowedDomains: runtimeCookieDomains,
+        robotsPolicy: options.robotsPolicy,
       });
     },
   };

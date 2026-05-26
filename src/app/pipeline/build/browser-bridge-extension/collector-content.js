@@ -1,7 +1,10 @@
 (() => {
-  if (globalThis.__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_INSTALLED__) {
+  const SITEFORGE_COLLECTOR_CONTENT_VERSION = 'route-queue-chinese-semantic-v6';
+  const SITEFORGE_COLLECT_MESSAGE_TYPE = `siteforge-collect-structure:${SITEFORGE_COLLECTOR_CONTENT_VERSION}`;
+  if (globalThis.__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_VERSION__ === SITEFORGE_COLLECTOR_CONTENT_VERSION) {
     return;
   }
+  globalThis.__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_VERSION__ = SITEFORGE_COLLECTOR_CONTENT_VERSION;
   globalThis.__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_INSTALLED__ = true;
 
   const MAX_LINKS = 160;
@@ -57,12 +60,22 @@
   );
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const semanticKindFor = (href, label, node) => {
-    const text = [href, label, attr(node, 'class'), attr(node, 'id'), attr(node, 'role')].join(' ').toLowerCase();
+    const text = [
+      href,
+      label,
+      attr(node, 'class'),
+      attr(node, 'id'),
+      attr(node, 'role'),
+      attr(node, 'aria-label'),
+      attr(node, 'title'),
+      attr(node, 'data-testid'),
+      attr(node, 'data-e2e'),
+    ].join(' ').toLowerCase();
+    if (/(?:^|[\/?#:_\s-])(?:follow|following|followed|followers)(?=$|[\/?#:_\s-])|\u5173\u6ce8|\u7c89\u4e1d/u.test(text)) return 'following_list';
     if (/search|query|keyword|find|\u641c\u7d22|\u641c\u4e66|\u68c0\u7d22/u.test(text)) return 'search';
     if (/categor|category|categories|genre|genres|channel|channels|section|classify|bookstore|library|\u5206\u7c7b|\u7c7b\u522b|\u9891\u9053|\u4e66\u5e93|\u4e66\u57ce/u.test(text)) return 'category';
     if (/tag|topic|\u6807\u7b7e|\u8bdd\u9898/u.test(text)) return 'tag';
     if (/rank|ranking|top|hot|popular|trending|latest|recent|\u699c\u5355|\u6392\u884c|\u70ed\u95e8|\u6700\u65b0|\u65b0\u4e66/u.test(text)) return 'ranking';
-    if (/follow(?:ing|ed)?|followers|\u5173\u6ce8|\u7c89\u4e1d/u.test(text)) return 'following_list';
     if (/article|story|news|post|blog|\u6587\u7ae0|\u8d44\u8baf|\u65b0\u95fb/u.test(text)) return 'article';
     if (/book|books|novel|fiction|chapter|reader|work|works|\u5c0f\u8bf4|\u4e66\u7c4d|\u4f5c\u54c1|\u7ae0\u8282|\u9605\u8bfb/u.test(text)) return 'work';
     if (/video|watch|movie|media/u.test(text)) return 'media';
@@ -89,7 +102,7 @@
       credentials: 'omit',
       body: JSON.stringify(payload),
     });
-    return { ok: response.ok, status: response.status };
+    return { ok: response.ok, status: response.status, collectorVersion: SITEFORGE_COLLECTOR_CONTENT_VERSION };
   };
   const listSelector = 'ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]';
   const itemSelector = 'article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]';
@@ -185,6 +198,7 @@
           sourceLayer,
           status: 'challenge_detected',
           reasonCode: 'browser-bridge-definite-challenge',
+          collectorVersion: SITEFORGE_COLLECTOR_CONTENT_VERSION,
         }],
       });
     }
@@ -336,12 +350,13 @@
         : routeStatus === 'thin_capture'
         ? 'browser-bridge-low-structure-evidence'
         : null,
+      collectorVersion: SITEFORGE_COLLECTOR_CONTENT_VERSION,
     }];
     return await postPayload(session, payload);
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type !== 'siteforge-collect-structure') {
+    if (message?.type !== SITEFORGE_COLLECT_MESSAGE_TYPE) {
       return false;
     }
     collect(message.session)

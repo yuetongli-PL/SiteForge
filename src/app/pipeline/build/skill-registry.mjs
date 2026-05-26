@@ -86,6 +86,16 @@ function hasObjectMismatch(best, utterance) {
 
 const WRITE_INTENT_PATTERN = /(?:\b(?:edit|update|change|modify|delete|remove|publish|send|submit|follow|unfollow|like|repost|upload|pay|payment|checkout)\b|\u4fee\u6539|\u7f16\u8f91|\u66f4\u6539|\u5220\u9664|\u79fb\u9664|\u53d1\u5e03|\u53d1\u9001|\u63d0\u4ea4|\u5173\u6ce8|\u53d6\u5173|\u70b9\u8d5e|\u8f6c\u53d1|\u4e0a\u4f20|\u4ed8\u6b3e|\u652f\u4ed8)/iu;
 const PROFILE_EDIT_INTENT_PATTERN = /(?:(?:\b(?:edit|update|change|modify)\b|\u4fee\u6539|\u7f16\u8f91|\u66f4\u6539).*(?:\b(?:profile|account|bio|homepage)\b|\u4e2a\u4eba\u8d44\u6599|\u8d26\u53f7\u8d44\u6599|\u4e3b\u9875\u4fe1\u606f|\u4e3b\u9875)|(?:\b(?:profile|account|bio|homepage)\b|\u4e2a\u4eba\u8d44\u6599|\u8d26\u53f7\u8d44\u6599|\u4e3b\u9875\u4fe1\u606f|\u4e3b\u9875).*(?:\b(?:edit|update|change|modify)\b|\u4fee\u6539|\u7f16\u8f91|\u66f4\u6539))/iu;
+const FOLLOW_READ_SURFACE_PATTERN = /(?:\b(?:following|followed|followers|follow\s+(?:channel|feed|list|updates)|following\s+(?:channel|feed|list|updates)|followed\s+updates|followers\s+list)\b|\u5173\u6ce8(?:\u9891\u9053|\u5217\u8868|\u52a8\u6001|\u6d41|\u9875)|\u7c89\u4e1d(?:\u5217\u8868|\u9875)?)/iu;
+const FOLLOW_MUTATION_INTENT_PATTERN = /(?:\b(?:unfollow|follow\s+(?:account|user|profile|author|creator|person)|follow\s+this|follow\s+that)\b|\u53d6\u5173|\u53d6\u6d88\u5173\u6ce8|\u5173\u6ce8(?:\u8d26\u53f7|\u8d26\u6237|\u7528\u6237|\u4f5c\u8005|\u535a\u4e3b|\u8fd9\u4e2a|\u8be5))/iu;
+const READ_INTENT_VERB_PATTERN = /(?:\b(?:view|open|browse|read|show|list|check)\b|\u67e5\u770b|\u6253\u5f00|\u6d4f\u89c8|\u8bfb\u53d6|\u663e\u793a)/iu;
+
+function isReadOnlyFollowIntentText(value) {
+  const text = normalizePhrase(value);
+  return FOLLOW_READ_SURFACE_PATTERN.test(text)
+    && !FOLLOW_MUTATION_INTENT_PATTERN.test(text)
+    && (READ_INTENT_VERB_PATTERN.test(text) || !/^\s*(?:follow|\u5173\u6ce8)\s*$/iu.test(text));
+}
 
 function bestSupportsWriteIntent(best) {
   const action = String(best?.capabilityAction ?? '').toLowerCase();
@@ -101,6 +111,9 @@ function bestSupportsWriteIntent(best) {
     best?.canonicalUtterance,
     ...(best?.utteranceExamples ?? []),
   ].join(' '));
+  if (isReadOnlyFollowIntentText(bestText) && !FOLLOW_MUTATION_INTENT_PATTERN.test(bestText)) {
+    return false;
+  }
   return /(?:\b(?:draft|compose|prepare|edit|update|change|modify|delete|remove|publish|send|submit|follow|unfollow|like|repost|upload|payment|checkout)\b|\u4fee\u6539|\u7f16\u8f91|\u66f4\u6539|\u5220\u9664|\u53d1\u5e03|\u53d1\u9001|\u63d0\u4ea4|\u5173\u6ce8|\u53d6\u5173|\u70b9\u8d5e|\u8f6c\u53d1|\u4e0a\u4f20|\u4ed8\u6b3e|\u652f\u4ed8)/iu.test(bestText);
 }
 
@@ -109,7 +122,11 @@ function hasActionMismatch(best, utterance) {
   if (!queryPhrase) {
     return false;
   }
-  if ((WRITE_INTENT_PATTERN.test(queryPhrase) || PROFILE_EDIT_INTENT_PATTERN.test(queryPhrase)) && !bestSupportsWriteIntent(best)) {
+  const readOnlyFollowIntent = isReadOnlyFollowIntentText(queryPhrase);
+  if (!readOnlyFollowIntent && FOLLOW_MUTATION_INTENT_PATTERN.test(queryPhrase) && !bestSupportsWriteIntent(best)) {
+    return true;
+  }
+  if (!readOnlyFollowIntent && (WRITE_INTENT_PATTERN.test(queryPhrase) || PROFILE_EDIT_INTENT_PATTERN.test(queryPhrase)) && !bestSupportsWriteIntent(best)) {
     return true;
   }
   if (PROFILE_EDIT_INTENT_PATTERN.test(queryPhrase)) {
@@ -201,7 +218,8 @@ export function lookupSkillIntentFromRegistry(registry, {
       skillId: null,
       intentId: null,
       capabilityId: null,
-      ...((WRITE_INTENT_PATTERN.test(normalizePhrase(utterance)) || PROFILE_EDIT_INTENT_PATTERN.test(normalizePhrase(utterance)))
+      ...(((WRITE_INTENT_PATTERN.test(normalizePhrase(utterance)) || PROFILE_EDIT_INTENT_PATTERN.test(normalizePhrase(utterance)))
+        && !isReadOnlyFollowIntentText(utterance))
         ? { reason: 'action_mismatch' }
         : {}),
     };

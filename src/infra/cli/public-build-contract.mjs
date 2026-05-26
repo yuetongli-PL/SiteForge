@@ -45,10 +45,9 @@ export const PUBLIC_STRING_VALUE_BUILD_FLAGS = Object.freeze([
 ]);
 
 export const PUBLIC_BUILD_HELP_FLAGS = Object.freeze([
-  ...PUBLIC_BOOLEAN_BUILD_FLAGS,
+  ...PUBLIC_BOOLEAN_BUILD_FLAGS.filter((flag) => !['--cookie-stdin', '--login-enhanced', '--public-only'].includes(flag)),
   '--privacy limited|strict',
   '--report user|debug|both',
-  '--auth none|cookie|browser',
   '--progress auto|interactive|plain',
   '--browser-path <path>',
   '--timeout <ms>',
@@ -56,9 +55,6 @@ export const PUBLIC_BUILD_HELP_FLAGS = Object.freeze([
   '--max-pages <n>',
   '--max-seeds <n>',
   '--max-sitemaps <n>',
-  '--cookie-env <name>',
-  '--cookie-file <path>',
-  '--auth-check-url <url-or-path>',
 ]);
 
 export const PUBLIC_BUILD_HELP = `Usage:
@@ -67,8 +63,7 @@ export const PUBLIC_BUILD_HELP = `Usage:
 Examples:
   siteforge build https://example.com/
   siteforge build https://example.com/ --auto --privacy limited --report user
-  siteforge build https://example.com/ --auth cookie --cookie-env SITEFORGE_COOKIE --auth-check-url /account
-  siteforge build https://example.com/ --auth browser --auth-check-url /account
+  siteforge build https://example.com/
 
 Flags:
   --auto
@@ -77,16 +72,7 @@ Flags:
   --network              Save only a sanitized network summary where available; raw traces are not persisted.
   --render-js            Enable rendered-page discovery.
   --no-render-js         Disable rendered-page discovery.
-  --auth none|cookie|browser
-                          Use public-only, Cookie verification, or default-browser bridge auth.
-  --cookie-env <name>    Read Cookie header from an environment variable.
-  --cookie-file <path>   Read Cookie header or Netscape cookie jar from a file.
-  --cookie-stdin         Read Cookie header from stdin.
   --robots-plan          On robots/setup block, print a machine-readable compliant remediation plan.
-  --auth-check-url <url-or-path>
-                          Same-site URL/path used to verify Cookie or browser bridge auth before authenticated crawl.
-  --login-enhanced       Compatibility alias for --auth cookie; still requires cookie input.
-  --public-only          Compatibility alias for --auth none.
   --privacy limited|strict
   --browser-path <path>
   --timeout <ms>
@@ -106,6 +92,9 @@ Flags:
   --progress auto|interactive|plain
   --no-tty
   --force-tty
+
+Authentication and browser bridge settings are read from siteforge.local.json.
+Advanced authentication flags remain accepted for compatibility and test automation, but are intentionally hidden from the user-facing help.
 `;
 
 export function publicBooleanBuildFlagSet() {

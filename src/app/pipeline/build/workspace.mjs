@@ -305,8 +305,9 @@ export async function readLastSuccessfulBuild(workspace) {
   return await readJsonFile(workspace.paths.lastSuccessfulBuildPath);
 }
 
-export async function promoteVerifiedBuild(context, stageResults) {
+export async function promoteVerifiedBuild(context, stageResults, options = /** @type {any} */ ({})) {
   const { paths } = context.workspace;
+  const retainCurrentBackup = options.retainCurrentBackup === true;
   const siteDir = siteForgeSiteDir({
     cwd: context.cwd,
     workspaceRoot: context.workspace.paths.rootDir,
@@ -352,7 +353,9 @@ export async function promoteVerifiedBuild(context, stageResults) {
       backupCreated = true;
     }
     await retryFsOperation(async () => rename(tempCurrentDir, paths.currentDir));
-    await rm(backupCurrentDir, { recursive: true, force: true }).catch(() => {});
+    if (!retainCurrentBackup) {
+      await rm(backupCurrentDir, { recursive: true, force: true }).catch(() => {});
+    }
   } catch (error) {
     await rm(paths.currentDir, { recursive: true, force: true }).catch(() => {});
     if (backupCreated && await pathExists(backupCurrentDir)) {
@@ -381,12 +384,45 @@ export async function promoteVerifiedBuild(context, stageResults) {
     registryPath: relativeToCwd(context.cwd, context.registryPath ?? paths.registryPath),
     verificationReport: relativeToCwd(context.cwd, path.join(paths.currentDir, 'verification_report.json')),
   };
-  return {
+  const promotion = {
     currentDir: paths.currentDir,
     activeSkillDir: paths.currentDir,
     lastSuccessfulBuild,
     promotedFiles: CURRENT_PROMOTION_FILES,
   };
+  if (retainCurrentBackup) {
+    Object.defineProperty(promotion, 'rollbackState', {
+      enumerable: false,
+      value: {
+        backupCurrentDir,
+        backupCreated,
+      },
+    });
+  }
+  return promotion;
+}
+
+export async function finalizeRetainedCurrentPromotion(workspace, promotion) {
+  const rollbackState = promotion?.rollbackState;
+  if (!rollbackState) {
+    return;
+  }
+  assertInside(workspace.paths.siteDir, rollbackState.backupCurrentDir, 'backupCurrentDir');
+  await rm(rollbackState.backupCurrentDir, { recursive: true, force: true }).catch(() => {});
+}
+
+export async function rollbackRetainedCurrentPromotion(workspace, promotion) {
+  const rollbackState = promotion?.rollbackState;
+  if (!rollbackState) {
+    return;
+  }
+  assertInside(workspace.paths.siteDir, rollbackState.backupCurrentDir, 'backupCurrentDir');
+  assertInside(workspace.paths.siteDir, workspace.paths.currentDir, 'currentDir');
+  await rm(workspace.paths.currentDir, { recursive: true, force: true }).catch(() => {});
+  if (rollbackState.backupCreated && await pathExists(rollbackState.backupCurrentDir)) {
+    await retryFsOperation(async () => rename(rollbackState.backupCurrentDir, workspace.paths.currentDir));
+  }
+  await rm(rollbackState.backupCurrentDir, { recursive: true, force: true }).catch(() => {});
 }
 
 export async function writeLastSuccessfulBuild(workspace, lastSuccessfulBuild) {

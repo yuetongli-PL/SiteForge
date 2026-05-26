@@ -21,9 +21,13 @@ import {
   runBrowserAuthStateCheck,
   runCookieAuthStateCheck,
   runSiteForgeBuild,
+  normalizeAuthStateReport,
+  authSummaryForReport,
   siteForgeBuildCliJson,
   canRunAuthenticatedLayer,
   createCrawlContract,
+  normalizeEvidenceBundle,
+  providerRuntimeMode,
   stableSiteIdFromUrl,
   validateCapabilitySafetyForVerification,
 } from '../../src/app/pipeline/build/index.mjs';
@@ -45,6 +49,7 @@ import {
   runBrowserAuthBridge,
 } from '../../src/app/pipeline/build/browser-auth-bridge.mjs';
 import { browserStructureCollectorScript } from '../../src/app/pipeline/build/browser-structure-collector.mjs';
+import { assertBuildProfileSafe } from '../../src/app/pipeline/build/build-profile-safety.mjs';
 import {
   simpleShopRoutes,
   tencentNewsRoutes,
@@ -163,6 +168,30 @@ async function assertArtifactsExist(artifactDir, artifactNames) {
       `${artifactName} should exist`,
     );
   }
+}
+
+async function collectTextFiles(rootDir) {
+  const entries = await readdir(rootDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await collectTextFiles(fullPath));
+    } else if (/\.(?:json|md|html|yaml|yml|txt)$/iu.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+async function readExistingTextFiles(filePaths) {
+  const text = [];
+  for (const filePath of filePaths) {
+    if (await fileExists(filePath)) {
+      text.push(await readFile(filePath, 'utf8'));
+    }
+  }
+  return text.join('\n');
 }
 
 async function writeParallelCrawlFixture(fixtureDir, {
@@ -494,6 +523,13 @@ test('SiteForge build static parser extracts links, forms, buttons, inputs, sele
     <a href="/categories/action/">Action category</a>
     <a href="/categories/xuanhuan/">玄幻分类</a>
     <a href="/hot/">Hot ranking</a>
+    <a href="/search/" aria-label="站内搜索"><span></span></a>
+    <a href="/tags/topic/">话题标签</a>
+    <a href="/rank/new" aria-label="最新榜单"><span></span></a>
+    <a href="/news/">新闻资讯</a>
+    <a href="/books/book-1/">小说作品</a>
+    <a href="/authors/one/">作者主页</a>
+    <a href="/details/book-1/">详情目录</a>
     <button type="button" aria-expanded="false">Menu</button>
     <form id="search" role="search" method="GET" action="/search.html">
       <input name="q" type="search" placeholder="headphones">
@@ -508,12 +544,131 @@ test('SiteForge build static parser extracts links, forms, buttons, inputs, sele
   assert.equal(parsed.links.some((link) => link.label === 'Action category' && link.semanticKind === 'category'), true);
   assert.equal(parsed.links.some((link) => link.label === '玄幻分类' && link.semanticKind === 'category'), true);
   assert.equal(parsed.links.some((link) => link.label === 'Hot ranking' && link.semanticKind === 'ranking'), true);
+  assert.equal(parsed.links.some((link) => link.label === '站内搜索' && link.semanticKind === 'search'), true);
+  assert.equal(parsed.links.some((link) => link.label === '话题标签' && link.semanticKind === 'tag'), true);
+  assert.equal(parsed.links.some((link) => link.label === '最新榜单' && link.semanticKind === 'ranking'), true);
+  assert.equal(parsed.links.some((link) => link.label === '新闻资讯' && link.semanticKind === 'article'), true);
+  assert.equal(parsed.links.some((link) => link.label === '小说作品' && link.semanticKind === 'work'), true);
+  assert.equal(parsed.links.some((link) => link.label === '作者主页' && link.semanticKind === 'profile'), true);
+  assert.equal(parsed.links.some((link) => link.label === '详情目录' && link.semanticKind === 'detail'), true);
   assert.equal(parsed.elementInstances.some((element) => element.label === '玄幻分类' && element.role === 'category'), true);
+  assert.equal(parsed.elementInstances.some((element) => element.label === '最新榜单' && element.role === 'ranking'), true);
   assert.equal(parsed.elementInstances.every((element) => element.rawDomPersisted === false && element.rawHtmlPersisted === false && element.bodyTextPersisted === false), true);
   assert.equal(parsed.forms[0].method, 'GET');
   assert.equal(parsed.forms[0].inputs.some((input) => input.tagName === 'select'), true);
   assert.equal(parsed.forms[0].inputs.some((input) => input.tagName === 'textarea'), true);
   assert.equal(parsed.controls.some((control) => control.tagName === 'button'), true);
+});
+
+test('SiteForge static parser maps opaque Chinese semantic link labels', () => {
+  const expected = new Map([
+    ['分类', 'category'],
+    ['频道', 'category'],
+    ['书库', 'category'],
+    ['书城', 'category'],
+    ['榜单', 'ranking'],
+    ['排行', 'ranking'],
+    ['热门', 'ranking'],
+    ['最新', 'ranking'],
+    ['新书', 'ranking'],
+    ['搜索', 'search'],
+    ['搜书', 'search'],
+    ['检索', 'search'],
+    ['作品', 'work'],
+    ['小说', 'work'],
+    ['书籍', 'work'],
+    ['作者', 'profile'],
+    ['作家', 'profile'],
+    ['用户主页', 'profile'],
+    ['详情', 'detail'],
+    ['目录', 'detail'],
+    ['书页', 'detail'],
+    ['关注频道', 'following_list'],
+  ]);
+  const links = [...expected.keys()]
+    .map((label, index) => `<a href="/opaque/${index + 1}">${label}</a>`)
+    .join('\n');
+  const parsed = parseHtmlDocument(testHtmlPage('Chinese semantic labels', links), 'https://fixture.local/');
+  for (const [label, semanticKind] of expected) {
+    assert.equal(
+      parsed.links.find((link) => link.label === label)?.semanticKind,
+      semanticKind,
+      `${label} should map to ${semanticKind}`,
+    );
+    assert.equal(
+      parsed.elementInstances.find((element) => element.label === label)?.role,
+      semanticKind === 'followed_channel' ? 'following_list' : semanticKind,
+      `${label} element instance should map to ${semanticKind}`,
+    );
+  }
+});
+
+test('runSiteForgeBuild generates graph capabilities and intents for opaque Chinese semantic links', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-chinese-semantic-links-'));
+  const expected = new Map([
+    ['分类', 'category'],
+    ['频道', 'category'],
+    ['书库', 'category'],
+    ['榜单', 'ranking'],
+    ['排行', 'ranking'],
+    ['热门', 'ranking'],
+    ['搜索', 'search'],
+    ['搜书', 'search'],
+    ['检索', 'search'],
+    ['作品', 'work'],
+    ['作者', 'profile'],
+    ['详情', 'detail'],
+    ['关注频道', 'following_list'],
+  ]);
+  try {
+    await withTestSite((rootUrl) => {
+      const routes = {
+        '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+      };
+      const links = [...expected.keys()].map((label, index) => {
+        const route = `/opaque/${index + 1}`;
+        routes[route] = testHtmlPage(label, `<main><ul><li>${label} summary</li></ul></main>`);
+        return `<a href="${route}">${label}</a>`;
+      }).join('\n');
+      routes['/'] = testHtmlPage('Opaque Chinese semantic links', `<main>${links}</main>`);
+      return routes;
+    }, async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'chinese-semantic-links-build',
+        now: new Date('2026-05-24T04:25:00.000Z'),
+        maxDepth: 1,
+        maxPages: 30,
+        maxSeeds: 30,
+        fetchDelayMs: 0,
+      });
+      assert.equal(result.status, 'success');
+
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      for (const [label, semanticKind] of expected) {
+        assert.equal(graph.nodes.some((node) => (
+          node.categoryInstance?.kind === semanticKind
+          && node.categoryInstance?.label === label
+          && node.sourceLayer === 'public'
+        )), true, `${label} should generate a graph categoryInstance`);
+        const capability = capabilities.capabilities.find((candidate) => (
+          candidate.object === label
+          && candidate.elementRole === semanticKind
+          && candidate.status === 'active'
+        ));
+        assert.ok(capability, `${label} should generate an active ${semanticKind} capability`);
+        assert.equal(intents.intents.some((intent) => (
+          intent.capabilityId === capability.id
+          && intent.callable !== false
+          && /\p{Script=Han}/u.test(intent.canonicalUtterance)
+        )), true, `${label} should generate a callable Chinese intent`);
+      }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('runSiteForgeBuild promotes uncrawled semantic links into route-only public capabilities', async () => {
@@ -848,6 +1003,102 @@ test('runSiteForgeBuild registers browser bridge runtime for challenge-blocked r
   }
 });
 
+test('robots-disallowed verification remains report-only even with browser bridge evidence', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-robots-report-only-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { disallow: '/blocked', sitemap: false }) },
+      '/': testHtmlPage('Robots report-only fixture', `
+        <main>
+          <h1>Public entry</h1>
+          <a href="/catalog">Catalog</a>
+          <a href="/blocked">Robots blocked page</a>
+        </main>
+      `),
+      '/catalog': testHtmlPage('Catalog', '<main><a href="/item-1">Item 1</a></main>'),
+      '/blocked': testHtmlPage('Blocked', '<main>Blocked by robots policy.</main>'),
+      '/notifications': testHtmlPage('Notifications', '<main><ul><li>Notification summary</li></ul></main>'),
+    }), async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'robots-report-only-bridge-build',
+        now: new Date('2026-05-23T03:30:00.000Z'),
+        renderJs: true,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        fetchDelayMs: 0,
+        localBuildConfig: {
+          authRoutes: ['/notifications'],
+          publicRevisitRoutes: ['/'],
+        },
+        publicRenderedStructureProvider: async () => ({
+          publicRenderedPages: [{
+            url: new URL('/blocked', rootUrl).toString(),
+            routeTemplate: '/blocked',
+            pageType: 'blocked_page',
+            visibleItemCount: 1,
+            listPresent: true,
+            links: [{ href: '/catalog', label: 'Catalog' }],
+          }],
+        }),
+        browserAuthBridgeProvider: async ({ routes }) => ({
+          authenticatedPages: [{
+            routeId: routes[0].id,
+            url: routes[0].targetUrl,
+            routeTemplate: '/notifications',
+            pageType: 'notifications',
+            visibleItemCount: 1,
+            listPresent: true,
+          }],
+        }),
+      });
+
+      assert.equal(result.result_status, 'partial_success');
+      assert.equal(result.summary.verificationStatus, 'report_only_blocked');
+      assert.equal(result.summary.verificationReasonCode, 'robots-disallowed');
+      assert.equal(result.summary.registryStatus, 'promotion-blocked');
+      assert.equal(result.summary.currentUpdated, false);
+      assert.notEqual(result.summary.promotionClass, 'browser_bridge_runtime');
+      assert.notEqual(result.summary.runtimeMode, 'browser_bridge_required');
+
+      const verificationReport = await readJson(path.join(result.artifactDir, 'verification_report.json'));
+      assert.equal(verificationReport.status, 'report_only_blocked');
+      assert.equal(verificationReport.reasonCode, 'robots-disallowed');
+      assert.equal(verificationReport.promotionAllowed, false);
+      assert.notEqual(verificationReport.promotionClass, 'browser_bridge_runtime');
+      assert.notEqual(verificationReport.runtimeMode, 'browser_bridge_required');
+      assert.match(JSON.stringify(verificationReport.errors), /robots-disallowed/u);
+
+      const registryReport = await readJson(path.join(result.artifactDir, 'registry_report.json'));
+      assert.equal(registryReport.status, 'promotion-blocked');
+      assert.equal(registryReport.lookup.status, 'skipped');
+      assert.equal(registryReport.promotionAllowed, false);
+      assert.notEqual(registryReport.promotionClass, 'browser_bridge_runtime');
+      assert.notEqual(registryReport.runtimeMode, 'browser_bridge_required');
+
+      const registry = await readJson(result.workspace.registryPath);
+      assert.equal(registry.skills.some((skill) => skill.skillId === result.skillId), false);
+      assert.doesNotMatch(JSON.stringify(registry), /bridge_runtime_passed|browser_bridge_runtime|browser_bridge_required/u);
+      assert.equal(await fileExists(path.join(result.buildContext.siteDir, 'current', 'skill.yaml')), false);
+      assert.equal(await fileExists(path.join(result.buildContext.siteDir, 'current', 'verification_report.json')), false);
+
+      const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+      assert.equal(buildReport.summary.verificationStatus, 'report_only_blocked');
+      assert.equal(buildReport.summary.verificationReasonCode, 'robots-disallowed');
+      assert.equal(buildReport.summary.registryStatus, 'promotion-blocked');
+      assert.equal(buildReport.summary.currentUpdated, false);
+
+      const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
+      assert.equal(userReport.build_completion.registry_status, 'promotion-blocked');
+      assert.equal(userReport.build_completion.current_updated, false);
+      assert.equal(userReport.next_step_workflows.every((workflow) => workflow.promotionAllowed === false), true);
+      assert.equal(userReport.next_step_workflows.some((workflow) => workflow.id === 'browser-bridge-runtime'), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('SiteForge static crawl records failed fetches and standalone controls within maxPages', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-crawl-coverage-'));
   try {
@@ -1065,6 +1316,250 @@ test('runSiteForgeBuild keeps distinct Chinese category element capabilities', a
       assert.equal(categoryCapabilities.some((capability) => capability.object === fantasy), true);
       assert.equal(categoryCapabilities.some((capability) => capability.object === city), true);
       assert.equal(new Set(categoryCapabilities.map((capability) => capability.id)).size, categoryCapabilities.length);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild disables Chinese write and account mutation controls', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-chinese-risk-controls-'));
+  const labels = [
+    '\u53d1\u5e03',
+    '\u8bc4\u8bba',
+    '\u53d1\u9001\u79c1\u4fe1',
+    '\u5220\u9664',
+    '\u4e0a\u4f20',
+    '\u652f\u4ed8',
+    '\u5173\u6ce8',
+    '\u70b9\u8d5e',
+    '\u8f6c\u53d1',
+  ];
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+      '/': testHtmlPage('Chinese risk controls', `
+        <main>
+          <h1>Public controls</h1>
+          ${labels.map((label) => `<button aria-label="${label}">${label}</button>`).join('\n')}
+          <form method="post" action="/settings/password" aria-label="\u4fee\u6539\u5bc6\u7801">
+            <button type="submit">\u4fee\u6539\u5bc6\u7801</button>
+          </form>
+        </main>
+      `),
+    }), async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'chinese-risk-controls-build',
+        now: new Date('2026-05-24T04:00:00.000Z'),
+        fetchDelayMs: 0,
+      });
+      assert.equal(result.status, 'success');
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const disabledActions = new Set(capabilities.capabilities
+        .filter((capability) => capability.status === 'disabled')
+        .map((capability) => capability.blockedAction)
+        .filter(Boolean));
+      for (const action of ['publish', 'publish_reply', 'send_dm', 'delete', 'upload', 'pay', 'follow', 'like', 'repost', 'change_password']) {
+        assert.equal(disabledActions.has(action), true, `Expected disabled action ${action}`);
+      }
+
+      const activeCapabilitiesText = JSON.stringify(capabilities.capabilities
+        .filter((capability) => (
+          capability.status === 'active'
+          || ['enabled', 'limited_enabled'].includes(String(capability.enabled_status ?? ''))
+        ))
+        .map((capability) => ({
+          name: capability.name,
+          action: capability.action,
+          object: capability.object,
+          userValue: capability.userValue,
+          executionPlan: capability.executionPlan,
+        })));
+      for (const label of [...labels, '\u4fee\u6539\u5bc6\u7801']) {
+        assert.equal(activeCapabilitiesText.includes(label), false, `${label} should not be active`);
+      }
+
+      const disabledCapabilityIds = new Set(capabilities.capabilities
+        .filter((capability) => capability.status === 'disabled')
+        .map((capability) => capability.id));
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      assert.equal(intents.intents
+        .filter((intent) => disabledCapabilityIds.has(intent.capabilityId))
+        .every((intent) => intent.callable === false), true);
+
+      const registry = await readJson(result.workspace.registryPath);
+      const record = registry.skills.find((skill) => skill.skillId === result.skillId);
+      const registryText = JSON.stringify(record ?? {});
+      for (const label of [...labels, '\u4fee\u6539\u5bc6\u7801']) {
+        assert.equal(registryText.includes(label), false, `${label} should not be registered`);
+      }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild separates follow read links from follow mutation controls', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-follow-read-write-'));
+  const readLabel = '\u5173\u6ce8\u9891\u9053';
+  const followLabel = '\u5173\u6ce8';
+  const unfollowLabel = '\u53d6\u5173';
+  try {
+    await withTestServer((request, response) => {
+      const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt('http://localhost/', { sitemap: false }));
+        return;
+      }
+      if (pathname === '/follow') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage(readLabel, '<main><ul><li>Followed item summary</li></ul></main>'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Follow read/write split', `
+        <main>
+          <a href="/follow" aria-label="${readLabel}">${readLabel}</a>
+          <button aria-label="${followLabel}">${followLabel}</button>
+          <button aria-label="${unfollowLabel}">${unfollowLabel}</button>
+        </main>
+      `));
+    }, async (rootUrl) => {
+      const siteUrl = rootUrl.replace('127.0.0.1', 'localhost');
+      const result = await runSiteForgeBuild(siteUrl, {
+        cwd: workspace,
+        buildId: 'follow-read-write-build',
+        now: new Date('2026-05-24T04:10:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+      });
+      assert.equal(result.status, 'success');
+
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.equal(graph.nodes.some((node) => (
+        node.categoryInstance?.kind === 'following_list'
+        && node.categoryInstance?.label === readLabel
+        && node.sourceLayer !== 'authenticated'
+      )), true);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const readCapability = capabilities.capabilities.find((capability) => (
+        capability.object === readLabel
+        && capability.elementRole === 'following_list'
+      ));
+      assert.ok(readCapability);
+      assert.equal(readCapability.status, 'active');
+      assert.equal(['enabled', 'limited_enabled'].includes(String(readCapability.enabled_status ?? '')), true);
+
+      const followWriteCapability = capabilities.capabilities.find((capability) => capability.blockedAction === 'follow');
+      const unfollowWriteCapability = capabilities.capabilities.find((capability) => capability.blockedAction === 'unfollow');
+      assert.equal(followWriteCapability?.status, 'disabled');
+      assert.equal(unfollowWriteCapability?.status, 'disabled');
+      assert.equal(followWriteCapability?.executionPlan, undefined);
+      assert.equal(unfollowWriteCapability?.executionPlan, undefined);
+
+      const activeMutationControls = capabilities.capabilities.filter((capability) => (
+        (
+          capability.status === 'active'
+          || ['enabled', 'limited_enabled'].includes(String(capability.enabled_status ?? ''))
+        )
+        && ['button', 'form', 'control'].includes(String(capability.elementKind ?? capability.kind ?? '').toLowerCase())
+        && [followLabel, unfollowLabel].includes(String(capability.object ?? capability.userValue ?? capability.name ?? '').trim())
+      ));
+      assert.deepEqual(activeMutationControls, []);
+
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      const disabledIds = new Set([followWriteCapability?.id, unfollowWriteCapability?.id].filter(Boolean));
+      assert.equal(intents.intents
+        .filter((intent) => disabledIds.has(intent.capabilityId))
+        .every((intent) => intent.callable === false), true);
+
+      const registry = await readJson(result.workspace.registryPath);
+      const registryText = JSON.stringify(registry.skills.find((skill) => skill.skillId === result.skillId) ?? {});
+      assert.match(registryText, /\u5173\u6ce8\u9891\u9053/u);
+      assert.doesNotMatch(registryText, /"\u5173\u6ce8"(?!\u9891\u9053)|\u53d6\u5173/u);
+
+      const readLookup = await lookupSkillIntent({
+        registryPath: result.workspace.registryPath,
+        domain: new URL(siteUrl).hostname,
+        utterance: `\u67e5\u770b${readLabel}`,
+      });
+      assert.equal(readLookup.status, 'found');
+      assert.equal(readLookup.capabilityId, readCapability.id);
+      for (const utterance of ['\u5173\u6ce8\u8d26\u53f7', '\u53d6\u5173']) {
+        const writeLookup = await lookupSkillIntent({
+          registryPath: result.workspace.registryPath,
+          domain: new URL(siteUrl).hostname,
+          utterance,
+        });
+        assert.equal(writeLookup.status, 'not_found');
+      }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild keeps loopback internal links after URL redaction', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-loopback-internal-links-'));
+  const readLabel = '\u5173\u6ce8\u9891\u9053';
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+      '/': testHtmlPage('Loopback internal links', `
+        <main>
+          <a href="/follow" aria-label="${readLabel}">${readLabel}</a>
+          <a href="/secret?token=SECRET_SESSION_VALUE&safe=1">Sensitive query link</a>
+        </main>
+      `),
+      '/follow': testHtmlPage(readLabel, '<main><ul><li>Followed item summary</li></ul></main>'),
+      '/secret': testHtmlPage('Secret route', '<main>Should not require token replay</main>'),
+    }), async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'loopback-internal-links-build',
+        now: new Date('2026-05-24T04:15:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+      });
+      assert.equal(result.status, 'success');
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      const forbiddenRuntimeUrlFieldPattern = /"(?:rawHref|originalHref|resolvedHref|runtimeHref|rawUrl|originalUrl|resolvedUrl|rawAction|sourceSameOrigin)"\s*:/iu;
+      assert.equal(crawlStatic.pages.some((page) => new URL(page.normalizedUrl).pathname === '/follow'), true);
+      assert.doesNotMatch(JSON.stringify(crawlStatic), forbiddenRuntimeUrlFieldPattern);
+      const homepage = crawlStatic.pages.find((page) => new URL(page.normalizedUrl).pathname === '/');
+      assert.ok(homepage);
+      assert.equal(homepage.links.some((link) => (
+        new URL(link.normalizedHref).pathname === '/follow'
+        && link.href.includes('redacted-ip.invalid')
+      )), true);
+      assert.doesNotMatch(JSON.stringify(crawlStatic), /SECRET_SESSION_VALUE|token=SECRET_SESSION_VALUE/iu);
+
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.doesNotMatch(JSON.stringify(graph), forbiddenRuntimeUrlFieldPattern);
+      assert.doesNotMatch(JSON.stringify(graph), /SECRET_SESSION_VALUE|token=SECRET_SESSION_VALUE/iu);
+      assert.equal(graph.nodes.some((node) => (
+        node.categoryInstance?.kind === 'following_list'
+        && node.categoryInstance?.label === readLabel
+        && node.sourceLayer === 'public'
+      )), true);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      assert.doesNotMatch(JSON.stringify(capabilities), forbiddenRuntimeUrlFieldPattern);
+      assert.doesNotMatch(JSON.stringify(capabilities), /SECRET_SESSION_VALUE|token=SECRET_SESSION_VALUE/iu);
+      assert.equal(capabilities.capabilities.some((capability) => (
+        capability.elementRole === 'following_list'
+        && capability.object === readLabel
+        && capability.status === 'active'
+      )), true);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -1661,6 +2156,16 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
     assert.equal(result.skillDir, path.join(siteRoot, 'current'));
 
     const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+    const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+    const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+    assert.equal(crawlStatic.evidenceBundles.some((bundle) => bundle.providerId === 'public_http'), true);
+    assert.equal(crawlStatic.evidenceBundles.some((bundle) => bundle.providerId === 'authorized_summary'), true);
+    assert.equal(crawlStatic.evidenceCoverage.providers.public_http.pages > 0, true);
+    assert.equal(buildReport.summary.coverage.providers.public_http.pages > 0, true);
+    assert.equal(buildReport.user_report.coverage.providers.public_http.runtimeMode, 'generic_http_read');
+    assert.match(htmlReport, /Evidence Providers/u);
+    assert.match(htmlReport, /public_http/u);
+    assert.equal(graph.nodes.some((node) => node.providerId === 'public_http'), true);
     assert.equal(buildReport.reports.user.html_capability_intent_summary, htmlReportPath);
     assert.equal(buildReport.reports.capability_intent_summary_html, htmlReportPath);
     assert.match(buildReport.reports.raw_page_material_manifest, /raw_page_material_manifest\.json$/u);
@@ -2001,15 +2506,16 @@ test('cookie auth state check gates authenticated layer without persisting cooki
     assert.equal(missing.verified, false);
     assert.equal(canRunAuthenticatedLayer(missing), false);
 
+    const verifiedOptions = {
+      authMode: 'cookie',
+      cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+      authCheckUrl: '/account',
+      fetchTimeoutMs: 1000,
+    };
     const verified = await runCookieAuthStateCheck({
       inputUrl: rootUrl,
       site,
-      options: {
-        authMode: 'cookie',
-        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
-        authCheckUrl: '/account',
-        fetchTimeoutMs: 1000,
-      },
+      options: verifiedOptions,
     });
     assert.equal(verified.authMethod, 'cookie');
     assert.equal(verified.authVerificationStatus, 'cookie_verified');
@@ -2018,6 +2524,7 @@ test('cookie auth state check gates authenticated layer without persisting cooki
     assert.equal(verified.cookieInput.pairCount, 2);
     assert.equal(verified.cookieInput.persisted, false);
     assert.equal(canRunAuthenticatedLayer(verified), true);
+    assert.equal(verifiedOptions.authRuntime, undefined);
     assert.doesNotMatch(JSON.stringify(verified), /SECRET_SESSION_VALUE|sid=|uid=123/u);
 
     const redirected = await runCookieAuthStateCheck({
@@ -2076,6 +2583,80 @@ test('cookie auth state check gates authenticated layer without persisting cooki
   });
 });
 
+test('cookie auth state check blocks robots-disallowed URLs before sending Cookie', async () => {
+  const accountRequests = [];
+  const redirectRequests = [];
+  await withTestServer((request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://127.0.0.1/').pathname;
+    if (pathname === '/account') {
+      accountRequests.push(request.headers.cookie ?? '');
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Account', '<main><ul><li>private</li></ul></main>'));
+      return;
+    }
+    if (pathname === '/redirect-account') {
+      redirectRequests.push(request.headers.cookie ?? '');
+      response.writeHead(302, { location: '/account' });
+      response.end('');
+      return;
+    }
+    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('not found');
+  }, async (rootUrl) => {
+    const site = {
+      id: 'cookie-auth-robots-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    const robotsPolicy = parseRobotsPolicy(testRobotsTxt(rootUrl, { disallow: '/account', sitemap: false }), rootUrl);
+    const options = {
+      authMode: 'cookie',
+      cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+      authCheckUrl: '/account',
+      fetchTimeoutMs: 1000,
+    };
+
+    const blocked = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options,
+      robotsPolicy,
+    });
+
+    assert.equal(blocked.authMethod, 'cookie');
+    assert.equal(blocked.authVerificationStatus, 'cookie_blocked');
+    assert.equal(blocked.verified, false);
+    assert.equal(canRunAuthenticatedLayer(blocked), false);
+    assert.equal(blocked.blockingSignals.includes('robots-disallowed'), true);
+    assert.equal(blocked.blockingSignals.includes('auth-check-url-robots-disallowed'), true);
+    assert.equal(accountRequests.length, 0);
+    assert.equal(options.authRuntime, undefined);
+    assert.doesNotMatch(JSON.stringify(blocked), /SECRET_SESSION_VALUE|sid=|uid=123/u);
+
+    const redirectOptions = {
+      authMode: 'cookie',
+      cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+      authCheckUrl: '/redirect-account',
+      fetchTimeoutMs: 1000,
+    };
+    const redirected = await runCookieAuthStateCheck({
+      inputUrl: rootUrl,
+      site,
+      options: redirectOptions,
+      robotsPolicy,
+    });
+
+    assert.equal(redirected.authVerificationStatus, 'cookie_blocked');
+    assert.equal(redirected.verified, false);
+    assert.equal(redirected.blockingSignals.includes('robots-disallowed'), true);
+    assert.equal(redirected.blockingSignals.includes('auth-check-redirect-robots-disallowed'), true);
+    assert.equal(redirectRequests.length, 1);
+    assert.equal(accountRequests.length, 0);
+    assert.equal(redirectOptions.authRuntime, undefined);
+    assert.doesNotMatch(JSON.stringify(redirected), /SECRET_SESSION_VALUE|sid=|uid=123/u);
+  });
+});
+
 test('browser auth state check verifies bridge summaries without reading session material', async () => {
   await withTestServer({
     '/robots.txt': testRobotsTxt('http://example.test/'),
@@ -2100,34 +2681,35 @@ test('browser auth state check verifies bridge summaries without reading session
     assert.equal(missing.verified, false);
     assert.equal(canRunAuthenticatedLayer(missing), false);
 
+    const verifiedBrowserOptions = {
+      authMode: 'browser',
+      authCheckUrl: '/account',
+      browserAuthBridgeProvider: async ({ targetUrl, routes }) => {
+        assert.equal(routes.length, 1);
+        return ({
+        authenticatedPages: [{
+          url: targetUrl,
+          routeId: routes[0].id,
+          routeTemplate: '/account',
+          pageType: 'account_home',
+          visibleItemCount: 5,
+          listPresent: true,
+          controls: [{ kind: 'button', label: 'Open notifications', selector: '[data-action="notifications"]' }],
+        }],
+        authenticatedOverlayPages: [{
+          url: rootUrl,
+          routeTemplate: '/',
+          pageType: 'home_overlay',
+          visibleItemCount: 2,
+          listPresent: true,
+        }],
+        });
+      },
+    };
     const verified = await runBrowserAuthStateCheck({
       inputUrl: rootUrl,
       site,
-      options: {
-        authMode: 'browser',
-        authCheckUrl: '/account',
-        browserAuthBridgeProvider: async ({ targetUrl, routes }) => {
-          assert.equal(routes.length, 1);
-          return ({
-          authenticatedPages: [{
-            url: targetUrl,
-            routeId: routes[0].id,
-            routeTemplate: '/account',
-            pageType: 'account_home',
-            visibleItemCount: 5,
-            listPresent: true,
-            controls: [{ kind: 'button', label: 'Open notifications', selector: '[data-action="notifications"]' }],
-          }],
-          authenticatedOverlayPages: [{
-            url: rootUrl,
-            routeTemplate: '/',
-            pageType: 'home_overlay',
-            visibleItemCount: 2,
-            listPresent: true,
-          }],
-          });
-        },
-      },
+      options: verifiedBrowserOptions,
     });
     assert.equal(verified.authMethod, 'browser');
     assert.equal(verified.authVerificationStatus, 'browser_verified');
@@ -2139,6 +2721,8 @@ test('browser auth state check verifies bridge summaries without reading session
     assert.equal(verified.browserBridge.capturedRouteCount, 1);
     assert.equal(verified.browserBridge.missingRouteCount, 0);
     assert.equal(canRunAuthenticatedLayer(verified), true);
+    assert.equal(verifiedBrowserOptions.authRuntime, undefined);
+    assert.equal(verifiedBrowserOptions.authenticatedStructureSummary, undefined);
     assert.doesNotMatch(JSON.stringify(verified), /sid=SECRET_SESSION_VALUE|uid=123|Bearer synthetic-secret/iu);
 
     const blocked = await runBrowserAuthStateCheck({
@@ -2153,6 +2737,570 @@ test('browser auth state check verifies bridge summaries without reading session
     assert.equal(blocked.authVerificationStatus, 'browser_blocked');
     assert.deepEqual(blocked.blockingSignals, ['browser-auth-url-cross-site']);
   });
+});
+
+test('browser auth bridge filters robots-disallowed configured routes before provider execution', async () => {
+  await withTestSite((rootUrl) => ({
+    '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { disallow: '/blocked-auth', sitemap: false }) },
+    '/': testHtmlPage('Home', '<main>Home</main>'),
+    '/notifications': testHtmlPage('Notifications', '<main><ul><li>Notification summary</li></ul></main>'),
+    '/blocked-auth': testHtmlPage('Blocked auth', '<main>Blocked.</main>'),
+  }), async (rootUrl) => {
+    const site = {
+      id: 'browser-auth-robots-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    const robotsPolicy = parseRobotsPolicy(testRobotsTxt(rootUrl, { disallow: '/blocked-auth', sitemap: false }), rootUrl);
+    let providerRoutes = [];
+    const filtered = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      robotsPolicy,
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: ['/notifications', '/blocked-auth'],
+        },
+        browserBridgeMaxRetryPasses: 0,
+        browserAuthBridgeProvider: async ({ routes }) => {
+          providerRoutes = routes;
+          return {
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: '/notifications',
+              pageType: 'notifications',
+              visibleItemCount: 1,
+              listPresent: true,
+            }, {
+              routeId: 'robots-blocked-route-1',
+              url: new URL('/blocked-auth', rootUrl).toString(),
+              routeTemplate: '/blocked-auth',
+              pageType: 'blocked_auth',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.deepEqual(providerRoutes.map((route) => route.routeTemplate), ['/notifications']);
+    assert.equal(filtered.status, 'browser_verified_partial');
+    assert.equal(filtered.verified, true);
+    assert.equal(filtered.bridgeSummary.routeCount, 2);
+    assert.equal(filtered.bridgeSummary.capturedRouteCount, 1);
+    assert.equal(filtered.bridgeSummary.missingRouteCount, 1);
+    assert.equal(filtered.bridgeSummary.routeResults.some((result) => (
+      result.targetRoute === '/blocked-auth'
+      && result.status === 'blocked'
+      && result.reasonCode === 'robots-disallowed'
+    )), true);
+
+    let providerCalled = false;
+    let browserOpened = false;
+    const allBlocked = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      robotsPolicy,
+      openBrowser: async () => {
+        browserOpened = true;
+      },
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: ['/blocked-auth'],
+        },
+        browserAuthBridgeProvider: async () => {
+          providerCalled = true;
+          return {
+            authenticatedPages: [{
+              url: new URL('/blocked-auth', rootUrl).toString(),
+              routeTemplate: '/blocked-auth',
+              pageType: 'blocked_auth',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(providerCalled, false);
+    assert.equal(browserOpened, false);
+    assert.equal(allBlocked.status, 'browser_blocked');
+    assert.equal(allBlocked.verified, false);
+    assert.equal(allBlocked.blockingSignals.includes('robots-disallowed'), true);
+    assert.equal(allBlocked.blockingSignals.includes('browser-bridge-all-routes-robots-disallowed'), true);
+    assert.equal(allBlocked.bridgeSummary.routeResults.some((result) => (
+      result.targetRoute === '/blocked-auth'
+      && result.status === 'blocked'
+      && result.reasonCode === 'robots-disallowed'
+    )), true);
+  });
+});
+
+test('browser auth route result persistence redacts sensitive diagnostic fields', () => {
+  const report = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      routeCount: 3,
+      capturedRouteCount: 1,
+      missingRouteCount: 2,
+      routeResults: [
+        {
+          routeId: 'route-1',
+          sourceLayer: 'authenticated',
+          targetRoute: 'https://example.test/account?access_token=SECRET_ROUTE_TOKEN#frag',
+          status: 'captured',
+          reasonCode: 'captured',
+          finalReasonCode: 'captured',
+          retryOutcome: 'not_attempted',
+        },
+        {
+          routeId: 'access_token=SECRET_ROUTE_TOKEN',
+          sourceLayer: 'authenticated',
+          targetRoute: '/secure?token=SECRET_ROUTE_TOKEN',
+          status: 'blocked',
+          reasonCode: 'Cookie: sessionid=SECRET_SESSION_VALUE',
+          initialReasonCode: 'Authorization: Bearer synthetic-secret',
+          finalReasonCode: 'raw html <html>SECRET</html>',
+          retryOutcome: 'Bearer synthetic-secret',
+        },
+        {
+          routeId: 'route-3',
+          sourceLayer: 'authenticated_overlay',
+          routeTemplate: '/safe-overlay',
+          status: 'timeout',
+          reasonCode: 'browser-bridge-route-limit-exceeded',
+          finalReasonCode: 'browser-bridge-route-limit-exceeded',
+          retryOutcome: 'not_attempted',
+          headers: { cookie: 'sid=SECRET_SESSION_VALUE' },
+          rawBody: '<html>SECRET</html>',
+        },
+      ],
+    },
+  }, {
+    site: {
+      rootUrl: 'https://example.test/',
+      allowedDomains: ['example.test'],
+    },
+    crawlMode: 'authenticated_browser',
+    authMethod: 'browser',
+  });
+
+  assert.equal(report.browserBridge.routeResults.length, 3);
+  assert.equal(report.browserBridge.routeResults[0].targetRoute, 'https://example.test/account');
+  assert.equal(report.browserBridge.routeResults[1].targetRoute, '/secure');
+  assert.equal(report.browserBridge.routeResults[1].routeId, null);
+  assert.equal(report.browserBridge.routeResults[1].reasonCode, null);
+  assert.equal(report.browserBridge.routeResults[1].initialReasonCode, null);
+  assert.equal(report.browserBridge.routeResults[1].finalReasonCode, null);
+  assert.equal(report.browserBridge.routeResults[1].retryOutcome, null);
+  assert.equal(report.browserBridge.routeResults[2].targetRoute, '/safe-overlay');
+  const text = JSON.stringify(report);
+  assert.doesNotMatch(text, /SECRET_ROUTE_TOKEN|SECRET_SESSION_VALUE|sid=|Cookie:|Authorization:|Bearer synthetic-secret|raw html|<html>|headers|rawBody/iu);
+});
+
+test('browser auth extension stage persistence keeps complete sanitized diagnostics', () => {
+  const extensionStages = [
+    'bridge-content-version:route-queue-chinese-semantic-v6',
+    'bridge-version:route-queue-chinese-semantic-v6',
+    'collector-injecting:route-1',
+    'collector-reinjecting:route-1',
+    'collector-reinjecting:route-1',
+    ...Array.from({ length: 26 }, (_, index) => `route-opened:route-${index + 1}`),
+    'Cookie: sid=SECRET_SESSION_VALUE',
+    'execute-script-failed:route-1:attempt-1',
+  ];
+  const extensionStageTimeline = [
+    ...Array.from({ length: 390 }, (_, index) => ({
+      index,
+      eventIndex: index,
+      passIndex: index < 200 ? 0 : 1,
+      stage: index === 0
+        ? 'collector-injecting:route-1'
+        : index <= 2
+        ? 'collector-reinjecting:route-1'
+        : `route-opened:route-${(index % 26) + 1}`,
+    })),
+    {
+      index: 391,
+      eventIndex: 391,
+      passIndex: 1,
+      stage: 'Cookie: sid=SECRET_SESSION_VALUE',
+    },
+  ];
+  const report = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      routeCount: 26,
+      capturedRouteCount: 1,
+      missingRouteCount: 25,
+      routeResults: [{
+        routeId: 'route-1',
+        targetRoute: '/route-1',
+        status: 'captured',
+      }],
+      extensionStages,
+      extensionStageTimeline,
+    },
+  }, {
+    site: {
+      rootUrl: 'https://example.test/',
+      allowedDomains: ['example.test'],
+    },
+    crawlMode: 'authenticated_browser',
+    authMethod: 'browser',
+  });
+
+  assert.equal(report.browserBridge.extensionStages.length > 20, true);
+  assert.equal(report.browserBridge.extensionStages.includes('route-opened:route-26'), true);
+  assert.equal(report.browserBridge.extensionStages.includes('bridge-content-version:route-queue-chinese-semantic-v6'), true);
+  assert.equal(report.browserBridge.extensionStages.includes('collector-injecting:route-1'), true);
+  assert.equal(report.browserBridge.extensionStages.includes('collector-reinjecting:route-1'), true);
+  assert.equal(report.browserBridge.extensionStageCount, report.browserBridge.extensionStages.length);
+  assert.equal(report.browserBridge.extensionStageOmittedCount, 0);
+  assert.equal(report.browserBridge.extensionStageTimelineCount, 390);
+  assert.equal(report.browserBridge.extensionStageTimelineLimit, 384);
+  assert.equal(report.browserBridge.extensionStageTimeline.length, 384);
+  assert.equal(report.browserBridge.extensionStageTimelineOmittedCount, 6);
+  assert.equal(report.browserBridge.extensionStageTimeline[0].eventIndex, 0);
+  assert.equal(report.browserBridge.extensionStageTimeline[0].stage, 'collector-injecting:route-1');
+  assert.equal(report.browserBridge.extensionStageTimeline[1].stage, 'collector-reinjecting:route-1');
+  assert.equal(report.browserBridge.extensionStageTimeline[2].stage, 'collector-reinjecting:route-1');
+  assert.equal(report.browserBridge.extensionStageTimeline[383].eventIndex, 383);
+  assert.equal(report.browserBridge.extensionStageTimeline.every((entry) => entry.index === entry.eventIndex), true);
+  assert.equal(report.browserBridge.extensionStageTimeline.every((entry) => /^(?:route-opened|collector-injecting|collector-reinjecting):route-/u.test(entry.stage)), true);
+  assert.equal(report.browserBridge.extensionStages.some((stage) => /Cookie|SECRET|sid=/iu.test(stage)), false);
+  const userSummary = authSummaryForReport(null, report);
+  assert.equal(userSummary.browserBridge.extensionStageCount, report.browserBridge.extensionStageCount);
+  assert.equal(userSummary.browserBridge.extensionStages.length, 0);
+  assert.equal(userSummary.browserBridge.extensionStageOmittedCount, report.browserBridge.extensionStageCount);
+  assert.equal(userSummary.browserBridge.extensionStageTimelineCount, report.browserBridge.extensionStageTimelineCount);
+  assert.equal(userSummary.browserBridge.extensionStageTimeline.length, 0);
+  assert.equal(userSummary.browserBridge.extensionStageTimelineOmittedCount, report.browserBridge.extensionStageTimelineCount);
+  const userSummaryText = JSON.stringify(userSummary);
+  assert.equal(userSummaryText.includes('route-opened:route-26'), false);
+  assert.equal(userSummaryText.includes('collector-injecting:route-1'), false);
+  assert.equal(userSummaryText.includes('bridge-content-version:route-queue-chinese-semantic-v6'), false);
+  assert.equal(userSummaryText.includes('extensionStages":["'), false);
+  assert.equal(userSummaryText.includes('extensionStageTimeline":[{'), false);
+  assert.doesNotMatch(JSON.stringify(report), /SECRET_SESSION_VALUE|sid=/iu);
+});
+
+test('browser auth extension diagnostic counts ignore hostile input counts', () => {
+  const report = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      routeCount: 2,
+      capturedRouteCount: 1,
+      missingRouteCount: 1,
+      extensionStageCount: 999999,
+      extensionStageOmittedCount: 999999,
+      extensionStageTimelineCount: 999999,
+      extensionStageTimelineOmittedCount: 999999,
+      routeResults: [{
+        routeId: 'route-1',
+        targetRoute: '/route-1',
+        status: 'captured',
+      }],
+      extensionStages: [
+        'route-opened:route-1',
+        'route-opened:route-2',
+        'route-opened:route-1',
+        'Cookie: sid=SECRET_SESSION_VALUE',
+        'raw html <html>SECRET</html>',
+      ],
+      extensionStageTimeline: Array.from({ length: 390 }, (_, index) => ({
+        eventIndex: index,
+        passIndex: index < 200 ? 0 : 1,
+        stage: `route-opened:route-${(index % 26) + 1}`,
+      })),
+    },
+  }, {
+    site: {
+      rootUrl: 'https://example.test/',
+      allowedDomains: ['example.test'],
+    },
+    crawlMode: 'authenticated_browser',
+    authMethod: 'browser',
+  });
+
+  assert.equal(report.browserBridge.extensionStageCount, 2);
+  assert.equal(report.browserBridge.extensionStageOmittedCount, 0);
+  assert.equal(report.browserBridge.extensionStages.length, 2);
+  assert.equal(report.browserBridge.extensionStageTimelineCount, 390);
+  assert.equal(report.browserBridge.extensionStageTimeline.length, 384);
+  assert.equal(report.browserBridge.extensionStageTimelineOmittedCount, 6);
+  assert.doesNotMatch(JSON.stringify(report), /999999|SECRET_SESSION_VALUE|sid=|raw html|<html>/iu);
+
+  const userSummary = authSummaryForReport(null, report);
+  assert.equal(userSummary.browserBridge.extensionStageCount, 2);
+  assert.equal(userSummary.browserBridge.extensionStages.length, 0);
+  assert.equal(userSummary.browserBridge.extensionStageOmittedCount, 2);
+  assert.equal(userSummary.browserBridge.extensionStageTimelineCount, 390);
+  assert.equal(userSummary.browserBridge.extensionStageTimeline.length, 0);
+  assert.equal(userSummary.browserBridge.extensionStageTimelineOmittedCount, 390);
+  assert.doesNotMatch(JSON.stringify(userSummary), /999999|route-opened:route-26|SECRET_SESSION_VALUE|sid=/iu);
+
+  const emptyDiagnostics = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      extensionStageCount: 999999,
+      extensionStageOmittedCount: 999999,
+      extensionStageTimelineCount: 999999,
+      extensionStageTimelineOmittedCount: 999999,
+      extensionStages: [],
+      extensionStageTimeline: [],
+    },
+  }, {
+    site: {
+      rootUrl: 'https://example.test/',
+      allowedDomains: ['example.test'],
+    },
+    crawlMode: 'authenticated_browser',
+    authMethod: 'browser',
+  });
+  assert.equal(emptyDiagnostics.browserBridge.extensionStageCount, 0);
+  assert.equal(emptyDiagnostics.browserBridge.extensionStageOmittedCount, 0);
+  assert.equal(emptyDiagnostics.browserBridge.extensionStageTimelineCount, 0);
+  assert.equal(emptyDiagnostics.browserBridge.extensionStageTimelineOmittedCount, 0);
+  assert.doesNotMatch(JSON.stringify(emptyDiagnostics), /999999/u);
+
+  const forgedSelfConsistentTimeline = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      extensionStageTimelineCount: 1000383,
+      extensionStageTimelineOmittedCount: 999999,
+      extensionStageTimeline: Array.from({ length: 384 }, (_, index) => ({
+        eventIndex: index,
+        stage: `route-opened:route-${(index % 26) + 1}`,
+      })),
+    },
+  }, {
+    site: {
+      rootUrl: 'https://example.test/',
+      allowedDomains: ['example.test'],
+    },
+    crawlMode: 'authenticated_browser',
+    authMethod: 'browser',
+  });
+  assert.equal(forgedSelfConsistentTimeline.browserBridge.extensionStageTimelineCount, 384);
+  assert.equal(forgedSelfConsistentTimeline.browserBridge.extensionStageTimelineOmittedCount, 0);
+  assert.equal(forgedSelfConsistentTimeline.browserBridge.extensionStageTimeline.length, 384);
+  assert.doesNotMatch(JSON.stringify(forgedSelfConsistentTimeline), /999999|1000383/u);
+});
+
+test('browser auth route coverage counts derive from route results instead of hostile input counts', () => {
+  const site = {
+    rootUrl: 'https://example.test/',
+    allowedDomains: ['example.test'],
+  };
+
+  const hostileEmptyRoutes = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      routeCount: 999999,
+      capturedRouteCount: 999999,
+      missingRouteCount: 0,
+      finalCapturedRouteCount: 999999,
+      finalMissingRouteCount: 0,
+      routeCoverageStatus: 'complete',
+      routeResults: [],
+    },
+  }, { site, crawlMode: 'authenticated_browser', authMethod: 'browser' });
+
+  assert.equal(hostileEmptyRoutes.browserBridge.routeCount, 0);
+  assert.equal(hostileEmptyRoutes.browserBridge.capturedRouteCount, 0);
+  assert.equal(hostileEmptyRoutes.browserBridge.missingRouteCount, 0);
+  assert.equal(hostileEmptyRoutes.browserBridge.finalCapturedRouteCount, 0);
+  assert.equal(hostileEmptyRoutes.browserBridge.finalMissingRouteCount, 0);
+  assert.equal(hostileEmptyRoutes.browserBridge.routeCoverageStatus, 'none');
+  assert.equal(hostileEmptyRoutes.browserBridge.routeResultCount, 0);
+  assert.equal(canRunAuthenticatedLayer(hostileEmptyRoutes), false);
+  assert.doesNotMatch(JSON.stringify(hostileEmptyRoutes), /999999/u);
+
+  const hostileBlockedRoute = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      routeCount: 1,
+      capturedRouteCount: 1,
+      missingRouteCount: 0,
+      finalCapturedRouteCount: 1,
+      finalMissingRouteCount: 0,
+      routeCoverageStatus: 'complete',
+      routeResults: [{
+        routeId: 'route-1',
+        targetRoute: '/account',
+        status: 'timeout',
+      }],
+    },
+  }, { site, crawlMode: 'authenticated_browser', authMethod: 'browser' });
+
+  assert.equal(hostileBlockedRoute.browserBridge.routeCount, 1);
+  assert.equal(hostileBlockedRoute.browserBridge.capturedRouteCount, 0);
+  assert.equal(hostileBlockedRoute.browserBridge.missingRouteCount, 1);
+  assert.equal(hostileBlockedRoute.browserBridge.finalCapturedRouteCount, 0);
+  assert.equal(hostileBlockedRoute.browserBridge.finalMissingRouteCount, 1);
+  assert.equal(hostileBlockedRoute.browserBridge.routeCoverageStatus, 'none');
+  assert.equal(canRunAuthenticatedLayer(hostileBlockedRoute), false);
+
+  const capturedRoutes = normalizeAuthStateReport({
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    verified: true,
+    browserBridge: {
+      used: true,
+      routeCount: 0,
+      capturedRouteCount: 0,
+      missingRouteCount: 999999,
+      finalCapturedRouteCount: 0,
+      finalMissingRouteCount: 999999,
+      routeResults: [{
+        routeId: 'route-1',
+        targetRoute: '/account',
+        status: 'captured',
+      }],
+    },
+  }, { site, crawlMode: 'authenticated_browser', authMethod: 'browser' });
+
+  assert.equal(capturedRoutes.browserBridge.routeCount, 1);
+  assert.equal(capturedRoutes.browserBridge.capturedRouteCount, 1);
+  assert.equal(capturedRoutes.browserBridge.missingRouteCount, 0);
+  assert.equal(capturedRoutes.browserBridge.finalCapturedRouteCount, 1);
+  assert.equal(capturedRoutes.browserBridge.finalMissingRouteCount, 0);
+  assert.equal(capturedRoutes.browserBridge.routeCoverageStatus, 'complete');
+  assert.equal(canRunAuthenticatedLayer(capturedRoutes), true);
+  assert.doesNotMatch(JSON.stringify(capturedRoutes), /999999/u);
+});
+
+test('evidence provider bundles normalize pages and strip sensitive material', () => {
+  const bundle = normalizeEvidenceBundle({
+    providerId: 'browser_bridge',
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    pages: [{
+      url: 'https://example.test/account',
+      normalizedUrl: 'https://example.test/account',
+      sourceLayer: 'authenticated',
+      title: '<script>alert(1)</script>',
+      textSummary: 'Cookie: sid=SECRET_SESSION_VALUE raw HTML <html>SECRET</html>',
+      rawHtml: '<html>SECRET</html>',
+      headers: { authorization: 'Bearer synthetic-secret' },
+      collection: { status: 'success' },
+    }],
+    routeResults: [{
+      routeId: 'route-1',
+      targetRoute: '/account',
+      status: 'captured',
+      cookie: 'sid=SECRET_SESSION_VALUE',
+    }, {
+      routeId: 'route-2',
+      targetRoute: '/blocked',
+      status: 'timeout',
+      rawBody: '<html>SECRET</html>',
+    }],
+    warnings: ['Cookie: sid=SECRET_SESSION_VALUE'],
+  });
+
+  assert.equal(bundle.providerId, 'browser_bridge');
+  assert.equal(bundle.pages.length, 1);
+  assert.equal(bundle.pages[0].providerId, 'browser_bridge');
+  assert.equal(bundle.pages[0].authMethod, 'browser');
+  assert.equal(bundle.pages[0].runtimeMode, 'browser_bridge_required');
+  assert.equal(bundle.pages[0].collection.providerId, 'browser_bridge');
+  assert.equal(bundle.coverage.routeResults, 2);
+  assert.equal(bundle.coverage.capturedRouteCount, 1);
+  assert.equal(bundle.coverage.missingRouteCount, 1);
+  assert.equal(providerRuntimeMode('public_http'), 'generic_http_read');
+  assert.equal(providerRuntimeMode('authorized_summary'), null);
+  assert.doesNotMatch(JSON.stringify(bundle), /SECRET_SESSION_VALUE|sid=|Bearer synthetic-secret|<html>|"rawHtml"\s*:|"authorization"\s*:/iu);
+});
+
+test('saved authenticated build profile requires fresh auth before reuse', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-saved-auth-reverify-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const first = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'saved-auth-first',
+        now: new Date('2026-05-21T08:30:00.000Z'),
+        authMode: 'browser',
+        authCheckUrl: '/account',
+        fetchDelayMs: 0,
+        setupOutput: { write() {} },
+        browserAuthBridgeProvider: async ({ routes, targetUrl }) => ({
+          authenticatedPages: [{
+            routeId: routes[0].id,
+            url: targetUrl,
+            routeTemplate: '/account',
+            pageType: 'account_home',
+            visibleItemCount: 2,
+            listPresent: true,
+          }],
+        }),
+      });
+      assert.equal(first.profile.authStateReport.authVerificationStatus, 'browser_verified');
+      assert.equal(first.profile.crawlContract.crawlMode, 'authenticated_browser');
+
+      const reused = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'saved-auth-reused',
+        now: new Date('2026-05-21T08:31:00.000Z'),
+        fetchDelayMs: 0,
+        setupOutput: { write() {} },
+      });
+      assert.equal(reused.status, 'reused');
+      assert.equal(reused.profile.authStateReport.authVerificationStatus, 'not_requested');
+      assert.equal(reused.profile.authStateReport.verified, false);
+      assert.equal(reused.profile.authStateReport.blockingSignals.includes('saved-auth-reverify-required'), true);
+      assert.equal(reused.profile.crawlContract.crawlMode, 'public_only');
+      assert.equal(reused.buildOptions.authStateReport.authVerificationStatus, 'not_requested');
+      assert.equal(reused.buildOptions.crawlContract.crawlMode, 'public_only');
+      const reusedAuthReport = await readJson(reused.paths.authStateReportPath);
+      assert.equal(reusedAuthReport.authVerificationStatus, 'not_requested');
+      assert.equal(reusedAuthReport.blockingSignals.includes('saved-auth-reverify-required'), true);
+
+      const directBuild = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'saved-auth-direct-build',
+        now: new Date('2026-05-21T08:32:00.000Z'),
+        fetchDelayMs: 0,
+      });
+      const directAuthReport = await readJson(path.join(directBuild.artifactDir, 'auth_state_report.json'));
+      assert.equal(directAuthReport.authVerificationStatus, 'not_requested');
+      assert.equal(directAuthReport.verified, false);
+      assert.equal(directAuthReport.blockingSignals.includes('saved-auth-reverify-required'), true);
+      assert.equal(directBuild.summary.auth.verified, false);
+      const directCrawlAuthenticated = await readJson(path.join(directBuild.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(directCrawlAuthenticated.status, 'skipped');
+      assert.equal((directCrawlAuthenticated.authenticatedPages ?? []).length, 0);
+      assert.equal((directCrawlAuthenticated.authenticatedOverlayPages ?? []).length, 0);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('SiteForge setup records partial browser route coverage without blocking captured routes', async () => {
@@ -2190,11 +3338,15 @@ test('SiteForge setup records partial browser route coverage without blocking ca
       });
       const authReport = await readJson(paths.authStateReportPath);
       const setupPlan = await readJson(paths.setupPlanPath);
-      assert.equal(authReport.authVerificationStatus, 'browser_verified');
+      assert.equal(authReport.authVerificationStatus, 'browser_verified_partial');
+      assert.equal(authReport.verified, true);
       assert.equal(authReport.browserBridge.routeCount, 3);
       assert.equal(authReport.browserBridge.capturedRouteCount, 1);
       assert.equal(authReport.browserBridge.missingRouteCount, 2);
+      assert.equal(authReport.browserBridge.routeCoverageStatus, 'partial');
       assert.equal(setupPlan.buildReadiness.buildable, true);
+      assert.equal(setupPlan.crawlContract.authVerificationStatus, 'browser_verified_partial');
+      assert.equal(setupPlan.crawlContract.sourceMode, 'browser_bridge_partial');
       assert.equal(setupPlan.partialCoverage.reasonCode, 'browser-auth-route-coverage-partial');
       assert.equal(setupPlan.partialCoverage.capturedRouteCount, 1);
       assert.equal(setupPlan.partialCoverage.missingRouteCount, 2);
@@ -2316,16 +3468,19 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     const extensionDir = browserBridgeExtensionDirectory();
     const manifest = JSON.parse(await readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.manifest_version, 3);
-    assert.equal(manifest.version, '0.1.5');
-    assert.match(manifest.name, /v0\.1\.5/u);
+    assert.equal(manifest.version, '0.1.6');
+    assert.match(manifest.name, /v0\.1\.6/u);
     assert.deepEqual(manifest.permissions.sort(), ['scripting', 'tabs']);
     const extensionContent = await readFile(path.join(extensionDir, 'bridge-content.js'), 'utf8');
     assert.equal(extensionContent.includes('siteforge-bridge-session'), true);
     assert.equal(extensionContent.includes('bridge-content-version:'), true);
-    assert.equal(extensionContent.includes('route-queue-loading-dom-fallback-v5'), true);
+    assert.equal(extensionContent.includes('route-queue-chinese-semantic-v6'), true);
     const extensionBackground = await readFile(path.join(extensionDir, 'background.js'), 'utf8');
     assert.equal(extensionBackground.includes('chrome.scripting.executeScript'), true);
-    assert.equal(extensionBackground.includes('route-queue-loading-dom-fallback-v5'), true);
+    assert.equal(extensionBackground.includes('route-queue-chinese-semantic-v6'), true);
+    assert.equal(extensionBackground.includes('collector-version:'), true);
+    assert.equal(extensionBackground.includes('collector-version:${route.id}:'), true);
+    assert.equal(extensionBackground.includes('SITEFORGE_COLLECT_MESSAGE_TYPE'), true);
     assert.equal(extensionBackground.includes('route-tab-usable-while-loading'), true);
     assert.equal(extensionBackground.includes('route-load-fallback'), true);
     assert.equal(extensionBackground.includes('route-tab-stable'), true);
@@ -2337,10 +3492,22 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(extensionBackground.includes('collector-message-failed'), true);
     const extensionCollector = await readFile(path.join(extensionDir, 'collector-content.js'), 'utf8');
     assert.equal(extensionCollector.includes('siteforge-collect-structure'), true);
+    assert.equal(extensionCollector.includes('SITEFORGE_COLLECTOR_CONTENT_VERSION'), true);
+    assert.equal(extensionCollector.includes('__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_VERSION__'), true);
+    assert.equal(extensionCollector.includes('SITEFORGE_COLLECT_MESSAGE_TYPE'), true);
+    assert.equal(extensionCollector.includes('route-queue-chinese-semantic-v6'), true);
+    assert.equal(extensionCollector.includes('collectorVersion'), true);
     assert.equal(extensionCollector.includes('captured_with_warning'), true);
     assert.equal(extensionCollector.includes('definite_challenge'), true);
     assert.equal(extensionCollector.includes('thin_capture'), true);
     assert.equal(extensionCollector.includes('media_surface'), true);
+    assert.equal(extensionCollector.includes("attr(node, 'aria-label')"), true);
+    assert.equal(extensionCollector.includes("attr(node, 'data-testid')"), true);
+    const followSemanticIndex = extensionCollector.indexOf('(?:follow|following|followed|followers)');
+    const categorySemanticIndex = extensionCollector.indexOf('categor|category');
+    assert.equal(followSemanticIndex >= 0, true);
+    assert.equal(categorySemanticIndex > followSemanticIndex, true);
+    assert.doesNotMatch(extensionCollector, /follow\(\?:ing\|ed\)\?/u);
 
     const script = browserStructureCollectorScript({
       nonce: 'nonce-test',
@@ -2387,6 +3554,137 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(challenge.verified, false);
     assert.equal(challenge.bridgeSummary.routeResults[0].status, 'challenge_detected');
     assert.equal(challenge.blockingSignals.includes('browser-bridge-route-challenge-detected'), true);
+
+    const unmatchedRouteSummary = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          assert.equal(routes[0].routeTemplate, '/account');
+          return {
+            routeResults: [{
+              routeId: 'wrong-route',
+              targetUrl: new URL('/unrequested', rootUrl).toString(),
+              sourceLayer: 'authenticated',
+              status: 'captured',
+            }],
+            authenticatedPages: [{
+              routeId: 'wrong-route',
+              url: new URL('/unrequested', rootUrl).toString(),
+              routeTemplate: '/unrequested',
+              sourceLayer: 'authenticated',
+              pageType: 'account_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(unmatchedRouteSummary.status, 'browser_bridge_missing');
+    assert.equal(unmatchedRouteSummary.verified, false);
+    assert.equal(unmatchedRouteSummary.structureSummary, null);
+    assert.equal(unmatchedRouteSummary.bridgeSummary.capturedRouteCount, 0);
+    assert.equal(unmatchedRouteSummary.bridgeSummary.routeCoverageStatus, 'none');
+    assert.equal(unmatchedRouteSummary.bridgeSummary.routeResults.some((route) => route.routeId === 'wrong-route'), false);
+    assert.equal(unmatchedRouteSummary.bridgeSummary.routeResults[0].targetRoute, '/account');
+    assert.equal(unmatchedRouteSummary.blockingSignals.includes('browser-bridge-no-captured-route'), true);
+
+    const mismatchedUrlForRouteId = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => ({
+          routeResults: [{
+            routeId: routes[0].id,
+            targetUrl: new URL('/unrequested', rootUrl).toString(),
+            sourceLayer: routes[0].sourceLayer,
+            status: 'captured',
+          }],
+          authenticatedPages: [{
+            routeId: routes[0].id,
+            url: new URL('/unrequested', rootUrl).toString(),
+            routeTemplate: '/unrequested',
+            sourceLayer: routes[0].sourceLayer,
+            pageType: 'account_home',
+            visibleItemCount: 1,
+            listPresent: true,
+          }],
+        }),
+      },
+    });
+    assert.equal(mismatchedUrlForRouteId.status, 'browser_bridge_missing');
+    assert.equal(mismatchedUrlForRouteId.verified, false);
+    assert.equal(mismatchedUrlForRouteId.structureSummary, null);
+    assert.equal(mismatchedUrlForRouteId.bridgeSummary.capturedRouteCount, 0);
+    assert.equal(mismatchedUrlForRouteId.bridgeSummary.routeResults[0].targetRoute, '/account');
+    assert.equal(JSON.stringify(mismatchedUrlForRouteId.bridgeSummary).includes('/unrequested'), false);
+
+    const mismatchedUrlChallengeForRouteId = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => ({
+          routeResults: [{
+            routeId: routes[0].id,
+            targetUrl: new URL('/unrequested', rootUrl).toString(),
+            sourceLayer: routes[0].sourceLayer,
+            status: 'challenge_detected',
+            reasonCode: 'wrong-url-challenge',
+          }],
+        }),
+      },
+    });
+    assert.equal(mismatchedUrlChallengeForRouteId.status, 'browser_bridge_missing');
+    assert.equal(mismatchedUrlChallengeForRouteId.verified, false);
+    assert.equal(mismatchedUrlChallengeForRouteId.structureSummary, null);
+    assert.equal(mismatchedUrlChallengeForRouteId.bridgeSummary.capturedRouteCount, 0);
+    assert.equal(mismatchedUrlChallengeForRouteId.bridgeSummary.routeResults[0].status, 'timeout');
+    assert.equal(mismatchedUrlChallengeForRouteId.bridgeSummary.routeResults[0].targetRoute, '/account');
+    assert.equal(JSON.stringify(mismatchedUrlChallengeForRouteId.bridgeSummary).includes('/unrequested'), false);
+    assert.equal(JSON.stringify(mismatchedUrlChallengeForRouteId.bridgeSummary).includes('wrong-url-challenge'), false);
+
+    const mismatchedTargetRouteForRouteId = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: { authRoutes: ['/account'] },
+        browserAuthBridgeProvider: async ({ routes }) => ({
+          routeResults: [{
+            routeId: routes[0].id,
+            targetRoute: '/unrequested',
+            sourceLayer: routes[0].sourceLayer,
+            status: 'challenge_detected',
+            reasonCode: 'wrong-target-route-challenge',
+          }],
+        }),
+      },
+    });
+    assert.equal(mismatchedTargetRouteForRouteId.status, 'browser_bridge_missing');
+    assert.equal(mismatchedTargetRouteForRouteId.verified, false);
+    assert.equal(mismatchedTargetRouteForRouteId.structureSummary, null);
+    assert.equal(mismatchedTargetRouteForRouteId.bridgeSummary.capturedRouteCount, 0);
+    assert.equal(mismatchedTargetRouteForRouteId.bridgeSummary.routeResults[0].status, 'timeout');
+    assert.equal(mismatchedTargetRouteForRouteId.bridgeSummary.routeResults[0].targetRoute, '/account');
+    assert.equal(JSON.stringify(mismatchedTargetRouteForRouteId.bridgeSummary).includes('/unrequested'), false);
+    assert.equal(JSON.stringify(mismatchedTargetRouteForRouteId.bridgeSummary).includes('wrong-target-route-challenge'), false);
 
     const trailingSlashRoute = await runBrowserAuthBridge({
       inputUrl: rootUrl,
@@ -2517,7 +3815,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
         },
       },
     });
-    assert.equal(retrySkipsDefiniteChallenge.status, 'browser_verified');
+    assert.equal(retrySkipsDefiniteChallenge.status, 'browser_verified_partial');
     assert.equal(retrySkipsDefiniteChallenge.bridgeSummary.routeResults.find((route) => route.targetRoute === '/blocked-challenge')?.retryAttemptCount, 0);
     assert.equal(retrySkipsDefiniteChallenge.bridgeSummary.routeResults.find((route) => route.targetRoute === '/late-route')?.retryOutcome, 'captured_after_retry');
 
@@ -2527,10 +3825,11 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
       options: {
         authMode: 'browser',
         localBuildConfig: {
-          authRoutes: Array.from({ length: 32 }, (_, index) => `/route-${index + 1}`),
+          authRoutes: Array.from({ length: 35 }, (_, index) => `/route-${index + 1}`),
         },
         browserAuthBridgeProvider: async ({ routes, passIndex }) => {
           if (passIndex === 0) {
+            assert.equal(routes.length, 32);
             return {
               authenticatedPages: [{
                 routeId: routes[0].id,
@@ -2564,9 +3863,16 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
         },
       },
     });
-    assert.equal(saturatedRetryResults.bridgeSummary.routeCount, 32);
+    assert.equal(saturatedRetryResults.bridgeSummary.routeCount, 35);
+    assert.equal(saturatedRetryResults.bridgeSummary.scheduledRouteCount, 32);
+    assert.equal(saturatedRetryResults.bridgeSummary.overflowRouteCount, 3);
+    assert.equal(saturatedRetryResults.bridgeSummary.unattemptedRouteCount, 3);
+    assert.equal(saturatedRetryResults.bridgeSummary.routeQueueTruncated, true);
+    assert.equal(saturatedRetryResults.bridgeSummary.routeCoverageStatus, 'partial');
     assert.equal(saturatedRetryResults.bridgeSummary.retryPasses, 2);
     assert.equal(saturatedRetryResults.bridgeSummary.routeResults.find((route) => route.targetRoute === '/route-32')?.finalReasonCode, 'browser-bridge-definite-challenge');
+    assert.equal(saturatedRetryResults.bridgeSummary.routeResults.find((route) => route.targetRoute === '/route-33')?.finalReasonCode, 'browser-bridge-route-limit-exceeded');
+    assert.equal(saturatedRetryResults.bridgeSummary.routeResults.find((route) => route.targetRoute === '/route-35')?.finalReasonCode, 'browser-bridge-route-limit-exceeded');
 
     const capturedWithoutSummary = await runBrowserAuthBridge({
       inputUrl: rootUrl,
@@ -2610,7 +3916,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(thinCapture.status, 'browser_bridge_missing');
     assert.equal(thinCapture.bridgeSummary.capturedRouteCount, 0);
     assert.equal(thinCapture.bridgeSummary.routeResults[0].status, 'thin_capture');
-    assert.equal(thinCapture.structureSummary.authenticatedPages.length, 0);
+    assert.equal(thinCapture.structureSummary, null);
 
     const staleExtension = await runBrowserAuthBridge({
       inputUrl: rootUrl,
@@ -2679,6 +3985,291 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(mixedVersionExtension.verified, false);
     assert.equal(mixedVersionExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), true);
     assert.equal(mixedVersionExtension.bridgeSummary.capturedRouteCount, 1);
+
+    const missingCollectorVersionExtension = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeTimeoutMs: 1000,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage(`collector-submit-ok:${session.routes[0].id}`);
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [{
+              routeId: session.routes[0].id,
+              targetUrl: session.routes[0].targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+            }],
+            authenticatedPages: [{
+              routeId: session.routes[0].id,
+              url: session.routes[0].targetUrl,
+              routeTemplate: '/',
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(missingCollectorVersionExtension.status, 'browser_bridge_missing');
+    assert.equal(missingCollectorVersionExtension.verified, false);
+    assert.equal(missingCollectorVersionExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), true);
+    assert.equal(missingCollectorVersionExtension.bridgeSummary.capturedRouteCount, 1);
+
+    const currentExtension = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeTimeoutMs: 1000,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const route = session.routes[0];
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage(`collector-version:${route.id}:route-queue-chinese-semantic-v6`);
+        await signalStage(`collector-submit-ok:${route.id}`);
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [{
+              routeId: route.id,
+              targetUrl: route.targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+              collectorVersion: 'route-queue-chinese-semantic-v6',
+            }],
+            authenticatedPages: [{
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: '/',
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(currentExtension.status, 'browser_verified');
+    assert.equal(currentExtension.verified, true);
+    assert.equal(currentExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), false);
+    assert.equal(currentExtension.bridgeSummary.capturedRouteCount, 1);
+
+    const staleCollectorVersionExtension = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeTimeoutMs: 1000,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const route = session.routes[0];
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage(`collector-version:${route.id}:route-queue-loading-dom-fallback-v5`);
+        await signalStage(`collector-submit-ok:${route.id}`);
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [{
+              routeId: route.id,
+              targetUrl: route.targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+              collectorVersion: 'route-queue-loading-dom-fallback-v5',
+            }],
+            authenticatedPages: [{
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: '/',
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(staleCollectorVersionExtension.status, 'browser_bridge_missing');
+    assert.equal(staleCollectorVersionExtension.verified, false);
+    assert.equal(staleCollectorVersionExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), true);
+    assert.equal(staleCollectorVersionExtension.bridgeSummary.capturedRouteCount, 1);
+
+    const mixedCollectorRouteExtension = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: ['/account', '/messages'],
+        },
+        browserBridgeTimeoutMs: 1000,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const [firstRoute, secondRoute] = session.routes;
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage(`collector-version:${firstRoute.id}:route-queue-chinese-semantic-v6`);
+        await signalStage(`collector-submit-ok:${firstRoute.id}`);
+        await signalStage(`collector-submit-ok:${secondRoute.id}`);
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [firstRoute, secondRoute].map((route, index) => ({
+              routeId: route.id,
+              targetUrl: route.targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+              ...(index === 0 ? { collectorVersion: 'route-queue-chinese-semantic-v6' } : {}),
+            })),
+            authenticatedPages: [firstRoute, secondRoute].map((route, index) => ({
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: route.routeTemplate,
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_browser_summary',
+              visibleItemCount: index + 1,
+              listPresent: true,
+            })),
+          }),
+        });
+      },
+    });
+    assert.equal(mixedCollectorRouteExtension.status, 'browser_bridge_missing');
+    assert.equal(mixedCollectorRouteExtension.verified, false);
+    assert.equal(mixedCollectorRouteExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), true);
+    assert.equal(mixedCollectorRouteExtension.bridgeSummary.capturedRouteCount, 2);
+
+    const manyExtensionStages = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        localBuildConfig: {
+          authRoutes: Array.from({ length: 26 }, (_, index) => `/stage-${index + 1}`),
+        },
+        browserBridgeTimeoutMs: 1000,
+        browserBridgeMaxRetryPasses: 0,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage('collector-injecting:route-1');
+        await signalStage('collector-reinjecting:route-1');
+        await signalStage('collector-reinjecting:route-1');
+        for (const route of session.routes) {
+          await signalStage(`route-opened:${route.id}`);
+        }
+        await signalStage('route-opened:route-1');
+        const route = session.routes[0];
+        await signalStage(`collector-version:${route.id}:route-queue-chinese-semantic-v6`);
+        await signalStage(`collector-submit-ok:${route.id}`);
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [{
+              routeId: route.id,
+              targetUrl: route.targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+              collectorVersion: 'route-queue-chinese-semantic-v6',
+            }],
+            authenticatedPages: [{
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: route.routeTemplate,
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_browser_summary',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(manyExtensionStages.status, 'browser_verified_partial');
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.length > 20, true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageCount, manyExtensionStages.bridgeSummary.extensionStages.length);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageOmittedCount, 0);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.includes('route-opened:route-26'), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.filter((stage) => stage === 'route-opened:route-1').length, 1);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.includes('collector-injecting:route-1'), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.includes('collector-reinjecting:route-1'), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.filter((stage) => stage === 'collector-reinjecting:route-1').length, 1);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.length > 20, true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimelineCount, manyExtensionStages.bridgeSummary.extensionStageTimeline.length);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimelineOmittedCount, 0);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].stage, 'bridge-content-version:route-queue-chinese-semantic-v6');
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].index, 0);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].eventIndex, 0);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.every((entry, index) => entry.index === index), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.every((entry, index) => entry.eventIndex === index), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.some((entry) => entry.stage === 'route-opened:route-26'), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.filter((entry) => entry.stage === 'route-opened:route-1').length, 2);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.some((entry) => entry.stage === 'collector-injecting:route-1'), true);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.filter((entry) => entry.stage === 'collector-reinjecting:route-1').length, 2);
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStages.some((stage) => /cookie|token|authorization|bearer|raw/i.test(stage)), false);
 
     const retryOnly = await runBrowserAuthBridge({
       inputUrl: rootUrl,
@@ -2793,6 +4384,392 @@ test('authenticated crawl reuses verified cookie only at runtime', async () => {
       const authReportText = await readFile(path.join(result.artifactDir, 'auth_state_report.json'), 'utf8');
       const buildReportText = await readFile(path.join(result.artifactDir, 'build_report.json'), 'utf8');
       assert.doesNotMatch(`${authReportText}\n${buildReportText}`, /sid=ok|uid=123/u);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('cookie runtime source keeps public crawl cookie-free and only authenticates auth seeds', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-cookie-public-source-'));
+  const robotsCookies = [];
+  const sitemapCookies = [];
+  const homeCookies = [];
+  const catalogCookies = [];
+  const accountCookies = [];
+  try {
+    await withTestServer((request, response) => {
+      const pathname = new URL(request.url ?? '/', 'http://127.0.0.1/').pathname;
+      const cookie = String(request.headers.cookie ?? '');
+      if (pathname === '/robots.txt') {
+        robotsCookies.push(cookie);
+        const rootUrl = `http://${request.headers.host}/`;
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        sitemapCookies.push(cookie);
+        const rootUrl = `http://${request.headers.host}/`;
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/catalog']));
+        return;
+      }
+      if (pathname === '/account') {
+        accountCookies.push(cookie);
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Account', '<main><ul><li>notice</li></ul></main>'));
+        return;
+      }
+      if (pathname === '/catalog') {
+        catalogCookies.push(cookie);
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Catalog', '<main><ul><li>public item</li></ul></main>'));
+        return;
+      }
+      homeCookies.push(cookie);
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', `
+        <main>
+          <nav><a href="/catalog">Catalog</a></nav>
+          <form method="GET" action="/search"><input name="q"><button>Search</button></form>
+        </main>
+      `));
+    }, async (rootUrl) => {
+      const site = {
+        id: 'cookie-public-source-test',
+        rootUrl,
+        allowedDomains: [new URL(rootUrl).hostname],
+      };
+      const authStateReport = {
+        schemaVersion: 1,
+        artifactFamily: 'siteforge-auth-state-report',
+        crawlMode: 'authenticated_cookie',
+        authMethod: 'cookie',
+        authVerificationStatus: 'cookie_verified',
+        verified: true,
+        source: 'cookie_header_verification',
+        blockingSignals: [],
+        positiveSignals: ['cookie_header_present', 'auth_check_http_success', 'auth_check_not_login_route'],
+        verifiedRoutes: ['/account'],
+        capabilityProofs: [],
+        rawMaterialPersisted: false,
+        sessionMaterialPersisted: false,
+        cookieMaterialPersisted: false,
+        browserProfilePersisted: false,
+      };
+      const crawlContract = createCrawlContract({
+        site,
+        authStateReport,
+        coverageTargets: {
+          publicRoutes: ['/'],
+          authRoutes: ['/account'],
+          publicRevisitRoutes: [],
+        },
+      });
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'cookie-public-source',
+        now: new Date('2026-05-21T08:18:00.000Z'),
+        fetchDelayMs: 0,
+        authMode: 'cookie',
+        authRuntime: {
+          method: 'cookie',
+          cookieHeader: 'sid=ok; uid=123',
+          allowedDomains: [new URL(rootUrl).hostname],
+        },
+        authStateReport,
+        crawlContract,
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(robotsCookies.length > 0, true);
+      assert.equal(sitemapCookies.length > 0, true);
+      assert.equal(homeCookies.length > 0, true);
+      assert.equal(catalogCookies.length > 0, true);
+      assert.equal([...robotsCookies, ...sitemapCookies, ...homeCookies, ...catalogCookies].every((cookie) => !cookie.includes('sid=ok')), true);
+      assert.equal(accountCookies.some((cookie) => cookie.includes('sid=ok')), true);
+
+      const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(crawlAuthenticated.authenticatedPages.some((page) => /\/account$/u.test(page.normalizedUrl)), true);
+      const siteRoot = siteWorkspaceDir(workspace, rootUrl);
+      const reportText = await readExistingTextFiles([
+        ...await collectTextFiles(result.artifactDir),
+        ...await collectTextFiles(path.join(siteRoot, 'current')).catch(() => []),
+        path.join(siteRoot, 'registry.json'),
+      ]);
+      assert.doesNotMatch(reportText, /authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin|sid=ok|uid=123/iu);
+      const profilePaths = [
+        path.join(siteWorkspaceDir(workspace, rootUrl), 'setup', 'build_profile.json'),
+        path.join(result.artifactDir, 'inputs', 'build_profile.json'),
+      ];
+      for (const inputProfilePath of profilePaths) {
+        if (!(await fileExists(inputProfilePath))) {
+          continue;
+        }
+        const inputProfileText = await readFile(inputProfilePath, 'utf8');
+        assert.doesNotMatch(inputProfileText, /authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin|sid=ok|uid=123/iu);
+        const inputProfile = JSON.parse(inputProfileText);
+        assert.equal(Object.hasOwn(inputProfile, 'authRuntime'), false);
+      }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('cookie auth runtime material is not persisted when a later stage fails after authenticated crawl', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-cookie-post-auth-failure-'));
+  const authCheckCookies = [];
+  const accountCookies = [];
+  const secretCookie = 'sid=ok; uid=123';
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      const cookie = String(request.headers.cookie ?? '');
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/account', '/auth-check']));
+        return;
+      }
+      if (pathname === '/auth-check') {
+        authCheckCookies.push(cookie);
+        if (!cookie.includes('sid=ok')) {
+          response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+          response.end('Forbidden');
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Auth check', '<main><ul><li>verified</li></ul></main>'));
+        return;
+      }
+      if (pathname === '/account') {
+        accountCookies.push(cookie);
+        if (!cookie.includes('sid=ok')) {
+          response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+          response.end('Forbidden');
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Account', '<main><ul><li>notice</li></ul></main>'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', '<main><a href="/account">Account</a><a href="/catalog">Catalog</a></main>'));
+    }, async (rootUrl) => {
+      const site = {
+        id: 'cookie-post-auth-failure-test',
+        rootUrl,
+        allowedDomains: [new URL(rootUrl).hostname],
+      };
+      const initialAuthStateReport = {
+        schemaVersion: 1,
+        artifactFamily: 'siteforge-auth-state-report',
+        crawlMode: 'authenticated_cookie',
+        authMethod: 'cookie',
+        authVerificationStatus: 'cookie_verified',
+        verified: true,
+        source: 'cookie_header_verification',
+        blockingSignals: [],
+        positiveSignals: ['cookie_header_present', 'auth_check_http_success', 'auth_check_not_login_route'],
+        verifiedRoutes: ['/auth-check'],
+        capabilityProofs: [],
+        rawMaterialPersisted: false,
+        sessionMaterialPersisted: false,
+        cookieMaterialPersisted: false,
+        browserProfilePersisted: false,
+      };
+      const crawlContract = createCrawlContract({
+        site,
+        authStateReport: initialAuthStateReport,
+        coverageTargets: {
+          publicRoutes: ['/'],
+          authRoutes: ['/account'],
+          publicRevisitRoutes: [],
+        },
+      });
+
+      let capturedError = /** @type {any} */ (null);
+      await assert.rejects(
+        () => runSiteForgeBuild(rootUrl, {
+          cwd: workspace,
+          buildId: 'cookie-post-auth-failure',
+          now: new Date('2026-05-26T08:00:00.000Z'),
+          fetchDelayMs: 0,
+          authMode: 'cookie',
+          strictCookieAuth: true,
+          cookieHeader: secretCookie,
+          authCheckUrl: '/auth-check',
+          authStateReport: initialAuthStateReport,
+          crawlContract,
+          renderJs: true,
+          publicRenderedStructureProvider: async ({ context }) => {
+            assert.equal(context.options.cookieHeader, undefined);
+            assert.equal(context.options.cookieEnv, undefined);
+            assert.equal(context.options.cookieFile, undefined);
+            assert.equal(context.options.cookieStdin, undefined);
+            assert.equal(context.options.authRuntime, undefined);
+            assert.equal(context.options.authenticatedStructureSummary, undefined);
+            const error = new Error('synthetic post-auth render failure cookieHeader=sid=ok; uid=123 authRuntime');
+            error.code = 'synthetic-post-auth-render-failure';
+            error.reasonCode = 'synthetic-post-auth-render-failure';
+            throw error;
+          },
+        }),
+        (error) => {
+          capturedError = error;
+          return true;
+        },
+      );
+
+      assert.equal(capturedError?.stage, 'crawlRendered');
+      assert.equal(authCheckCookies.some((cookie) => cookie.includes('sid=ok')), true);
+      assert.equal(accountCookies.some((cookie) => cookie.includes('sid=ok')), true);
+      const artifactDir = path.join(siteBuildsDir(workspace, rootUrl), 'cookie-post-auth-failure');
+      const authStateReport = await readJson(path.join(artifactDir, 'auth_state_report.json'));
+      assert.equal(authStateReport.authMethod, 'cookie');
+      assert.equal(authStateReport.authVerificationStatus, 'cookie_verified');
+      assert.equal(authStateReport.verified, true);
+      const crawlAuthenticated = await readJson(path.join(artifactDir, 'crawl_authenticated.json'));
+      assert.equal(crawlAuthenticated.authenticatedPages.some((page) => /\/account$/u.test(page.normalizedUrl)), true);
+      const buildReport = await readJson(path.join(artifactDir, 'build_report.json'));
+      assert.equal(buildReport.failedStage, 'crawlRendered');
+      assert.notEqual(buildReport.summary.registryStatus, 'registered');
+      assert.equal(buildReport.summary.currentUpdated, false);
+
+      const siteRoot = siteWorkspaceDir(workspace, rootUrl);
+      const persistedText = await readExistingTextFiles([
+        ...await collectTextFiles(artifactDir),
+        ...await collectTextFiles(path.join(siteRoot, 'current')).catch(() => []),
+        path.join(siteRoot, 'registry.json'),
+        path.join(siteRoot, 'setup', 'build_profile.json'),
+        path.join(artifactDir, 'inputs', 'build_profile.json'),
+      ]);
+      assert.doesNotMatch(
+        persistedText,
+        /authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin|sid=ok|uid=123/iu,
+      );
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('authenticated cookie crawl does not follow robots-disallowed redirects with Cookie', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-auth-cookie-redirect-robots-'));
+  const authCheckCookies = [];
+  const privateStartCookies = [];
+  const privateFinalCookies = [];
+  try {
+    await withTestServer((request, response) => {
+      const pathname = new URL(request.url ?? '/', 'http://127.0.0.1/').pathname;
+      if (pathname === '/robots.txt') {
+        const rootUrl = `http://${request.headers.host}/`;
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl, { disallow: '/private-final', sitemap: false }));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        const rootUrl = `http://${request.headers.host}/`;
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/']));
+        return;
+      }
+      if (pathname === '/auth-check') {
+        authCheckCookies.push(String(request.headers.cookie ?? ''));
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Auth check', '<main><ul><li>verified</li></ul></main>'));
+        return;
+      }
+      if (pathname === '/private-start') {
+        privateStartCookies.push(String(request.headers.cookie ?? ''));
+        response.writeHead(302, { location: '/private-final' });
+        response.end('');
+        return;
+      }
+      if (pathname === '/private-final') {
+        privateFinalCookies.push(String(request.headers.cookie ?? ''));
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Private final', '<main><ul><li>private final</li></ul></main>'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', `
+        <main>
+          <nav><a href="/catalog">Catalog</a></nav>
+          <form method="GET" action="/search"><input name="q"><button>Search</button></form>
+        </main>
+      `));
+    }, async (rootUrl) => {
+      const site = {
+        id: 'auth-cookie-redirect-robots-test',
+        rootUrl,
+        allowedDomains: [new URL(rootUrl).hostname],
+      };
+      const authStateReport = {
+        schemaVersion: 1,
+        artifactFamily: 'siteforge-auth-state-report',
+        crawlMode: 'authenticated_cookie',
+        authMethod: 'cookie',
+        authVerificationStatus: 'cookie_verified',
+        verified: true,
+        source: 'cookie_header_verification',
+        blockingSignals: [],
+        positiveSignals: ['cookie_header_present', 'auth_check_http_success', 'auth_check_not_login_route'],
+        verifiedRoutes: ['/auth-check'],
+        capabilityProofs: [],
+        rawMaterialPersisted: false,
+        sessionMaterialPersisted: false,
+        cookieMaterialPersisted: false,
+        browserProfilePersisted: false,
+      };
+      const crawlContract = createCrawlContract({
+        site,
+        authStateReport,
+        coverageTargets: {
+          publicRoutes: ['/'],
+          authRoutes: ['/private-start'],
+          publicRevisitRoutes: [],
+        },
+      });
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'auth-cookie-redirect-robots',
+        now: new Date('2026-05-21T08:17:00.000Z'),
+        fetchDelayMs: 0,
+        authMode: 'cookie',
+        cookieHeader: 'sid=ok; uid=123',
+        authCheckUrl: '/auth-check',
+        authStateReport,
+        crawlContract,
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(authCheckCookies.some((cookie) => cookie.includes('sid=ok')), true);
+      assert.equal(privateStartCookies.some((cookie) => cookie.includes('sid=ok')), true);
+      assert.equal(privateFinalCookies.length, 0);
+
+      const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(JSON.stringify(crawlAuthenticated.authenticatedPages).includes('/private-final'), false);
+      assert.equal(crawlAuthenticated.warnings.some((warning) => /static-fetch-auth-redirect-robots-disallowed/u.test(warning)), true);
+
+      const reportText = [
+        await readFile(path.join(result.artifactDir, 'auth_state_report.json'), 'utf8'),
+        await readFile(path.join(result.artifactDir, 'crawl_authenticated.json'), 'utf8'),
+        await readFile(path.join(result.artifactDir, 'build_report.json'), 'utf8'),
+        await readFile(path.join(result.artifactDir, 'build_report.debug.json'), 'utf8'),
+        await readFile(path.join(result.artifactDir, 'build_report.user.json'), 'utf8'),
+        await readFile(path.join(result.artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8'),
+      ].join('\n');
+      assert.doesNotMatch(reportText, /sid=ok|uid=123/u);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -2996,6 +4973,13 @@ test('runSiteForgeBuild accepts default-browser bridge authenticated summaries',
       assert.equal(authReport.browserBridge.missingRouteCount, 0);
       assert.equal(authReport.cookieMaterialPersisted, false);
       assert.equal(authReport.browserProfilePersisted, false);
+      const completeRouteCapturePlan = await readJson(path.join(result.artifactDir, 'route_capture_plan.json'));
+      assert.equal(completeRouteCapturePlan.status, 'complete');
+      assert.equal(completeRouteCapturePlan.routeCoverageStatus, 'complete');
+      assert.equal(completeRouteCapturePlan.routeCount, 3);
+      assert.equal(completeRouteCapturePlan.capturedRouteCount, 3);
+      assert.equal(completeRouteCapturePlan.missingRouteCount, 0);
+      assert.deepEqual(completeRouteCapturePlan.missingRoutes, []);
 
       const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
       assert.equal(crawlAuthenticated.authenticatedPages.length, 2);
@@ -3059,6 +5043,8 @@ test('runSiteForgeBuild accepts default-browser bridge authenticated summaries',
       assert.equal(userReport.crawlMode, 'authenticated_browser');
       assert.equal(userReport.authMethod, 'browser');
       assert.equal(userReport.authVerificationStatus, 'browser_verified');
+      assert.match(userReport.reports.route_capture_plan, /route_capture_plan\.json/u);
+      assert.equal(userReport.next_step_workflows.some((workflow) => workflow.id === 'browser-bridge-route-retry'), false);
       assert.doesNotMatch(JSON.stringify(userReport), /sid=SECRET_SESSION_VALUE|uid=123|Bearer synthetic-secret/iu);
     });
   } finally {
@@ -3102,6 +5088,20 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
             pageType: 'notifications',
             visibleItemCount: 2,
             listPresent: true,
+            links: [{
+              href: '/account',
+              label: 'Account dashboard',
+              semanticKind: 'profile',
+              routeTemplate: '/account',
+            }],
+          }, {
+            routeId: routes[1].id,
+            url: routes[1].targetUrl,
+            routeTemplate: '/account',
+            tabState: 'account',
+            pageType: 'account_navigation',
+            visibleItemCount: 3,
+            listPresent: true,
           }],
           authenticatedOverlayPages: [{
             routeId: routes[2].id,
@@ -3139,7 +5139,8 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
       assert.equal(result.partial_success_reasons.some((reason) => /runtime-routed Skill/u.test(reason)), true);
 
       const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
-      assert.equal(authReport.authVerificationStatus, 'browser_verified');
+      assert.equal(authReport.authVerificationStatus, 'browser_verified_partial');
+      assert.equal(authReport.verified, true);
       assert.equal(authReport.browserBridge.routeCount, 3);
       assert.equal(authReport.browserBridge.capturedRouteCount, 2);
       assert.equal(authReport.browserBridge.missingRouteCount, 1);
@@ -3150,6 +5151,12 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
       assert.equal(crawlAuthenticated.authenticatedPages.length, 1);
       assert.equal(crawlAuthenticated.authenticatedOverlayPages.length, 1);
 
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.equal(graph.nodes.some((node) => (
+        ['authenticated', 'authenticated_overlay'].includes(node.sourceLayer)
+        && node.routeTemplate === '/account'
+      )), false);
+
       const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
       assert.equal(capabilities.capabilities.some((capability) => (
         capability.sourceLayer === 'authenticated_overlay'
@@ -3158,8 +5165,15 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
       )), true);
       assert.equal(JSON.stringify(capabilities).includes('/account'), false);
 
+      const executionPlans = await readJson(path.join(result.artifactDir, 'execution_plans.json'));
+      assert.equal(JSON.stringify(executionPlans).includes('/account'), false);
+
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      assert.equal(JSON.stringify(intents).includes('/account'), false);
+
       const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
       assert.equal(userReport.result_status, 'partial_success');
+      assert.equal(userReport.authVerificationStatus, 'browser_verified_partial');
       assert.equal(userReport.build_completion.registry_status, 'registered');
       assert.equal(userReport.build_completion.current_updated, true);
       assert.equal(userReport.build_completion.runtime_mode, 'browser_bridge_required');
@@ -3169,6 +5183,9 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
       assert.equal(userReport.coverage.browserBridge.routeCoverageStatus, 'partial');
       assert.equal(userReport.coverage.runtime.browserBridgeRuntimeCapabilities > 0, true);
       assert.equal(userReport.build_completion.runtime_counts.browserBridgeRuntimeCapabilities > 0, true);
+      const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+      assert.equal(buildReport.summary.auth.authVerificationStatus, 'browser_verified_partial');
+      assert.equal(buildReport.crawlContract.sourceMode, 'browser_bridge_partial');
       assert.equal(userReport.blocked_by_auth.some((entry) => (
         entry.routeTemplate === '/account'
         && entry.reason === 'browser-bridge-route-challenge-detected'
@@ -3194,6 +5211,7 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
       assert.doesNotMatch(htmlReport, /cookie\s*=|token\s*=|sid=|uid=|\bauthorization\b|\bbearer\b/iu);
 
       const registryReport = await readJson(path.join(result.artifactDir, 'registry_report.json'));
+      assert.equal(JSON.stringify(registryReport).includes('/account'), false);
       assert.equal(registryReport.status, 'registered');
       assert.equal(registryReport.runtimeMode, 'browser_bridge_required');
       assert.equal(registryReport.lookup.status, 'found');
@@ -3203,6 +5221,287 @@ test('runSiteForgeBuild produces partial success for captured browser routes whe
       assert.equal(record.runtimeMode, 'browser_bridge_required');
       assert.equal(record.runtimeModes.includes('browser_bridge_required'), true);
       assert.equal(JSON.stringify(record).includes('/account'), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('missing browser auth routes are not revived as public capabilities', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-missing-public-'));
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/notifications', '/catalog']));
+        return;
+      }
+      if (pathname === '/notifications') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Notifications', '<main><h1>Notifications</h1><ul><li>public shell</li></ul></main>'));
+        return;
+      }
+      if (pathname === '/catalog') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage('Catalog', '<main><a href="/item">Item</a></main>'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', `
+        <main>
+          <a href="/notifications">Notifications</a>
+          <a href="/catalog">Catalog</a>
+        </main>
+      `));
+    }, async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'browser-missing-public',
+        now: new Date('2026-05-26T09:00:00.000Z'),
+        maxDepth: 2,
+        maxPages: 20,
+        maxSeeds: 20,
+        renderJs: true,
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          auth: { mode: 'browser' },
+          authRoutes: ['/notifications'],
+          publicRevisitRoutes: ['/'],
+        },
+        publicRenderedStructureProvider: async () => ({
+          publicRenderedPages: [{
+            url: rootUrl,
+            routeTemplate: '/',
+            pageType: 'home_public_rendered',
+            visibleItemCount: 1,
+            listPresent: true,
+            links: [
+              { href: '/notifications', label: 'Notifications', semanticKind: 'notification_list' },
+              { href: '/catalog', label: 'Catalog', semanticKind: 'category' },
+            ],
+          }],
+        }),
+        browserAuthBridgeProvider: async ({ routes }) => {
+          const authRoute = routes.find((route) => route.routeTemplate === '/notifications');
+          const overlayRoute = routes.find((route) => route.sourceLayer === 'authenticated_overlay');
+          return {
+            authenticatedOverlayPages: [{
+              routeId: overlayRoute?.id,
+              url: overlayRoute?.targetUrl,
+              routeTemplate: '/',
+              pageType: 'home_overlay',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+            routeResults: [{
+              routeId: authRoute?.id,
+              sourceLayer: 'authenticated',
+              targetRoute: '/notifications',
+              status: 'challenge_detected',
+              reasonCode: 'browser-bridge-route-challenge-detected',
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(result.result_status, 'partial_success');
+      const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
+      assert.equal(authReport.browserBridge.missingRouteCount, 1);
+      assert.equal(authReport.browserBridge.routeResults.some((route) => (
+        route.targetRoute === '/notifications'
+        && route.captured === false
+      )), true);
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.pages.some((page) => /\/notifications$/u.test(page.normalizedUrl)), false);
+      assert.equal(JSON.stringify(crawlStatic.pages).includes('/notifications'), false);
+
+      const crawlRendered = await readJson(path.join(result.artifactDir, 'crawl_rendered.json'));
+      assert.equal(JSON.stringify(crawlRendered.publicRenderedPages ?? []).includes('/notifications'), false);
+
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.equal(JSON.stringify(graph.nodes).includes('/notifications'), false);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      assert.equal(JSON.stringify(capabilities.capabilities).includes('/notifications'), false);
+
+      const executionPlans = await readJson(path.join(result.artifactDir, 'execution_plans.json'));
+      assert.equal(JSON.stringify(executionPlans).includes('/notifications'), false);
+
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      assert.equal(JSON.stringify(intents).includes('/notifications'), false);
+
+      const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
+      assert.equal(userReport.blocked_by_auth.some((entry) => entry.routeTemplate === '/notifications'), true);
+
+      const routeCapturePlan = await readJson(path.join(result.artifactDir, 'route_capture_plan.json'));
+      assert.equal(routeCapturePlan.missingRoutes.some((route) => (
+        route.targetRoute === '/notifications'
+        && route.capabilityGenerated === false
+      )), true);
+
+      const registryReport = await readJson(path.join(result.artifactDir, 'registry_report.json'));
+      assert.equal(JSON.stringify(registryReport).includes('/notifications'), false);
+
+      const siteRoot = siteWorkspaceDir(workspace, rootUrl);
+      for (const currentFile of ['graph.json', 'capabilities.json', 'execution_plans.json', 'intents.json']) {
+        const currentPath = path.join(siteRoot, 'current', currentFile);
+        if (await fileExists(currentPath)) {
+          assert.equal((await readFile(currentPath, 'utf8')).includes('/notifications'), false);
+        }
+      }
+      const registry = await readJson(path.join(siteRoot, 'registry.json'));
+      assert.equal(JSON.stringify(registry).includes('/notifications'), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('browser bridge route queue overflow is reported as uncovered routes', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-route-overflow-'));
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/']));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', '<main><a href="/catalog">Catalog</a></main>'));
+    }, async (rootUrl) => {
+      const authRoutes = Array.from({ length: 100 }, (_, index) => `/route-${index + 1}`);
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'browser-route-overflow',
+        now: new Date('2026-05-26T09:10:00.000Z'),
+        maxDepth: 1,
+        maxPages: 10,
+        maxSeeds: 10,
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        browserBridgeMaxRetryPasses: 0,
+        renderedStructureProvider: async () => ({
+          url: rootUrl,
+          routeTemplate: '/',
+          pageType: 'public_rendered_home',
+          sourceLayer: 'public_rendered',
+          links: [{
+            href: new URL('/route-41', rootUrl).toString(),
+            routeTemplate: '/route-41',
+            label: 'FAKE_AUTH_OVERFLOW_ABILITY',
+            semanticKind: 'category',
+          }, {
+            href: new URL('/route-100', rootUrl).toString(),
+            routeTemplate: '/route-100',
+            label: 'FAKE_AUTH_OVERFLOW_ABILITY',
+            semanticKind: 'ranking',
+          }],
+          itemLinks: [],
+          controls: [],
+          forms: [],
+        }),
+        localBuildConfig: {
+          auth: { mode: 'browser' },
+          authRoutes,
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          assert.equal(routes.length, 32);
+          return {
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: routes[0].routeTemplate,
+              pageType: 'authenticated_route_summary',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(result.result_status, 'partial_success');
+      const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
+      assert.equal(authReport.authVerificationStatus, 'browser_verified_partial');
+      assert.equal(authReport.browserBridge.routeCount, 100);
+      assert.equal(authReport.browserBridge.scheduledRouteCount, 32);
+      assert.equal(authReport.browserBridge.overflowRouteCount, 68);
+      assert.equal(authReport.browserBridge.unattemptedRouteCount, 68);
+      assert.equal(authReport.browserBridge.routeQueueTruncated, true);
+      assert.equal(authReport.browserBridge.routeResultCount, 100);
+      assert.equal(authReport.browserBridge.routeResultOmittedCount, 0);
+      assert.equal(authReport.browserBridge.routeResults.length, 100);
+      assert.equal(authReport.browserBridge.routeResults.some((route) => route.targetRoute === '/route-35'), true);
+      assert.equal(authReport.browserBridge.routeResults.some((route) => route.targetRoute === '/route-100'), true);
+
+      const routeCapturePlan = await readJson(path.join(result.artifactDir, 'route_capture_plan.json'));
+      assert.equal(routeCapturePlan.routeCount, 100);
+      assert.equal(routeCapturePlan.missingRouteCount, 99);
+      assert.equal(routeCapturePlan.unattemptedRouteCount, 68);
+      assert.equal(routeCapturePlan.unattemptedRoutes.length, 68);
+      assert.equal(routeCapturePlan.missingRoutes.some((route) => (
+        route.targetRoute === '/route-33'
+        && route.finalReasonCode === 'browser-bridge-route-limit-exceeded'
+        && route.recommendedRetryMode === 'split_browser_bridge_route_batch'
+        && route.capabilityGenerated === false
+      )), true);
+      assert.equal(routeCapturePlan.missingRoutes.some((route) => route.targetRoute === '/route-35'), true);
+      assert.equal(routeCapturePlan.missingRoutes.some((route) => route.targetRoute === '/route-100'), true);
+
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const executionPlans = await readJson(path.join(result.artifactDir, 'execution_plans.json'));
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      const registryReport = await readJson(path.join(result.artifactDir, 'registry_report.json'));
+      for (const artifact of [graph.nodes, capabilities.capabilities, executionPlans, intents.intents, registryReport]) {
+        assert.equal(JSON.stringify(artifact).includes('/route-33'), false);
+        assert.equal(JSON.stringify(artifact).includes('/route-100'), false);
+        assert.equal(JSON.stringify(artifact).includes('FAKE_AUTH_OVERFLOW_ABILITY'), false);
+      }
+
+      const siteRoot = siteWorkspaceDir(workspace, rootUrl);
+      for (const currentFile of ['graph.json', 'capabilities.json', 'execution_plans.json', 'intents.json', 'skill.yaml']) {
+        const currentPath = path.join(siteRoot, 'current', currentFile);
+        if (await fileExists(currentPath)) {
+          const currentText = await readFile(currentPath, 'utf8');
+          assert.equal(currentText.includes('/route-33'), false);
+          assert.equal(currentText.includes('/route-100'), false);
+          assert.equal(currentText.includes('FAKE_AUTH_OVERFLOW_ABILITY'), false);
+        }
+      }
+      const registry = await readJson(path.join(siteRoot, 'registry.json'));
+      assert.equal(JSON.stringify(registry).includes('/route-33'), false);
+      assert.equal(JSON.stringify(registry).includes('/route-100'), false);
+      assert.equal(JSON.stringify(registry).includes('FAKE_AUTH_OVERFLOW_ABILITY'), false);
+
+      const htmlReport = await readFile(path.join(result.artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8');
+      assert.match(htmlReport, /Browser Bridge Route Coverage/u);
+      assert.match(htmlReport, /Only the first 40 missing routes are shown here/u);
+      assert.match(htmlReport, /59 more are listed in <code>route_capture_plan\.json<\/code>/u);
+      assert.match(htmlReport, /route_capture_plan\.json/u);
+      assert.match(htmlReport, /\/route-41/u);
+      assert.doesNotMatch(htmlReport, /\/route-42/u);
+      assert.match(htmlReport, /unattempted 68/u);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -3455,6 +5754,59 @@ test('failed SiteForge builds keep current skill, registry, and last success sta
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('registry write failure after promotion rolls back active current state', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-registry-atomic-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const success = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'atomic-success-build',
+        now: new Date('2026-05-16T05:00:00.000Z'),
+        fetchDelayMs: 0,
+      });
+      const siteRoot = siteWorkspaceDir(workspace, rootUrl);
+      const currentSkillPath = path.join(siteRoot, 'current', 'skill.yaml');
+      const currentVerificationPath = path.join(siteRoot, 'current', 'verification_report.json');
+      const registryPath = path.join(siteRoot, 'registry.json');
+      const lastSuccessfulPath = path.join(siteRoot, 'last_successful_build.json');
+      const currentSkillBefore = await readFile(currentSkillPath, 'utf8');
+      const currentVerificationBefore = await readFile(currentVerificationPath, 'utf8');
+      const registryBefore = await readFile(registryPath, 'utf8');
+      const lastSuccessfulBefore = await readFile(lastSuccessfulPath, 'utf8');
+
+      const registryBlocker = path.join(siteRoot, 'registry-blocker');
+      await writeFile(registryBlocker, 'not a directory', 'utf8');
+      await assert.rejects(
+        () => runSiteForgeBuild(rootUrl, {
+          cwd: workspace,
+          buildId: 'atomic-registry-fail-build',
+          now: new Date('2026-05-16T06:00:00.000Z'),
+          fetchDelayMs: 0,
+          registryPath: path.join(registryBlocker, 'registry.json'),
+        }),
+      );
+
+      assert.equal(await readFile(currentSkillPath, 'utf8'), currentSkillBefore);
+      assert.equal(await readFile(currentVerificationPath, 'utf8'), currentVerificationBefore);
+      assert.equal(await readFile(registryPath, 'utf8'), registryBefore);
+      assert.equal(await readFile(lastSuccessfulPath, 'utf8'), lastSuccessfulBefore);
+      assert.equal((await readJson(lastSuccessfulPath)).buildId, success.buildId);
+      const siteEntries = await readdir(siteRoot);
+      assert.equal(siteEntries.some((entry) => entry.includes('atomic-registry-fail-build') && /\.backup|\.tmp/u.test(entry)), false);
+      const failedBuildDir = path.join(siteRoot, 'builds', 'atomic-registry-fail-build');
+      const failedReport = await readJson(path.join(failedBuildDir, 'build_report.json'));
+      assert.equal(failedReport.failedStage, 'registerSkill');
+      assert.notEqual(failedReport.summary.registryStatus, 'registered');
+      assert.equal(failedReport.summary.currentUpdated, false);
+      assert.equal(await fileExists(path.join(failedBuildDir, 'registry_report.json')), false);
+      assert.equal(await fileExists(path.join(failedBuildDir, 'reports', 'registry_report.json')), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('public SiteForge CLI first run without a profile auto-builds from a local HTTP site', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-'));
   try {
@@ -3797,13 +6149,120 @@ test('public SiteForge CLI reads local cookie config auth routes and runs authen
       const userReport = await readJson(path.join(artifactDir, 'build_report.user.json'));
       assert.equal(userReport.limited_enabled_capabilities.some((capability) => capability.name === 'read authenticated route summaries'), true);
       const reportText = [
+        await readFile(path.join(artifactDir, 'inputs', 'build_profile.json'), 'utf8'),
         await readFile(path.join(artifactDir, 'auth_state_report.json'), 'utf8'),
         await readFile(path.join(artifactDir, 'build_report.json'), 'utf8'),
         await readFile(path.join(artifactDir, 'build_report.debug.json'), 'utf8'),
         await readFile(path.join(artifactDir, 'build_report.user.json'), 'utf8'),
         await readFile(path.join(artifactDir, 'reports', 'capability_intent_summary.html'), 'utf8'),
       ].join('\n');
-      assert.doesNotMatch(reportText, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+      assert.doesNotMatch(reportText, /authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin|SITEFORGE_TEST_COOKIE|SECRET_SESSION_VALUE|sid=|uid=123/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public SiteForge CLI strips sensitive configured route material before persistence', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-route-redaction-'));
+  const secretCookie = 'sid=SECRET_SESSION_VALUE; uid=123';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...simpleShopRoutes(rootUrl),
+      '/account': testHtmlPage('Account dashboard', `
+        <main>
+          <h1>Account dashboard</h1>
+          <p>Authenticated route is reachable.</p>
+        </main>
+      `),
+    }), async (rootUrl) => {
+      const { protocol, host } = new URL(rootUrl);
+      await writeFile(
+        path.join(workspace, 'siteforge.local.json'),
+        JSON.stringify({
+          sites: [
+            {
+              url: rootUrl,
+              auth: {
+                mode: 'cookie',
+                cookieEnv: 'SITEFORGE_TEST_COOKIE',
+                authCheckUrl: '/account',
+                authRoutes: [
+                  `${protocol}//route-user:ROUTE_PASS@${host}/account?route_marker=LOCAL_ROUTE_VALUE&opaque=LOCAL_ROUTE_OPAQUE#frag`,
+                ],
+                publicRevisitRoutes: [
+                  `${protocol}//revisit-user:REVISIT_PASS@${host}/?session_id=LOCAL_REVISIT_SESSION&api_key=LOCAL_REVISIT_KEY#tab`,
+                ],
+              },
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUTF8: '1',
+          SITEFORGE_TEST_COOKIE: secretCookie,
+        },
+      });
+
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /SECRET_SESSION_VALUE|sid=|uid=123|LOCAL_ROUTE_VALUE|LOCAL_REVISIT_SESSION/u);
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      assert.equal(buildDirs.length, 1);
+      const artifactDir = buildDirs[0];
+      const siteRoot = siteWorkspaceDir(workspace, rootUrl);
+      const setupPlan = await readJson(path.join(siteRoot, 'setup', 'setup_plan.json'));
+      const setupProfile = await readJson(path.join(siteRoot, 'setup', 'build_profile.json'));
+      const artifactBuildProfile = await readJson(path.join(artifactDir, 'inputs', 'build_profile.json'));
+      const seeds = await readJson(path.join(artifactDir, 'seeds.json'));
+      const buildReport = await readJson(path.join(artifactDir, 'build_report.json'));
+      const configuredAuthRoute = setupPlan.localBuildConfig.authRoutes.find((urlValue) => /\/account$/u.test(urlValue));
+      const configuredRevisitRoute = setupPlan.localBuildConfig.publicRevisitRoutes.find((urlValue) => new URL(urlValue).pathname === '/');
+      assert.ok(configuredAuthRoute);
+      assert.ok(configuredRevisitRoute);
+      assert.equal(new URL(configuredAuthRoute).username, '');
+      assert.equal(new URL(configuredAuthRoute).password, '');
+      assert.equal(new URL(configuredAuthRoute).search, '');
+      assert.equal(new URL(configuredAuthRoute).hash, '');
+      assert.equal(new URL(configuredRevisitRoute).username, '');
+      assert.equal(new URL(configuredRevisitRoute).password, '');
+      assert.equal(new URL(configuredRevisitRoute).search, '');
+      assert.equal(new URL(configuredRevisitRoute).hash, '');
+      assert.equal(buildReport.crawlContract.coverageTargets.authRoutes.some((urlValue) => /\/account$/u.test(urlValue)), true);
+      assert.equal(buildReport.crawlContract.coverageTargets.publicRevisitRoutes.some((urlValue) => new URL(urlValue).pathname === '/'), true);
+      assert.equal(seeds.authSeeds.some((seed) => /\/account$/u.test(seed.normalizedUrl)), true);
+      assert.equal(seeds.revisitSeeds.some((seed) => new URL(seed.normalizedUrl).pathname === '/'), true);
+      const artifactFiles = [
+        path.join(siteRoot, 'setup', 'setup_plan.json'),
+        path.join(siteRoot, 'setup', 'build_profile.json'),
+        path.join(artifactDir, 'inputs', 'build_profile.json'),
+        path.join(artifactDir, 'auth_state_report.json'),
+        path.join(artifactDir, 'crawl_authenticated.json'),
+        path.join(artifactDir, 'seeds.json'),
+        path.join(artifactDir, 'graph.json'),
+        path.join(artifactDir, 'classified_graph.json'),
+        path.join(artifactDir, 'capabilities.json'),
+        path.join(artifactDir, 'execution_plans.json'),
+        path.join(artifactDir, 'build_report.json'),
+        path.join(artifactDir, 'build_report.debug.json'),
+        path.join(artifactDir, 'build_report.user.json'),
+        path.join(artifactDir, 'reports', 'capability_intent_summary.html'),
+      ];
+      if (await fileExists(path.join(artifactDir, 'route_capture_plan.json'))) {
+        artifactFiles.push(path.join(artifactDir, 'route_capture_plan.json'));
+      }
+      const reportText = (await Promise.all(artifactFiles.map((filePath) => readFile(filePath, 'utf8')))).join('\n');
+      assert.doesNotMatch(reportText, /SECRET_SESSION_VALUE|route-user|ROUTE_PASS|revisit-user|REVISIT_PASS|LOCAL_ROUTE_VALUE|LOCAL_ROUTE_OPAQUE|LOCAL_REVISIT_SESSION|LOCAL_REVISIT_KEY|route_marker=|session_id=|api_key=|sid=|uid=123|#frag|#tab/iu);
+      assert.doesNotMatch(JSON.stringify(setupProfile), /route-user|ROUTE_PASS|revisit-user|REVISIT_PASS|LOCAL_ROUTE_VALUE|LOCAL_REVISIT_SESSION|route_marker=|session_id=/iu);
+      const forbiddenProfilePattern = /authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin|SITEFORGE_TEST_COOKIE|SECRET_SESSION_VALUE|sid=|uid=123/iu;
+      assert.doesNotMatch(JSON.stringify(setupProfile), forbiddenProfilePattern);
+      assert.doesNotMatch(JSON.stringify(artifactBuildProfile), forbiddenProfilePattern);
+      assert.equal(Object.hasOwn(setupProfile, 'authRuntime'), false);
+      assert.equal(Object.hasOwn(artifactBuildProfile, 'authRuntime'), false);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -4016,6 +6475,69 @@ test('interactive first-run setup persists profile artifacts with unsafe actions
   }
 });
 
+test('build profile safety rejects runtime cookie material without echoing secret values', () => {
+  assert.doesNotThrow(() => assertBuildProfileSafe({
+    artifactFamily: 'siteforge-build-profile',
+    source: { type: 'live_website' },
+    authStateReport: {
+      authMethod: 'cookie',
+      authVerificationStatus: 'cookie_verified',
+      cookieInput: {
+        provided: true,
+        source: 'env',
+        pairCount: 2,
+        persisted: false,
+        redacted: true,
+      },
+      cookieMaterialPersisted: false,
+    },
+    sourceDiagnostics: [
+      {
+        label: 'homepage',
+        requestHeaders: {
+          accept: 'text/html',
+          'user-agent': 'SiteForge',
+        },
+      },
+    ],
+  }));
+
+  assert.throws(
+    () => assertBuildProfileSafe({
+      artifactFamily: 'siteforge-build-profile',
+      source: { type: 'live_website' },
+      authRuntime: {
+        method: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+      },
+    }),
+    (error) => {
+      const thrown = /** @type {Error} */ (error);
+      assert.match(thrown.message, /build_profile\.json contains sensitive fields/u);
+      assert.match(thrown.message, /authRuntime/u);
+      assert.doesNotMatch(thrown.message, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () => assertBuildProfileSafe({
+      artifactFamily: 'siteforge-build-profile',
+      source: { type: 'live_website' },
+      authStateReport: {
+        blockingSignals: ['cookie sid=SECRET_SESSION_VALUE'],
+      },
+    }),
+    (error) => {
+      const thrown = /** @type {Error} */ (error);
+      assert.match(thrown.message, /build_profile\.json contains sensitive values at/u);
+      assert.match(thrown.message, /authStateReport\.blockingSignals\.0/u);
+      assert.doesNotMatch(thrown.message, /SECRET_SESSION_VALUE|sid=/u);
+      return true;
+    },
+  );
+});
+
 test('public SiteForge CLI reuses saved setup profile and then builds the local HTTP simple-shop site', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-profile-'));
   try {
@@ -4064,6 +6586,53 @@ test('public SiteForge CLI reuses saved setup profile and then builds the local 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('public SiteForge CLI rejects stale saved profile containing runtime cookie material', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-stale-sensitive-profile-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'setup-profile',
+        now: new Date('2026-05-16T04:30:00.000Z'),
+        setupInteractive: true,
+        setupOutput: { write() {} },
+        setupPrompt: async () => 'focus search',
+        fetchDelayMs: 0,
+      });
+      const setupPaths = buildSetupAssistantPaths(rootUrl, {
+        cwd: workspace,
+        buildId: 'setup-profile',
+        now: new Date('2026-05-16T04:30:00.000Z'),
+      });
+      const staleProfile = await readJson(setupPaths.savedBuildProfilePath);
+      staleProfile.authRuntime = {
+        method: 'cookie',
+        cookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
+      };
+      await writeFile(setupPaths.savedBuildProfilePath, JSON.stringify(staleProfile, null, 2), 'utf8');
+
+      const result = await spawnNode([CLI_PATH, 'build', rootUrl], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /SECRET_SESSION_VALUE|sid=|uid=123/u);
+
+      const buildDirs = await listBuildDirs(siteBuildsDir(workspace, rootUrl));
+      const artifactDirs = buildDirs.filter((candidate) => path.basename(candidate) !== 'setup-profile');
+      assert.equal(artifactDirs.length, 1);
+      const artifactDir = artifactDirs[0];
+      const finalSetupProfileText = await readFile(setupPaths.savedBuildProfilePath, 'utf8');
+      const inputProfileText = await readFile(path.join(artifactDir, 'inputs', 'build_profile.json'), 'utf8');
+      assert.doesNotMatch(finalSetupProfileText, /authRuntime|cookieHeader|SECRET_SESSION_VALUE|sid=|uid=123/iu);
+      assert.doesNotMatch(inputProfileText, /authRuntime|cookieHeader|SECRET_SESSION_VALUE|sid=|uid=123/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('public SiteForge CLI builds the local HTTP Tencent News site without extra params', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-news-http-cli-profile-'));
   try {

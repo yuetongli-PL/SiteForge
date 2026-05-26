@@ -16,7 +16,7 @@ import {
   readCliValue,
 } from '../../infra/cli/parse-values.mjs';
 import { sanitizePublicUrl } from '../../shared/url-safety.mjs';
-import { prepareRedactedArtifactJsonWithAudit } from '../../domain/sessions/security-guard.mjs';
+import { prepareRedactedArtifactJsonWithAudit, redactError } from '../../domain/sessions/security-guard.mjs';
 
 const SITEFORGE_PRIVACY_MODES = new Set(['limited', 'strict']);
 const SITEFORGE_REPORT_MODES = siteForgeReportModeSet();
@@ -43,6 +43,14 @@ async function writeJsonFile(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(auditPath, prepared.auditJson, 'utf8');
   await writeFile(filePath, `${prepared.json.trimEnd()}\n`, 'utf8');
+}
+
+function redactCliDiagnosticText(value) {
+  const raw = String(value ?? '');
+  const { error } = redactError({ message: raw, stack: raw });
+  return String(error.stack ?? error.message ?? raw)
+    .replace(/\b(?:sid|uid|session(?:[_-]?id)?|token|auth|cookieHeader|cookieEnv|cookieFile|cookieStdin)\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^;\s'",]+/giu, '[REDACTED]')
+    .replace(/\b(?:authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin)\b/giu, '[REDACTED_FIELD]');
 }
 
 function setupFailureClass(reasonCode) {
@@ -1123,14 +1131,7 @@ function printHelp() {
   --manual                     Accepted for compatibility; build still runs without prompts
   --deep                       Request broader/deeper discovery
   --network                    Save a sanitized network summary only
-  --auth <mode>                none | cookie | browser
-  --cookie-env <name>          Read Cookie header from environment variable
-  --cookie-file <path>         Read Cookie header or Netscape cookie jar from file
-  --cookie-stdin               Read Cookie header from stdin
   --robots-plan                Print compliant recovery workflows for robots/setup blocks as JSON
-  --auth-check-url <url/path>  Same-site URL/path used to verify Cookie or browser bridge auth
-  --login-enhanced             Compatibility alias for --auth cookie; still requires cookie input
-  --public-only                Compatibility alias for --auth none
   --privacy <mode>             limited | strict
   --explain                    Include explanatory user-facing output
   --report <mode>              user | debug | both
@@ -1206,7 +1207,7 @@ async function runCli() {
       }
     }
     if (buildOptions.debug && error?.stack) {
-      process.stderr.write(`${error.stack}\n`);
+      process.stderr.write(`${redactCliDiagnosticText(error.stack)}\n`);
     }
     process.exitCode = 1;
     return;
@@ -1236,7 +1237,7 @@ async function runCli() {
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
 if (entryPath && fileURLToPath(import.meta.url) === entryPath) {
   runCli().catch((error) => {
-    process.stderr.write(`${error?.message ?? String(error)}\n`);
+    process.stderr.write(`${redactCliDiagnosticText(error?.message ?? String(error))}\n`);
     process.exitCode = 1;
   });
 }

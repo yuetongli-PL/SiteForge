@@ -292,6 +292,7 @@ export function isReadOnlyFollowSurface(value = /** @type {any} */ ({})) {
       value.description,
       value.userValue,
       value.label,
+      value.elementKind,
       value.href,
       value.endpoint,
       value.routeTemplate,
@@ -311,11 +312,17 @@ export function isReadOnlyFollowSurface(value = /** @type {any} */ ({})) {
     return /\b(?:view|open|browse|read|list|show|route|link|navigation)\b/iu.test(value);
   }
   const kind = String(value.kind ?? '').toLowerCase();
+  const elementKind = String(value.elementKind ?? '').toLowerCase();
+  if (['button', 'form', 'input', 'select', 'control'].includes(elementKind)) {
+    return false;
+  }
   const action = String(value.action ?? value.intentAction ?? '').toLowerCase();
   const safety = String(value.safety ?? value.safetyLevel ?? '').toLowerCase();
   const method = String(value.method ?? '').toUpperCase();
   const mode = String(value.executionPlan?.mode ?? '').toLowerCase();
-  const readKind = !kind || ['link', 'route', 'navigation', 'component'].includes(kind);
+  const readKind = (!kind && !elementKind)
+    || ['link', 'route', 'navigation', 'component'].includes(kind)
+    || ['link', 'navigation'].includes(elementKind);
   const readAction = !action || READ_ONLY_ACTION_PATTERN.test(action) || action.includes('followed');
   const readSafety = !safety || ['read_only', 'safe'].includes(safety);
   const readMethod = !method || ['GET', 'HEAD', 'OPTIONS'].includes(method);
@@ -343,6 +350,32 @@ export function findForcedDisabledActions(value) {
     const phrasePattern = new RegExp(`(?:^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}(?:$|[^a-z0-9])`, 'u');
     const actionPattern = new RegExp(`(?:^|[^a-z0-9])${action.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}(?:$|[^a-z0-9])`, 'u');
     if (tokens.has(normalized) || phrasePattern.test(text) || actionPattern.test(text)) {
+      hits.push(action);
+    }
+  }
+  const localizedPatterns = /** @type {Array<[string, RegExp]>} */ ([
+    ['publish', /\u53d1\u5e03|\u53d1\u5e16|\u53d1\u52a8\u6001|\u53d1\u5fae\u535a|\u53d1\u8868/u],
+    ['publish_reply', /\u8bc4\u8bba|\u56de\u590d|\u53d1\u8868\u56de\u590d|\u63d0\u4ea4\u8bc4\u8bba/u],
+    ['submit', /\u63d0\u4ea4|\u786e\u8ba4\u63d0\u4ea4|\u9012\u4ea4/u],
+    ['send_dm', /\u53d1\u9001\u79c1\u4fe1|\u79c1\u4fe1/u],
+    ['send_reply', /\u53d1\u9001\u56de\u590d|\u56de\u590d/u],
+    ['send', /\u53d1\u9001/u],
+    ['delete', /\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u6ce8\u9500/u],
+    ['pay', /\u652f\u4ed8|\u4ed8\u6b3e|\u4ed8\u8d39|\u5145\u503c|\u6253\u8d4f/u],
+    ['checkout', /\u7ed3\u8d26|\u4e0b\u5355/u],
+    ['upload', /\u4e0a\u4f20/u],
+    ['change_password', /\u4fee\u6539\u5bc6\u7801|\u66f4\u6539\u5bc6\u7801|\u91cd\u7f6e\u5bc6\u7801/u],
+    ['change_email', /\u4fee\u6539\u90ae\u7bb1|\u66f4\u6362\u90ae\u7bb1|\u7ed1\u5b9a\u90ae\u7bb1/u],
+    ['change_2fa', /\u4fee\u6539(?:2fa|mfa|\u4e24\u6b65\u9a8c\u8bc1|\u4e8c\u6b65\u9a8c\u8bc1)|\u5173\u95ed(?:2fa|mfa|\u4e24\u6b65\u9a8c\u8bc1|\u4e8c\u6b65\u9a8c\u8bc1)|\u5f00\u542f(?:2fa|mfa|\u4e24\u6b65\u9a8c\u8bc1|\u4e8c\u6b65\u9a8c\u8bc1)/iu],
+    ['change_payment', /\u4fee\u6539\u4ed8\u6b3e\u65b9\u5f0f|\u66f4\u6362\u652f\u4ed8\u65b9\u5f0f|\u6dfb\u52a0\u94f6\u884c\u5361/u],
+    ['edit_profile', /\u4fee\u6539\u8d44\u6599|\u7f16\u8f91\u8d44\u6599|\u4fee\u6539\u7b80\u4ecb|\u7f16\u8f91\u4e2a\u4eba\u8d44\u6599/u],
+    ['unfollow', /\u53d6\u6d88\u5173\u6ce8|\u53d6\u5173/u],
+    ['follow', /(?:^|[^\p{Script=Han}])\u5173\u6ce8(?:$|[^\p{Script=Han}])|\u5173\u6ce8(?:\u8d26\u53f7|\u7528\u6237|\u6b64\u4eba|\u4f5c\u8005|\u535a\u4e3b)/u],
+    ['like', /(?:^|[^\p{Script=Han}])\u70b9\u8d5e(?:$|[^\p{Script=Han}])|\u7ed9.*\u70b9\u8d5e/u],
+    ['repost', /\u8f6c\u53d1/u],
+  ]);
+  for (const [action, pattern] of localizedPatterns) {
+    if (pattern.test(String(value ?? ''))) {
       hits.push(action);
     }
   }

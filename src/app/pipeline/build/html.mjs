@@ -177,6 +177,18 @@ function resolveUrlMaybe(value, baseUrl) {
   }
 }
 
+function sourceUrlSameOrigin(value, baseUrl) {
+  const resolved = resolveUrlMaybe(value, baseUrl);
+  if (!resolved || !baseUrl) {
+    return false;
+  }
+  try {
+    return new URL(resolved).origin === new URL(baseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 function sanitizeUrlMaybe(value, baseUrl) {
   const resolved = resolveUrlMaybe(value, baseUrl);
   if (!resolved) {
@@ -284,7 +296,7 @@ export function extractLinks(html, baseUrl) {
     const label = sanitizeArtifactText(match[2], 160) || sanitizeArtifactText(rawAttrs['aria-label'] ?? rawAttrs.title ?? '', 160);
     const link = {
       href,
-      rawHref: attrs.href,
+      sourceSameOrigin: sourceUrlSameOrigin(rawAttrs.href, baseUrl),
       label,
       selector: selectorFor('a', attrs, index),
       attrs,
@@ -382,7 +394,12 @@ function semanticKindForLink(link = /** @type {any} */ ({})) {
     link.attrs?.class,
     link.attrs?.id,
     link.attrs?.role,
+    link.attrs?.['aria-label'],
+    link.attrs?.title,
+    link.attrs?.['data-testid'],
+    link.attrs?.['data-e2e'],
   ].join(' ').toLowerCase();
+  if (/(?:^|[/?#:_\s-])(?:follow|following|followed|followers)(?=$|[/?#:_\s-])|\u5173\u6ce8|\u7c89\u4e1d/u.test(text)) return 'following_list';
   if (/搜索|搜书|检索/u.test(text)) return 'search';
   if (/分类|类别|频道|书库|书城/u.test(text)) return 'category';
   if (/标签|话题/u.test(text)) return 'tag';
@@ -451,6 +468,7 @@ export function extractElementInstances({
       label,
       selector: link.selector,
       href: link.href,
+      sourceSameOrigin: link.sourceSameOrigin === true,
       routeTemplate: link.routeTemplate ?? routeTemplateForUrlMaybe(link.href),
       evidenceStatus: 'element_instance_summary_present',
       evidenceLevel: 'public_verified',
@@ -724,7 +742,7 @@ function parseRobotsDirective(line) {
 export function parseRobotsPolicy(robotsText, baseUrl, userAgent = 'SiteForgeBuildStaticCrawler') {
   const groups = /** @type {any[]} */ ([]);
   const sitemaps = /** @type {any[]} */ ([]);
-  let currentGroup = null;
+  let currentGroup = /** @type {null | { agents: string[], rules: any[], crawlDelaySeconds?: number }} */ (null);
   let currentGroupHasRules = false;
 
   for (const line of String(robotsText ?? '').split(/\r?\n/u)) {

@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import process from 'node:process';
+import { rm } from 'node:fs/promises';
 import { displayPath, displayReportPath } from '../../../infra/cli/path-display.mjs';
 import { buildStatusLabel, collectionStatusLabel, verificationStatusLabel } from '../../../infra/cli/status-labels.mjs';
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
@@ -113,7 +114,10 @@ import {
 import {
   createSiteWorkspace,
   ensureSiteWorkspace,
+  finalizeRetainedCurrentPromotion,
   promoteVerifiedBuild,
+  readLastSuccessfulBuild,
+  rollbackRetainedCurrentPromotion,
   writeLastSuccessfulBuild,
 } from './workspace.mjs';
 import {
@@ -131,6 +135,7 @@ import {
 import {
   AUTH_STATE_REPORT_FILE,
   CRAWL_AUTHENTICATED_FILE,
+  authRuntimeMaterialFrom,
   authSummaryForReport,
   canRunAuthenticatedLayer,
   createCrawlContract,
@@ -138,7 +143,14 @@ import {
   evidenceLevelRank,
   normalizeAuthStateReport,
   runDefaultBrowserAuthStateCheck,
+  sanitizeRouteTargetForPersistence,
 } from './auth-state.mjs';
+import {
+  canUseEvidenceProvider,
+  evidenceBundlesFromStageResults,
+  evidenceCoverageFromBundles,
+  normalizeEvidenceBundle,
+} from './evidence-provider.mjs';
 import {
   RUNTIME_MODES,
   runtimeProviderPromotionMetadata,
@@ -574,6 +586,10 @@ function pageEvidenceLevel(page = /** @type {any} */ ({})) {
 }
 
 function pagesFromStageResults(stageResults = /** @type {any} */ ({})) {
+  const evidenceBundles = evidenceBundlesFromStageResults(stageResults);
+  if (evidenceBundles.length) {
+    return evidenceBundles.flatMap((bundle) => bundle.pages ?? []);
+  }
   return [
     ...(stageResults.crawlStatic?.pages ?? []),
     ...(stageResults.crawlAuthenticated?.authenticatedPages ?? []),
@@ -889,7 +905,7 @@ function classifyPage(page, context = /** @type {any} */ ({})) {
     const authText = `${page.routeTemplate ?? ''} ${page.routePattern ?? ''} ${page.pageType ?? ''} ${page.title ?? ''} ${page.textSummary ?? ''}`.toLowerCase();
     if (/notification|mention/u.test(authText)) return 'notification_list';
     if (/bookmark|saved/u.test(authText)) return 'bookmark_list';
-    if (/following|followers|followed/u.test(authText)) return 'following_list';
+    if (/(?:^|[/?#:_\s-])(?:follow|following|followers|followed)(?=$|[/?#:_\s-])/u.test(authText)) return 'following_list';
     if (/direct message|\bdm\b|message/u.test(authText)) return 'direct_message_list_summary';
     if (/account|settings|profile|security/u.test(authText)) return 'account_navigation';
     if (/timeline|feed|home/u.test(authText)) return 'authenticated_timeline';
@@ -965,6 +981,16 @@ function classifyPage(page, context = /** @type {any} */ ({})) {
 function formSafety(form) {
   const method = String(form.method ?? 'GET').toUpperCase();
   const haystack = `${form.label ?? ''} ${form.action ?? ''} ${form.textSummary ?? ''}`.toLowerCase();
+  const forcedActions = findForcedDisabledActions(haystack);
+  if (forcedActions.some((action) => ['pay', 'checkout', 'change_payment'].includes(action))) {
+    return 'payment';
+  }
+  if (forcedActions.some((action) => action === 'delete' || action.startsWith('change_') || action === 'edit_profile')) {
+    return 'destructive';
+  }
+  if (forcedActions.length > 0) {
+    return 'state_changing';
+  }
   if (/checkout|payment|purchase|order|billing/u.test(haystack)) {
     return 'payment';
   }
@@ -1008,13 +1034,26 @@ function controlAffordanceKind(control) {
 function controlSafety(control) {
   const type = String(control.type ?? '').toLowerCase();
   const haystack = `${control.label ?? ''} ${control.name ?? ''} ${type} ${control.attrs?.role ?? ''}`.toLowerCase();
+  const forcedActions = findForcedDisabledActions(haystack);
+  if (forcedActions.some((action) => ['pay', 'checkout', 'change_payment'].includes(action))) {
+    return 'payment';
+  }
+  if (forcedActions.some((action) => action === 'delete' || action.startsWith('change_') || action === 'edit_profile')) {
+    return 'destructive';
+  }
+  if (forcedActions.length > 0) {
+    return 'state_changing';
+  }
   if (/checkout|payment|purchase|order|billing/u.test(haystack)) {
     return 'payment';
   }
   if (/delete|remove|destroy|cancel account/u.test(haystack)) {
     return 'destructive';
   }
-  if (control.kind === 'input' || control.kind === 'select' || type === 'submit') {
+  if (type === 'submit') {
+    return /search|query|keyword|find/u.test(haystack) ? 'requires_input' : 'state_changing';
+  }
+  if (control.kind === 'input' || control.kind === 'select') {
     return 'requires_input';
   }
   return 'safe';
@@ -1504,7 +1543,6 @@ function userAuthorizedEvidencePages(context) {
       .map((urlValue, index) => ({
         href: urlValue,
         normalizedHref: urlValue,
-        rawHref: urlValue,
         label: `Known-site authorized route seed ${index + 1}`,
         selector: `authorized-route-seed:nth-of-type(${index + 1})`,
         attrs: {
@@ -1566,6 +1604,40 @@ function userAuthorizedEvidencePages(context) {
   });
 }
 
+function resolveRuntimeAuthFromOptions(options = /** @type {any} */ ({}), site = null) {
+  const material = authRuntimeMaterialFrom(options);
+  const authRuntime = material?.authRuntime ?? options.authRuntime ?? null;
+  const authenticatedStructureSummary = material?.authenticatedStructureSummary
+    ?? options.authenticatedStructureSummary
+    ?? null;
+  return {
+    authRuntime: authRuntime && typeof authRuntime === 'object'
+      ? {
+        ...authRuntime,
+        allowedDomains: authRuntime.allowedDomains ?? site?.allowedDomains ?? [],
+      }
+      : null,
+    authenticatedStructureSummary,
+  };
+}
+
+function buildSafeRuntimeOptions(options = /** @type {any} */ ({})) {
+  const safeOptions = { ...options };
+  delete safeOptions.authRuntime;
+  delete safeOptions.authenticatedStructureSummary;
+  return safeOptions;
+}
+
+function clearRuntimeAuthInputOptions(options = /** @type {any} */ ({})) {
+  delete options.authRuntime;
+  delete options.authenticatedStructureSummary;
+  delete options.cookieHeader;
+  delete options.cookieEnv;
+  delete options.cookieFile;
+  delete options.cookieStdin;
+  return options;
+}
+
 function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
   const now = options.now instanceof Date ? options.now : new Date();
   const startedAt = now.toISOString();
@@ -1602,6 +1674,8 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     allowAccountMutation: options.allowAccountMutation,
     allowContactSubmit: options.allowContactSubmit,
   });
+  const runtimeAuth = resolveRuntimeAuthFromOptions(options, site);
+  const safeOptions = buildSafeRuntimeOptions(options);
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     siteId: site.id,
@@ -1613,15 +1687,15 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     cwd,
     workspace,
     artifactDir,
-    setupProfile: options.setupProfile ?? null,
-    crawlContract: options.crawlContract ?? options.setupProfile?.crawlContract ?? null,
-    authStateReport: options.authStateReport ?? options.setupProfile?.authStateReport ?? null,
-    authStateReportPath: options.authStateReportPath ?? null,
+    setupProfile: safeOptions.setupProfile ?? null,
+    crawlContract: safeOptions.crawlContract ?? safeOptions.setupProfile?.crawlContract ?? null,
+    authStateReport: safeOptions.authStateReport ?? safeOptions.setupProfile?.authStateReport ?? null,
+    authStateReportPath: safeOptions.authStateReportPath ?? null,
     siteAdapterProfile: null,
     siteAdapterPaths: null,
-    setupCollectionReview: options.setupCollectionReview ?? null,
+    setupCollectionReview: safeOptions.setupCollectionReview ?? null,
     setupCollectionReviewPath: null,
-    buildProfilePath: options.buildProfilePath ?? null,
+    buildProfilePath: safeOptions.buildProfilePath ?? null,
     artifactStore: {
       type: 'siteforge-per-site-build-dir',
       rootDir: workspace.paths.buildDir,
@@ -1630,24 +1704,21 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     },
     startedAt,
     policy,
-    options,
+    options: safeOptions,
+    authRuntime: runtimeAuth.authRuntime,
+    authenticatedStructureSummary: runtimeAuth.authenticatedStructureSummary,
     source: createBuildSource(inputUrl, {
-      ...options,
+      ...safeOptions,
       fetchDelayMs: policy.fetchDelayMs,
       fetchTimeoutMs: policy.fetchTimeoutMs,
-      authRuntime: options.authRuntime?.method === 'cookie'
-        ? {
-          ...options.authRuntime,
-          allowedDomains: options.authRuntime.allowedDomains ?? site.allowedDomains,
-        }
-        : null,
+      authRuntime: null,
     }),
     warnings: [],
     skillId: null,
     skillDir: null,
     draftSkillDir: null,
     activeSkillDir: null,
-    registryPath: path.resolve(options.registryPath ?? workspace.paths.registryPath),
+    registryPath: path.resolve(safeOptions.registryPath ?? workspace.paths.registryPath),
   };
 }
 
@@ -1751,12 +1822,7 @@ async function hydrateBuildProfile(context) {
     ...context.options,
     fetchDelayMs: context.policy.fetchDelayMs,
     fetchTimeoutMs: context.policy.fetchTimeoutMs,
-    authRuntime: context.options.authRuntime?.method === 'cookie'
-      ? {
-        ...context.options.authRuntime,
-        allowedDomains: context.options.authRuntime.allowedDomains ?? context.site.allowedDomains,
-      }
-      : null,
+    authRuntime: null,
   });
 }
 
@@ -2268,7 +2334,12 @@ function routeTargetToUrl(context, routeTarget) {
     return null;
   }
   try {
-    return normalizeUrl(value, context.site.rootUrl);
+    const parsed = new URL(normalizeUrl(value, context.site.rootUrl));
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
   } catch {
     return null;
   }
@@ -2377,11 +2448,19 @@ function layeredSeedsForContext(context, publicSeeds = /** @type {any[]} */ ([])
     authStateReport: context.authStateReport,
   });
   const targets = contract.coverageTargets ?? {};
-  const publicSeedsLayer = publicSeeds.map((seed) => ({
-    ...seed,
-    sourceLayer: 'public',
-    authRequired: false,
-  }));
+  const configuredAuthRoutes = configuredAuthRouteTemplateSet(context);
+  const publicSeedsLayer = publicSeeds
+    .filter((seed) => !matchesConfiguredAuthRoute(context, configuredAuthRoutes, [
+      seed?.routeTemplate,
+      seed?.routePattern,
+      seed?.normalizedUrl,
+      seed?.url,
+    ]))
+    .map((seed) => ({
+      ...seed,
+      sourceLayer: 'public',
+      authRequired: false,
+    }));
   const authRouteSeeds = (targets.authRoutes ?? [])
     .map((route) => seedFromRouteTarget(context, route, {
       source: 'auth_route',
@@ -2832,6 +2911,16 @@ async function discoverSeedsStage(context) {
   }
   const hasAuthorizedSourceEvidence = hasAuthorizedSourceStructureEvidence(context);
   const layeredSeeds = layeredSeedsForContext(context, deduped, robotsExcludedUrls, robotsPolicy);
+  const authenticatedProviderId = context.crawlContract?.authMethod === 'browser' ? 'browser_bridge' : 'cookie_http';
+  const evidenceTargets = {
+    public_http: (layeredSeeds.publicSeeds ?? []).map((seed) => seed.normalizedUrl ?? seed.url).filter(Boolean),
+    [authenticatedProviderId]: [
+      ...(layeredSeeds.authSeeds ?? []),
+      ...(layeredSeeds.revisitSeeds ?? []),
+    ].map((seed) => seed.normalizedUrl ?? seed.url).filter(Boolean),
+    authorized_summary: hasAuthorizedSourceEvidence ? ['configured-authorized-sources'] : [],
+    public_rendered: [],
+  };
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -2848,6 +2937,7 @@ async function discoverSeedsStage(context) {
       robotsExcludedUrls,
       robotsDecisionRecords,
     }),
+    evidenceTargets,
     summary: layeredSeedsSummary(layeredSeeds),
     warnings,
   };
@@ -2889,6 +2979,7 @@ async function discoverSeedsStage(context) {
     robots: payload.robots,
     robotsPolicy,
     robotsExcludedUrls: uniqueSortedStrings(robotsExcludedUrls),
+    evidenceTargets,
     warnings,
     authorizedSourceOnly: !deduped.length && hasAuthorizedSourceEvidence,
     generatedAdapter: generatedAdapter.profile,
@@ -3336,7 +3427,14 @@ async function writePublicRawPageMaterialArtifacts(context, pages = /** @type {a
 }
 
 async function crawlStaticStage(context, stageResults) {
-  const { seeds, robotsPolicy = null, robots = null } = requireStage(stageResults, 'discoverSeeds');
+  const discoverSeedResult = requireStage(stageResults, 'discoverSeeds');
+  const {
+    robotsPolicy = null,
+    robots = null,
+  } = discoverSeedResult;
+  const publicSeedInputs = discoverSeedResult.publicSeeds ?? discoverSeedResult.seeds ?? [];
+  const configuredAuthRoutes = configuredAuthRouteTemplateSet(context);
+  const matchesConfiguredAuthPublicRoute = (...values) => matchesConfiguredAuthRoute(context, configuredAuthRoutes, values);
   const authorizedSourceManifest = buildAuthorizedSourceManifest(context);
   const maxDepth = Number(context.policy.maxDepth ?? 2);
   const maxPages = Math.max(1, Number(context.policy.maxPages ?? 50));
@@ -3346,7 +3444,13 @@ async function crawlStaticStage(context, stageResults) {
   const effectiveCrawlFetchDelayMs = robotsCrawlDelayActive
     ? Math.max(0, Number(robots?.effectiveFetchDelayMs ?? 0) || 0)
     : 0;
-  const coveragePlan = planRepresentativeCrawlCoverage(context, seeds, { maxPages });
+  const publicCrawlSeeds = publicSeedInputs.filter((seed) => !matchesConfiguredAuthPublicRoute(
+    seed?.routeTemplate,
+    seed?.routePattern,
+    seed?.normalizedUrl,
+    seed?.url,
+  ));
+  const coveragePlan = planRepresentativeCrawlCoverage(context, publicCrawlSeeds, { maxPages });
   const queue = coveragePlan.seeds.map((seed) => ({
     url: seed.normalizedUrl,
     depth: 0,
@@ -3390,6 +3494,22 @@ async function crawlStaticStage(context, stageResults) {
     }
     return allowed;
   };
+  const normalizeSameOriginStaticUrl = (value, baseUrl, sourceSameOrigin = false) => {
+    const normalized = normalizeUrl(value, baseUrl);
+    if (isInternalUrl(normalized, context.site.allowedDomains)) {
+      return normalized;
+    }
+    if (sourceSameOrigin !== true || /(?:\[REDACTED\]|%5BREDACTED%5D)/iu.test(normalized)) {
+      return normalized;
+    }
+    try {
+      const redacted = new URL(normalized);
+      const restored = normalizeUrl(`${redacted.pathname}${redacted.search}`, baseUrl);
+      return isInternalUrl(restored, context.site.allowedDomains) ? restored : normalized;
+    } catch {
+      return normalized;
+    }
+  };
 
   const crawlEntry = async (entry) => {
     const entryWarnings = /** @type {any[]} */ ([]);
@@ -3408,9 +3528,16 @@ async function crawlStaticStage(context, stageResults) {
         fetchedAt: pageSource.fetchedAt ?? null,
       });
       const links = parsed.links
-        .map((link) => ({ ...link, normalizedHref: normalizeUrl(link.href, entry.url) }))
+        .map((link) => {
+          const { sourceSameOrigin, ...safeLink } = link;
+          return {
+            ...safeLink,
+            normalizedHref: normalizeSameOriginStaticUrl(link.href, entry.url, sourceSameOrigin),
+          };
+        })
         .filter((link) => (
           isInternalUrl(link.normalizedHref, context.site.allowedDomains)
+          && !matchesConfiguredAuthPublicRoute(link.routeTemplate, link.normalizedHref)
           && canCrawl(link.normalizedHref, {
             robotsExcludedUrls: entryRobotsExcludedUrls,
             reasonCodes: entryReasonCodes,
@@ -3464,13 +3591,19 @@ async function crawlStaticStage(context, stageResults) {
         forms: parsed.forms,
         controls: parsed.controls,
         elementInstances: (parsed.elementInstances ?? [])
-          .map((element) => ({
-            ...element,
-            href: element.href ? normalizeUrl(element.href, entry.url) : null,
-            action: element.action ? normalizeUrl(element.action, entry.url) : null,
-          }))
+          .map((element) => {
+            const { sourceSameOrigin, ...safeElement } = element;
+            return {
+              ...safeElement,
+              href: element.href ? normalizeSameOriginStaticUrl(element.href, entry.url, sourceSameOrigin) : null,
+              action: element.action ? normalizeSameOriginStaticUrl(element.action, entry.url, sourceSameOrigin) : null,
+            };
+          })
           .filter((element) => (
             !element.href || isInternalUrl(element.href, context.site.allowedDomains)
+          ))
+          .filter((element) => (
+            !element.href || !matchesConfiguredAuthPublicRoute(element.routeTemplate, element.href)
           ))
           .filter((element) => (
             !element.href || canCrawl(element.href, {
@@ -3614,6 +3747,46 @@ async function crawlStaticStage(context, stageResults) {
   const duplicateRatio = pages.length === 0
     ? 0
     : duplicateUrls / pages.length;
+  const publicHttpEvidenceBundle = normalizeEvidenceBundle({
+    providerId: 'public_http',
+    status: shouldBlockStatic ? 'blocked' : 'success',
+    authMethod: 'none',
+    authVerificationStatus: null,
+    sourceLayer: 'public',
+    pages: dedupedPages.filter((page) => pageSourceLayer(page) === 'public'),
+    warnings,
+    reasonCodes: uniqueSortedStrings([...reasonCodes]),
+    coverage: {
+      publicSeedUrls: publicCrawlSeeds.length,
+      fetchedUrls: visited.size,
+      failedUrls: dedupedFailures.length,
+      robotsExcludedUrls: uniqueSortedStrings(robotsExcludedUrls).length,
+    },
+    privacy: {
+      rawDomSaved: false,
+      rawHtmlSaved: false,
+      rawContentSaved: false,
+      privateContentSaved: false,
+      cookiesSaved: false,
+      tokensSaved: false,
+      browserProfileSaved: false,
+    },
+  });
+  const authorizedSummaryEvidenceBundle = normalizeEvidenceBundle({
+    providerId: 'authorized_summary',
+    status: authorizedSourceManifest.pages.length ? 'success' : 'skipped',
+    authMethod: 'none',
+    authVerificationStatus: null,
+    sourceLayer: 'authorized_source',
+    pages: authorizedSourceManifest.pages,
+    warnings: authorizedSourceManifest.warnings,
+    reasonCodes: authorizedSourceManifest.pages.length ? [] : ['authorized-summary-empty'],
+    coverage: {
+      configuredSources: authorizedSourceManifest.manifest?.sources?.length ?? 0,
+    },
+  });
+  const evidenceBundles = [publicHttpEvidenceBundle, authorizedSummaryEvidenceBundle];
+  const evidenceCoverage = evidenceCoverageFromBundles(evidenceBundles);
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -3634,11 +3807,11 @@ async function crawlStaticStage(context, stageResults) {
       maxDepth,
       maxPages,
       effectiveMaxPages,
-      seedInventoryUrls: seeds.length,
+      seedInventoryUrls: publicCrawlSeeds.length,
       representativeCoverageMode: coveragePlan.mode,
       representativeFamilyCount: coveragePlan.familyCount,
       representativeSeedUrls: coveragePlan.seeds.length,
-      representativeUnfetchedSeeds: Math.max(0, seeds.length - coveragePlan.seeds.length),
+      representativeUnfetchedSeeds: Math.max(0, publicCrawlSeeds.length - coveragePlan.seeds.length),
       fetchedUrls: visited.size,
       failedUrls: dedupedFailures.length,
       rawPageMaterial: rawPageMaterialWrite.value.summary,
@@ -3657,12 +3830,14 @@ async function crawlStaticStage(context, stageResults) {
     warnings,
     rawPageMaterial: rawPageMaterialWrite.value,
     authorizedSource: authorizedSourceWrite.value,
+    evidenceBundles,
+    evidenceCoverage,
   };
   const crawlStaticPath = await writeArtifactJson(context, 'crawl_static.json', payload);
   const crawlCheckpointPath = await writeCrawlCheckpoint(context, {
     status: shouldBlockStatic ? 'blocked' : 'completed',
     mode: coveragePlan.mode,
-    seeds,
+    seeds: publicCrawlSeeds,
     pages: dedupedPages,
     failures: dedupedFailures,
     queueLength: queue.length,
@@ -3692,6 +3867,8 @@ async function crawlStaticStage(context, stageResults) {
   }
   return {
     pages: dedupedPages,
+    evidenceBundles,
+    evidenceCoverage,
     warnings,
     artifactPaths: {
       crawlStatic: crawlStaticPath,
@@ -3733,6 +3910,148 @@ function browserBridgeRouteRetryable(result = /** @type {any} */ ({})) {
   ].includes(reasonCode);
 }
 
+function routeTemplateComparisonValues(context = /** @type {any} */ ({}), values = /** @type {any[]} */ ([])) {
+  const variants = new Set();
+  const addVariant = (value) => {
+    const text = String(value ?? '').trim();
+    if (!text) {
+      return;
+    }
+    variants.add(text);
+    if (text !== '/' && text.endsWith('/')) {
+      variants.add(text.replace(/\/+$/u, ''));
+    } else if (text !== '/') {
+      variants.add(`${text}/`);
+    }
+  };
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (!text) {
+      continue;
+    }
+    addVariant(text.split(/[?#]/u)[0] || text);
+    try {
+      const normalizedUrl = normalizeUrl(text, context.site?.rootUrl);
+      const parsed = new URL(normalizedUrl);
+      addVariant(parsed.pathname || '/');
+      addVariant(routePatternForUrl(normalizedUrl));
+    } catch {
+      // Non-URL route templates are handled through the raw path variants above.
+    }
+  }
+  return [...variants].filter(Boolean);
+}
+
+function configuredAuthRouteTemplateSet(context = /** @type {any} */ ({})) {
+  const targets = [
+    ...(context.crawlContract?.coverageTargets?.authRoutes ?? []),
+    ...(context.options?.authRoutes ?? []),
+    ...(context.options?.localBuildConfig?.authRoutes ?? []),
+  ];
+  const configured = new Set();
+  for (const target of targets) {
+    for (const variant of routeTemplateComparisonValues(context, [target])) {
+      if (variant && variant !== '/') {
+        configured.add(variant);
+      }
+    }
+  }
+  return configured;
+}
+
+function matchesConfiguredAuthRoute(context = /** @type {any} */ ({}), configuredRouteTemplates = new Set(), values = /** @type {any[]} */ ([])) {
+  if (!configuredRouteTemplates?.size) {
+    return false;
+  }
+  return routeTemplateComparisonValues(context, values).some((variant) => variant !== '/' && configuredRouteTemplates.has(variant));
+}
+
+function browserBridgeMissingRouteTemplateSet(context = /** @type {any} */ ({})) {
+  const bridge = context.authStateReport?.browserBridge ?? {};
+  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
+  const missing = new Set();
+  for (const result of routeResults) {
+    if (browserBridgeRouteCaptured(result)) {
+      continue;
+    }
+    for (const variant of routeTemplateComparisonValues(context, [
+      result?.targetRoute,
+      result?.routeTemplate,
+      result?.targetUrl,
+      result?.url,
+      result?.normalizedUrl,
+    ])) {
+      missing.add(variant);
+    }
+  }
+  return missing;
+}
+
+function browserBridgeCapturedRouteTemplateSet(context = /** @type {any} */ ({})) {
+  const bridge = context.authStateReport?.browserBridge ?? {};
+  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
+  const captured = new Set();
+  for (const result of routeResults) {
+    if (!browserBridgeRouteCaptured(result)) {
+      continue;
+    }
+    for (const variant of routeTemplateComparisonValues(context, [
+      result?.targetRoute,
+      result?.routeTemplate,
+      result?.targetUrl,
+      result?.url,
+      result?.normalizedUrl,
+    ])) {
+      captured.add(variant);
+    }
+  }
+  return captured;
+}
+
+function matchesBrowserBridgeMissingRoute(context = /** @type {any} */ ({}), missingRouteTemplates = new Set(), values = /** @type {any[]} */ ([])) {
+  if (!missingRouteTemplates?.size) {
+    return false;
+  }
+  return routeTemplateComparisonValues(context, values).some((variant) => missingRouteTemplates.has(variant));
+}
+
+function matchesBrowserBridgeMissingNonRootRoute(context = /** @type {any} */ ({}), missingRouteTemplates = new Set(), values = /** @type {any[]} */ ([])) {
+  if (!missingRouteTemplates?.size) {
+    return false;
+  }
+  return routeTemplateComparisonValues(context, values).some((variant) => variant !== '/' && missingRouteTemplates.has(variant));
+}
+
+function browserBridgePageWasCaptured(context = /** @type {any} */ ({}), page = /** @type {any} */ ({})) {
+  if (context.authStateReport?.authMethod !== 'browser') {
+    return true;
+  }
+  const routeResults = Array.isArray(context.authStateReport?.browserBridge?.routeResults)
+    ? context.authStateReport.browserBridge.routeResults
+    : [];
+  if (!routeResults.length) {
+    return true;
+  }
+  const routeId = String(page?.routeId ?? '').trim();
+  if (routeId) {
+    const routeResult = routeResults.find((result) => String(result?.routeId ?? '').trim() === routeId);
+    if (routeResult) {
+      return browserBridgeRouteCaptured(routeResult);
+    }
+  }
+  const values = [
+    page?.routeTemplate,
+    page?.routePattern,
+    page?.normalizedUrl,
+    page?.url,
+  ];
+  if (matchesBrowserBridgeMissingRoute(context, browserBridgeMissingRouteTemplateSet(context), values)) {
+    return false;
+  }
+  const capturedRoutes = browserBridgeCapturedRouteTemplateSet(context);
+  return capturedRoutes.size === 0 || routeTemplateComparisonValues(context, values).some((variant) => capturedRoutes.has(variant));
+}
+
 function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any} */ ({})) {
   const bridge = authStateReport?.browserBridge ?? {};
   const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
@@ -3740,6 +4059,8 @@ function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any
     .filter((result) => !browserBridgeRouteCaptured(result))
     .map((result) => {
       const retryable = browserBridgeRouteRetryable(result);
+      const finalReasonCode = result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured';
+      const routeLimitExceeded = finalReasonCode === 'browser-bridge-route-limit-exceeded';
       return {
         routeId: result?.routeId ?? null,
         sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
@@ -3748,40 +4069,55 @@ function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any
         reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
         initialStatus: result?.initialStatus ?? result?.status ?? 'timeout',
         finalStatus: result?.finalStatus ?? result?.status ?? 'timeout',
-        finalReasonCode: result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
+        finalReasonCode,
         retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
         retryOutcome: result?.retryOutcome ?? 'not_attempted',
-        recommendedRetryMode: retryable ? 'browser_bridge_missing_route_retry' : 'access_boundary_no_automatic_retry',
+        recommendedRetryMode: routeLimitExceeded
+          ? 'split_browser_bridge_route_batch'
+          : retryable ? 'browser_bridge_missing_route_retry' : 'access_boundary_no_automatic_retry',
         retryable,
         capabilityGenerated: false,
       };
     });
+  const unattemptedRoutes = missingRoutes.filter((route) => route.finalReasonCode === 'browser-bridge-route-limit-exceeded');
   if (
     authStateReport?.authMethod !== 'browser'
-    || authStateReport?.authVerificationStatus !== 'browser_verified'
+    || !['browser_verified', 'browser_verified_partial'].includes(String(authStateReport?.authVerificationStatus ?? ''))
     || Number(bridge.capturedRouteCount ?? 0) <= 0
-    || missingRoutes.length === 0
   ) {
     return null;
   }
+  const routeCoverageStatus = ['complete', 'partial', 'none'].includes(String(bridge.routeCoverageStatus ?? '').trim())
+    ? String(bridge.routeCoverageStatus).trim()
+    : missingRoutes.length > 0
+      ? 'partial'
+      : 'complete';
   return sanitizeReportPublicValue({
     schemaVersion: BUILD_SCHEMA_VERSION,
     artifactFamily: 'siteforge-route-capture-plan',
     siteId: context.site.id,
     buildId: context.buildId,
-    status: 'partial',
-    routeCoverageStatus: bridge.routeCoverageStatus ?? 'partial',
+    status: routeCoverageStatus,
+    routeCoverageStatus,
     retryStatus: bridge.retryStatus ?? 'not_attempted',
     retryPasses: Math.max(0, Number(bridge.retryPasses ?? 0) || 0),
     initialCapturedRouteCount: Math.max(0, Number(bridge.initialCapturedRouteCount ?? 0) || 0),
     retryAttemptedRouteCount: Math.max(0, Number(bridge.retryAttemptedRouteCount ?? 0) || 0),
     retryCapturedRouteCount: Math.max(0, Number(bridge.retryCapturedRouteCount ?? 0) || 0),
     finalCapturedRouteCount: Math.max(0, Number(bridge.finalCapturedRouteCount ?? bridge.capturedRouteCount ?? 0) || 0),
-    finalMissingRouteCount: missingRoutes.length,
+    finalMissingRouteCount: Math.max(0, Number(bridge.finalMissingRouteCount ?? missingRoutes.length) || 0),
+    routeQueueLimit: Math.max(0, Number(bridge.routeQueueLimit ?? 0) || 0),
+    scheduledRouteCount: Math.max(0, Number(bridge.scheduledRouteCount ?? 0) || 0),
+    overflowRouteCount: Math.max(0, Number(bridge.overflowRouteCount ?? 0) || 0),
+    unattemptedRouteCount: Math.max(0, Number(bridge.unattemptedRouteCount ?? unattemptedRoutes.length) || 0),
+    routeQueueTruncated: bridge.routeQueueTruncated === true,
+    routeQueueStatus: bridge.routeQueueStatus ?? (bridge.routeQueueTruncated === true ? 'truncated' : 'complete'),
+    routeLimitReasonCode: bridge.routeLimitReasonCode ?? null,
     routeCount: Number(bridge.routeCount ?? routeResults.length ?? 0) || 0,
     capturedRouteCount: Number(bridge.capturedRouteCount ?? 0) || 0,
-    missingRouteCount: missingRoutes.length,
+    missingRouteCount: Math.max(0, Number(bridge.missingRouteCount ?? missingRoutes.length) || 0),
     missingRoutes,
+    unattemptedRoutes,
     safety: {
       cookiePersisted: false,
       browserProfilePersisted: false,
@@ -3793,18 +4129,26 @@ function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any
   });
 }
 
-async function authStateCheckStage(context) {
+async function authStateCheckStage(context, stageResults = /** @type {any} */ ({})) {
   const needsAuthCheck = ['cookie', 'browser'].includes(context.options.authMode) && (
     !canRunAuthenticatedLayer(context.authStateReport)
-    || context.options.authRuntime?.method !== context.options.authMode
+    || context.authRuntime?.method !== context.options.authMode
   );
+  const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? setupProfileRobotsPolicy(context);
+  const authOptions = needsAuthCheck ? { ...context.options } : null;
   const baseReport = needsAuthCheck
     ? await runDefaultBrowserAuthStateCheck({
       inputUrl: context.inputUrl,
       site: context.site,
-      options: context.options,
+      options: authOptions,
+      robotsPolicy,
     })
     : context.authStateReport ?? createPublicOnlyAuthStateReport({ site: context.site, authMethod: 'none' });
+  if (authOptions) {
+    const runtimeMaterial = authRuntimeMaterialFrom(baseReport);
+    context.authRuntime = runtimeMaterial?.authRuntime ?? null;
+    context.authenticatedStructureSummary = runtimeMaterial?.authenticatedStructureSummary ?? null;
+  }
   const normalizedReport = normalizeAuthStateReport(baseReport, {
     site: context.site,
     crawlMode: baseReport?.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
@@ -3815,8 +4159,8 @@ async function authStateCheckStage(context) {
     const verifiedAuthRoutes = uniqueSortedStrings((normalizedReport.verifiedRoutes ?? [])
       .map((route) => {
         try {
-          const normalized = normalizeUrl(route, context.site.rootUrl);
-          return isInternalUrl(normalized, context.site.allowedDomains) && !/\/api(?:\/|$)/iu.test(new URL(normalized).pathname)
+          const normalized = sanitizeRouteTargetForPersistence(route, context.site, { preserveRelative: false });
+          return normalized && isInternalUrl(normalized, context.site.allowedDomains) && !/\/api(?:\/|$)/iu.test(new URL(normalized).pathname)
             ? normalized
             : null;
         } catch {
@@ -3836,16 +4180,12 @@ async function authStateCheckStage(context) {
   });
   context.authStateReport = normalizedReport;
   context.crawlContract = nextContract;
+  clearRuntimeAuthInputOptions(context.options);
   context.source = createBuildSource(context.inputUrl, {
     ...context.options,
     fetchDelayMs: context.policy.fetchDelayMs,
     fetchTimeoutMs: context.policy.fetchTimeoutMs,
-    authRuntime: context.options.authRuntime?.method === 'cookie'
-      ? {
-        ...context.options.authRuntime,
-        allowedDomains: context.options.authRuntime.allowedDomains ?? context.site.allowedDomains,
-      }
-      : null,
+    authRuntime: null,
   });
   const authStateReportPath = await writeArtifactJson(context, AUTH_STATE_REPORT_FILE, normalizedReport);
   if (context.options.strictCookieAuth === true && context.options.authMode === 'cookie' && !canRunAuthenticatedLayer(normalizedReport)) {
@@ -4252,12 +4592,25 @@ async function collectAuthenticatedStructurePages(context, seeds, {
   sourceLayer = 'authenticated',
   overlay = false,
   warnings = /** @type {string[]} */ ([]),
+  robotsPolicy = null,
 } = /** @type {any} */ ({})) {
   const limit = Math.max(0, Math.min(Number(context.policy.maxPages ?? 20) || 20, seeds.length));
   const pages = [];
+  const readSource = context.authRuntime?.method === 'cookie'
+    ? createBuildSource(context.inputUrl, {
+      ...context.options,
+      fetchDelayMs: context.policy.fetchDelayMs,
+      fetchTimeoutMs: context.policy.fetchTimeoutMs,
+      authRuntime: {
+        ...context.authRuntime,
+        allowedDomains: context.authRuntime.allowedDomains ?? context.site.allowedDomains,
+      },
+      robotsPolicy,
+    })
+    : context.source;
   for (const seed of seeds.slice(0, limit)) {
     try {
-      const response = await context.source.read(seed.normalizedUrl ?? seed.url);
+      const response = await readSource.read(seed.normalizedUrl ?? seed.url);
       const page = authenticatedStructurePageFromHtml(context, response, {
         sourceLayer,
         fallbackUrl: seed.normalizedUrl ?? seed.url,
@@ -4281,6 +4634,23 @@ async function crawlAuthenticatedStage(context, stageResults) {
   if (!canRunAuth) {
     const reason = 'Authenticated crawl skipped because runtime authentication was not requested or did not verify successfully.';
     warnings.push(reason);
+    const skippedProviderId = authStateReport?.authMethod === 'browser'
+      ? 'browser_bridge'
+      : authStateReport?.authMethod === 'cookie'
+        ? 'cookie_http'
+        : null;
+    const evidenceBundles = skippedProviderId ? [
+      normalizeEvidenceBundle({
+        providerId: skippedProviderId,
+        status: 'skipped',
+        authMethod: authStateReport?.authMethod ?? 'none',
+        authVerificationStatus: authStateReport?.authVerificationStatus ?? null,
+        sourceLayer: 'authenticated',
+        pages: [],
+        warnings,
+        reasonCodes: ['missing_auth_evidence'],
+      }),
+    ] : [];
     const payload = {
       schemaVersion: BUILD_SCHEMA_VERSION,
       buildId: context.buildId,
@@ -4305,12 +4675,16 @@ async function crawlAuthenticatedStage(context, stageResults) {
         tokensSaved: false,
         browserProfileSaved: false,
       },
+      evidenceBundles,
+      evidenceCoverage: evidenceCoverageFromBundles(evidenceBundles),
     };
     const crawlAuthenticatedPath = await writeArtifactJson(context, CRAWL_AUTHENTICATED_FILE, payload);
     return {
       status: 'skipped',
       authenticatedPages: [],
       authenticatedOverlayPages: [],
+      evidenceBundles,
+      evidenceCoverage: payload.evidenceCoverage,
       authCoverageSummary: payload.authCoverageSummary,
       warnings,
       reasonCode: 'missing_auth_evidence',
@@ -4329,21 +4703,24 @@ async function crawlAuthenticatedStage(context, stageResults) {
       crawlContract,
       seeds: stageResults.discoverSeeds,
     });
-  } else if (context.options.authenticatedStructureSummary) {
-    provided = context.options.authenticatedStructureSummary;
+  } else if (context.authenticatedStructureSummary) {
+    provided = context.authenticatedStructureSummary;
   }
   const authSeeds = stageResults.discoverSeeds?.authSeeds ?? [];
   const revisitSeeds = stageResults.discoverSeeds?.revisitSeeds ?? [];
+  const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? setupProfileRobotsPolicy(context);
   if (!provided) {
     provided = {
       authenticatedPages: await collectAuthenticatedStructurePages(context, authSeeds, {
         sourceLayer: 'authenticated',
         warnings,
+        robotsPolicy,
       }),
       authenticatedOverlayPages: await collectAuthenticatedStructurePages(context, revisitSeeds, {
         sourceLayer: 'authenticated_overlay',
         overlay: true,
         warnings,
+        robotsPolicy,
       }),
     };
   }
@@ -4353,7 +4730,16 @@ async function crawlAuthenticatedStage(context, stageResults) {
       authStateReport,
       fallbackUrl: authSeeds[index]?.normalizedUrl ?? context.site.rootUrl,
     }))
-    .filter(Boolean), (page) => pageIdentity(page))
+    .filter((page) => {
+      if (!page) {
+        return false;
+      }
+      if (!browserBridgePageWasCaptured(context, page)) {
+        warnings.push(`browser bridge authenticated summary ignored for uncaptured route ${sanitizeEvidenceRef(page.routeTemplate ?? page.normalizedUrl) ?? '<route>'}`);
+        return false;
+      }
+      return true;
+    }), (page) => pageIdentity(page))
     .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
   const authenticatedOverlayPages = arrayUniqueBy((provided.authenticatedOverlayPages ?? provided.overlayPages ?? [])
     .map((page, index) => normalizeAuthenticatedStructurePage(context, page, {
@@ -4362,7 +4748,16 @@ async function crawlAuthenticatedStage(context, stageResults) {
       fallbackUrl: revisitSeeds[index]?.normalizedUrl ?? context.site.rootUrl,
       overlayFor: page.overlayFor ?? page.publicUrl ?? revisitSeeds[index]?.normalizedUrl ?? null,
     }))
-    .filter(Boolean), (page) => pageIdentity(page))
+    .filter((page) => {
+      if (!page) {
+        return false;
+      }
+      if (!browserBridgePageWasCaptured(context, page)) {
+        warnings.push(`browser bridge authenticated overlay summary ignored for uncaptured route ${sanitizeEvidenceRef(page.routeTemplate ?? page.normalizedUrl) ?? '<route>'}`);
+        return false;
+      }
+      return true;
+    }), (page) => pageIdentity(page))
     .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
   warnings.push(...(Array.isArray(provided.warnings) ? provided.warnings.map(String) : []));
   const authCoverageSummary = {
@@ -4374,6 +4769,26 @@ async function crawlAuthenticatedStage(context, stageResults) {
     sessionMaterialPersisted: false,
     browserProfilePersisted: false,
   };
+  const authenticatedProviderId = authStateReport?.authMethod === 'browser' ? 'browser_bridge' : 'cookie_http';
+  const evidenceBundles = canUseEvidenceProvider(context, authenticatedProviderId)
+    ? [
+      normalizeEvidenceBundle({
+        providerId: authenticatedProviderId,
+        status: 'success',
+        authMethod: authStateReport?.authMethod ?? (authenticatedProviderId === 'browser_bridge' ? 'browser' : 'cookie'),
+        authVerificationStatus: authStateReport?.authVerificationStatus ?? null,
+        sourceLayer: 'authenticated',
+        pages: [...authenticatedPages, ...authenticatedOverlayPages],
+        routeResults: authenticatedProviderId === 'browser_bridge'
+          ? (authStateReport?.browserBridge?.routeResults ?? [])
+          : [],
+        coverage: authCoverageSummary,
+        warnings,
+        reasonCodes: [],
+      }),
+    ]
+    : [];
+  const evidenceCoverage = evidenceCoverageFromBundles(evidenceBundles);
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -4383,6 +4798,8 @@ async function crawlAuthenticatedStage(context, stageResults) {
     authenticatedOverlayPages,
     authCoverageSummary,
     warnings,
+    evidenceBundles,
+    evidenceCoverage,
     privacy: {
       rawDomSaved: false,
       rawHtmlSaved: false,
@@ -4397,6 +4814,8 @@ async function crawlAuthenticatedStage(context, stageResults) {
   return {
     authenticatedPages,
     authenticatedOverlayPages,
+    evidenceBundles,
+    evidenceCoverage,
     authCoverageSummary,
     warnings,
     artifactPaths: { crawlAuthenticated: crawlAuthenticatedPath },
@@ -4538,6 +4957,14 @@ function normalizePublicRenderedStructurePage(context, page = /** @type {any} */
     return null;
   }
   const routeTemplate = page.routeTemplate ?? routePatternForUrl(normalizedUrl);
+  if (matchesBrowserBridgeMissingNonRootRoute(context, browserBridgeMissingRouteTemplateSet(context), [routeTemplate, normalizedUrl])) {
+    return {
+      blocked: true,
+      url: normalizedUrl,
+      normalizedUrl,
+      reasonCode: 'browser-auth-route-coverage-partial',
+    };
+  }
   const visibleItemCount = Math.max(0, Number(page.visibleItemCount ?? 0) || 0);
   const listPresent = page.listPresent === true || page.listPresence === true;
   const emptyStatePresent = page.emptyStatePresent === true || page.empty_state_present === true;
@@ -4564,6 +4991,9 @@ function normalizePublicRenderedStructurePage(context, page = /** @type {any} */
         try {
           const normalizedHref = sanitizeRenderedInternalUrl(context, link?.normalizedHref ?? link?.href, normalizedUrl);
           if (!normalizedHref) {
+            return null;
+          }
+          if (matchesBrowserBridgeMissingNonRootRoute(context, browserBridgeMissingRouteTemplateSet(context), [link?.routeTemplate, link?.routePattern, normalizedHref])) {
             return null;
           }
           return {
@@ -4777,6 +5207,17 @@ async function crawlRenderedStage(context, stageResults) {
   const renderRequested = canAttemptPublicRenderedLayer(context, { renderedRequired })
     || (hasPublicStaticGaps && targets.length > 0 && canAutoAttemptPublicRenderedLayer(context));
   if (!renderRequested) {
+    const evidenceBundles = [
+      normalizeEvidenceBundle({
+        providerId: 'public_rendered',
+        status: 'skipped',
+        authMethod: 'none',
+        sourceLayer: 'public_rendered',
+        pages: [],
+        warnings: ['Public rendered crawl was not requested; static-only public evidence remains the activation boundary.'],
+        reasonCodes: ['dynamic-unsupported'],
+      }),
+    ];
     const payload = {
       schemaVersion: BUILD_SCHEMA_VERSION,
       buildId: context.buildId,
@@ -4796,6 +5237,8 @@ async function crawlRenderedStage(context, stageResults) {
         tokensSaved: false,
         browserProfileSaved: false,
       },
+      evidenceBundles,
+      evidenceCoverage: evidenceCoverageFromBundles(evidenceBundles),
     };
     const crawlRenderedPath = await writeArtifactJson(context, 'crawl_rendered.json', payload);
     return {
@@ -4804,6 +5247,8 @@ async function crawlRenderedStage(context, stageResults) {
       reasonCodes: ['dynamic-unsupported'],
       warnings: [payload.reason],
       publicRenderedPages: [],
+      evidenceBundles,
+      evidenceCoverage: payload.evidenceCoverage,
       artifactPaths: { crawlRendered: crawlRenderedPath },
       summary: payload.publicRenderedCoverageSummary,
     };
@@ -4855,6 +5300,19 @@ async function crawlRenderedStage(context, stageResults) {
     tokensSaved: false,
     browserProfileSaved: false,
   };
+  const evidenceBundles = [
+    normalizeEvidenceBundle({
+      providerId: 'public_rendered',
+      status: publicRenderedPages.length ? 'success' : (renderedRequired ? 'blocked' : 'skipped'),
+      authMethod: 'none',
+      sourceLayer: 'public_rendered',
+      pages: publicRenderedPages,
+      warnings,
+      reasonCodes: publicRenderedPages.length ? [] : ['dynamic-unsupported', ...uniqueSortedStrings(blockedPages.map((page) => page.reasonCode).filter(Boolean))],
+      coverage: publicRenderedCoverageSummary,
+    }),
+  ];
+  const evidenceCoverage = evidenceCoverageFromBundles(evidenceBundles);
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -4879,6 +5337,8 @@ async function crawlRenderedStage(context, stageResults) {
       browserProfileSaved: false,
     },
     warnings,
+    evidenceBundles,
+    evidenceCoverage,
   };
   const crawlRenderedPath = await writeArtifactJson(context, 'crawl_rendered.json', payload);
   if (renderedRequired && !publicRenderedPages.length) {
@@ -4900,6 +5360,8 @@ async function crawlRenderedStage(context, stageResults) {
     publicRenderedPages,
     pages: publicRenderedPages,
     blockedPages,
+    evidenceBundles,
+    evidenceCoverage,
     warnings,
     artifactPaths: { crawlRendered: crawlRenderedPath },
     summary: publicRenderedCoverageSummary,
@@ -4922,6 +5384,8 @@ async function discoverInteractionsStage(context, stageResults) {
         endpoint: form.action,
         safety,
         sourceLayer: pageSourceLayer(page),
+        providerId: page.providerId ?? null,
+        runtimeMode: page.runtimeMode ?? null,
         authRequired: page.authRequired === true,
         authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel: pageEvidenceLevel(page),
@@ -4953,6 +5417,8 @@ async function discoverInteractionsStage(context, stageResults) {
         selector: control.selector,
         safety: ['tab', 'menu', 'button'].includes(kind) ? 'safe' : 'requires_input',
         sourceLayer: pageSourceLayer(page),
+        providerId: page.providerId ?? null,
+        runtimeMode: page.runtimeMode ?? null,
         authRequired: page.authRequired === true,
         authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel: pageEvidenceLevel(page),
@@ -5151,6 +5617,14 @@ async function buildSiteGraphStage(context, stageResults) {
   const edges = /** @type {any[]} */ ([]);
   const nodeByPageKey = new Map();
   const routeNodes = new Map();
+  const missingBrowserBridgeRouteTemplates = browserBridgeMissingRouteTemplateSet(context);
+  const isMissingBrowserBridgeRoute = (sourceLayer, ...values) => (
+    isAuthenticatedSourceLayer(sourceLayer)
+      ? matchesBrowserBridgeMissingRoute(context, missingBrowserBridgeRouteTemplates, values)
+      : isPublicReadSourceLayer(sourceLayer)
+        ? matchesBrowserBridgeMissingNonRootRoute(context, missingBrowserBridgeRouteTemplates, values)
+        : false
+  );
   const attachRouteTemplateNode = ({
     parentNode,
     page,
@@ -5168,10 +5642,13 @@ async function buildSiteGraphStage(context, stageResults) {
     if (!parentNode || !pattern || pattern === '/') {
       return;
     }
+    if (isMissingBrowserBridgeRoute(sourceLayer, pattern, linkHref)) {
+      return;
+    }
     const resolvedEvidenceStatus = routeOnly ? (evidenceStatus ?? 'link_route_template') : evidenceStatus;
     const sanitizedLinkLabel = sanitizedStructureText(linkLabel, 80);
     const sanitizedLinkHref = linkHref ? sanitizeEvidenceRef(linkHref) : null;
-    const categoryInstance = ['category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(String(linkSemanticKind ?? '').toLowerCase())
+    const categoryInstance = ['search', 'category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(String(linkSemanticKind ?? '').toLowerCase())
       ? {
         kind: String(linkSemanticKind).toLowerCase(),
         label: sanitizedLinkLabel ?? String(linkSemanticKind),
@@ -5208,6 +5685,8 @@ async function buildSiteGraphStage(context, stageResults) {
           : `Sanitized route template discovered from ${page.normalizedUrl}`,
         discoveredBy: page.discoveredBy,
         sourceLayer,
+        providerId: page.providerId ?? null,
+        runtimeMode: page.runtimeMode ?? null,
         authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel,
         evidenceStatus: resolvedEvidenceStatus,
@@ -5273,6 +5752,9 @@ async function buildSiteGraphStage(context, stageResults) {
 
   for (const page of pages) {
     const sourceLayer = pageSourceLayer(page);
+    if (isMissingBrowserBridgeRoute(sourceLayer, page.routeTemplate, page.routePattern, page.normalizedUrl, page.url)) {
+      continue;
+    }
     const authRequired = page.authRequired === true || isAuthenticatedSourceLayer(sourceLayer);
     const evidenceLevel = pageEvidenceLevel(page);
     const id = pageNodeIdForPage(page);
@@ -5306,6 +5788,8 @@ async function buildSiteGraphStage(context, stageResults) {
       publicEvidenceStatus: page.diagnostics?.publicEvidenceStatus ?? null,
       riskLevel: page.riskLevel ?? null,
       sourceLayer,
+      providerId: page.providerId ?? null,
+      runtimeMode: page.runtimeMode ?? null,
       authVerificationStatus: page.authVerificationStatus ?? null,
       evidenceLevel,
       title: page.title,
@@ -5326,6 +5810,9 @@ async function buildSiteGraphStage(context, stageResults) {
     for (const [elementIndex, element] of pageElementInstances.entries()) {
       const elementUrl = element.href ?? element.action ?? null;
       const routeTemplate = element.routeTemplate ?? (elementUrl ? routePatternForUrl(elementUrl) : page.routeTemplate ?? null);
+      if (isMissingBrowserBridgeRoute(sourceLayer, routeTemplate, elementUrl)) {
+        continue;
+      }
       const elementLabel = sanitizedStructureText(element.label, 120, `${element.kind ?? 'element'}-${elementIndex + 1}`);
       const elementRole = sanitizedStructureText(element.role ?? element.semanticKind ?? 'navigation', 60, 'navigation');
       const elementId = stableNodeId(
@@ -5368,6 +5855,8 @@ async function buildSiteGraphStage(context, stageResults) {
         publicEvidenceStatus: page.diagnostics?.publicEvidenceStatus ?? null,
         riskLevel: page.riskLevel ?? 'read_public_low',
         sourceLayer,
+        providerId: element.providerId ?? page.providerId ?? null,
+        runtimeMode: element.runtimeMode ?? page.runtimeMode ?? null,
         authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel: element.evidenceLevel ?? evidenceLevel,
         title: elementLabel,
@@ -5421,6 +5910,9 @@ async function buildSiteGraphStage(context, stageResults) {
           }
         }
         if (linkRouteTemplate && (isPublicReadSourceLayer(sourceLayer) || isAuthenticatedSourceLayer(sourceLayer))) {
+          if (isMissingBrowserBridgeRoute(sourceLayer, linkRouteTemplate, link.normalizedHref ?? link.href)) {
+            continue;
+          }
           attachRouteTemplateNode({
             parentNode: from,
             page,
@@ -5437,6 +5929,40 @@ async function buildSiteGraphStage(context, stageResults) {
           });
         }
         continue;
+      }
+      const linkKind = String(link.semanticKind ?? '').toLowerCase();
+      if (['search', 'category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(linkKind)) {
+        const linkRouteTemplate = link.routeTemplate ?? (() => {
+          try {
+            return link.normalizedHref ? routePatternForUrl(link.normalizedHref) : null;
+          } catch {
+            return null;
+          }
+        })();
+        const linkLabel = sanitizedStructureText(link.label, 80) ?? linkKind;
+        const linkHref = link.normalizedHref ?? link.href ?? null;
+        const targetCategoryInstance = {
+          kind: linkKind,
+          label: linkLabel,
+          routeTemplate: linkRouteTemplate ?? target.routeTemplate ?? target.routePattern ?? null,
+          normalizedUrl: linkHref ? sanitizeEvidenceRef(linkHref) : (target.normalizedUrl ?? target.url ?? null),
+          selector: link.selector ?? null,
+          sourceLayer: nodeSourceLayer(target),
+          evidenceStatus: 'link_semantic_route_template',
+        };
+        target.linkSemanticKind = target.linkSemanticKind ?? linkKind;
+        target.linkStructureType = target.linkStructureType ?? link.structureType ?? null;
+        target.linkLabel = target.linkLabel ?? linkLabel;
+        target.linkHref = target.linkHref ?? (linkHref ? sanitizeEvidenceRef(linkHref) : null);
+        target.categoryInstance = target.categoryInstance ?? targetCategoryInstance;
+        target.categoryInstances = Array.isArray(target.categoryInstances) ? target.categoryInstances : [];
+        if (!target.categoryInstances.some((entry) => (
+          entry?.kind === targetCategoryInstance.kind
+          && entry?.routeTemplate === targetCategoryInstance.routeTemplate
+          && entry?.label === targetCategoryInstance.label
+        ))) {
+          target.categoryInstances.push(targetCategoryInstance);
+        }
       }
       from.childNodeIds.push(target.id);
       target.parentNodeIds.push(from.id);
@@ -5485,6 +6011,8 @@ async function buildSiteGraphStage(context, stageResults) {
           : `Route pattern discovered from ${page.normalizedUrl}`,
         discoveredBy: page.discoveredBy,
         sourceLayer,
+        providerId: page.providerId ?? null,
+        runtimeMode: page.runtimeMode ?? null,
         authVerificationStatus: page.authVerificationStatus ?? null,
         evidenceLevel,
         staticEvidenceStatus: page.diagnostics?.staticEvidenceStatus ?? null,
@@ -5514,6 +6042,9 @@ async function buildSiteGraphStage(context, stageResults) {
       evidence: routeNode.evidence,
     });
     for (const template of uniqueSortedStrings(page.routeTemplates ?? [])) {
+      if (isMissingBrowserBridgeRoute(sourceLayer, template)) {
+        continue;
+      }
       attachRouteTemplateNode({
         parentNode: from,
         page,
@@ -6818,7 +7349,7 @@ function hasMeaningfulElementLabel(node = /** @type {any} */ ({})) {
 
 function categoryInstanceForNode(node = /** @type {any} */ ({})) {
   const role = String(node.elementRole ?? node.linkSemanticKind ?? '').toLowerCase();
-  if (!['category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(role)) {
+  if (!['search', 'category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(role)) {
     return null;
   }
   const label = sanitizedStructureText(node.elementLabel ?? node.linkLabel ?? node.title, 120, role);
@@ -6971,6 +7502,7 @@ function addPublicElementInstanceCapabilities(context, capabilities, graph, robo
       default_policy: authRequired ? 'limited_enabled' : 'read_only',
       evidence_status: 'verified',
       evidenceModel: authRequired ? 'authenticated_route_only' : 'public_element_summary',
+      elementKind: node.elementKind ?? null,
       elementRole: role,
       elementLabel: label,
       saved_material: ['sanitized_element_summary_only'],
@@ -8151,6 +8683,30 @@ function sourceLayerForCapability(capability = /** @type {any} */ ({}), nodesByI
   return capability.authRequired === true ? 'authenticated' : 'public';
 }
 
+function providerIdForCapability(capability = /** @type {any} */ ({}), nodesById = new Map()) {
+  const nodes = [
+    ...(capability.entryNodeIds ?? []),
+    ...(capability.requiredNodeIds ?? []),
+  ].map((id) => nodesById.get(id)).filter(Boolean);
+  const providerIds = uniqueSortedStrings(nodes.map((node) => node.providerId).filter(Boolean));
+  if (providerIds.includes('browser_bridge')) return 'browser_bridge';
+  if (providerIds.includes('cookie_http')) return 'cookie_http';
+  if (providerIds.includes('authorized_summary')) return 'authorized_summary';
+  if (providerIds.includes('public_rendered')) return 'public_rendered';
+  if (providerIds.includes('public_http')) return 'public_http';
+  const sourceLayer = sourceLayerForCapability(capability, nodesById);
+  if (sourceLayer === 'authenticated' || sourceLayer === 'authenticated_overlay') {
+    return 'browser_bridge';
+  }
+  if (sourceLayer === 'authorized_source') {
+    return 'authorized_summary';
+  }
+  if (sourceLayer === 'public_rendered') {
+    return 'public_rendered';
+  }
+  return 'public_http';
+}
+
 function observedCapabilityEvidenceLevel(capability = /** @type {any} */ ({}), nodesById = new Map(), authStateReport = null) {
   const nodes = [
     ...(capability.entryNodeIds ?? []),
@@ -8215,6 +8771,7 @@ function nodeHasPublicStructureEvidence(node = /** @type {any} */ ({})) {
 function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ ({}), nodesById = new Map()) {
   const authRequired = capabilityRequiresLogin(context, capability, nodesById);
   const sourceLayer = sourceLayerForCapability({ ...capability, authRequired }, nodesById);
+  const providerId = providerIdForCapability({ ...capability, authRequired }, nodesById);
   const publicRouteNavigationOnly = capability.evidenceModel === 'public_route_navigation' || capability.publicRouteOnly === true;
   const publicElementSummary = capability.evidenceModel === 'public_element_summary';
   const authenticatedRouteOnly = capability.evidenceModel === 'authenticated_route_only';
@@ -8290,6 +8847,7 @@ function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
     requiredEvidenceLevel,
     observedEvidenceLevel,
     sourceLayer,
+    providerId,
     requiredEvidence,
     observedEvidence: observed,
     missingEvidence,
@@ -8304,6 +8862,7 @@ function applyCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
     ...capability,
     authRequired: matrix.authRequired,
     sourceLayer: matrix.sourceLayer,
+    providerId: matrix.providerId,
     requiredEvidenceLevel: matrix.requiredEvidenceLevel,
     observedEvidenceLevel: matrix.observedEvidenceLevel,
     evidenceMatrix: matrix,
@@ -8974,7 +9533,6 @@ function generateGraphElementIntentRecords(context, graph, capabilities = /** @t
       description: 'Intent generated directly from sanitized graph element evidence, independent of capability discovery.',
       canonicalUtterance,
       utteranceExamples: graphIntentExamples(node),
-      negativeExamples: ['自动支付', '删除数据', '提交表单'],
       slots: [],
       negativeExamples: ['\u81ea\u52a8\u652f\u4ed8', '\u5220\u9664\u6570\u636e', '\u63d0\u4ea4\u8868\u5355'],
       safetyLevel: capability?.safetyLevel ?? 'read_only',
@@ -8991,6 +9549,7 @@ function generateGraphElementIntentRecords(context, graph, capabilities = /** @t
       intentSource: 'graph_element',
       sourceNodeId: node.id,
       sourceLayer: nodeSourceLayer(node),
+      providerId: capability?.providerId ?? node.providerId ?? null,
       categoryInstance: node.categoryInstance ?? null,
       graphOnly: capability ? false : true,
     };
@@ -9432,7 +9991,7 @@ function buildRegistryRecord(context, stageResults, options = /** @type {any} */
     skillId: context.skillId,
     siteId: context.site.id,
     domains: context.site.allowedDomains,
-    skillDir: path.relative(context.cwd, context.skillDir).replace(/\\/gu, '/'),
+    skillDir: path.relative(context.cwd, options.skillDir ?? context.skillDir).replace(/\\/gu, '/'),
     artifactDir: path.relative(context.cwd, context.artifactDir).replace(/\\/gu, '/'),
     ...(runtimeMetadata ? runtimeMetadata : {}),
     runtimeModes,
@@ -9480,10 +10039,13 @@ function canUseBridgeRuntimePromotion(report = /** @type {any} */ ({}), stageRes
   if (!canUseReportOnlyVerification(report, stageResults)) {
     return false;
   }
+  if (String(report.reasonCode ?? '').trim() === 'robots-disallowed') {
+    return false;
+  }
   const authState = context.authStateReport ?? {};
   if (
     authState.authMethod !== 'browser'
-    || authState.authVerificationStatus !== 'browser_verified'
+    || !['browser_verified', 'browser_verified_partial'].includes(String(authState.authVerificationStatus ?? ''))
     || authState.verified !== true
   ) {
     return false;
@@ -9657,6 +10219,25 @@ async function writeNonRegisteredRegistryReport(context, status, reasonCode, ext
   };
 }
 
+async function noteRecoveryFailure(error, label, operation) {
+  try {
+    await operation();
+  } catch (recoveryError) {
+    error.recoveryErrors = [
+      ...(error.recoveryErrors ?? []),
+      {
+        label,
+        message: recoveryError?.message ?? String(recoveryError),
+      },
+    ];
+  }
+}
+
+async function removeRegistryReportArtifacts(context) {
+  await rm(path.join(context.artifactDir, 'registry_report.json'), { force: true }).catch(() => {});
+  await rm(path.join(context.artifactDir, 'reports', 'registry_report.json'), { force: true }).catch(() => {});
+}
+
 async function registerSkillStage(context, stageResults) {
   const verification = requireStage(stageResults, 'verifySkill').verificationReport;
   if (verification.status === 'report_only_blocked') {
@@ -9681,19 +10262,39 @@ async function registerSkillStage(context, stageResults) {
       { writeMode, ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}) },
     );
   }
-  const promotion = await promoteVerifiedBuild(context, stageResults);
-  context.skillDir = promotion.activeSkillDir ?? promotion.currentDir;
   if (writeMode === 'current_only') {
-    const lastSuccessfulBuildPath = await writeLastSuccessfulBuild(context.workspace, promotion.lastSuccessfulBuild);
-    return await writeNonRegisteredRegistryReport(context, 'current-updated', 'write-mode-current-only', {
-      writeMode,
-      lastSuccessfulBuildPath,
-      promotion,
-      ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
-    });
+    const lastSuccessfulBefore = await readLastSuccessfulBuild(context.workspace);
+    const previousSkillDir = context.skillDir;
+    let promotion = null;
+    try {
+      promotion = await promoteVerifiedBuild(context, stageResults, { retainCurrentBackup: true });
+      context.skillDir = promotion.activeSkillDir ?? promotion.currentDir;
+      const lastSuccessfulBuildPath = await writeLastSuccessfulBuild(context.workspace, promotion.lastSuccessfulBuild);
+      const result = await writeNonRegisteredRegistryReport(context, 'current-updated', 'write-mode-current-only', {
+        writeMode,
+        lastSuccessfulBuildPath,
+        promotion,
+        ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
+      });
+      await finalizeRetainedCurrentPromotion(context.workspace, promotion);
+      return result;
+    } catch (error) {
+      if (promotion) {
+        await noteRecoveryFailure(error, 'current', () => rollbackRetainedCurrentPromotion(context.workspace, promotion));
+      }
+      if (lastSuccessfulBefore) {
+        await noteRecoveryFailure(error, 'last_successful_build', () => writeLastSuccessfulBuild(context.workspace, lastSuccessfulBefore));
+      }
+      context.skillDir = previousSkillDir;
+      await removeRegistryReportArtifacts(context);
+      throw error;
+    }
   }
   const registry = await readSkillRegistry(context.registryPath);
-  const record = buildRegistryRecord(context, stageResults, registryOptions);
+  const record = buildRegistryRecord(context, stageResults, {
+    ...registryOptions,
+    skillDir: context.workspace.paths.currentDir,
+  });
   const nextRegistry = upsertSkillRegistryRecord(registry, record, new Date().toISOString());
   const capabilities = requireStage(stageResults, 'discoverCapabilities').capabilities;
   const intents = requireStage(stageResults, 'generateIntents').intents;
@@ -9707,34 +10308,57 @@ async function registerSkillStage(context, stageResults) {
   if (lookup.status !== 'found') {
     throw new Error('Registry lookup failed after registration.');
   }
-  await writeGeneratedJson(context, context.registryPath, nextRegistry);
-  const lastSuccessfulBuildPath = await writeLastSuccessfulBuild(context.workspace, promotion.lastSuccessfulBuild);
-  const registryReport = {
-    schemaVersion: BUILD_SCHEMA_VERSION,
-    buildId: context.buildId,
-    siteId: context.site.id,
-    skillId: context.skillId,
-    status: 'registered',
-    registryPath: context.registryPath,
-    lastSuccessfulBuildPath,
-    lookup,
-    promotion,
-    ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
-  };
-  const registryReportPath = await writeArtifactJson(context, 'registry_report.json', registryReport);
-  return {
-    registryReport,
-    promotion,
-    artifactPaths: {
-      registry: context.registryPath,
-      registryReport: registryReportPath,
-    },
-    summary: {
-      status: registryReport.status,
-      lookup: lookup.status,
-      currentDir: promotion.currentDir,
-    },
-  };
+  const lastSuccessfulBefore = await readLastSuccessfulBuild(context.workspace);
+  const previousSkillDir = context.skillDir;
+  let promotion = null;
+  let registryWritten = false;
+  try {
+    promotion = await promoteVerifiedBuild(context, stageResults, { retainCurrentBackup: true });
+    context.skillDir = promotion.activeSkillDir ?? promotion.currentDir;
+    await writeGeneratedJson(context, context.registryPath, nextRegistry);
+    registryWritten = true;
+    const lastSuccessfulBuildPath = await writeLastSuccessfulBuild(context.workspace, promotion.lastSuccessfulBuild);
+    const registryReport = {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      buildId: context.buildId,
+      siteId: context.site.id,
+      skillId: context.skillId,
+      status: 'registered',
+      registryPath: context.registryPath,
+      lastSuccessfulBuildPath,
+      lookup,
+      promotion,
+      ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
+    };
+    const registryReportPath = await writeArtifactJson(context, 'registry_report.json', registryReport);
+    await finalizeRetainedCurrentPromotion(context.workspace, promotion);
+    return {
+      registryReport,
+      promotion,
+      artifactPaths: {
+        registry: context.registryPath,
+        registryReport: registryReportPath,
+      },
+      summary: {
+        status: registryReport.status,
+        lookup: lookup.status,
+        currentDir: promotion.currentDir,
+      },
+    };
+  } catch (error) {
+    if (promotion) {
+      await noteRecoveryFailure(error, 'current', () => rollbackRetainedCurrentPromotion(context.workspace, promotion));
+    }
+    if (registryWritten) {
+      await noteRecoveryFailure(error, 'registry', () => writeGeneratedJson(context, context.registryPath, registry));
+    }
+    if (lastSuccessfulBefore) {
+      await noteRecoveryFailure(error, 'last_successful_build', () => writeLastSuccessfulBuild(context.workspace, lastSuccessfulBefore));
+    }
+    context.skillDir = previousSkillDir;
+    await removeRegistryReportArtifacts(context);
+    throw error;
+  }
 }
 
 function classifyBuildFailure(error, stageRecords) {
@@ -10553,7 +11177,7 @@ function buildNextStepWorkflows({ resultStatus, report }) {
       genericHttpRuntimeAllowed: true,
     });
   }
-  if (routeCapturePlanPath) {
+  if (routeCapturePlanPath && Number(report.summary?.routeCapturePlan?.missingRouteCount ?? 0) > 0) {
     workflows.push({
       id: 'browser-bridge-route-retry',
       status: 'available-for-missing-routes',
@@ -10658,6 +11282,7 @@ function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), ca
     })),
   ];
   const browserBridge = authSummaryForReport(context.crawlContract, context.authStateReport).browserBridge;
+  const providerCoverage = evidenceCoverageFromBundles(evidenceBundlesFromStageResults(stageResults));
   const runtimeCapabilities = {
     httpRuntimeCapabilities: capabilities.filter((capability) => capability.runtimeMode === HTTP_RUNTIME_MODE).length,
     browserBridgeRuntimeCapabilities: capabilities.filter((capability) => capability.runtimeMode === BRIDGE_RUNTIME_MODE).length,
@@ -10676,6 +11301,8 @@ function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), ca
     authMethod: context.crawlContract?.authMethod ?? context.authStateReport?.authMethod ?? 'none',
     authVerificationStatus: context.crawlContract?.authVerificationStatus ?? context.authStateReport?.authVerificationStatus ?? null,
     browserBridge,
+    providers: providerCoverage.providers,
+    evidenceProviders: providerCoverage,
     runtime: runtimeCapabilities,
     public: {
       pages: stageResults.crawlStatic?.summary?.publicPages
@@ -11711,16 +12338,26 @@ function renderBrowserBridgeRouteCoverage(coverage = /** @type {any} */ ({})) {
   }
   const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
   const missing = routeResults.filter((result) => !['captured', 'captured_with_warning'].includes(String(result?.status ?? '')));
+  const displayedMissing = missing.slice(0, 40);
+  const omittedMissingCount = Math.max(0, missing.length - displayedMissing.length);
   const notes = [
     `默认浏览器 Bridge 最终采集 ${bridge.capturedRouteCount ?? 0}/${bridge.routeCount ?? 0} 条配置路由。`,
     `系统已自动温和重试 ${bridge.retryAttemptedRouteCount ?? 0} 条路由，重试后新增采集 ${bridge.retryCapturedRouteCount ?? 0} 条。`,
     '未采集路由只进入覆盖缺口和 route_capture_plan.json，不生成能力或意图，不声明全覆盖。',
     '系统不会绕过 robots、验证码、MFA、JS challenge、登录墙或访问控制。',
-  ];
+    omittedMissingCount > 0
+      ? `This HTML table shows the first ${displayedMissing.length} missing routes; the full ${missing.length} route gap list is in route_capture_plan.json.`
+      : null,
+  ].filter(Boolean);
   const rows = [
     ['routeCoverageStatus', bridge.routeCoverageStatus ?? '-'],
     ['retryStatus', bridge.retryStatus ?? '-'],
     ['retryPasses', bridge.retryPasses ?? 0],
+    ['routeQueueLimit', bridge.routeQueueLimit ?? 0],
+    ['scheduledRouteCount', bridge.scheduledRouteCount ?? 0],
+    ['overflowRouteCount', bridge.overflowRouteCount ?? 0],
+    ['unattemptedRouteCount', bridge.unattemptedRouteCount ?? 0],
+    ['routeQueueTruncated', bridge.routeQueueTruncated === true ? 'true' : 'false'],
     ['initialCapturedRouteCount', bridge.initialCapturedRouteCount ?? 0],
     ['finalCapturedRouteCount', bridge.finalCapturedRouteCount ?? bridge.capturedRouteCount ?? 0],
     ['finalMissingRouteCount', bridge.finalMissingRouteCount ?? bridge.missingRouteCount ?? 0],
@@ -11728,7 +12365,7 @@ function renderBrowserBridgeRouteCoverage(coverage = /** @type {any} */ ({})) {
   const missingTable = missing.length
     ? `<h3>未采集路由</h3><div class="table-wrapper"><table>
       <thead><tr><th>Route</th><th>Layer</th><th>Initial</th><th>Final</th><th>Reason</th><th>Retry</th></tr></thead>
-      <tbody>${missing.slice(0, 40).map((route) => `<tr>
+      <tbody>${displayedMissing.map((route) => `<tr>
         <td>${htmlCell(route.targetRoute ?? route.routeId ?? '-', { code: true })}</td>
         <td>${htmlCell(route.sourceLayer ?? '-', { code: true })}</td>
         <td>${htmlStatusBadge(route.initialStatus ?? route.status ?? '-')}</td>
@@ -11736,13 +12373,14 @@ function renderBrowserBridgeRouteCoverage(coverage = /** @type {any} */ ({})) {
         <td>${htmlCell(route.finalReasonCode ?? route.reasonCode ?? '-')}</td>
         <td>${htmlCell(`${route.retryAttemptCount ?? 0} / ${route.retryOutcome ?? 'not_attempted'}`)}</td>
       </tr>`).join('')}</tbody>
-    </table></div>`
+    </table></div>${omittedMissingCount > 0 ? `<p class="muted">Only the first ${displayedMissing.length} missing routes are shown here; ${omittedMissingCount} more are listed in <code>route_capture_plan.json</code>.</p>` : ''}`
     : '<p class="empty">没有未采集的 Browser Bridge 路由。</p>';
   return `
     <div class="summary-row">
       ${htmlBadge(`captured ${bridge.capturedRouteCount ?? 0}/${bridge.routeCount ?? 0}`, bridge.missingRouteCount ? 'warning' : 'success')}
       ${htmlBadge(`retry ${bridge.retryStatus ?? 'not_attempted'}`, bridge.retryCapturedRouteCount ? 'limited' : 'muted')}
       ${htmlBadge(`missing ${bridge.missingRouteCount ?? 0}`, bridge.missingRouteCount ? 'warning' : 'success')}
+      ${Number(bridge.unattemptedRouteCount ?? 0) > 0 ? htmlBadge(`unattempted ${bridge.unattemptedRouteCount}`, 'warning') : ''}
     </div>
     <div class="notice-list">
       ${notes.map((note) => `<div class="notice"><p>${htmlCell(note)}</p></div>`).join('')}
@@ -11768,6 +12406,11 @@ function renderCoverageTable(coverage = /** @type {any} */ ({})) {
     ['browser bridge routes', coverage.browserBridge?.routeCount ?? 0],
     ['browser bridge captured routes', coverage.browserBridge?.capturedRouteCount ?? 0],
     ['browser bridge missing routes', coverage.browserBridge?.missingRouteCount ?? 0],
+    ['browser bridge route queue limit', coverage.browserBridge?.routeQueueLimit ?? 0],
+    ['browser bridge scheduled routes', coverage.browserBridge?.scheduledRouteCount ?? 0],
+    ['browser bridge overflow routes', coverage.browserBridge?.overflowRouteCount ?? 0],
+    ['browser bridge unattempted routes', coverage.browserBridge?.unattemptedRouteCount ?? 0],
+    ['browser bridge route queue truncated', coverage.browserBridge?.routeQueueTruncated === true ? 'true' : 'false'],
     ['browser bridge route coverage status', coverage.browserBridge?.routeCoverageStatus ?? '-'],
     ['browser bridge retry status', coverage.browserBridge?.retryStatus ?? '-'],
     ['browser bridge retry passes', coverage.browserBridge?.retryPasses ?? 0],
@@ -11783,6 +12426,27 @@ function renderCoverageTable(coverage = /** @type {any} */ ({})) {
   return `<div class="table-wrapper compact"><table>
     <thead><tr><th>Metric</th><th>Value</th></tr></thead>
     <tbody>${rows.map(([metric, value]) => `<tr><td>${htmlCell(metric)}</td><td>${htmlCell(value)}</td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderProviderCoverageTable(coverage = /** @type {any} */ ({})) {
+  const providers = Object.entries(coverage.providers ?? {});
+  if (!providers.length) {
+    return '<p class="empty">No normalized evidence provider bundles were recorded.</p>';
+  }
+  return `<div class="table-wrapper compact"><table>
+    <thead><tr><th>Provider</th><th>Status</th><th>Pages</th><th>Routes</th><th>Captured</th><th>Missing</th><th>Source layer</th><th>Auth</th><th>Runtime</th></tr></thead>
+    <tbody>${providers.map(([providerId, row]) => `<tr>
+      <td>${htmlCell(providerId, { code: true })}</td>
+      <td>${htmlStatusBadge(row.status ?? '-')}</td>
+      <td>${htmlCell(row.pages ?? 0)}</td>
+      <td>${htmlCell(row.routeResults ?? 0)}</td>
+      <td>${htmlCell(row.capturedRouteCount ?? 0)}</td>
+      <td>${htmlCell(row.missingRouteCount ?? 0)}</td>
+      <td>${htmlCell(row.sourceLayer ?? '-', { code: true })}</td>
+      <td>${htmlCell(row.authMethod ?? '-', { code: true })}</td>
+      <td>${htmlCell(row.runtimeMode ?? '-', { code: true })}</td>
+    </tr>`).join('')}</tbody>
   </table></div>`;
 }
 
@@ -11959,6 +12623,7 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
       <nav>
         <a href="#overview">Overview</a>
         <a href="#coverage">Coverage</a>
+        <a href="#evidence-providers">Evidence providers</a>
         <a href="#browser-bridge-route-coverage">Browser Bridge route coverage</a>
         <a href="#element-coverage">Element coverage</a>
         <a href="#capabilities">Capabilities</a>
@@ -12005,6 +12670,10 @@ export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {
     <section id="coverage">
       <h2>覆盖率概览</h2>
       ${renderCoverageTable(safe.coverage ?? {})}
+    </section>
+    <section id="evidence-providers">
+      <h2>Evidence Providers</h2>
+      ${renderProviderCoverageTable(safe.coverage ?? {})}
     </section>
     <section id="browser-bridge-route-coverage">
       <h2>Browser Bridge Route Coverage</h2>
@@ -12637,7 +13306,7 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
   }
   const pageReconciliationWrite = await writePageReconciliationReport(context, stageResults, report);
   report.pageReconciliation = pageReconciliationWrite.value;
-  report.summary.pageReconciliation = pageReconciliationWrite.value.summary;
+  /** @type {any} */ (report.summary).pageReconciliation = pageReconciliationWrite.value.summary;
   report.artifacts[PAGE_RECONCILIATION_REPORT_FILE] = pageReconciliationWrite.artifactPath;
   const accessRemediationWrite = await writeAccessRemediationPlanIfNeeded(context, stageResults, pageReconciliationWrite.value);
   if (accessRemediationWrite) {
@@ -12646,7 +13315,7 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
   }
   if (stageResults.authStateCheck?.artifactPaths?.routeCapturePlan) {
     report.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ?? null;
-    report.summary.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
+    /** @type {any} */ (report.summary).routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
       status: stageResults.authStateCheck.routeCapturePlan.status,
       routeCoverageStatus: stageResults.authStateCheck.routeCapturePlan.routeCoverageStatus,
       retryStatus: stageResults.authStateCheck.routeCapturePlan.retryStatus,
@@ -12736,7 +13405,7 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
   try {
     const pageReconciliationWrite = await writePageReconciliationReport(context, stageResults, failedReport);
     failedReport.pageReconciliation = pageReconciliationWrite.value;
-    failedReport.summary.pageReconciliation = pageReconciliationWrite.value.summary;
+    /** @type {any} */ (failedReport.summary).pageReconciliation = pageReconciliationWrite.value.summary;
     failedReport.artifacts[PAGE_RECONCILIATION_REPORT_FILE] = pageReconciliationWrite.artifactPath;
     const accessRemediationWrite = await writeAccessRemediationPlanIfNeeded(context, stageResults, pageReconciliationWrite.value);
     if (accessRemediationWrite) {
@@ -12745,7 +13414,7 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
     }
     if (stageResults.authStateCheck?.artifactPaths?.routeCapturePlan) {
       failedReport.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ?? null;
-      failedReport.summary.routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
+      /** @type {any} */ (failedReport.summary).routeCapturePlan = stageResults.authStateCheck.routeCapturePlan ? {
         status: stageResults.authStateCheck.routeCapturePlan.status,
         routeCoverageStatus: stageResults.authStateCheck.routeCapturePlan.routeCoverageStatus,
         retryStatus: stageResults.authStateCheck.routeCapturePlan.retryStatus,

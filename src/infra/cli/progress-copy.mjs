@@ -9,6 +9,7 @@ export const SITEFORGE_BUILD_STAGE_COPY = Object.freeze({
   crawlRendered: { zh: '处理渲染页面采集', en: 'Handling rendered-page crawl' },
   discoverInteractions: { zh: '发现页面交互', en: 'Discovering interactions' },
   captureNetworkTraces: { zh: '处理网络摘要', en: 'Handling network summary' },
+  apiAdapterReplay: { zh: '验证 API adapter replay', en: 'Verifying API adapter replay' },
   buildSiteGraph: { zh: '构建站点图谱', en: 'Building site graph' },
   classifyNodes: { zh: '分类站点节点', en: 'Classifying site nodes' },
   extractAffordances: { zh: '提取可操作项', en: 'Extracting affordances' },

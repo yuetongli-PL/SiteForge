@@ -19,8 +19,10 @@ import {
   prepareRedactedArtifactJsonWithAudit,
 } from '../../../domain/sessions/security-guard.mjs';
 import {
+  validateApiCandidateWithAdapter,
   writeApiCandidateArtifactsFromObservedRequests,
 } from '../../../domain/capabilities/api-discovery.mjs';
+import { resolveSiteAdapter } from '../../../sites/adapters/resolver.mjs';
 import {
   ensureBuildDirectories,
   readJsonIfExists,
@@ -155,6 +157,7 @@ import {
   RUNTIME_MODES,
   runtimeProviderPromotionMetadata,
 } from './runtime-provider.mjs';
+import { runBrowserBridgeApiReplay } from './browser-auth-bridge.mjs';
 
 export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
   'registerSite',
@@ -165,6 +168,7 @@ export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
   'crawlRendered',
   'discoverInteractions',
   'captureNetworkTraces',
+  'apiAdapterReplay',
   'buildSiteGraph',
   'classifyNodes',
   'extractAffordances',
@@ -185,7 +189,8 @@ const STAGE_DEPENDENCIES = Object.freeze({
   crawlRendered: ['crawlAuthenticated'],
   discoverInteractions: ['crawlStatic', 'crawlAuthenticated'],
   captureNetworkTraces: ['crawlRendered'],
-  buildSiteGraph: ['crawlStatic', 'crawlAuthenticated', 'discoverInteractions', 'captureNetworkTraces'],
+  apiAdapterReplay: ['captureNetworkTraces'],
+  buildSiteGraph: ['crawlStatic', 'crawlAuthenticated', 'discoverInteractions', 'apiAdapterReplay'],
   classifyNodes: ['buildSiteGraph'],
   extractAffordances: ['classifyNodes', 'discoverInteractions'],
   discoverCapabilities: ['extractAffordances'],
@@ -5450,9 +5455,652 @@ async function discoverInteractionsStage(context, stageResults) {
   };
 }
 
+const API_ADAPTER_SAFE_METHODS = new Set(['GET', 'HEAD']);
+const API_REPLAY_SENSITIVE_QUERY_PATTERN = /^(?:auth|authorization|sid|sessdata|csrf|xsrf|secret|password|pass|signature|sign|access[_-]?token|refresh[_-]?token|session(?:[_-]?id)?|api[_-]?key|xsec[_-]?token)$/iu;
+const API_REPLAY_WRITE_PATH_PATTERN = /(?:^|[/_.-])(?:create|delete|destroy|remove|update|edit|mutate|mutation|post|publish|submit|send|upload|follow|unfollow|like|repost|checkout|pay|order|login|logout|signin|signout)(?:$|[/_.-])/iu;
+const API_REPLAY_CHALLENGE_PATTERN = /(?:captcha|challenge|verify|verification|required login|login required|sign in|signin|log in|forbidden|access denied|permission denied|risk|anti[- ]?bot|blocked)/iu;
+
+function apiAdapterArtifactName(prefix, index) {
+  return `${prefix}-${String(index + 1).padStart(4, '0')}.json`;
+}
+
+async function writeRedactedArtifactWithAudit(context, artifactRelativePath, auditRelativePath, payload) {
+  const prepared = prepareRedactedArtifactJsonWithAudit(payload);
+  const artifactPath = await writeArtifactText(context, artifactRelativePath, prepared.json);
+  const redactionAuditPath = await writeArtifactText(context, auditRelativePath, prepared.auditJson);
+  return {
+    artifactPath,
+    redactionAuditPath,
+    value: prepared.value,
+    audit: prepared.auditValue,
+  };
+}
+
+function apiCandidateEndpointUrl(candidate = /** @type {any} */ ({})) {
+  return String(candidate?.endpoint?.url ?? candidate?.url ?? '').trim();
+}
+
+function apiCandidateMethod(candidate = /** @type {any} */ ({}), rawTrace = null) {
+  return String(candidate?.endpoint?.method ?? candidate?.method ?? rawTrace?.request?.method ?? 'GET').trim().toUpperCase();
+}
+
+function apiReplayRawEndpointUrl(candidate = /** @type {any} */ ({}), rawTrace = null) {
+  return String(rawTrace?.request?.url ?? rawTrace?.response?.url ?? apiCandidateEndpointUrl(candidate) ?? '').trim();
+}
+
+function parseCandidateUrl(context, candidate = /** @type {any} */ ({}), rawTrace = null) {
+  try {
+    const urlValue = normalizeUrl(apiReplayRawEndpointUrl(candidate, rawTrace), context.site?.rootUrl);
+    return new URL(urlValue);
+  } catch {
+    return null;
+  }
+}
+
+function hasSensitiveQueryMaterial(urlValue) {
+  try {
+    const parsed = new URL(String(urlValue ?? ''));
+    for (const key of parsed.searchParams.keys()) {
+      if (API_REPLAY_SENSITIVE_QUERY_PATTERN.test(key)) {
+        return true;
+      }
+    }
+    return /(?:%5Bredacted%5D|\[redacted\]|redacted)/iu.test(parsed.search);
+  } catch {
+    return false;
+  }
+}
+
+function apiCandidateHasSensitiveReplayQuery(candidate = /** @type {any} */ ({}), rawTrace = null) {
+  const candidateUrl = apiCandidateEndpointUrl(candidate);
+  const rawUrl = rawTrace?.request?.url ?? rawTrace?.url ?? null;
+  const riskText = [
+    candidate?.target?.riskClass,
+    candidate?.target?.endpointKind,
+    candidate?.target?.roleHint,
+    ...(candidate?.target?.queryKeys ?? []),
+  ].join(' ');
+  return hasSensitiveQueryMaterial(candidateUrl)
+    || hasSensitiveQueryMaterial(rawUrl)
+    || /request-protection|auth-session|risk-or-access-control|csrf|xsrf|token|secret|signature|session/iu.test(riskText);
+}
+
+function hasSubstantiveApiRequestBody(value) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return Boolean(text) && !['[REDACTED]', 'null', 'undefined'].includes(text);
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === 'object') {
+    return Object.keys(value).length > 0;
+  }
+  return true;
+}
+
+function apiCandidateHasRequestBody(candidate = /** @type {any} */ ({}), rawTrace = null) {
+  const candidateBody = candidate?.request?.body ?? candidate?.body;
+  const rawBody = rawTrace?.request?.body ?? rawTrace?.request?.postData ?? rawTrace?.postData;
+  return hasSubstantiveApiRequestBody(candidateBody)
+    || hasSubstantiveApiRequestBody(rawBody)
+    || rawTrace?.request?.hasPostData === true;
+}
+
+function apiCandidateLooksWriteLike(candidate = /** @type {any} */ ({}), rawTrace = null) {
+  const endpointUrl = apiCandidateEndpointUrl(candidate) || rawTrace?.request?.url || '';
+  const bodyText = [
+    candidate?.target?.endpointKind,
+    candidate?.target?.roleHint,
+    rawTrace?.request?.body,
+  ].filter(Boolean).join(' ');
+  try {
+    const parsed = new URL(endpointUrl);
+    return API_REPLAY_WRITE_PATH_PATTERN.test(`${parsed.pathname} ${parsed.search} ${bodyText}`);
+  } catch {
+    return API_REPLAY_WRITE_PATH_PATTERN.test(`${endpointUrl} ${bodyText}`);
+  }
+}
+
+function rawTraceForApiCandidate(candidate = /** @type {any} */ ({}), rawTraces = []) {
+  const candidateId = String(candidate?.id ?? '').trim();
+  if (candidateId) {
+    const byId = rawTraces.find((trace) => String(trace?.requestId ?? trace?.id ?? '').trim() === candidateId);
+    if (byId) {
+      return byId;
+    }
+  }
+  const endpointUrl = apiCandidateEndpointUrl(candidate);
+  const method = apiCandidateMethod(candidate);
+  return rawTraces.find((trace) => {
+    const traceMethod = String(trace?.request?.method ?? 'GET').trim().toUpperCase();
+    const traceUrl = String(trace?.request?.url ?? trace?.response?.url ?? '').trim();
+    if (traceMethod !== method || !traceUrl || !endpointUrl) {
+      return false;
+    }
+    try {
+      const left = new URL(traceUrl);
+      const right = new URL(endpointUrl);
+      return left.hostname === right.hostname && left.pathname === right.pathname;
+    } catch {
+      return traceUrl === endpointUrl;
+    }
+  }) ?? null;
+}
+
+function apiReplayAuthBoundary(context) {
+  const report = context.authStateReport ?? {};
+  if (report.authMethod === 'browser' && canRunAuthenticatedLayer(report)) {
+    return 'browser_bridge';
+  }
+  if (report.authMethod === 'cookie' && canRunAuthenticatedLayer(report)) {
+    return 'cookie_replay_only';
+  }
+  return 'none';
+}
+
+function apiReplayEligibility(context, candidate = /** @type {any} */ ({}), rawTrace = null, robotsPolicy = null) {
+  const method = apiCandidateMethod(candidate, rawTrace);
+  const parsed = parseCandidateUrl(context, candidate, rawTrace);
+  const replayEndpoint = parsed ? parsed.toString() : null;
+  const endpoint = replayEndpoint ? sanitizeEvidenceRef(replayEndpoint) : (apiCandidateEndpointUrl(candidate) || '');
+  if (!API_ADAPTER_SAFE_METHODS.has(method)) {
+    return { eligible: false, reasonCode: 'method_not_read_only', method, endpoint, authBoundary: 'none' };
+  }
+  if (apiCandidateHasRequestBody(candidate, rawTrace)) {
+    return { eligible: false, reasonCode: 'request_body_present', method, endpoint, authBoundary: 'none' };
+  }
+  if (!parsed || !isInternalUrl(parsed.toString(), context.site.allowedDomains)) {
+    return { eligible: false, reasonCode: 'cross_site_endpoint', method, endpoint, authBoundary: 'none' };
+  }
+  if (!isUrlAllowedByRobots(parsed.toString(), robotsPolicy ?? setupProfileRobotsPolicy(context))) {
+    return { eligible: false, reasonCode: 'robots_disallowed', method, endpoint, authBoundary: 'none' };
+  }
+  if (apiCandidateHasSensitiveReplayQuery(candidate, rawTrace)) {
+    return { eligible: false, reasonCode: 'sensitive_query_material', method, endpoint, authBoundary: 'none' };
+  }
+  if (apiCandidateLooksWriteLike(candidate, rawTrace)) {
+    return { eligible: false, reasonCode: 'write_like_endpoint', method, endpoint, authBoundary: 'none' };
+  }
+  const transport = String(candidate?.target?.transport ?? candidate?.transport ?? 'http').trim().toLowerCase();
+  if (transport && transport !== 'http') {
+    return { eligible: false, reasonCode: 'unsupported_transport', method, endpoint, authBoundary: 'none' };
+  }
+  const authBoundary = apiReplayAuthBoundary(context);
+  if (authBoundary === 'none') {
+    return { eligible: false, reasonCode: 'authenticated_browser_bridge_unavailable', method, endpoint, authBoundary };
+  }
+  if (authBoundary !== 'browser_bridge') {
+    return { eligible: false, reasonCode: 'cookie_replay_not_registered_for_runtime', method, endpoint, authBoundary };
+  }
+  return { eligible: true, reasonCode: null, method, endpoint, replayEndpoint, authBoundary };
+}
+
+function summarizeApiReplayResult(rawResult = /** @type {any} */ ({})) {
+  const statusText = String(rawResult?.status ?? rawResult?.result ?? '').trim().toLowerCase();
+  const httpStatus = Number(rawResult?.httpStatus ?? rawResult?.statusCode ?? rawResult?.response?.status ?? 0) || null;
+  const contentType = String(rawResult?.contentType ?? rawResult?.response?.contentType ?? rawResult?.headers?.['content-type'] ?? '').trim();
+  const probeText = [
+    rawResult?.responseKind,
+    rawResult?.statusText,
+    rawResult?.reason,
+    rawResult?.reasonCode,
+    rawResult?.bodyText,
+    rawResult?.text,
+  ].filter(Boolean).join(' ');
+  const challengeLike = API_REPLAY_CHALLENGE_PATTERN.test(probeText)
+    || [401, 403, 407, 419, 429].includes(Number(httpStatus));
+  const httpOk = httpStatus === null || (httpStatus >= 200 && httpStatus < 300) || httpStatus === 304;
+  const verified = !challengeLike && httpOk && ['verified', 'success', 'passed'].includes(statusText || 'verified');
+  return {
+    status: verified ? 'verified' : (statusText === 'skipped' ? 'skipped' : 'failed'),
+    reasonCode: challengeLike ? 'challenge_or_login_wall_response' : (rawResult?.reasonCode ?? (httpOk ? null : 'api_replay_http_failed')),
+    httpStatus,
+    contentType: contentType || null,
+    responseKind: String(rawResult?.responseKind ?? rawResult?.kind ?? '').trim() || null,
+  };
+}
+
+async function resolveApiAdapterForCandidate(context, candidate) {
+  if (typeof context.options.apiAdapterResolver === 'function') {
+    return await context.options.apiAdapterResolver({
+      context,
+      candidate,
+      site: context.site,
+      profile: context.siteAdapterProfile,
+    });
+  }
+  const endpointUrl = apiCandidateEndpointUrl(candidate);
+  let host = candidate?.siteKey ?? context.site?.id;
+  try {
+    host = new URL(endpointUrl).hostname;
+  } catch {
+    // Keep the site key fallback.
+  }
+  return resolveSiteAdapter({
+    host,
+    inputUrl: endpointUrl || context.site.rootUrl,
+    siteContext: context.site,
+    profile: context.siteAdapterProfile,
+  });
+}
+
+async function validateApiAdapterCandidate(context, candidateResult, index) {
+  const candidate = candidateResult?.candidate ?? null;
+  const artifactName = apiAdapterArtifactName('decision', index);
+  const decisionRelativePath = path.join('discovery', 'api-adapter-decisions', artifactName);
+  const auditRelativePath = path.join(
+    'discovery',
+    'api-adapter-decision-redaction-audits',
+    artifactName.replace(/\.json$/u, '.redaction-audit.json'),
+  );
+  let adapter = null;
+  let siteAdapterDecision = null;
+  let catalogUpgradePolicy = null;
+  let status = 'skipped';
+  let reasonCode = 'site_adapter_validation_unavailable';
+  try {
+    adapter = await resolveApiAdapterForCandidate(context, candidate);
+    if (typeof adapter?.validateApiCandidate !== 'function') {
+      reasonCode = 'site_adapter_validation_unavailable';
+    } else {
+      siteAdapterDecision = validateApiCandidateWithAdapter(candidate, adapter, {
+        validatedAt: context.startedAt,
+        scope: {
+          validationMode: 'siteforge-build-api-adapter-replay',
+          candidateArtifact: relativeReportPath(context.cwd, candidateResult?.artifactPath),
+        },
+        evidence: {
+          source: 'api-candidate-artifact',
+          artifactPath: relativeReportPath(context.cwd, candidateResult?.artifactPath),
+        },
+      });
+      status = siteAdapterDecision.decision === 'accepted' ? 'accepted' : 'rejected';
+      reasonCode = siteAdapterDecision.reasonCode ?? null;
+      if (typeof adapter.getApiCatalogUpgradePolicy === 'function') {
+        try {
+          catalogUpgradePolicy = adapter.getApiCatalogUpgradePolicy({
+            candidate,
+            siteAdapterDecision,
+            decidedAt: context.startedAt,
+            scope: {
+              policyMode: 'siteforge-build-api-adapter-replay',
+              candidateArtifact: relativeReportPath(context.cwd, candidateResult?.artifactPath),
+              siteAdapterDecisionArtifact: decisionRelativePath,
+            },
+            evidence: {
+              source: 'api-candidate-artifact',
+              candidateArtifact: relativeReportPath(context.cwd, candidateResult?.artifactPath),
+              siteAdapterDecisionArtifact: decisionRelativePath,
+            },
+          });
+        } catch (error) {
+          catalogUpgradePolicy = {
+            status: 'failed',
+            reasonCode: error?.reasonCode ?? error?.message ?? 'api_catalog_upgrade_policy_failed',
+          };
+        }
+      }
+    }
+  } catch (error) {
+    status = 'failed';
+    reasonCode = error?.reasonCode ?? error?.message ?? 'site_adapter_validation_failed';
+  }
+  const payload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-api-adapter-decision',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    candidateId: candidate?.id ?? null,
+    candidateRef: relativeReportPath(context.cwd, candidateResult?.artifactPath),
+    status,
+    reasonCode,
+    adapterId: adapter?.id ?? siteAdapterDecision?.adapterId ?? null,
+    adapterVersion: adapter?.version ?? siteAdapterDecision?.adapterVersion ?? null,
+    siteAdapterDecision,
+    catalogUpgradePolicy,
+  };
+  const write = await writeRedactedArtifactWithAudit(context, decisionRelativePath, auditRelativePath, payload);
+  return {
+    index,
+    candidate,
+    status,
+    reasonCode,
+    adapterId: payload.adapterId,
+    adapterVersion: payload.adapterVersion,
+    decision: siteAdapterDecision,
+    catalogUpgradePolicy,
+    artifactPath: write.artifactPath,
+    redactionAuditPath: write.redactionAuditPath,
+    value: write.value,
+  };
+}
+
+async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robotsPolicy) {
+  const { candidate, index } = decisionRecord;
+  const artifactName = apiAdapterArtifactName('replay', index);
+  const replayRelativePath = path.join('discovery', 'api-replay-verifications', artifactName);
+  const auditRelativePath = path.join(
+    'discovery',
+    'api-replay-verification-redaction-audits',
+    artifactName.replace(/\.json$/u, '.redaction-audit.json'),
+  );
+  const eligibility = apiReplayEligibility(context, candidate, rawTrace, robotsPolicy);
+  let status = 'skipped';
+  let reasonCode = eligibility.reasonCode;
+  let replaySummary = {
+    status,
+    reasonCode,
+    httpStatus: null,
+    contentType: null,
+    responseKind: null,
+  };
+  if (decisionRecord.status !== 'accepted') {
+    reasonCode = decisionRecord.reasonCode ?? 'adapter_rejected';
+    replaySummary = {
+      ...replaySummary,
+      reasonCode,
+    };
+  } else if (eligibility.eligible) {
+    const replayEndpoint = eligibility.replayEndpoint ?? eligibility.endpoint;
+    if (typeof context.options.apiAdapterReplayProvider === 'function') {
+      try {
+        const providerResult = await context.options.apiAdapterReplayProvider({
+          context,
+          site: context.site,
+          candidate,
+          decision: decisionRecord.decision,
+          rawTrace,
+          endpoint: replayEndpoint,
+          redactedEndpoint: eligibility.endpoint,
+          method: eligibility.method,
+          authBoundary: eligibility.authBoundary,
+          fetchOptions: {
+            credentials: 'include',
+            method: eligibility.method,
+            body: null,
+            persistCookies: false,
+            persistStorage: false,
+            persistResponseBody: false,
+          },
+        });
+        replaySummary = summarizeApiReplayResult(providerResult);
+        status = replaySummary.status;
+        reasonCode = replaySummary.reasonCode;
+      } catch (error) {
+        status = 'failed';
+        reasonCode = error?.reasonCode ?? error?.message ?? 'api_replay_failed';
+        replaySummary = {
+          status,
+          reasonCode,
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        };
+      }
+    } else {
+      replaySummary = summarizeApiReplayResult(await runBrowserBridgeApiReplay({
+        inputUrl: context.site.rootUrl,
+        site: context.site,
+        endpoint: replayEndpoint,
+        method: eligibility.method,
+        options: context.options,
+        robotsPolicy,
+      }));
+      status = replaySummary.status;
+      reasonCode = replaySummary.reasonCode;
+    }
+  }
+  const activated = decisionRecord.status === 'accepted'
+    && eligibility.eligible === true
+    && replaySummary.status === 'verified'
+    && eligibility.authBoundary === 'browser_bridge';
+  const runtimeBindingId = activated
+    ? stableNodeId('api-adapter-runtime-binding', `${context.site.id}:${candidate?.id ?? index}:${eligibility.replayEndpoint ?? eligibility.endpoint}`)
+    : null;
+  const payload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-api-replay-verification',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    candidateId: candidate?.id ?? null,
+    adapterDecisionRef: relativeReportPath(context.cwd, decisionRecord.artifactPath),
+    status: activated ? 'verified' : replaySummary.status,
+    reasonCode: activated ? null : reasonCode,
+    activated,
+    runtimeBindingId,
+    method: eligibility.method,
+    endpoint: sanitizeEvidenceRef(eligibility.endpoint),
+    authBoundary: eligibility.authBoundary,
+    replayPolicy: {
+      credentials: eligibility.authBoundary === 'browser_bridge' ? 'include' : 'none',
+      requestBodyAllowed: false,
+      savedCookieMaterial: false,
+      savedStorageMaterial: false,
+      rawResponseBodyPersisted: false,
+      responseMaterial: SANITIZED_SUMMARY_ONLY,
+      runtimeRegistration: activated ? 'browser_bridge_required' : 'not_registered',
+      genericHttpRuntimeAllowed: false,
+    },
+    response: {
+      httpStatus: replaySummary.httpStatus,
+      contentType: replaySummary.contentType,
+      responseKind: replaySummary.responseKind,
+      challengeOrLoginWallBlocked: reasonCode === 'challenge_or_login_wall_response',
+    },
+  };
+  const write = await writeRedactedArtifactWithAudit(context, replayRelativePath, auditRelativePath, payload);
+  return {
+    index,
+    candidate,
+    status: payload.status,
+    reasonCode: payload.reasonCode,
+    activated,
+    runtimeBindingId,
+    runtimeEndpoint: activated ? eligibility.replayEndpoint : null,
+    method: eligibility.method,
+    endpoint: payload.endpoint,
+    authBoundary: eligibility.authBoundary,
+    artifactPath: write.artifactPath,
+    redactionAuditPath: write.redactionAuditPath,
+    value: write.value,
+  };
+}
+
+function countByReason(records = []) {
+  const counts = {};
+  for (const record of records) {
+    const reasonCode = String(record?.reasonCode ?? '').trim();
+    if (!reasonCode) {
+      continue;
+    }
+    counts[reasonCode] = (counts[reasonCode] ?? 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right, 'en')));
+}
+
+async function writeApiAdapterRuntimeBindings(context, activatedAdapters = []) {
+  const bindings = activatedAdapters
+    .filter((adapter) => adapter?.runtimeBindingId && adapter?.runtimeEndpoint)
+    .map((adapter) => ({
+      id: adapter.runtimeBindingId,
+      candidateId: adapter.candidateId ?? null,
+      adapterId: adapter.adapterId ?? null,
+      adapterVersion: adapter.adapterVersion ?? null,
+      method: adapter.method,
+      endpoint: adapter.runtimeEndpoint,
+      redactedEndpoint: adapter.endpoint,
+      authBoundary: 'browser_bridge',
+      runtimeMode: BRIDGE_RUNTIME_MODE,
+      responseMaterial: SANITIZED_SUMMARY_ONLY,
+      requestPolicy: {
+        credentials: 'include',
+        requestBodyAllowed: false,
+        genericHttpRuntimeAllowed: false,
+        persistCookies: false,
+        persistStorage: false,
+        persistResponseBody: false,
+      },
+      evidence: {
+        candidateRef: adapter.candidateRef,
+        adapterDecisionRef: adapter.adapterDecisionRef,
+        replayVerificationRef: adapter.replayVerificationRef,
+      },
+    }));
+  if (!bindings.length) {
+    return null;
+  }
+  return await writeArtifactJson(context, path.join('runtime', 'api-adapter-bindings.internal.json'), {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-api-adapter-runtime-bindings',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    internalOnly: true,
+    containsSensitiveMaterial: true,
+    cookieMaterialPersisted: false,
+    storageMaterialPersisted: false,
+    rawResponseBodyPersisted: false,
+    bindingCount: bindings.length,
+    bindings,
+  });
+}
+
+function apiCatalogPromotionEvidenceFor(context, candidateId) {
+  const configured = context.options?.apiCatalogPromotionEvidence;
+  if (!configured || typeof configured !== 'object' || Array.isArray(configured)) {
+    return {};
+  }
+  const byCandidate = candidateId && configured[candidateId] && typeof configured[candidateId] === 'object'
+    ? configured[candidateId]
+    : null;
+  const byDefault = configured.default && typeof configured.default === 'object'
+    ? configured.default
+    : null;
+  return byCandidate ?? byDefault ?? configured;
+}
+
+function evaluateApiCatalogPromotionGate(context, decisionRecord, replayRecord) {
+  const candidateId = decisionRecord?.candidate?.id ?? replayRecord?.candidate?.id ?? null;
+  const promotionEvidence = apiCatalogPromotionEvidenceFor(context, candidateId);
+  const schemaEvidenceRef = String(promotionEvidence.schemaEvidenceRef ?? promotionEvidence.schemaRef ?? '').trim() || null;
+  const policyEvidenceRef = String(promotionEvidence.policyEvidenceRef ?? promotionEvidence.policyRef ?? '').trim() || null;
+  const testEvidenceRefs = Array.isArray(promotionEvidence.testEvidenceRefs ?? promotionEvidence.testRefs)
+    ? (promotionEvidence.testEvidenceRefs ?? promotionEvidence.testRefs).map((ref) => String(ref ?? '').trim()).filter(Boolean)
+    : [];
+  const explicitPromotionGate = context.options?.apiCatalogPromotion === true
+    || promotionEvidence.explicitPromotionGate === true;
+  const policyAllowsCatalogUpgrade = decisionRecord?.catalogUpgradePolicy?.allowCatalogUpgrade === true;
+  const adapterAccepted = decisionRecord?.status === 'accepted';
+  const replayVerified = replayRecord?.status === 'verified';
+  const schemaEvidencePresent = Boolean(schemaEvidenceRef);
+  const policyEvidencePresent = Boolean(policyEvidenceRef);
+  const testEvidencePresent = testEvidenceRefs.length > 0;
+  let reasonCode = null;
+  if (!adapterAccepted) {
+    reasonCode = decisionRecord?.reasonCode ?? 'site_adapter_validation_failed';
+  } else if (!replayVerified) {
+    reasonCode = replayRecord?.reasonCode ?? 'api_replay_not_verified';
+  } else if (!policyAllowsCatalogUpgrade) {
+    reasonCode = decisionRecord?.catalogUpgradePolicy?.reasonCode ?? 'api-catalog-entry-blocked';
+  } else if (!explicitPromotionGate) {
+    reasonCode = 'explicit_promotion_gate_required';
+  } else if (!schemaEvidencePresent || !policyEvidencePresent || !testEvidencePresent) {
+    reasonCode = 'api_catalog_promotion_evidence_missing';
+  }
+  const readyForCatalog = reasonCode === null;
+  return {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-api-catalog-promotion-gate',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    candidateId,
+    status: readyForCatalog ? 'ready_for_catalog' : 'blocked',
+    canEnterCatalog: readyForCatalog,
+    reasonCode,
+    observedApiAutoPromotionAllowed: false,
+    catalogWriteStatus: 'not_written',
+    requirements: {
+      candidateStatus: replayVerified ? 'replay_verified' : (decisionRecord?.candidate?.status ?? 'observed'),
+      adapterAccepted,
+      replayVerified,
+      policyAllowsCatalogUpgrade,
+      explicitPromotionGate,
+      schemaEvidencePresent,
+      policyEvidencePresent,
+      testEvidencePresent,
+      redactionAuditRequired: true,
+    },
+    evidence: {
+      candidateRef: decisionRecord?.value?.candidateRef ?? null,
+      adapterDecisionRef: decisionRecord?.artifactPath ? relativeReportPath(context.cwd, decisionRecord.artifactPath) : null,
+      replayVerificationRef: replayRecord?.artifactPath ? relativeReportPath(context.cwd, replayRecord.artifactPath) : null,
+      schemaEvidenceRef,
+      policyEvidenceRef,
+      testEvidenceRefs,
+    },
+  };
+}
+
+async function writeApiCatalogPromotionGate(context, decisionRecord, replayRecord) {
+  const artifactName = apiAdapterArtifactName('gate', decisionRecord?.index ?? replayRecord?.index ?? 0);
+  const gateRelativePath = path.join('discovery', 'api-catalog-promotion-gates', artifactName);
+  const auditRelativePath = path.join(
+    'discovery',
+    'api-catalog-promotion-gate-redaction-audits',
+    artifactName.replace(/\.json$/u, '.redaction-audit.json'),
+  );
+  const payload = evaluateApiCatalogPromotionGate(context, decisionRecord, replayRecord);
+  const write = await writeRedactedArtifactWithAudit(context, gateRelativePath, auditRelativePath, payload);
+  return {
+    index: decisionRecord?.index ?? replayRecord?.index ?? 0,
+    status: write.value.status,
+    reasonCode: write.value.reasonCode,
+    canEnterCatalog: write.value.canEnterCatalog,
+    artifactPath: write.artifactPath,
+    redactionAuditPath: write.redactionAuditPath,
+    value: write.value,
+  };
+}
+
+async function mergeApiAdapterReplayIntoNetworkSummary(context, replaySummary) {
+  const networkPath = path.join(context.artifactDir, 'network_traces.json');
+  const networkPayload = await readJsonIfExists(networkPath, null);
+  if (!networkPayload) {
+    return null;
+  }
+  const adapterFields = {
+    adapterValidationCount: replaySummary.adapterDecisionCount,
+    adapterAcceptedCount: replaySummary.adapterAcceptedCount,
+    replayVerifiedCount: replaySummary.replayVerifiedCount,
+    activatedApiAdapterCount: replaySummary.activatedApiAdapterCount,
+    adapterSkippedReasonCounts: replaySummary.skippedReasonCounts,
+    adapterDecisionArtifacts: replaySummary.decisionArtifacts,
+    replayVerificationArtifacts: replaySummary.replayVerificationArtifacts,
+    catalogPromotionGateCount: replaySummary.catalogPromotionGateCount ?? 0,
+    catalogPromotionReadyCount: replaySummary.catalogPromotionReadyCount ?? 0,
+    catalogPromotionBlockedReasonCounts: replaySummary.catalogPromotionBlockedReasonCounts ?? {},
+    catalogPromotionGateArtifacts: replaySummary.catalogPromotionGateArtifacts ?? [],
+    runtimeBindingArtifact: replaySummary.runtimeBindingArtifact ?? null,
+    rawTracesPersistedForReplay: replaySummary.rawTracesPersisted === true,
+  };
+  const updated = {
+    ...networkPayload,
+    apiAdapterReplay: adapterFields,
+    sanitizedSummary: {
+      ...(networkPayload.sanitizedSummary ?? {}),
+      ...adapterFields,
+    },
+  };
+  return await writeArtifactJson(context, 'network_traces.json', updated);
+}
+
 async function captureNetworkTracesStage(context) {
   const networkRequested = context.policy.captureNetwork === true || context.options.network === true;
   const internalRawRequested = context.options.internalRawNetwork === true;
+  const apiExtractionDisabledReason = context.options.apiExtractionDisabledReason ?? null;
   const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
   const internalCapture = context.internalRawNetworkCapture ?? {};
   const rawTraces = Array.isArray(internalCapture.rawTraces) ? internalCapture.rawTraces : [];
@@ -5498,7 +6146,7 @@ async function captureNetworkTracesStage(context) {
       },
     };
     rawNetworkPath = await writeArtifactJson(context, path.join('discovery', 'network_traces.raw.json'), rawPayload);
-    warnings.push('Internal raw network capture was enabled; raw trace artifacts may contain sensitive material.');
+    warnings.push('Raw network capture was enabled; raw trace artifacts may contain sensitive material.');
 
     if (observedRequests.length) {
       try {
@@ -5548,6 +6196,7 @@ async function captureNetworkTracesStage(context) {
     apiCandidateArtifacts: apiCandidateSummary.artifacts,
     apiCandidateCount: apiCandidateSummary.count,
     apiCandidateStatus: apiCandidateSummary.status,
+    apiExtractionDisabledReason,
     sourceDiagnosticCount: sourceDiagnostics.length,
     observedStatusCodes: uniqueSortedStrings(sourceDiagnostics.map((item) => item?.statusCode).filter(Boolean)),
     observedHosts: uniqueSortedStrings(sourceDiagnostics.map((item) => {
@@ -5564,10 +6213,12 @@ async function captureNetworkTracesStage(context) {
     siteId: context.site.id,
     status: internalRawRequested ? 'success' : 'skipped',
     reason: internalRawRequested
-      ? 'Internal raw network capture was enabled; public summary excludes raw headers, bodies, cookies, and tokens.'
-      : networkRequested
-        ? 'Network summary requested; raw network traces were not captured or persisted.'
-        : 'Network summary was not requested; raw network tracing is not part of the public build path.',
+      ? 'Raw network capture was enabled; public summary excludes raw headers, bodies, cookies, and tokens.'
+      : apiExtractionDisabledReason
+        ? `API extraction skipped because ${apiExtractionDisabledReason}.`
+        : networkRequested
+          ? 'Network summary requested; raw network traces were not captured or persisted.'
+          : 'Network summary was not requested; raw network tracing is not part of the public build path.',
     traces: [],
     observedRequests: [],
     observedResponseSummaries: [],
@@ -5585,6 +6236,7 @@ async function captureNetworkTracesStage(context) {
         rawNetworkTraces: rawNetworkPath,
         apiCandidateArtifacts: apiCandidateSummary.artifacts,
       },
+      apiCandidateResults: apiCandidateArtifacts,
       summary: {
         traces: 0,
         rawTraces: rawTraceCount,
@@ -5608,6 +6260,135 @@ async function captureNetworkTracesStage(context) {
       traces: 0,
       sanitizedSummary,
     },
+  };
+}
+
+async function apiAdapterReplayStage(context, stageResults) {
+  const captureStage = stageResults.captureNetworkTraces ?? {};
+  const candidateResults = Array.isArray(captureStage.apiCandidateResults)
+    ? captureStage.apiCandidateResults
+    : [];
+  const rawTraces = Array.isArray(context.internalRawNetworkCapture?.rawTraces)
+    ? context.internalRawNetworkCapture.rawTraces
+    : [];
+  const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? setupProfileRobotsPolicy(context);
+  const warnings = /** @type {string[]} */ ([]);
+  const decisions = /** @type {any[]} */ ([]);
+  const replayVerifications = /** @type {any[]} */ ([]);
+  const activatedAdapters = /** @type {any[]} */ ([]);
+
+  for (const [index, candidateResult] of candidateResults.entries()) {
+    try {
+      const decision = await validateApiAdapterCandidate(context, candidateResult, index);
+      decisions.push(decision);
+      const rawTrace = rawTraceForApiCandidate(decision.candidate, rawTraces);
+      const replay = await replayApiAdapterCandidate(context, decision, rawTrace, robotsPolicy);
+      replayVerifications.push(replay);
+      if (replay.activated) {
+        activatedAdapters.push({
+          candidateId: decision.candidate?.id ?? null,
+          siteKey: decision.candidate?.siteKey ?? context.site.id,
+          adapterId: decision.adapterId,
+          adapterVersion: decision.adapterVersion,
+          runtimeBindingId: replay.runtimeBindingId,
+          runtimeEndpoint: replay.runtimeEndpoint,
+          method: replay.method,
+          endpoint: replay.endpoint,
+          authBoundary: replay.authBoundary,
+          candidateRef: relativeReportPath(context.cwd, candidateResult.artifactPath),
+          adapterDecisionRef: relativeReportPath(context.cwd, decision.artifactPath),
+          replayVerificationRef: relativeReportPath(context.cwd, replay.artifactPath),
+          responsePolicy: SANITIZED_SUMMARY_ONLY,
+        });
+      }
+    } catch (error) {
+      warnings.push(`api-adapter-replay:${error?.reasonCode ?? error?.message ?? 'failed'}`);
+    }
+  }
+
+  const skippedRecords = [
+    ...decisions.filter((decision) => decision.status !== 'accepted'),
+    ...replayVerifications.filter((verification) => verification.status !== 'verified'),
+  ];
+  const runtimeBindingsPath = await writeApiAdapterRuntimeBindings(context, activatedAdapters);
+  const promotionGates = [];
+  for (const replay of replayVerifications) {
+    const decision = decisions.find((candidate) => candidate.index === replay.index) ?? null;
+    if (!decision) {
+      continue;
+    }
+    promotionGates.push(await writeApiCatalogPromotionGate(context, decision, replay));
+  }
+  const summary = {
+    status: candidateResults.length ? 'completed' : 'skipped',
+    candidateCount: candidateResults.length,
+    adapterDecisionCount: decisions.length,
+    adapterAcceptedCount: decisions.filter((decision) => decision.status === 'accepted').length,
+    replayAttemptedCount: replayVerifications.filter((verification) => verification.reasonCode !== 'adapter_rejected').length,
+    replayVerifiedCount: replayVerifications.filter((verification) => verification.status === 'verified').length,
+    activatedApiAdapterCount: activatedAdapters.length,
+    skippedReasonCounts: countByReason(skippedRecords),
+    catalogPromotionGateCount: promotionGates.length,
+    catalogPromotionReadyCount: promotionGates.filter((gate) => gate.canEnterCatalog === true).length,
+    catalogPromotionBlockedReasonCounts: countByReason(promotionGates.filter((gate) => gate.canEnterCatalog !== true)),
+    rawTracesPersisted: captureStage.summary?.rawTracesPersisted === true,
+    decisionArtifacts: decisions.map((decision) => relativeReportPath(context.cwd, decision.artifactPath)),
+    replayVerificationArtifacts: replayVerifications.map((verification) => relativeReportPath(context.cwd, verification.artifactPath)),
+    catalogPromotionGateArtifacts: promotionGates.map((gate) => relativeReportPath(context.cwd, gate.artifactPath)),
+    runtimeBindingArtifact: runtimeBindingsPath ? relativeReportPath(context.cwd, runtimeBindingsPath) : null,
+  };
+  const summaryPayload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    artifactFamily: 'siteforge-api-adapter-replay-summary',
+    buildId: context.buildId,
+    siteId: context.site.id,
+    status: summary.status,
+    summary,
+    activatedAdapters,
+  };
+  const adapterSummaryFields = {
+    adapterValidationCount: summary.adapterDecisionCount,
+    adapterAcceptedCount: summary.adapterAcceptedCount,
+    replayVerifiedCount: summary.replayVerifiedCount,
+    activatedApiAdapterCount: summary.activatedApiAdapterCount,
+    adapterSkippedReasonCounts: summary.skippedReasonCounts,
+    adapterDecisionArtifacts: summary.decisionArtifacts,
+    replayVerificationArtifacts: summary.replayVerificationArtifacts,
+    catalogPromotionGateCount: summary.catalogPromotionGateCount,
+    catalogPromotionReadyCount: summary.catalogPromotionReadyCount,
+    catalogPromotionBlockedReasonCounts: summary.catalogPromotionBlockedReasonCounts,
+    catalogPromotionGateArtifacts: summary.catalogPromotionGateArtifacts,
+    runtimeBindingArtifact: summary.runtimeBindingArtifact,
+  };
+  if (captureStage.summary) {
+    Object.assign(captureStage.summary, adapterSummaryFields);
+    if (captureStage.summary.sanitizedSummary) {
+      Object.assign(captureStage.summary.sanitizedSummary, adapterSummaryFields);
+    }
+  }
+  const summaryWrite = await writeRedactedArtifactWithAudit(
+    context,
+    path.join('discovery', 'api_adapter_replay.json'),
+    path.join('discovery', 'api-adapter-replay-redaction-audits', 'api_adapter_replay.redaction-audit.json'),
+    summaryPayload,
+  );
+  await mergeApiAdapterReplayIntoNetworkSummary(context, summary);
+  return {
+    status: 'success',
+    warnings,
+    decisions,
+    replayVerifications,
+    promotionGates,
+    activatedAdapters,
+    artifactPaths: {
+      apiAdapterReplay: summaryWrite.artifactPath,
+      apiAdapterReplayRedactionAudit: summaryWrite.redactionAuditPath,
+      decisions: summary.decisionArtifacts,
+      replayVerifications: summary.replayVerificationArtifacts,
+      catalogPromotionGates: summary.catalogPromotionGateArtifacts,
+      runtimeBindings: runtimeBindingsPath,
+    },
+    summary,
   };
 }
 
@@ -8677,10 +9458,13 @@ function sourceLayerForCapability(capability = /** @type {any} */ ({}), nodesByI
   if (nodes.some((node) => nodeSourceLayer(node) === 'authorized_source')) {
     return 'authorized_source';
   }
+  if (capability.authRequired === true) {
+    return 'authenticated';
+  }
   if (nodes.some((node) => nodeSourceLayer(node) === 'public_rendered')) {
     return 'public_rendered';
   }
-  return capability.authRequired === true ? 'authenticated' : 'public';
+  return 'public';
 }
 
 function providerIdForCapability(capability = /** @type {any} */ ({}), nodesById = new Map()) {
@@ -8741,6 +9525,9 @@ function observedCapabilityEvidenceLevel(capability = /** @type {any} */ ({}), n
   })) {
     levels.push('capability_verified');
   }
+  if (capability.apiReplayVerified === true || capability.evidenceModel === 'api_adapter_replay_verified') {
+    levels.push('capability_verified');
+  }
   return levels.sort((left, right) => evidenceLevelRank(right) - evidenceLevelRank(left))[0] ?? 'candidate';
 }
 
@@ -8775,6 +9562,7 @@ function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
   const publicRouteNavigationOnly = capability.evidenceModel === 'public_route_navigation' || capability.publicRouteOnly === true;
   const publicElementSummary = capability.evidenceModel === 'public_element_summary';
   const authenticatedRouteOnly = capability.evidenceModel === 'authenticated_route_only';
+  const apiAdapterReplayVerified = capability.evidenceModel === 'api_adapter_replay_verified';
   const nodes = [
     ...(capability.entryNodeIds ?? []),
     ...(capability.requiredNodeIds ?? []),
@@ -8814,6 +9602,7 @@ function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
   const hasAuthNode = nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)));
   if (authRequired && hasAuthNode) observedEvidence.add('route_accessible');
   if (authRequired && canRunAuthenticatedLayer(context.authStateReport)) observedEvidence.add('not_login_wall');
+  if (apiAdapterReplayVerified && capability.apiReplayVerified === true) observedEvidence.add('api_replay_verified');
   const hasListContainer = nodes.some((node) => (
     node.listPresent === true
     || node.emptyStatePresent === true
@@ -8823,10 +9612,14 @@ function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
   const hasVisibleItemsOrEmptyState = nodes.some((node) => Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true);
   if (authRequired && hasVisibleItemsOrEmptyState) observedEvidence.add('visible_item_count_or_empty_state');
   const requiredEvidence = authRequired
-    ? authenticatedRouteOnly
+    ? apiAdapterReplayVerified
+      ? ['source_node_present', 'not_login_wall', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
+      : authenticatedRouteOnly
       ? ['source_node_present', 'route_accessible', 'not_login_wall', 'sanitized_evidence_present', 'risk_policy_passed']
       : ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
-    : publicRouteNavigationOnly
+    : apiAdapterReplayVerified
+      ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
+      : publicRouteNavigationOnly
       ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_route_template_present', 'risk_policy_passed']
       : publicElementSummary
         ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_element_instance_present', 'risk_policy_passed']
@@ -8839,7 +9632,7 @@ function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
   ));
   const observedEvidenceLevel = observedCapabilityEvidenceLevel(capability, nodesById, context.authStateReport);
   const requiredEvidenceLevel = authRequired
-    ? authenticatedRouteOnly ? 'login_route_verified' : 'capability_verified'
+    ? (authenticatedRouteOnly && !apiAdapterReplayVerified) ? 'login_route_verified' : 'capability_verified'
     : 'public_verified';
   return {
     capabilityId: capability.id,
@@ -8935,6 +9728,161 @@ function applyCapabilityEvidenceMatrix(context, capability = /** @type {any} */ 
     next.evidence_status = 'verified';
   }
   return next;
+}
+
+function apiCandidateCapabilityMetadata(stageResults = /** @type {any} */ ({})) {
+  const networkSummary = stageResults.captureNetworkTraces?.summary?.sanitizedSummary
+    ?? stageResults.captureNetworkTraces?.summary
+    ?? {};
+  const replaySummary = stageResults.apiAdapterReplay?.summary ?? {};
+  const apiCandidateCount = Math.max(0, Number(networkSummary.apiCandidateCount ?? 0) || 0);
+  const apiCandidateArtifacts = Array.isArray(networkSummary.apiCandidateArtifacts)
+    ? networkSummary.apiCandidateArtifacts
+    : [];
+  const evidence = apiCandidateArtifacts.slice(0, 5).map((artifactPath, index) => buildEvidence({
+    type: 'network',
+    source: artifactPath,
+    text: `API candidate artifact ${index + 1} of ${apiCandidateCount}`,
+    confidence: 0.72,
+  }));
+  const rawTracesPersisted = networkSummary.rawTracesPersisted === true;
+  const captureStatus = networkSummary.apiCandidateStatus ?? 'not_requested';
+  return {
+    apiCandidateCount,
+    apiCandidateArtifacts,
+    evidence,
+    rawTracesPersisted,
+    captureStatus,
+    adapterValidationCount: Number(replaySummary.adapterDecisionCount ?? networkSummary.adapterValidationCount ?? 0) || 0,
+    adapterAcceptedCount: Number(replaySummary.adapterAcceptedCount ?? networkSummary.adapterAcceptedCount ?? 0) || 0,
+    replayVerifiedCount: Number(replaySummary.replayVerifiedCount ?? networkSummary.replayVerifiedCount ?? 0) || 0,
+    activatedApiAdapterCount: Number(replaySummary.activatedApiAdapterCount ?? networkSummary.activatedApiAdapterCount ?? 0) || 0,
+    adapterSkippedReasonCounts: replaySummary.skippedReasonCounts ?? networkSummary.adapterSkippedReasonCounts ?? {},
+    description: apiCandidateCount > 0
+      ? `Observed ${apiCandidateCount} redacted API candidate artifact(s) from network capture.`
+      : rawTracesPersisted
+        ? 'Raw network capture ran, but no API candidate artifacts were generated.'
+        : 'Network API capture did not produce API candidate artifacts for this build.',
+    userValue: apiCandidateCount > 0
+      ? `Review ${apiCandidateCount} discovered API candidate(s)`
+      : 'Review network API capture status',
+    confidence: apiCandidateCount > 0 ? 0.55 : 0,
+  };
+}
+
+function apiEndpointShortPath(endpoint) {
+  try {
+    const parsed = new URL(String(endpoint ?? ''));
+    const pathPart = parsed.pathname.replace(/\/+/gu, '/').replace(/\/$/u, '') || '/';
+    const queryKeys = [...parsed.searchParams.keys()].slice(0, 3);
+    return `${pathPart}${queryKeys.length ? `?${queryKeys.join('&')}` : ''}`.slice(0, 80);
+  } catch {
+    return String(endpoint ?? '/api').replace(/^https?:\/\/[^/]+/iu, '').slice(0, 80) || '/api';
+  }
+}
+
+function executableApiAdapterCapabilities(context, stageResults = /** @type {any} */ ({}), graph = /** @type {any} */ ({}), homepage = null) {
+  const activatedAdapters = Array.isArray(stageResults.apiAdapterReplay?.activatedAdapters)
+    ? stageResults.apiAdapterReplay.activatedAdapters
+    : [];
+  if (!activatedAdapters.length) {
+    return [];
+  }
+  const pageNodes = graph.nodes?.filter((node) => node.type === 'page') ?? [];
+  const authNode = pageNodes.find((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)));
+  const entryNode = authNode ?? homepage ?? pageNodes[0] ?? null;
+  return activatedAdapters.map((adapter, index) => {
+    const shortPath = apiEndpointShortPath(adapter.endpoint);
+    const capability = makeCapability(context, {
+      name: `read API endpoint ${shortPath}`,
+      description: `Read replay-verified same-site API endpoint ${shortPath} through the Browser Bridge runtime.`,
+      action: 'view',
+      object: 'API endpoint',
+      userValue: `Read API endpoint ${shortPath}`,
+      entryNodeIds: entryNode ? [entryNode.id] : [],
+      outputs: [{ name: 'response', type: 'api_response_summary' }],
+      safetyLevel: 'read_only',
+      evidence: [
+        buildEvidence({
+          type: 'network',
+          source: adapter.candidateRef,
+          text: `API candidate ${adapter.candidateId ?? index + 1} was observed and redacted.`,
+          confidence: 0.72,
+        }),
+        buildEvidence({
+          type: 'network',
+          source: adapter.adapterDecisionRef,
+          text: 'SiteAdapter accepted the API candidate as same-site read-only candidate evidence.',
+          confidence: 0.78,
+        }),
+        buildEvidence({
+          type: 'network',
+          source: adapter.replayVerificationRef,
+          text: 'Build-time browser-auth replay verified this API candidate; response body was not persisted.',
+          confidence: 0.84,
+        }),
+      ],
+      confidence: 0.78,
+      status: 'active',
+      informational: false,
+      authRequired: true,
+      sourceLayer: 'authenticated',
+      providerId: 'browser_bridge',
+      evidenceModel: 'api_adapter_replay_verified',
+      apiReplayVerified: true,
+      enabled_status: 'limited_enabled',
+      default_policy: 'limited_enabled',
+      evidence_status: 'verified',
+      risk_level: 'read_personal_medium',
+      apiAdapter: {
+        candidateRef: adapter.candidateRef,
+        adapterDecisionRef: adapter.adapterDecisionRef,
+        replayVerificationRef: adapter.replayVerificationRef,
+        runtimeBindingId: adapter.runtimeBindingId,
+        method: adapter.method,
+        redactedEndpoint: adapter.endpoint,
+        authBoundary: adapter.authBoundary,
+        responsePolicy: adapter.responsePolicy,
+        runtime: 'browser_bridge_required',
+        requiresFreshBridgeEvidence: true,
+        genericHttpRuntimeAllowed: false,
+      },
+      intents: [{
+        canonicalUtterance: `read API endpoint ${shortPath}`,
+        utteranceExamples: [
+          `read API endpoint ${shortPath}`,
+          `call replay verified API endpoint ${shortPath}`,
+          `读取已验证 API 接口 ${shortPath}`,
+        ],
+        negativeExamples: ['submit API request', 'update account settings', 'send a POST request'],
+        slots: [],
+        invocationScore: 0.74,
+      }],
+    });
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'limited_read',
+      dryRunOnly: false,
+      requiresConfirmation: false,
+      autoExecute: false,
+      steps: [{
+        kind: 'api_request',
+        method: adapter.method,
+        endpoint: adapter.endpoint,
+        runtimeBindingId: adapter.runtimeBindingId,
+        candidateRef: adapter.candidateRef,
+        adapterDecisionRef: adapter.adapterDecisionRef,
+        replayVerificationRef: adapter.replayVerificationRef,
+        authBoundary: 'browser_bridge',
+        mode: 'limited_read',
+        autoExecute: false,
+        requiresConfirmation: false,
+        responseMaterial: SANITIZED_SUMMARY_ONLY,
+      }],
+    });
+    capability.executionPlan.limitedOutputOnly = true;
+    capability.executionPlan.responseMaterial = SANITIZED_SUMMARY_ONLY;
+    return capability;
+  });
 }
 
 async function discoverCapabilitiesStage(context, stageResults) {
@@ -9182,19 +10130,33 @@ async function discoverCapabilitiesStage(context, stageResults) {
     affordances,
     existingCapabilities: capabilities,
   }));
+  capabilities.push(...executableApiAdapterCapabilities(context, stageResults, graph, homepage));
 
+  const apiCandidateMetadata = apiCandidateCapabilityMetadata(stageResults);
   capabilities.push(makeCapability(context, {
     name: 'capture network APIs',
-    description: 'Network API capture was not available in this static build.',
+    description: apiCandidateMetadata.description,
     action: 'track',
-    object: 'network traces',
-    userValue: 'Candidate only until instrumentation exists.',
+    object: 'network API candidates',
+    userValue: apiCandidateMetadata.userValue,
     entryNodeIds: homepage ? [homepage.id] : [],
     safetyLevel: 'read_only',
-    evidence: [],
-    confidence: 0,
+    evidence: apiCandidateMetadata.evidence,
+    confidence: apiCandidateMetadata.confidence,
     status: 'candidate',
     informational: true,
+    enabled_status: 'candidate_debug_only',
+    default_policy: 'candidate_debug_only',
+    evidence_status: apiCandidateMetadata.apiCandidateCount > 0 ? 'observed_sanitized' : 'candidate',
+    apiCandidateCount: apiCandidateMetadata.apiCandidateCount,
+    apiCandidateArtifacts: apiCandidateMetadata.apiCandidateArtifacts,
+    rawNetworkTracesPersisted: apiCandidateMetadata.rawTracesPersisted,
+    networkCaptureStatus: apiCandidateMetadata.captureStatus,
+    adapterValidationCount: apiCandidateMetadata.adapterValidationCount,
+    adapterAcceptedCount: apiCandidateMetadata.adapterAcceptedCount,
+    replayVerifiedCount: apiCandidateMetadata.replayVerifiedCount,
+    activatedApiAdapterCount: apiCandidateMetadata.activatedApiAdapterCount,
+    adapterSkippedReasonCounts: apiCandidateMetadata.adapterSkippedReasonCounts,
   }));
 
   const policyApplied = dedupeSemanticCapabilities(arrayUniqueBy(capabilities, (capability) => capability.id)
@@ -9871,10 +10833,13 @@ function isGenericHttpReadSafeCapability(context, capability = /** @type {any} *
   }
   return steps.every((step) => {
     const kind = normalizeStatusToken(step.kind);
-    if (!['navigate', 'route_template', 'form_get'].includes(kind)) {
+    if (!['navigate', 'route_template', 'form_get', 'api_request'].includes(kind)) {
       return false;
     }
     if (kind === 'form_get' && String(step.method ?? 'GET').toUpperCase() !== 'GET') {
+      return false;
+    }
+    if (kind === 'api_request' && !['GET', 'HEAD'].includes(String(step.method ?? 'GET').toUpperCase())) {
       return false;
     }
     return planStepTargetAllowedByRobots(context, step, graph, robotsPolicy);
@@ -10006,6 +10971,7 @@ function buildRegistryRecord(context, stageResults, options = /** @type {any} */
         capabilityName: capability?.name ?? intent.name,
         capabilityAction: capability?.action ?? null,
         executionPlanId: capability?.executionPlan?.id ?? null,
+        runtimeBindingId: capability?.apiAdapter?.runtimeBindingId ?? capability?.executionPlan?.steps?.find((step) => step?.runtimeBindingId)?.runtimeBindingId ?? null,
         canonicalUtterance: intent.canonicalUtterance,
         utteranceExamples: intent.utteranceExamples,
         safetyLevel: intent.safetyLevel,
@@ -11085,7 +12051,7 @@ function buildUserFacingWarnings(report, resultStatus, context = null, partialSu
     warnings.push('Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.');
   }
   if (context?.options?.internalRawNetwork === true) {
-    warnings.push('Internal raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.');
+    warnings.push('Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.');
   }
   if (resultStatus === 'failed' && report.reason) {
     warnings.push(report.reason);
@@ -11120,7 +12086,7 @@ function buildNextSteps({ resultStatus, context, report, confirmationRequired, d
       steps.push('Run with --deep when you need broader static and sanitized structure discovery; this does not enable browser-rendered crawling.');
     }
     if (context.policy?.captureNetwork !== true) {
-      steps.push('Run with --network only when a sanitized network summary is needed; raw traces are not saved.');
+      steps.push('Enable rendered discovery when API/network capture evidence is needed; raw network capture is enabled by default for the public build command.');
     }
     if (
       context.setupProfile?.userAuthorizedEvidence?.autoDiscovery?.status === 'modeled'
@@ -11432,6 +12398,7 @@ function buildUserReport(context, stageResults, report) {
     ? relativeReportPath(context.cwd, report.artifacts[ROUTE_CAPTURE_PLAN_FILE])
     : null;
   const rawPageMaterialSummary = report.summary?.rawPageMaterial ?? null;
+  const networkSummary = sanitizedNetworkSummary(context, stageResults);
   return {
     // Migration: status remains the legacy stage/build field; result_status is the stable user-facing outcome.
     result_status: resultStatus,
@@ -11458,6 +12425,24 @@ function buildUserReport(context, stageResults, report) {
     blocked_by_risk: coverage.blockedByRisk,
     blocked_by_auth: coverage.blockedByAuth,
     counts,
+    api_discovery_summary: {
+      requested: networkSummary.requested,
+      raw_network_traces_persisted: networkSummary.raw_traces_persisted,
+      raw_trace_count: networkSummary.raw_trace_count,
+      api_candidate_count: networkSummary.api_candidate_count,
+      adapter_validation_count: networkSummary.adapter_validation_count,
+      adapter_accepted_count: networkSummary.adapter_accepted_count,
+      replay_verified_count: networkSummary.replay_verified_count,
+      activated_api_adapter_count: networkSummary.activated_api_adapter_count,
+      skipped_reason_counts: networkSummary.adapter_skipped_reason_counts,
+      catalog_promotion_gate_count: networkSummary.catalog_promotion_gate_count,
+      catalog_promotion_ready_count: networkSummary.catalog_promotion_ready_count,
+      catalog_promotion_blocked_reason_counts: networkSummary.catalog_promotion_blocked_reason_counts,
+      api_extraction_disabled_reason: networkSummary.api_extraction_disabled_reason,
+      collector_status: networkSummary.collector_status?.sanitizedSummary?.apiCandidateStatus
+        ?? networkSummary.collector_status?.apiCandidateStatus
+        ?? null,
+    },
     enabled_capabilities: enabledCapabilities,
     limited_enabled_capabilities: limitedEnabledCapabilities,
     limited_capabilities: limitedEnabledCapabilities,
@@ -11514,7 +12499,7 @@ function buildUserReport(context, stageResults, report) {
         ? `已保存 ${rawPageMaterialSummary.pages} 个公开页面的受控页面材料，并已脱敏敏感赋值和脚本正文。`
         : '未保存公开页面原始材料。',
       context.options?.internalRawNetwork === true
-        ? 'Internal raw network capture was enabled; user report omits raw artifact paths and raw contents.'
+        ? 'Raw network capture was enabled; user report omits raw artifact paths and raw contents.'
         : '没有保存 cookie、token、Authorization header、浏览器 profile、storage 材料、原始网络 payload 或私密正文。',
     ].filter(Boolean),
     debug_candidate_summary: {
@@ -11589,6 +12574,7 @@ function sanitizedNetworkSummary(context, stageResults = /** @type {any} */ ({})
   const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
   const networkStage = stageResults.captureNetworkTraces ?? null;
   const stageSummary = networkStage?.summary?.sanitizedSummary ?? networkStage?.summary ?? null;
+  const replaySummary = stageResults.apiAdapterReplay?.summary ?? {};
   return {
     requested: context.policy?.captureNetwork === true || context.options?.network === true,
     raw_traces_persisted: stageSummary?.rawTracesPersisted === true,
@@ -11598,6 +12584,15 @@ function sanitizedNetworkSummary(context, stageResults = /** @type {any} */ ({})
     raw_truncated_body_count: stageSummary?.rawTruncatedBodyCount ?? 0,
     api_candidate_count: stageSummary?.apiCandidateCount ?? 0,
     api_candidate_artifacts: stageSummary?.apiCandidateArtifacts ?? [],
+    adapter_validation_count: replaySummary.adapterDecisionCount ?? stageSummary?.adapterValidationCount ?? 0,
+    adapter_accepted_count: replaySummary.adapterAcceptedCount ?? stageSummary?.adapterAcceptedCount ?? 0,
+    replay_verified_count: replaySummary.replayVerifiedCount ?? stageSummary?.replayVerifiedCount ?? 0,
+    activated_api_adapter_count: replaySummary.activatedApiAdapterCount ?? stageSummary?.activatedApiAdapterCount ?? 0,
+    adapter_skipped_reason_counts: replaySummary.skippedReasonCounts ?? stageSummary?.adapterSkippedReasonCounts ?? {},
+    catalog_promotion_gate_count: replaySummary.catalogPromotionGateCount ?? stageSummary?.catalogPromotionGateCount ?? 0,
+    catalog_promotion_ready_count: replaySummary.catalogPromotionReadyCount ?? stageSummary?.catalogPromotionReadyCount ?? 0,
+    catalog_promotion_blocked_reason_counts: replaySummary.catalogPromotionBlockedReasonCounts ?? stageSummary?.catalogPromotionBlockedReasonCounts ?? {},
+    api_extraction_disabled_reason: stageSummary?.apiExtractionDisabledReason ?? null,
     source_diagnostic_count: sourceDiagnostics.length,
     observed_status_codes: uniqueSortedStrings(sourceDiagnostics.map((item) => item?.statusCode).filter(Boolean)),
     observed_hosts: uniqueSortedStrings(sourceDiagnostics.map((item) => {
@@ -11608,6 +12603,7 @@ function sanitizedNetworkSummary(context, stageResults = /** @type {any} */ ({})
       }
     }).filter(Boolean)),
     collector_status: networkStage?.summary ?? null,
+    adapter_replay_status: stageResults.apiAdapterReplay?.summary ?? null,
   };
 }
 
@@ -13504,6 +14500,7 @@ const STAGE_IMPLS = Object.freeze({
   crawlRendered: crawlRenderedStage,
   discoverInteractions: discoverInteractionsStage,
   captureNetworkTraces: captureNetworkTracesStage,
+  apiAdapterReplay: apiAdapterReplayStage,
   buildSiteGraph: buildSiteGraphStage,
   classifyNodes: classifyNodesStage,
   extractAffordances: extractAffordancesStage,
@@ -13671,6 +14668,8 @@ function displayBuildWarning(value) {
     ['Network summary was not requested; raw network tracing is not part of the public build path.', 'Network summary was not requested; raw network tracing is not part of the public build path.'],
     ['Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary.', 'Network capture requested; only a sanitized network summary was saved.'],
     ['Network summary requested; raw network traces were not captured or persisted.', 'Network summary requested; raw network traces were not captured or persisted.'],
+    ['Raw network capture was enabled; raw trace artifacts may contain sensitive material.', 'Raw network capture was enabled; raw trace artifacts may contain sensitive material.'],
+    ['Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.', 'Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.'],
     ['network-fetch-failed', 'Network fetch failed; raw error details were not saved.'],
     ['validation-failed', 'Verification did not pass; see verification_report.json.'],
     ['robots-unavailable', 'robots.txt could not be fetched, so the live build stopped safely.'],

@@ -4,7 +4,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sanitizeEvidenceRef } from './risk-policy.mjs';
+import { SANITIZED_SUMMARY_ONLY, sanitizeEvidenceRef } from './risk-policy.mjs';
 import {
   assertNoForbiddenPatterns,
   scanForbiddenPatterns,
@@ -19,6 +19,8 @@ const MAX_EXTENSION_STAGE_TIMELINE = MAX_BRIDGE_ROUTES * 12;
 const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v6';
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
 const ROUTE_RESULT_MATCH_URL_SYMBOL = Symbol('siteforge.browserBridge.routeResultMatchUrl');
+const API_REPLAY_SAFE_METHODS = new Set(['GET', 'HEAD']);
+const API_REPLAY_CHALLENGE_PATTERN = /(?:captcha|challenge|verify|verification|required login|login required|sign in|signin|log in|forbidden|access denied|permission denied|risk|anti[- ]?bot|blocked)/iu;
 const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -1349,6 +1351,142 @@ function browserBridgeServerPort(server) {
     throw new Error('Browser bridge server did not bind to a TCP port.');
   }
   return address.port;
+}
+
+function replayHeaderValue(headers, name) {
+  if (!headers || typeof headers !== 'object') {
+    return null;
+  }
+  const wanted = String(name).toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (String(key).toLowerCase() === wanted) {
+      return String(Array.isArray(value) ? value.join(', ') : value ?? '').trim();
+    }
+  }
+  return null;
+}
+
+function sanitizeBrowserBridgeApiReplayResult(payload = /** @type {any} */ ({})) {
+  const httpStatus = Number(payload.httpStatus ?? payload.statusCode ?? payload.status ?? payload.response?.status ?? 0) || null;
+  const headers = payload.headers ?? payload.response?.headers ?? {};
+  const contentType = String(payload.contentType ?? replayHeaderValue(headers, 'content-type') ?? '').trim() || null;
+  const probeText = [
+    payload.statusText,
+    payload.reason,
+    payload.reasonCode,
+    payload.responseKind,
+    payload.bodyText,
+    payload.text,
+    typeof payload.body === 'string' ? payload.body.slice(0, 600) : '',
+  ].filter(Boolean).join(' ');
+  const challengeLike = API_REPLAY_CHALLENGE_PATTERN.test(probeText)
+    || [401, 403, 407, 419, 429].includes(Number(httpStatus));
+  const httpOk = httpStatus === null || (httpStatus >= 200 && httpStatus < 300) || httpStatus === 304;
+  const statusText = String(payload.status ?? payload.result ?? '').trim().toLowerCase();
+  const verified = !challengeLike && httpOk && ['verified', 'success', 'passed', ''].includes(statusText);
+  const result = {
+    status: verified ? 'verified' : (statusText === 'skipped' ? 'skipped' : 'failed'),
+    reasonCode: challengeLike ? 'challenge_or_login_wall_response' : (verified ? null : (payload.reasonCode ?? 'api_replay_http_failed')),
+    httpStatus,
+    contentType,
+    responseKind: String(payload.responseKind ?? payload.kind ?? '').trim() || (contentType?.includes('json') ? 'json' : null),
+    responsePolicy: {
+      responseMaterial: SANITIZED_SUMMARY_ONLY,
+      bodyPersisted: false,
+      cookieMaterialPersisted: false,
+      storageMaterialPersisted: false,
+      profileMaterialPersisted: false,
+    },
+  };
+  assertNoForbiddenPatterns(result);
+  return result;
+}
+
+export async function runBrowserBridgeApiReplay({
+  inputUrl,
+  site,
+  endpoint,
+  method = 'GET',
+  options = /** @type {any} */ ({}),
+  robotsPolicy = null,
+} = /** @type {any} */ ({})) {
+  const normalizedMethod = String(method ?? 'GET').trim().toUpperCase();
+  if (!API_REPLAY_SAFE_METHODS.has(normalizedMethod)) {
+    return {
+      status: 'skipped',
+      reasonCode: 'method_not_read_only',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    };
+  }
+  let replayEndpoint;
+  try {
+    replayEndpoint = normalizeUrl(endpoint, site?.rootUrl ?? inputUrl);
+  } catch {
+    return {
+      status: 'skipped',
+      reasonCode: 'endpoint_not_runtime_resolvable',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    };
+  }
+  if (!isInternalUrl(replayEndpoint, site?.allowedDomains ?? [])) {
+    return {
+      status: 'skipped',
+      reasonCode: 'cross_site_endpoint',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    };
+  }
+  if (robotsPolicy && !isUrlAllowedByRobots(replayEndpoint, robotsPolicy)) {
+    return {
+      status: 'skipped',
+      reasonCode: 'robots_disallowed',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    };
+  }
+  if (typeof options.browserBridgeApiReplayProvider !== 'function') {
+    return {
+      status: 'skipped',
+      reasonCode: 'browser_bridge_replay_unavailable',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    };
+  }
+  try {
+    const provided = await options.browserBridgeApiReplayProvider({
+      inputUrl,
+      site,
+      endpoint: replayEndpoint,
+      method: normalizedMethod,
+      authBoundary: 'browser_bridge',
+      runtimeBoundary: 'browser_bridge_page_context_fetch',
+      fetchOptions: {
+        credentials: 'include',
+        method: normalizedMethod,
+        body: null,
+        persistCookies: false,
+        persistStorage: false,
+        persistResponseBody: false,
+        responseMaterial: SANITIZED_SUMMARY_ONLY,
+      },
+    });
+    return sanitizeBrowserBridgeApiReplayResult(provided ?? {});
+  } catch (error) {
+    return {
+      status: 'failed',
+      reasonCode: error?.reasonCode ?? error?.message ?? 'api_replay_failed',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    };
+  }
 }
 
 export async function runBrowserAuthBridge({

@@ -5858,6 +5858,7 @@ test('public SiteForge CLI records local authorized source contracts without tre
               url: rootUrl,
               build: {
                 maxSitemaps: 3,
+                renderJs: false,
               },
               authorizedSources: [
                 {
@@ -5889,6 +5890,7 @@ test('public SiteForge CLI records local authorized source contracts without tre
       });
       const setupPlan = await readJson(setupPaths.setupPlanPath);
       assert.equal(setupPlan.localBuildConfig.build.maxSitemaps, 3);
+      assert.equal(setupPlan.localBuildConfig.build.renderJs, false);
       assert.equal(setupPlan.localBuildConfig.authorizedSources.length, 1);
       assert.equal(setupPlan.localBuildConfig.authorizedSources[0].genericCrawlAllowed, false);
       assert.equal(setupPlan.localBuildConfig.authorizedSources[0].promotionAllowed, false);
@@ -5898,6 +5900,9 @@ test('public SiteForge CLI records local authorized source contracts without tre
       assert.equal(buildReport.summary.authorizedSources.sources[0].kind, 'rss');
       assert.equal(buildReport.summary.authorizedSources.sources[0].genericCrawlAllowed, false);
       assert.equal(buildReport.summary.authorizedSources.sources[0].promotionAllowed, false);
+      assert.equal(await fileExists(path.join(artifactDir, 'discovery', 'network_traces.raw.json')), false);
+      const networkSummary = await readJson(path.join(artifactDir, 'network_traces.json'));
+      assert.equal(networkSummary.sanitizedSummary.apiExtractionDisabledReason, 'render-js-disabled-by-local-config');
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });

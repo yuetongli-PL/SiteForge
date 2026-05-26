@@ -546,6 +546,18 @@ function normalizePositiveInteger(value, flagName) {
   return parseIntegerOption(value, flagName, { min: 1 });
 }
 
+function disableDefaultApiExtraction(next, reason) {
+  next.apiExtractionDisabledReason = next.apiExtractionDisabledReason ?? reason;
+  next.internalRawNetwork = false;
+  if (next.networkExplicit === true) {
+    next.network = true;
+    next.captureNetwork = true;
+  } else {
+    next.network = false;
+    next.captureNetwork = false;
+  }
+}
+
 function applySiteForgeCliDefaults(options) {
   const next = { ...options };
   if (next.manual === true) {
@@ -581,10 +593,17 @@ function applySiteForgeCliDefaults(options) {
     }
     next.renderJs = next.renderJs ?? true;
   }
-  if (next.network === true) {
+
+  if (next.renderJsDisabledExplicit === true || (next.renderJsExplicit === true && next.renderJs === false)) {
+    next.renderJs = false;
+    disableDefaultApiExtraction(next, 'render-js-disabled');
+  } else {
+    next.network = true;
     next.captureNetwork = true;
+    next.internalRawNetwork = true;
+    next.renderJs = next.renderJs ?? true;
   }
-  if (next.internalRawNetwork === true) {
+  if (next.internalRawNetwork === true && next.renderJs !== false) {
     next.network = true;
     next.captureNetwork = true;
     next.renderJs = true;
@@ -683,11 +702,13 @@ export function parseCliArgs(argv) {
       case '--network':
         options.network = true;
         options.captureNetwork = true;
+        options.networkExplicit = true;
         break;
       case '--internal-raw-network':
         options.internalRawNetwork = true;
         options.network = true;
         options.captureNetwork = true;
+        options.networkExplicit = true;
         options.renderJs = true;
         options.renderJsExplicit = true;
         break;
@@ -742,6 +763,7 @@ export function parseCliArgs(argv) {
       case '--no-render-js':
         options.renderJs = false;
         options.renderJsExplicit = true;
+        options.renderJsDisabledExplicit = true;
         break;
       case '--privacy': {
         const { value, nextIndex } = readValue(args, current, index);
@@ -1084,7 +1106,12 @@ async function applyLocalBuildConfig(inputUrl, options, {
     localBuildConfig,
   };
   if (build.deep === true && options.deepExplicit !== true) next.deep = true;
-  if ((build.renderJs === true || build.renderJs === false) && options.renderJsExplicit !== true) next.renderJs = build.renderJs;
+  if ((build.renderJs === true || build.renderJs === false) && options.renderJsExplicit !== true) {
+    next.renderJs = build.renderJs;
+    if (build.renderJs === false) {
+      disableDefaultApiExtraction(next, 'render-js-disabled-by-local-config');
+    }
+  }
   if (Number.isFinite(Number(build.maxDepth)) && options.maxDepthExplicit !== true) next.maxDepth = Math.max(1, Number(build.maxDepth));
   if (Number.isFinite(Number(build.maxPages)) && options.maxPagesExplicit !== true) next.maxPages = Math.max(1, Number(build.maxPages));
   if (Number.isFinite(Number(build.maxSeeds)) && options.maxSeedsExplicit !== true) next.maxSeeds = Math.max(1, Number(build.maxSeeds));
@@ -1130,7 +1157,7 @@ function printHelp() {
   --auto                       Non-interactive build mode (default)
   --manual                     Accepted for compatibility; build still runs without prompts
   --deep                       Request broader/deeper discovery
-  --network                    Save a sanitized network summary only
+  --network                    Keep network/API capture requested; raw traces are enabled by default
   --robots-plan                Print compliant recovery workflows for robots/setup blocks as JSON
   --privacy <mode>             limited | strict
   --explain                    Include explanatory user-facing output

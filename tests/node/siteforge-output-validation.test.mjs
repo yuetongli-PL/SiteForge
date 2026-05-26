@@ -305,6 +305,41 @@ test('output validation accepts a complete graph, capability map, intents, and r
   assert.equal(report.gates.registryLookup.executionPlanId, 'plan:fixture-local:view-homepage');
 });
 
+test('output validation accepts active read-only API request execution plans', async () => {
+  const fixture = createValidationFixture();
+  const capability = fixture.stageResults.discoverCapabilities.capabilities[0];
+  const plan = capability.executionPlan;
+  capability.name = 'read API endpoint /api/feed';
+  capability.action = 'view';
+  capability.object = 'API endpoint';
+  capability.userValue = 'Read API endpoint /api/feed.';
+  capability.apiReplayVerified = true;
+  capability.apiAdapter = {
+    candidateRef: '.siteforge/sites/fixture-local/builds/validation-fixture-build/discovery/api-candidates/candidate-0001.json',
+    adapterDecisionRef: '.siteforge/sites/fixture-local/builds/validation-fixture-build/discovery/api-adapter-decisions/decision-0001.json',
+    replayVerificationRef: '.siteforge/sites/fixture-local/builds/validation-fixture-build/discovery/api-replay-verifications/replay-0001.json',
+    method: 'GET',
+    redactedEndpoint: 'http://127.0.0.1/api/feed',
+    authBoundary: 'none',
+    responsePolicy: 'sanitized_summary_only',
+  };
+  plan.mode = 'limited_read';
+  plan.limitedOutputOnly = true;
+  plan.responseMaterial = 'sanitized_summary_only';
+  plan.steps = [{
+    kind: 'api_request',
+    method: 'GET',
+    endpoint: 'http://127.0.0.1/api/feed',
+    autoExecute: false,
+    responseMaterial: 'sanitized_summary_only',
+  }];
+
+  const report = await validateFixture(fixture);
+
+  assert.equal(report.status, 'passed');
+  assert.equal(report.gates.capabilityMap.activeCapabilityCount, 1);
+});
+
 test('risk policy defaults encode privacy and forced-disabled action boundaries', () => {
   assert.deepEqual(RISK_LEVEL_DEFAULTS.read_public_low.defaultAction, 'enabled');
   assert.deepEqual(RISK_LEVEL_DEFAULTS.read_personal_medium.defaultAction, 'confirm_or_limited');

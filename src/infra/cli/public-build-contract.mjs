@@ -69,7 +69,7 @@ Flags:
   --auto
   --manual               Accepted for compatibility; build still starts immediately without prompts.
   --deep                 Broaden static and sanitized structure discovery.
-  --network              Save only a sanitized network summary where available; raw traces are not persisted.
+  --network              Keep network/API capture requested; raw traces are enabled by default.
   --render-js            Enable rendered-page discovery.
   --no-render-js         Disable rendered-page discovery.
   --robots-plan          On robots/setup block, print a machine-readable compliant remediation plan.

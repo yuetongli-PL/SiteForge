@@ -577,7 +577,7 @@ export function renderSiteForgeUserBuildSummary(result, options = /** @type {any
     }
   }
   staticLines.push(
-    'Safety: public page HTML/DOM/body text may be saved as redacted build evidence; cookies, tokens, Authorization headers, browser profiles, storage material, raw network payloads, and private content are not saved.',
+    'Safety: public page HTML/DOM/body text may be saved as redacted build evidence; raw network traces may be saved for API discovery, while generated skills, registries, and user-facing summaries omit raw cookies, tokens, Authorization headers, browser profiles, storage material, and private content.',
   );
   return `${staticLines.join('\n')}\n`;
 }

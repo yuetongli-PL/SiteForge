@@ -91,6 +91,10 @@ test('build CLI defaults to automatic non-interactive build', () => {
   assert.equal(parsed.options.setupInteractive, false);
   assert.equal(parsed.options.interactive, false);
   assert.equal(parsed.options.disableManualCapabilityProofPrompt, true);
+  assert.equal(parsed.options.network, true);
+  assert.equal(parsed.options.captureNetwork, true);
+  assert.equal(parsed.options.internalRawNetwork, true);
+  assert.equal(parsed.options.renderJs, true);
 
   const manual = parseCliArgs(['https://example.com/', '--manual']);
   assert.equal(manual.options.auto, true);
@@ -99,4 +103,17 @@ test('build CLI defaults to automatic non-interactive build', () => {
   assert.equal(manual.options.interactive, false);
   assert.equal(manual.options.disableManualCapabilityProofPrompt, true);
   assert.equal(manual.options.manualSupplementalCollection, false);
+  assert.equal(manual.options.internalRawNetwork, true);
+});
+
+test('build CLI no-render flag disables default API extraction', () => {
+  const parsed = parseCliArgs(['https://example.com/', '--no-render-js']);
+
+  assert.equal(parsed.options.renderJs, false);
+  assert.equal(parsed.options.renderJsExplicit, true);
+  assert.equal(parsed.options.renderJsDisabledExplicit, true);
+  assert.equal(parsed.options.network, false);
+  assert.equal(parsed.options.captureNetwork, false);
+  assert.equal(parsed.options.internalRawNetwork, false);
+  assert.equal(parsed.options.apiExtractionDisabledReason, 'render-js-disabled');
 });

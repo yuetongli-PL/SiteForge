@@ -11,6 +11,7 @@ import {
   RUNTIME_PROMOTION_CLASSES,
   RUNTIME_PROVIDER_IDS,
   createEmptySkillRegistry,
+  executeApiRequestIntent,
   lookupSkillIntent,
   lookupSkillIntentFromRegistry,
   providerRuntimeMode,
@@ -72,6 +73,137 @@ function passedRecord(overrides = /** @type {any} */ ({})) {
       invocationScore: 1,
     }],
     ...overrides,
+  };
+}
+
+async function writeJsonFile(filePath, payload) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+}
+
+async function writeApiRequestRuntimeFixture(workspace, {
+  endpoint = 'https://fixture.local/api/profile?view=summary',
+  method = 'GET',
+  stepOverrides = {},
+  capabilityOverrides = {},
+  planOverrides = {},
+  recordOverrides = {},
+  runtimeBinding = null,
+} = /** @type {any} */ ({})) {
+  const siteDir = path.join(workspace, '.siteforge', 'sites', 'fixture-local');
+  const skillDir = path.join(siteDir, 'current');
+  const registryPath = path.join(siteDir, 'registry.json');
+  const capabilityId = 'capability:fixture-local:read-api-profile';
+  const executionPlanId = 'plan:fixture-local:read-api-profile';
+  const intentId = 'intent:fixture-local:read-api-profile';
+  const step = {
+    kind: 'api_request',
+    method,
+    endpoint,
+    authBoundary: 'browser_bridge',
+    mode: 'limited_read',
+    autoExecute: false,
+    requiresConfirmation: false,
+    responseMaterial: 'sanitized_summary_only',
+    requiresFreshBridgeEvidence: true,
+    genericHttpRuntimeAllowed: false,
+    runtimeMode: 'browser_bridge_required',
+    ...stepOverrides,
+  };
+  const plan = {
+    id: executionPlanId,
+    capabilityId,
+    mode: 'limited_read',
+    autoExecute: false,
+    requiresConfirmation: false,
+    limitedOutputOnly: true,
+    responseMaterial: 'sanitized_summary_only',
+    runtimeMode: 'browser_bridge_required',
+    requiresFreshBridgeEvidence: true,
+    genericHttpRuntimeAllowed: false,
+    steps: [step],
+    ...planOverrides,
+  };
+  const capability = {
+    id: capabilityId,
+    siteId: 'fixture-local',
+    name: 'read API endpoint /api/profile',
+    action: 'view',
+    safetyLevel: 'read_only',
+    status: 'active',
+    entryNodeIds: ['node:fixture-local:home'],
+    evidence: [{ type: 'network', source: 'discovery/api-candidates/candidate-0001.json' }],
+    confidence: 0.86,
+    runtimeMode: 'browser_bridge_required',
+    promotionClass: 'browser_bridge_runtime',
+    requiresFreshBridgeEvidence: true,
+    genericHttpRuntimeAllowed: false,
+    apiAdapter: {
+      runtime: 'browser_bridge_required',
+      requiresFreshBridgeEvidence: true,
+      genericHttpRuntimeAllowed: false,
+      responsePolicy: 'sanitized_summary_only',
+    },
+    executionPlan: plan,
+    ...capabilityOverrides,
+  };
+  const registry = upsertSkillRegistryRecord(createEmptySkillRegistry('2026-05-27T00:00:00.000Z'), passedRecord({
+    skillId: 'fixture-api-runtime',
+    siteId: 'fixture-local',
+    domains: ['fixture.local'],
+    skillDir: '.siteforge/sites/fixture-local/current',
+    artifactDir: '.siteforge/sites/fixture-local/builds/runtime',
+    verificationStatus: 'bridge_runtime_passed',
+    promotionClass: 'browser_bridge_runtime',
+    runtimeMode: 'browser_bridge_required',
+    requiresFreshBridgeEvidence: true,
+    genericHttpRuntimeAllowed: false,
+    runtimeRequirements: {
+      authMethod: 'browser',
+      requiresFreshBridgeEvidence: true,
+      genericHttpRuntimeAllowed: false,
+    },
+    intents: [{
+      intentId,
+      name: 'read API endpoint /api/profile',
+      capabilityId,
+      capabilityName: 'read API endpoint /api/profile',
+      capabilityAction: 'view',
+      executionPlanId,
+      canonicalUtterance: 'read API endpoint /api/profile',
+      utteranceExamples: ['read API endpoint /api/profile', 'call profile API'],
+      safetyLevel: 'read_only',
+      invocationScore: 1,
+      runtimeMode: 'browser_bridge_required',
+      requiresFreshBridgeEvidence: true,
+      genericHttpRuntimeAllowed: false,
+    }],
+    ...recordOverrides,
+  }), '2026-05-27T00:00:01.000Z');
+
+  await writeJsonFile(registryPath, registry);
+  await writeJsonFile(path.join(skillDir, 'capabilities.json'), {
+    schemaVersion: 1,
+    capabilities: [capability],
+  });
+  await writeJsonFile(path.join(skillDir, 'execution_plans.json'), {
+    schemaVersion: 1,
+    executionPlans: [plan],
+  });
+  if (runtimeBinding) {
+    await writeJsonFile(path.join(siteDir, 'builds', 'runtime', 'runtime', 'api-adapter-bindings.internal.json'), {
+      schemaVersion: 1,
+      artifactFamily: 'siteforge-api-adapter-runtime-bindings',
+      internalOnly: true,
+      containsSensitiveMaterial: true,
+      bindings: [runtimeBinding],
+    });
+  }
+  return {
+    registryPath,
+    capability,
+    plan,
+    step,
   };
 }
 
@@ -250,6 +382,186 @@ test('runtime registry lookup returns browser bridge runtime restrictions', () =
   assert.equal(foundLookup.genericHttpRuntimeAllowed, false);
   assert.equal(foundLookup.coverageStatus, 'partial');
   assert.equal(foundLookup.runtimeRequirements.capturedRouteCount, 2);
+});
+
+test('api_request runtime executes only through fresh browser bridge evidence', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-runtime-'));
+  try {
+    const { registryPath } = await writeApiRequestRuntimeFixture(workspace);
+    let request = /** @type {any} */ (null);
+    const result = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: {
+        status: 'verified',
+        capturedAt: '2026-05-27T00:00:00.000Z',
+      },
+      now: new Date('2026-05-27T00:01:00.000Z'),
+      browserBridgeFetch: async (input) => {
+        request = input;
+        return {
+          statusCode: 200,
+          headers: { 'content-type': 'application/json' },
+          body: {
+            items: [{ id: 1, name: 'Ada', access_token: 'synthetic-secret-token' }],
+            nextToken: 'synthetic-secret-token',
+          },
+        };
+      },
+    });
+
+    assert.equal(result.status, 'success');
+    assert.equal(result.runtimeMode, 'browser_bridge_required');
+    assert.equal(result.method, 'GET');
+    assert.equal(result.response.responseMaterial, 'sanitized_summary_only');
+    assert.equal(result.response.bodyPersisted, false);
+    assert.equal(result.runtimePolicy.genericHttpRuntimeAllowed, false);
+    assert.deepEqual(request, {
+      endpoint: 'https://fixture.local/api/profile?view=summary',
+      method: 'GET',
+      credentials: 'include',
+      body: null,
+      persistCookies: false,
+      persistStorage: false,
+      persistResponseBody: false,
+      responseMaterial: 'sanitized_summary_only',
+    });
+    const serialized = JSON.stringify(result);
+    assert.equal(serialized.includes('synthetic-secret-token'), false);
+    assert.equal(serialized.includes('access_token'), false);
+    assert.equal(serialized.includes('nextToken'), false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('api_request runtime resolves opaque runtime binding before browser bridge fetch', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-runtime-binding-'));
+  try {
+    const { registryPath } = await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'structure-ref:redacted-api-profile',
+      stepOverrides: { runtimeBindingId: 'api-binding-1' },
+      runtimeBinding: {
+        id: 'api-binding-1',
+        method: 'GET',
+        endpoint: 'https://fixture.local/api/profile?view=summary',
+        redactedEndpoint: 'structure-ref:redacted-api-profile',
+        authBoundary: 'browser_bridge',
+        runtimeMode: 'browser_bridge_required',
+        responseMaterial: 'sanitized_summary_only',
+      },
+      recordOverrides: {
+        intents: [{
+          intentId: 'intent:fixture-local:read-api-profile',
+          name: 'read API endpoint /api/profile',
+          capabilityId: 'capability:fixture-local:read-api-profile',
+          capabilityName: 'read API endpoint /api/profile',
+          capabilityAction: 'view',
+          executionPlanId: 'plan:fixture-local:read-api-profile',
+          runtimeBindingId: 'api-binding-1',
+          canonicalUtterance: 'read API endpoint /api/profile',
+          utteranceExamples: ['read API endpoint /api/profile'],
+          safetyLevel: 'read_only',
+          invocationScore: 1,
+          runtimeMode: 'browser_bridge_required',
+          requiresFreshBridgeEvidence: true,
+          genericHttpRuntimeAllowed: false,
+        }],
+      },
+    });
+    let endpoint = null;
+    const result = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: true,
+      browserBridgeFetch: async (request) => {
+        endpoint = request.endpoint;
+        return {
+          statusCode: 200,
+          headers: { 'content-type': 'application/json' },
+          body: { items: [{ id: 1 }] },
+        };
+      },
+    });
+
+    assert.equal(result.status, 'success');
+    assert.equal(result.runtimeBindingId, 'api-binding-1');
+    assert.equal(endpoint, 'https://fixture.local/api/profile?view=summary');
+    assert.equal(JSON.stringify(result).includes('structure-ref:redacted-api-profile'), false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('api_request runtime blocks stale bridge evidence and unsafe plans before fetch', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-runtime-guards-'));
+  try {
+    const { registryPath } = await writeApiRequestRuntimeFixture(workspace);
+    let fetchCalled = false;
+    const stale = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: {
+        status: 'verified',
+        capturedAt: '2026-05-27T00:00:00.000Z',
+      },
+      now: new Date('2026-05-27T00:10:01.000Z'),
+      browserBridgeFetch: async () => {
+        fetchCalled = true;
+        return { statusCode: 200, body: {} };
+      },
+    });
+
+    assert.equal(stale.status, 'blocked');
+    assert.equal(stale.reasonCode, 'fresh_browser_bridge_evidence_required');
+    assert.equal(fetchCalled, false);
+
+    await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'https://fixture.local/api/update-profile',
+      method: 'POST',
+      stepOverrides: { body: { name: 'Ada' } },
+    });
+    const post = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: true,
+      browserBridgeFetch: async () => {
+        fetchCalled = true;
+        return { statusCode: 200, body: {} };
+      },
+    });
+    assert.equal(post.status, 'blocked');
+    assert.equal(post.reasonCode, 'method_not_read_only');
+    assert.equal(fetchCalled, false);
+
+    await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'https://evil.example/api/profile',
+    });
+    const crossSite = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: true,
+      browserBridgeFetch: async () => {
+        fetchCalled = true;
+        return { statusCode: 200, body: {} };
+      },
+    });
+    assert.equal(crossSite.status, 'blocked');
+    assert.equal(crossSite.reasonCode, 'cross_site_endpoint');
+    assert.equal(fetchCalled, false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('runtime registry lookup does not resolve unrelated utterances from invocation score alone', () => {

@@ -90,9 +90,11 @@ function createCandidate(overrides = /** @type {any} */ ({})) {
   };
 }
 
-function createFakeCdpClient() {
+function createFakeCdpClient({ responseBodies = /** @type {any} */ ({}) } = /** @type {any} */ ({})) {
   const listeners = new Map();
+  const bodyMap = responseBodies instanceof Map ? responseBodies : new Map(Object.entries(responseBodies));
   return {
+    sendCalls: [],
     on(eventName, handler) {
       listeners.set(eventName, handler);
       return () => {
@@ -101,6 +103,13 @@ function createFakeCdpClient() {
     },
     emit(eventName, event) {
       listeners.get(eventName)?.(event);
+    },
+    async send(method, params, sessionId) {
+      this.sendCalls.push({ method, params, sessionId });
+      if (method === 'Network.getResponseBody') {
+        return bodyMap.get(params?.requestId) ?? { body: '', base64Encoded: false };
+      }
+      return {};
     },
   };
 }
@@ -460,6 +469,169 @@ test('Browser network tracker exposes bounded in-memory response summaries witho
     },
   }));
   assert.deepEqual(session.getObservedNetworkResponseSummaries({ siteKey: 'example' }), []);
+});
+
+test('Browser network tracker keeps raw API traces disabled by default', async () => {
+  const client = createFakeCdpClient({
+    responseBodies: {
+      'synthetic-request-1': { body: '{"secret":"synthetic-response-token"}', base64Encoded: false },
+    },
+  });
+  const tracker = createNetworkTracker(client, 'session-1');
+  const session = new BrowserSession({
+    client,
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    networkTracker: tracker,
+  });
+
+  client.emit('Network.requestWillBeSent', createRequestWillBeSentEvent());
+  client.emit('Network.responseReceived', createResponseReceivedEvent());
+  client.emit('Network.loadingFinished', {
+    params: {
+      requestId: 'synthetic-request-1',
+      encodedDataLength: 42,
+    },
+  });
+  await session.waitForRawNetworkBodies();
+
+  assert.deepEqual(session.getRawNetworkTraces(), []);
+  assert.equal(client.sendCalls.length, 0);
+  tracker.dispose();
+});
+
+test('Browser network tracker captures internal raw JSON API request and response material', async () => {
+  const client = createFakeCdpClient({
+    responseBodies: {
+      'synthetic-request-1': { body: '{"ok":true,"secret":"synthetic-response-token"}', base64Encoded: false },
+    },
+  });
+  const tracker = createNetworkTracker(client, 'session-1', {
+    rawNetworkCapture: true,
+    maxRawNetworkTraces: 10,
+    maxRawResponseBodyBytes: 1024,
+  });
+  const session = new BrowserSession({
+    client,
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    networkTracker: tracker,
+  });
+
+  client.emit('Network.requestWillBeSent', createRequestWillBeSentEvent());
+  client.emit('Network.responseReceived', createResponseReceivedEvent());
+  client.emit('Network.loadingFinished', {
+    params: {
+      requestId: 'synthetic-request-1',
+      encodedDataLength: 128,
+    },
+  });
+  await session.waitForRawNetworkBodies();
+
+  const traces = session.getRawNetworkTraces();
+  assert.equal(traces.length, 1);
+  assert.equal(traces[0].request.method, 'POST');
+  assert.equal(traces[0].request.headers.authorization, 'Bearer synthetic-network-token');
+  assert.match(traces[0].request.body, /synthetic-network-csrf/u);
+  assert.equal(traces[0].response.status, 200);
+  assert.equal(traces[0].response.headers['content-type'], 'application/json');
+  assert.equal(traces[0].responseBody.body.includes('synthetic-response-token'), true);
+  assert.equal(traces[0].responseBody.truncated, false);
+  assert.equal(traces[0].responseBodyStatus, 'captured');
+  assert.deepEqual(client.sendCalls.map((call) => call.method), ['Network.getResponseBody']);
+  tracker.dispose();
+});
+
+test('Browser network tracker truncates oversized internal raw response bodies', async () => {
+  const client = createFakeCdpClient({
+    responseBodies: {
+      'synthetic-request-1': { body: '{"items":["abcdef","ghijkl"]}', base64Encoded: false },
+    },
+  });
+  const tracker = createNetworkTracker(client, 'session-1', {
+    rawNetworkCapture: true,
+    maxRawNetworkTraces: 10,
+    maxRawResponseBodyBytes: 12,
+  });
+  const session = new BrowserSession({
+    client,
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    networkTracker: tracker,
+  });
+
+  client.emit('Network.requestWillBeSent', createRequestWillBeSentEvent());
+  client.emit('Network.responseReceived', createResponseReceivedEvent());
+  client.emit('Network.loadingFinished', {
+    params: {
+      requestId: 'synthetic-request-1',
+      encodedDataLength: 128,
+    },
+  });
+  await session.waitForRawNetworkBodies();
+
+  const [trace] = session.getRawNetworkTraces();
+  assert.equal(trace.responseBody.truncated, true);
+  assert.equal(Buffer.byteLength(trace.responseBody.body, 'utf8') <= 12, true);
+  assert.equal(trace.responseBody.bodySizeBytes, Buffer.byteLength('{"items":["abcdef","ghijkl"]}', 'utf8'));
+  assert.equal(trace.responseBodyStatus, 'captured_truncated');
+  tracker.dispose();
+});
+
+test('Browser network tracker skips binary and media raw response bodies', async () => {
+  const client = createFakeCdpClient({
+    responseBodies: {
+      'synthetic-request-1': { body: 'synthetic-binary-body', base64Encoded: false },
+    },
+  });
+  const tracker = createNetworkTracker(client, 'session-1', {
+    rawNetworkCapture: true,
+    maxRawNetworkTraces: 10,
+  });
+  const session = new BrowserSession({
+    client,
+    sessionId: 'session-1',
+    targetId: 'target-1',
+    networkTracker: tracker,
+  });
+
+  client.emit('Network.requestWillBeSent', createRequestWillBeSentEvent({
+    params: {
+      requestId: 'synthetic-request-1',
+      type: 'Fetch',
+      request: {
+        method: 'GET',
+        url: 'https://example.invalid/api/image-proxy',
+        headers: {
+          accept: 'image/png',
+        },
+      },
+    },
+  }));
+  client.emit('Network.responseReceived', createResponseReceivedEvent({
+    params: {
+      response: {
+        status: 200,
+        mimeType: 'image/png',
+        headers: {
+          'content-type': 'image/png',
+        },
+      },
+    },
+  }));
+  client.emit('Network.loadingFinished', {
+    params: {
+      requestId: 'synthetic-request-1',
+      encodedDataLength: 128,
+    },
+  });
+  await session.waitForRawNetworkBodies();
+
+  const [trace] = session.getRawNetworkTraces();
+  assert.equal(trace.responseBody, null);
+  assert.equal(trace.responseBodyStatus, 'skipped_non_text_or_non_api');
+  assert.equal(client.sendCalls.length, 0);
+  tracker.dispose();
 });
 
 test('Browser network tracker records SSE without blocking network idle', async () => {

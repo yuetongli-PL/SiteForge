@@ -18,6 +18,9 @@ import {
   prepareRedactedArtifactJsonWithAudit,
 } from '../../../domain/sessions/security-guard.mjs';
 import {
+  writeApiCandidateArtifactsFromObservedRequests,
+} from '../../../domain/capabilities/api-discovery.mjs';
+import {
   ensureBuildDirectories,
   readJsonIfExists,
   writeArtifactJson,
@@ -4720,6 +4723,11 @@ async function collectPublicRenderedStructurePagesWithBrowser(context, targets, 
       viewport: { width: 1280, height: 900, deviceScaleFactor: 1 },
       fullPage: false,
       sessionOpenRetries: 1,
+      networkCapture: {
+        rawNetworkCapture: context.options.internalRawNetwork === true,
+        maxRawNetworkTraces: context.options.rawNetworkTraceLimit ?? 100,
+        maxRawResponseBodyBytes: context.options.rawNetworkBodyMaxBytes ?? 256 * 1024,
+      },
     }, {
       userDataDirPrefix: 'siteforge-public-render-',
       userDataDir: null,
@@ -4741,6 +4749,16 @@ async function collectPublicRenderedStructurePagesWithBrowser(context, targets, 
       } catch (error) {
         warnings.push(`public rendered collection skipped ${sanitizeEvidenceRef(target) ?? '<url>'}: ${error?.code ?? error?.message ?? 'render_failed'}`);
       }
+    }
+    if (context.options.internalRawNetwork === true) {
+      await session.waitForRawNetworkBodies?.();
+      const siteKey = context.site?.id ?? 'site';
+      context.internalRawNetworkCapture = {
+        status: 'captured',
+        rawTraces: session.getRawNetworkTraces?.({ limit: 100 }) ?? [],
+        observedRequests: session.getObservedNetworkRequests?.({ siteKey, limit: 100 }) ?? [],
+        observedResponseSummaries: session.getObservedNetworkResponseSummaries?.({ siteKey, limit: 100 }) ?? [],
+      };
     }
     return pages;
   } catch (error) {
@@ -4968,11 +4986,102 @@ async function discoverInteractionsStage(context, stageResults) {
 
 async function captureNetworkTracesStage(context) {
   const networkRequested = context.policy.captureNetwork === true || context.options.network === true;
+  const internalRawRequested = context.options.internalRawNetwork === true;
   const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
+  const internalCapture = context.internalRawNetworkCapture ?? {};
+  const rawTraces = Array.isArray(internalCapture.rawTraces) ? internalCapture.rawTraces : [];
+  const observedRequests = Array.isArray(internalCapture.observedRequests) ? internalCapture.observedRequests : [];
+  const observedResponseSummaries = Array.isArray(internalCapture.observedResponseSummaries)
+    ? internalCapture.observedResponseSummaries
+    : [];
+  const rawTraceCount = rawTraces.length;
+  const rawResponseBodyCount = rawTraces.filter((trace) => trace?.responseBody?.body !== null && trace?.responseBody?.body !== undefined).length;
+  const rawTruncatedBodyCount = rawTraces.filter((trace) => trace?.responseBody?.truncated === true).length;
+  const rawSkippedBodyCount = rawTraces.filter((trace) => String(trace?.responseBodyStatus ?? '').startsWith('skipped')).length;
+  let rawNetworkPath = null;
+  let apiCandidateArtifacts = /** @type {any[]} */ ([]);
+  let apiCandidateSummary = {
+    status: 'not_requested',
+    count: 0,
+    artifacts: [],
+    redactionAuditArtifacts: [],
+  };
+  const warnings = /** @type {string[]} */ ([]);
+
+  if (internalRawRequested) {
+    const rawPayload = {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      artifactFamily: 'siteforge-internal-raw-network-traces',
+      buildId: context.buildId,
+      siteId: context.site.id,
+      internalOnly: true,
+      redactionApplied: false,
+      containsSensitiveMaterial: true,
+      captureScope: 'api-json-text',
+      limits: {
+        maxTraces: 100,
+        maxResponseBodyBytes: 256 * 1024,
+      },
+      captureStatus: internalCapture.status ?? 'unavailable',
+      traces: rawTraces,
+      summary: {
+        traces: rawTraceCount,
+        responseBodies: rawResponseBodyCount,
+        truncatedBodies: rawTruncatedBodyCount,
+        skippedBodies: rawSkippedBodyCount,
+      },
+    };
+    rawNetworkPath = await writeArtifactJson(context, path.join('discovery', 'network_traces.raw.json'), rawPayload);
+    warnings.push('Internal raw network capture was enabled; raw trace artifacts may contain sensitive material.');
+
+    if (observedRequests.length) {
+      try {
+        apiCandidateArtifacts = await writeApiCandidateArtifactsFromObservedRequests(observedRequests, {
+          outputDir: path.join(context.artifactDir, 'discovery', 'api-candidates'),
+          redactionAuditDir: path.join(context.artifactDir, 'discovery', 'api-candidate-redaction-audits'),
+        });
+        apiCandidateSummary = {
+          status: 'written',
+          count: apiCandidateArtifacts.length,
+          artifacts: apiCandidateArtifacts.map((artifact) => relativeReportPath(context.cwd, artifact.artifactPath)),
+          redactionAuditArtifacts: apiCandidateArtifacts.map((artifact) => relativeReportPath(context.cwd, artifact.redactionAuditPath)),
+        };
+      } catch (error) {
+        apiCandidateSummary = {
+          status: 'failed',
+          count: 0,
+          artifacts: [],
+          redactionAuditArtifacts: [],
+          reason: error?.reasonCode ?? error?.message ?? 'api_candidate_generation_failed',
+        };
+        warnings.push(`api-candidate-generation:${apiCandidateSummary.reason}`);
+      }
+    } else {
+      apiCandidateSummary = {
+        status: 'empty',
+        count: 0,
+        artifacts: [],
+        redactionAuditArtifacts: [],
+      };
+    }
+  }
+
   const sanitizedSummary = {
     requested: networkRequested,
-    rawTracesPersisted: false,
-    savedSummaryOnly: true,
+    internalRawNetworkEnabled: internalRawRequested,
+    rawTracesPersisted: Boolean(rawNetworkPath),
+    savedSummaryOnly: !rawNetworkPath,
+    rawArtifactPresent: Boolean(rawNetworkPath),
+    rawArtifactPath: rawNetworkPath ? relativeReportPath(context.cwd, rawNetworkPath) : null,
+    rawTraceCount,
+    rawResponseBodyCount,
+    rawTruncatedBodyCount,
+    rawSkippedBodyCount,
+    observedRequestCount: observedRequests.length,
+    observedResponseSummaryCount: observedResponseSummaries.length,
+    apiCandidateArtifacts: apiCandidateSummary.artifacts,
+    apiCandidateCount: apiCandidateSummary.count,
+    apiCandidateStatus: apiCandidateSummary.status,
     sourceDiagnosticCount: sourceDiagnostics.length,
     observedStatusCodes: uniqueSortedStrings(sourceDiagnostics.map((item) => item?.statusCode).filter(Boolean)),
     observedHosts: uniqueSortedStrings(sourceDiagnostics.map((item) => {
@@ -4987,14 +5096,42 @@ async function captureNetworkTracesStage(context) {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
-    status: 'skipped',
-    reason: networkRequested
-      ? 'Network summary requested; raw network traces were not captured or persisted.'
-      : 'Network summary was not requested; raw network tracing is not part of the public build path.',
+    status: internalRawRequested ? 'success' : 'skipped',
+    reason: internalRawRequested
+      ? 'Internal raw network capture was enabled; public summary excludes raw headers, bodies, cookies, and tokens.'
+      : networkRequested
+        ? 'Network summary requested; raw network traces were not captured or persisted.'
+        : 'Network summary was not requested; raw network tracing is not part of the public build path.',
     traces: [],
+    observedRequests: [],
+    observedResponseSummaries: [],
+    apiCandidateArtifacts: apiCandidateSummary.artifacts,
+    apiCandidateRedactionAuditArtifacts: apiCandidateSummary.redactionAuditArtifacts,
     sanitizedSummary,
   };
   const networkPath = await writeArtifactJson(context, 'network_traces.json', payload);
+  if (internalRawRequested) {
+    return {
+      status: 'success',
+      warnings,
+      artifactPaths: {
+        networkTraces: networkPath,
+        rawNetworkTraces: rawNetworkPath,
+        apiCandidateArtifacts: apiCandidateSummary.artifacts,
+      },
+      summary: {
+        traces: 0,
+        rawTraces: rawTraceCount,
+        rawTracesPersisted: Boolean(rawNetworkPath),
+        rawArtifactPath: rawNetworkPath ? relativeReportPath(context.cwd, rawNetworkPath) : null,
+        rawResponseBodyCount,
+        rawTruncatedBodyCount,
+        apiCandidateCount: apiCandidateSummary.count,
+        apiCandidateArtifacts: apiCandidateSummary.artifacts,
+        sanitizedSummary,
+      },
+    };
+  }
   return {
     status: 'skipped',
     reasonCode: 'dynamic-unsupported',
@@ -10288,6 +10425,8 @@ function summarizeNodes(stageResults = /** @type {any} */ ({})) {
 function summarizePrivacy(context, report) {
   const privacyMode = context.options?.privacyMode ?? context.options?.privacy ?? 'limited';
   const networkRequested = context.policy?.captureNetwork === true || context.options?.network === true;
+  const rawNetworkTracesPersisted = report.summary?.network?.sanitizedSummary?.rawTracesPersisted === true
+    || report.summary?.network?.rawTracesPersisted === true;
   const rawPageMaterialPages = Number(report.summary?.rawPageMaterial?.pages ?? 0);
   return {
     mode: privacyMode,
@@ -10298,10 +10437,10 @@ function summarizePrivacy(context, report) {
     public_page_material_pages: rawPageMaterialPages,
     public_page_material_redacted: rawPageMaterialPages > 0,
     private_page_material_persisted: false,
-    raw_network_traces_persisted: false,
+    raw_network_traces_persisted: rawNetworkTracesPersisted,
     sanitized_reports: true,
     network_capture_requested: networkRequested,
-    network_summary_only: networkRequested,
+    network_summary_only: networkRequested && !rawNetworkTracesPersisted,
     redaction_required: true,
     warning_codes: report.warningCodes ?? [],
   };
@@ -10320,6 +10459,9 @@ function buildUserFacingWarnings(report, resultStatus, context = null, partialSu
     )
   ) {
     warnings.push('Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.');
+  }
+  if (context?.options?.internalRawNetwork === true) {
+    warnings.push('Internal raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.');
   }
   if (resultStatus === 'failed' && report.reason) {
     warnings.push(report.reason);
@@ -10744,7 +10886,9 @@ function buildUserReport(context, stageResults, report) {
       rawPageMaterialSummary?.pages
         ? `已保存 ${rawPageMaterialSummary.pages} 个公开页面的受控页面材料，并已脱敏敏感赋值和脚本正文。`
         : '未保存公开页面原始材料。',
-      '没有保存 cookie、token、Authorization header、浏览器 profile、storage 材料、原始网络 payload 或私密正文。',
+      context.options?.internalRawNetwork === true
+        ? 'Internal raw network capture was enabled; user report omits raw artifact paths and raw contents.'
+        : '没有保存 cookie、token、Authorization header、浏览器 profile、storage 材料、原始网络 payload 或私密正文。',
     ].filter(Boolean),
     debug_candidate_summary: {
       count: debugOnlyCapabilities.length,
@@ -10817,10 +10961,16 @@ function summarizeStageRecords(stageRecords = /** @type {any} */ ({})) {
 function sanitizedNetworkSummary(context, stageResults = /** @type {any} */ ({})) {
   const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
   const networkStage = stageResults.captureNetworkTraces ?? null;
+  const stageSummary = networkStage?.summary?.sanitizedSummary ?? networkStage?.summary ?? null;
   return {
     requested: context.policy?.captureNetwork === true || context.options?.network === true,
-    raw_traces_persisted: false,
-    saved_summary_only: true,
+    raw_traces_persisted: stageSummary?.rawTracesPersisted === true,
+    saved_summary_only: stageSummary?.savedSummaryOnly !== false,
+    raw_artifact_path: stageSummary?.rawArtifactPath ?? null,
+    raw_trace_count: stageSummary?.rawTraceCount ?? stageSummary?.rawTraces ?? 0,
+    raw_truncated_body_count: stageSummary?.rawTruncatedBodyCount ?? 0,
+    api_candidate_count: stageSummary?.apiCandidateCount ?? 0,
+    api_candidate_artifacts: stageSummary?.apiCandidateArtifacts ?? [],
     source_diagnostic_count: sourceDiagnostics.length,
     observed_status_codes: uniqueSortedStrings(sourceDiagnostics.map((item) => item?.statusCode).filter(Boolean)),
     observed_hosts: uniqueSortedStrings(sourceDiagnostics.map((item) => {
@@ -12438,6 +12588,7 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       coverage,
       auth: authSummary,
       robots: stageResults.discoverSeeds?.robots ?? null,
+      network: stageResults.captureNetworkTraces?.summary ?? null,
       authorizedSources: authorizedSourcesSummaryForReport(context),
       rawPageMaterial: stageResults.crawlStatic?.rawPageMaterial?.summary ?? null,
       activeCapabilities: activeCapabilities.length,

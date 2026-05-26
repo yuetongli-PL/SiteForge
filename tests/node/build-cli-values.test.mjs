@@ -75,6 +75,15 @@ test('build CLI parses robots remediation plan flag', () => {
   assert.equal(parsed.options.json, true);
 });
 
+test('internal build entrypoint parses hidden raw network flag', () => {
+  const parsed = parseCliArgs(['https://example.com/', '--internal-raw-network']);
+  assert.equal(parsed.options.internalRawNetwork, true);
+  assert.equal(parsed.options.network, true);
+  assert.equal(parsed.options.captureNetwork, true);
+  assert.equal(parsed.options.renderJs, true);
+  assert.equal(parsed.options.renderJsExplicit, true);
+});
+
 test('build CLI defaults to automatic non-interactive build', () => {
   const parsed = parseCliArgs(['https://example.com/']);
   assert.equal(parsed.options.auto, true);

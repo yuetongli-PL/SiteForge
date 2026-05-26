@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
+import { PUBLIC_BUILD_HELP } from '../../src/infra/cli/public-build-contract.mjs';
 import {
   buildCliCommand,
   downloadCliCommand,
@@ -40,6 +41,14 @@ test('command map refuses unsupported public build flags', () => {
       new RegExp(flag, 'u'),
     );
   }
+});
+
+test('public build facade keeps internal raw network flag hidden and rejected', () => {
+  assert.throws(
+    () => resolveCliDispatch(['build', 'https://example.com/', '--internal-raw-network']),
+    /Unknown flag: --internal-raw-network/u,
+  );
+  assert.doesNotMatch(PUBLIC_BUILD_HELP, /--internal-raw-network/u);
 });
 
 test('download command map uses internal site action entrypoints for site-specific routes', () => {

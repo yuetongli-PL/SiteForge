@@ -25,9 +25,15 @@ const SESSION_OPEN_RETRY_DELAY_MS = 250;
 const DEFAULT_SESSION_OPEN_RETRIES = 2;
 const DOM_QUIET_RECOVERY_READY_TIMEOUT_MS = 2_000;
 const DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT = 100;
+const DEFAULT_RAW_NETWORK_TRACE_LIMIT = 100;
+const DEFAULT_RAW_NETWORK_BODY_MAX_BYTES = 256 * 1024;
 const PENDING_NETWORK_CAPTURE_SITE_KEY = 'pending-site';
 const RESOURCE_HINT_API_PATTERN = /(?:\/api(?:\/|$|[?#])|\/graphql\b|graphql|\.json(?:$|[?#])|\/ajax\/|\/xhr\/|\/v\d+\/|\/web\/v\d+\/)/iu;
 const RESOURCE_HINT_INITIATOR_TYPES = new Set(['beacon', 'eventsource', 'fetch', 'xmlhttprequest']);
+const RAW_NETWORK_API_RESOURCE_TYPES = new Set(['eventsource', 'fetch', 'xhr', 'xmlhttprequest']);
+const RAW_NETWORK_TEXT_MIME_PATTERN = /(?:json|text\/|javascript|ecmascript|xml|x-www-form-urlencoded|graphql)/iu;
+const RAW_NETWORK_SKIP_MIME_PATTERN = /(?:^image\/|^video\/|^audio\/|^font\/|application\/octet-stream|application\/pdf|mpegurl|dash\+xml)/iu;
+const RAW_NETWORK_SKIP_URL_PATTERN = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp|mp4|m4v|mov|webm|mp3|aac|wav|ogg|flac|woff2?|ttf|otf|eot|pdf|m3u8|mpd)(?:$|[?#])/iu;
 const ROUTE_HINT_PATTERN = /(?:^\/(?!\/)|\/(?:app|detail|item|search|profile|user|work|works|book|video|author|creator|tag|category|settings|login|vip|paywall|checkout|account)(?:\/|$|[?#])|[?&](?:route|page|tab|view)=|route|router|\.m?js(?:$|[?#]))/iu;
 
 function formatEvaluationError(result, fallback) {
@@ -125,6 +131,68 @@ function safeApiHintMethod(value) {
   return /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/u.test(method) ? method : 'GET';
 }
 
+function rawHeaderValue(headers = /** @type {any} */ ({}), name) {
+  const wanted = String(name ?? '').toLowerCase();
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (String(key).toLowerCase() === wanted) {
+      return Array.isArray(value) ? value.join(', ') : String(value ?? '');
+    }
+  }
+  return '';
+}
+
+function utf8ByteLength(value) {
+  return Buffer.byteLength(String(value ?? ''), 'utf8');
+}
+
+function truncateRawNetworkText(value, maxBytes) {
+  const text = String(value ?? '');
+  const totalBytes = utf8ByteLength(text);
+  if (totalBytes <= maxBytes) {
+    return { text, totalBytes, truncated: false };
+  }
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (utf8ByteLength(text.slice(0, mid)) <= maxBytes) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return {
+    text: text.slice(0, low),
+    totalBytes,
+    truncated: true,
+  };
+}
+
+function shouldStartRawNetworkTrace(params = /** @type {any} */ ({})) {
+  const request = params.request ?? {};
+  const url = String(request.url ?? params.url ?? '').trim();
+  if (!url || RAW_NETWORK_SKIP_URL_PATTERN.test(url)) {
+    return false;
+  }
+  const resourceType = String(params.type ?? '').trim().toLowerCase();
+  const accept = rawHeaderValue(request.headers, 'accept');
+  return RAW_NETWORK_API_RESOURCE_TYPES.has(resourceType)
+    || RESOURCE_HINT_API_PATTERN.test(url)
+    || RAW_NETWORK_TEXT_MIME_PATTERN.test(accept);
+}
+
+function shouldCaptureRawResponseBody(trace = /** @type {any} */ ({})) {
+  const url = String(trace.response?.url ?? trace.request?.url ?? '').trim();
+  const mimeType = String(trace.response?.mimeType ?? '').trim();
+  const resourceType = String(trace.resourceType ?? '').trim().toLowerCase();
+  if (!url || RAW_NETWORK_SKIP_URL_PATTERN.test(url) || RAW_NETWORK_SKIP_MIME_PATTERN.test(mimeType)) {
+    return false;
+  }
+  return RAW_NETWORK_TEXT_MIME_PATTERN.test(mimeType)
+    || RAW_NETWORK_API_RESOURCE_TYPES.has(resourceType)
+    || RESOURCE_HINT_API_PATTERN.test(url);
+}
+
 function isLikelyRouteHint(value) {
   const text = String(value ?? '').trim();
   if (!text) {
@@ -152,14 +220,24 @@ function boundedRouteHintText(value) {
 export function createNetworkTracker(client, sessionId, {
   maxObservedRequests = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT,
   maxObservedResponseSummaries = maxObservedRequests,
+  rawNetworkCapture = false,
+  maxRawNetworkTraces = rawNetworkCapture ? DEFAULT_RAW_NETWORK_TRACE_LIMIT : 0,
+  maxRawResponseBodyBytes = DEFAULT_RAW_NETWORK_BODY_MAX_BYTES,
 } = /** @type {any} */ ({})) {
   const inflight = new Set();
   const observedRequests = /** @type {any[]} */ ([]);
   const observedRequestsById = new Map();
   const observedResponseSummaries = /** @type {any[]} */ ([]);
+  const rawTraces = /** @type {any[]} */ ([]);
+  const rawTracesById = new Map();
+  const rawBodyPromises = new Set();
   let lastActivityAt = Date.now();
   const observedRequestLimit = Math.max(0, Number(maxObservedRequests) || 0);
   const observedResponseSummaryLimit = Math.max(0, Number(maxObservedResponseSummaries) || 0);
+  const rawTraceLimit = rawNetworkCapture === true
+    ? Math.max(0, Number(maxRawNetworkTraces) || 0)
+    : 0;
+  const rawResponseBodyMaxBytes = Math.max(0, Number(maxRawResponseBodyBytes) || 0);
 
   const markActivity = () => {
     lastActivityAt = Date.now();
@@ -188,6 +266,48 @@ export function createNetworkTracker(client, sessionId, {
         }
       }
     }
+  };
+
+  const appendRawTraceRequest = (event) => {
+    if (rawTraceLimit <= 0 || rawTraces.length >= rawTraceLimit) {
+      return;
+    }
+    const { params } = event ?? {};
+    if (!params?.requestId || !shouldStartRawNetworkTrace(params)) {
+      return;
+    }
+    const request = params.request ?? {};
+    const requestBody = request.postData === undefined ? null : String(request.postData);
+    const requestBodyCapture = requestBody === null
+      ? { text: null, totalBytes: 0, truncated: false }
+      : truncateRawNetworkText(requestBody, rawResponseBodyMaxBytes);
+    const trace = {
+      requestId: params.requestId,
+      resourceType: params.type ?? null,
+      wallTime: params.wallTime ?? null,
+      timestamp: params.timestamp ?? null,
+      documentURL: params.documentURL ?? null,
+      initiator: cloneJson(params.initiator ?? null),
+      request: {
+        method: request.method ?? null,
+        url: request.url ?? params.url ?? null,
+        headers: cloneJson(request.headers ?? {}),
+        body: requestBodyCapture.text,
+        bodySizeBytes: requestBodyCapture.totalBytes,
+        truncated: requestBodyCapture.truncated,
+        hasPostData: request.hasPostData === true || requestBody !== null,
+      },
+      response: null,
+      responseBody: null,
+      responseBodyStatus: 'pending',
+      loading: {
+        status: 'pending',
+        encodedDataLength: null,
+        failedText: null,
+      },
+    };
+    rawTraces.push(trace);
+    rawTracesById.set(params.requestId, trace);
   };
 
   const appendObservedResponseSummary = (event) => {
@@ -220,6 +340,83 @@ export function createNetworkTracker(client, sessionId, {
     }
   };
 
+  const appendRawTraceResponse = (event) => {
+    const { params } = event ?? {};
+    const trace = params?.requestId ? rawTracesById.get(params.requestId) : null;
+    if (!trace) {
+      return;
+    }
+    const response = params.response ?? {};
+    trace.response = {
+      url: response.url ?? trace.request?.url ?? null,
+      status: response.status ?? null,
+      statusText: response.statusText ?? null,
+      mimeType: response.mimeType ?? null,
+      headers: cloneJson(response.headers ?? {}),
+      remoteIPAddress: response.remoteIPAddress ?? null,
+      remotePort: response.remotePort ?? null,
+      encodedDataLength: response.encodedDataLength ?? null,
+      fromDiskCache: response.fromDiskCache === true,
+      fromServiceWorker: response.fromServiceWorker === true,
+    };
+    trace.responseBodyStatus = shouldCaptureRawResponseBody(trace) ? 'pending' : 'skipped_non_text_or_non_api';
+  };
+
+  const captureRawTraceResponseBody = async (params = /** @type {any} */ ({})) => {
+    const trace = params?.requestId ? rawTracesById.get(params.requestId) : null;
+    if (!trace) {
+      return;
+    }
+    trace.loading = {
+      status: 'finished',
+      encodedDataLength: params.encodedDataLength ?? null,
+      failedText: null,
+    };
+    if (trace.responseBodyStatus !== 'pending' || !shouldCaptureRawResponseBody(trace)) {
+      if (trace.responseBodyStatus === 'pending') {
+        trace.responseBodyStatus = 'skipped_non_text_or_non_api';
+      }
+      return;
+    }
+    if (typeof client.send !== 'function') {
+      trace.responseBodyStatus = 'unavailable';
+      return;
+    }
+    try {
+      const result = await client.send('Network.getResponseBody', { requestId: params.requestId }, sessionId);
+      if (result?.base64Encoded === true) {
+        trace.responseBodyStatus = 'skipped_base64';
+        trace.responseBody = {
+          base64Encoded: true,
+          body: null,
+          bodySizeBytes: 0,
+          truncated: false,
+        };
+        return;
+      }
+      const captured = truncateRawNetworkText(result?.body ?? '', rawResponseBodyMaxBytes);
+      trace.responseBody = {
+        base64Encoded: false,
+        body: captured.text,
+        bodySizeBytes: captured.totalBytes,
+        truncated: captured.truncated,
+      };
+      trace.responseBodyStatus = captured.truncated ? 'captured_truncated' : 'captured';
+    } catch (error) {
+      trace.responseBodyStatus = 'unavailable';
+      trace.responseBodyError = error?.message ?? String(error);
+    }
+  };
+
+  const queueRawResponseBodyCapture = (params) => {
+    const promise = captureRawTraceResponseBody(params)
+      .catch(() => {})
+      .finally(() => {
+        rawBodyPromises.delete(promise);
+      });
+    rawBodyPromises.add(promise);
+  };
+
   const offRequest = client.on(
     'Network.requestWillBeSent',
     (event) => {
@@ -231,6 +428,7 @@ export function createNetworkTracker(client, sessionId, {
         inflight.add(params.requestId);
       }
       appendObservedRequest(event);
+      appendRawTraceRequest(event);
       markActivity();
     },
     { sessionId },
@@ -240,6 +438,7 @@ export function createNetworkTracker(client, sessionId, {
     'Network.responseReceived',
     (event) => {
       appendObservedResponseSummary(event);
+      appendRawTraceResponse(event);
       markActivity();
     },
     { sessionId },
@@ -262,11 +461,27 @@ export function createNetworkTracker(client, sessionId, {
       return;
     }
     inflight.delete(params.requestId);
+    queueRawResponseBodyCapture(params);
     markActivity();
   };
 
   const offFinished = client.on('Network.loadingFinished', finishRequest, { sessionId });
-  const offFailed = client.on('Network.loadingFailed', finishRequest, { sessionId });
+  const offFailed = client.on('Network.loadingFailed', ({ params }) => {
+    if (!params?.requestId) {
+      return;
+    }
+    const trace = rawTracesById.get(params.requestId);
+    if (trace) {
+      trace.loading = {
+        status: 'failed',
+        encodedDataLength: null,
+        failedText: params.errorText ?? null,
+      };
+      trace.responseBodyStatus = 'loading_failed';
+    }
+    inflight.delete(params.requestId);
+    markActivity();
+  }, { sessionId });
 
   return {
     async waitForIdle({ quietMs, timeoutMs }) {
@@ -306,6 +521,16 @@ export function createNetworkTracker(client, sessionId, {
         ...cloneJson(summary),
         siteKey: normalizedSiteKey,
       }));
+    },
+    getRawNetworkTraces({ limit } = /** @type {any} */ ({})) {
+      const readLimit = limit === undefined ? rawTraces.length : Math.max(0, Number(limit) || 0);
+      if (readLimit <= 0) {
+        return [];
+      }
+      return rawTraces.slice(-readLimit).map((trace) => cloneJson(trace));
+    },
+    async waitForRawBodies() {
+      await Promise.allSettled([...rawBodyPromises]);
     },
     clearObservedRequests() {
       observedRequests.length = 0;
@@ -407,6 +632,14 @@ export class BrowserSession {
 
   getObservedNetworkResponseSummaries(options = /** @type {any} */ ({})) {
     return this.networkTracker?.getObservedResponseSummaries?.(options) ?? [];
+  }
+
+  getRawNetworkTraces(options = /** @type {any} */ ({})) {
+    return this.networkTracker?.getRawNetworkTraces?.(options) ?? [];
+  }
+
+  async waitForRawNetworkBodies() {
+    await this.networkTracker?.waitForRawBodies?.();
   }
 
   async getObservedPageResourceApiHints({ siteKey, limit = DEFAULT_NETWORK_CAPTURE_REQUEST_LIMIT } = /** @type {any} */ ({})) {
@@ -1223,7 +1456,7 @@ async function openBrowserSessionOnce(
     sessionId,
   );
 
-  const networkTracker = createNetworkTracker(client, sessionId);
+  const networkTracker = createNetworkTracker(client, sessionId, settings.networkCapture ?? {});
 
   return new BrowserSession({
     client,

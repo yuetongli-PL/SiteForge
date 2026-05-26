@@ -576,6 +576,11 @@ function applySiteForgeCliDefaults(options) {
   if (next.network === true) {
     next.captureNetwork = true;
   }
+  if (next.internalRawNetwork === true) {
+    next.network = true;
+    next.captureNetwork = true;
+    next.renderJs = true;
+  }
   next.authMode = normalizeChoice(next.authMode ?? 'none', SITEFORGE_AUTH_MODES, '--auth');
   if (!next.reportMode) {
     next.reportMode = next.debug || next.verbose ? 'debug' : 'user';
@@ -670,6 +675,13 @@ export function parseCliArgs(argv) {
       case '--network':
         options.network = true;
         options.captureNetwork = true;
+        break;
+      case '--internal-raw-network':
+        options.internalRawNetwork = true;
+        options.network = true;
+        options.captureNetwork = true;
+        options.renderJs = true;
+        options.renderJsExplicit = true;
         break;
       case '--auth': {
         const { value, nextIndex } = readValue(args, current, index);

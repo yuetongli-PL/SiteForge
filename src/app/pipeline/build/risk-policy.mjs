@@ -2,6 +2,10 @@
 
 import crypto from 'node:crypto';
 import {
+  CapabilityEnablementStatus as STATUS_VOCAB_CAPABILITY_ENABLEMENT_STATUSES,
+  CallableCapabilityEnablementStatus as STATUS_VOCAB_CALLABLE_ENABLEMENT_STATUSES,
+} from '../../../domain/status/status-vocabulary.mjs';
+import {
   assertNoForbiddenPatterns,
   redactPublicIdentifierText,
   redactUrl,
@@ -44,22 +48,8 @@ export const RISK_LEVEL_DEFAULTS = Object.freeze({
   }),
 });
 
-export const CAPABILITY_ENABLEMENT_STATUSES = Object.freeze([
-  'enabled',
-  'limited_enabled',
-  'confirmation_required',
-  'draft_only',
-  'disabled',
-  'debug_only',
-  'candidate_debug_only',
-]);
-
-export const CALLABLE_ENABLEMENT_STATUSES = Object.freeze([
-  'enabled',
-  'limited_enabled',
-  'confirmation_required',
-  'draft_only',
-]);
+export const CAPABILITY_ENABLEMENT_STATUSES = STATUS_VOCAB_CAPABILITY_ENABLEMENT_STATUSES;
+export const CALLABLE_ENABLEMENT_STATUSES = STATUS_VOCAB_CALLABLE_ENABLEMENT_STATUSES;
 
 const CAPABILITY_ENABLEMENT_STATUS_SET = new Set(CAPABILITY_ENABLEMENT_STATUSES);
 const CALLABLE_ENABLEMENT_STATUS_SET = new Set(CALLABLE_ENABLEMENT_STATUSES);

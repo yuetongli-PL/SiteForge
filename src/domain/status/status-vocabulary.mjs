@@ -40,9 +40,17 @@ export const CapabilityEnablementStatus = Object.freeze([
   'enabled',
   'limited_enabled',
   'confirmation_required',
+  'draft_only',
   'disabled',
   'debug_only',
   'candidate_debug_only',
+]);
+
+export const CallableCapabilityEnablementStatus = Object.freeze([
+  'enabled',
+  'limited_enabled',
+  'confirmation_required',
+  'draft_only',
 ]);
 
 export const EvidenceStatus = Object.freeze([
@@ -59,6 +67,7 @@ export const STATUS_VOCABULARY = Object.freeze({
   OutcomeStatus,
   DownloadStatus,
   CapabilityEnablementStatus,
+  CallableCapabilityEnablementStatus,
   EvidenceStatus,
 });
 

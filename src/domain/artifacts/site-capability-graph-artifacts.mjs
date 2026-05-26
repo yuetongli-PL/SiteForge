@@ -9163,6 +9163,9 @@ function assertNoGraphDocsOutputLiveConsumerDispatchDryRunRuntimeProducts(
   label = 'GraphDocsOutputLiveConsumerDispatchDryRunResult',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   const sanitized = removeAllowedFalseRuntimeFlagsForLiveConsumerDispatchDryRun(value);
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(sanitized, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
@@ -9460,6 +9463,9 @@ function assertNoGraphDocsOutputLiveConsumerDispatchCompatibilityReviewGateRunti
   label = 'GraphDocsOutputLiveConsumerDispatchCompatibilityReviewGate',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   const sanitized = removeAllowedFalseRuntimeFlagsForLiveConsumerDispatchCompatibilityReviewGate(
     value,
   );
@@ -9778,6 +9784,9 @@ function assertNoGraphDocsOutputLiveConsumerExternalDispatchAcceptancePreflightR
   label = 'GraphDocsOutputLiveConsumerExternalDispatchAcceptancePreflight',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   const sanitized = removeAllowedFalseRuntimeFlagsForLiveConsumerExternalDispatchAcceptancePreflight(
     value,
   );
@@ -10110,6 +10119,9 @@ function assertNoGraphDocsOutputLiveConsumerExternalDispatchNoopHandoffGateRunti
   label = 'GraphDocsOutputLiveConsumerExternalDispatchNoopHandoffGate',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   const sanitized = removeAllowedFalseRuntimeFlagsForLiveConsumerExternalDispatchNoopHandoffGate(
     value,
   );
@@ -10184,6 +10196,9 @@ function assertNoGraphDocsOutputLiveConsumerArtifactWriterInvocationPreflightRun
   label = 'GraphDocsOutputLiveConsumerArtifactWriterInvocationPreflight',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   const sanitized = removeAllowedFalseRuntimeFlagsForLiveConsumerArtifactWriterInvocationPreflight(
     value,
   );
@@ -10886,6 +10901,9 @@ function assertNoGraphDocsOutputLiveConsumerRuntimeWriteObservabilityPreflightRu
   label = 'GraphDocsOutputLiveConsumerRuntimeWriteObservabilityPreflight',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   const sanitized =
     removeAllowedFalseRuntimeFlagsForLiveConsumerRuntimeWriteObservabilityPreflight(
       value,
@@ -11051,6 +11069,9 @@ function assertNoGraphDocsOutputLiveConsumerArtifactWriterInvocationEvidenceRunt
   label = 'GraphDocsOutputLiveConsumerArtifactWriterInvocationEvidence',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -11363,11 +11384,98 @@ const GRAPH_RUNTIME_DOCS_ARTIFACT_WRITE_OBSERVABILITY_FORBIDDEN_PATH_KEYS = Obje
   'repoPath',
 ]);
 
+const GRAPH_DOCS_OUTPUT_LIVE_CONSUMER_SAFE_SUMMARY_RUNTIME_FIELD_ALLOWLIST = new Set([
+  'sourcealiaspolicy',
+]);
+
+function assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(
+  value = {},
+  label = 'GraphDocsOutputLiveConsumerRuntimeProducts',
+  pathLabel = label,
+) {
+  if (typeof value === 'function') {
+    throw new Error(`${label} rejected executable runtime field: ${pathLabel}`);
+  }
+  if (!value || typeof value !== 'object') {
+    if (typeof value === 'string') {
+      assertNoForbiddenPatterns(value);
+      if (
+        /(?:sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._-]{8,}|cookie\s*=|sessdata|csrf)/iu
+          .test(value)
+      ) {
+        throw new Error(`${label} rejected synthetic sensitive material: ${pathLabel}`);
+      }
+      if (path.isAbsolute(value)) {
+        throw new Error(`${label} rejected absolute path string: ${pathLabel}`);
+      }
+    }
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return false;
+  }
+  /** @type {Record<string, any>} */
+  const safeSummary = value;
+  if (
+    safeSummary.safeSummaryOnly !== true
+      || safeSummary.disabled !== true
+      || safeSummary.descriptorOnly !== true
+      || safeSummary.redactionRequired !== true
+  ) {
+    return false;
+  }
+  if (
+    safeSummary.result !== 'blocked'
+      || safeSummary.reasonCode !== GRAPH_RUNTIME_CONSUMER_DISABLED_REASON_CODE
+  ) {
+    throw new Error(`${label} safe summary must stay blocked descriptor-only: ${pathLabel}`);
+  }
+  for (const [key, entry] of Object.entries(safeSummary)) {
+    if (typeof entry === 'function') {
+      throw new Error(`${label} safe summary rejected executable field: ${pathLabel}.${key}`);
+    }
+    if (entry && typeof entry === 'object') {
+      throw new Error(`${label} safe summary must not include nested runtime material: ${pathLabel}.${key}`);
+    }
+    const isDisabledFlag = entry === false && /Enabled$/u.test(key);
+    if (isDisabledFlag) {
+      continue;
+    }
+    const normalized = normalizedKey(key);
+    if (isSensitiveFieldName(key)) {
+      throw new Error(`${label} safe summary rejected sensitive field: ${pathLabel}.${key}`);
+    }
+    if (
+      GRAPH_RUNTIME_DOCS_ARTIFACT_WRITE_OBSERVABILITY_FORBIDDEN_PATH_KEYS.includes(key)
+        || GRAPH_DOCS_MARKDOWN_RUNTIME_WRITE_PATH_FORBIDDEN_KEY_SET.has(normalized)
+        || normalized.endsWith('path')
+    ) {
+      throw new Error(`${label} safe summary must not expose path field: ${pathLabel}.${key}`);
+    }
+    if (
+      !GRAPH_DOCS_OUTPUT_LIVE_CONSUMER_SAFE_SUMMARY_RUNTIME_FIELD_ALLOWLIST.has(normalized)
+        && GRAPH_DOCS_OUTPUT_LIVE_CONSUMER_DOWNSTREAM_SAFE_SUMMARY_CONSUMER_NOOP_DELIVERY_LANE_REVIEW_SCAN_RUNTIME_PRODUCT_KEY_SET
+          .has(normalized)
+    ) {
+      throw new Error(`${label} safe summary rejected runtime field: ${pathLabel}.${key}`);
+    }
+    assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(
+      entry,
+      label,
+      `${pathLabel}.${key}`,
+    );
+  }
+  return true;
+}
+
 function assertNoGraphDocsOutputLiveConsumerRuntimeDocsArtifactWriteObservabilityEvidenceRuntimeProducts(
   value = {},
   label = 'GraphDocsOutputLiveConsumerRuntimeDocsArtifactWriteObservabilityEvidence',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -11785,6 +11893,9 @@ function assertNoGraphDocsOutputLiveConsumerReviewedArtifactPipelineReadinessGat
   label = 'GraphDocsOutputLiveConsumerReviewedArtifactPipelineReadinessGate',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -12169,6 +12280,9 @@ function assertNoGraphDocsOutputLiveConsumerArtifactPipelineAcceptanceBoundaryRu
   label = 'GraphDocsOutputLiveConsumerArtifactPipelineAcceptanceBoundary',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -12523,6 +12637,9 @@ function assertNoGraphDocsOutputLiveConsumerArtifactPipelineCompletionGapScanRun
   label = 'GraphDocsOutputLiveConsumerArtifactPipelineCompletionGapScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -12906,6 +13023,9 @@ function assertNoGraphDocsOutputLiveConsumerRegistrationToWriterBoundaryGapScanR
   label = 'GraphDocsOutputLiveConsumerRegistrationToWriterBoundaryGapScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -13349,6 +13469,9 @@ function assertNoGraphDocsOutputLiveConsumerWriterResultToRedactionAuditBoundary
   label = 'GraphDocsOutputLiveConsumerWriterResultToRedactionAuditBoundaryGapScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsMarkdownRuntimeWritePathProducts(value, label);
   assertNoGraphDerivedArtifactConsumerDescriptorPayload(value, label);
   assertNoForbiddenPatterns(value);
@@ -13833,6 +13956,9 @@ function assertNoGraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoffGapS
   label = 'GraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoffGapScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerWriterResultToRedactionAuditBoundaryGapScanRuntimeProducts(
     value,
     label,
@@ -14344,6 +14470,9 @@ function assertNoGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBounda
   label = 'GraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerRedactionAuditSafeSummaryHandoffGapScanRuntimeProducts(
     value,
     label,
@@ -14890,6 +15019,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerEligibi
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerEligibilityScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerPostHandoffSafeSummaryConsumerBoundaryGapScanRuntimeProducts(
     value,
     label,
@@ -15464,6 +15596,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopReg
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRegistrationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerEligibilityScanRuntimeProducts(
     value,
     label,
@@ -16103,6 +16238,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDis
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDispatchReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRegistrationReviewScanRuntimeProducts(
     value,
     label,
@@ -16959,6 +17097,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopTel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopTelemetryReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDispatchReviewScanRuntimeProducts(
     value,
     label,
@@ -17765,6 +17906,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopArt
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopArtifactPublicationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopTelemetryReviewScanRuntimeProducts(
     value,
     label,
@@ -18511,6 +18655,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRet
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRetainedOutputReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopArtifactPublicationReviewScanRuntimeProducts(
     value,
     label,
@@ -19158,6 +19305,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopCle
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopCleanupPolicyReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRetainedOutputReviewScanRuntimeProducts(
     value,
     label,
@@ -19799,6 +19949,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRet
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRetentionReportReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopCleanupPolicyReviewScanRuntimeProducts(
     value,
     label,
@@ -20446,6 +20599,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopArc
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopArchiveManifestReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopRetentionReportReviewScanRuntimeProducts(
     value,
     label,
@@ -21064,6 +21220,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPac
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPlanReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopArchiveManifestReviewScanRuntimeProducts(
     value,
     label,
@@ -21751,6 +21910,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPac
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPlanReviewScanRuntimeProducts(
     value,
     label,
@@ -22438,6 +22600,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPac
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingOutputReviewScanRuntimeProducts(
     value,
     label,
@@ -23135,6 +23300,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPac
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingRetentionReviewScanRuntimeProducts(
     value,
     label,
@@ -23842,6 +24010,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPac
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingCleanupReviewScanRuntimeProducts(
     value,
     label,
@@ -24535,6 +24706,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPac
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingPublicationReviewScanRuntimeProducts(
     value,
     label,
@@ -25231,6 +25405,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopPackagingDeliveryReviewScanRuntimeProducts(
     value,
     label,
@@ -25933,6 +26110,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryIndexReviewScanRuntimeProducts(
     value,
     label,
@@ -26653,6 +26833,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryManifestReviewScanRuntimeProducts(
     value,
     label,
@@ -27394,6 +27577,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReceiptReviewScanRuntimeProducts(
     value,
     label,
@@ -28137,6 +28323,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAuditReviewScanRuntimeProducts(
     value,
     label,
@@ -28884,6 +29073,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCompletionReviewScanRuntimeProducts(
     value,
     label,
@@ -29632,6 +29824,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryFinalizationReviewScanRuntimeProducts(
     value,
     label,
@@ -30383,6 +30578,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCloseoutReviewScanRuntimeProducts(
     value,
     label,
@@ -31135,6 +31333,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySealReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryClosureReviewScanRuntimeProducts(
     value,
     label,
@@ -31835,6 +32036,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySealReviewScanRuntimeProducts(
     value,
     label,
@@ -32641,6 +32845,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAttestationReviewScanRuntimeProducts(
     value,
     label,
@@ -33394,6 +33601,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVerificationReviewScanRuntimeProducts(
     value,
     label,
@@ -34166,6 +34376,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConfirmationReviewScanRuntimeProducts(
     value,
     label,
@@ -34810,6 +35023,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcknowledgementReviewScanRuntimeProducts(
     value,
     label,
@@ -35455,6 +35671,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAcceptanceReviewScanRuntimeProducts(
     value,
     label,
@@ -36094,6 +36313,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryReleaseReviewScanRuntimeProducts(
     value,
     label,
@@ -36734,6 +36956,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySignoffReviewScanRuntimeProducts(
     value,
     label,
@@ -37260,6 +37485,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryHandoffReviewScanRuntimeProducts(
     value,
     label,
@@ -37788,6 +38016,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTurnoverReviewScanRuntimeProducts(
     value,
     label,
@@ -38323,6 +38554,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransferReviewScanRuntimeProducts(
     value,
     label,
@@ -38867,6 +39101,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitionReviewScanRuntimeProducts(
     value,
     label,
@@ -39432,6 +39669,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryConveyanceReviewScanRuntimeProducts(
     value,
     label,
@@ -40013,6 +40253,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarriageReviewScanRuntimeProducts(
     value,
     label,
@@ -40597,6 +40840,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransportReviewScanRuntimeProducts(
     value,
     label,
@@ -41174,6 +41420,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRoutingReviewScanRuntimeProducts(
     value,
     label,
@@ -41768,6 +42017,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryForwardingReviewScanRuntimeProducts(
     value,
     label,
@@ -42365,6 +42617,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryRelayReviewScanRuntimeProducts(
     value,
     label,
@@ -42969,6 +43224,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPassThroughReviewScanRuntimeProducts(
     value,
     label,
@@ -43575,6 +43833,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryTransitReviewScanRuntimeProducts(
     value,
     label,
@@ -44187,6 +44448,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCarrierReviewScanRuntimeProducts(
     value,
     label,
@@ -44799,6 +45063,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCourierReviewScanRuntimeProducts(
     value,
     label,
@@ -45411,6 +45678,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryServiceReviewScanRuntimeProducts(
     value,
     label,
@@ -46019,6 +46289,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryProviderReviewScanRuntimeProducts(
     value,
     label,
@@ -46627,6 +46900,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliverySupplierReviewScanRuntimeProducts(
     value,
     label,
@@ -47241,6 +47517,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryVendorReviewScanRuntimeProducts(
     value,
     label,
@@ -47858,6 +48137,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryContractorReviewScanRuntimeProducts(
     value,
     label,
@@ -48475,6 +48757,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryPartnerReviewScanRuntimeProducts(
     value,
     label,
@@ -49092,6 +49377,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryCollaboratorReviewScanRuntimeProducts(
     value,
     label,
@@ -49708,6 +49996,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAssociateReviewScanRuntimeProducts(
     value,
     label,
@@ -50324,6 +50615,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAffiliateReviewScanRuntimeProducts(
     value,
     label,
@@ -50957,6 +51251,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryAllianceReviewScanRuntimeProducts(
     value,
     label,
@@ -51591,6 +51888,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryNetworkReviewScanRuntimeProducts(
     value,
     label,
@@ -52224,6 +52524,9 @@ function assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDel
   label = 'GraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryLaneReviewScan',
   pathLabel = label,
 ) {
+  if (assertGraphDocsOutputLiveConsumerRuntimeProductsFastPath(value, label, pathLabel)) {
+    return true;
+  }
   assertNoGraphDocsOutputLiveConsumerDownstreamSafeSummaryConsumerNoopDeliveryChannelReviewScanRuntimeProducts(
     value,
     label,

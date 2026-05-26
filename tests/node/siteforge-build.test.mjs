@@ -12,6 +12,7 @@ import {
   isUrlAllowedByRobots,
   lookupSkillIntent,
   normalizeUrl,
+  isSameSiteUrl,
   parseHtmlDocument,
   parseRobotsPolicy,
   parseRobotsSitemaps,
@@ -46,6 +47,7 @@ import {
 } from '../../src/app/pipeline/build/setup-assistant.mjs';
 import {
   browserBridgeExtensionDirectory,
+  runBrowserBridgeApiReplay,
   runBrowserAuthBridge,
 } from '../../src/app/pipeline/build/browser-auth-bridge.mjs';
 import { browserStructureCollectorScript } from '../../src/app/pipeline/build/browser-structure-collector.mjs';
@@ -298,6 +300,11 @@ test('SiteForge build URL normalization removes tracking and sensitive query par
     normalizeUrl('HTTPS://Fixture.Local:443/products.html?utm_source=x&b=2&a=1&access_token=secret#section'),
     'https://fixture.local/products.html?a=1&b=2',
   );
+});
+
+test('SiteForge API replay treats subdomains as same-site without changing exact internal matching', () => {
+  assert.equal(isSameSiteUrl('https://creator.douyin.com/web/api/media/user/info/', ['douyin.com', 'www.douyin.com']), true);
+  assert.equal(isSameSiteUrl('https://example.invalid/web/api/media/user/info/', ['douyin.com', 'www.douyin.com']), false);
 });
 
 test('SiteForge build seed parsers handle robots and sitemap records', () => {
@@ -3630,6 +3637,42 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(mismatchedUrlForRouteId.bridgeSummary.routeResults[0].targetRoute, '/account');
     assert.equal(JSON.stringify(mismatchedUrlForRouteId.bridgeSummary).includes('/unrequested'), false);
 
+    const extensionCanonicalizedUrlForRouteId = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => ({
+          routeResults: [{
+            routeId: routes[0].id,
+            targetUrl: new URL('/unrequested', rootUrl).toString(),
+            sourceLayer: routes[0].sourceLayer,
+            status: 'captured',
+            collectorVersion: 'route-queue-chinese-semantic-v6',
+          }],
+          authenticatedPages: [{
+            routeId: routes[0].id,
+            url: new URL('/unrequested', rootUrl).toString(),
+            routeTemplate: '/unrequested',
+            sourceLayer: routes[0].sourceLayer,
+            pageType: 'account_home',
+            visibleItemCount: 1,
+            listPresent: true,
+          }],
+        }),
+      },
+    });
+    assert.equal(extensionCanonicalizedUrlForRouteId.status, 'browser_verified');
+    assert.equal(extensionCanonicalizedUrlForRouteId.verified, true);
+    assert.equal(extensionCanonicalizedUrlForRouteId.bridgeSummary.capturedRouteCount, 1);
+    assert.equal(extensionCanonicalizedUrlForRouteId.bridgeSummary.routeResults[0].targetRoute, '/account');
+    assert.equal(JSON.stringify(extensionCanonicalizedUrlForRouteId.bridgeSummary).includes('/unrequested'), false);
+    assert.equal(JSON.stringify(extensionCanonicalizedUrlForRouteId.structureSummary).includes('collectorVersion'), false);
+
     const mismatchedUrlChallengeForRouteId = await runBrowserAuthBridge({
       inputUrl: rootUrl,
       site,
@@ -4308,6 +4351,125 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(retryOnly.bridgeSummary.routeCount, 1);
     assert.equal(retryOnly.bridgeSummary.capturedRouteCount, 1);
     assert.equal(retryOnly.structureSummary.authenticatedPages[0].normalizedUrl, new URL('/messages', rootUrl).toString());
+  });
+});
+
+test('browser bridge API replay uses one-time extension session when provider is absent', async () => {
+  await withTestSite((rootUrl) => ({
+    '/': testHtmlPage('Replay Host', '<main>Replay host</main>'),
+    '/api/feed': {
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({ ok: true }),
+    },
+    '/robots.txt': {
+      contentType: 'text/plain; charset=utf-8',
+      body: testRobotsTxt(rootUrl),
+    },
+  }), async (rootUrl) => {
+    const host = new URL(rootUrl).hostname;
+    let sessionSeen = null;
+    const replay = await runBrowserBridgeApiReplay({
+      inputUrl: rootUrl,
+      site: {
+        id: 'replay-fixture',
+        rootUrl,
+        allowedDomains: [host],
+      },
+      endpoint: new URL('/api/feed', rootUrl).toString(),
+      method: 'GET',
+      options: {
+        browserBridgeApiReplayTimeoutMs: 1000,
+      },
+      openBrowser: async (bridgeUrl) => {
+        const bridgeHtml = await (await fetch(bridgeUrl)).text();
+        assert.equal(bridgeHtml.includes('siteforge-browser-bridge'), true);
+        const opened = new URL(bridgeUrl);
+        const sessionUrl = new URL('/session.json', opened.origin);
+        sessionUrl.searchParams.set('nonce', opened.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        sessionSeen = session;
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            nonce: session.nonce,
+            apiReplay: {
+              status: 'verified',
+              httpStatus: 200,
+              contentType: 'application/json; charset=utf-8',
+              responseKind: 'json',
+              bodyText: 'synthetic-api-replay-secret',
+            },
+          }),
+        });
+      },
+    });
+
+    assert.equal(replay.status, 'verified');
+    assert.equal(replay.httpStatus, 200);
+    assert.equal(replay.contentType, 'application/json; charset=utf-8');
+    assert.equal(replay.responseKind, 'json');
+    assert.equal(JSON.stringify(replay).includes('synthetic-api-replay-secret'), false);
+    assert.equal(sessionSeen?.apiReplay?.endpoint, new URL('/api/feed', rootUrl).toString());
+    assert.equal(sessionSeen?.apiReplay?.method, 'GET');
+    assert.equal(sessionSeen?.apiReplay?.allowedHost, host);
+  });
+});
+
+test('browser auth bridge preserves submitted route statuses when summaries time out', async () => {
+  await withTestSite((rootUrl) => ({
+    '/': testHtmlPage('Challenge', '<main>Challenge</main>'),
+    '/late': testHtmlPage('Late', '<main>Late</main>'),
+    '/robots.txt': {
+      contentType: 'text/plain; charset=utf-8',
+      body: testRobotsTxt(rootUrl),
+    },
+  }), async (rootUrl) => {
+    const site = {
+      id: 'bridge-timeout-fixture',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    const result = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeTimeoutMs: 100,
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/', '/late'],
+        },
+      },
+      openBrowser: async (bridgeUrl) => {
+        const opened = new URL(bridgeUrl);
+        const sessionUrl = new URL('/session.json', opened.origin);
+        sessionUrl.searchParams.set('nonce', opened.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            nonce: session.nonce,
+            routeResults: [{
+              routeId: session.routes[0].id,
+              targetUrl: session.routes[0].targetUrl,
+              sourceLayer: session.routes[0].sourceLayer,
+              status: 'challenge_detected',
+              reasonCode: 'browser-bridge-definite-challenge',
+              collectorVersion: 'route-queue-chinese-semantic-v6',
+            }],
+          }),
+        });
+      },
+    });
+
+    assert.equal(result.status, 'browser_blocked');
+    assert.equal(result.verified, false);
+    assert.equal(result.bridgeSummary.routeResults[0].status, 'challenge_detected');
+    assert.equal(result.bridgeSummary.routeResults[0].reasonCode, 'browser-bridge-definite-challenge');
+    assert.equal(result.bridgeSummary.routeResults[1].status, 'timeout');
+    assert.equal(result.blockingSignals.includes('browser-bridge-route-challenge-detected'), true);
   });
 });
 

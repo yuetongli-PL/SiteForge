@@ -7,6 +7,7 @@ const TAB_STABLE_MAX_POLLS = 16;
 const TAB_STABLE_POLL_MS = 500;
 const COLLECTOR_READY_DELAY_MS = 250;
 const COLLECTOR_RETRY_BACKOFF_MS = [1000, 3000, 7000];
+const API_REPLAY_READY_DELAY_MS = 1000;
 
 function safeUrl(value) {
   try {
@@ -101,6 +102,27 @@ function routeSession(session, route) {
   };
 }
 
+function normalizedApiReplay(session) {
+  const apiReplay = session?.apiReplay || null;
+  const endpoint = safeUrl(apiReplay?.endpoint);
+  const pageUrl = safeUrl(apiReplay?.pageUrl || (endpoint ? `${endpoint.origin}/` : ''));
+  const method = String(apiReplay?.method || 'GET').toUpperCase();
+  const allowedHost = String(apiReplay?.allowedHost || endpoint?.hostname || '');
+  if (!endpoint || !pageUrl || !['GET', 'HEAD'].includes(method)) {
+    return null;
+  }
+  if (endpoint.hostname !== allowedHost || pageUrl.hostname !== allowedHost) {
+    return null;
+  }
+  return {
+    id: String(apiReplay?.id || 'api-replay-1'),
+    endpoint: endpoint.toString(),
+    pageUrl: pageUrl.toString(),
+    method,
+    allowedHost,
+  };
+}
+
 function clearFallbackTimer(state) {
   if (state?.fallbackTimerId) {
     clearTimeout(state.fallbackTimerId);
@@ -110,6 +132,156 @@ function clearFallbackTimer(state) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createTab(url) {
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url, active: true }, (tab) => resolve(tab || null));
+  });
+}
+
+function waitForTabComplete(tabId) {
+  return new Promise((resolve) => {
+    const listener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') {
+        return;
+      }
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve(tab || null);
+    };
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      chrome.tabs.get(tabId, (tab) => resolve(tab || null));
+    }, TAB_STABLE_MAX_POLLS * TAB_STABLE_POLL_MS);
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId, (tab) => {
+      if (tab?.status === 'complete') {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve(tab);
+      }
+    });
+  });
+}
+
+async function executeApiReplayFetch(tabId, replay) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async ({ endpoint, method, allowedHost }) => {
+      try {
+        const response = await fetch(endpoint, {
+          method,
+          credentials: 'include',
+          cache: 'no-store',
+          redirect: 'follow',
+        });
+        const contentType = response.headers.get('content-type') || '';
+        const finalHost = new URL(response.url).hostname;
+        const responseKind = /json/iu.test(contentType)
+          ? 'json'
+          : /html/iu.test(contentType)
+            ? 'html'
+            : contentType
+              ? 'other'
+              : null;
+        if (finalHost !== allowedHost) {
+          return {
+            status: 'failed',
+            reasonCode: 'cross_site_redirect',
+            httpStatus: response.status,
+            contentType,
+            responseKind,
+          };
+        }
+        const verified = response.ok && responseKind === 'json';
+        return {
+          status: verified ? 'verified' : 'failed',
+          reasonCode: verified ? null : (response.ok ? 'api_replay_non_json_response' : 'api_replay_http_failed'),
+          httpStatus: response.status,
+          contentType,
+          responseKind,
+        };
+      } catch {
+        return {
+          status: 'failed',
+          reasonCode: 'api_replay_fetch_failed',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        };
+      }
+    },
+    args: [{
+      endpoint: replay.endpoint,
+      method: replay.method,
+      allowedHost: replay.allowedHost,
+    }],
+  });
+  return results?.[0]?.result || {
+    status: 'failed',
+    reasonCode: 'api_replay_failed',
+    httpStatus: null,
+    contentType: null,
+    responseKind: null,
+  };
+}
+
+async function submitApiReplay(session, replay, result) {
+  const submitUrl = session?.apiReplaySubmitUrl || session?.submitUrl;
+  if (!submitUrl) {
+    return;
+  }
+  await fetch(submitUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'omit',
+    cache: 'no-store',
+    body: JSON.stringify({
+      nonce: session.nonce,
+      apiReplay: {
+        replayId: replay.id,
+        method: replay.method,
+        ...result,
+      },
+    }),
+  });
+}
+
+async function runApiReplaySession(session) {
+  const replay = normalizedApiReplay(session);
+  signal(session, `bridge-version:${SITEFORGE_BRIDGE_EXTENSION_VERSION}`);
+  if (!sessionKey(session) || !replay) {
+    return { ok: false };
+  }
+  signal(session, `api-replay-started:${replay.id}`);
+  const tab = await createTab(replay.pageUrl);
+  if (!tab?.id) {
+    await submitApiReplay(session, replay, {
+      status: 'failed',
+      reasonCode: 'browser-bridge-route-open-failed',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    }).catch(() => {});
+    return { ok: false };
+  }
+  const settledTab = await waitForTabComplete(tab.id);
+  if (!settledTab?.id || !sameAllowedHost(settledTab.url, replay.allowedHost) || loginLikeUrl(settledTab.url)) {
+    await submitApiReplay(session, replay, {
+      status: 'failed',
+      reasonCode: loginLikeUrl(settledTab?.url) ? 'challenge_or_login_wall_response' : 'host-mismatch',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+    }).catch(() => {});
+    return { ok: false };
+  }
+  await sleep(API_REPLAY_READY_DELAY_MS);
+  const result = await executeApiReplayFetch(tab.id, replay);
+  await submitApiReplay(session, replay, result);
+  signal(session, `api-replay-submit-ok:${replay.id}`);
+  return { ok: true };
 }
 
 async function waitForStableTab(tabId, session, route) {
@@ -348,6 +520,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const session = message.session;
+  if (session?.apiReplay) {
+    runApiReplaySession(session)
+      .then((result) => sendResponse?.(result))
+      .catch(() => sendResponse?.({ ok: false }));
+    return true;
+  }
+
   const routes = normalizedRoutes(session);
   if (!sessionKey(session) || !routes.length) {
     sendResponse?.({ ok: false });

@@ -142,6 +142,18 @@ export function isInternalUrl(urlValue, allowedDomains) {
   }
 }
 
+export function isSameSiteUrl(urlValue, allowedDomains) {
+  try {
+    const host = new URL(urlValue).hostname.toLowerCase();
+    return (Array.isArray(allowedDomains) ? allowedDomains : [])
+      .map((domain) => String(domain ?? '').toLowerCase())
+      .filter(Boolean)
+      .some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
 export function stableSiteIdFromUrl(inputUrl) {
   const normalized = normalizeUrl(rootUrlFrom(inputUrl));
   const host = sanitizeHost(new URL(normalized).hostname.replace(/^www\./u, ''));

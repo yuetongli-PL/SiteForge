@@ -49,6 +49,7 @@ import {
   createSiteRecord,
   formatBuildId,
   isInternalUrl,
+  isSameSiteUrl,
   mergeBuildPolicy,
   normalizeUrl,
   rootUrlFrom,
@@ -144,6 +145,7 @@ import {
   createPublicOnlyAuthStateReport,
   evidenceLevelRank,
   normalizeAuthStateReport,
+  openSystemDefaultBrowser,
   runDefaultBrowserAuthStateCheck,
   sanitizeRouteTargetForPersistence,
 } from './auth-state.mjs';
@@ -1630,12 +1632,14 @@ function buildSafeRuntimeOptions(options = /** @type {any} */ ({})) {
   const safeOptions = { ...options };
   delete safeOptions.authRuntime;
   delete safeOptions.authenticatedStructureSummary;
+  delete safeOptions.apiReplayCookieHeader;
   return safeOptions;
 }
 
 function clearRuntimeAuthInputOptions(options = /** @type {any} */ ({})) {
   delete options.authRuntime;
   delete options.authenticatedStructureSummary;
+  delete options.apiReplayCookieHeader;
   delete options.cookieHeader;
   delete options.cookieEnv;
   delete options.cookieFile;
@@ -1680,6 +1684,9 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     allowContactSubmit: options.allowContactSubmit,
   });
   const runtimeAuth = resolveRuntimeAuthFromOptions(options, site);
+  const apiReplayCookieHeader = typeof options.apiReplayCookieHeader === 'string'
+    ? options.apiReplayCookieHeader.trim()
+    : null;
   const safeOptions = buildSafeRuntimeOptions(options);
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -1710,6 +1717,7 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     startedAt,
     policy,
     options: safeOptions,
+    apiReplayCookieHeader,
     authRuntime: runtimeAuth.authRuntime,
     authenticatedStructureSummary: runtimeAuth.authenticatedStructureSummary,
     source: createBuildSource(inputUrl, {
@@ -5613,7 +5621,7 @@ function apiReplayEligibility(context, candidate = /** @type {any} */ ({}), rawT
   if (apiCandidateHasRequestBody(candidate, rawTrace)) {
     return { eligible: false, reasonCode: 'request_body_present', method, endpoint, authBoundary: 'none' };
   }
-  if (!parsed || !isInternalUrl(parsed.toString(), context.site.allowedDomains)) {
+  if (!parsed || !isSameSiteUrl(parsed.toString(), context.site.allowedDomains)) {
     return { eligible: false, reasonCode: 'cross_site_endpoint', method, endpoint, authBoundary: 'none' };
   }
   if (!isUrlAllowedByRobots(parsed.toString(), robotsPolicy ?? setupProfileRobotsPolicy(context))) {
@@ -5662,6 +5670,90 @@ function summarizeApiReplayResult(rawResult = /** @type {any} */ ({})) {
     contentType: contentType || null,
     responseKind: String(rawResult?.responseKind ?? rawResult?.kind ?? '').trim() || null,
   };
+}
+
+function apiReplayCookieHeader(context = /** @type {any} */ ({})) {
+  const cookie = String(context.apiReplayCookieHeader ?? '').trim();
+  return cookie || null;
+}
+
+function canUseCookieApiReplayFallback(context = /** @type {any} */ ({}), eligibility = /** @type {any} */ ({})) {
+  return eligibility.authBoundary === 'browser_bridge'
+    && canRunAuthenticatedLayer(context.authStateReport)
+    && Boolean(apiReplayCookieHeader(context));
+}
+
+function apiReplayResponseKind(contentType) {
+  const value = String(contentType ?? '').trim();
+  if (/json/iu.test(value)) return 'json';
+  if (/html/iu.test(value)) return 'html';
+  if (/text\//iu.test(value)) return 'text';
+  return value ? 'other' : null;
+}
+
+async function runCookieApiReplayFallback(context, {
+  endpoint,
+  method,
+} = /** @type {any} */ ({})) {
+  const cookie = apiReplayCookieHeader(context);
+  if (!cookie) {
+    return {
+      status: 'skipped',
+      reasonCode: 'cookie_replay_unavailable',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+      authBoundary: 'cookie_replay_only',
+    };
+  }
+  const controller = new AbortController();
+  const configuredTimeout = Number(context.options?.browserBridgeApiReplayTimeoutMs);
+  const timeoutMs = Math.max(1000, Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 8000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method,
+      redirect: 'manual',
+      headers: {
+        cookie,
+        accept: 'application/json, text/plain;q=0.8, */*;q=0.1',
+      },
+      signal: controller.signal,
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const responseKind = apiReplayResponseKind(contentType);
+    const bodyText = method === 'HEAD'
+      ? ''
+      : await response.text().then((text) => text.slice(0, 600)).catch(() => '');
+    const redirect = response.status >= 300 && response.status < 400;
+    const verified = response.ok && responseKind === 'json';
+    return summarizeApiReplayResult({
+      status: verified ? 'verified' : 'failed',
+      reasonCode: redirect
+        ? 'cross_site_redirect'
+        : verified
+          ? null
+          : response.ok
+            ? 'api_replay_non_json_response'
+            : 'api_replay_http_failed',
+      httpStatus: response.status,
+      contentType,
+      responseKind,
+      bodyText,
+      authBoundary: 'cookie_replay_only',
+    });
+  } catch (error) {
+    return {
+      status: 'failed',
+      reasonCode: error?.name === 'AbortError' ? 'api_replay_timeout' : 'api_replay_http_failed',
+      httpStatus: null,
+      contentType: null,
+      responseKind: null,
+      authBoundary: 'cookie_replay_only',
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function resolveApiAdapterForCandidate(context, candidate) {
@@ -5798,6 +5890,7 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
     contentType: null,
     responseKind: null,
   };
+  let buildTimeAuthBoundary = eligibility.authBoundary;
   if (decisionRecord.status !== 'accepted') {
     reasonCode = decisionRecord.reasonCode ?? 'adapter_rejected';
     replaySummary = {
@@ -5841,6 +5934,26 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
           responseKind: null,
         };
       }
+    } else if (context.apiAdapterReplayBrowserBridgeUnavailableReason) {
+      if (canUseCookieApiReplayFallback(context, eligibility)) {
+        replaySummary = await runCookieApiReplayFallback(context, {
+          endpoint: replayEndpoint,
+          method: eligibility.method,
+        });
+        buildTimeAuthBoundary = 'cookie_replay_only';
+        status = replaySummary.status;
+        reasonCode = replaySummary.reasonCode;
+      } else {
+        status = 'skipped';
+        reasonCode = context.apiAdapterReplayBrowserBridgeUnavailableReason;
+        replaySummary = {
+          status,
+          reasonCode,
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        };
+      }
     } else {
       replaySummary = summarizeApiReplayResult(await runBrowserBridgeApiReplay({
         inputUrl: context.site.rootUrl,
@@ -5849,9 +5962,22 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
         method: eligibility.method,
         options: context.options,
         robotsPolicy,
+        openBrowser: (targetUrl) => openSystemDefaultBrowser(targetUrl, context.options),
       }));
       status = replaySummary.status;
       reasonCode = replaySummary.reasonCode;
+      if (/^browser_bridge_replay_/u.test(String(reasonCode ?? ''))) {
+        context.apiAdapterReplayBrowserBridgeUnavailableReason = reasonCode;
+        if (canUseCookieApiReplayFallback(context, eligibility)) {
+          replaySummary = await runCookieApiReplayFallback(context, {
+            endpoint: replayEndpoint,
+            method: eligibility.method,
+          });
+          buildTimeAuthBoundary = 'cookie_replay_only';
+          status = replaySummary.status;
+          reasonCode = replaySummary.reasonCode;
+        }
+      }
     }
   }
   const activated = decisionRecord.status === 'accepted'
@@ -5876,6 +6002,7 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
     endpoint: sanitizeEvidenceRef(eligibility.endpoint),
     authBoundary: eligibility.authBoundary,
     replayPolicy: {
+      buildTimeAuthBoundary,
       credentials: eligibility.authBoundary === 'browser_bridge' ? 'include' : 'none',
       requestBodyAllowed: false,
       savedCookieMaterial: false,

@@ -49,8 +49,8 @@ function redactCliDiagnosticText(value) {
   const raw = String(value ?? '');
   const { error } = redactError({ message: raw, stack: raw });
   return String(error.stack ?? error.message ?? raw)
-    .replace(/\b(?:sid|uid|session(?:[_-]?id)?|token|auth|cookieHeader|cookieEnv|cookieFile|cookieStdin)\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^;\s'",]+/giu, '[REDACTED]')
-    .replace(/\b(?:authRuntime|cookieHeader|cookieEnv|cookieFile|cookieStdin)\b/giu, '[REDACTED_FIELD]');
+    .replace(/\b(?:sid|uid|session(?:[_-]?id)?|token|auth|cookieHeader|apiReplayCookieHeader|cookieEnv|cookieFile|cookieStdin)\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^;\s'",]+/giu, '[REDACTED]')
+    .replace(/\b(?:authRuntime|cookieHeader|apiReplayCookieHeader|cookieEnv|cookieFile|cookieStdin)\b/giu, '[REDACTED_FIELD]');
 }
 
 function setupFailureClass(reasonCode) {
@@ -1129,6 +1129,9 @@ async function applyLocalBuildConfig(inputUrl, options, {
   if (auth.mode === 'browser' && options.ignoreLocalCookieConfig !== true && options.authModeExplicit !== true) {
     next.authMode = 'browser';
     next.strictBrowserAuth = true;
+    if (cookie && !hasExplicitCookieSource) {
+      next.apiReplayCookieHeader = cookie;
+    }
     if (localBuildConfig.authCheckUrl && !options.authCheckUrl) {
       next.authCheckUrl = localBuildConfig.authCheckUrl;
     }

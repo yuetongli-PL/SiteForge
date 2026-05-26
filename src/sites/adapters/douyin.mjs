@@ -10,6 +10,7 @@ import { createCatalogAdapter } from './factory.mjs';
 
 const DOUYIN_HOSTS = Object.freeze([
   'www.douyin.com',
+  'creator.douyin.com',
 ]);
 
 export const DOUYIN_TERMINOLOGY = Object.freeze({
@@ -57,12 +58,21 @@ function endpointParts(candidate = /** @type {any} */ ({})) {
   };
 }
 
+function isDouyinSiteKey(value) {
+  const siteKey = String(value ?? '').trim();
+  return siteKey === 'douyin' || /^douyin\.com-/u.test(siteKey);
+}
+
 function isDouyinApiCandidate(candidate = /** @type {any} */ ({})) {
-  const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
-  return siteKey === 'douyin'
-    && host === 'www.douyin.com'
-    && pathname.startsWith('/aweme/v1/');
+  if (!isDouyinSiteKey(candidate?.siteKey)) {
+    return false;
+  }
+  if (host === 'www.douyin.com') {
+    return pathname.startsWith('/aweme/v1/');
+  }
+  return host === 'creator.douyin.com'
+    && (pathname.startsWith('/aweme/v1/') || pathname.startsWith('/web/api/'));
 }
 
 const DOUYIN_HEALTH_SIGNAL_MAP = Object.freeze({

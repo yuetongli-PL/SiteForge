@@ -445,6 +445,78 @@ test('replay verified browser-auth read-only API becomes active browser bridge A
   }
 });
 
+test('browser-auth API replay can use cookie only for build-time verification with bridge runtime evidence', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-cookie-replay-'));
+  const rawSecret = 'synthetic-internal-raw-token';
+  const cookieSecret = 'synthetic-cookie-replay-secret';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/api/feed': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ items: [{ id: 1 }] }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-cookie-replay-build',
+        now: new Date('2026-05-26T01:02:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        apiReplayCookieHeader: `sid=${cookieSecret}`,
+        browserBridgeApiReplayProvider: async () => ({
+          status: 'skipped',
+          reasonCode: 'browser_bridge_replay_timeout',
+        }),
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawReadApiTrace(rootUrl, rawSecret)],
+            observedRequests: [observedReadApiRequest(rootUrl, context.site.id, rawSecret)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'cookie_replay_only');
+      assert.equal(replayArtifact.replayPolicy.runtimeRegistration, 'browser_bridge_required');
+      assert.equal(replayArtifact.replayPolicy.savedCookieMaterial, false);
+      assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const apiCapability = capabilities.capabilities.find((capability) => capability.apiAdapter?.replayVerificationRef);
+      assert.equal(apiCapability?.status, 'active');
+      assert.equal(apiCapability?.runtimeMode, 'browser_bridge_required');
+      assert.equal(apiCapability?.requiresFreshBridgeEvidence, true);
+      assert.equal(JSON.stringify(apiCapability).includes(cookieSecret), false);
+
+      const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
+      assert.equal(userReport.api_discovery_summary.activated_api_adapter_count, 1);
+      assert.equal(JSON.stringify(userReport).includes(cookieSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('api catalog promotion gate requires explicit schema policy and test evidence', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-catalog-gate-'));
   const secret = 'synthetic-internal-raw-token';

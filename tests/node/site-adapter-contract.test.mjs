@@ -2085,6 +2085,26 @@ test('douyin adapter validates synthetic site API candidates without catalog pro
   assert.equal(Object.hasOwn(decision, 'artifactPath'), false);
   assert.equal(Object.hasOwn(decision, 'catalogPath'), false);
 
+  const observedBuildCandidate = createSyntheticCandidate({
+    id: 'douyin-observed-build-candidate',
+    siteKey: 'douyin.com-73a07da7',
+    endpoint: {
+      method: 'GET',
+      url: 'https://creator.douyin.com/web/api/media/user/info/',
+    },
+  });
+  // @ts-ignore
+  const observedDecision = adapter.validateApiCandidate({
+    candidate: observedBuildCandidate,
+    validatedAt: '2026-05-01T13:10:01.000Z',
+  });
+  assert.equal(observedDecision.candidateId, 'douyin-observed-build-candidate');
+  assert.equal(observedDecision.siteKey, 'douyin.com-73a07da7');
+  assert.equal(observedDecision.adapterId, 'douyin');
+  assert.equal(observedDecision.decision, 'accepted');
+  assert.equal(observedDecision.scope.endpointHost, 'creator.douyin.com');
+  assert.equal(observedDecision.scope.endpointPath, '/web/api/media/user/info/');
+
   await assert.rejects(
     writeApiCatalogEntryArtifact(candidate, { catalogPath: path.join('unused', 'douyin-catalog.json') }),
     /ApiCandidate must be verified before catalog entry/u,

@@ -10,6 +10,9 @@ import { ensureDir, pathExists, readJsonFile, writeJsonFile } from '../../../inf
 import { jsonClone } from '../../../shared/clone.mjs';
 import { uniqueSortedStrings } from '../../../shared/normalize.mjs';
 import {
+  policySupportsCapabilityFamily,
+} from '../../../sites/registry/core/capability-intent-mapping.mjs';
+import {
   BUILD_SCHEMA_VERSION,
   createSiteRecord,
   DEFAULT_BUILD_POLICY,
@@ -355,11 +358,13 @@ function knownPolicyPublicRouteTemplates(registryRecord, capabilityRecord) {
   const explicit = explicitPublicRouteTemplates(registryRecord, capabilityRecord);
   const adapterId = String(registryRecord?.adapterId ?? capabilityRecord?.adapterId ?? '').toLowerCase();
   const archetype = String(registryRecord?.siteArchetype ?? capabilityRecord?.primaryArchetype ?? '').toLowerCase();
-  const supported = new Set(capabilityRecord?.supportedIntents ?? []);
-  const families = new Set([
-    ...(registryRecord?.capabilityFamilies ?? []),
-    ...(capabilityRecord?.capabilityFamilies ?? []),
-  ]);
+  const routePolicy = {
+    capabilityFamilies: [
+      ...(registryRecord?.capabilityFamilies ?? []),
+      ...(capabilityRecord?.capabilityFamilies ?? []),
+    ],
+    supportedIntents: capabilityRecord?.supportedIntents ?? [],
+  };
   const explicitRouteKeys = new Set(explicit
     .map((route) => String(route?.path ?? route?.route ?? route?.pathTemplate ?? route?.routeTemplate ?? '').trim())
     .filter(Boolean));
@@ -371,16 +376,16 @@ function knownPolicyPublicRouteTemplates(registryRecord, capabilityRecord) {
     }
   };
   if (adapterId === 'chapter-content' || archetype === 'chapter-content') {
-    if (families.has('navigate-to-category') || supported.has('open-category')) {
+    if (policySupportsCapabilityFamily(routePolicy, 'navigate-to-category')) {
       addInferred({ id: 'chapter-content-category-template', pathTemplate: '/category/{categoryId}/', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: false });
     }
-    if (families.has('search-content') || supported.has('search-book')) {
+    if (policySupportsCapabilityFamily(routePolicy, 'search-content')) {
       addInferred({ id: 'chapter-content-search-template', pathTemplate: '/search', pageType: 'search-results-page', capabilityFamilies: ['search-content'], seedable: false });
     }
-    if (families.has('navigate-to-content') || supported.has('open-book')) {
+    if (policySupportsCapabilityFamily(routePolicy, 'navigate-to-content')) {
       addInferred({ id: 'chapter-content-book-template', pathTemplate: '/book/{bookId}/', pageType: 'book-detail-page', capabilityFamilies: ['navigate-to-content'], seedable: false });
     }
-    if (families.has('navigate-to-chapter') || supported.has('open-chapter')) {
+    if (policySupportsCapabilityFamily(routePolicy, 'navigate-to-chapter')) {
       addInferred({ id: 'chapter-content-chapter-template', pathTemplate: '/chapter/{bookId}/{chapterId}/', pageType: 'chapter-page', capabilityFamilies: ['navigate-to-chapter'], seedable: false });
     }
   }
@@ -1309,20 +1314,11 @@ function authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, site, knownSitePolicy
     return [];
   }
   const pathName = normalizedPathName(parsed.pathname);
-  const families = new Set(knownSitePolicy?.capabilityFamilies ?? []);
-  const supported = new Set(knownSitePolicy?.supportedIntents ?? []);
-  const hasSocialContent = families.has('query-social-content')
-    || supported.has('recommended-timeline-posts')
-    || supported.has('list-recommended-timeline-posts')
-    || supported.has('search-posts')
-    || supported.has('search-content');
-  const hasSocialRelations = families.has('query-social-relations')
-    || supported.has('list-followed-users');
-  const hasAccountProfile = families.has('query-account-profile')
-    || supported.has('profile-content')
-    || supported.has('list-profile-content');
-  const hasUtilityRoutes = families.has('navigate-to-utility-page')
-    || supported.has('open-utility-page');
+  const hasSocialContent = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-content')
+    || policySupportsCapabilityFamily(knownSitePolicy, 'search-content');
+  const hasSocialRelations = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-relations');
+  const hasAccountProfile = policySupportsCapabilityFamily(knownSitePolicy, 'query-account-profile');
+  const hasUtilityRoutes = policySupportsCapabilityFamily(knownSitePolicy, 'navigate-to-utility-page');
   const seeds = /** @type {any[]} */ ([]);
   const addSeed = (urlValue, {
     routeKind = 'authorized-route',
@@ -1489,8 +1485,11 @@ function knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized = 
     return [];
   }
   const supported = new Set(knownSitePolicy.supportedIntents ?? []);
-  const families = new Set(knownSitePolicy.capabilityFamilies ?? []);
   const observed = capabilityIdsFromUserAuthorizedEvidence(userAuthorizedEvidence);
+  const supportsSocialContent = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-content');
+  const supportsSocialRelations = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-relations');
+  const supportsAccountProfile = policySupportsCapabilityFamily(knownSitePolicy, 'query-account-profile');
+  const supportsDownloadContent = policySupportsCapabilityFamily(knownSitePolicy, 'download-content');
   const capabilities = /** @type {any[]} */ ([]);
   const add = (id, name, reason, safety = 'read_only', recommended = false, extra = /** @type {any} */ ({})) => {
     if (!capabilities.some((capability) => capability.id === id)) {
@@ -1507,16 +1506,16 @@ function knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized = 
     }
   };
   const hasIntent = (...ids) => ids.some((id) => supported.has(id) || observed.has(normalizeCapabilityId(id)));
-  if (supported.has('list-followed-users') || families.has('query-social-relations')) {
+  if (supportsSocialRelations || observed.has('list-followed-users')) {
     add('list-followed-users', 'List followed users', 'Candidate only until SiteForge captures capability-specific followed-user evidence.');
   }
-  if (supported.has('list-followed-updates') || families.has('query-social-content')) {
+  if (supportsSocialContent || observed.has('list-followed-updates')) {
     add('list-followed-updates', 'List followed updates', 'Candidate only until SiteForge captures capability-specific followed-update evidence.');
   }
-  if (supported.has('recommended-timeline-posts') || supported.has('list-recommended-timeline-posts') || families.has('query-social-content')) {
+  if (supportsSocialContent || hasIntent('recommended-timeline-posts', 'list-recommended-timeline-posts')) {
     add('recommended-timeline-posts', 'List recommended timeline posts', 'Candidate only until SiteForge captures capability-specific recommended timeline evidence.');
   }
-  if (supported.has('profile-content') || supported.has('list-profile-content') || families.has('query-social-content')) {
+  if (supportsSocialContent || supportsAccountProfile || hasIntent('profile-content', 'list-profile-content')) {
     add('list-profile-content', 'List profile content', 'Candidate only until SiteForge captures capability-specific profile evidence.');
   }
   if (supported.has('search-posts') || supported.has('search-content')) {
@@ -1534,7 +1533,7 @@ function knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized = 
   if (hasIntent('list-direct-messages', 'direct-messages', 'messages')) {
     add('list-direct-messages', 'List direct messages', 'Candidate only until SiteForge captures explicit message-list evidence.', 'requires_confirmation');
   }
-  if (families.has('download-content')) {
+  if (supportsDownloadContent) {
     add('download-content-candidate', 'Prepare media download candidate', 'Downloads require a separate approved bounded action path.', 'requires_confirmation', false);
   }
   return capabilities;
@@ -3343,19 +3342,20 @@ function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
     return [];
   }
   const supported = new Set(knownSitePolicy.supportedIntents ?? []);
-  const families = new Set(knownSitePolicy.capabilityFamilies ?? []);
+  const supportsSocialContent = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-content');
+  const supportsSocialRelations = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-relations');
   const followingRoutePath = knownPolicyFollowingRoutePath(knownSitePolicy);
   const routes = new Set();
-  if (supported.has('recommended-timeline-posts') || supported.has('list-recommended-timeline-posts') || families.has('query-social-content')) {
+  if (supportsSocialContent) {
     routes.add('/home');
   }
-  if (supported.has('list-followed-updates') || families.has('query-social-content')) {
+  if (supportsSocialContent) {
     routes.add(followingRoutePath);
   }
   if (supported.has('search-posts') || supported.has('search-content')) {
     routes.add(knownPolicySearchRoutePath(knownSitePolicy));
   }
-  if (supported.has('list-followed-users') || families.has('query-social-relations')) {
+  if (supportsSocialRelations) {
     routes.add(followingRoutePath);
   }
   if (supported.has('list-notifications')) {

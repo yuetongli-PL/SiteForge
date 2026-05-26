@@ -24,6 +24,9 @@ import {
   isDownloadIntent,
   normalizeDownloadAvailability,
 } from '../../sites/availability.mjs';
+import {
+  resolveCapabilityFamilyForIntent,
+} from '../../sites/registry/core/capability-intent-mapping.mjs';
 
 const SAFE_REGISTRY_FIELDS = Object.freeze([
   'adapterId',
@@ -150,25 +153,6 @@ function modeForIntent(intent) {
   return 'readOnly';
 }
 
-function capabilityFamilyForIntent(intent, families = []) {
-  if (families.includes(intent)) {
-    return intent;
-  }
-  if (/download/iu.test(intent) && families.includes('download-content')) {
-    return 'download-content';
-  }
-  if (/search/iu.test(intent) && families.includes('search-content')) {
-    return 'search-content';
-  }
-  if (/chapter/iu.test(intent) && families.includes('navigate-to-chapter')) {
-    return 'navigate-to-chapter';
-  }
-  if (/book|content|page|open/iu.test(intent) && families.includes('navigate-to-content')) {
-    return 'navigate-to-content';
-  }
-  return families[0] ?? intent;
-}
-
 /** @param {Record<string, any>} [capabilitySite] */
 function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
   const supportedIntents = Array.isArray(capabilitySite.supportedIntents)
@@ -192,7 +176,7 @@ function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
     return {
       capabilityKey: intent,
       normalizedIntent: intent,
-      capabilityFamily: capabilityFamilyForIntent(intent, families),
+      capabilityFamily: resolveCapabilityFamilyForIntent(intent, families),
       supportedTaskTypes: [intent],
       routeKey: intent,
       routeKind: 'page',

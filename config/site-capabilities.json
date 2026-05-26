@@ -79,6 +79,7 @@
         "navigate-to-category",
         "navigate-to-chapter",
         "navigate-to-content",
+        "navigate-to-utility-page",
         "search-content"
       ],
       "supportedIntents": [
@@ -470,6 +471,13 @@
       ],
       "capabilityFamilies": [
         "download-content",
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
+        "query-social-content",
+        "query-social-relations",
         "search-content"
       ],
       "supportedIntents": [

@@ -11,6 +11,9 @@ import { mapWithConcurrency } from '../../../shared/concurrency.mjs';
 import { slugifyAscii, uniqueSortedStrings } from '../../../shared/normalize.mjs';
 import { sanitizePublicUrl } from '../../../shared/url-safety.mjs';
 import {
+  policySupportsCapabilityFamily,
+} from '../../../sites/registry/core/capability-intent-mapping.mjs';
+import {
   assertNoForbiddenPatterns,
   prepareRedactedArtifactJsonWithAudit,
 } from '../../../domain/sessions/security-guard.mjs';
@@ -7764,7 +7767,10 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
     return;
   }
   const supported = knownPolicySupportedIntents(context);
-  const families = knownPolicyCapabilityFamilies(context);
+  const knownSitePolicy = context.setupProfile.knownSitePolicy;
+  const supportsSocialContent = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-content');
+  const supportsSocialRelations = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-relations');
+  const supportsAccountProfile = policySupportsCapabilityFamily(knownSitePolicy, 'query-account-profile');
   const selected = selectedSetupCapabilityIds(context);
   const browserSeedCapabilities = userAuthorizedBrowserSeedCapabilityIds(context);
   const siteKey = context.setupProfile.knownSitePolicy.siteKey ?? context.setupProfile.knownSitePolicy.adapterId ?? context.site.id;
@@ -7866,7 +7872,7 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
     }
     capabilities.push(capability);
   };
-  if (supported.has('list-followed-users') || families.has('query-social-relations')) {
+  if (supportsSocialRelations) {
     add({
       name: 'list followed users',
       description: 'List followed users through the bounded known-site adapter using user-authorized browser state.',
@@ -7876,7 +7882,7 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
       setupCapabilityId: 'list-followed-users',
     });
   }
-  if (supported.has('list-followed-updates') || families.has('query-social-content')) {
+  if (supportsSocialContent) {
     add({
       name: 'list followed updates',
       description: 'List followed updates through the bounded known-site adapter using user-authorized browser state.',
@@ -7886,7 +7892,7 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
       setupCapabilityId: 'list-followed-updates',
     });
   }
-  if (supported.has('recommended-timeline-posts') || supported.has('list-recommended-timeline-posts') || families.has('query-social-content')) {
+  if (supportsSocialContent) {
     add({
       name: 'list recommended timeline posts',
       description: 'List recommended timeline posts through a bounded user-authorized known-site adapter path.',
@@ -7896,7 +7902,7 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
       setupCapabilityId: 'recommended-timeline-posts',
     });
   }
-  if (supported.has('profile-content') || supported.has('list-profile-content') || families.has('query-social-content') || families.has('query-account-profile')) {
+  if (supportsSocialContent || supportsAccountProfile) {
     add({
       name: 'list profile content',
       description: 'List profile content through the bounded known-site adapter.',

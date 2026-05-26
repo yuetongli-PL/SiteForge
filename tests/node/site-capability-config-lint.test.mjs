@@ -12,59 +12,15 @@ import {
   isDownloadIntent,
   normalizeDownloadAvailability,
 } from '../../src/sites/availability.mjs';
+import {
+  CANONICAL_CAPABILITY_FAMILIES,
+  CANONICAL_SUPPORTED_INTENTS,
+  explainCapabilityIntentMapping,
+} from '../../src/sites/registry/core/capability-intent-mapping.mjs';
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../../${relativePath}`, import.meta.url), 'utf8'));
 }
-
-const ALLOWED_SUPPORTED_INTENTS = new Set([
-  'account-info',
-  'download-book',
-  'download-media',
-  'download-note',
-  'download-video',
-  'full-archive',
-  'list-author-following',
-  'list-category-videos',
-  'list-followed-updates',
-  'list-followed-users',
-  'list-profile-content',
-  'open-actress',
-  'open-auth-page',
-  'open-author',
-  'open-book',
-  'open-category',
-  'open-chapter',
-  'open-model',
-  'open-note',
-  'open-post',
-  'open-reel',
-  'open-utility-page',
-  'open-video',
-  'open-work',
-  'profile-content',
-  'search-book',
-  'search-content',
-  'search-note',
-  'search-posts',
-  'search-video',
-  'search-work',
-]);
-
-const ALLOWED_CAPABILITY_FAMILIES = new Set([
-  'download-content',
-  'navigate-to-author',
-  'navigate-to-category',
-  'navigate-to-chapter',
-  'navigate-to-content',
-  'navigate-to-utility-page',
-  'open-auth-page',
-  'query-account-profile',
-  'query-social-content',
-  'query-social-relations',
-  'search-content',
-  'switch-in-page-state',
-]);
 
 const ALLOWED_ACTION_KINDS = new Set([
   'download-book',
@@ -106,10 +62,16 @@ test('site capability config uses typed intents, families, action kinds, and can
 
   for (const [host, site] of Object.entries(capabilities.sites)) {
     for (const intent of site.supportedIntents ?? []) {
-      assert.equal(ALLOWED_SUPPORTED_INTENTS.has(intent), true, `${host} has unknown supportedIntent ${intent}`);
+      assert.equal(CANONICAL_SUPPORTED_INTENTS.has(intent), true, `${host} has unknown supportedIntent ${intent}`);
+      const mapping = explainCapabilityIntentMapping(intent, site.capabilityFamilies ?? []);
+      assert.equal(
+        mapping.status,
+        'mapped',
+        `${host} supportedIntent ${intent} must map to a declared capabilityFamily; got ${mapping.reason}`,
+      );
     }
     for (const family of site.capabilityFamilies ?? []) {
-      assert.equal(ALLOWED_CAPABILITY_FAMILIES.has(family), true, `${host} has unknown capabilityFamily ${family}`);
+      assert.equal(CANONICAL_CAPABILITY_FAMILIES.has(family), true, `${host} has unknown capabilityFamily ${family}`);
     }
     for (const actionKind of [...(site.safeActionKinds ?? []), ...(site.approvalActionKinds ?? [])]) {
       assert.equal(ALLOWED_ACTION_KINDS.has(actionKind), true, `${host} has unknown action kind ${actionKind}`);

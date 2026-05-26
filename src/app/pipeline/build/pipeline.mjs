@@ -26,6 +26,11 @@ import {
   writeSkillJson,
   writeSkillText,
 } from './artifact-store.mjs';
+import { assertBuildProfileSafe } from './build-profile-safety.mjs';
+import {
+  reusableBuildProfileAuthStateReport,
+  reusableBuildProfileCrawlContract,
+} from './build-profile-reuse.mjs';
 import {
   assertAffordance,
   assertCapability,
@@ -1104,31 +1109,6 @@ function toYaml(value, indent = 0) {
   return `${pad}${renderYamlScalar(value)}`;
 }
 
-const SENSITIVE_BUILD_PROFILE_KEY_PATTERN = /^(?:cookie|cookies|csrf|authorization|authHeader|authHeaders|header|headers|accessToken|access_token|refreshToken|refresh_token|sessdata|sessionId|session_id|sid|token|tokens|profilePath|browserProfile|browserProfileRoot|userDataDir|user_data_dir)$/iu;
-
-function findSensitiveBuildProfileKeys(value, pathParts = /** @type {any[]} */ ([])) {
-  if (!value || typeof value !== 'object') {
-    return [];
-  }
-  const hits = /** @type {any[]} */ ([]);
-  for (const [key, item] of Object.entries(value)) {
-    const nextPath = [...pathParts, key];
-    if (SENSITIVE_BUILD_PROFILE_KEY_PATTERN.test(key)) {
-      hits.push(nextPath.join('.'));
-      continue;
-    }
-    hits.push(...findSensitiveBuildProfileKeys(item, nextPath));
-  }
-  return hits;
-}
-
-function assertBuildProfileSafe(profile) {
-  const sensitiveKeys = findSensitiveBuildProfileKeys(profile);
-  if (sensitiveKeys.length) {
-    throw new Error(`build_profile.json contains sensitive fields: ${sensitiveKeys.join(', ')}`);
-  }
-}
-
 function policyFromSetupProfile(profile = /** @type {any} */ ({})) {
   const scope = profile.scope ?? {};
   const safety = profile.safety ?? {};
@@ -1714,10 +1694,25 @@ async function hydrateBuildProfile(context) {
     return;
   }
   assertBuildProfileSafe(profile);
-  context.setupProfile = profile;
   context.buildProfilePath = profilePath;
-  context.authStateReport = context.options.authStateReport ?? profile.authStateReport ?? context.authStateReport;
-  context.crawlContract = context.options.crawlContract ?? profile.crawlContract ?? context.crawlContract;
+  context.authStateReport = reusableBuildProfileAuthStateReport({
+    options: context.options,
+    site: context.site,
+    buildProfile: profile,
+    fallbackAuthStateReport: context.authStateReport,
+  });
+  context.crawlContract = reusableBuildProfileCrawlContract({
+    options: context.options,
+    site: context.site,
+    buildProfile: profile,
+    authStateReport: context.authStateReport,
+    fallbackCrawlContract: context.crawlContract,
+  });
+  context.setupProfile = {
+    ...profile,
+    authStateReport: context.authStateReport,
+    crawlContract: context.crawlContract,
+  };
   if (!context.authStateReport) {
     context.authStateReport = createPublicOnlyAuthStateReport({
       site: context.site,

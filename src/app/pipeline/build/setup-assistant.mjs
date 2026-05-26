@@ -30,6 +30,14 @@ import {
   runDefaultBrowserAuthStateCheck,
 } from './auth-state.mjs';
 import {
+  assertBuildProfileSafe,
+  isBuildProfileSafe,
+} from './build-profile-safety.mjs';
+import {
+  reusableBuildProfileAuthStateReport,
+  reusableBuildProfileCrawlContract,
+} from './build-profile-reuse.mjs';
+import {
   AUTO_DISCOVERY_SCHEMA_VERSION,
   createSocialSpaAutoDiscoverySummary,
   mergeAutoDiscoveryPages,
@@ -1748,6 +1756,7 @@ function isUsableSavedBuildProfile(profile) {
   return profile?.artifactFamily === 'siteforge-build-profile'
     && profile?.site?.rootUrl
     && profile?.source?.type === 'live_website'
+    && isBuildProfileSafe(profile)
     && !profileHasRetiredFixtureSource(profile)
     && !profileHasRetiredAuthenticationModel(profile)
     && profile?.scope
@@ -3612,6 +3621,7 @@ async function persistSetupProfile({ paths, setupPlan, userChoices, saveProfile 
     .map((capability) => capability.id);
   const capabilityHints = createCapabilityHints(setupPlan, userChoices);
   const profile = createBuildProfile(setupPlan, userChoices, capabilityHints, paths);
+  assertBuildProfileSafe(profile);
   await ensureSiteWorkspace(paths.workspace, paths.site, { nowIso: paths.generatedAt });
   await ensureDir(paths.artifactDir);
   await ensureDir(paths.siteArtifactDir);
@@ -3656,11 +3666,22 @@ async function persistProfileSnapshot(paths, profile) {
     hints: profile.userHints ?? [],
     evidenceValidationBoundary: capabilityHints.validationBoundary,
   };
-  const profileSnapshot = {
-    ...profile,
-    updatedAt: new Date().toISOString(),
-    crawlContract: clone(profile.crawlContract ?? createCrawlContract({
+  const authStateReport = reusableBuildProfileAuthStateReport({
+    site: paths.site,
+    buildProfile: profile,
+  })
+    ?? createPublicOnlyAuthStateReport({
       site: profile.site ?? paths.site,
+      authMethod: 'none',
+    });
+  const crawlContract = reusableBuildProfileCrawlContract({
+    site: paths.site,
+    buildProfile: profile,
+    authStateReport,
+  })
+    ?? createCrawlContract({
+      site: profile.site ?? paths.site,
+      authStateReport,
       coverageTargets: {
         publicRoutes: [paths.site.rootUrl],
         authRoutes: [],
@@ -3668,13 +3689,12 @@ async function persistProfileSnapshot(paths, profile) {
         candidateCapabilities: [],
         requiresLoginCapabilities: [],
       },
-    })),
-    authStateReport: normalizeAuthStateReport(profile.authStateReport ?? createPublicOnlyAuthStateReport({
-      site: profile.site ?? paths.site,
-      authMethod: 'none',
-    }), {
-      site: profile.site ?? paths.site,
-    }),
+    });
+  const profileSnapshot = {
+    ...profile,
+    updatedAt: new Date().toISOString(),
+    crawlContract,
+    authStateReport,
     collectionReview: clone(profile.collectionReview ?? null),
     setupConfiguration: normalizeSetupConfiguration(profile.setupConfiguration),
     setupRefs: {
@@ -3689,6 +3709,7 @@ async function persistProfileSnapshot(paths, profile) {
       reason: null,
     },
   };
+  assertBuildProfileSafe(profileSnapshot);
   await ensureSiteWorkspace(paths.workspace, paths.site, { nowIso: paths.generatedAt });
   await ensureDir(paths.artifactDir);
   await ensureDir(path.dirname(paths.buildProfilePath));
@@ -4025,15 +4046,31 @@ async function promptFirstRunChoices(setupPlan, options = /** @type {any} */ ({}
 function buildOptionsFromProfile(options, paths, profile) {
   const scope = profile.scope ?? {};
   const safety = profile.safety ?? {};
+  const authStateReport = reusableBuildProfileAuthStateReport({
+    options,
+    site: paths.site,
+    buildProfile: profile,
+  });
+  const crawlContract = reusableBuildProfileCrawlContract({
+    options,
+    site: paths.site,
+    buildProfile: profile,
+    authStateReport,
+  });
+  const setupProfile = {
+    ...profile,
+    authStateReport,
+    crawlContract,
+  };
   return {
     ...options,
     buildId: paths.buildId,
     cwd: paths.cwd,
     buildProfilePath: paths.buildProfilePath,
     savedBuildProfilePath: paths.savedBuildProfilePath,
-    setupProfile: profile,
-    crawlContract: clone(profile.crawlContract ?? null),
-    authStateReport: clone(profile.authStateReport ?? null),
+    setupProfile,
+    crawlContract,
+    authStateReport,
     authStateReportPath: profile.authStateReportRef
       ? path.resolve(paths.cwd, profile.authStateReportRef)
       : paths.authStateReportPath,

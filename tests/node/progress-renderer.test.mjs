@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  createProgressLifecycle,
   createProgressRenderer,
   formatEta,
   formatPercent,
@@ -12,7 +13,6 @@ import {
   truncateText,
   visibleWidth,
 } from '../../src/infra/cli/progress.mjs';
-import { siteForgeBuildStageTitle } from '../../src/infra/cli/progress-copy.mjs';
 
 function createStream({ isTTY = false, columns = 80 } = /** @type {any} */ ({})) {
   let output = '';
@@ -79,6 +79,24 @@ test('stage progress falls back to stage index when no inner progress is reporte
   stage.succeed({ message: 'done' });
   const output = stripAnsi(stderr.output());
   assert.match(output, /70%/u);
+});
+
+test('progress lifecycle accepts stage status tokens and method names', () => {
+  const stderr = createStream();
+  const progress = createProgressRenderer({ stdout: stderr, stderr, mode: 'plain', color: 'never', unicode: 'never', env: {} });
+  const task = progress.task({ id: 'build', title: 'Build' });
+  const lifecycle = createProgressLifecycle(progress, task);
+
+  lifecycle.finishStage(lifecycle.startStage({ id: 'writeReport', index: 1, total: 4 }), 'success', { message: 'report written' });
+  lifecycle.finishStage(lifecycle.startStage({ id: 'capture', index: 2, total: 4 }), 'warning', { message: 'partial capture' });
+  lifecycle.finishStage(lifecycle.startStage({ id: 'optional', index: 3, total: 4 }), 'skipped', { message: 'not needed' });
+  lifecycle.finishStage(lifecycle.startStage({ id: 'verify', index: 4, total: 4 }), 'fail', { message: 'verification failed' });
+
+  const output = stderr.output();
+  assert.match(output, /name=writeReport status=success message="report written"/u);
+  assert.match(output, /name=capture status=warning message="partial capture"/u);
+  assert.match(output, /name=optional status=skipped message="not needed"/u);
+  assert.match(output, /name=verify status=failed message="verification failed"/u);
 });
 
 test('interactive mode supports status icons and color can be disabled', () => {
@@ -156,15 +174,6 @@ test('download progress summary renders bytes, speed, ETA, resume, skip, verify,
   assert.match(output, /verified=1/u);
   assert.match(output, /skippedExisting=1/u);
   assert.match(output, /failed=1/u);
-});
-
-test('SiteForge build stage mapping is centralized and defaults to Chinese', () => {
-  assert.equal(siteForgeBuildStageTitle('registerSite'), '注册站点');
-  assert.equal(siteForgeBuildStageTitle('discoverSeeds'), '发现种子页面');
-  assert.equal(siteForgeBuildStageTitle('crawlStatic'), '采集静态页面');
-  assert.equal(siteForgeBuildStageTitle('writeBuildReport'), '写入构建报告');
-  assert.equal(siteForgeBuildStageTitle('registerSite', 'en'), 'Registering site');
-  assert.equal(siteForgeBuildStageTitle('unknownStage'), 'unknownStage');
 });
 
 test('progress output redacts sensitive keys and values', () => {

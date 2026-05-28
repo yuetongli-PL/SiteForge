@@ -16,7 +16,10 @@ import {
   readSiteRegistry,
   upsertSiteRegistryRecord,
 } from '../../src/sites/registry/catalog/registry.mjs';
+import { readSiteContext } from '../../src/sites/registry/catalog/context.mjs';
+import { readSiteContext as readCoreSiteContext } from '../../src/sites/registry/core/context.mjs';
 import { createSiteIndexStore } from '../../src/sites/registry/catalog/index.mjs';
+import { readSiteRepository } from '../../src/sites/registry/catalog/repository.mjs';
 import { createSiteMetadataSandbox } from './helpers/site-metadata-sandbox.mjs';
 
 test('site registry and capabilities return default empty documents before first write', async () => {
@@ -231,6 +234,36 @@ test('site registry and capabilities keep hosts isolated', async () => {
 
     assert.deepEqual(capabilities.sites['www.22biqu.com'].supportedIntents, ['download-book']);
     assert.deepEqual(capabilities.sites['moodyz.com'].supportedIntents, ['open-actress', 'open-work']);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('site repository and site context share host normalization and record lookup', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-context-repository-'));
+  try {
+    await upsertSiteRegistryRecord(workspace, 'jable.tv', {
+      canonicalBaseUrl: 'https://jable.tv/',
+      siteKey: 'jable',
+      adapterId: 'jable',
+    });
+    await upsertSiteCapabilities(workspace, 'jable.tv', {
+      baseUrl: 'https://jable.tv/',
+      siteKey: 'jable',
+      adapterId: 'jable',
+      supportedIntents: ['search-video'],
+    });
+
+    const context = await readSiteContext(workspace, 'https://JABLE.TV/videos/latest');
+    const repository = await readSiteRepository(workspace, 'https://jable.tv/search');
+    const coreContext = await readCoreSiteContext(workspace, 'https://jable.tv/tags/recent');
+
+    assert.equal(context.host, 'jable.tv');
+    assert.deepEqual(repository, context);
+    assert.deepEqual(coreContext, context);
+    assert.equal(repository.registryRecord.siteKey, 'jable');
+    assert.equal(repository.capabilitiesRecord.siteKey, 'jable');
+    assert.deepEqual(repository.capabilitiesRecord.supportedIntents, ['search-video']);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

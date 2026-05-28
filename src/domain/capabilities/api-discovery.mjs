@@ -411,8 +411,9 @@ export function apiCandidateFromObservedRequest(raw = {}) {
   const redactedHeaders = redactHeaders(raw.headers ?? raw.request?.headers ?? {}).headers;
   const redactedBody = redactBody(raw.body ?? raw.request?.body).body;
   const redactedEvidence = redactValue(raw.evidence).value;
+  const redactedRuntime = raw.runtime ? redactValue(raw.runtime).value : undefined;
 
-  return {
+  const candidate = {
     schemaVersion: API_CANDIDATE_SCHEMA_VERSION,
     id: normalizeText(raw.id),
     siteKey,
@@ -435,6 +436,10 @@ export function apiCandidateFromObservedRequest(raw = {}) {
       body: redactedBody,
     },
   };
+  if (redactedRuntime !== undefined) {
+    candidate.runtime = redactedRuntime;
+  }
+  return candidate;
 }
 
 export async function writeApiCandidateArtifactsFromObservedRequests(requests = [], {
@@ -604,13 +609,17 @@ export async function writeManualApiCandidateVerificationArtifacts(records = [],
   return artifacts;
 }
 
-/** @param {Record<string, any>} [candidate] */
-export function validateApiCandidateWithAdapter(candidate = {}, adapter = {}, {
+/**
+ * @param {Record<string, any>} [candidate]
+ * @param {Record<string, any>} [adapter]
+ * @param {Record<string, any>} [options]
+ */
+export function validateApiCandidateWithAdapter(candidate = {}, adapter = {}, options = {}) {
+  const {
   evidence = {},
   scope = {},
-  // @ts-ignore
   validatedAt,
-} = {}) {
+  } = options;
   if (typeof adapter.validateApiCandidate !== 'function') {
     throw new Error('SiteAdapter validateApiCandidate is required');
   }

@@ -61,6 +61,14 @@ export const EvidenceStatus = Object.freeze([
   'unavailable',
 ]);
 
+export const CapabilityEvidenceStatus = Object.freeze([
+  'verified',
+  'inferred',
+  'confirmation_required',
+  'disabled',
+  'debug_only',
+]);
+
 export const STATUS_VOCABULARY = Object.freeze({
   StageStatus,
   BuildStatus,
@@ -69,6 +77,7 @@ export const STATUS_VOCABULARY = Object.freeze({
   CapabilityEnablementStatus,
   CallableCapabilityEnablementStatus,
   EvidenceStatus,
+  CapabilityEvidenceStatus,
 });
 
 export function statusVocabularySet(name) {

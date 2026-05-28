@@ -2,10 +2,15 @@
 
 import { readSiteCapabilities } from './capabilities.mjs';
 import { readSiteRegistry } from './registry.mjs';
-import { sanitizeHost, uniqueSortedStrings } from '../../../shared/normalize.mjs';
+import { hostFromUrl, sanitizeHost, uniqueSortedStrings } from '../../../shared/normalize.mjs';
+
+export function resolveSiteContextHostKey(hostOrUrl) {
+  const value = typeof hostOrUrl === 'string' ? hostOrUrl.trim() : '';
+  return sanitizeHost(hostFromUrl(value) ?? value);
+}
 
 export async function readSiteContext(workspaceRoot = process.cwd(), host, pathOptions = /** @type {any} */ ({})) {
-  const hostKey = sanitizeHost(host);
+  const hostKey = resolveSiteContextHostKey(host);
   const [registry, capabilities] = await Promise.all([
     readSiteRegistry(workspaceRoot, pathOptions),
     readSiteCapabilities(workspaceRoot, pathOptions),

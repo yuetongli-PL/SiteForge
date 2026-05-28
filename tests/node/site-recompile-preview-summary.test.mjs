@@ -109,6 +109,7 @@ test('site recompile preview summary writes guarded descriptor-only matrix', asy
     const persisted = JSON.parse(await readFile(result.artifactWrite.artifactPath, 'utf8'));
     assert.equal(persisted.artifactFamily, 'site-recompile-preview-summary');
     assert.equal(persisted.sites.find((site) => site.siteKey === '22biqu').status, 'ready');
+    assert.equal(persisted.sites.find((site) => site.siteKey === '22biqu').repoSkillDir, 'skills/22biqu');
     assert.equal(persisted.sites.find((site) => site.siteKey === '22biqu').reasonCode, 'site-recompile-ready');
     assert.equal(persisted.sites.find((site) => site.siteKey === 'blocked-site').reasonCode, 'compiler.capability_inventory_invalid');
     const audit = JSON.parse(await readFile(result.artifactWrite.auditPath, 'utf8'));

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 
 import {
@@ -27,6 +28,17 @@ import {
 
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));
+}
+
+async function readPackageScripts() {
+  const packageJson = JSON.parse(await readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
+  return packageJson.scripts ?? {};
+}
+
+function scriptTestFiles(script) {
+  return new Set(String(script ?? '')
+    .split(/\s+/u)
+    .filter((part) => /^tests\/node\/.*\.test\.mjs$/u.test(part)));
 }
 
 async function collectTextFiles(rootDir) {
@@ -132,6 +144,86 @@ function verificationFixtures() {
     },
   };
 }
+
+test('stale SiteForge golden output fixtures stay absent unless wired into tests', async () => {
+  const goldenDir = path.join(process.cwd(), 'tests', 'golden');
+  let fileNames = /** @type {string[]} */ ([]);
+  try {
+    fileNames = await readdir(goldenDir);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  assert.deepEqual(
+    fileNames.filter((name) => /^siteforge_build_.*_output\.txt$/u.test(name)),
+    [],
+  );
+});
+
+test('focused pipeline suite includes build profile reuse coverage', async () => {
+  const scripts = await readPackageScripts();
+  const pipelineTestFiles = scriptTestFiles(scripts['test:pipeline']);
+
+  assert.equal(
+    pipelineTestFiles.has('tests/node/build-profile-reuse.test.mjs'),
+    true,
+    'test:pipeline should cover saved build_profile.json reuse and crawlContract compatibility',
+  );
+});
+
+test('focused pipeline suite includes browser bridge version policy coverage', async () => {
+  const scripts = await readPackageScripts();
+  const pipelineTestFiles = scriptTestFiles(scripts['test:pipeline']);
+
+  assert.equal(
+    pipelineTestFiles.has('tests/node/browser-bridge-version-policy.test.mjs'),
+    true,
+    'test:pipeline should cover browser bridge extension version compatibility policy',
+  );
+});
+
+test('focused pipeline suite includes browser bridge route coverage policy coverage', async () => {
+  const scripts = await readPackageScripts();
+  const pipelineTestFiles = scriptTestFiles(scripts['test:pipeline']);
+
+  assert.equal(
+    pipelineTestFiles.has('tests/node/browser-bridge-route-coverage.test.mjs'),
+    true,
+    'test:pipeline should cover browser bridge route capture and retry policy',
+  );
+});
+
+test('focused pipeline suite includes capability evidence matrix coverage', async () => {
+  const scripts = await readPackageScripts();
+  const pipelineTestFiles = scriptTestFiles(scripts['test:pipeline']);
+
+  assert.equal(
+    pipelineTestFiles.has('tests/node/capability-evidence-matrix.test.mjs'),
+    true,
+    'test:pipeline should cover capability evidence matrix activation policy',
+  );
+});
+
+test('focused core suite includes shared wiki and architecture gate coverage', async () => {
+  const scripts = await readPackageScripts();
+  const focusedScript = scripts['test:node:focused'] ?? '';
+  const coreTestFiles = scriptTestFiles(scripts['test:core']);
+
+  assert.match(
+    focusedScript,
+    /\btest:core\b/u,
+    'test:node:focused should continue running the core architecture gate suite',
+  );
+  for (const file of [
+    'tests/node/architecture-import-rules.test.mjs',
+    'tests/node/test-coverage-regression.test.mjs',
+    'tests/node/shared-wiki.test.mjs',
+    'tests/node/site-doctor-progress-copy.test.mjs',
+  ]) {
+    assert.equal(coreTestFiles.has(file), true, `test:core should include ${file}`);
+  }
+});
 
 test('SiteForge build artifacts do not persist sensitive input URL material', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-redaction-'));

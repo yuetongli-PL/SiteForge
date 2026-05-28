@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { readJsonFile, pathExists } from '../../../../infra/io.mjs';
 import { cleanText, normalizeText, normalizeUrlNoFragment, sanitizeHost } from '../../../../shared/normalize.mjs';
-import { readSiteContext } from '../../../registry/catalog/context.mjs';
+import { readSiteContext } from '../../../registry/core/context.mjs';
 
 const JABLE_DEFAULT_KB_DIR = path.resolve(process.cwd(), 'knowledge-base', 'jable.tv');
 const MAX_SUGGESTIONS = 5;

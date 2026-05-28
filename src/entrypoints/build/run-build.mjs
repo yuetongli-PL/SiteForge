@@ -7,7 +7,6 @@ import {
   renderCapabilityIntentSummaryHtml,
   renderSiteForgeBuildSummary,
   runSiteForgeBuild,
-  siteForgeReportModeSet,
   siteForgeBuildCliJson,
 } from '../../app/pipeline/build/index.mjs';
 import { prepareSiteForgeBuildSetup } from '../../app/pipeline/build/setup-assistant.mjs';
@@ -15,13 +14,18 @@ import {
   parseIntegerOption,
   readCliValue,
 } from '../../infra/cli/parse-values.mjs';
+import {
+  PUBLIC_BUILD_HELP,
+  acceptedEnumValueBuildFlagMap,
+} from '../cli/public-build-contract.mjs';
 import { sanitizePublicUrl } from '../../shared/url-safety.mjs';
 import { prepareRedactedArtifactJsonWithAudit, redactError } from '../../domain/sessions/security-guard.mjs';
 
-const SITEFORGE_PRIVACY_MODES = new Set(['limited', 'strict']);
-const SITEFORGE_REPORT_MODES = siteForgeReportModeSet();
-const SITEFORGE_PROGRESS_MODES = new Set(['auto', 'interactive', 'plain']);
-const SITEFORGE_AUTH_MODES = new Set(['none', 'cookie', 'browser']);
+const ACCEPTED_ENUM_VALUE_BUILD_FLAGS = acceptedEnumValueBuildFlagMap();
+const SITEFORGE_PRIVACY_MODES = new Set(ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get('--privacy'));
+const SITEFORGE_REPORT_MODES = new Set(ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get('--report'));
+const SITEFORGE_PROGRESS_MODES = new Set(ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get('--progress'));
+const SITEFORGE_AUTH_MODES = new Set(ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get('--auth'));
 const SITEFORGE_LOCAL_CONFIG_FILE = 'siteforge.local.json';
 const CAPABILITY_INTENT_SUMMARY_HTML_FILE = 'capability_intent_summary.html';
 const BUILD_SCHEMA_VERSION = 1;
@@ -1150,41 +1154,7 @@ async function applyLocalBuildConfig(inputUrl, options, {
 }
 
 function printHelp() {
-  process.stdout.write(`用法:
-  node src/entrypoints/build/run-build.mjs <url> [build options]
-
-公开命令:
-  siteforge build <url>
-
-选项:
-  --auto                       Non-interactive build mode (default)
-  --manual                     Accepted for compatibility; build still runs without prompts
-  --deep                       Request broader/deeper discovery
-  --network                    Keep network/API capture requested; raw traces are enabled by default
-  --robots-plan                Print compliant recovery workflows for robots/setup blocks as JSON
-  --privacy <mode>             limited | strict
-  --explain                    Include explanatory user-facing output
-  --report <mode>              user | debug | both
-  --browser-path <path>        指定 Chromium/Chrome 可执行文件路径
-  --timeout <ms>               浏览器授权步骤超时时间
-  --max-depth <n>              Discovery depth for deep builds
-  --max-pages <n>              Maximum pages for deep builds
-  --max-seeds <n>              Maximum seeds for deep builds
-  --max-sitemaps <n>           Maximum sitemap files to inspect during seed discovery
-  --render-js                  Enable rendered-page discovery
-  --no-render-js               Disable rendered-page discovery
-  --json                       stdout 保持 JSON，并关闭进度输出
-  --quiet                      抑制 stderr 的人类可读进度
-  --verbose                    显示更多细节和完整路径
-  --debug                      显示堆栈和原始诊断 JSON
-  --no-color                   禁用 ANSI 颜色
-  --ascii                      禁用 Unicode 符号
-  --compact                    使用紧凑单行输出
-  --progress <mode>            auto | interactive | plain
-  --no-tty                     强制普通进度输出
-  --force-tty                  强制交互式进度输出
-  --help                       显示帮助
-`);
+  process.stdout.write(`${PUBLIC_BUILD_HELP}\n`);
 }
 
 async function runCli() {

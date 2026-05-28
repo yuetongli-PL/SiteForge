@@ -3,23 +3,15 @@
 import {
   readSiteContext as readSiteContextCanonical,
   resolveCapabilityFamiliesFromSiteContext as resolveCapabilityFamiliesFromSiteContextCanonical,
+  resolveSiteContextHostKey,
   resolvePageTypesFromSiteContext as resolvePageTypesFromSiteContextCanonical,
   resolvePrimaryArchetypeFromSiteContext as resolvePrimaryArchetypeFromSiteContextCanonical,
   resolveSafeActionKindsFromSiteContext as resolveSafeActionKindsFromSiteContextCanonical,
   resolveSupportedIntentsFromSiteContext as resolveSupportedIntentsFromSiteContextCanonical,
 } from '../catalog/context.mjs';
-import { hostFromUrl } from '../../../shared/normalize.mjs';
-
-function resolveHostValue(input) {
-  if (typeof input === 'string' && input.trim()) {
-    return hostFromUrl(input) ?? input;
-  }
-  return null;
-}
 
 export async function readSiteContext(workspaceRoot = process.cwd(), hostOrUrl, pathOptions = /** @type {any} */ ({})) {
-  const resolvedHost = resolveHostValue(hostOrUrl);
-  return readSiteContextCanonical(workspaceRoot, resolvedHost ?? hostOrUrl, pathOptions);
+  return readSiteContextCanonical(workspaceRoot, resolveSiteContextHostKey(hostOrUrl), pathOptions);
 }
 
 export function resolvePrimaryArchetypeFromSiteContext(siteContext, fallbacks = /** @type {any[]} */ ([])) {

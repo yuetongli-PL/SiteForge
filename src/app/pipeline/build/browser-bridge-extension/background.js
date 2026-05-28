@@ -1,5 +1,5 @@
 const activeTabs = new Map();
-const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v6';
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v7';
 const SITEFORGE_COLLECT_MESSAGE_TYPE = `siteforge-collect-structure:${SITEFORGE_BRIDGE_EXTENSION_VERSION}`;
 const ROUTE_COLLECT_FALLBACK_DELAY_MS = 6500;
 const ROUTE_STABLE_AFTER_COMPLETE_MS = 1500;
@@ -105,6 +105,7 @@ function routeSession(session, route) {
 function normalizedApiReplay(session) {
   const apiReplay = session?.apiReplay || null;
   const endpoint = safeUrl(apiReplay?.endpoint);
+  const endpointTemplate = String(apiReplay?.endpointTemplate || apiReplay?.runtimeEndpoint || apiReplay?.endpoint || '');
   const pageUrl = safeUrl(apiReplay?.pageUrl || (endpoint ? `${endpoint.origin}/` : ''));
   const method = String(apiReplay?.method || 'GET').toUpperCase();
   const allowedHost = String(apiReplay?.allowedHost || endpoint?.hostname || '');
@@ -120,6 +121,9 @@ function normalizedApiReplay(session) {
     pageUrl: pageUrl.toString(),
     method,
     allowedHost,
+    endpointTemplate,
+    runtimeParameterSource: apiReplay?.runtimeParameterSource || null,
+    responseEvidence: apiReplay?.responseEvidence || null,
   };
 }
 
@@ -168,9 +172,96 @@ function waitForTabComplete(tabId) {
 async function executeApiReplayFetch(tabId, replay) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async ({ endpoint, method, allowedHost }) => {
+    func: async ({ endpoint, endpointTemplate, method, allowedHost, runtimeParameterSource, responseEvidence }) => {
+      const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
+      const parseRenderData = (encoded) => {
+        const text = String(encoded || '');
+        const decodeAttempts = [
+          text,
+          (() => {
+            try {
+              return decodeURIComponent(text);
+            } catch {
+              return null;
+            }
+          })(),
+          text.replace(/%([0-9a-f]{2})/giu, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16))),
+        ];
+        for (const attempt of decodeAttempts) {
+          if (!attempt) {
+            continue;
+          }
+          try {
+            return JSON.parse(attempt);
+          } catch {
+            // Try the next decoding strategy; only structural ASCII fields are needed for API replay.
+          }
+        }
+        return null;
+      };
+      const replaceRuntimePlaceholders = (template, values) => String(template || '')
+        .replace(/\{self\.uid\}|%7Bself\.uid%7D/giu, encodeURIComponent(values.uid || ''))
+        .replace(/\{self\.secUid\}|%7Bself\.secUid%7D/gu, encodeURIComponent(values.secUid || ''))
+        .replace(/\{self\.sec_uid\}|%7Bself\.sec_uid%7D/giu, encodeURIComponent(values.secUid || ''));
+      const resolveRuntimeEndpoint = () => {
+        const sourceKind = String(runtimeParameterSource?.kind || '');
+        if (!sourceKind) {
+          return { endpoint: endpointTemplate || endpoint, reasonCode: null };
+        }
+        if (sourceKind !== 'douyin_self_user_render_data') {
+          return { endpoint: null, reasonCode: 'runtime_parameter_source_unsupported' };
+        }
+        let renderData = null;
+        try {
+          const renderNode = document.getElementById('RENDER_DATA');
+          renderData = parseRenderData(renderNode?.textContent || '');
+        } catch {
+          renderData = null;
+        }
+        const selfInfo = renderData?.app?.user?.info ?? null;
+        const uid = normalizeTextLocal(selfInfo?.uid || '');
+        const secUid = normalizeTextLocal(selfInfo?.secUid || selfInfo?.sec_uid || '');
+        if (!uid || !secUid) {
+          return { endpoint: null, reasonCode: 'runtime_parameter_source_unavailable' };
+        }
+        return {
+          endpoint: replaceRuntimePlaceholders(endpointTemplate || endpoint, { uid, secUid }),
+          reasonCode: null,
+        };
+      };
+      const evaluateResponseEvidence = (json) => {
+        if (!responseEvidence || typeof responseEvidence !== 'object') {
+          return {
+            status: null,
+            observedStatusCode: null,
+            observedArrayFieldPresent: null,
+          };
+        }
+        const expectedStatus = Number(responseEvidence.statusCode);
+        const observedStatusCode = Number(json?.status_code ?? json?.statusCode ?? json?.code);
+        const statusCodeMatches = !Number.isFinite(expectedStatus)
+          || (Number.isFinite(observedStatusCode) && observedStatusCode === expectedStatus);
+        const arrayField = normalizeTextLocal(responseEvidence.arrayField || '');
+        const observedArrayFieldPresent = arrayField ? Array.isArray(json?.[arrayField]) : null;
+        const arrayMatches = !arrayField || observedArrayFieldPresent === true;
+        return {
+          status: statusCodeMatches && arrayMatches ? 'matched' : 'failed',
+          observedStatusCode: Number.isFinite(observedStatusCode) ? observedStatusCode : null,
+          observedArrayFieldPresent,
+        };
+      };
       try {
-        const response = await fetch(endpoint, {
+        const resolved = resolveRuntimeEndpoint();
+        if (!resolved.endpoint) {
+          return {
+            status: 'skipped',
+            reasonCode: resolved.reasonCode || 'endpoint_not_runtime_resolvable',
+            httpStatus: null,
+            contentType: null,
+            responseKind: null,
+          };
+        }
+        const response = await fetch(resolved.endpoint, {
           method,
           credentials: 'include',
           cache: 'no-store',
@@ -194,13 +285,25 @@ async function executeApiReplayFetch(tabId, replay) {
             responseKind,
           };
         }
-        const verified = response.ok && responseKind === 'json';
+        const json = responseKind === 'json'
+          ? await response.clone().json().catch(() => null)
+          : null;
+        const evidence = evaluateResponseEvidence(json);
+        const evidenceFailed = evidence.status === 'failed';
+        const verified = response.ok && responseKind === 'json' && !evidenceFailed;
         return {
           status: verified ? 'verified' : 'failed',
-          reasonCode: verified ? null : (response.ok ? 'api_replay_non_json_response' : 'api_replay_http_failed'),
+          reasonCode: verified
+            ? null
+            : evidenceFailed
+              ? 'api_replay_response_evidence_failed'
+              : (response.ok ? 'api_replay_non_json_response' : 'api_replay_http_failed'),
           httpStatus: response.status,
           contentType,
           responseKind,
+          responseEvidenceStatus: evidence.status,
+          observedStatusCode: evidence.observedStatusCode,
+          observedArrayFieldPresent: evidence.observedArrayFieldPresent,
         };
       } catch {
         return {
@@ -214,8 +317,11 @@ async function executeApiReplayFetch(tabId, replay) {
     },
     args: [{
       endpoint: replay.endpoint,
+      endpointTemplate: replay.endpointTemplate,
       method: replay.method,
       allowedHost: replay.allowedHost,
+      runtimeParameterSource: replay.runtimeParameterSource,
+      responseEvidence: replay.responseEvidence,
     }],
   });
   return results?.[0]?.result || {

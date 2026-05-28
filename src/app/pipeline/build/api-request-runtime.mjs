@@ -16,10 +16,14 @@ import {
   isSensitiveFieldName,
   redactPublicIdentifierText,
 } from '../../../domain/sessions/security-guard.mjs';
-
-const API_RUNTIME_SAFE_METHODS = new Set(['GET', 'HEAD']);
-const API_RUNTIME_WRITE_PATH_PATTERN = /(?:^|[/_.-])(?:create|delete|destroy|remove|update|edit|mutate|mutation|post|publish|submit|send|upload|follow|unfollow|like|repost|checkout|pay|order|login|logout|signin|signout)(?:$|[/_.-])/iu;
-const API_RUNTIME_CHALLENGE_PATTERN = /(?:captcha|challenge|verify|verification|required login|login required|sign in|signin|log in|forbidden|access denied|permission denied|risk|anti[- ]?bot|blocked)/iu;
+import {
+  API_READ_ONLY_CHALLENGE_PATTERN,
+  apiEndpointLooksWriteLike,
+  hasSensitiveApiQueryMaterial,
+  hasSubstantiveApiRequestBody,
+  isReadOnlyApiMethod,
+  normalizeApiMethod,
+} from './api-readonly-policy.mjs';
 const API_RUNTIME_FRESH_EVIDENCE_MAX_AGE_MS = 5 * 60 * 1000;
 
 function sanitizeText(value, maxLength = 160) {
@@ -128,34 +132,7 @@ function hasFreshBridgeEvidence(value, now = new Date()) {
 
 function hasRequestBody(step = /** @type {any} */ ({})) {
   const body = step.body ?? step.requestBody ?? step.payload ?? null;
-  if (body === null || body === undefined) {
-    return false;
-  }
-  if (typeof body === 'string') {
-    return body.trim().length > 0;
-  }
-  if (Array.isArray(body)) {
-    return body.length > 0;
-  }
-  if (typeof body === 'object') {
-    return Object.keys(body).length > 0;
-  }
-  return true;
-}
-
-function hasSensitiveQuery(urlValue) {
-  let parsed;
-  try {
-    parsed = new URL(String(urlValue ?? ''));
-  } catch {
-    return true;
-  }
-  for (const key of parsed.searchParams.keys()) {
-    if (isSensitiveFieldName(key) || /^(?:auth|authorization|sid|sessdata|csrf|xsrf|secret|password|pass|signature|sign|access[_-]?token|refresh[_-]?token|session(?:[_-]?id)?|api[_-]?key|xsec[_-]?token)$/iu.test(key)) {
-      return true;
-    }
-  }
-  return /(?:%5Bredacted%5D|\[redacted\]|redacted)/iu.test(parsed.search);
+  return hasSubstantiveApiRequestBody(body);
 }
 
 function resolveEndpointUrl(step, site, runtimeBinding = null) {
@@ -219,8 +196,8 @@ function validateApiRequestPlan({
   ) {
     return { ok: false, reasonCode: 'fresh_browser_bridge_evidence_required' };
   }
-  const method = String(step.method ?? 'GET').trim().toUpperCase();
-  if (!API_RUNTIME_SAFE_METHODS.has(method)) {
+  const method = normalizeApiMethod(step.method);
+  if (!isReadOnlyApiMethod(method)) {
     return { ok: false, reasonCode: 'method_not_read_only', method };
   }
   if (runtimeBinding?.method && String(runtimeBinding.method).trim().toUpperCase() !== method) {
@@ -242,11 +219,10 @@ function validateApiRequestPlan({
   if (!allowedDomains.length || !isInternalUrl(resolved.endpoint, allowedDomains)) {
     return { ok: false, reasonCode: 'cross_site_endpoint', method, endpoint: resolved.endpoint };
   }
-  const parsed = new URL(resolved.endpoint);
-  if (API_RUNTIME_WRITE_PATH_PATTERN.test(`${parsed.pathname} ${parsed.search}`)) {
+  if (apiEndpointLooksWriteLike({ url: resolved.endpoint, method })) {
     return { ok: false, reasonCode: 'write_like_endpoint', method, endpoint: resolved.endpoint };
   }
-  if (hasSensitiveQuery(resolved.endpoint)) {
+  if (hasSensitiveApiQueryMaterial(resolved.endpoint, { invalidAsSensitive: true })) {
     return { ok: false, reasonCode: 'sensitive_query_material', method, endpoint: resolved.endpoint };
   }
   if (robotsPolicy && !isUrlAllowedByRobots(resolved.endpoint, robotsPolicy)) {
@@ -354,7 +330,7 @@ function summarizeBridgeResponse(response = /** @type {any} */ ({})) {
     response.responseKind,
     typeof body === 'string' ? body.slice(0, 600) : '',
   ].filter(Boolean).join(' ');
-  const challengeLike = API_RUNTIME_CHALLENGE_PATTERN.test(probeText)
+  const challengeLike = API_READ_ONLY_CHALLENGE_PATTERN.test(probeText)
     || [401, 403, 407, 419, 429].includes(Number(httpStatus));
   const ok = !challengeLike && (httpStatus === null || (httpStatus >= 200 && httpStatus < 300) || httpStatus === 304);
   const summary = {
@@ -507,6 +483,9 @@ export async function executeApiRequestIntent({
 
   const bridgeResponse = await browserBridgeFetch({
     endpoint: validation.endpoint,
+    endpointTemplate: firstValue(runtimeBinding?.endpoint, step?.runtimeEndpoint, step?.endpoint, step?.url) ?? validation.endpoint,
+    runtimeParameterSource: runtimeBinding?.runtimeParameterSource ?? step?.runtimeParameterSource ?? capability.apiAdapter?.runtimeParameterSource ?? null,
+    responseEvidence: runtimeBinding?.responseEvidence ?? step?.responseEvidence ?? capability.apiAdapter?.responseEvidence ?? null,
     method: validation.method,
     credentials: 'include',
     body: null,

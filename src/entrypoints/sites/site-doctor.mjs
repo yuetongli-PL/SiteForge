@@ -12,8 +12,9 @@ import {
   parseNonNegativeNumberOption as normalizeNumber,
   parseStrictBooleanOption as normalizeBoolean,
 } from '../../infra/cli/parse-values.mjs';
+import { parseProgressCliOption } from '../../infra/cli/progress-cli.mjs';
 import { createProgressRenderer } from '../../infra/cli/progress.mjs';
-import { doctorStageTitle } from '../../infra/cli/progress-copy.mjs';
+import { doctorStageTitle } from './site-doctor-progress-copy.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { ensureDir, pathExists, readJsonFile, writeTextFile } from '../../infra/io.mjs';
 import { sanitizeHost, toArray, uniqueSortedStrings } from '../../shared/normalize.mjs';
@@ -3143,6 +3144,11 @@ export function parseCliArgs(argv) {
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
+    const progressOption = parseProgressCliOption(rest, token, index, options);
+    if (progressOption.handled) {
+      index = progressOption.nextIndex;
+      continue;
+    }
     switch (token) {
       case '--query': {
         const { value, nextIndex } = readValue(index);
@@ -3227,24 +3233,6 @@ export function parseCliArgs(argv) {
         break;
       case '--capability-compile-dry-run':
         options.capabilityDryRun = true;
-        break;
-      case '--json':
-        options.json = true;
-        break;
-      case '--quiet':
-        options.quiet = true;
-        break;
-      case '--progress': {
-        const { value, nextIndex } = readValue(index);
-        options.progressMode = value;
-        index = nextIndex;
-        break;
-      }
-      case '--force-tty':
-        options.forceTty = true;
-        break;
-      case '--no-tty':
-        options.noTty = true;
         break;
       case '--headless':
         options.headless = true;

@@ -13,6 +13,10 @@ import {
   policySupportsCapabilityFamily,
 } from '../../../sites/registry/core/capability-intent-mapping.mjs';
 import {
+  readSiteCapabilities,
+  readSiteRegistry,
+} from '../../../sites/registry/catalog/repository.mjs';
+import {
   BUILD_SCHEMA_VERSION,
   createSiteRecord,
   DEFAULT_BUILD_POLICY,
@@ -33,6 +37,12 @@ import {
   sanitizeRouteTargetForPersistence,
 } from './auth-state.mjs';
 import {
+  canContinueSetupBlockedForApiDiscovery,
+  SETUP_BLOCKED_API_DISCOVERY_STATUS,
+  setupBlockedApiDiscoveryOptions,
+  setupBlockedApiDiscoveryPlan,
+} from './api-discovery-setup-fallback.mjs';
+import {
   assertBuildProfileSafe,
   isBuildProfileSafe,
 } from './build-profile-safety.mjs';
@@ -40,6 +50,20 @@ import {
   reusableBuildProfileAuthStateReport,
   reusableBuildProfileCrawlContract,
 } from './build-profile-reuse.mjs';
+import {
+  knownPolicyAllowsUserAuthorizedSetup,
+  knownPolicyCapabilityPressure,
+  knownPolicyRecommendedCapabilities,
+  knownPolicySummary,
+} from './known-site-policy.mjs';
+import {
+  buildCollectionReviewModel,
+  capabilityProofMatches,
+  collectionReviewLabel,
+  hasVerifiedCapabilityProof,
+  normalizeUserAuthorizedCapabilityProofs,
+} from './setup-collection-review.mjs';
+import { normalizeCapabilityId } from './capability-id.mjs';
 import {
   AUTO_DISCOVERY_SCHEMA_VERSION,
   createSocialSpaAutoDiscoverySummary,
@@ -52,6 +76,11 @@ import {
   sanitizeEvidenceRef,
 } from './risk-policy.mjs';
 import { createSiteWorkspace, createSiteWorkspacePaths, ensureSiteWorkspace } from './workspace.mjs';
+
+export {
+  buildCollectionReviewModel,
+  createCollectionReviewModel,
+} from './setup-collection-review.mjs';
 
 export const SETUP_ASSISTANT_SCHEMA_VERSION = 1;
 
@@ -280,253 +309,6 @@ function hostnameFromOptionalUrl(urlValue) {
   }
 }
 
-function cloneIfPresent(value) {
-  return value === undefined ? undefined : clone(value);
-}
-
-function firstPresent(...values) {
-  return values.find((value) => value !== undefined && value !== null && value !== '') ?? null;
-}
-
-function asStringList(value) {
-  return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
-}
-
-function knownGenericLiveBuildSummary(registryRecord, capabilityRecord) {
-  const registryGeneric = registryRecord?.genericLiveBuild && typeof registryRecord.genericLiveBuild === 'object'
-    ? registryRecord.genericLiveBuild
-    : {};
-  const capabilityGeneric = capabilityRecord?.genericLiveBuild && typeof capabilityRecord.genericLiveBuild === 'object'
-    ? capabilityRecord.genericLiveBuild
-    : {};
-  const registryDownloadSupport = registryRecord?.downloadSupport && typeof registryRecord.downloadSupport === 'object'
-    ? registryRecord.downloadSupport
-    : {};
-  const capabilityDownloader = capabilityRecord?.downloader && typeof capabilityRecord.downloader === 'object'
-    ? capabilityRecord.downloader
-    : {};
-  const alternativeAccessPaths = uniqueSortedStrings([
-    ...asStringList(registryGeneric.alternativeAccessPaths),
-    ...asStringList(capabilityGeneric.alternativeAccessPaths),
-    ...asStringList(registryRecord?.alternativeAccessPaths),
-    ...asStringList(capabilityRecord?.alternativeAccessPaths),
-  ]);
-  const status = firstPresent(
-    registryGeneric.status,
-    capabilityGeneric.status,
-    registryRecord?.siteAccessStatus,
-    capabilityRecord?.siteAccessStatus,
-    registryDownloadSupport.liveAccessStatus,
-    capabilityDownloader.liveAccessStatus,
-    capabilityRecord?.liveAccessStatus,
-  );
-  const reasonCode = firstPresent(
-    registryGeneric.reasonCode,
-    capabilityGeneric.reasonCode,
-    registryRecord?.unsupportedLiveReasonCode,
-    capabilityRecord?.unsupportedLiveReasonCode,
-    registryDownloadSupport.reasonCode,
-    capabilityDownloader.reasonCode,
-    registryDownloadSupport.unsupportedLiveReasonCode,
-    capabilityDownloader.liveAccessReasonCode,
-    capabilityDownloader.unsupportedLiveReasonCode,
-    capabilityRecord?.liveAccessReasonCode,
-  );
-  const reason = firstPresent(
-    registryGeneric.reason,
-    capabilityGeneric.reason,
-    registryRecord?.unsupportedLiveReason,
-    capabilityRecord?.unsupportedLiveReason,
-    registryDownloadSupport.reason,
-    capabilityDownloader.reason,
-    registryDownloadSupport.unsupportedLiveReason,
-    capabilityDownloader.liveAccessReason,
-    capabilityDownloader.unsupportedLiveReason,
-    capabilityRecord?.liveAccessReason,
-  );
-  if (!status && !reasonCode && !reason && alternativeAccessPaths.length === 0) {
-    return null;
-  }
-  return {
-    status,
-    reasonCode,
-    reason,
-    alternativeAccessPaths,
-  };
-}
-
-function explicitPublicRouteTemplates(...records) {
-  return records.flatMap((record) => (
-    Array.isArray(record?.publicRouteTemplates)
-      ? record.publicRouteTemplates
-      : Array.isArray(record?.publicRoutes)
-        ? record.publicRoutes
-        : []
-  ));
-}
-
-function knownPolicyPublicRouteTemplates(registryRecord, capabilityRecord) {
-  const explicit = explicitPublicRouteTemplates(registryRecord, capabilityRecord);
-  const adapterId = String(registryRecord?.adapterId ?? capabilityRecord?.adapterId ?? '').toLowerCase();
-  const archetype = String(registryRecord?.siteArchetype ?? capabilityRecord?.primaryArchetype ?? '').toLowerCase();
-  const routePolicy = {
-    capabilityFamilies: [
-      ...(registryRecord?.capabilityFamilies ?? []),
-      ...(capabilityRecord?.capabilityFamilies ?? []),
-    ],
-    supportedIntents: capabilityRecord?.supportedIntents ?? [],
-  };
-  const explicitRouteKeys = new Set(explicit
-    .map((route) => String(route?.path ?? route?.route ?? route?.pathTemplate ?? route?.routeTemplate ?? '').trim())
-    .filter(Boolean));
-  const inferred = [];
-  const addInferred = (route) => {
-    const routeKey = String(route?.path ?? route?.route ?? route?.pathTemplate ?? route?.routeTemplate ?? '').trim();
-    if (routeKey && !explicitRouteKeys.has(routeKey)) {
-      inferred.push(route);
-    }
-  };
-  if (adapterId === 'chapter-content' || archetype === 'chapter-content') {
-    if (policySupportsCapabilityFamily(routePolicy, 'navigate-to-category')) {
-      addInferred({ id: 'chapter-content-category-template', pathTemplate: '/category/{categoryId}/', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: false });
-    }
-    if (policySupportsCapabilityFamily(routePolicy, 'search-content')) {
-      addInferred({ id: 'chapter-content-search-template', pathTemplate: '/search', pageType: 'search-results-page', capabilityFamilies: ['search-content'], seedable: false });
-    }
-    if (policySupportsCapabilityFamily(routePolicy, 'navigate-to-content')) {
-      addInferred({ id: 'chapter-content-book-template', pathTemplate: '/book/{bookId}/', pageType: 'book-detail-page', capabilityFamilies: ['navigate-to-content'], seedable: false });
-    }
-    if (policySupportsCapabilityFamily(routePolicy, 'navigate-to-chapter')) {
-      addInferred({ id: 'chapter-content-chapter-template', pathTemplate: '/chapter/{bookId}/{chapterId}/', pageType: 'chapter-page', capabilityFamilies: ['navigate-to-chapter'], seedable: false });
-    }
-  }
-  const byId = new Map();
-  for (const [index, route] of [...explicit, ...inferred].entries()) {
-    if (!route || typeof route !== 'object') {
-      continue;
-    }
-    const pathValue = route.path ?? route.route ?? null;
-    const pathTemplate = route.pathTemplate ?? route.routeTemplate ?? null;
-    if (!pathValue && !pathTemplate) {
-      continue;
-    }
-    const id = String(route.id ?? pathValue ?? pathTemplate ?? `public-route-${index}`).trim();
-    byId.set(id, {
-      id,
-      path: pathValue ?? null,
-      pathTemplate: pathTemplate ?? null,
-      pageType: route.pageType ?? null,
-      capabilityFamilies: uniqueSortedStrings(route.capabilityFamilies ?? []),
-      seedable: route.seedable === true && Boolean(pathValue),
-    });
-  }
-  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id, 'en'));
-}
-
-function knownPolicySummary(registryRecord, capabilityRecord) {
-  if (!registryRecord && !capabilityRecord) {
-    return null;
-  }
-  const capabilityFamilies = uniqueSortedStrings([
-    ...(registryRecord?.capabilityFamilies ?? []),
-    ...(capabilityRecord?.capabilityFamilies ?? []),
-  ]);
-  const pageTypes = uniqueSortedStrings([
-    ...(registryRecord?.pageTypes ?? []),
-    ...(capabilityRecord?.pageTypes ?? []),
-  ]);
-  const supportedIntents = uniqueSortedStrings(capabilityRecord?.supportedIntents ?? []);
-  const safeActionKinds = uniqueSortedStrings(capabilityRecord?.safeActionKinds ?? []);
-  const approvalActionKinds = uniqueSortedStrings(capabilityRecord?.approvalActionKinds ?? []);
-  const genericLiveBuild = knownGenericLiveBuildSummary(registryRecord, capabilityRecord);
-  const publicRouteTemplates = knownPolicyPublicRouteTemplates(registryRecord, capabilityRecord);
-  return {
-    schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
-    status: 'matched',
-    host: registryRecord?.host ?? capabilityRecord?.host ?? null,
-    siteKey: registryRecord?.siteKey ?? capabilityRecord?.siteKey ?? null,
-    adapterId: registryRecord?.adapterId ?? capabilityRecord?.adapterId ?? null,
-    repoSkillDir: registryRecord?.repoSkillDir ?? null,
-    siteArchetype: registryRecord?.siteArchetype ?? capabilityRecord?.primaryArchetype ?? null,
-    siteAccessStatus: registryRecord?.siteAccessStatus ?? capabilityRecord?.siteAccessStatus ?? null,
-    pageTypes,
-    publicRouteTemplates,
-    capabilityFamilies,
-    supportedIntents,
-    safeActionKinds,
-    approvalActionKinds,
-    downloadSessionRequirement: registryRecord?.downloadSessionRequirement ?? null,
-    downloadTaskTypes: cloneIfPresent(registryRecord?.downloadTaskTypes) ?? [],
-    downloadSupport: cloneIfPresent(registryRecord?.downloadSupport) ?? null,
-    downloader: cloneIfPresent(capabilityRecord?.downloader) ?? null,
-    accessSignals: cloneIfPresent(registryRecord?.accessSignals ?? capabilityRecord?.accessSignals) ?? null,
-    routingNotes: cloneIfPresent(registryRecord?.routingNotes ?? capabilityRecord?.routingNotes) ?? [],
-    genericLiveBuild,
-    setupConstraints: {
-      userChoicesBypassPolicy: false,
-      requiresEvidenceForCapabilities: capabilityFamilies,
-      approvalActionKinds,
-      safeActionKinds,
-      downloadSessionRequirement: registryRecord?.downloadSessionRequirement ?? null,
-      genericLiveBuildStatus: genericLiveBuild?.status ?? null,
-      genericLiveBuildReasonCode: genericLiveBuild?.reasonCode ?? null,
-      downloadReasonCode: registryRecord?.downloadSupport?.reasonCode ?? capabilityRecord?.downloader?.reasonCode ?? null,
-      alternativeAccessPaths: cloneIfPresent(genericLiveBuild?.alternativeAccessPaths) ?? [],
-    },
-    sources: [
-      registryRecord ? 'config/site-registry.json' : null,
-      capabilityRecord ? 'config/site-capabilities.json' : null,
-    ].filter(Boolean),
-  };
-}
-
-function policyCapabilityMatches(value) {
-  const text = String(value ?? '').toLowerCase();
-  return text.includes('download') || text.includes('social') || text.includes('query');
-}
-
-function knownPolicyCapabilityPressure(knownSitePolicy) {
-  if (!knownSitePolicy) {
-    return null;
-  }
-  const matchedCapabilityFamilies = uniqueSortedStrings(
-    (knownSitePolicy.capabilityFamilies ?? []).filter(policyCapabilityMatches),
-  );
-  const matchedSupportedIntents = uniqueSortedStrings(
-    (knownSitePolicy.supportedIntents ?? []).filter(policyCapabilityMatches),
-  );
-  const matchedDownloadTaskTypes = uniqueSortedStrings(
-    (knownSitePolicy.downloadTaskTypes ?? []).filter(policyCapabilityMatches),
-  );
-  return {
-    schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
-    siteKey: knownSitePolicy.siteKey ?? null,
-    adapterId: knownSitePolicy.adapterId ?? null,
-    sources: clone(knownSitePolicy.sources ?? []),
-    hasPolicyCapabilities: matchedCapabilityFamilies.length > 0
-      || matchedSupportedIntents.length > 0
-      || matchedDownloadTaskTypes.length > 0,
-    matchedCapabilityFamilies,
-    matchedSupportedIntents,
-    matchedDownloadTaskTypes,
-  };
-}
-
-function knownPolicyAllowsUserAuthorizedSetup(knownSitePolicy) {
-  if (!knownSitePolicy) {
-    return false;
-  }
-  const alternatives = [
-    ...(knownSitePolicy.genericLiveBuild?.alternativeAccessPaths ?? []),
-    ...(knownSitePolicy.setupConstraints?.alternativeAccessPaths ?? []),
-    ...(knownSitePolicy.routingNotes ?? []),
-    ...(knownSitePolicy.accessSignals?.restrictionSignals ?? []),
-    ...(knownSitePolicy.accessSignals?.notes ?? []),
-  ].join(' ');
-  return knownSitePolicy.downloadSessionRequirement === 'required'
-    || /user-authori[sz]ed|authorized|login|session|consent|manual user/iu.test(alternatives);
-}
-
 function normalizeAuthorizedControl(control, index) {
   const controlType = firstWords(control?.controlType ?? control?.kind ?? 'control', 80);
   const labelSummary = firstWords(control?.labelSummary ?? controlType, 120);
@@ -618,27 +400,6 @@ function normalizeUserAuthorizedEvidencePage(page, site) {
     controls,
     structureItems,
   };
-}
-
-function normalizeUserAuthorizedCapabilityProofs(proofs) {
-  if (!Array.isArray(proofs)) {
-    return [];
-  }
-  return proofs.map((proof) => ({
-    status: proof?.status === 'verified' ? 'verified' : 'candidate',
-    capabilityId: firstWords(proof?.capabilityId, 80),
-    setupCapabilityId: firstWords(proof?.setupCapabilityId, 80),
-    intentType: firstWords(proof?.intentType, 80),
-    action: firstWords(proof?.action, 80),
-    evidenceType: firstWords(proof?.evidenceType ?? proof?.type ?? 'summary', 80),
-    sampleCount: Math.max(0, Number(proof?.sampleCount ?? proof?.itemCount ?? proof?.evidenceCount ?? 0) || 0),
-    source: firstWords(sanitizeEvidenceRef(proof?.source) ?? 'user-authorized-capability-proof', 160),
-    rawMaterialPersisted: false,
-  })).filter((proof) => (
-    proof.status === 'verified'
-    && proof.sampleCount > 0
-    && [proof.capabilityId, proof.setupCapabilityId, proof.intentType, proof.action].some(Boolean)
-  ));
 }
 
 function normalizeUserAuthorizedBrowserSeeds(seeds, site) {
@@ -1477,87 +1238,6 @@ function pageInputsFromAuthorizedEvidence(evidence) {
   }));
 }
 
-function capabilityIdsFromUserAuthorizedEvidence(evidence) {
-  const seeds = Array.isArray(evidence?.browserSeeds) ? evidence.browserSeeds : [];
-  return new Set(seeds
-    .flatMap((seed) => [
-      seed?.capabilityId,
-      seed?.setupCapabilityId,
-      seed?.intentType,
-      seed?.action,
-      ...(Array.isArray(seed?.capabilityIds) ? seed.capabilityIds : []),
-    ])
-    .map(normalizeCapabilityId)
-    .filter(Boolean));
-}
-
-function knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized = false, userAuthorizedEvidence = null } = /** @type {any} */ ({})) {
-  if (!knownSitePolicy || !userAuthorized) {
-    return [];
-  }
-  const supported = new Set(knownSitePolicy.supportedIntents ?? []);
-  const observed = capabilityIdsFromUserAuthorizedEvidence(userAuthorizedEvidence);
-  const supportsSocialContent = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-content');
-  const supportsSocialRelations = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-relations');
-  const supportsAccountProfile = policySupportsCapabilityFamily(knownSitePolicy, 'query-account-profile');
-  const supportsDownloadContent = policySupportsCapabilityFamily(knownSitePolicy, 'download-content');
-  const capabilities = /** @type {any[]} */ ([]);
-  const add = (id, name, reason, safety = 'read_only', recommended = false, extra = /** @type {any} */ ({})) => {
-    if (!capabilities.some((capability) => capability.id === id)) {
-      capabilities.push({
-        id,
-        name,
-        reason,
-        safety,
-        recommended,
-        status: recommended ? 'recommended' : 'candidate',
-        evidenceRequirement: extra.evidenceRequirement ?? 'capability-specific-evidence',
-        disabledReason: recommended ? null : (extra.disabledReason ?? 'capability-specific-evidence-required'),
-      });
-    }
-  };
-  const hasIntent = (...ids) => ids.some((id) => supported.has(id) || observed.has(normalizeCapabilityId(id)));
-  if (supportsSocialRelations || observed.has('list-followed-users')) {
-    add('list-followed-users', 'List followed users', 'Candidate only until SiteForge captures capability-specific followed-user evidence.');
-  }
-  if (supportsSocialContent || observed.has('list-followed-updates')) {
-    add('list-followed-updates', 'List followed updates', 'Candidate only until SiteForge captures capability-specific followed-update evidence.');
-  }
-  if (supportsSocialContent || hasIntent('recommended-timeline-posts', 'list-recommended-timeline-posts')) {
-    add('recommended-timeline-posts', 'List recommended timeline posts', 'Candidate only until SiteForge captures capability-specific recommended timeline evidence.');
-  }
-  if (supportsSocialContent || supportsAccountProfile || hasIntent('profile-content', 'list-profile-content')) {
-    add('list-profile-content', 'List profile content', 'Candidate only until SiteForge captures capability-specific profile evidence.');
-  }
-  if (supported.has('search-posts') || supported.has('search-content')) {
-    add('search-posts', 'Search posts', 'Candidate only until SiteForge captures capability-specific search evidence.');
-  }
-  if (hasIntent('list-notifications', 'notifications')) {
-    add('list-notifications', 'List notifications', 'Candidate only until SiteForge captures capability-specific notification evidence.');
-  }
-  if (hasIntent('list-bookmarks', 'bookmarks')) {
-    add('list-bookmarks', 'List bookmarks', 'Candidate only until SiteForge captures capability-specific bookmark evidence.');
-  }
-  if (hasIntent('list-lists', 'lists')) {
-    add('list-lists', 'List lists', 'Candidate only until SiteForge captures capability-specific list evidence.');
-  }
-  if (hasIntent('list-direct-messages', 'direct-messages', 'messages')) {
-    add('list-direct-messages', 'List direct messages', 'Candidate only until SiteForge captures explicit message-list evidence.', 'requires_confirmation');
-  }
-  if (supportsDownloadContent) {
-    add('download-content-candidate', 'Prepare media download candidate', 'Downloads require a separate approved bounded action path.', 'requires_confirmation', false);
-  }
-  return capabilities;
-}
-
-function normalizeCapabilityId(value) {
-  return String(value ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/gu, '-')
-    .replace(/^-+|-+$/gu, '');
-}
-
 const USER_AUTHORIZED_CAPABILITY_PROOF_DESCRIPTORS = Object.freeze({
   'list-followed-users': {
     action: 'followed-users',
@@ -1744,8 +1424,10 @@ async function readKnownSitePolicy(paths) {
     PACKAGE_ROOT,
   ].map((root) => path.resolve(root)));
   for (const root of configRoots) {
-    const registry = await readJsonOrNull(path.join(root, 'config', 'site-registry.json'));
-    const capabilities = await readJsonOrNull(path.join(root, 'config', 'site-capabilities.json'));
+    const [registry, capabilities] = await Promise.all([
+      readSiteRegistry(root),
+      readSiteCapabilities(root),
+    ]);
     const registryRecord = configRecordForSite(registry, paths.site);
     const capabilityRecord = configRecordForSite(capabilities, paths.site);
     if (registryRecord || capabilityRecord) {
@@ -2278,551 +1960,6 @@ function isSetupPlanBuildable(setupPlan) {
   return setupPlan?.buildReadiness?.buildable !== false;
 }
 
-const COLLECTION_REVIEW_KINDS = Object.freeze([
-  'seeds',
-  'nodes',
-  'affordances',
-  'capabilities',
-  'intents',
-]);
-
-const COLLECTION_REVIEW_GENERIC_TOKENS = Object.freeze(new Set([
-  'a',
-  'an',
-  'and',
-  'by',
-  'candidate',
-  'capability',
-  'content',
-  'for',
-  'from',
-  'list',
-  'navigate',
-  'open',
-  'page',
-  'pages',
-  'policy',
-  'public',
-  'query',
-  'read',
-  'site',
-  'to',
-  'use',
-  'view',
-  'with',
-]));
-
-function collectionReviewBucket() {
-  return {
-    collected: [],
-    missing: [],
-  };
-}
-
-function collectionReviewLabel(value) {
-  const text = String(value ?? '').trim();
-  if (/^https?:\/\//iu.test(text)) {
-    return firstWords(sanitizeEvidenceRef(text) ?? 'route-template', 120);
-  }
-  return firstWords(text
-    .replace(/^policy-(?:family|intent)-/u, '')
-    .replace(/[-_]+/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim(), 120);
-}
-
-function collectionReviewTokens(value) {
-  return normalizeCapabilityId(value)
-    .split('-')
-    .filter((token) => token.length > 1);
-}
-
-function collectionReviewDistinctiveTokens(value) {
-  const tokens = collectionReviewTokens(value);
-  const distinctive = tokens.filter((token) => !COLLECTION_REVIEW_GENERIC_TOKENS.has(token));
-  return distinctive.length ? distinctive : tokens;
-}
-
-function collectionReviewSignalCovers(value, signals) {
-  const target = normalizeCapabilityId(value);
-  if (!target) {
-    return false;
-  }
-  const normalizedSignals = signals
-    .map(normalizeCapabilityId)
-    .filter(Boolean);
-  if (normalizedSignals.some((signal) => signal === target || signal.includes(target) || target.includes(signal))) {
-    return true;
-  }
-  const targetTokens = collectionReviewDistinctiveTokens(target);
-  return normalizedSignals.some((signal) => {
-    const signalTokens = new Set(collectionReviewTokens(signal));
-    return targetTokens.some((token) => signalTokens.has(token));
-  });
-}
-
-function addCollectionReviewItem(bucket, status, item) {
-  const list = status === 'missing' ? bucket.missing : bucket.collected;
-  const normalizedId = normalizeCapabilityId(item.id ?? item.label);
-  if (!normalizedId) {
-    return;
-  }
-  if (list.some((existing) => existing.id === normalizedId)) {
-    return;
-  }
-  const next = {
-    id: normalizedId,
-    label: collectionReviewLabel(item.label ?? item.id),
-    status,
-    source: item.source ?? null,
-    reasonCode: item.reasonCode ?? null,
-    reason: item.reason ? firstWords(item.reason, 180) : null,
-    evidenceRefs: uniqueSortedStrings((item.evidenceRefs ?? [])
-      .map((ref) => sanitizeEvidenceRef(ref))
-      .filter(Boolean)),
-    evidence_status: item.evidenceStatus ?? 'observed_sanitized',
-    saved_material: SANITIZED_SUMMARY_ONLY,
-    raw_content_saved: false,
-    private_content_saved: false,
-    requiresUserGrant: item.requiresUserAuthorization === true,
-    requiresCapabilityEvidence: item.requiresCapabilityEvidence === true,
-    rawMaterialPersisted: false,
-  };
-  for (const [key, value] of Object.entries(item.extra ?? {})) {
-    if (value !== undefined) {
-      next[key] = value;
-    }
-  }
-  list.push(next);
-}
-
-function finalizeCollectionReviewBucket(bucket) {
-  const sortEntries = (entries) => entries.sort((left, right) => (
-    `${left.label}:${left.id}`.localeCompare(`${right.label}:${right.id}`, 'en')
-  ));
-  return {
-    collected: sortEntries(bucket.collected),
-    missing: sortEntries(bucket.missing),
-  };
-}
-
-function collectionReviewVerifiedProofs(userAuthorizedEvidence = null) {
-  return normalizeUserAuthorizedCapabilityProofs(userAuthorizedEvidence?.capabilityProofs);
-}
-
-function collectionReviewProofCovers(value, proofs) {
-  const target = normalizeCapabilityId(value);
-  return proofs.some((proof) => [
-    proof.capabilityId,
-    proof.setupCapabilityId,
-    proof.intentType,
-    proof.action,
-  ].map(normalizeCapabilityId).some((id) => id && (id === target || id.includes(target) || target.includes(id))));
-}
-
-function capabilityProofMatches(proof, capability = /** @type {any} */ ({})) {
-  const targets = [
-    capability.id,
-    capability.name,
-    capability.action,
-    capability.intentType,
-  ].filter(Boolean);
-  return targets.some((target) => collectionReviewProofCovers(target, [proof]));
-}
-
-function hasVerifiedCapabilityProof(setupPlan, capability = /** @type {any} */ ({})) {
-  const proofs = collectionReviewVerifiedProofs(setupPlan?.userAuthorizedEvidence);
-  return proofs.some((proof) => capabilityProofMatches(proof, capability));
-}
-
-function capabilityProofsFromAuthorizedBrowserSeeds(setupPlan = null, capability = null) {
-  void setupPlan;
-  void capability;
-  return [];
-}
-
-function collectionReviewPolicyCapabilities(knownSitePolicy, userAuthorizedEvidence = null) {
-  if (!knownSitePolicy) {
-    return [];
-  }
-  const knownPolicyCapabilities = knownPolicyRecommendedCapabilities(knownSitePolicy, {
-    userAuthorized: true,
-    userAuthorizedEvidence,
-  });
-  const genericCapabilities = [
-    ...(knownSitePolicy.capabilityFamilies ?? []).map((family) => ({
-      id: family,
-      name: collectionReviewLabel(family),
-      reason: 'Known site policy declares this capability family; setup must collect matching evidence before activation.',
-      safety: 'read_only',
-      recommended: false,
-      status: 'candidate',
-      evidenceRequirement: 'policy-evidence',
-      disabledReason: 'policy-evidence-required',
-      policyValue: family,
-    })),
-    ...(knownSitePolicy.downloadTaskTypes ?? []).map((taskType) => ({
-      id: `download-${taskType}`,
-      name: collectionReviewLabel(`download ${taskType}`),
-      reason: 'Known site policy declares this download task type; downloader activation requires a separate bounded evidence path.',
-      safety: 'requires_confirmation',
-      recommended: false,
-      status: 'candidate',
-      evidenceRequirement: 'policy-evidence',
-      disabledReason: 'policy-evidence-required',
-      policyValue: taskType,
-    })),
-  ];
-  const byId = new Map();
-  for (const capability of [...knownPolicyCapabilities, ...genericCapabilities]) {
-    const id = normalizeCapabilityId(capability.id ?? capability.name);
-    if (!id || byId.has(id)) {
-      continue;
-    }
-    byId.set(id, capability);
-  }
-  return [...byId.values()];
-}
-
-function collectionReviewCapabilityEvidenceStatus(setupPlan, capability, collectedSignals, proofs) {
-  const id = capability.id ?? capability.name;
-  const requiresCapabilityEvidence = capability.evidenceRequirement === 'capability-specific-evidence';
-  const verified = collectionReviewProofCovers(id, proofs) || hasVerifiedCapabilityProof(setupPlan, capability);
-  const coveredBySignal = collectionReviewSignalCovers(id, collectedSignals);
-  if (verified) {
-    return {
-      collected: true,
-      reasonCode: null,
-      requiresCapabilityEvidence,
-    };
-  }
-  if (requiresCapabilityEvidence) {
-    return {
-      collected: false,
-      reasonCode: 'capability-specific-evidence-required',
-      requiresCapabilityEvidence: true,
-    };
-  }
-  if (capability.recommended === true || capability.status === 'recommended' || coveredBySignal) {
-    return {
-      collected: true,
-      reasonCode: null,
-      requiresCapabilityEvidence: false,
-    };
-  }
-  return {
-    collected: false,
-    reasonCode: capability.disabledReason ?? setupPlan?.buildReadiness?.reasonCode ?? 'policy-evidence-required',
-    requiresCapabilityEvidence,
-  };
-}
-
-export function buildCollectionReviewModel({
-  setupPlan = /** @type {any} */ ({}),
-  userAuthorizedEvidence = setupPlan?.userAuthorizedEvidence ?? null,
-  knownSitePolicy = setupPlan?.knownSitePolicy ?? null,
-} = /** @type {any} */ ({})) {
-  const buckets = Object.fromEntries(COLLECTION_REVIEW_KINDS.map((kind) => [kind, collectionReviewBucket()]));
-  const proofs = collectionReviewVerifiedProofs(userAuthorizedEvidence);
-  const collectedSignals = /** @type {any[]} */ ([]);
-  const addSignal = (...values) => {
-    collectedSignals.push(...values.filter(Boolean));
-  };
-
-  for (const group of setupPlan.pageGroups ?? []) {
-    if (Number(group?.count ?? 0) < 1) {
-      continue;
-    }
-    addCollectionReviewItem(buckets.nodes, 'collected', {
-      id: `page-group-${group.id}`,
-      label: group.name ?? group.id,
-      source: 'setup-plan-page-group',
-      evidenceRefs: group.sampleUrls ?? [],
-      extra: {
-        count: Number(group.count ?? 0),
-        groupId: group.id ?? null,
-      },
-    });
-    addCollectionReviewItem(buckets.affordances, 'collected', {
-      id: `navigate-${group.id}`,
-      label: `Navigate ${group.name ?? group.id}`,
-      source: 'setup-plan-page-group',
-      evidenceRefs: group.sampleUrls ?? [],
-      extra: {
-        affordanceType: 'navigation',
-        groupId: group.id ?? null,
-      },
-    });
-    addSignal(group.id, group.name, ...(group.sampleLabels ?? []));
-    for (const sampleUrl of group.sampleUrls ?? []) {
-      addCollectionReviewItem(buckets.seeds, 'collected', {
-        id: `setup-page-${sampleUrl}`,
-        label: sampleUrl,
-        source: 'setup-plan-page-sample',
-        evidenceRefs: [sampleUrl],
-        extra: {
-          url: sampleUrl,
-          groupId: group.id ?? null,
-        },
-      });
-      addSignal(sampleUrl);
-    }
-  }
-
-  for (const page of userAuthorizedEvidence?.pages ?? []) {
-    const pageUrl = page.normalizedUrl ?? page.url;
-    addCollectionReviewItem(buckets.seeds, 'collected', {
-      id: `user-authorized-page-${pageUrl}`,
-      label: pageUrl,
-      source: 'user-authorized-browser-page',
-      evidenceRefs: [pageUrl].filter(Boolean),
-      requiresUserAuthorization: true,
-      extra: {
-        url: pageUrl ?? null,
-      },
-    });
-    addCollectionReviewItem(buckets.nodes, 'collected', {
-      id: `user-authorized-node-${pageUrl}`,
-      label: page.title ?? pageUrl ?? 'User-authorized browser page',
-      source: 'user-authorized-browser-page',
-      evidenceRefs: [pageUrl].filter(Boolean),
-      requiresUserAuthorization: true,
-      extra: {
-        nodeType: 'user-authorized-page',
-        url: pageUrl ?? null,
-      },
-    });
-    addSignal(pageUrl, page.title, page.textSummary);
-  }
-
-  for (const seed of userAuthorizedEvidence?.browserSeeds ?? []) {
-    const seedUrl = seed.normalizedUrl ?? seed.url;
-    const capabilityIds = uniqueSortedStrings([
-      ...(seed.capabilityIds ?? []),
-      seed.capabilityId,
-      seed.setupCapabilityId,
-      seed.intentType,
-      seed.action,
-    ].map(normalizeCapabilityId).filter(Boolean));
-    addCollectionReviewItem(buckets.seeds, 'collected', {
-      id: `user-authorized-seed-${seed.routeKind || seed.seedType}-${seedUrl}`,
-      label: `${seed.routeKind || seed.seedType || 'authorized route'} ${seedUrl ?? ''}`,
-      source: seed.source ?? 'user-authorized-browser-seed',
-      evidenceRefs: [seedUrl].filter(Boolean),
-      requiresUserAuthorization: true,
-      extra: {
-        url: seedUrl ?? null,
-        routeKind: seed.routeKind ?? null,
-        seedType: seed.seedType ?? null,
-        capabilityIds,
-        visibleItemCount: Number(seed.visibleItemCount ?? 0) || 0,
-      },
-    });
-    addCollectionReviewItem(buckets.affordances, 'collected', {
-      id: `authorized-route-${seed.routeKind || seed.seedType || seedUrl}`,
-      label: seed.routeKind || seed.seedType || 'authorized route',
-      source: seed.source ?? 'user-authorized-browser-seed',
-      evidenceRefs: [seedUrl].filter(Boolean),
-      requiresUserAuthorization: true,
-      extra: {
-        affordanceType: 'authorized-route',
-        capabilityIds,
-        visibleItemCount: Number(seed.visibleItemCount ?? 0) || 0,
-      },
-    });
-    if (Number(seed.visibleItemCount ?? 0) < 1 && capabilityIds.length) {
-      for (const capabilityId of capabilityIds) {
-        addCollectionReviewItem(buckets.nodes, 'missing', {
-          id: `authorized-content-${capabilityId}`,
-          label: capabilityId,
-          source: seed.source ?? 'user-authorized-browser-seed',
-          reasonCode: 'authorized-route-seed-only',
-          reason: 'A bounded authorized route seed exists, but setup has not collected visible item evidence for this capability.',
-          requiresUserAuthorization: true,
-          requiresCapabilityEvidence: true,
-          evidenceRefs: [seedUrl].filter(Boolean),
-        });
-      }
-    }
-    addSignal(seedUrl, seed.routeKind, seed.seedType, ...capabilityIds);
-  }
-
-  const autoDiscoverySummary = userAuthorizedEvidence?.autoDiscovery?.summary;
-  if (autoDiscoverySummary) {
-    addCollectionReviewItem(buckets.nodes, 'collected', {
-      id: 'auto-discovery-structure-summary',
-      label: 'auto discovery structure summary',
-      source: userAuthorizedEvidence.autoDiscovery?.source ?? 'auto-discovery',
-      requiresUserAuthorization: true,
-      extra: {
-        nodeType: 'auto-discovery-summary',
-        nodesTotal: Number(autoDiscoverySummary.nodes_total ?? 0) || 0,
-        routeTemplates: Number(autoDiscoverySummary.route_templates ?? 0) || 0,
-        evidenceStatus: autoDiscoverySummary.evidenceStatus ?? 'modeled_structure',
-      },
-    });
-    addCollectionReviewItem(buckets.affordances, 'collected', {
-      id: 'auto-discovery-actionable-summary',
-      label: 'auto discovery actionable summary',
-      source: userAuthorizedEvidence.autoDiscovery?.source ?? 'auto-discovery',
-      requiresUserAuthorization: true,
-      extra: {
-        affordanceType: 'auto-discovery-summary',
-        actionableElements: Number(autoDiscoverySummary.actionable_elements ?? 0) || 0,
-        evidenceStatus: autoDiscoverySummary.evidenceStatus ?? 'modeled_structure',
-      },
-    });
-    addSignal('auto-discovery', 'route-template', 'spa-state', 'structure-summary');
-  }
-
-  for (const proof of proofs) {
-    const proofIds = uniqueSortedStrings([
-      proof.capabilityId,
-      proof.setupCapabilityId,
-      proof.intentType,
-      proof.action,
-    ].map(normalizeCapabilityId).filter(Boolean));
-    for (const proofId of proofIds) {
-      addCollectionReviewItem(buckets.affordances, 'collected', {
-        id: `capability-proof-${proofId}`,
-        label: proofId,
-        source: proof.source ?? 'user-authorized-capability-proof',
-        requiresUserAuthorization: true,
-        requiresCapabilityEvidence: true,
-        extra: {
-          affordanceType: 'capability-proof',
-          evidenceType: proof.evidenceType,
-          sampleCount: proof.sampleCount,
-        },
-      });
-      addSignal(proofId, proof.evidenceType, proof.source);
-    }
-  }
-
-  const expectedCapabilities = [
-    ...(setupPlan.recommendedCapabilities ?? []),
-    ...collectionReviewPolicyCapabilities(knownSitePolicy, userAuthorizedEvidence),
-  ];
-  const seenCapabilities = new Set();
-  for (const capability of expectedCapabilities) {
-    const id = normalizeCapabilityId(capability.id ?? capability.name);
-    if (!id || seenCapabilities.has(id)) {
-      continue;
-    }
-    seenCapabilities.add(id);
-    const evidenceStatus = collectionReviewCapabilityEvidenceStatus(setupPlan, capability, collectedSignals, proofs);
-    const targetStatus = evidenceStatus.collected ? 'collected' : 'missing';
-    addCollectionReviewItem(buckets.capabilities, targetStatus, {
-      id,
-      label: capability.name ?? capability.id,
-      source: capability.policyValue ? 'known-site-policy' : 'setup-plan-recommendation',
-      reasonCode: evidenceStatus.reasonCode,
-      reason: evidenceStatus.reasonCode ? capability.reason : null,
-      requiresUserAuthorization: capability.evidenceRequirement === 'capability-specific-evidence',
-      requiresCapabilityEvidence: evidenceStatus.requiresCapabilityEvidence,
-      extra: {
-        safety: capability.safety ?? null,
-        recommended: capability.recommended === true,
-        evidenceRequirement: capability.evidenceRequirement ?? null,
-        policyValue: capability.policyValue ?? null,
-      },
-    });
-    if (evidenceStatus.collected) {
-      addSignal(id, capability.name, capability.policyValue);
-    }
-  }
-
-  const expectedIntents = uniqueSortedStrings([
-    ...(knownSitePolicy?.supportedIntents ?? []),
-    ...proofs.flatMap((proof) => [proof.intentType, proof.action]),
-    ...(setupPlan.recommendedCapabilities ?? [])
-      .filter((capability) => capability.recommended === true)
-      .map((capability) => capability.id ?? capability.name),
-  ].map(normalizeCapabilityId).filter(Boolean));
-  for (const intent of expectedIntents) {
-    const proofed = collectionReviewProofCovers(intent, proofs);
-    const covered = proofed || collectionReviewSignalCovers(intent, collectedSignals);
-    addCollectionReviewItem(buckets.intents, covered ? 'collected' : 'missing', {
-      id: intent,
-      label: intent,
-      source: proofed ? 'user-authorized-capability-proof' : 'known-site-policy',
-      reasonCode: covered ? null : (
-        userAuthorizedEvidence?.status === 'captured'
-          ? 'capability-specific-evidence-required'
-          : setupPlan.buildReadiness?.reasonCode ?? 'policy-intent-not-collected'
-      ),
-      reason: covered ? null : 'Known site policy or user request advertises this intent, but setup has not collected matching sanitized evidence.',
-      requiresUserAuthorization: Boolean(knownSitePolicy),
-      requiresCapabilityEvidence: !covered,
-    });
-  }
-
-  if (buckets.seeds.collected.length === 0) {
-    addCollectionReviewItem(buckets.seeds, 'missing', {
-      id: 'setup-page-evidence',
-      label: 'setup page evidence',
-      source: 'setup-readiness',
-      reasonCode: setupPlan.buildReadiness?.reasonCode ?? 'setup-no-page-evidence',
-      reason: setupPlan.buildReadiness?.reason ?? 'Setup did not collect public page or bounded user-authorized evidence.',
-    });
-  }
-  for (const excludedUrl of setupPlan.evidenceQuality?.robotsExcludedPageEvidenceUrls ?? []) {
-    addCollectionReviewItem(buckets.seeds, 'missing', {
-      id: `robots-excluded-${excludedUrl}`,
-      label: excludedUrl,
-      source: 'robots.txt',
-      reasonCode: 'robots-disallowed',
-      reason: 'robots.txt excluded this candidate setup seed; SiteForge did not crawl it.',
-      evidenceRefs: [excludedUrl],
-    });
-  }
-  if (
-    knownSitePolicy
-    && userAuthorizedEvidence?.status !== 'captured'
-    && knownPolicyAllowsUserAuthorizedSetup(knownSitePolicy)
-  ) {
-    addCollectionReviewItem(buckets.seeds, 'missing', {
-      id: 'user-authorized-browser-evidence',
-      label: 'user-authorized browser evidence',
-      source: 'known-site-policy',
-      reasonCode: 'user-authorized-evidence-required',
-      reason: 'Known site policy allows a bounded user-authorized setup path, but no sanitized browser evidence was collected.',
-      requiresUserAuthorization: true,
-    });
-  }
-
-  const finalized = Object.fromEntries(Object.entries(buckets)
-    .map(([kind, bucket]) => [kind, finalizeCollectionReviewBucket(bucket)]));
-  return {
-    schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-collection-review',
-    buildId: setupPlan.buildId ?? null,
-    siteId: setupPlan.site?.id ?? null,
-    knownSitePolicy: knownSitePolicy ? {
-      status: knownSitePolicy.status ?? null,
-      siteKey: knownSitePolicy.siteKey ?? null,
-      adapterId: knownSitePolicy.adapterId ?? null,
-      sources: clone(knownSitePolicy.sources ?? []),
-    } : null,
-    userAuthorizedEvidence: userAuthorizedEvidence ? {
-      status: userAuthorizedEvidence.status ?? null,
-      pageCount: userAuthorizedEvidence.pages?.length ?? 0,
-      browserSeedCount: userAuthorizedEvidence.browserSeeds?.length ?? 0,
-      capabilityProofCount: proofs.length,
-      sessionMaterialPersisted: userAuthorizedEvidence.sessionMaterialPersisted === true,
-      browserProfilePersisted: userAuthorizedEvidence.browserProfilePersisted === true,
-      rawHtmlPersisted: userAuthorizedEvidence.rawHtmlPersisted === true,
-    } : null,
-    safetyBoundary: 'Collection review uses sanitized setup summaries only; it does not persist sensitive browser or session material, and it does not bypass robots, login, or access controls.',
-    summary: Object.fromEntries(COLLECTION_REVIEW_KINDS.map((kind) => [kind, {
-      collected: finalized[kind].collected.length,
-      missing: finalized[kind].missing.length,
-    }])),
-    ...finalized,
-  };
-}
-
-export const createCollectionReviewModel = buildCollectionReviewModel;
 
 export async function generateSetupPlan(inputUrl, options = /** @type {any} */ ({})) {
   const paths = buildSetupAssistantPaths(inputUrl, options);
@@ -3750,6 +2887,27 @@ function countAuthorizedActionableElements(evidence) {
   return Math.max(autoCount, pageControlCount, seedCount);
 }
 
+function capabilityProofsFromAuthorizedBrowserSeeds(setupPlan, capability = /** @type {any} */ ({})) {
+  const targetIds = [
+    capability.id,
+    capability.name,
+    capability.action,
+    capability.intentType,
+  ].map(normalizeCapabilityId).filter(Boolean);
+  if (!targetIds.length) {
+    return [];
+  }
+  return (setupPlan?.userAuthorizedEvidence?.browserSeeds ?? []).filter((seed) => {
+    const seedCapabilityIds = [
+      ...(seed?.capabilityIds ?? []),
+      ...capabilityIdsFromAuthorizedBrowserSeedSummary(seed),
+    ].map(normalizeCapabilityId).filter(Boolean);
+    return targetIds.some((targetId) => seedCapabilityIds.some((seedId) => (
+      seedId === targetId || seedId.includes(targetId) || targetId.includes(seedId)
+    )));
+  });
+}
+
 function collectedUserAuthorizedCapabilityIds(setupPlan) {
   const ids = new Set();
   for (const capability of setupPlan.recommendedCapabilities ?? []) {
@@ -4167,6 +3325,24 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
       // Synthetic or known-site policy evidence must not make setup buildable.
     }
     if (!isSetupPlanBuildable(setupPlan)) {
+      if (canContinueSetupBlockedForApiDiscovery(setupPlan, options)) {
+        const fallbackSetupPlan = setupBlockedApiDiscoveryPlan(setupPlan);
+        const fallbackOptions = setupBlockedApiDiscoveryOptions(options, fallbackSetupPlan);
+        const userChoices = applyBuildModeChoiceOverrides(defaultChoicesFromPlan(fallbackSetupPlan, 'auto'), fallbackOptions);
+        const persisted = await persistSetupProfile({
+          paths,
+          setupPlan: fallbackSetupPlan,
+          userChoices,
+          saveProfile: false,
+        });
+        return {
+          status: SETUP_BLOCKED_API_DISCOVERY_STATUS,
+          paths,
+          setupPlan: fallbackSetupPlan,
+          ...persisted,
+          buildOptions: buildOptionsFromFreshSetupProfile(fallbackOptions, paths, persisted.profile, fallbackSetupPlan),
+        };
+      }
       if (interactive) {
         await persistUnbuildableSetupAndThrow({
           paths,

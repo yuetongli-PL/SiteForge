@@ -1,6 +1,6 @@
 // @ts-check
 
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
 import { prepareRedactedArtifactJsonWithAudit } from '../../domain/sessions/security-guard.mjs';
+import { readSiteRegistry } from '../../sites/registry/catalog/repository.mjs';
 import { runSiteCapabilityCompile } from './site-capability-compile.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,20 @@ function normalizeRepoPath(value) {
   return String(value ?? '').replaceAll('\\', '/').replace(/^\.?\//u, '');
 }
 
+function normalizeRepoSkillDir(cwd, value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return '';
+  }
+  const resolvedRoot = path.resolve(cwd);
+  const resolvedValue = path.isAbsolute(text) ? path.normalize(text) : path.resolve(resolvedRoot, text);
+  const relative = path.relative(resolvedRoot, resolvedValue);
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return normalizeRepoPath(relative);
+  }
+  return normalizeRepoPath(text);
+}
+
 function sanitizeSegment(value) {
   return String(value ?? 'unknown')
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
@@ -72,15 +87,11 @@ function sanitizeSegment(value) {
     .replace(/^-|-$/g, '') || 'unknown';
 }
 
-async function readJson(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
-}
-
 async function readRepoLocalSkillSites(cwd) {
-  const registry = await readJson(path.join(cwd, 'config', 'site-registry.json'));
+  const registry = await readSiteRegistry(cwd);
   const sites = /** @type {any[]} */ ([]);
   for (const [host, record] of Object.entries(registry.sites ?? {})) {
-    const repoSkillDir = normalizeRepoPath(record?.repoSkillDir);
+    const repoSkillDir = normalizeRepoSkillDir(cwd, record?.repoSkillDir);
     if (!repoSkillDir || !repoSkillDir.startsWith('skills/')) {
       continue;
     }

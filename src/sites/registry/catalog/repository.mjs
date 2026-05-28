@@ -16,7 +16,7 @@ import {
   readSiteRegistry as readSiteRegistryCanonical,
   upsertSiteRegistryRecord as upsertSiteRegistryRecordCanonical,
 } from './registry.mjs';
-import { sanitizeHost } from '../../../shared/normalize.mjs';
+import { readSiteContext as readSiteContextCanonical } from './context.mjs';
 
 export {
   SITE_CAPABILITIES_FILE_NAME,
@@ -58,16 +58,5 @@ export async function upsertSiteCapabilities(workspaceRoot, host, patch, pathOpt
 }
 
 export async function readSiteRepository(workspaceRoot = process.cwd(), host, pathOptions = /** @type {any} */ ({})) {
-  const hostKey = sanitizeHost(host);
-  const [registry, capabilities] = await Promise.all([
-    readSiteRegistryCanonical(workspaceRoot, pathOptions),
-    readSiteCapabilitiesCanonical(workspaceRoot, pathOptions),
-  ]);
-  return {
-    host: hostKey,
-    registry,
-    capabilities,
-    registryRecord: registry?.sites?.[hostKey] ?? null,
-    capabilitiesRecord: capabilities?.sites?.[hostKey] ?? null,
-  };
+  return readSiteContextCanonical(workspaceRoot, host, pathOptions);
 }

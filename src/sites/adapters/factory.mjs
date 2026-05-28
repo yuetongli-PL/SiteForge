@@ -33,6 +33,7 @@ export function createCatalogAdapter({
   classifyApi,
   detectRestrictionPage = null,
   describeApiCandidateSemantics,
+  getBuildApiDiscoverySeeds,
   validateApiCandidate,
   getApiCatalogUpgradePolicy,
   probeHealth,
@@ -83,6 +84,9 @@ export function createCatalogAdapter({
   }
   if (typeof describeApiCandidateSemantics === 'function') {
     adapter.describeApiCandidateSemantics = describeApiCandidateSemantics;
+  }
+  if (typeof getBuildApiDiscoverySeeds === 'function') {
+    adapter.getBuildApiDiscoverySeeds = getBuildApiDiscoverySeeds;
   }
   if (typeof getApiCatalogUpgradePolicy === 'function') {
     adapter.getApiCatalogUpgradePolicy = getApiCatalogUpgradePolicy;

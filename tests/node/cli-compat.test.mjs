@@ -8,8 +8,16 @@ import { spawnSync } from 'node:child_process';
 
 import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
 import {
+  ACCEPTED_BOOLEAN_BUILD_FLAGS,
+  ACCEPTED_ENUM_VALUE_BUILD_FLAGS,
+  ACCEPTED_STRING_VALUE_BUILD_FLAGS,
+  COMPAT_BOOLEAN_BUILD_FLAGS,
+  COMPAT_ENUM_VALUE_BUILD_FLAGS,
+  COMPAT_STRING_VALUE_BUILD_FLAGS,
   PUBLIC_BOOLEAN_BUILD_FLAGS,
   PUBLIC_BUILD_HELP_FLAGS,
+  PUBLIC_ENUM_VALUE_BUILD_FLAGS,
+  PUBLIC_STRING_VALUE_BUILD_FLAGS,
 } from '../../src/entrypoints/cli/public-build-contract.mjs';
 
 const repoRoot = process.cwd();
@@ -53,10 +61,42 @@ test('public SiteForge CLI exposes only build help', () => {
   for (const flag of PUBLIC_BUILD_HELP_FLAGS) {
     assert.match(help.stdout, new RegExp(flag.replace(/[|]/gu, '\\$&'), 'u'));
   }
+  for (const flag of [
+    ...COMPAT_BOOLEAN_BUILD_FLAGS,
+    ...COMPAT_ENUM_VALUE_BUILD_FLAGS.map(([flagName]) => flagName),
+    ...COMPAT_STRING_VALUE_BUILD_FLAGS,
+  ]) {
+    assert.doesNotMatch(help.stdout, new RegExp(`${flag}\\b`, 'u'));
+  }
   assert.doesNotMatch(help.stdout, /--auth\b|--cookie-env\b|--cookie-file\b|--cookie-stdin\b|--auth-check-url\b|--login-enhanced\b|--public-only\b/u);
   assert.match(help.stdout, /siteforge\.local\.json/u);
   assert.doesNotMatch(help.stdout, /siteforge capabilities/u);
   assert.doesNotMatch(help.stdout, /site doctor|site scaffold|download plan|generate-skill/u);
+});
+
+test('public build contract separates user-facing and compatibility flags', () => {
+  const publicFlags = new Set([
+    ...PUBLIC_BOOLEAN_BUILD_FLAGS,
+    ...PUBLIC_ENUM_VALUE_BUILD_FLAGS.map(([flagName]) => flagName),
+    ...PUBLIC_STRING_VALUE_BUILD_FLAGS,
+  ]);
+  const compatFlags = [
+    ...COMPAT_BOOLEAN_BUILD_FLAGS,
+    ...COMPAT_ENUM_VALUE_BUILD_FLAGS.map(([flagName]) => flagName),
+    ...COMPAT_STRING_VALUE_BUILD_FLAGS,
+  ];
+  const acceptedFlags = new Set([
+    ...ACCEPTED_BOOLEAN_BUILD_FLAGS,
+    ...ACCEPTED_ENUM_VALUE_BUILD_FLAGS.map(([flagName]) => flagName),
+    ...ACCEPTED_STRING_VALUE_BUILD_FLAGS,
+  ]);
+  const helpFlags = PUBLIC_BUILD_HELP_FLAGS.join('\n');
+
+  for (const flag of compatFlags) {
+    assert.equal(publicFlags.has(flag), false, `${flag} must not be user-facing`);
+    assert.equal(acceptedFlags.has(flag), true, `${flag} must remain accepted`);
+    assert.doesNotMatch(helpFlags, new RegExp(`(^|\\s)${flag}(\\s|$)`, 'u'));
+  }
 });
 
 test('public SiteForge CLI runs when invoked through an npm link path', async (t) => {
@@ -103,10 +143,10 @@ test('public SiteForge CLI help routes stay available', () => {
   }
 });
 
-test('public SiteForge CLI accepts only documented build flags', () => {
+test('public SiteForge CLI accepts documented and compatibility build flags', () => {
   assertBuildDispatch(['build', 'https://example.com/']);
 
-  for (const flag of PUBLIC_BOOLEAN_BUILD_FLAGS) {
+  for (const flag of ACCEPTED_BOOLEAN_BUILD_FLAGS) {
     assertBuildDispatch(['build', 'https://example.com/', flag]);
   }
 

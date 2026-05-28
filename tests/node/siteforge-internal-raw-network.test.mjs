@@ -112,15 +112,15 @@ function rawApiTrace(rootUrl, secret) {
   };
 }
 
-function observedReadApiRequest(rootUrl, siteKey, secret) {
+function observedReadApiRequest(rootUrl, siteKey, secret, { method = 'GET', requestId = 'synthetic-read-api-request' } = {}) {
   return observedRequestFromNetworkCaptureEvent({
     method: 'Network.requestWillBeSent',
     params: {
-      requestId: 'synthetic-read-api-request',
+      requestId,
       type: 'Fetch',
       documentURL: rootUrl,
       request: {
-        method: 'GET',
+        method,
         url: new URL('/api/feed?page=1', rootUrl).toString(),
         headers: {
           authorization: `Bearer ${secret}`,
@@ -134,17 +134,83 @@ function observedReadApiRequest(rootUrl, siteKey, secret) {
   });
 }
 
-function rawReadApiTrace(rootUrl, secret) {
+function observedDynamicReadApiRequest(rootUrl, siteKey) {
+  const endpointTemplate = new URL('/api/profile?user_id={self.uid}&sec_user_id={self.secUid}', rootUrl).toString();
+  return {
+    id: 'synthetic-dynamic-read-api-request',
+    siteKey,
+    status: 'observed',
+    method: 'GET',
+    url: endpointTemplate,
+    resourceType: 'fetch',
+    source: 'test.dynamic-api-seed',
+    request: {
+      headers: {
+        accept: 'application/json',
+      },
+      body: null,
+    },
+    runtime: {
+      endpointTemplate,
+      parameterSource: {
+        kind: 'douyin_self_user_render_data',
+        pageUrl: rootUrl,
+        rawMaterialPersisted: false,
+      },
+      responseEvidence: {
+        statusCode: 0,
+        arrayField: 'items',
+      },
+      rawParameterMaterialPersisted: false,
+    },
+  };
+}
+
+function rawDynamicReadApiTrace(rootUrl) {
+  const endpointTemplate = new URL('/api/profile?user_id={self.uid}&sec_user_id={self.secUid}', rootUrl).toString();
+  return {
+    requestId: 'synthetic-dynamic-read-api-request',
+    resourceType: 'Fetch',
+    wallTime: '2026-05-26T01:04:00.000Z',
+    timestamp: 1,
+    documentURL: rootUrl,
+    initiator: { type: 'script' },
+    request: {
+      method: 'GET',
+      url: endpointTemplate,
+      headers: {
+        accept: 'application/json',
+      },
+      body: null,
+      bodySizeBytes: 0,
+      truncated: false,
+      hasPostData: false,
+    },
+  };
+}
+
+function encodedDouyinSelfRenderPage() {
+  const encoded = [
+    '%7B%22app%22%3A%7B%22user%22%3A%7B%22info%22%3A%7B',
+    '%22uid%22%3A%22123456%22%2C',
+    '%22secUid%22%3A%22MS4wLjABAAAAfixture%22%2C',
+    '%22nickname%22%3A%22%E4%22',
+    '%7D%7D%7D%7D',
+  ].join('');
+  return testHtmlPage('Douyin self', `<main><a href="/article/1">Article</a></main><script id="RENDER_DATA">${encoded}</script>`);
+}
+
+function rawReadApiTrace(rootUrl, secret, { method = 'GET', requestId = 'synthetic-read-api-request' } = {}) {
   const responseBody = JSON.stringify({ token: secret, items: [{ id: 1, title: 'Private item' }] });
   return {
-    requestId: 'synthetic-read-api-request',
+    requestId,
     resourceType: 'Fetch',
     wallTime: '2026-05-26T01:00:00.000Z',
     timestamp: 1,
     documentURL: rootUrl,
     initiator: { type: 'script' },
     request: {
-      method: 'GET',
+      method,
       url: new URL('/api/feed?page=1', rootUrl).toString(),
       headers: {
         authorization: `Bearer ${secret}`,
@@ -445,6 +511,80 @@ test('replay verified browser-auth read-only API becomes active browser bridge A
   }
 });
 
+test('HEAD browser-auth API replay becomes active browser bridge API capability', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-head-replay-'));
+  const secret = 'synthetic-internal-raw-token';
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-head-replay-build',
+        now: new Date('2026-05-26T01:02:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 204,
+            contentType: null,
+            responseKind: null,
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawReadApiTrace(rootUrl, secret, { method: 'HEAD', requestId: 'synthetic-head-api-request' })],
+            observedRequests: [observedReadApiRequest(rootUrl, context.site.id, secret, { method: 'HEAD', requestId: 'synthetic-head-api-request' })],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
+      assert.equal(summaryArtifact.sanitizedSummary.apiCandidateCount, 1);
+      assert.equal(summaryArtifact.sanitizedSummary.replayVerifiedCount, 1);
+      assert.equal(summaryArtifact.sanitizedSummary.activatedApiAdapterCount, 1);
+      assert.equal(bridgeReplayRequest.method, 'HEAD');
+      assert.equal(bridgeReplayRequest.fetchOptions.method, 'HEAD');
+      assert.equal(bridgeReplayRequest.fetchOptions.body, null);
+      assert.equal(bridgeReplayRequest.fetchOptions.persistResponseBody, false);
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.method, 'HEAD');
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const apiCapability = capabilities.capabilities.find((capability) => capability.apiAdapter?.replayVerificationRef);
+      assert.equal(apiCapability?.status, 'active');
+      assert.equal(apiCapability?.executionPlan?.steps?.[0]?.method, 'HEAD');
+      const bindingArtifact = await readJson(path.join(result.artifactDir, 'runtime', 'api-adapter-bindings.internal.json'));
+      assert.equal(bindingArtifact.bindings[0].method, 'HEAD');
+      assert.equal(bindingArtifact.bindings[0].requestPolicy.persistResponseBody, false);
+      assert.equal(JSON.stringify({ summaryArtifact, replayArtifact, bindingArtifact }).includes(secret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('browser-auth API replay can use cookie only for build-time verification with bridge runtime evidence', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-cookie-replay-'));
   const rawSecret = 'synthetic-internal-raw-token';
@@ -511,6 +651,214 @@ test('browser-auth API replay can use cookie only for build-time verification wi
       const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
       assert.equal(userReport.api_discovery_summary.activated_api_adapter_count, 1);
       assert.equal(JSON.stringify(userReport).includes(cookieSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('dynamic API replay uses browser bridge parameter source before cookie fallback', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-dynamic-replay-'));
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-dynamic-replay-build',
+        now: new Date('2026-05-26T01:04:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 200,
+            contentType: 'application/json',
+            responseKind: 'json',
+            responseEvidenceStatus: 'matched',
+            observedStatusCode: 0,
+            observedArrayFieldPresent: true,
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawDynamicReadApiTrace(rootUrl)],
+            observedRequests: [observedDynamicReadApiRequest(rootUrl, context.site.id)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(bridgeReplayRequest.runtimeParameterSource.kind, 'douyin_self_user_render_data');
+      assert.equal(bridgeReplayRequest.responseEvidence.arrayField, 'items');
+      assert.equal(bridgeReplayRequest.endpoint.includes('user_id='), true);
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'browser_bridge');
+      assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.kind, 'douyin_self_user_render_data');
+      assert.equal(replayArtifact.replayPolicy.responseEvidence.arrayField, 'items');
+
+      const bindingArtifact = await readJson(path.join(result.artifactDir, 'runtime', 'api-adapter-bindings.internal.json'));
+      assert.equal(bindingArtifact.bindings[0].runtimeParameterSource.kind, 'douyin_self_user_render_data');
+      assert.equal(bindingArtifact.bindings[0].responseEvidence.arrayField, 'items');
+      assert.equal(JSON.stringify(bindingArtifact).includes('synthetic-cookie-replay-secret'), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('dynamic API replay cookie fallback resolves malformed encoded Douyin render data', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-dynamic-cookie-replay-'));
+  const cookieSecret = 'synthetic-dynamic-cookie-replay-secret';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/': encodedDouyinSelfRenderPage(),
+      '/api/profile': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ status_code: 0, items: [{ id: 'safe-item' }] }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-dynamic-cookie-replay-build',
+        now: new Date('2026-05-26T01:04:30.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiReplayCookieHeader: `sid=${cookieSecret}`,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async () => ({
+          status: 'skipped',
+          reasonCode: 'browser_bridge_replay_timeout',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        }),
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawDynamicReadApiTrace(rootUrl)],
+            observedRequests: [observedDynamicReadApiRequest(rootUrl, context.site.id)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'cookie_replay_only');
+      assert.equal(replayArtifact.replayPolicy.runtimeRegistration, 'browser_bridge_required');
+      assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const apiCapability = capabilities.capabilities.find((capability) => capability.apiAdapter?.replayVerificationRef);
+      assert.equal(apiCapability?.status, 'active');
+      assert.equal(apiCapability?.executionPlan?.steps?.[0]?.kind, 'api_request');
+      assert.equal(apiCapability?.apiAdapter?.runtimeParameterSource?.kind, 'douyin_self_user_render_data');
+      assert.equal(JSON.stringify(apiCapability).includes(cookieSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('dynamic API replay pre-resolves cookie parameters for browser bridge replay', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-dynamic-bridge-preresolve-'));
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/': encodedDouyinSelfRenderPage(),
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-dynamic-bridge-preresolve-build',
+        now: new Date('2026-05-26T01:04:45.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiReplayCookieHeader: 'sid=synthetic-parameter-cookie',
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 200,
+            contentType: 'application/json',
+            responseKind: 'json',
+            responseEvidenceStatus: 'matched',
+            observedStatusCode: 0,
+            observedArrayFieldPresent: true,
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawDynamicReadApiTrace(rootUrl)],
+            observedRequests: [observedDynamicReadApiRequest(rootUrl, context.site.id)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(bridgeReplayRequest.endpoint.includes('user_id=123456'), true);
+      assert.equal(bridgeReplayRequest.endpoint.includes('{self.uid}'), false);
+      assert.equal(bridgeReplayRequest.runtimeEndpoint.includes('user_id=123456'), true);
+      assert.equal(bridgeReplayRequest.runtimeEndpoint.includes('{self.uid}'), false);
+      assert.equal(bridgeReplayRequest.runtimeParameterSource, null);
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'browser_bridge');
+      assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.kind, 'douyin_self_user_render_data');
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -638,6 +986,68 @@ test('unsafe API candidates stay candidates and record replay skip reasons', asy
       const captureCapability = capabilities.capabilities.find((capability) => capability.name === 'capture network APIs');
       assert.equal(captureCapability?.status, 'candidate');
       assert.equal(Object.hasOwn(captureCapability, 'executionPlan'), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('bodyless POST API candidates stay candidates because method is not read-only', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-bodyless-post-'));
+  const secret = 'synthetic-internal-raw-token';
+  let replayCalled = false;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-bodyless-post-build',
+        now: new Date('2026-05-26T01:12:00.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        apiAdapterReplayProvider: async () => {
+          replayCalled = true;
+          return { status: 'verified', httpStatus: 200 };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawReadApiTrace(rootUrl, secret, { method: 'POST', requestId: 'synthetic-bodyless-post-api-request' })],
+            observedRequests: [observedReadApiRequest(rootUrl, context.site.id, secret, { method: 'POST', requestId: 'synthetic-bodyless-post-api-request' })],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(replayCalled, false);
+      const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
+      assert.equal(summaryArtifact.sanitizedSummary.apiCandidateCount, 1);
+      assert.equal(summaryArtifact.sanitizedSummary.activatedApiAdapterCount, 0);
+      assert.equal(summaryArtifact.sanitizedSummary.adapterSkippedReasonCounts.method_not_read_only, 1);
+      assert.equal(summaryArtifact.sanitizedSummary.adapterSkippedReasonCounts.request_body_present ?? 0, 0);
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'skipped');
+      assert.equal(replayArtifact.reasonCode, 'method_not_read_only');
+      assert.equal(replayArtifact.method, 'POST');
+      assert.equal(replayArtifact.activated, false);
+
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      assert.equal(capabilities.capabilities.some((capability) => capability.name.startsWith('read API endpoint')), false);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });

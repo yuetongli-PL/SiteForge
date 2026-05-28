@@ -7,6 +7,7 @@ import {
 } from '../../domain/capabilities/api-candidates.mjs';
 import { inferDouyinPageTypeFromUrl } from '../known-sites/douyin/model/site.mjs';
 import { createCatalogAdapter } from './factory.mjs';
+import { normalizeSiteAdapterSemanticEntry } from './generic-navigation.mjs';
 
 const DOUYIN_HOSTS = Object.freeze([
   'www.douyin.com',
@@ -73,6 +74,172 @@ function isDouyinApiCandidate(candidate = /** @type {any} */ ({})) {
   }
   return host === 'creator.douyin.com'
     && (pathname.startsWith('/aweme/v1/') || pathname.startsWith('/web/api/'));
+}
+
+const DOUYIN_SELF_PARAMETER_SOURCE = Object.freeze({
+  kind: 'douyin_self_user_render_data',
+  pageUrl: 'https://www.douyin.com/user/self',
+  fields: Object.freeze({
+    user_id: 'uid',
+    sec_user_id: 'secUid',
+  }),
+  rawMaterialPersisted: false,
+});
+
+const DOUYIN_BUILD_API_SEEDS = Object.freeze([
+  Object.freeze({
+    id: 'douyin-known-api-following-list',
+    semanticKind: 'list-followed-users',
+    method: 'GET',
+    endpointTemplate: 'https://www.douyin.com/aweme/v1/web/user/following/list/?device_platform=webapp&aid=6383&channel=channel_pc_web&offset=0&min_time=0&max_time=0&count=20&source_type=4&gps_access=0&address_book_access=0&is_top=1&user_id={self.uid}&sec_user_id={self.secUid}',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+      arrayField: 'followings',
+    }),
+  }),
+  Object.freeze({
+    id: 'douyin-known-api-aweme-posts',
+    semanticKind: 'list-profile-videos',
+    method: 'GET',
+    endpointTemplate: 'https://www.douyin.com/aweme/v1/web/aweme/post/?device_platform=webapp&aid=6383&channel=channel_pc_web&max_cursor=0&count=18&user_id={self.uid}&sec_user_id={self.secUid}',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+      arrayField: 'aweme_list',
+    }),
+  }),
+]);
+
+function douyinApiSemanticsForPath(pathname) {
+  if (pathname === '/aweme/v1/web/user/following/list/') {
+    return {
+      semanticKind: 'list-followed-users',
+      name: 'list followed users API',
+      description: 'Read the authenticated Douyin following list through a replay-verified read-only API endpoint.',
+      object: 'followed users',
+      userValue: 'List followed Douyin accounts without follow or unfollow actions.',
+      outputName: 'followed_users',
+      outputType: 'list',
+      intentExamples: [
+        'list followed Douyin users',
+        'read Douyin following list',
+        '\u63d0\u53d6\u6296\u97f3\u5173\u6ce8\u7528\u6237\u5217\u8868',
+      ],
+    };
+  }
+  if (pathname === '/aweme/v1/web/aweme/post/') {
+    return {
+      semanticKind: 'list-profile-videos',
+      name: 'list profile videos API',
+      description: 'Read replay-verified Douyin profile video posts through a read-only API endpoint.',
+      object: 'profile videos',
+      userValue: 'List Douyin profile video posts without publishing, liking, or account mutation.',
+      outputName: 'videos',
+      outputType: 'list',
+      intentExamples: [
+        'list Douyin profile videos',
+        'read Douyin video posts',
+        '\u63d0\u53d6\u6296\u97f3\u89c6\u9891\u5217\u8868',
+      ],
+    };
+  }
+  if (pathname === '/aweme/v1/web/aweme/detail/') {
+    return {
+      semanticKind: 'read-video-detail',
+      name: 'read video detail API',
+      description: 'Read replay-verified Douyin video detail metadata through a read-only API endpoint.',
+      object: 'video detail',
+      userValue: 'Read Douyin video detail metadata without account mutation.',
+      outputName: 'video_detail',
+      outputType: 'entity',
+      intentExamples: [
+        'read Douyin video detail',
+        'get Douyin video metadata',
+        '\u8bfb\u53d6\u6296\u97f3\u89c6\u9891\u8be6\u60c5',
+      ],
+    };
+  }
+  if (/\/user\/info\/?$/u.test(pathname)) {
+    return {
+      semanticKind: 'read-creator-user-info',
+      name: 'read creator user info API',
+      description: 'Read replay-verified Douyin creator account user information through a read-only API endpoint.',
+      object: 'creator user info',
+      userValue: 'Read Douyin creator account information without account mutation.',
+      outputName: 'creator_user_info',
+      outputType: 'entity',
+      intentExamples: [
+        'read Douyin creator user info',
+        'get creator account info',
+        '\u8bfb\u53d6\u6296\u97f3\u521b\u4f5c\u8005\u7528\u6237\u4fe1\u606f',
+      ],
+    };
+  }
+  if (pathname === '/aweme/v1/web/oversea/judgment/') {
+    return {
+      semanticKind: 'read-oversea-judgment',
+      name: 'read oversea judgment API',
+      description: 'Read replay-verified Douyin regional access judgment through a read-only API endpoint.',
+      object: 'regional access judgment',
+      userValue: 'Read Douyin regional access status without account mutation.',
+      outputName: 'regional_access_status',
+      outputType: 'entity',
+      intentExamples: [
+        'read Douyin regional access status',
+        'get Douyin oversea judgment',
+        '\u8bfb\u53d6\u6296\u97f3\u5730\u533a\u8bbf\u95ee\u72b6\u6001',
+      ],
+    };
+  }
+  return null;
+}
+
+function douyinUnsupportedApiSemantics(pathname) {
+  return {
+    semanticKind: 'unsupported-douyin-api',
+    name: 'unsupported Douyin API',
+    description: 'Unsupported Douyin API candidate; the adapter can describe it only as a redacted read-only candidate.',
+    object: 'unsupported Douyin API response',
+    userValue: 'Unsupported Douyin API candidate without activation or catalog promotion.',
+    outputName: 'unsupported_douyin_api',
+    outputType: 'unknown',
+    intentExamples: [],
+    endpointPath: pathname,
+  };
+}
+
+function buildDouyinApiDiscoverySeeds({ siteKey = 'douyin' } = {}) {
+  return DOUYIN_BUILD_API_SEEDS.map((seed) => ({
+    id: seed.id,
+    siteKey,
+    status: 'observed',
+    method: seed.method,
+    url: seed.endpointTemplate,
+    resourceType: 'fetch',
+    source: 'site-adapter.build-api-seed',
+    evidence: {
+      event: 'site-adapter-build-api-seed',
+      source: 'douyin-known-site-query',
+      semanticKind: seed.semanticKind,
+      observedOnly: true,
+      catalogPromotionAllowed: false,
+      rawMaterialPersisted: false,
+    },
+    request: {
+      headers: {
+        Origin: 'https://www.douyin.com',
+        Referer: 'https://www.douyin.com/user/self',
+      },
+      body: {},
+    },
+    runtime: {
+      semanticKind: seed.semanticKind,
+      endpointTemplate: seed.endpointTemplate,
+      parameterSource: DOUYIN_SELF_PARAMETER_SOURCE,
+      responseEvidence: seed.responseEvidence,
+      runtimeParameterResolution: 'browser_bridge_page_context_or_build_time_cookie_replay',
+      rawParameterMaterialPersisted: false,
+    },
+  }));
 }
 
 const DOUYIN_HEALTH_SIGNAL_MAP = Object.freeze({
@@ -147,6 +314,54 @@ export const douyinAdapter = createCatalogAdapter({
     return inferDouyinPageTypeFromUrl(inputUrl);
   },
   normalizeDisplayLabel: ({ value }) => cleanText(value),
+  describeApiCandidateSemantics({
+    candidate,
+    scope = /** @type {any} */ ({}),
+  } = /** @type {any} */ ({})) {
+    const { pathname } = endpointParts(candidate);
+    const semantics = douyinApiSemanticsForPath(pathname) ?? douyinUnsupportedApiSemantics(pathname);
+    const normalized = normalizeSiteAdapterSemanticEntry({
+      candidate,
+      semantics: {
+        auth: {
+          ...(candidate?.auth ?? {}),
+          authenticationRequired: true,
+          credentialPolicy: 'redacted-session-view-only',
+        },
+        pagination: {
+          ...(candidate?.pagination ?? {}),
+        },
+        fieldMapping: {
+          ...(candidate?.fieldMapping ?? {}),
+          outputName: semantics.outputName,
+          outputType: semantics.outputType,
+        },
+        risk: {
+          reasonCodeOnUnavailable: 'douyin-api-evidence-unavailable',
+          rawMaterialPersisted: false,
+          catalogPromotionAllowed: false,
+          ...(candidate?.risk ?? {}),
+        },
+      },
+      scope: {
+        semanticMode: 'douyin-api-candidate',
+        endpointPath: pathname,
+        semanticKind: semantics.semanticKind,
+        ...scope,
+      },
+    }, {
+      adapterId: 'douyin',
+      siteKey: 'douyin',
+    });
+    return {
+      ...normalized,
+      ...semantics,
+    };
+  },
+  getBuildApiDiscoverySeeds({ site } = /** @type {any} */ ({})) {
+    const siteKey = isDouyinSiteKey(site?.id) ? site.id : 'douyin';
+    return buildDouyinApiDiscoverySeeds({ siteKey });
+  },
   validateApiCandidate({
     candidate,
     evidence = /** @type {any} */ ({}),

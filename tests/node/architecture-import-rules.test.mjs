@@ -15,6 +15,7 @@ const BUILTIN_SPECIFIERS = new Set([
 const IMPORT_PATTERNS = [
   /\bimport\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/gu,
   /\bexport\s+\*\s+from\s+['"]([^'"]+)['"]/gu,
+  /\bexport\s+\{[^}]*\}\s+from\s+['"]([^'"]+)['"]/gu,
   /\bimport\(\s*['"]([^'"]+)['"]\s*\)/gu,
   /\brequire\(\s*['"]([^'"]+)['"]\s*\)/gu,
 ];
@@ -218,7 +219,7 @@ function assertDependencyAllowlist(imports, options, messagePrefix) {
 }
 
 const ARTIFACT_WRITE_SINK_PATTERN =
-  /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|createWriteStream|writeJsonFile|writeTextFile|appendTextFile|appendJsonLine|writeJsonLines)\b/gu;
+  /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|createWriteStream|writeJsonFile|writeTextFile|writeArtifactJson|writeArtifactText|writeArtifactYaml|appendTextFile|appendJsonLine|writeJsonLines)\b/gu;
 const DYNAMIC_FS_IMPORT_PATTERN = /\bimport\(\s*['"](?:node:fs|node:fs\/promises|fs|fs\/promises)['"]\s*\)/gu;
 
 const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
@@ -239,6 +240,7 @@ const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/domain/lifecycle/lifecycle-events.mjs',
   'src/app/planner/plan-artifact.mjs',
   'src/app/planner/policy-handoff.mjs',
+  'src/app/pipeline/build/pipeline.mjs',
   'src/domain/artifacts/site-capability-graph-artifacts.mjs',
   'src/sites/registry/catalog/index.mjs',
   'src/domain/sessions/runner.mjs',
@@ -276,7 +278,8 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/infra/auth/site-auth.mjs', 3],
   ['src/infra/auth/site-session-governance.mjs', 8],
   ['src/infra/io.mjs', 12],
-  ['src/app/pipeline/build/artifact-store.mjs', 2],
+  ['src/app/pipeline/build/artifact-store.mjs', 5],
+  ['src/app/pipeline/build/pipeline.mjs', 43],
   ['src/app/pipeline/build/capability-interaction.mjs', 3],
   ['src/app/pipeline/build/setup-assistant.mjs', 14],
   ['src/app/pipeline/build/workspace.mjs', 2],
@@ -530,6 +533,19 @@ test('src, tests, tools, and schema do not import retired lib modules', async ()
   assertNoResolvedPrefix(imports, 'lib/', 'retired internal import detected');
 });
 
+test('import specifier collector catches named re-export dependencies', () => {
+  assert.deepEqual(
+    collectImportSpecifiers(`
+      export { retiredHelper as helper } from '../lib/retired-helper.mjs';
+      export { safeHelper } from './safe-helper.mjs';
+    `),
+    [
+      '../lib/retired-helper.mjs',
+      './safe-helper.mjs',
+    ],
+  );
+});
+
 test('artifact write source classifier catches unguarded synthetic writers', () => {
   assert.equal(
     classifyArtifactWriteSource(
@@ -554,6 +570,30 @@ test('artifact write source classifier catches unguarded synthetic writers', () 
       `,
     ),
     'src/sites/example/dynamic-fs.mjs has unclassified artifact write sinks: src/sites/example/dynamic-fs.mjs:4: writeFile; src/sites/example/dynamic-fs.mjs:3: import(\'node:fs/promises\')',
+  );
+  assert.equal(
+    classifyArtifactWriteSource(
+      'src/sites/example/bad-artifact-store-writer.mjs',
+      `
+        import { writeArtifactJson } from '../../app/pipeline/build/artifact-store.mjs';
+        export async function writeRawArtifact(context, payload) {
+          await writeArtifactJson(context, 'unsafe.json', payload);
+        }
+      `,
+    ),
+    'src/sites/example/bad-artifact-store-writer.mjs has unclassified artifact write sinks: src/sites/example/bad-artifact-store-writer.mjs:2: writeArtifactJson; src/sites/example/bad-artifact-store-writer.mjs:4: writeArtifactJson',
+  );
+  assert.equal(
+    classifyArtifactWriteSource(
+      'src/sites/example/bad-artifact-yaml-writer.mjs',
+      `
+        import { writeArtifactYaml } from '../../app/pipeline/build/artifact-store.mjs';
+        export async function writeRawArtifact(context, payload) {
+          await writeArtifactYaml(context, 'unsafe.yaml', payload);
+        }
+      `,
+    ),
+    'src/sites/example/bad-artifact-yaml-writer.mjs has unclassified artifact write sinks: src/sites/example/bad-artifact-yaml-writer.mjs:2: writeArtifactYaml; src/sites/example/bad-artifact-yaml-writer.mjs:4: writeArtifactYaml',
   );
   assert.equal(
     classifyArtifactWriteSource(
@@ -663,6 +703,121 @@ test('infra auth services do not depend on CLI entrypoints', async () => {
   );
 });
 
+test('public SiteForge build CLI contract stays owned by CLI entrypoint layer', async () => {
+  const ownerPath = 'src/entrypoints/cli/public-build-contract.mjs';
+  const compatibilityShimPath = 'src/infra/cli/public-build-contract.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const shimSource = await readFile(path.join(REPO_ROOT, compatibilityShimPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport const PUBLIC_BUILD_COMMAND\b/u);
+  assert.match(ownerSource, /\bexport const PUBLIC_BOOLEAN_BUILD_FLAGS\b/u);
+  assert.match(ownerSource, /\bexport const ACCEPTED_BOOLEAN_BUILD_FLAGS\b/u);
+  assert.equal(
+    shimSource.trim(),
+    [
+      '// @ts-check',
+      '',
+      '// Compatibility re-export. The public build CLI contract is owned by the',
+      '// entrypoint layer; keep this shim for older internal imports.',
+      "export * from '../../entrypoints/cli/public-build-contract.mjs';",
+    ].join('\n'),
+  );
+
+  const imports = [
+    ...await collectResolvedImports('src'),
+    ...await collectResolvedImports('tools'),
+  ];
+  const hits = imports.filter((entry) => entry.resolvedRelativePath === compatibilityShimPath);
+  assert.deepEqual(
+    hits.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [],
+    'production code should import the entrypoint-owned public build contract instead of the infra compatibility shim',
+  );
+});
+
+test('SiteForge build status labels stay owned by the app build layer', async () => {
+  const ownerPath = 'src/app/pipeline/build/status-labels.mjs';
+  const compatibilityShimPath = 'src/infra/cli/status-labels.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const shimSource = await readFile(path.join(REPO_ROOT, compatibilityShimPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function resultStatusLabel\b/u);
+  assert.match(ownerSource, /\bexport function buildStatusLabel\b/u);
+  assert.match(ownerSource, /\bexport function collectionStatusLabel\b/u);
+  assert.equal(
+    shimSource.trim(),
+    [
+      '// @ts-check',
+      '',
+      '// Compatibility re-export. SiteForge build status labels are owned by the',
+      '// app build layer; keep this shim for older internal imports.',
+      "export * from '../../app/pipeline/build/status-labels.mjs';",
+    ].join('\n'),
+  );
+
+  const imports = [
+    ...await collectResolvedImports('src'),
+    ...await collectResolvedImports('tools'),
+  ];
+  const hits = imports.filter((entry) => entry.resolvedRelativePath === compatibilityShimPath);
+  assert.deepEqual(
+    hits.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [],
+    'production code should import the app build status labels instead of the infra compatibility shim',
+  );
+});
+
+test('SiteForge build progress copy stays owned by the app build layer', async () => {
+  const ownerPath = 'src/app/pipeline/build/progress-copy.mjs';
+  const genericCopyPath = 'src/infra/cli/progress-copy.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const genericCopySource = await readFile(path.join(REPO_ROOT, genericCopyPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport const SITEFORGE_BUILD_STAGE_COPY\b/u);
+  assert.match(ownerSource, /\bexport function siteForgeBuildStageTitle\b/u);
+  assert.doesNotMatch(genericCopySource, /\bSITEFORGE_BUILD_STAGE_COPY\b/u);
+  assert.doesNotMatch(genericCopySource, /\bsiteForgeBuildStageTitle\b/u);
+
+  const infraCliImports = await collectResolvedImports('src/infra/cli');
+  const hits = infraCliImports.filter((entry) => entry.resolvedRelativePath === ownerPath);
+  assert.deepEqual(
+    hits.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [],
+    'infra CLI progress helpers should not import SiteForge build progress copy',
+  );
+});
+
+test('site-doctor progress copy stays owned by the site doctor entrypoint', async () => {
+  const ownerPath = 'src/entrypoints/sites/site-doctor-progress-copy.mjs';
+  const siteDoctorPath = 'src/entrypoints/sites/site-doctor.mjs';
+  const genericCopyPath = 'src/infra/cli/progress-copy.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const siteDoctorSource = await readFile(path.join(REPO_ROOT, siteDoctorPath), 'utf8');
+  const genericCopySource = await readFile(path.join(REPO_ROOT, genericCopyPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport const DOCTOR_STAGE_COPY\b/u);
+  assert.match(ownerSource, /\bexport function doctorStageTitle\b/u);
+  assert.match(siteDoctorSource, /from\s+['"]\.\/site-doctor-progress-copy\.mjs['"]/u);
+  assert.doesNotMatch(genericCopySource, /\b(?:DOCTOR_STAGE_COPY|doctorStageTitle)\b/u);
+});
+
+test('shared modules stay below application, infra, domain, and site layers', async () => {
+  const imports = await collectResolvedImports('src/shared');
+  for (const forbiddenPrefix of [
+    'src/app/',
+    'src/domain/',
+    'src/entrypoints/',
+    'src/infra/',
+    'src/sites/',
+  ]) {
+    assertNoResolvedPrefix(
+      imports,
+      forbiddenPrefix,
+      'shared modules should depend only on node builtins or other shared helpers',
+    );
+  }
+});
+
 test('site modules do not depend on scripts or root shims', async () => {
   const imports = await collectResolvedImports('src/sites');
   assertNoResolvedPrefix(imports, 'scripts/', 'site module should not import scripts');
@@ -679,6 +834,226 @@ test('site modules do not depend on scripts or root shims', async () => {
     rootShimHits.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
     [],
     'site modules should not import root compatibility shims',
+  );
+});
+
+test('known-site modules consume registry metadata through core facades', async () => {
+  const imports = await collectResolvedImports('src/sites/known-sites');
+  assertNoResolvedPrefix(
+    imports,
+    'src/sites/registry/catalog/',
+    'known-site modules should use registry core facades instead of catalog internals',
+  );
+});
+
+test('SiteForge setup assistant reads known-site metadata through registry readers', async () => {
+  const setupAssistantPath = 'src/app/pipeline/build/setup-assistant.mjs';
+  const sourceText = await readFile(path.join(REPO_ROOT, setupAssistantPath), 'utf8');
+
+  assert.match(sourceText, /\breadSiteRegistry\b/u);
+  assert.match(sourceText, /\breadSiteCapabilities\b/u);
+  assert.doesNotMatch(
+    sourceText,
+    /readJsonOrNull\s*\(\s*path\.join\([^)]*['"]config['"][^)]*['"]site-(?:registry|capabilities)\.json['"]/u,
+    'setup assistant should use registry readers instead of hand-reading config site metadata JSON',
+  );
+});
+
+test('SiteForge known-site policy helpers stay in their app build module', async () => {
+  const ownerPath = 'src/app/pipeline/build/known-site-policy.mjs';
+  const setupAssistantPath = 'src/app/pipeline/build/setup-assistant.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const setupAssistantSource = await readFile(path.join(REPO_ROOT, setupAssistantPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function knownPolicySummary\b/u);
+  assert.match(ownerSource, /\bexport function knownPolicyCapabilityPressure\b/u);
+  assert.match(ownerSource, /\bexport function knownPolicyAllowsUserAuthorizedSetup\b/u);
+  assert.match(ownerSource, /\bexport function knownPolicyPublicSeedRoutes\b/u);
+  assert.match(ownerSource, /\bexport function knownPolicyPublicRouteTemplatePattern\b/u);
+  assert.match(ownerSource, /\bexport function knownPolicyPublicRouteTemplatePatterns\b/u);
+  assert.match(setupAssistantSource, /from\s+['"]\.\/known-site-policy\.mjs['"]/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/known-site-policy\.mjs['"]/u);
+  assert.doesNotMatch(
+    setupAssistantSource,
+    /function\s+(?:knownPolicySummary|knownPolicyCapabilityPressure|knownPolicyAllowsUserAuthorizedSetup)\b/u,
+    'setup assistant should delegate known-site policy summaries to known-site-policy.mjs',
+  );
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:knownPolicyPublicSeedRoutes|knownPolicyPublicRouteTemplatePattern|knownPolicyPublicRouteTemplatePatterns?)\b/u,
+    'pipeline should delegate known-site public route projection to known-site-policy.mjs',
+  );
+});
+
+test('SiteForge runtime provider metadata helpers stay outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/runtime-provider.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function bridgeRuntimeMetadata\b/u);
+  assert.match(ownerSource, /\bexport function genericHttpRuntimeMetadata\b/u);
+  assert.match(ownerSource, /\bexport function registryIntentRuntimeMetadata\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/runtime-provider\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:bridgeRuntimeMetadata|genericHttpRuntimeMetadata|registryIntentRuntimeMetadata)\b/u,
+    'pipeline should delegate runtime provider metadata shaping to runtime-provider.mjs',
+  );
+});
+
+test('SiteForge setup capability id normalization stays in a build helper', async () => {
+  const ownerPath = 'src/app/pipeline/build/capability-id.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const consumerPaths = [
+    'src/app/pipeline/build/pipeline.mjs',
+    'src/app/pipeline/build/known-site-policy.mjs',
+    'src/app/pipeline/build/setup-assistant.mjs',
+    'src/app/pipeline/build/setup-collection-review.mjs',
+  ];
+
+  assert.match(ownerSource, /\bexport function normalizeCapabilityId\b/u);
+  assert.match(ownerSource, /\bexport function normalizeSetupCapabilityId\b/u);
+  assert.match(ownerSource, /\bexport function canonicalCapabilitySemanticToken\b/u);
+  for (const consumerPath of consumerPaths) {
+    const consumerSource = await readFile(path.join(REPO_ROOT, consumerPath), 'utf8');
+    assert.match(consumerSource, /from\s+['"]\.\/capability-id\.mjs['"]/u);
+    assert.doesNotMatch(
+      consumerSource,
+      /function\s+(?:normalizeCapabilityId|normalizeSetupCapabilityId|canonicalCapabilitySemanticToken)\b|const\s+CAPABILITY_SEMANTIC_ALIASES\b/u,
+      `${consumerPath} should delegate setup capability id normalization to capability-id.mjs`,
+    );
+  }
+});
+
+test('SiteForge setup-blocked API discovery fallback stays in a pure app build module', async () => {
+  const ownerPath = 'src/app/pipeline/build/api-discovery-setup-fallback.mjs';
+  const setupAssistantPath = 'src/app/pipeline/build/setup-assistant.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const setupAssistantSource = await readFile(path.join(REPO_ROOT, setupAssistantPath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport function canContinueSetupBlockedForApiDiscovery\b/u);
+  assert.match(ownerSource, /\bexport function setupBlockedApiDiscoveryOptions\b/u);
+  assert.match(ownerSource, /\bexport function setupBlockedApiDiscoveryPlan\b/u);
+  assert.deepEqual(
+    ownerImports.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [`${ownerPath} -> ../../../shared/normalize.mjs`],
+    'setup-blocked API discovery fallback should stay pure and depend only on shared normalization',
+  );
+  assert.match(setupAssistantSource, /from\s+['"]\.\/api-discovery-setup-fallback\.mjs['"]/u);
+  assert.doesNotMatch(
+    setupAssistantSource,
+    /function\s+(?:canContinueSetupBlockedForApiDiscovery|setupBlockedApiDiscoveryOptions|setupBlockedApiDiscoveryPlan)\b/u,
+    'setup assistant should delegate setup-blocked API discovery fallback policy to api-discovery-setup-fallback.mjs',
+  );
+});
+
+test('SiteForge API read-only policy stays in its build policy module', async () => {
+  const ownerPath = 'src/app/pipeline/build/api-readonly-policy.mjs';
+  const consumerPaths = [
+    'src/app/pipeline/build/api-request-runtime.mjs',
+    'src/app/pipeline/build/browser-auth-bridge.mjs',
+    'src/app/pipeline/build/pipeline.mjs',
+  ];
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport const READ_ONLY_API_METHODS\b/u);
+  assert.match(ownerSource, /\bexport function normalizeApiMethod\b/u);
+  assert.match(ownerSource, /\bexport function isReadOnlyApiMethod\b/u);
+  assert.match(ownerSource, /\bexport function hasSubstantiveApiRequestBody\b/u);
+  assert.match(ownerSource, /\bexport function apiEndpointLooksWriteLike\b/u);
+  for (const consumerPath of consumerPaths) {
+    const consumerSource = await readFile(path.join(REPO_ROOT, consumerPath), 'utf8');
+    assert.match(consumerSource, /from\s+['"]\.\/api-readonly-policy\.mjs['"]/u);
+    assert.doesNotMatch(
+      consumerSource,
+      /const\s+API_(?:ADAPTER_SAFE_METHODS|RUNTIME_SAFE_METHODS|REPLAY_SAFE_METHODS|REPLAY_SENSITIVE_QUERY_PATTERN|REPLAY_WRITE_PATH_PATTERN|RUNTIME_WRITE_PATH_PATTERN)\b|function\s+(?:hasSensitiveQueryMaterial|hasSubstantiveApiRequestBody)\b/u,
+      `${consumerPath} should delegate shared API read-only policy to api-readonly-policy.mjs`,
+    );
+  }
+});
+
+test('SiteForge browser bridge version policy stays outside bridge IO', async () => {
+  const ownerPath = 'src/app/pipeline/build/browser-bridge-version-policy.mjs';
+  const bridgePath = 'src/app/pipeline/build/browser-auth-bridge.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const bridgeSource = await readFile(path.join(REPO_ROOT, bridgePath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION\b/u);
+  assert.match(ownerSource, /\bexport const COMPATIBLE_BROWSER_BRIDGE_EXTENSION_VERSIONS\b/u);
+  assert.match(ownerSource, /\bexport function bridgeVersionCompatible\b/u);
+  assert.match(ownerSource, /\bexport function bridgeExtensionVersionBlockingSignals\b/u);
+  assert.deepEqual(ownerImports, [], 'browser bridge version policy should stay pure and dependency-free');
+  assert.match(bridgeSource, /from\s+['"]\.\/browser-bridge-version-policy\.mjs['"]/u);
+  assert.doesNotMatch(
+    bridgeSource,
+    /const\s+(?:EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION|COMPATIBLE_BROWSER_BRIDGE_EXTENSION_VERSIONS)\b|function\s+(?:bridgeExtensionVersionSignals|collectorVersionMatchesExpectedVersion|bridgeVersionCompatible|bridgeExtensionVersionBlockingSignals)\b/u,
+    'browser-auth-bridge should delegate version compatibility policy to browser-bridge-version-policy.mjs',
+  );
+});
+
+test('SiteForge browser bridge route coverage policy stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/browser-bridge-route-coverage.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport function browserBridgeRouteCaptured\b/u);
+  assert.match(ownerSource, /\bexport function configuredAuthRouteTemplateSet\b/u);
+  assert.match(ownerSource, /\bexport function browserBridgePageWasCaptured\b/u);
+  assert.match(ownerSource, /\bexport function routeCapturePlanFromAuthState\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/browser-bridge-route-coverage\.mjs['"]/u);
+  assert.equal(
+    ownerImports.some((entry) => entry.resolvedRelativePath === pipelinePath),
+    false,
+    'browser bridge route coverage policy must not import pipeline orchestration',
+  );
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:browserBridgeRouteCaptured|browserBridgeRouteRetryable|routeTemplateComparisonValues|configuredAuthRouteTemplateSet|matchesConfiguredAuthRoute|browserBridgeMissingRouteTemplateSet|browserBridgeCapturedRouteTemplateSet|matchesBrowserBridgeMissingRoute|matchesBrowserBridgeMissingNonRootRoute|browserBridgePageWasCaptured|routeCapturePlanFromAuthState)\b/u,
+    'pipeline should delegate browser bridge route coverage policy to browser-bridge-route-coverage.mjs',
+  );
+});
+
+test('SiteForge setup collection review model stays outside setup assistant orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/setup-collection-review.mjs';
+  const setupAssistantPath = 'src/app/pipeline/build/setup-assistant.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const setupAssistantSource = await readFile(path.join(REPO_ROOT, setupAssistantPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport function buildCollectionReviewModel\b/u);
+  assert.match(ownerSource, /\bexport function collectionReviewLabel\b/u);
+  assert.match(ownerSource, /\bexport function normalizeUserAuthorizedCapabilityProofs\b/u);
+  assert.match(ownerSource, /\bexport function reconcileSetupCollectionReviewWithBuildOutputs\b/u);
+  assert.match(ownerSource, /\bexport function setupCollectionReviewReport\b/u);
+  assert.match(ownerSource, /\bexport function renderSetupCollectionReviewLines\b/u);
+  assert.match(setupAssistantSource, /from\s+['"]\.\/setup-collection-review\.mjs['"]/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/setup-collection-review\.mjs['"]/u);
+  assert.doesNotMatch(setupAssistantSource, /\bCOLLECTION_REVIEW_KINDS\b/u);
+  assert.doesNotMatch(
+    setupAssistantSource,
+    /function\s+(?:collectionReviewBucket|collectionReviewProofCovers|collectionReviewPolicyCapabilities|buildCollectionReviewModel|normalizeUserAuthorizedCapabilityProofs)\b/u,
+    'setup assistant should delegate collection review modeling to setup-collection-review.mjs',
+  );
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:collectionReviewCount|collectionReviewBucketSummary|collectionReviewMissingRecords|finalReviewTokens|finalReviewDistinctiveTokens|finalReviewAliases|finalReviewSignalRecords|finalReviewSignalCovers|reconcileSetupCollectionReviewWithBuildOutputs|setupCollectionReviewReport|renderSetupCollectionReviewLines)\b|const\s+FINAL_REVIEW_GENERIC_TOKENS\b/u,
+    'pipeline should delegate setup collection review reporting to setup-collection-review.mjs',
+  );
+  assert.deepEqual(
+    ownerImports
+      .filter((entry) => entry.resolvedRelativePath === setupAssistantPath)
+      .map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [],
+    'setup collection review must not import setup assistant orchestration',
   );
 });
 
@@ -708,6 +1083,482 @@ test('pipeline application layer only exposes the SiteForge build implementation
       .map((entry) => entry.name)
       .sort(),
     ['build'],
+  );
+});
+
+test('SiteForge build stage plan stays a private pipeline orchestration contract', async () => {
+  const stagePlanPath = 'src/app/pipeline/build/stage-plan.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const buildIndexPath = 'src/app/pipeline/build/index.mjs';
+
+  const stagePlanImports = await collectResolvedImportsFromFile(stagePlanPath);
+  assert.deepEqual(
+    stagePlanImports.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [],
+    'stage plan should stay a pure structure module without runtime, site, infra, or domain imports',
+  );
+
+  const stagePlanReferences = await collectSourcePatternMatches(
+    'src',
+    /from\s+['"][^'"]*stage-plan\.mjs['"]/gu,
+  );
+  const unexpectedReferences = stagePlanReferences.filter((match) => !match.startsWith(`${pipelinePath}:`));
+  assert.deepEqual(
+    unexpectedReferences,
+    [],
+    'production code should consume the stage plan through the build pipeline owner only',
+  );
+
+  const buildIndexSource = await readFile(path.join(REPO_ROOT, buildIndexPath), 'utf8');
+  assert.doesNotMatch(
+    buildIndexSource,
+    /from\s+['"]\.\/stage-plan\.mjs['"]/u,
+    'build barrel should not expose the stage plan module directly',
+  );
+});
+
+test('SiteForge build stage report model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/build-stage-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function safeBuildWarningForReport\b/u);
+  assert.match(ownerSource, /\bexport function buildReportWarningSummary\b/u);
+  assert.match(ownerSource, /\bexport function buildStageRecord\b/u);
+  assert.match(ownerSource, /\bexport function classifyBuildFailure\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/build-stage-report\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:safeBuildWarningForReport|safeBuildMessagesForReport|buildReportWarningSummary|buildStageRecord|classifyBuildFailure)\b|const\s+SAFE_BUILD_WARNING_PATTERNS\b/u,
+    'pipeline should delegate build stage report modeling to build-stage-report.mjs',
+  );
+});
+
+test('SiteForge debug and index report models stay outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/build-debug-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function summarizeStageRecords\b/u);
+  assert.match(ownerSource, /\bexport function sanitizedNetworkSummary\b/u);
+  assert.match(ownerSource, /\bexport function buildRouteStateGraph\b/u);
+  assert.match(ownerSource, /\bexport function buildDebugReport\b/u);
+  assert.match(ownerSource, /\bexport function buildReportIndex\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/build-debug-report\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:summarizeStageRecords|sanitizedNetworkSummary|buildRouteStateGraph|buildDebugReport|buildReportIndex)\b|const\s+(?:RAW_PAGE_MATERIAL_MANIFEST|AUTHORIZED_SOURCE_MANIFEST|CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH)\b/u,
+    'pipeline should delegate debug and index report modeling to build-debug-report.mjs',
+  );
+});
+
+test('SiteForge capability intent HTML value helpers stay outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/capability-intent-html-values.mjs';
+  const renderPath = 'src/app/pipeline/build/capability-intent-html-render.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const renderSource = await readFile(path.join(REPO_ROOT, renderPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function sanitizeCapabilityIntentHtmlPayload\b/u);
+  assert.match(ownerSource, /\bexport function escapeHtml\b/u);
+  assert.match(ownerSource, /\bexport function htmlCell\b/u);
+  assert.match(ownerSource, /\bexport function htmlStatusBadge\b/u);
+  assert.match(renderSource, /from\s+['"]\.\/capability-intent-html-values\.mjs['"]/u);
+  assert.doesNotMatch(pipelineSource, /from\s+['"]\.\/capability-intent-html-values\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:sanitizeHtmlReportUrl|sanitizeHtmlReportString|sanitizeHtmlReportValue|sanitizeCapabilityIntentHtmlPayload|escapeHtml|htmlCell|htmlList|htmlBadge|htmlStatusBadge|htmlRiskBadge|htmlAuthBadge)\b|const\s+HTML_REPORT_(?:MAX_EXAMPLES|FORBIDDEN_PATTERNS)\b/u,
+    'pipeline should delegate capability intent HTML value helpers to capability-intent-html-values.mjs',
+  );
+});
+
+test('SiteForge capability intent HTML payload model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/capability-intent-html-payload.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function buildCapabilityIntentHtmlPayload\b/u);
+  assert.match(ownerSource, /\bexport function buildElementCoverageAuditRows\b/u);
+  assert.match(ownerSource, /\bexport function htmlCategoryInstanceLabel\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/capability-intent-html-payload\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:capabilityHtmlGroup|capabilityHtmlReason|capabilityHtmlStrategy|intentCallableLabel|summarizeHtmlCoverage|capabilitySourceNodesForHtml|routeTemplatesForHtml|categoryInstancesForHtml|htmlCategoryInstanceLabel|buildElementCoverageAuditRows|elementCoverageAuditSummary|buildCapabilityIntentHtmlPayload)\b/u,
+    'pipeline should delegate capability intent HTML payload modeling to capability-intent-html-payload.mjs',
+  );
+});
+
+test('SiteForge capability intent HTML rendering stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/capability-intent-html-render.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function renderCapabilityIntentSummaryHtml\b/u);
+  assert.match(ownerSource, /\bexport function assertCapabilityIntentHtmlSafe\b/u);
+  assert.match(ownerSource, /from\s+['"]\.\/capability-intent-html-values\.mjs['"]/u);
+  assert.match(ownerSource, /from\s+['"]\.\/capability-intent-html-payload\.mjs['"]/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/capability-intent-html-render\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:renderCapabilityRows|renderIntentRows|renderMappingRows|renderBrowserBridgeRouteCoverage|renderCoverageTable|renderProviderCoverageTable|renderElementCoverageAudit|renderBlockedList|renderCapabilityIntentSummaryHtml|assertCapabilityIntentHtmlSafe)\b/u,
+    'pipeline should delegate capability intent HTML rendering to capability-intent-html-render.mjs',
+  );
+});
+
+test('SiteForge page reconciliation report model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/page-reconciliation-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function buildPageReconciliationReport\b/u);
+  assert.match(ownerSource, /\bexport function classifyPageReconciliationOutcome\b/u);
+  assert.match(ownerSource, /\bexport function reconciliationRouteKey\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/page-reconciliation-report\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:reconciliationRouteKey|reconciliationLinkUrl|reconciliationLinkLabel|isReconciliationCategoryLink|isChallengeLikePage|classifyPageReconciliationOutcome|reconciliationGraphUrlSet|hasChineseText|buildPageReconciliationReport)\b|const\s+PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN\b/u,
+    'pipeline should delegate page reconciliation report modeling to page-reconciliation-report.mjs',
+  );
+});
+
+test('SiteForge access remediation plan model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/access-remediation-plan.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function shouldWriteAccessRemediationPlan\b/u);
+  assert.match(ownerSource, /\bexport function buildAccessRemediationPlan\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/access-remediation-plan\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:shouldWriteAccessRemediationPlan|buildAccessRemediationPlan)\b/u,
+    'pipeline should delegate access remediation plan modeling to access-remediation-plan.mjs',
+  );
+});
+
+test('SiteForge structure sanitizer stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/structure-sanitizer.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const reconciliationPath = 'src/app/pipeline/build/page-reconciliation-report.mjs';
+  const remediationPath = 'src/app/pipeline/build/access-remediation-plan.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const reconciliationSource = await readFile(path.join(REPO_ROOT, reconciliationPath), 'utf8');
+  const remediationSource = await readFile(path.join(REPO_ROOT, remediationPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function sanitizedStructureText\b/u);
+  assert.match(ownerSource, /\bexport function safeStructureHash\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/structure-sanitizer\.mjs['"]/u);
+  assert.match(reconciliationSource, /from\s+['"]\.\/structure-sanitizer\.mjs['"]/u);
+  assert.match(remediationSource, /from\s+['"]\.\/structure-sanitizer\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:sanitizedStructureText|safeStructureHash)\b/u,
+    'pipeline should delegate shared structure sanitizing to structure-sanitizer.mjs',
+  );
+  assert.doesNotMatch(
+    `${reconciliationSource}\n${remediationSource}`,
+    /function\s+sanitizedStructureText\b/u,
+    'report model modules should reuse the shared structure sanitizer',
+  );
+});
+
+test('SiteForge authorized sources report model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/authorized-sources-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function authorizedSourcesSummaryForReport\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/authorized-sources-report\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+authorizedSourcesSummaryForReport\b/u,
+    'pipeline should delegate authorized source report modeling to authorized-sources-report.mjs',
+  );
+});
+
+test('SiteForge setup profile report model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/setup-profile-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport function setupProfileSummary\b/u);
+  assert.match(ownerSource, /\bexport function setupProfileBlockCode\b/u);
+  assert.match(ownerSource, /\bexport function setupProfileBuildBlock\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/setup-profile-report\.mjs['"]/u);
+  assert.deepEqual(
+    ownerImports.map((entry) => `${entry.fileRelativePath} -> ${entry.specifier}`),
+    [
+      `${ownerPath} -> ../../../shared/clone.mjs`,
+      `${ownerPath} -> ../../../shared/normalize.mjs`,
+      `${ownerPath} -> ./user-report-values.mjs`,
+    ],
+    'setup profile report model should stay pure and depend only on shared helpers plus public report value sanitizing',
+  );
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:setupProfileSummary|setupProfileBlockCode|setupProfileBuildBlock)\b/u,
+    'pipeline should delegate setup profile report modeling to setup-profile-report.mjs',
+  );
+});
+
+test('SiteForge collection outcome aggregation stays in the collection outcome module', async () => {
+  const ownerPath = 'src/app/pipeline/build/collection-outcomes.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const userReportPath = 'src/app/pipeline/build/user-report.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const userReportSource = await readFile(path.join(REPO_ROOT, userReportPath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function collectUnsuccessfulCollections\b/u);
+  assert.match(ownerSource, /\bexport function isDebugOnlyCapability\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/collection-outcomes\.mjs['"]/u);
+  assert.match(userReportSource, /from\s+['"]\.\/collection-outcomes\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:collectUnsuccessfulCollections|isDebugOnlyCapability)\b/u,
+    'pipeline should delegate collection outcome aggregation to collection-outcomes.mjs',
+  );
+  assert.doesNotMatch(
+    userReportSource,
+    /\b(?:DEBUG_ONLY_STATUS_VALUES|function\s+isDebugOnlyCapability)\b/u,
+    'user report should share debug-only capability semantics with collection-outcomes.mjs',
+  );
+});
+
+test('SiteForge build report display stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/build-report-display.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function displayBuildWarning\b/u);
+  assert.match(ownerSource, /\bexport function renderCollectionOutcomeTable\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/build-report-display\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:displayBuildWarning|displayCollectionKind|displayCollectionTarget|displayCollectionReason|markdownTableCell|renderCollectionOutcomeTable)\b/u,
+    'pipeline should delegate build report display formatting to build-report-display.mjs',
+  );
+});
+
+test('SiteForge capability state report model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/capability-state-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport function buildCapabilityCard\b/u);
+  assert.match(ownerSource, /\bexport function buildCapabilityStateModel\b/u);
+  assert.match(ownerSource, /\bexport function capabilityCounts\b/u);
+  assert.match(ownerSource, /\bexport function sortCapabilitiesForUser\b/u);
+  assert.match(ownerSource, /\bexport function isHighRiskOrAccountDisabled\b/u);
+  assert.equal(
+    ownerImports.some((entry) => entry.resolvedRelativePath === 'src/app/pipeline/build/auto-capabilities.mjs'),
+    false,
+    'capability state reporting should not depend on auto capability generation for status counts',
+  );
+  assert.match(pipelineSource, /from\s+['"]\.\/capability-state-report\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:userReportGroupForCapability|userCapabilityReason|userCapabilityStrategy|safeExecutionPlanRoute|executionPlanCard|buildCapabilityCard|buildCapabilityStateModel|capabilityCounts|capabilitySortText|capabilityUserSortRank|sortCapabilitiesForUser|isHighRiskOrAccountDisabled)\b/u,
+    'pipeline should delegate capability state report modeling to capability-state-report.mjs',
+  );
+});
+
+test('SiteForge capability evidence matrix policy stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/capability-evidence-matrix.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+  const ownerImports = await collectResolvedImportsFromFile(ownerPath);
+
+  assert.match(ownerSource, /\bexport function capabilityRequiresLogin\b/u);
+  assert.match(ownerSource, /\bexport function buildCapabilityEvidenceMatrix\b/u);
+  assert.match(ownerSource, /\bexport function applyCapabilityEvidenceMatrix\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/capability-evidence-matrix\.mjs['"]/u);
+  assert.equal(
+    ownerImports.some((entry) => entry.resolvedRelativePath === pipelinePath),
+    false,
+    'capability evidence matrix policy must not import pipeline orchestration',
+  );
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:capabilityRequiresLogin|sourceLayerForCapability|providerIdForCapability|observedCapabilityEvidenceLevel|nodeHasPublicStructureEvidence|buildCapabilityEvidenceMatrix|applyCapabilityEvidenceMatrix)\b/u,
+    'pipeline should delegate capability evidence matrix policy to capability-evidence-matrix.mjs',
+  );
+});
+
+test('SiteForge partial success reason model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/partial-success-report.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function buildPartialSuccessReasons\b/u);
+  assert.match(ownerSource, /\bexport function partialSuccessReasonFromWarning\b/u);
+  assert.match(ownerSource, /\bexport function buildPartialSuccessOutcome\b/u);
+  assert.match(ownerSource, /\bexport function resultStatusFromBuild\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/partial-success-report\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:partialSuccessReasonFromWarning|safePublicReasonCode|buildPartialSuccessReasons|buildPartialSuccessOutcome|resultStatusFromBuild)\b/u,
+    'pipeline should delegate partial success reason modeling to partial-success-report.mjs',
+  );
+});
+
+test('SiteForge build summary report path resolution stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/build-summary-paths.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function capabilityIntentHtmlResultPath\b/u);
+  assert.match(ownerSource, /\bexport function pageReconciliationResultPath\b/u);
+  assert.match(ownerSource, /\bexport function robotsRemediationResultPath\b/u);
+  assert.match(ownerSource, /\bexport function accessRemediationResultPath\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/build-summary-paths\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:capabilityIntentHtmlResultPath|pageReconciliationResultPath|robotsRemediationResultPath|accessRemediationResultPath)\b/u,
+    'pipeline should delegate build summary report path resolution to build-summary-paths.mjs',
+  );
+});
+
+test('SiteForge build report mode payload selection stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/build-report-mode.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function normalizeReportMode\b/u);
+  assert.match(ownerSource, /\bexport function buildReportPayloadForMode\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/build-report-mode\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:normalizeReportMode|buildReportPayloadForMode)\b/u,
+    'pipeline should delegate build report mode payload selection to build-report-mode.mjs',
+  );
+});
+
+test('SiteForge plain build summary rendering stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/build-plain-summary.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function renderSiteForgePlainBuildSummary\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/build-plain-summary\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:numberOrZero|renderSiteForgePlainBuildSummary)\b/u,
+    'pipeline should delegate plain build summary rendering to build-plain-summary.mjs',
+  );
+});
+
+test('SiteForge user report public value helpers stay outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/user-report-values.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function sanitizeReportString\b/u);
+  assert.match(ownerSource, /\bexport function sanitizeReportPublicValue\b/u);
+  assert.match(ownerSource, /\bexport function relativeReportPath\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/user-report-values\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:sanitizeReportString|sanitizeReportPublicValue|relativeReportPath)\b|const\s+REPORT_(?:ABSOLUTE_PATH|EMAIL|PHONE|HANDLE|BEARER|SECRET_ASSIGNMENT|COOKIE|AUTH_HEADER|RAW_MARKUP)_PATTERN\b/u,
+    'pipeline should delegate user report public value helpers to user-report-values.mjs',
+  );
+});
+
+test('SiteForge user report coverage model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/user-report-coverage.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function browserBridgeCoverageGaps\b/u);
+  assert.match(ownerSource, /\bexport function summarizeNodes\b/u);
+  assert.match(ownerSource, /\bexport function buildCoverageReport\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/user-report-coverage\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+(?:browserBridgeCoverageGaps|summarizeNodes|buildCoverageReport)\b/u,
+    'pipeline should delegate user report coverage modeling to user-report-coverage.mjs',
+  );
+});
+
+test('SiteForge user report warning model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/user-report-warnings.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function buildUserFacingWarnings\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/user-report-warnings\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+buildUserFacingWarnings\b/u,
+    'pipeline should delegate user report warning modeling to user-report-warnings.mjs',
+  );
+});
+
+test('SiteForge user report next-step model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/user-report-next-steps.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function buildNextSteps\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/user-report-next-steps\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+buildNextSteps\b/u,
+    'pipeline should delegate user report next-step modeling to user-report-next-steps.mjs',
+  );
+});
+
+test('SiteForge user report workflow model stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/user-report-workflows.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function buildNextStepWorkflows\b/u);
+  assert.match(ownerSource, /\bexport const ROUTE_CAPTURE_PLAN_FILE\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/user-report-workflows\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+buildNextStepWorkflows\b/u,
+    'pipeline should delegate user report workflow modeling to user-report-workflows.mjs',
+  );
+});
+
+test('SiteForge user report privacy summary stays outside pipeline orchestration', async () => {
+  const ownerPath = 'src/app/pipeline/build/user-report-privacy.mjs';
+  const pipelinePath = 'src/app/pipeline/build/pipeline.mjs';
+  const ownerSource = await readFile(path.join(REPO_ROOT, ownerPath), 'utf8');
+  const pipelineSource = await readFile(path.join(REPO_ROOT, pipelinePath), 'utf8');
+
+  assert.match(ownerSource, /\bexport function summarizePrivacy\b/u);
+  assert.match(pipelineSource, /from\s+['"]\.\/user-report-privacy\.mjs['"]/u);
+  assert.doesNotMatch(
+    pipelineSource,
+    /function\s+summarizePrivacy\b/u,
+    'pipeline should delegate user report privacy summary modeling to user-report-privacy.mjs',
   );
 });
 

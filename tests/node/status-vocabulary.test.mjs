@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 import {
   BuildStatus,
+  CapabilityEvidenceStatus,
   CallableCapabilityEnablementStatus,
   CapabilityEnablementStatus,
   DownloadStatus,
@@ -12,10 +13,6 @@ import {
   StageStatus,
   isKnownStatus,
 } from '../../src/domain/status/status-vocabulary.mjs';
-import {
-  CALLABLE_ENABLEMENT_STATUSES,
-  CAPABILITY_ENABLEMENT_STATUSES,
-} from '../../src/app/pipeline/build/risk-policy.mjs';
 
 test('status vocabulary defines the public report status sets', () => {
   assert.equal(isKnownStatus('BuildStatus', 'partial_success'), true);
@@ -26,6 +23,8 @@ test('status vocabulary defines the public report status sets', () => {
   assert.equal(isKnownStatus('CallableCapabilityEnablementStatus', 'draft_only'), true);
   assert.equal(isKnownStatus('CallableCapabilityEnablementStatus', 'disabled'), false);
   assert.equal(isKnownStatus('EvidenceStatus', 'fixture_only'), true);
+  assert.equal(isKnownStatus('CapabilityEvidenceStatus', 'inferred'), true);
+  assert.equal(isKnownStatus('CapabilityEvidenceStatus', 'partial'), false);
   assert.equal(isKnownStatus('StageStatus', 'passed'), true);
   assert.equal(isKnownStatus('BuildStatus', 'mystery'), false);
 });
@@ -48,14 +47,10 @@ test('status vocabulary stays duplicate-free', () => {
     CapabilityEnablementStatus,
     CallableCapabilityEnablementStatus,
     EvidenceStatus,
+    CapabilityEvidenceStatus,
   })) {
     assert.equal(new Set(values).size, values.length, `${name} contains duplicate values`);
   }
-});
-
-test('pipeline risk-policy enablement exports stay aligned with shared vocabulary', () => {
-  assert.deepEqual(CAPABILITY_ENABLEMENT_STATUSES, CapabilityEnablementStatus);
-  assert.deepEqual(CALLABLE_ENABLEMENT_STATUSES, CallableCapabilityEnablementStatus);
 });
 
 test('result_status and legacy_status compatibility fields carry migration comments', async () => {

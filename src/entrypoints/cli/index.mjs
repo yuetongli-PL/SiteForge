@@ -10,17 +10,17 @@ import { initializeCliUtf8 } from '../../infra/cli.mjs';
 import {
   PUBLIC_BUILD_COMMAND,
   PUBLIC_BUILD_HELP,
-  publicBooleanBuildFlagSet,
-  publicEnumValueBuildFlagMap,
-  publicStringValueBuildFlagSet,
+  acceptedBooleanBuildFlagSet,
+  acceptedEnumValueBuildFlagMap,
+  acceptedStringValueBuildFlagSet,
 } from './public-build-contract.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const HELP = PUBLIC_BUILD_HELP;
-const PUBLIC_BOOLEAN_BUILD_FLAGS = publicBooleanBuildFlagSet();
-const PUBLIC_ENUM_VALUE_BUILD_FLAGS = publicEnumValueBuildFlagMap();
-const PUBLIC_STRING_VALUE_BUILD_FLAGS = publicStringValueBuildFlagSet();
+const ACCEPTED_BOOLEAN_BUILD_FLAGS = acceptedBooleanBuildFlagSet();
+const ACCEPTED_ENUM_VALUE_BUILD_FLAGS = acceptedEnumValueBuildFlagMap();
+const ACCEPTED_STRING_VALUE_BUILD_FLAGS = acceptedStringValueBuildFlagSet();
 
 function scriptPath(...segments) {
   return path.resolve(MODULE_DIR, ...segments);
@@ -107,7 +107,7 @@ function validateBuildFlagValuePresence(flagName, value) {
 
 function validateBuildEnumFlagValue(flagName, value) {
   validateBuildFlagValuePresence(flagName, value);
-  const allowedValues = PUBLIC_ENUM_VALUE_BUILD_FLAGS.get(flagName);
+  const allowedValues = ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get(flagName);
   if (!allowedValues.includes(value)) {
     errorWithHelp(`${flagName} must be one of: ${allowedValues.join(', ')}`);
   }
@@ -122,13 +122,13 @@ function validateBuildArgs(args) {
     }
     if (String(token).startsWith('--')) {
       const flagName = splitFlagName(token);
-      if (PUBLIC_BOOLEAN_BUILD_FLAGS.has(flagName)) {
+      if (ACCEPTED_BOOLEAN_BUILD_FLAGS.has(flagName)) {
         if (String(token).includes('=')) {
           errorWithHelp(`Flag does not take a value: ${flagName}`);
         }
         continue;
       }
-      if (PUBLIC_ENUM_VALUE_BUILD_FLAGS.has(flagName)) {
+      if (ACCEPTED_ENUM_VALUE_BUILD_FLAGS.has(flagName)) {
         if (String(token).includes('=')) {
           validateBuildEnumFlagValue(flagName, String(token).slice(flagName.length + 1));
           continue;
@@ -140,7 +140,7 @@ function validateBuildArgs(args) {
         validateBuildEnumFlagValue(flagName, String(args[index]));
         continue;
       }
-      if (PUBLIC_STRING_VALUE_BUILD_FLAGS.has(flagName)) {
+      if (ACCEPTED_STRING_VALUE_BUILD_FLAGS.has(flagName)) {
         if (String(token).includes('=')) {
           validateBuildFlagValuePresence(flagName, String(token).slice(flagName.length + 1));
           continue;

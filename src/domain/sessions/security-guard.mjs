@@ -208,7 +208,7 @@ export function redactValue(value) {
 }
 
 /**
- * @param {Record<string, any>} value
+ * @param {any} value
  * @param {Record<string, any>} options
  */
 export function redactPublicIdentifierText(value, {

@@ -11,7 +11,7 @@ import {
   resultStatusLabel,
   setupStatusLabel,
   verificationStatusLabel,
-} from '../../src/infra/cli/status-labels.mjs';
+} from '../../src/app/pipeline/build/status-labels.mjs';
 
 test('status labels preserve user-facing build and verification wording', () => {
   assert.equal(resultStatusLabel('success'), '成功');

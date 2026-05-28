@@ -2482,6 +2482,56 @@ test('SiteForge setup fails closed when configured cookie authentication fails',
   }
 });
 
+test('SiteForge setup continues API discovery when strict browser auth blocks default network capture', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-api-setup-fallback-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'browser-api-setup-fallback',
+        now: new Date('2026-05-27T08:00:00.000Z'),
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        renderJs: true,
+        network: true,
+        captureNetwork: true,
+        internalRawNetwork: true,
+        browserBridgeMaxRetryPasses: 0,
+        fetchDelayMs: 0,
+        setupOutput: { write() {} },
+        localBuildConfig: {
+          authRoutes: ['/notifications'],
+          publicRevisitRoutes: ['/'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => ({
+          routeResults: routes.map((route) => ({
+            routeId: route.id,
+            sourceLayer: route.sourceLayer,
+            targetRoute: route.routeTemplate,
+            status: 'challenge_detected',
+            reasonCode: 'browser-bridge-route-challenge-detected',
+          })),
+        }),
+      });
+
+      assert.equal(setup.status, 'api_discovery_setup_blocked');
+      assert.equal(setup.setupPlan.buildReadiness.buildable, false);
+      assert.equal(setup.setupPlan.buildReadiness.reasonCode, 'browser_blocked');
+      assert.equal(setup.buildOptions.strictBrowserAuth, false);
+      assert.equal(setup.buildOptions.allowSetupBlockedApiDiscovery, true);
+      assert.equal(setup.buildOptions.internalRawNetwork, true);
+      assert.equal(setup.profile.profileUsability.buildable, false);
+      assert.equal(setup.profile.apiDiscoverySetupFallback, undefined);
+
+      const persistedPlan = await readJson(setup.paths.setupPlanPath);
+      assert.equal(persistedPlan.apiDiscoverySetupFallback.status, 'enabled');
+      assert.equal(persistedPlan.apiDiscoverySetupFallback.reasonCode, 'browser_blocked');
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('cookie auth state check gates authenticated layer without persisting cookie material', async () => {
   await withTestSite((rootUrl) => ({
     '/account': testHtmlPage('Account', '<main><ul><li>item</li></ul></main>'),
@@ -2913,8 +2963,8 @@ test('browser auth route result persistence redacts sensitive diagnostic fields'
 
 test('browser auth extension stage persistence keeps complete sanitized diagnostics', () => {
   const extensionStages = [
-    'bridge-content-version:route-queue-chinese-semantic-v6',
-    'bridge-version:route-queue-chinese-semantic-v6',
+    'bridge-content-version:route-queue-chinese-semantic-v7',
+    'bridge-version:route-queue-chinese-semantic-v7',
     'collector-injecting:route-1',
     'collector-reinjecting:route-1',
     'collector-reinjecting:route-1',
@@ -2968,7 +3018,7 @@ test('browser auth extension stage persistence keeps complete sanitized diagnost
 
   assert.equal(report.browserBridge.extensionStages.length > 20, true);
   assert.equal(report.browserBridge.extensionStages.includes('route-opened:route-26'), true);
-  assert.equal(report.browserBridge.extensionStages.includes('bridge-content-version:route-queue-chinese-semantic-v6'), true);
+  assert.equal(report.browserBridge.extensionStages.includes('bridge-content-version:route-queue-chinese-semantic-v7'), true);
   assert.equal(report.browserBridge.extensionStages.includes('collector-injecting:route-1'), true);
   assert.equal(report.browserBridge.extensionStages.includes('collector-reinjecting:route-1'), true);
   assert.equal(report.browserBridge.extensionStageCount, report.browserBridge.extensionStages.length);
@@ -2995,7 +3045,7 @@ test('browser auth extension stage persistence keeps complete sanitized diagnost
   const userSummaryText = JSON.stringify(userSummary);
   assert.equal(userSummaryText.includes('route-opened:route-26'), false);
   assert.equal(userSummaryText.includes('collector-injecting:route-1'), false);
-  assert.equal(userSummaryText.includes('bridge-content-version:route-queue-chinese-semantic-v6'), false);
+  assert.equal(userSummaryText.includes('bridge-content-version:route-queue-chinese-semantic-v7'), false);
   assert.equal(userSummaryText.includes('extensionStages":["'), false);
   assert.equal(userSummaryText.includes('extensionStageTimeline":[{'), false);
   assert.doesNotMatch(JSON.stringify(report), /SECRET_SESSION_VALUE|sid=/iu);
@@ -3481,10 +3531,10 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     const extensionContent = await readFile(path.join(extensionDir, 'bridge-content.js'), 'utf8');
     assert.equal(extensionContent.includes('siteforge-bridge-session'), true);
     assert.equal(extensionContent.includes('bridge-content-version:'), true);
-    assert.equal(extensionContent.includes('route-queue-chinese-semantic-v6'), true);
+    assert.equal(extensionContent.includes('route-queue-chinese-semantic-v7'), true);
     const extensionBackground = await readFile(path.join(extensionDir, 'background.js'), 'utf8');
     assert.equal(extensionBackground.includes('chrome.scripting.executeScript'), true);
-    assert.equal(extensionBackground.includes('route-queue-chinese-semantic-v6'), true);
+    assert.equal(extensionBackground.includes('route-queue-chinese-semantic-v7'), true);
     assert.equal(extensionBackground.includes('collector-version:'), true);
     assert.equal(extensionBackground.includes('collector-version:${route.id}:'), true);
     assert.equal(extensionBackground.includes('SITEFORGE_COLLECT_MESSAGE_TYPE'), true);
@@ -3502,7 +3552,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(extensionCollector.includes('SITEFORGE_COLLECTOR_CONTENT_VERSION'), true);
     assert.equal(extensionCollector.includes('__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_VERSION__'), true);
     assert.equal(extensionCollector.includes('SITEFORGE_COLLECT_MESSAGE_TYPE'), true);
-    assert.equal(extensionCollector.includes('route-queue-chinese-semantic-v6'), true);
+    assert.equal(extensionCollector.includes('route-queue-chinese-semantic-v7'), true);
     assert.equal(extensionCollector.includes('collectorVersion'), true);
     assert.equal(extensionCollector.includes('captured_with_warning'), true);
     assert.equal(extensionCollector.includes('definite_challenge'), true);
@@ -3652,7 +3702,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
             targetUrl: new URL('/unrequested', rootUrl).toString(),
             sourceLayer: routes[0].sourceLayer,
             status: 'captured',
-            collectorVersion: 'route-queue-chinese-semantic-v6',
+            collectorVersion: 'route-queue-chinese-semantic-v7',
           }],
           authenticatedPages: [{
             routeId: routes[0].id,
@@ -4046,8 +4096,8 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
           statusUrl.searchParams.set('stage', stage);
           await fetch(statusUrl, { method: 'POST' });
         };
-        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
-        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v7');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v7');
         await signalStage(`collector-submit-ok:${session.routes[0].id}`);
         await fetch(session.submitUrl, {
           method: 'POST',
@@ -4095,6 +4145,57 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
           statusUrl.searchParams.set('stage', stage);
           await fetch(statusUrl, { method: 'POST' });
         };
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v7');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v7');
+        await signalStage(`collector-version:${route.id}:route-queue-chinese-semantic-v7`);
+        await signalStage(`collector-submit-ok:${route.id}`);
+        await fetch(session.submitUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            routeResults: [{
+              routeId: route.id,
+              targetUrl: route.targetUrl,
+              sourceLayer: 'authenticated',
+              status: 'captured',
+              collectorVersion: 'route-queue-chinese-semantic-v7',
+            }],
+            authenticatedPages: [{
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: '/',
+              sourceLayer: 'authenticated',
+              pageType: 'authenticated_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          }),
+        });
+      },
+    });
+    assert.equal(currentExtension.status, 'browser_verified');
+    assert.equal(currentExtension.verified, true);
+    assert.equal(currentExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), false);
+    assert.equal(currentExtension.bridgeSummary.capturedRouteCount, 1);
+
+    const compatiblePreviousExtension = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeTimeoutMs: 1000,
+      },
+      openBrowser: async (urlValue) => {
+        const bridgeUrl = new URL(urlValue);
+        const sessionUrl = new URL('/session.json', bridgeUrl.origin);
+        sessionUrl.searchParams.set('nonce', bridgeUrl.searchParams.get('nonce'));
+        const session = await (await fetch(sessionUrl)).json();
+        const route = session.routes[0];
+        const signalStage = async (stage) => {
+          const statusUrl = new URL(session.extensionStatusUrl);
+          statusUrl.searchParams.set('stage', stage);
+          await fetch(statusUrl, { method: 'POST' });
+        };
         await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
         await signalStage('bridge-version:route-queue-chinese-semantic-v6');
         await signalStage(`collector-version:${route.id}:route-queue-chinese-semantic-v6`);
@@ -4123,10 +4224,10 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
         });
       },
     });
-    assert.equal(currentExtension.status, 'browser_verified');
-    assert.equal(currentExtension.verified, true);
-    assert.equal(currentExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), false);
-    assert.equal(currentExtension.bridgeSummary.capturedRouteCount, 1);
+    assert.equal(compatiblePreviousExtension.status, 'browser_verified');
+    assert.equal(compatiblePreviousExtension.verified, true);
+    assert.equal(compatiblePreviousExtension.blockingSignals.includes('browser-bridge-extension-stale-or-incompatible'), false);
+    assert.equal(compatiblePreviousExtension.bridgeSummary.capturedRouteCount, 1);
 
     const staleCollectorVersionExtension = await runBrowserAuthBridge({
       inputUrl: rootUrl,
@@ -4146,8 +4247,8 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
           statusUrl.searchParams.set('stage', stage);
           await fetch(statusUrl, { method: 'POST' });
         };
-        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
-        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v7');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v7');
         await signalStage(`collector-version:${route.id}:route-queue-loading-dom-fallback-v5`);
         await signalStage(`collector-submit-ok:${route.id}`);
         await fetch(session.submitUrl, {
@@ -4200,9 +4301,9 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
           statusUrl.searchParams.set('stage', stage);
           await fetch(statusUrl, { method: 'POST' });
         };
-        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
-        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
-        await signalStage(`collector-version:${firstRoute.id}:route-queue-chinese-semantic-v6`);
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v7');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v7');
+        await signalStage(`collector-version:${firstRoute.id}:route-queue-chinese-semantic-v7`);
         await signalStage(`collector-submit-ok:${firstRoute.id}`);
         await signalStage(`collector-submit-ok:${secondRoute.id}`);
         await fetch(session.submitUrl, {
@@ -4214,7 +4315,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
               targetUrl: route.targetUrl,
               sourceLayer: 'authenticated',
               status: 'captured',
-              ...(index === 0 ? { collectorVersion: 'route-queue-chinese-semantic-v6' } : {}),
+              ...(index === 0 ? { collectorVersion: 'route-queue-chinese-semantic-v7' } : {}),
             })),
             authenticatedPages: [firstRoute, secondRoute].map((route, index) => ({
               routeId: route.id,
@@ -4255,8 +4356,8 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
           statusUrl.searchParams.set('stage', stage);
           await fetch(statusUrl, { method: 'POST' });
         };
-        await signalStage('bridge-content-version:route-queue-chinese-semantic-v6');
-        await signalStage('bridge-version:route-queue-chinese-semantic-v6');
+        await signalStage('bridge-content-version:route-queue-chinese-semantic-v7');
+        await signalStage('bridge-version:route-queue-chinese-semantic-v7');
         await signalStage('collector-injecting:route-1');
         await signalStage('collector-reinjecting:route-1');
         await signalStage('collector-reinjecting:route-1');
@@ -4265,7 +4366,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
         }
         await signalStage('route-opened:route-1');
         const route = session.routes[0];
-        await signalStage(`collector-version:${route.id}:route-queue-chinese-semantic-v6`);
+        await signalStage(`collector-version:${route.id}:route-queue-chinese-semantic-v7`);
         await signalStage(`collector-submit-ok:${route.id}`);
         await fetch(session.submitUrl, {
           method: 'POST',
@@ -4276,7 +4377,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
               targetUrl: route.targetUrl,
               sourceLayer: 'authenticated',
               status: 'captured',
-              collectorVersion: 'route-queue-chinese-semantic-v6',
+              collectorVersion: 'route-queue-chinese-semantic-v7',
             }],
             authenticatedPages: [{
               routeId: route.id,
@@ -4303,7 +4404,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.length > 20, true);
     assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimelineCount, manyExtensionStages.bridgeSummary.extensionStageTimeline.length);
     assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimelineOmittedCount, 0);
-    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].stage, 'bridge-content-version:route-queue-chinese-semantic-v6');
+    assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].stage, 'bridge-content-version:route-queue-chinese-semantic-v7');
     assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].index, 0);
     assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline[0].eventIndex, 0);
     assert.equal(manyExtensionStages.bridgeSummary.extensionStageTimeline.every((entry, index) => entry.index === index), true);
@@ -4367,7 +4468,12 @@ test('browser bridge API replay uses one-time extension session when provider is
     },
   }), async (rootUrl) => {
     const host = new URL(rootUrl).hostname;
-    let sessionSeen = null;
+    let sessionSeen = /** @type {any} */ (null);
+    const runtimeParameterSource = {
+      kind: 'douyin_self_user_render_data',
+      pageUrl: new URL('/', rootUrl).toString(),
+      rawMaterialPersisted: false,
+    };
     const replay = await runBrowserBridgeApiReplay({
       inputUrl: rootUrl,
       site: {
@@ -4377,6 +4483,12 @@ test('browser bridge API replay uses one-time extension session when provider is
       },
       endpoint: new URL('/api/feed', rootUrl).toString(),
       method: 'GET',
+      runtimeEndpoint: new URL('/api/feed?user_id={self.uid}', rootUrl).toString(),
+      runtimeParameterSource,
+      responseEvidence: {
+        statusCode: 0,
+        arrayField: 'items',
+      },
       options: {
         browserBridgeApiReplayTimeoutMs: 1000,
       },
@@ -4398,6 +4510,9 @@ test('browser bridge API replay uses one-time extension session when provider is
               httpStatus: 200,
               contentType: 'application/json; charset=utf-8',
               responseKind: 'json',
+              responseEvidenceStatus: 'matched',
+              observedStatusCode: 0,
+              observedArrayFieldPresent: true,
               bodyText: 'synthetic-api-replay-secret',
             },
           }),
@@ -4409,10 +4524,84 @@ test('browser bridge API replay uses one-time extension session when provider is
     assert.equal(replay.httpStatus, 200);
     assert.equal(replay.contentType, 'application/json; charset=utf-8');
     assert.equal(replay.responseKind, 'json');
+    assert.equal(replay.responseEvidenceStatus, 'matched');
+    assert.equal(replay.observedStatusCode, 0);
+    assert.equal(replay.observedArrayFieldPresent, true);
     assert.equal(JSON.stringify(replay).includes('synthetic-api-replay-secret'), false);
     assert.equal(sessionSeen?.apiReplay?.endpoint, new URL('/api/feed', rootUrl).toString());
+    assert.equal(sessionSeen?.apiReplay?.endpointTemplate, new URL('/api/feed?user_id={self.uid}', rootUrl).toString());
+    assert.deepEqual(sessionSeen?.apiReplay?.runtimeParameterSource, runtimeParameterSource);
+    assert.equal(sessionSeen?.apiReplay?.responseEvidence?.arrayField, 'items');
     assert.equal(sessionSeen?.apiReplay?.method, 'GET');
     assert.equal(sessionSeen?.apiReplay?.allowedHost, host);
+  });
+});
+
+test('browser bridge API replay wrapper preserves HEAD and rejects non-read methods', async () => {
+  await withTestSite((rootUrl) => ({
+    '/': testHtmlPage('Replay Host', '<main>Replay host</main>'),
+    '/robots.txt': {
+      contentType: 'text/plain; charset=utf-8',
+      body: testRobotsTxt(rootUrl),
+    },
+  }), async (rootUrl) => {
+    const host = new URL(rootUrl).hostname;
+    let providerRequest = /** @type {any} */ (null);
+    const head = await runBrowserBridgeApiReplay({
+      inputUrl: rootUrl,
+      site: {
+        id: 'replay-fixture',
+        rootUrl,
+        allowedDomains: [host],
+      },
+      endpoint: new URL('/api/feed', rootUrl).toString(),
+      method: 'HEAD',
+      options: {
+        browserBridgeApiReplayProvider: async (request) => {
+          providerRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 204,
+            contentType: null,
+            responseKind: null,
+          };
+        },
+      },
+      openBrowser: async () => {
+        throw new Error('openBrowser should not be called when a provider is supplied');
+      },
+    });
+
+    assert.equal(head.status, 'verified');
+    assert.equal(providerRequest.method, 'HEAD');
+    assert.equal(providerRequest.fetchOptions.method, 'HEAD');
+    assert.equal(providerRequest.fetchOptions.body, null);
+    assert.equal(providerRequest.fetchOptions.persistResponseBody, false);
+
+    let providerCalled = false;
+    const post = await runBrowserBridgeApiReplay({
+      inputUrl: rootUrl,
+      site: {
+        id: 'replay-fixture',
+        rootUrl,
+        allowedDomains: [host],
+      },
+      endpoint: new URL('/api/feed', rootUrl).toString(),
+      method: 'POST',
+      options: {
+        browserBridgeApiReplayProvider: async () => {
+          providerCalled = true;
+          return { status: 'verified' };
+        },
+      },
+      openBrowser: async () => {
+        throw new Error('openBrowser should not be called for rejected replay methods');
+      },
+    });
+
+    assert.equal(post.status, 'skipped');
+    assert.equal(post.reasonCode, 'method_not_read_only');
+    assert.equal(providerCalled, false);
   });
 });
 
@@ -4457,7 +4646,7 @@ test('browser auth bridge preserves submitted route statuses when summaries time
               sourceLayer: session.routes[0].sourceLayer,
               status: 'challenge_detected',
               reasonCode: 'browser-bridge-definite-challenge',
-              collectorVersion: 'route-queue-chinese-semantic-v6',
+              collectorVersion: 'route-queue-chinese-semantic-v7',
             }],
           }),
         });

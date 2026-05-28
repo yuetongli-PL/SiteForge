@@ -10,8 +10,10 @@ import {
   RUNTIME_MODES,
   RUNTIME_PROMOTION_CLASSES,
   RUNTIME_PROVIDER_IDS,
+  bridgeRuntimeMetadata,
   createEmptySkillRegistry,
   executeApiRequestIntent,
+  genericHttpRuntimeMetadata,
   lookupSkillIntent,
   lookupSkillIntentFromRegistry,
   providerRuntimeMode,
@@ -20,6 +22,7 @@ import {
   runtimeProviderBundleRequirements,
   runtimeProviderDescriptor,
   runtimeProviderPromotionMetadata,
+  registryIntentRuntimeMetadata,
   upsertSkillRegistryRecord,
 } from '../../src/app/pipeline/build/index.mjs';
 import {
@@ -267,17 +270,48 @@ test('runtime provider preserves legacy evidence provider requirements', () => {
 });
 
 test('runtime provider promotion metadata preserves registry wire shape', () => {
-  const bridgeMetadata = runtimeProviderPromotionMetadata('browser_bridge', {
-    authStateReport: {
-      authVerificationStatus: 'browser_verified_partial',
-      browserBridge: {
-        routeCount: 3,
-        capturedRouteCount: 2,
-        missingRouteCount: 1,
-        routeCoverageStatus: 'partial',
-      },
+  const authStateReport = {
+    authVerificationStatus: 'browser_verified_partial',
+    browserBridge: {
+      routeCount: 3,
+      capturedRouteCount: 2,
+      missingRouteCount: 1,
+      routeCoverageStatus: 'partial',
     },
+  };
+  const bridgeMetadata = runtimeProviderPromotionMetadata('browser_bridge', {
+    authStateReport,
   });
+
+  assert.deepEqual(bridgeRuntimeMetadata(authStateReport), bridgeMetadata);
+  assert.deepEqual(genericHttpRuntimeMetadata(), runtimeProviderPromotionMetadata('public_http'));
+  assert.deepEqual(registryIntentRuntimeMetadata(
+    {
+      runtimeMode: 'intent_runtime',
+      requiresFreshBridgeEvidence: false,
+      runtimeRequirements: { source: 'intent' },
+    },
+    {
+      promotionClass: 'capability_class',
+      runtimeMode: 'capability_runtime',
+      genericHttpRuntimeAllowed: true,
+      coverageStatus: 'capability_coverage',
+    },
+    {
+      promotionClass: 'fallback_class',
+      runtimeMode: 'fallback_runtime',
+      requiresFreshBridgeEvidence: true,
+      runtimeRequirements: { source: 'fallback' },
+    },
+  ), {
+    promotionClass: 'capability_class',
+    runtimeMode: 'intent_runtime',
+    requiresFreshBridgeEvidence: false,
+    genericHttpRuntimeAllowed: true,
+    coverageStatus: 'capability_coverage',
+    runtimeRequirements: { source: 'intent' },
+  });
+  assert.equal(registryIntentRuntimeMetadata({}, {}, null), null);
 
   assert.equal(bridgeMetadata.promotionClass, 'browser_bridge_runtime');
   assert.equal(bridgeMetadata.runtimeMode, 'browser_bridge_required');
@@ -420,6 +454,9 @@ test('api_request runtime executes only through fresh browser bridge evidence', 
     assert.equal(result.runtimePolicy.genericHttpRuntimeAllowed, false);
     assert.deepEqual(request, {
       endpoint: 'https://fixture.local/api/profile?view=summary',
+      endpointTemplate: 'https://fixture.local/api/profile?view=summary',
+      runtimeParameterSource: null,
+      responseEvidence: null,
       method: 'GET',
       credentials: 'include',
       body: null,
@@ -432,6 +469,119 @@ test('api_request runtime executes only through fresh browser bridge evidence', 
     assert.equal(serialized.includes('synthetic-secret-token'), false);
     assert.equal(serialized.includes('access_token'), false);
     assert.equal(serialized.includes('nextToken'), false);
+
+    await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'https://fixture.local/api/profile-head?view=summary',
+      method: 'HEAD',
+    });
+    request = null;
+    const head = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: true,
+      browserBridgeFetch: async (input) => {
+        request = input;
+        return {
+          statusCode: 204,
+          headers: {},
+          body: null,
+        };
+      },
+    });
+
+    assert.equal(head.status, 'success');
+    assert.equal(head.runtimeMode, 'browser_bridge_required');
+    assert.equal(head.method, 'HEAD');
+    assert.equal(request.method, 'HEAD');
+    assert.equal(request.body, null);
+    assert.equal(request.persistResponseBody, false);
+    assert.equal(request.endpoint, 'https://fixture.local/api/profile-head?view=summary');
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('api_request runtime allows replay-verified Douyin profile video read path with runtime parameters', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-runtime-douyin-'));
+  try {
+    const endpointTemplate = 'https://www.douyin.com/aweme/v1/web/aweme/post/?device_platform=webapp&aid=6383&channel=channel_pc_web&max_cursor=0&count=18&user_id={self.uid}&sec_user_id={self.secUid}';
+    const runtimeParameterSource = {
+      kind: 'douyin_self_user_render_data',
+      pageUrl: 'https://www.douyin.com/user/self',
+      fields: {
+        user_id: 'uid',
+        sec_user_id: 'secUid',
+      },
+      rawMaterialPersisted: false,
+    };
+    const { registryPath } = await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: endpointTemplate,
+      capabilityOverrides: {
+        name: 'list profile videos API',
+        object: 'profile videos',
+        userValue: 'List Douyin profile video posts without account mutation.',
+        apiAdapter: {
+          runtime: 'browser_bridge_required',
+          requiresFreshBridgeEvidence: true,
+          genericHttpRuntimeAllowed: false,
+          responsePolicy: 'sanitized_summary_only',
+          runtimeParameterSource,
+          responseEvidence: {
+            statusCode: 0,
+            arrayField: 'aweme_list',
+          },
+        },
+      },
+      stepOverrides: {
+        runtimeParameterSource,
+        responseEvidence: {
+          statusCode: 0,
+          arrayField: 'aweme_list',
+        },
+      },
+      recordOverrides: {
+        domains: ['www.douyin.com'],
+        intents: [{
+          intentId: 'intent:douyin:list-profile-videos-api',
+          name: 'list profile videos API',
+          capabilityId: 'capability:fixture-local:read-api-profile',
+          capabilityName: 'list profile videos API',
+          capabilityAction: 'view',
+          executionPlanId: 'plan:fixture-local:read-api-profile',
+          canonicalUtterance: 'list Douyin profile videos',
+          utteranceExamples: ['list Douyin profile videos', 'read Douyin video posts'],
+          safetyLevel: 'read_only',
+          invocationScore: 1,
+          runtimeMode: 'browser_bridge_required',
+          requiresFreshBridgeEvidence: true,
+          genericHttpRuntimeAllowed: false,
+        }],
+      },
+    });
+    let request = /** @type {any} */ (null);
+    const result = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'www.douyin.com',
+      utterance: 'list Douyin profile videos',
+      freshBridgeEvidence: true,
+      browserBridgeFetch: async (input) => {
+        request = input;
+        return {
+          statusCode: 200,
+          headers: { 'content-type': 'application/json' },
+          body: { status_code: 0, aweme_list: [] },
+        };
+      },
+    });
+
+    assert.equal(result.status, 'success');
+    assert.equal(request.endpoint.includes('/aweme/v1/web/aweme/post/'), true);
+    assert.equal(request.endpointTemplate, endpointTemplate);
+    assert.equal(request.runtimeParameterSource.kind, 'douyin_self_user_render_data');
+    assert.equal(request.responseEvidence.arrayField, 'aweme_list');
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -520,6 +670,26 @@ test('api_request runtime blocks stale bridge evidence and unsafe plans before f
 
     assert.equal(stale.status, 'blocked');
     assert.equal(stale.reasonCode, 'fresh_browser_bridge_evidence_required');
+    assert.equal(fetchCalled, false);
+
+    await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'https://fixture.local/api/profile',
+      method: 'POST',
+    });
+    const bodylessPost = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'fixture.local',
+      utterance: 'read API endpoint /api/profile',
+      freshBridgeEvidence: true,
+      browserBridgeFetch: async () => {
+        fetchCalled = true;
+        return { statusCode: 200, body: {} };
+      },
+    });
+    assert.equal(bodylessPost.status, 'blocked');
+    assert.equal(bodylessPost.reasonCode, 'method_not_read_only');
+    assert.equal(bodylessPost.method, 'POST');
     assert.equal(fetchCalled, false);
 
     await writeApiRequestRuntimeFixture(workspace, {

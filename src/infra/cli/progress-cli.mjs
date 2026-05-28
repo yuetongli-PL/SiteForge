@@ -1,7 +1,7 @@
 // @ts-check
 
 import { createProgressRenderer } from './progress.mjs';
-import { siteForgeBuildStageTitle } from './progress-copy.mjs';
+import { readCliValue } from './parse-values.mjs';
 
 const PROGRESS_OPTION_KEYS = new Set([
   'json',
@@ -12,14 +12,7 @@ const PROGRESS_OPTION_KEYS = new Set([
 ]);
 
 export function readCliFlagValue(args, current, index) {
-  const eqIndex = current.indexOf('=');
-  if (eqIndex !== -1) {
-    return { value: current.slice(eqIndex + 1), nextIndex: index };
-  }
-  if (index + 1 >= args.length) {
-    throw new Error(`Missing value for ${current}`);
-  }
-  return { value: args[index + 1], nextIndex: index + 1 };
+  return readCliValue(args, current, index);
 }
 
 export function parseProgressCliOption(args, current, index, options) {
@@ -31,7 +24,7 @@ export function parseProgressCliOption(args, current, index, options) {
       options.quiet = true;
       return { handled: true, nextIndex: index };
     case '--progress': {
-      const { value, nextIndex } = readCliFlagValue(args, current, index);
+      const { value, nextIndex } = readCliValue(args, current, index);
       options.progressMode = value;
       return { handled: true, nextIndex };
     }
@@ -64,6 +57,10 @@ export function createCliProgressRenderer(options = /** @type {any} */ ({})) {
   });
 }
 
+function defaultStageTitle({ stageId, taskId, title }) {
+  return String(stageId ?? taskId ?? title ?? 'stage');
+}
+
 /**
  * @param {any} config
  */
@@ -84,7 +81,7 @@ export async function runSingleStageCliWithProgress({
   nextStep,
 }) {
   const progress = createCliProgressRenderer(options);
-  const resolvedStageTitle = stageTitle ?? siteForgeBuildStageTitle(stageId);
+  const resolvedStageTitle = stageTitle ?? defaultStageTitle({ stageId, taskId, title });
   const taskTitle = title ?? resolvedStageTitle;
   const task = progress.task({
     id: taskId,

@@ -2,9 +2,15 @@
 
 import crypto from 'node:crypto';
 import {
-  CapabilityEnablementStatus as STATUS_VOCAB_CAPABILITY_ENABLEMENT_STATUSES,
-  CallableCapabilityEnablementStatus as STATUS_VOCAB_CALLABLE_ENABLEMENT_STATUSES,
-} from '../../../domain/status/status-vocabulary.mjs';
+  CAPABILITY_EVIDENCE_STATUSES as DOMAIN_CAPABILITY_EVIDENCE_STATUSES,
+  CAPABILITY_ENABLEMENT_STATUSES as DOMAIN_CAPABILITY_ENABLEMENT_STATUSES,
+  CALLABLE_ENABLEMENT_STATUSES as DOMAIN_CALLABLE_ENABLEMENT_STATUSES,
+  capabilityEnablementStatusCounts as domainCapabilityEnablementStatusCounts,
+  capabilityEvidenceStatusSummary as domainCapabilityEvidenceStatusSummary,
+  isCallableCapabilityEnablementStatus,
+  normalizeCapabilityEnablementStatusFromPolicy,
+  normalizeCapabilityEvidenceStatus as normalizeDomainCapabilityEvidenceStatus,
+} from '../../../domain/status/capability-status.mjs';
 import {
   assertNoForbiddenPatterns,
   redactPublicIdentifierText,
@@ -48,11 +54,11 @@ export const RISK_LEVEL_DEFAULTS = Object.freeze({
   }),
 });
 
-export const CAPABILITY_ENABLEMENT_STATUSES = STATUS_VOCAB_CAPABILITY_ENABLEMENT_STATUSES;
-export const CALLABLE_ENABLEMENT_STATUSES = STATUS_VOCAB_CALLABLE_ENABLEMENT_STATUSES;
+export const CAPABILITY_ENABLEMENT_STATUSES = DOMAIN_CAPABILITY_ENABLEMENT_STATUSES;
+export const CALLABLE_ENABLEMENT_STATUSES = DOMAIN_CALLABLE_ENABLEMENT_STATUSES;
+export const CAPABILITY_EVIDENCE_STATUSES = DOMAIN_CAPABILITY_EVIDENCE_STATUSES;
 
 const CAPABILITY_ENABLEMENT_STATUS_SET = new Set(CAPABILITY_ENABLEMENT_STATUSES);
-const CALLABLE_ENABLEMENT_STATUS_SET = new Set(CALLABLE_ENABLEMENT_STATUSES);
 
 const RISK_LEVEL_SAFETY_LEVELS = Object.freeze({
   read_public_low: 'read_only',
@@ -64,113 +70,28 @@ const RISK_LEVEL_SAFETY_LEVELS = Object.freeze({
   account_security_critical: 'destructive',
 });
 
-function normalizeEnablementToken(value) {
-  const text = String(value ?? '').trim();
-  return CAPABILITY_ENABLEMENT_STATUS_SET.has(text) ? text : null;
-}
-
 export function isCallableEnablementStatus(value) {
-  return CALLABLE_ENABLEMENT_STATUS_SET.has(String(value ?? ''));
+  return isCallableCapabilityEnablementStatus(value);
 }
 
 export function normalizeCapabilityEnablementStatus(capability = /** @type {any} */ ({}), policy = capability.riskPolicy ?? createCapabilityRiskPolicy(capability)) {
-  const explicit = normalizeEnablementToken(capability.enabled_status);
-  const lifecycleStatus = String(capability.status ?? '').trim().toLowerCase();
-  if (lifecycleStatus === 'candidate') {
-    return explicit === 'debug_only' || explicit === 'candidate_debug_only'
-      ? explicit
-      : 'candidate_debug_only';
-  }
-  if (lifecycleStatus === 'discarded') {
-    return explicit === 'candidate_debug_only' ? 'candidate_debug_only' : 'debug_only';
-  }
-  if (explicit === 'disabled' || explicit === 'debug_only' || explicit === 'candidate_debug_only') {
-    return explicit;
-  }
-  if (
-    policy.disabled === true
-    || capability.disabledByPolicy === true
-    || capability.enabled === false
-    || lifecycleStatus === 'disabled'
-    || capability.default_policy === 'disabled'
-  ) {
-    return 'disabled';
-  }
-  if (explicit === 'limited_enabled' || explicit === 'draft_only') {
-    return explicit;
-  }
-  if (explicit === 'confirmation_required') {
-    return explicit;
-  }
-  if (explicit === 'enabled' && policy.limited !== true && policy.draftOnly !== true) {
-    return explicit;
-  }
-  if (policy.draftOnly === true || capability.default_policy === 'draft_only') {
-    return 'draft_only';
-  }
-  if (policy.limited === true || capability.default_policy === 'confirm_or_limited') {
-    return 'limited_enabled';
-  }
-  if (capability.safetyLevel === 'requires_confirmation' || capability.default_policy === 'confirmation_required') {
-    return 'confirmation_required';
-  }
-  return 'enabled';
+  return normalizeCapabilityEnablementStatusFromPolicy(capability, policy);
 }
 
 export function normalizeCapabilityEvidenceStatus(capability = /** @type {any} */ ({}), enablementStatus = normalizeCapabilityEnablementStatus(capability)) {
-  if (enablementStatus === 'debug_only' || enablementStatus === 'candidate_debug_only') {
-    return 'debug_only';
-  }
-  if (enablementStatus === 'disabled') {
-    return 'disabled';
-  }
-  if (enablementStatus === 'confirmation_required' || enablementStatus === 'draft_only') {
-    return 'confirmation_required';
-  }
-  if (capability.evidence_status === 'inferred' || capability.capabilityVerified === false) {
-    return 'inferred';
-  }
-  if (capability.evidence_status === 'verified') {
-    return 'verified';
-  }
-  if (capability.evidence_status === 'candidate') {
-    return 'inferred';
-  }
-  return 'verified';
+  return normalizeDomainCapabilityEvidenceStatus(capability, enablementStatus);
 }
 
 export function capabilityEvidenceStatusSummary(capabilities = /** @type {any[]} */ ([])) {
-  const summary = {
-    verified: 0,
-    inferred: 0,
-    confirmation_required: 0,
-    disabled: 0,
-    debug_only: 0,
-    total: 0,
-  };
-  for (const capability of Array.isArray(capabilities) ? capabilities : []) {
-    const enablementStatus = normalizeCapabilityEnablementStatus(capability);
-    const evidenceStatus = normalizeCapabilityEvidenceStatus(capability, enablementStatus);
-    summary[evidenceStatus] = (summary[evidenceStatus] ?? 0) + 1;
-    summary.total += 1;
-  }
-  return summary;
+  return domainCapabilityEvidenceStatusSummary(capabilities, {
+    normalizeEnablementStatus: normalizeCapabilityEnablementStatus,
+  });
 }
 
 export function capabilityEnablementStatusCounts(capabilities = /** @type {any[]} */ ([])) {
-  const counts = Object.fromEntries(CAPABILITY_ENABLEMENT_STATUSES.map((status) => [status, 0]));
-  for (const capability of Array.isArray(capabilities) ? capabilities : []) {
-    const status = normalizeCapabilityEnablementStatus(capability);
-    counts[status] = (counts[status] ?? 0) + 1;
-  }
-  return {
-    ...counts,
-    countedTotal: counts.enabled
-      + counts.limited_enabled
-      + counts.confirmation_required
-      + counts.draft_only
-      + counts.disabled,
-  };
+  return domainCapabilityEnablementStatusCounts(capabilities, {
+    normalizeEnablementStatus: normalizeCapabilityEnablementStatus,
+  });
 }
 
 export function riskPolicyForLevel(riskLevel = 'read_public_low') {

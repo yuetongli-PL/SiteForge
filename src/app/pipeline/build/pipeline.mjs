@@ -3,14 +3,13 @@
 import path from 'node:path';
 import process from 'node:process';
 import { rm } from 'node:fs/promises';
-import { displayPath, displayReportPath } from '../../../infra/cli/path-display.mjs';
-import { buildStatusLabel, collectionStatusLabel, verificationStatusLabel } from '../../../infra/cli/status-labels.mjs';
+import { displayPath } from '../../../infra/cli/path-display.mjs';
+import { buildStatusLabel, verificationStatusLabel } from './status-labels.mjs';
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { pathExists } from '../../../infra/io.mjs';
 import { jsonClone } from '../../../shared/clone.mjs';
 import { mapWithConcurrency } from '../../../shared/concurrency.mjs';
 import { slugifyAscii, uniqueSortedStrings } from '../../../shared/normalize.mjs';
-import { sanitizePublicUrl } from '../../../shared/url-safety.mjs';
 import {
   policySupportsCapabilityFamily,
 } from '../../../sites/registry/core/capability-intent-mapping.mjs';
@@ -66,7 +65,6 @@ import {
 } from './output-validation.mjs';
 import { renderSiteForgeUserBuildSummary as renderFriendlySiteForgeUserBuildSummary } from './user-report.mjs';
 import {
-  capabilityEnabledStatusCounts,
   enrichAutoCapability,
   generateAutoCapabilities,
   generateAutoIntentRecords,
@@ -80,13 +78,9 @@ import {
   FORCED_DISABLED_ACTIONS,
   SANITIZED_SUMMARY_ONLY,
   applyCapabilityRiskPolicy,
-  buildCapabilitySafeRemediationPath,
-  capabilityEnablementStatusCounts,
-  capabilityEvidenceStatusSummary,
   findForcedDisabledActions,
   isReadOnlyFollowSurface,
   normalizeCapabilityEnablementStatus,
-  normalizeCapabilityEvidenceStatus,
   publicSafeRemediation,
   riskPolicySummary,
   sanitizeEvidenceRef,
@@ -133,7 +127,6 @@ import {
   SITEFORGE_USER_REPORT_JSON_ALIAS as USER_REPORT_JSON_ALIAS,
   SITEFORGE_USER_REPORT_MARKDOWN_ALIAS as USER_REPORT_MARKDOWN_ALIAS,
   SITEFORGE_USER_REPORT_MARKDOWN_FILE as USER_REPORT_MARKDOWN_FILE,
-  siteForgeReportModeSet,
 } from './artifact-contract.mjs';
 import {
   AUTH_STATE_REPORT_FILE,
@@ -143,7 +136,6 @@ import {
   canRunAuthenticatedLayer,
   createCrawlContract,
   createPublicOnlyAuthStateReport,
-  evidenceLevelRank,
   normalizeAuthStateReport,
   openSystemDefaultBrowser,
   runDefaultBrowserAuthStateCheck,
@@ -157,69 +149,136 @@ import {
 } from './evidence-provider.mjs';
 import {
   RUNTIME_MODES,
-  runtimeProviderPromotionMetadata,
+  bridgeRuntimeMetadata,
+  genericHttpRuntimeMetadata,
+  registryIntentRuntimeMetadata,
 } from './runtime-provider.mjs';
 import { runBrowserBridgeApiReplay } from './browser-auth-bridge.mjs';
+import {
+  SITEFORGE_BUILD_STAGE_DEPENDENCIES as STAGE_DEPENDENCIES,
+  SITEFORGE_BUILD_STAGE_NAMES,
+  assertSiteForgeBuildStagePlan,
+} from './stage-plan.mjs';
+import {
+  buildReportWarningSummary,
+  buildStageRecord,
+  classifyBuildFailure,
+} from './build-stage-report.mjs';
+import {
+  AUTHORIZED_SOURCE_MANIFEST_FILE,
+  AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH,
+  CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH,
+  RAW_PAGE_MATERIAL_MANIFEST_FILE,
+  RAW_PAGE_MATERIAL_MANIFEST_RELATIVE_PATH,
+  buildDebugReport,
+  buildReportIndex,
+  sanitizedNetworkSummary,
+} from './build-debug-report.mjs';
+import {
+  collectUnsuccessfulCollections,
+  collectionOutcomeReason,
+  isDebugOnlyCapability,
+} from './collection-outcomes.mjs';
+import {
+  displayBuildWarning,
+  renderCollectionOutcomeTable,
+} from './build-report-display.mjs';
+import {
+  buildCapabilityCard,
+  buildCapabilityStateModel,
+  capabilityCounts,
+  sortCapabilitiesForUser,
+} from './capability-state-report.mjs';
+import {
+  buildPartialSuccessOutcome,
+} from './partial-success-report.mjs';
+import {
+  ACCESS_REMEDIATION_PLAN_FILE,
+  PAGE_RECONCILIATION_REPORT_FILE,
+  accessRemediationResultPath,
+  capabilityIntentHtmlResultPath,
+  pageReconciliationResultPath,
+  robotsRemediationResultPath,
+} from './build-summary-paths.mjs';
+import {
+  buildReportPayloadForMode,
+  normalizeReportMode,
+} from './build-report-mode.mjs';
+import { renderSiteForgePlainBuildSummary } from './build-plain-summary.mjs';
+import { buildUserFacingWarnings } from './user-report-warnings.mjs';
+import { buildNextSteps } from './user-report-next-steps.mjs';
+import {
+  ROUTE_CAPTURE_PLAN_FILE,
+  buildNextStepWorkflows,
+} from './user-report-workflows.mjs';
+import { summarizePrivacy } from './user-report-privacy.mjs';
+import {
+  relativeReportPath,
+  sanitizeReportPublicValue,
+} from './user-report-values.mjs';
+import {
+  buildCoverageReport,
+  summarizeNodes,
+} from './user-report-coverage.mjs';
+import { buildCapabilityIntentHtmlPayload } from './capability-intent-html-payload.mjs';
+import { renderCapabilityIntentSummaryHtml } from './capability-intent-html-render.mjs';
+import { buildPageReconciliationReport } from './page-reconciliation-report.mjs';
+import {
+  buildAccessRemediationPlan,
+  shouldWriteAccessRemediationPlan,
+} from './access-remediation-plan.mjs';
+import {
+  safeStructureHash,
+  sanitizedStructureText,
+} from './structure-sanitizer.mjs';
+import { authorizedSourcesSummaryForReport } from './authorized-sources-report.mjs';
+import {
+  renderSetupCollectionReviewLines,
+  reconcileSetupCollectionReviewWithBuildOutputs,
+  setupCollectionReviewReport,
+} from './setup-collection-review.mjs';
+import {
+  setupProfileBuildBlock,
+  setupProfileSummary,
+} from './setup-profile-report.mjs';
+import {
+  canonicalCapabilitySemanticToken,
+  normalizeSetupCapabilityId,
+} from './capability-id.mjs';
+import {
+  applyCapabilityEvidenceMatrix,
+  nodeHasPublicStructureEvidence,
+} from './capability-evidence-matrix.mjs';
+import {
+  browserBridgeMissingRouteTemplateSet,
+  browserBridgePageWasCaptured,
+  browserBridgeRouteCaptured,
+  configuredAuthRouteTemplateSet,
+  matchesBrowserBridgeMissingNonRootRoute,
+  matchesBrowserBridgeMissingRoute,
+  matchesConfiguredAuthRoute,
+  routeCapturePlanFromAuthState,
+} from './browser-bridge-route-coverage.mjs';
+import {
+  knownPolicyPublicRouteTemplatePatterns,
+  knownPolicyPublicSeedRoutes,
+} from './known-site-policy.mjs';
+import {
+  API_READ_ONLY_CHALLENGE_PATTERN,
+  apiEndpointLooksWriteLike,
+  hasSensitiveApiQueryMaterial,
+  hasSubstantiveApiRequestBody,
+  isReadOnlyApiMethod,
+  normalizeApiMethod,
+} from './api-readonly-policy.mjs';
 
-export const SITEFORGE_BUILD_STAGE_NAMES = Object.freeze([
-  'registerSite',
-  'discoverSeeds',
-  'crawlStatic',
-  'authStateCheck',
-  'crawlAuthenticated',
-  'crawlRendered',
-  'discoverInteractions',
-  'captureNetworkTraces',
-  'apiAdapterReplay',
-  'buildSiteGraph',
-  'classifyNodes',
-  'extractAffordances',
-  'discoverCapabilities',
-  'generateIntents',
-  'generateSkill',
-  'verifySkill',
-  'registerSkill',
-  'writeBuildReport',
-]);
+export { SITEFORGE_BUILD_STAGE_NAMES } from './stage-plan.mjs';
+export { renderCapabilityIntentSummaryHtml } from './capability-intent-html-render.mjs';
 
-const STAGE_DEPENDENCIES = Object.freeze({
-  registerSite: [],
-  discoverSeeds: ['registerSite'],
-  crawlStatic: ['discoverSeeds'],
-  authStateCheck: ['crawlStatic'],
-  crawlAuthenticated: ['authStateCheck'],
-  crawlRendered: ['crawlAuthenticated'],
-  discoverInteractions: ['crawlStatic', 'crawlAuthenticated'],
-  captureNetworkTraces: ['crawlRendered'],
-  apiAdapterReplay: ['captureNetworkTraces'],
-  buildSiteGraph: ['crawlStatic', 'crawlAuthenticated', 'discoverInteractions', 'apiAdapterReplay'],
-  classifyNodes: ['buildSiteGraph'],
-  extractAffordances: ['classifyNodes', 'discoverInteractions'],
-  discoverCapabilities: ['extractAffordances'],
-  generateIntents: ['discoverCapabilities'],
-  generateSkill: ['classifyNodes', 'discoverCapabilities', 'generateIntents'],
-  verifySkill: ['generateSkill'],
-  registerSkill: ['verifySkill'],
-  writeBuildReport: ['registerSkill'],
-});
-
-const REPORT_MODES = siteForgeReportModeSet();
+assertSiteForgeBuildStagePlan();
 
 const USER_AUTHORIZED_COLLECTION_CONCURRENCY = 4;
 const STATIC_CRAWL_COLLECTION_CONCURRENCY = 6;
-const COLLECTION_OUTCOME_LIMIT = 40;
-const COLLECTION_OUTCOME_STAGE_STATUSES = Object.freeze(['blocked', 'failed', 'skipped']);
-const COLLECTION_OUTCOME_STAGE_KINDS = Object.freeze({
-  buildSiteGraph: 'node',
-  classifyNodes: 'node',
-  discoverInteractions: 'affordance',
-  extractAffordances: 'affordance',
-  discoverCapabilities: 'capability',
-  generateIntents: 'capability',
-});
-const SETUP_COLLECTION_REVIEW_KINDS = Object.freeze(['seeds', 'nodes', 'affordances', 'capabilities', 'intents']);
-const ROUTE_CAPTURE_PLAN_FILE = 'route_capture_plan.json';
-
 const clone = jsonClone;
 
 function arrayUniqueBy(values, keyFn) {
@@ -234,62 +293,6 @@ function arrayUniqueBy(values, keyFn) {
     result.push(value);
   }
   return result;
-}
-
-const CAPABILITY_SEMANTIC_ALIASES = Object.freeze(new Map([
-  ['followed-users', 'list-followed-users'],
-  ['read-followed-users', 'list-followed-users'],
-  ['following-accounts', 'list-followed-users'],
-  ['followed-posts-by-date', 'list-followed-updates'],
-  ['followed-updates', 'list-followed-updates'],
-  ['following-posts', 'list-followed-updates'],
-  ['read-following-timeline', 'list-followed-updates'],
-  ['list-recommended-timeline-posts', 'recommended-timeline-posts'],
-  ['recommended-timeline', 'recommended-timeline-posts'],
-  ['read-recommended-timeline', 'recommended-timeline-posts'],
-  ['profile-content', 'list-profile-content'],
-  ['read-profile-content', 'list-profile-content'],
-  ['account-posts', 'list-profile-content'],
-  ['read-followers', 'read-followers'],
-  ['list-account-followers', 'read-followers'],
-  ['notifications', 'list-notifications'],
-  ['notification-summaries', 'list-notifications'],
-  ['list-notifications', 'list-notifications'],
-  ['read-all-notifications-summary', 'list-notifications'],
-  ['bookmarks', 'list-bookmarks'],
-  ['bookmark-summaries', 'list-bookmarks'],
-  ['list-bookmarks', 'list-bookmarks'],
-  ['read-bookmarks-summary', 'list-bookmarks'],
-  ['lists', 'list-lists'],
-  ['list-summaries', 'list-lists'],
-  ['list-lists', 'list-lists'],
-  ['read-lists-summary', 'list-lists'],
-  ['direct-messages', 'list-direct-messages'],
-  ['message-conversation-summaries', 'list-direct-messages'],
-  ['list-direct-messages', 'list-direct-messages'],
-  ['read-direct-message-conversation-summaries', 'list-direct-messages'],
-  ['view-post-detail', 'read-post-detail'],
-  ['read-post-detail', 'read-post-detail'],
-  ['view-post-replies', 'read-reply-tree-summary'],
-  ['read-reply-tree-summary', 'read-reply-tree-summary'],
-  ['view-post-media', 'read-media-summary'],
-  ['read-media-summary', 'read-media-summary'],
-  ['draft-post', 'create-post-draft'],
-  ['create-post-draft', 'create-post-draft'],
-  ['draft-reply', 'create-reply-draft'],
-  ['create-reply-draft', 'create-reply-draft'],
-  ['follow-user', 'follow-account'],
-  ['follow-account', 'follow-account'],
-  ['unfollow-user', 'unfollow-account'],
-  ['unfollow-account', 'unfollow-account'],
-]));
-
-function canonicalCapabilitySemanticToken(value) {
-  const normalized = normalizeSetupCapabilityId(value);
-  if (!normalized) {
-    return null;
-  }
-  return CAPABILITY_SEMANTIC_ALIASES.get(normalized) ?? normalized;
 }
 
 function capabilitySemanticKey(capability = /** @type {any} */ ({})) {
@@ -366,86 +369,6 @@ function sourceToDiscoveredBy(source) {
     return 'html_link';
   }
   return 'html_link';
-}
-
-function capabilityCounts(capabilities = /** @type {any[]} */ ([])) {
-  const enabledStatus = capabilityEnabledStatusCounts(capabilities);
-  return sanitizeReportPublicValue({
-    active: capabilities.filter((capability) => capability.status === 'active').length,
-    candidate: capabilities.filter((capability) => capability.status === 'candidate').length,
-    discarded: capabilities.filter((capability) => capability.status === 'discarded').length,
-    disabled: capabilities.filter((capability) => capability.status === 'disabled').length,
-    total: capabilities.length,
-    enabledStatus,
-    countedTotal: enabledStatus.countedTotal,
-    embeddedIntents: capabilities.reduce((sum, capability) => sum + (capability.intents?.length ?? 0), 0),
-    riskPolicy: riskPolicySummary(capabilities),
-  });
-}
-
-const SAFE_BUILD_WARNING_PATTERNS = Object.freeze([
-  /^generic crawler skipped; using bounded user-authorized browser evidence summary\.$/u,
-  /^using sanitized user-authorized browser evidence; unredacted page structure and session material were not persisted\.$/u,
-  /^Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only\.$/u,
-  /^Network summary was not requested; raw network tracing is not part of the public build path\.$/u,
-  /^Network summary requested; raw network traces were not captured or persisted\.$/u,
-  /^robots excluded all planned seed URLs before crawl\.$/u,
-  /^seed discovery truncated at maxSeeds=\d+; \d+ seeds were left out\.$/u,
-  /^sitemap discovery truncated at maxSitemaps=\d+; \d+ sitemap URLs were left out\.$/u,
-  /^crawl truncated at maxPages=\d+; \d+ queued URLs were not fetched\.$/u,
-  /^browser-auth-route-coverage-partial$/u,
-  /^Report-only partial success: generated capabilities and intents are available, but promotion is blocked by external access policy\.$/u,
-  /^Skipped because [a-zA-Z0-9]+ (?:skipped|failed|blocked)\.$/u,
-]);
-
-function safeBuildWarningForReport(message, fallbackReasonCode = 'validation-failed') {
-  const text = String(message ?? '').trim();
-  if (!text) {
-    return null;
-  }
-  if (SAFE_BUILD_WARNING_PATTERNS.some((pattern) => pattern.test(text))) {
-    return text;
-  }
-  const reason = classifySiteForgeWarning(text) ?? normalizeSiteForgeReason(fallbackReasonCode);
-  return reason?.reasonCode ?? 'stage-message-redacted';
-}
-
-function safeBuildMessagesForReport(messages, fallbackReasonCode = 'validation-failed') {
-  return uniqueSortedStrings((messages ?? [])
-    .map((message) => safeBuildWarningForReport(message, fallbackReasonCode))
-    .filter(Boolean));
-}
-
-function buildStageRecord(name, status, result = /** @type {any} */ ({}), startedAt, completedAt) {
-  const warningReasons = (result.warnings ?? [])
-    .map((warning) => classifySiteForgeWarning(warning))
-    .filter(Boolean);
-  const explicitReason = result.reasonCode ? normalizeSiteForgeReason(result.reasonCode) : null;
-  const primaryReason = explicitReason
-    ?? (status === 'failed' ? selectSiteForgePrimaryReason([
-      ...(result.errors ?? []).map((message) => ({ message })),
-      ...(result.warnings ?? []).map((message) => ({ message })),
-    ]) : null);
-  const reasonCodes = uniqueSortedStrings([
-    ...(result.reasonCodes ?? []),
-    explicitReason?.reasonCode,
-    primaryReason?.reasonCode,
-    ...warningReasons.map((reason) => reason.reasonCode),
-  ]);
-  return {
-    name,
-    deps: STAGE_DEPENDENCIES[name] ?? [],
-    status,
-    startedAt,
-    completedAt,
-    failureClass: primaryReason?.failureClass ?? null,
-    reasonCode: primaryReason?.reasonCode ?? null,
-    reasonCodes,
-    warnings: safeBuildMessagesForReport(result.warnings, primaryReason?.reasonCode ?? explicitReason?.reasonCode ?? 'validation-failed'),
-    errors: safeBuildMessagesForReport(result.errors, primaryReason?.reasonCode ?? explicitReason?.reasonCode ?? 'validation-failed'),
-    artifactPaths: result.artifactPaths ?? {},
-    summary: result.summary ?? {},
-  };
 }
 
 function createBlockedStageError(code, message, {
@@ -1173,355 +1096,6 @@ function policyFromSetupProfile(profile = /** @type {any} */ ({})) {
     allowPayment: safety.allowPayment === true ? false : false,
     allowAccountMutation: safety.allowAccountMutation === true ? false : false,
     allowContactSubmit: safety.allowContactSubmit === true ? false : false,
-  };
-}
-
-function setupProfileSummary(profile = null) {
-  if (!profile) {
-    return null;
-  }
-  const knownSitePolicy = profile.knownSitePolicy ? {
-    status: profile.knownSitePolicy.status ?? null,
-    host: profile.knownSitePolicy.host ?? null,
-    siteKey: profile.knownSitePolicy.siteKey ?? null,
-    adapterId: profile.knownSitePolicy.adapterId ?? null,
-    siteArchetype: profile.knownSitePolicy.siteArchetype ?? null,
-    primaryArchetype: profile.knownSitePolicy.primaryArchetype ?? null,
-    sources: clone(profile.knownSitePolicy.sources ?? []),
-    pageTypes: clone(profile.knownSitePolicy.pageTypes ?? []),
-    publicRouteTemplates: clone(profile.knownSitePolicy.publicRouteTemplates ?? []),
-    capabilityFamilies: clone(profile.knownSitePolicy.capabilityFamilies ?? []),
-    supportedIntents: clone(profile.knownSitePolicy.supportedIntents ?? []),
-    downloadTaskTypes: clone(profile.knownSitePolicy.downloadTaskTypes ?? []),
-    downloadSupport: clone(profile.knownSitePolicy.downloadSupport ?? null),
-    downloader: clone(profile.knownSitePolicy.downloader ?? null),
-  } : null;
-  const evidenceQuality = profile.evidenceQuality ? {
-    sourceAvailability: clone(profile.evidenceQuality.sourceAvailability ?? {}),
-    sourceStatus: clone(profile.evidenceQuality.sourceStatus ?? {}),
-    actualPageEvidenceCount: profile.evidenceQuality.actualPageEvidenceCount ?? 0,
-    syntheticPageEvidenceCount: profile.evidenceQuality.syntheticPageEvidenceCount ?? 0,
-    robotsExcludedPageEvidenceCount: profile.evidenceQuality.robotsExcludedPageEvidenceCount ?? 0,
-    allPrimarySourcesUnavailable: profile.evidenceQuality.allPrimarySourcesUnavailable === true,
-    syntheticFallbackOnly: profile.evidenceQuality.syntheticFallbackOnly === true,
-    robotsExcludedAllCandidateEvidence: profile.evidenceQuality.robotsExcludedAllCandidateEvidence === true,
-    knownPolicyCapabilityPressure: profile.evidenceQuality.knownPolicyCapabilityPressure ? clone(profile.evidenceQuality.knownPolicyCapabilityPressure) : null,
-  } : null;
-  return {
-    artifactFamily: profile.artifactFamily ?? null,
-    source: profile.source ?? null,
-    knownSitePolicy,
-    evidenceQuality,
-    crawlContract: profile.crawlContract ? {
-      crawlMode: profile.crawlContract.crawlMode ?? null,
-      sourceMode: profile.crawlContract.sourceMode ?? null,
-      authMethod: profile.crawlContract.authMethod ?? null,
-      authVerificationStatus: profile.crawlContract.authVerificationStatus ?? null,
-      coverageTargets: clone(profile.crawlContract.coverageTargets ?? {}),
-      evidencePolicy: clone(profile.crawlContract.evidencePolicy ?? {}),
-    } : null,
-    authState: profile.authStateReport ? {
-      crawlMode: profile.authStateReport.crawlMode ?? null,
-      authMethod: profile.authStateReport.authMethod ?? null,
-      authVerificationStatus: profile.authStateReport.authVerificationStatus ?? null,
-      verified: profile.authStateReport.verified === true,
-      source: profile.authStateReport.source ?? null,
-      rawMaterialPersisted: profile.authStateReport.rawMaterialPersisted === true,
-      sessionMaterialPersisted: profile.authStateReport.sessionMaterialPersisted === true,
-      browserProfilePersisted: profile.authStateReport.browserProfilePersisted === true,
-    } : null,
-    userAuthorizedEvidence: profile.userAuthorizedEvidence ? {
-      status: profile.userAuthorizedEvidence.status ?? null,
-      source: profile.userAuthorizedEvidence.source ?? null,
-      authorizationMode: profile.userAuthorizedEvidence.authorizationMode ?? null,
-      pageCount: profile.userAuthorizedEvidence.pages?.length ?? 0,
-      browserSeedCount: profile.userAuthorizedEvidence.browserSeeds?.length ?? 0,
-      capabilityProofCount: profile.userAuthorizedEvidence.capabilityProofs?.length ?? 0,
-      sessionMaterialPersisted: profile.userAuthorizedEvidence.sessionMaterialPersisted === true,
-      browserProfilePersisted: profile.userAuthorizedEvidence.browserProfilePersisted === true,
-      pageSourcePersisted: profile.userAuthorizedEvidence.rawHtmlPersisted === true,
-    } : null,
-    buildReadiness: profile.buildReadiness ? clone(profile.buildReadiness) : null,
-    partialCoverage: profile.partialCoverage ? clone(profile.partialCoverage) : null,
-    profileUsability: profile.profileUsability ? clone(profile.profileUsability) : null,
-    scope: profile.scope ?? null,
-    safety: profile.safety ? {
-      submitForms: profile.safety.submitForms === true,
-      allowDestructiveActions: profile.safety.allowDestructiveActions === true,
-      allowPayment: profile.safety.allowPayment === true,
-      allowAccountMutation: profile.safety.allowAccountMutation === true,
-      allowContactSubmit: profile.safety.allowContactSubmit === true,
-    } : null,
-    selectedCapabilityCount: profile.capabilityScope?.selectedCapabilities?.length ?? 0,
-  };
-}
-
-function collectionReviewCount(review, kind, status) {
-  const explicit = review?.summary?.[kind]?.[status];
-  if (Number.isFinite(Number(explicit))) {
-    return Number(explicit);
-  }
-  const bucket = review?.[kind]?.[status];
-  return Array.isArray(bucket) ? bucket.length : 0;
-}
-
-function collectionReviewBucketSummary(review = null) {
-  return Object.fromEntries(SETUP_COLLECTION_REVIEW_KINDS.map((kind) => [kind, {
-    collected: collectionReviewCount(review, kind, 'collected'),
-    missing: collectionReviewCount(review, kind, 'missing'),
-  }]));
-}
-
-function collectionReviewMissingRecords(review = null) {
-  const records = /** @type {any[]} */ ([]);
-  for (const kind of ['capabilities', 'intents']) {
-    for (const item of review?.[kind]?.missing ?? []) {
-      records.push({
-        kind,
-        id: normalizeSetupCapabilityId(item?.id ?? item?.label),
-        label: item?.label ?? item?.id ?? null,
-        source: item?.source ?? null,
-        reasonCode: item?.reasonCode ?? null,
-        requiresUserAuthorization: item?.requiresUserAuthorization === true,
-        requiresCapabilityEvidence: item?.requiresCapabilityEvidence === true,
-        evidenceRequirement: item?.extra?.evidenceRequirement ?? null,
-        recommended: item?.extra?.recommended === true,
-      });
-    }
-  }
-  return records.filter((record) => record.id || record.label);
-}
-
-const FINAL_REVIEW_GENERIC_TOKENS = new Set([
-  'a',
-  'an',
-  'and',
-  'browse',
-  'capability',
-  'content',
-  'list',
-  'navigate',
-  'open',
-  'page',
-  'pages',
-  'policy',
-  'public',
-  'read',
-  'site',
-  'to',
-  'view',
-]);
-
-function finalReviewTokens(value) {
-  return normalizeSetupCapabilityId(value)
-    .split('-')
-    .filter((token) => token.length > 1);
-}
-
-function finalReviewDistinctiveTokens(value) {
-  const tokens = finalReviewTokens(value);
-  const distinctive = tokens.filter((token) => !FINAL_REVIEW_GENERIC_TOKENS.has(token));
-  return distinctive.length ? distinctive : tokens;
-}
-
-function finalReviewAliases(record = /** @type {any} */ ({})) {
-  const id = normalizeSetupCapabilityId(record.id ?? record.label);
-  const aliases = [finalReviewDistinctiveTokens(id)];
-  if (/categor/u.test(id)) aliases.push(['category'], ['categories']);
-  if (/chapter/u.test(id)) aliases.push(['chapter']);
-  if (/book/u.test(id)) aliases.push(['book']);
-  if (/search/u.test(id)) aliases.push(['search']);
-  if (/rank/u.test(id)) aliases.push(['ranking'], ['rank']);
-  if (/profile|author/u.test(id)) aliases.push(['profile'], ['author']);
-  if (/repository|repo/u.test(id)) aliases.push(['repository'], ['repositories']);
-  if (/article|news/u.test(id)) aliases.push(['article'], ['news']);
-  if (/utility|navigation/u.test(id)) aliases.push(['navigation'], ['route']);
-  if (/content/u.test(id)) aliases.push(['detail'], ['book'], ['work'], ['article'], ['repository'], ['content']);
-  return aliases.filter((tokens) => Array.isArray(tokens) && tokens.length > 0);
-}
-
-function finalReviewSignalRecords(capabilities = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
-  const callableCapabilityIds = new Set((intents ?? [])
-    .filter((intent) => intent.callable !== false)
-    .map((intent) => normalizeSetupCapabilityId(intent.capabilityId))
-    .filter(Boolean));
-  const capabilitySignals = (capabilities ?? [])
-    .filter((capability) => (
-      capability.status === 'active'
-      || capability.enabled_status === 'enabled'
-      || capability.enabled_status === 'limited_enabled'
-      || callableCapabilityIds.has(normalizeSetupCapabilityId(capability.id))
-    ))
-    .flatMap((capability) => [
-      capability.id,
-      capability.name,
-      capability.user_facing_name,
-      capability.userFacingName,
-      capability.userValue,
-      capability.action,
-      capability.object,
-      capability.category,
-      capability.setupCapabilityId,
-      capability.intentAction,
-      capability.routeTemplate,
-      capability.routePath,
-      ...(capability.intents ?? []),
-    ]);
-  const intentSignals = (intents ?? [])
-    .filter((intent) => intent.callable !== false)
-    .flatMap((intent) => [
-      intent.id,
-      intent.name,
-      intent.capabilityId,
-      intent.canonicalUtterance,
-      ...(intent.utteranceExamples ?? []),
-    ]);
-  return uniqueSortedStrings([...capabilitySignals, ...intentSignals]
-    .map(normalizeSetupCapabilityId)
-    .filter(Boolean));
-}
-
-function finalReviewSignalCovers(record, signals = /** @type {any[]} */ ([])) {
-  const target = normalizeSetupCapabilityId(record?.id ?? record?.label);
-  if (!target || !signals.length) {
-    return false;
-  }
-  if (signals.some((signal) => signal === target || signal.includes(target) || target.includes(signal))) {
-    return true;
-  }
-  return finalReviewAliases(record).some((aliasTokens) => signals.some((signal) => {
-    const signalTokens = new Set(finalReviewTokens(signal));
-    return aliasTokens.every((token) => signalTokens.has(token) || signal.includes(token));
-  }));
-}
-
-function reconcileSetupCollectionReviewWithBuildOutputs(
-  review = null,
-  capabilities = /** @type {any[]} */ ([]),
-  intents = /** @type {any[]} */ ([]),
-) {
-  if (!review || typeof review !== 'object') {
-    return review;
-  }
-  const signals = finalReviewSignalRecords(capabilities, intents);
-  if (!signals.length) {
-    return review;
-  }
-  const next = clone(review);
-  for (const kind of ['capabilities', 'intents']) {
-    const bucket = next?.[kind];
-    if (!bucket || !Array.isArray(bucket.missing)) {
-      continue;
-    }
-    const collected = Array.isArray(bucket.collected) ? bucket.collected : [];
-    const missing = [];
-    for (const item of bucket.missing) {
-      if (finalReviewSignalCovers(item, signals)) {
-        collected.push({
-          ...item,
-          status: 'collected',
-          reasonCode: null,
-          reason: null,
-          collectedBy: 'final-build-capability-or-intent',
-          evidence_status: item.evidence_status ?? 'observed_sanitized',
-        });
-      } else {
-        missing.push(item);
-      }
-    }
-    bucket.collected = collected;
-    bucket.missing = missing;
-  }
-  next.summary = {
-    ...(next.summary ?? {}),
-    ...Object.fromEntries(SETUP_COLLECTION_REVIEW_KINDS.map((kind) => [kind, {
-      collected: Array.isArray(next?.[kind]?.collected) ? next[kind].collected.length : 0,
-      missing: Array.isArray(next?.[kind]?.missing) ? next[kind].missing.length : 0,
-    }])),
-  };
-  return next;
-}
-
-function setupCollectionReviewReport(review = null, sourcePath = null) {
-  if (!review || typeof review !== 'object') {
-    return null;
-  }
-  const missingRecords = collectionReviewMissingRecords(review);
-  const summary = collectionReviewBucketSummary(review);
-  return {
-    schemaVersion: review.schemaVersion ?? null,
-    artifactFamily: review.artifactFamily ?? 'siteforge-collection-review',
-    buildId: review.buildId ?? null,
-    siteId: review.siteId ?? null,
-    sourceRef: sanitizeEvidenceRef(sourcePath),
-    knownSitePolicy: review.knownSitePolicy ? {
-      status: review.knownSitePolicy.status ?? null,
-      siteKey: review.knownSitePolicy.siteKey ?? null,
-      adapterId: review.knownSitePolicy.adapterId ?? null,
-      sources: clone(review.knownSitePolicy.sources ?? []),
-    } : null,
-    userAuthorizedEvidence: review.userAuthorizedEvidence ? {
-      status: review.userAuthorizedEvidence.status ?? null,
-      pageCount: review.userAuthorizedEvidence.pageCount ?? 0,
-      browserSeedCount: review.userAuthorizedEvidence.browserSeedCount ?? 0,
-      capabilityProofCount: review.userAuthorizedEvidence.capabilityProofCount ?? 0,
-      sessionMaterialPersisted: review.userAuthorizedEvidence.sessionMaterialPersisted === true,
-      browserProfilePersisted: review.userAuthorizedEvidence.browserProfilePersisted === true,
-      pageSourcePersisted: review.userAuthorizedEvidence.rawHtmlPersisted === true,
-    } : null,
-    summary,
-    missingRecordCount: missingRecords.length,
-    missingRecords: missingRecords.slice(0, COLLECTION_OUTCOME_LIMIT),
-    truncated: missingRecords.length > COLLECTION_OUTCOME_LIMIT,
-    limit: COLLECTION_OUTCOME_LIMIT,
-    safetyBoundary: review.safetyBoundary
-      ?? 'Collection review is report-only; candidate capabilities still require verified capability-specific proof before activation.',
-  };
-}
-
-function setupProfileBlockCode(reasonCode) {
-  if (String(reasonCode ?? '').includes('robots-disallowed')) {
-    return 'robots-disallowed';
-  }
-  if (reasonCode === 'setup-primary-sources-unavailable') {
-    return 'robots-unavailable';
-  }
-  return 'siteforge-seed-discovery-empty';
-}
-
-function setupProfileBuildBlock(profile = null) {
-  const blocked = profile?.profileUsability?.buildable === false
-    || profile?.profileUsability?.status === 'unusable'
-    || profile?.buildReadiness?.buildable === false
-    || profile?.buildReadiness?.status === 'not_ready';
-  if (!blocked) {
-    return null;
-  }
-  const setupReasonCode = profile?.buildReadiness?.reasonCode
-    ?? profile?.profileUsability?.reasonCode
-    ?? 'setup-profile-unusable';
-  const knownPolicy = profile?.knownSitePolicy ?? null;
-  const policySources = clone(knownPolicy?.sources ?? []);
-  return {
-    code: setupProfileBlockCode(setupReasonCode),
-    setupReasonCode,
-    message: `Setup profile is not buildable: ${profile?.buildReadiness?.reason ?? profile?.profileUsability?.reason ?? setupReasonCode}.`,
-    reasonCodes: uniqueSortedStrings([
-      setupReasonCode,
-      profile?.profileUsability?.reasonCode,
-    ].filter(Boolean)),
-    warnings: [
-      `setup profile marked unusable; build skipped before activating capabilities (reasonCode=${setupReasonCode}).`,
-    ],
-    summary: {
-      setupProfileBuildable: false,
-      setupReasonCode,
-      knownSitePolicy: knownPolicy ? {
-        siteKey: knownPolicy.siteKey ?? null,
-        adapterId: knownPolicy.adapterId ?? null,
-        sources: policySources,
-      } : null,
-    },
   };
 }
 
@@ -2356,73 +1930,6 @@ function routeTargetToUrl(context, routeTarget) {
   } catch {
     return null;
   }
-}
-
-function knownPolicyPublicSeedRoutes(context) {
-  const policyRoutes = context.setupProfile?.knownSitePolicy?.publicRouteTemplates ?? [];
-  const contractRoutes = context.crawlContract?.coverageTargets?.publicRoutes ?? [];
-  const routes = [
-    ...policyRoutes
-      .filter((route) => route?.seedable === true && route.path)
-      .map((route) => ({
-        path: route.path,
-        pageType: route.pageType ?? null,
-        source: 'known_site_public_route_template',
-        reasonCode: 'known-site-public-route',
-      })),
-    ...contractRoutes.map((path) => ({
-      path,
-      pageType: null,
-      source: 'coverage_target_public_route',
-      reasonCode: 'coverage-target-public-route',
-    })),
-  ];
-  return arrayUniqueBy(routes
-    .map((route) => {
-      const normalizedUrl = routeTargetToUrl(context, route.path);
-      if (!normalizedUrl || !isInternalUrl(normalizedUrl, context.site.allowedDomains)) {
-        return null;
-      }
-      return {
-        ...route,
-        normalizedUrl,
-      };
-    })
-    .filter(Boolean), (route) => route.normalizedUrl)
-    .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
-}
-
-function knownPolicyPublicRouteTemplatePattern(route = /** @type {any} */ ({})) {
-  const raw = String(route.pathTemplate ?? route.routeTemplate ?? route.path ?? '').trim();
-  if (!raw || /[?#<>"']|(?:authorization|bearer|cookie|sid|uid|token|secret|session|password)/iu.test(raw)) {
-    return null;
-  }
-  const normalized = raw
-    .replace(/\{[^}/]+\}/gu, ':id')
-    .replace(/\/+/gu, '/');
-  if (!normalized.startsWith('/')) {
-    return null;
-  }
-  return normalized.length > 1 ? normalized.replace(/\/$/u, '') : normalized;
-}
-
-function knownPolicyPublicRouteTemplates(context) {
-  const policyRoutes = context.setupProfile?.knownSitePolicy?.publicRouteTemplates ?? [];
-  return arrayUniqueBy(policyRoutes
-    .map((route) => {
-      const pattern = knownPolicyPublicRouteTemplatePattern(route);
-      if (!pattern) {
-        return null;
-      }
-      return {
-        pattern,
-        pageType: route.pageType ?? null,
-        source: route.seedable === true ? 'known_site_public_seed_route_template' : 'known_site_public_route_template',
-        seedable: route.seedable === true,
-      };
-    })
-    .filter(Boolean), (route) => `${route.pattern}:${route.pageType ?? ''}`)
-    .sort((left, right) => left.pattern.localeCompare(right.pattern, 'en'));
 }
 
 function seedFromRouteTarget(context, routeTarget, {
@@ -3307,10 +2814,6 @@ function buildAuthorizedSourceManifest(context) {
 }
 
 const RAW_PAGE_MATERIAL_DIR = 'raw_pages';
-const RAW_PAGE_MATERIAL_MANIFEST_FILE = 'raw_page_material_manifest.json';
-const RAW_PAGE_MATERIAL_MANIFEST_RELATIVE_PATH = `reports/${RAW_PAGE_MATERIAL_MANIFEST_FILE}`;
-const AUTHORIZED_SOURCE_MANIFEST_FILE = 'authorized_source_manifest.json';
-const AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH = `reports/${AUTHORIZED_SOURCE_MANIFEST_FILE}`;
 
 function pageMaterialIdForUrl(urlValue) {
   return stableNodeId('page-material', urlValue).replace(/[^A-Za-z0-9._-]/gu, '-');
@@ -3896,254 +3399,10 @@ async function crawlStaticStage(context, stageResults) {
   };
 }
 
-function browserBridgeRouteCaptured(result = /** @type {any} */ ({})) {
-  return ['captured', 'captured_with_warning'].includes(String(result?.status ?? '').trim())
-    && result?.captured !== false;
-}
-
-function browserBridgeRouteRetryable(result = /** @type {any} */ ({})) {
-  const status = String(result?.status ?? '').trim();
-  const reasonCode = String(result?.reasonCode ?? '').trim();
-  if (status === 'challenge_detected' && reasonCode === 'browser-bridge-definite-challenge') {
-    return false;
-  }
-  if (['timeout', 'challenge_detected', 'thin_capture'].includes(status)) {
-    return true;
-  }
-  if (status !== 'blocked') {
-    return false;
-  }
-  return [
-    'browser-bridge-collector-injection-failed',
-    'browser-bridge-route-open-failed',
-    'execute-script-failed',
-    'collector-message-failed',
-    'navigation-in-progress',
-    'tab-missing',
-  ].includes(reasonCode);
-}
-
-function routeTemplateComparisonValues(context = /** @type {any} */ ({}), values = /** @type {any[]} */ ([])) {
-  const variants = new Set();
-  const addVariant = (value) => {
-    const text = String(value ?? '').trim();
-    if (!text) {
-      return;
-    }
-    variants.add(text);
-    if (text !== '/' && text.endsWith('/')) {
-      variants.add(text.replace(/\/+$/u, ''));
-    } else if (text !== '/') {
-      variants.add(`${text}/`);
-    }
-  };
-  for (const value of values) {
-    const text = String(value ?? '').trim();
-    if (!text) {
-      continue;
-    }
-    addVariant(text.split(/[?#]/u)[0] || text);
-    try {
-      const normalizedUrl = normalizeUrl(text, context.site?.rootUrl);
-      const parsed = new URL(normalizedUrl);
-      addVariant(parsed.pathname || '/');
-      addVariant(routePatternForUrl(normalizedUrl));
-    } catch {
-      // Non-URL route templates are handled through the raw path variants above.
-    }
-  }
-  return [...variants].filter(Boolean);
-}
-
-function configuredAuthRouteTemplateSet(context = /** @type {any} */ ({})) {
-  const targets = [
-    ...(context.crawlContract?.coverageTargets?.authRoutes ?? []),
-    ...(context.options?.authRoutes ?? []),
-    ...(context.options?.localBuildConfig?.authRoutes ?? []),
-  ];
-  const configured = new Set();
-  for (const target of targets) {
-    for (const variant of routeTemplateComparisonValues(context, [target])) {
-      if (variant && variant !== '/') {
-        configured.add(variant);
-      }
-    }
-  }
-  return configured;
-}
-
-function matchesConfiguredAuthRoute(context = /** @type {any} */ ({}), configuredRouteTemplates = new Set(), values = /** @type {any[]} */ ([])) {
-  if (!configuredRouteTemplates?.size) {
-    return false;
-  }
-  return routeTemplateComparisonValues(context, values).some((variant) => variant !== '/' && configuredRouteTemplates.has(variant));
-}
-
-function browserBridgeMissingRouteTemplateSet(context = /** @type {any} */ ({})) {
-  const bridge = context.authStateReport?.browserBridge ?? {};
-  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
-  const missing = new Set();
-  for (const result of routeResults) {
-    if (browserBridgeRouteCaptured(result)) {
-      continue;
-    }
-    for (const variant of routeTemplateComparisonValues(context, [
-      result?.targetRoute,
-      result?.routeTemplate,
-      result?.targetUrl,
-      result?.url,
-      result?.normalizedUrl,
-    ])) {
-      missing.add(variant);
-    }
-  }
-  return missing;
-}
-
-function browserBridgeCapturedRouteTemplateSet(context = /** @type {any} */ ({})) {
-  const bridge = context.authStateReport?.browserBridge ?? {};
-  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
-  const captured = new Set();
-  for (const result of routeResults) {
-    if (!browserBridgeRouteCaptured(result)) {
-      continue;
-    }
-    for (const variant of routeTemplateComparisonValues(context, [
-      result?.targetRoute,
-      result?.routeTemplate,
-      result?.targetUrl,
-      result?.url,
-      result?.normalizedUrl,
-    ])) {
-      captured.add(variant);
-    }
-  }
-  return captured;
-}
-
-function matchesBrowserBridgeMissingRoute(context = /** @type {any} */ ({}), missingRouteTemplates = new Set(), values = /** @type {any[]} */ ([])) {
-  if (!missingRouteTemplates?.size) {
-    return false;
-  }
-  return routeTemplateComparisonValues(context, values).some((variant) => missingRouteTemplates.has(variant));
-}
-
-function matchesBrowserBridgeMissingNonRootRoute(context = /** @type {any} */ ({}), missingRouteTemplates = new Set(), values = /** @type {any[]} */ ([])) {
-  if (!missingRouteTemplates?.size) {
-    return false;
-  }
-  return routeTemplateComparisonValues(context, values).some((variant) => variant !== '/' && missingRouteTemplates.has(variant));
-}
-
-function browserBridgePageWasCaptured(context = /** @type {any} */ ({}), page = /** @type {any} */ ({})) {
-  if (context.authStateReport?.authMethod !== 'browser') {
-    return true;
-  }
-  const routeResults = Array.isArray(context.authStateReport?.browserBridge?.routeResults)
-    ? context.authStateReport.browserBridge.routeResults
-    : [];
-  if (!routeResults.length) {
-    return true;
-  }
-  const routeId = String(page?.routeId ?? '').trim();
-  if (routeId) {
-    const routeResult = routeResults.find((result) => String(result?.routeId ?? '').trim() === routeId);
-    if (routeResult) {
-      return browserBridgeRouteCaptured(routeResult);
-    }
-  }
-  const values = [
-    page?.routeTemplate,
-    page?.routePattern,
-    page?.normalizedUrl,
-    page?.url,
-  ];
-  if (matchesBrowserBridgeMissingRoute(context, browserBridgeMissingRouteTemplateSet(context), values)) {
-    return false;
-  }
-  const capturedRoutes = browserBridgeCapturedRouteTemplateSet(context);
-  return capturedRoutes.size === 0 || routeTemplateComparisonValues(context, values).some((variant) => capturedRoutes.has(variant));
-}
-
-function routeCapturePlanFromAuthState(context, authStateReport = /** @type {any} */ ({})) {
-  const bridge = authStateReport?.browserBridge ?? {};
-  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
-  const missingRoutes = routeResults
-    .filter((result) => !browserBridgeRouteCaptured(result))
-    .map((result) => {
-      const retryable = browserBridgeRouteRetryable(result);
-      const finalReasonCode = result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured';
-      const routeLimitExceeded = finalReasonCode === 'browser-bridge-route-limit-exceeded';
-      return {
-        routeId: result?.routeId ?? null,
-        sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
-        targetRoute: result?.targetRoute ?? null,
-        status: result?.status ?? 'timeout',
-        reasonCode: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
-        initialStatus: result?.initialStatus ?? result?.status ?? 'timeout',
-        finalStatus: result?.finalStatus ?? result?.status ?? 'timeout',
-        finalReasonCode,
-        retryAttemptCount: Math.max(0, Number(result?.retryAttemptCount ?? 0) || 0),
-        retryOutcome: result?.retryOutcome ?? 'not_attempted',
-        recommendedRetryMode: routeLimitExceeded
-          ? 'split_browser_bridge_route_batch'
-          : retryable ? 'browser_bridge_missing_route_retry' : 'access_boundary_no_automatic_retry',
-        retryable,
-        capabilityGenerated: false,
-      };
-    });
-  const unattemptedRoutes = missingRoutes.filter((route) => route.finalReasonCode === 'browser-bridge-route-limit-exceeded');
-  if (
-    authStateReport?.authMethod !== 'browser'
-    || !['browser_verified', 'browser_verified_partial'].includes(String(authStateReport?.authVerificationStatus ?? ''))
-    || Number(bridge.capturedRouteCount ?? 0) <= 0
-  ) {
-    return null;
-  }
-  const routeCoverageStatus = ['complete', 'partial', 'none'].includes(String(bridge.routeCoverageStatus ?? '').trim())
-    ? String(bridge.routeCoverageStatus).trim()
-    : missingRoutes.length > 0
-      ? 'partial'
-      : 'complete';
-  return sanitizeReportPublicValue({
-    schemaVersion: BUILD_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-route-capture-plan',
-    siteId: context.site.id,
-    buildId: context.buildId,
-    status: routeCoverageStatus,
-    routeCoverageStatus,
-    retryStatus: bridge.retryStatus ?? 'not_attempted',
-    retryPasses: Math.max(0, Number(bridge.retryPasses ?? 0) || 0),
-    initialCapturedRouteCount: Math.max(0, Number(bridge.initialCapturedRouteCount ?? 0) || 0),
-    retryAttemptedRouteCount: Math.max(0, Number(bridge.retryAttemptedRouteCount ?? 0) || 0),
-    retryCapturedRouteCount: Math.max(0, Number(bridge.retryCapturedRouteCount ?? 0) || 0),
-    finalCapturedRouteCount: Math.max(0, Number(bridge.finalCapturedRouteCount ?? bridge.capturedRouteCount ?? 0) || 0),
-    finalMissingRouteCount: Math.max(0, Number(bridge.finalMissingRouteCount ?? missingRoutes.length) || 0),
-    routeQueueLimit: Math.max(0, Number(bridge.routeQueueLimit ?? 0) || 0),
-    scheduledRouteCount: Math.max(0, Number(bridge.scheduledRouteCount ?? 0) || 0),
-    overflowRouteCount: Math.max(0, Number(bridge.overflowRouteCount ?? 0) || 0),
-    unattemptedRouteCount: Math.max(0, Number(bridge.unattemptedRouteCount ?? unattemptedRoutes.length) || 0),
-    routeQueueTruncated: bridge.routeQueueTruncated === true,
-    routeQueueStatus: bridge.routeQueueStatus ?? (bridge.routeQueueTruncated === true ? 'truncated' : 'complete'),
-    routeLimitReasonCode: bridge.routeLimitReasonCode ?? null,
-    routeCount: Number(bridge.routeCount ?? routeResults.length ?? 0) || 0,
-    capturedRouteCount: Number(bridge.capturedRouteCount ?? 0) || 0,
-    missingRouteCount: Math.max(0, Number(bridge.missingRouteCount ?? missingRoutes.length) || 0),
-    missingRoutes,
-    unattemptedRoutes,
-    safety: {
-      cookiePersisted: false,
-      browserProfilePersisted: false,
-      storageRead: false,
-      rawDomPersisted: false,
-      rawHtmlPersisted: false,
-      privateBodyPersisted: false,
-    },
-  });
-}
-
 async function authStateCheckStage(context, stageResults = /** @type {any} */ ({})) {
-  const needsAuthCheck = ['cookie', 'browser'].includes(context.options.authMode) && (
+  const setupBlockedApiDiscoveryOnly = context.options.allowSetupBlockedApiDiscovery === true
+    && context.options.authMode === 'browser';
+  const needsAuthCheck = !setupBlockedApiDiscoveryOnly && ['cookie', 'browser'].includes(context.options.authMode) && (
     !canRunAuthenticatedLayer(context.authStateReport)
     || context.authRuntime?.method !== context.options.authMode
   );
@@ -4280,32 +3539,6 @@ async function authStateCheckStage(context, stageResults = /** @type {any} */ ({
         : 'Cookie authentication did not verify successfully; authenticated crawl remains disabled for this build.'],
     summary: authSummaryForReport(nextContract, normalizedReport),
   };
-}
-
-function sanitizedStructureText(value, maxLength = 80, fallback = null) {
-  const raw = String(value ?? '').trim();
-  if (!raw) {
-    return fallback;
-  }
-  if (/[<>{}]|=|\b(?:authorization|bearer|cookie|sid|uid|user[_-]?id|account[_-]?id|token|secret|session|password|localStorage|sessionStorage|userDataDir|raw\s+dom|raw\s+html|html|script)\b/iu.test(raw)) {
-    return '[REDACTED]';
-  }
-  const safe = sanitizeEvidenceRef(value);
-  if (!safe) {
-    return fallback;
-  }
-  if (/\b(?:authorization|bearer|cookie|sid|uid|token|secret|session|password|localStorage|sessionStorage|userDataDir)\b/iu.test(String(safe))) {
-    return '[REDACTED]';
-  }
-  return String(safe).slice(0, maxLength);
-}
-
-function safeStructureHash(prefix, providedValue, fallbackValue) {
-  const provided = String(providedValue ?? '').trim();
-  if (/^(?:[a-z][a-z0-9_-]*:)?[a-f0-9]{12,128}$/iu.test(provided)) {
-    return provided.slice(0, 160);
-  }
-  return stableNodeId(prefix, fallbackValue);
 }
 
 function sanitizedControl(control = /** @type {any} */ ({}), index = 0, {
@@ -5463,11 +4696,6 @@ async function discoverInteractionsStage(context, stageResults) {
   };
 }
 
-const API_ADAPTER_SAFE_METHODS = new Set(['GET', 'HEAD']);
-const API_REPLAY_SENSITIVE_QUERY_PATTERN = /^(?:auth|authorization|sid|sessdata|csrf|xsrf|secret|password|pass|signature|sign|access[_-]?token|refresh[_-]?token|session(?:[_-]?id)?|api[_-]?key|xsec[_-]?token)$/iu;
-const API_REPLAY_WRITE_PATH_PATTERN = /(?:^|[/_.-])(?:create|delete|destroy|remove|update|edit|mutate|mutation|post|publish|submit|send|upload|follow|unfollow|like|repost|checkout|pay|order|login|logout|signin|signout)(?:$|[/_.-])/iu;
-const API_REPLAY_CHALLENGE_PATTERN = /(?:captcha|challenge|verify|verification|required login|login required|sign in|signin|log in|forbidden|access denied|permission denied|risk|anti[- ]?bot|blocked)/iu;
-
 function apiAdapterArtifactName(prefix, index) {
   return `${prefix}-${String(index + 1).padStart(4, '0')}.json`;
 }
@@ -5488,8 +4716,14 @@ function apiCandidateEndpointUrl(candidate = /** @type {any} */ ({})) {
   return String(candidate?.endpoint?.url ?? candidate?.url ?? '').trim();
 }
 
+function apiCandidateRuntime(candidate = /** @type {any} */ ({})) {
+  return candidate?.runtime && typeof candidate.runtime === 'object' && !Array.isArray(candidate.runtime)
+    ? candidate.runtime
+    : {};
+}
+
 function apiCandidateMethod(candidate = /** @type {any} */ ({}), rawTrace = null) {
-  return String(candidate?.endpoint?.method ?? candidate?.method ?? rawTrace?.request?.method ?? 'GET').trim().toUpperCase();
+  return normalizeApiMethod(candidate?.endpoint?.method ?? candidate?.method ?? rawTrace?.request?.method);
 }
 
 function apiReplayRawEndpointUrl(candidate = /** @type {any} */ ({}), rawTrace = null) {
@@ -5505,20 +4739,6 @@ function parseCandidateUrl(context, candidate = /** @type {any} */ ({}), rawTrac
   }
 }
 
-function hasSensitiveQueryMaterial(urlValue) {
-  try {
-    const parsed = new URL(String(urlValue ?? ''));
-    for (const key of parsed.searchParams.keys()) {
-      if (API_REPLAY_SENSITIVE_QUERY_PATTERN.test(key)) {
-        return true;
-      }
-    }
-    return /(?:%5Bredacted%5D|\[redacted\]|redacted)/iu.test(parsed.search);
-  } catch {
-    return false;
-  }
-}
-
 function apiCandidateHasSensitiveReplayQuery(candidate = /** @type {any} */ ({}), rawTrace = null) {
   const candidateUrl = apiCandidateEndpointUrl(candidate);
   const rawUrl = rawTrace?.request?.url ?? rawTrace?.url ?? null;
@@ -5528,26 +4748,9 @@ function apiCandidateHasSensitiveReplayQuery(candidate = /** @type {any} */ ({})
     candidate?.target?.roleHint,
     ...(candidate?.target?.queryKeys ?? []),
   ].join(' ');
-  return hasSensitiveQueryMaterial(candidateUrl)
-    || hasSensitiveQueryMaterial(rawUrl)
+  return hasSensitiveApiQueryMaterial(candidateUrl)
+    || hasSensitiveApiQueryMaterial(rawUrl)
     || /request-protection|auth-session|risk-or-access-control|csrf|xsrf|token|secret|signature|session/iu.test(riskText);
-}
-
-function hasSubstantiveApiRequestBody(value) {
-  if (value === null || value === undefined) {
-    return false;
-  }
-  if (typeof value === 'string') {
-    const text = value.trim();
-    return Boolean(text) && !['[REDACTED]', 'null', 'undefined'].includes(text);
-  }
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-  if (typeof value === 'object') {
-    return Object.keys(value).length > 0;
-  }
-  return true;
 }
 
 function apiCandidateHasRequestBody(candidate = /** @type {any} */ ({}), rawTrace = null) {
@@ -5560,17 +4763,16 @@ function apiCandidateHasRequestBody(candidate = /** @type {any} */ ({}), rawTrac
 
 function apiCandidateLooksWriteLike(candidate = /** @type {any} */ ({}), rawTrace = null) {
   const endpointUrl = apiCandidateEndpointUrl(candidate) || rawTrace?.request?.url || '';
-  const bodyText = [
+  const extraText = [
     candidate?.target?.endpointKind,
     candidate?.target?.roleHint,
     rawTrace?.request?.body,
   ].filter(Boolean).join(' ');
-  try {
-    const parsed = new URL(endpointUrl);
-    return API_REPLAY_WRITE_PATH_PATTERN.test(`${parsed.pathname} ${parsed.search} ${bodyText}`);
-  } catch {
-    return API_REPLAY_WRITE_PATH_PATTERN.test(`${endpointUrl} ${bodyText}`);
-  }
+  return apiEndpointLooksWriteLike({
+    url: endpointUrl,
+    method: apiCandidateMethod(candidate, rawTrace),
+    extraText,
+  });
 }
 
 function rawTraceForApiCandidate(candidate = /** @type {any} */ ({}), rawTraces = []) {
@@ -5615,7 +4817,7 @@ function apiReplayEligibility(context, candidate = /** @type {any} */ ({}), rawT
   const parsed = parseCandidateUrl(context, candidate, rawTrace);
   const replayEndpoint = parsed ? parsed.toString() : null;
   const endpoint = replayEndpoint ? sanitizeEvidenceRef(replayEndpoint) : (apiCandidateEndpointUrl(candidate) || '');
-  if (!API_ADAPTER_SAFE_METHODS.has(method)) {
+  if (!isReadOnlyApiMethod(method)) {
     return { eligible: false, reasonCode: 'method_not_read_only', method, endpoint, authBoundary: 'none' };
   }
   if (apiCandidateHasRequestBody(candidate, rawTrace)) {
@@ -5647,7 +4849,42 @@ function apiReplayEligibility(context, candidate = /** @type {any} */ ({}), rawT
   return { eligible: true, reasonCode: null, method, endpoint, replayEndpoint, authBoundary };
 }
 
-function summarizeApiReplayResult(rawResult = /** @type {any} */ ({})) {
+function replayResponseEvidenceMatches(rawResult = /** @type {any} */ ({}), responseEvidence = null) {
+  if (!responseEvidence || typeof responseEvidence !== 'object') {
+    return true;
+  }
+  const evidenceStatus = String(rawResult?.responseEvidenceStatus ?? '').trim().toLowerCase();
+  if (['matched', 'verified', 'passed'].includes(evidenceStatus)) {
+    return true;
+  }
+  if (['failed', 'mismatched', 'missing'].includes(evidenceStatus)) {
+    return false;
+  }
+  const bodyText = String(rawResult?.bodyText ?? rawResult?.text ?? '').trim();
+  if (!bodyText) {
+    return false;
+  }
+  let json = null;
+  try {
+    json = JSON.parse(bodyText);
+  } catch {
+    return false;
+  }
+  if (Object.hasOwn(responseEvidence, 'statusCode')) {
+    const actual = Number(json?.status_code ?? json?.statusCode ?? json?.code);
+    const expected = Number(responseEvidence.statusCode);
+    if (!Number.isFinite(actual) || actual !== expected) {
+      return false;
+    }
+  }
+  const arrayField = String(responseEvidence.arrayField ?? '').trim();
+  if (arrayField && !Array.isArray(json?.[arrayField])) {
+    return false;
+  }
+  return true;
+}
+
+function summarizeApiReplayResult(rawResult = /** @type {any} */ ({}), responseEvidence = null) {
   const statusText = String(rawResult?.status ?? rawResult?.result ?? '').trim().toLowerCase();
   const httpStatus = Number(rawResult?.httpStatus ?? rawResult?.statusCode ?? rawResult?.response?.status ?? 0) || null;
   const contentType = String(rawResult?.contentType ?? rawResult?.response?.contentType ?? rawResult?.headers?.['content-type'] ?? '').trim();
@@ -5659,13 +4896,21 @@ function summarizeApiReplayResult(rawResult = /** @type {any} */ ({})) {
     rawResult?.bodyText,
     rawResult?.text,
   ].filter(Boolean).join(' ');
-  const challengeLike = API_REPLAY_CHALLENGE_PATTERN.test(probeText)
+  const challengeLike = API_READ_ONLY_CHALLENGE_PATTERN.test(probeText)
     || [401, 403, 407, 419, 429].includes(Number(httpStatus));
   const httpOk = httpStatus === null || (httpStatus >= 200 && httpStatus < 300) || httpStatus === 304;
-  const verified = !challengeLike && httpOk && ['verified', 'success', 'passed'].includes(statusText || 'verified');
+  const evidenceOk = replayResponseEvidenceMatches(rawResult, responseEvidence);
+  const skipped = statusText === 'skipped';
+  const verified = !challengeLike && httpOk && evidenceOk && ['verified', 'success', 'passed'].includes(statusText || 'verified');
   return {
-    status: verified ? 'verified' : (statusText === 'skipped' ? 'skipped' : 'failed'),
-    reasonCode: challengeLike ? 'challenge_or_login_wall_response' : (rawResult?.reasonCode ?? (httpOk ? null : 'api_replay_http_failed')),
+    status: verified ? 'verified' : (skipped ? 'skipped' : 'failed'),
+    reasonCode: challengeLike
+      ? 'challenge_or_login_wall_response'
+      : skipped
+        ? (rawResult?.reasonCode ?? null)
+        : !evidenceOk
+        ? 'api_replay_response_evidence_failed'
+        : (rawResult?.reasonCode ?? (httpOk ? null : 'api_replay_http_failed')),
     httpStatus,
     contentType: contentType || null,
     responseKind: String(rawResult?.responseKind ?? rawResult?.kind ?? '').trim() || null,
@@ -5683,6 +4928,46 @@ function canUseCookieApiReplayFallback(context = /** @type {any} */ ({}), eligib
     && Boolean(apiReplayCookieHeader(context));
 }
 
+function apiReplayOptionsForRuntimeResolution(context = /** @type {any} */ ({}), runtimeResolution = /** @type {any} */ ({})) {
+  if (!runtimeResolution.runtimeParameterSource) {
+    return context.options;
+  }
+  const configured = Number(context.options?.browserBridgeApiReplayTimeoutMs);
+  return {
+    ...context.options,
+    browserBridgeApiReplayTimeoutMs: Math.max(
+      Number.isFinite(configured) && configured > 0 ? configured : 0,
+      75_000,
+    ),
+  };
+}
+
+function maxBrowserBridgeApiReplayCalls(context = /** @type {any} */ ({})) {
+  const configured = Number(context.options?.maxBrowserBridgeApiReplayCalls);
+  if (Number.isFinite(configured) && configured >= 0) {
+    return Math.trunc(configured);
+  }
+  try {
+    const host = new URL(context.site?.rootUrl ?? '').hostname;
+    if (/(^|\.)douyin\.com$/iu.test(host)) {
+      return 2;
+    }
+  } catch {
+    // Use the unrestricted default for non-URL test fixtures.
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function consumeBrowserBridgeApiReplayBudget(context = /** @type {any} */ ({})) {
+  const maxCalls = maxBrowserBridgeApiReplayCalls(context);
+  const used = Number(context.browserBridgeApiReplayCallCount ?? 0) || 0;
+  if (used >= maxCalls) {
+    return false;
+  }
+  context.browserBridgeApiReplayCallCount = used + 1;
+  return true;
+}
+
 function apiReplayResponseKind(contentType) {
   const value = String(contentType ?? '').trim();
   if (/json/iu.test(value)) return 'json';
@@ -5691,9 +4976,165 @@ function apiReplayResponseKind(contentType) {
   return value ? 'other' : null;
 }
 
+function parseDouyinRenderDataFromHtml(html) {
+  const match = String(html ?? '').match(/<script[^>]+id=["']RENDER_DATA["'][^>]*>([\s\S]*?)<\/script>/iu);
+  if (!match?.[1]) {
+    return null;
+  }
+  const encoded = String(match[1]);
+  const decodeAttempts = [
+    encoded,
+    (() => {
+      try {
+        return decodeURIComponent(encoded);
+      } catch {
+        return null;
+      }
+    })(),
+    encoded.replace(/%([0-9a-f]{2})/giu, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16))),
+  ];
+  for (const attempt of decodeAttempts) {
+    if (!attempt) {
+      continue;
+    }
+    try {
+      return JSON.parse(attempt);
+    } catch {
+      // Try the next decoding strategy; Douyin can include malformed UTF-8 in otherwise parseable JSON.
+    }
+  }
+  return null;
+}
+
+async function resolveDouyinSelfRuntimeParameters(context, parameterSource = /** @type {any} */ ({})) {
+  const cookie = apiReplayCookieHeader(context);
+  if (!cookie) {
+    return { status: 'skipped', reasonCode: 'cookie_replay_unavailable', parameters: null };
+  }
+  const pageUrl = normalizeUrl(parameterSource.pageUrl ?? '/user/self', context.site.rootUrl);
+  const controller = new AbortController();
+  const configuredTimeout = Number(context.options?.browserBridgeApiReplayTimeoutMs);
+  const timeoutMs = Math.max(1000, Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 8000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(pageUrl, {
+      method: 'GET',
+      headers: {
+        cookie,
+        accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
+        'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        referer: context.site.rootUrl,
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36',
+      },
+      signal: controller.signal,
+    });
+    const html = await response.text();
+    const renderData = parseDouyinRenderDataFromHtml(html);
+    const userInfo = renderData?.app?.user?.info ?? null;
+    const uid = String(userInfo?.uid ?? '').trim();
+    const secUid = String(userInfo?.secUid ?? userInfo?.sec_uid ?? '').trim();
+    if (!uid || !secUid) {
+      return { status: 'skipped', reasonCode: 'runtime_parameter_source_unavailable', parameters: null };
+    }
+    return {
+      status: 'verified',
+      reasonCode: null,
+      parameters: {
+        uid,
+        secUid,
+      },
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      reasonCode: error?.name === 'AbortError' ? 'api_replay_timeout' : 'runtime_parameter_source_unavailable',
+      parameters: null,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function applyDouyinSelfRuntimeParameters(endpointTemplate, parameters = /** @type {any} */ ({})) {
+  const uid = encodeURIComponent(String(parameters.uid ?? ''));
+  const secUid = encodeURIComponent(String(parameters.secUid ?? ''));
+  return String(endpointTemplate ?? '')
+    .replace(/\{self\.uid\}/gu, uid)
+    .replace(/\{self\.secUid\}/gu, secUid)
+    .replace(/\{self\.sec_uid\}/gu, secUid);
+}
+
+async function resolveApiReplayEndpointForCandidate(context, candidate, eligibility) {
+  const runtime = apiCandidateRuntime(candidate);
+  const parameterSource = runtime.parameterSource ?? null;
+  const endpointTemplate = String(runtime.endpointTemplate ?? '').trim();
+  if (!parameterSource || !endpointTemplate) {
+    return {
+      status: 'ready',
+      reasonCode: null,
+      replayEndpoint: eligibility.replayEndpoint ?? eligibility.endpoint,
+      runtimeEndpoint: eligibility.replayEndpoint ?? eligibility.endpoint,
+      runtimeParameterSource: null,
+      buildTimeAuthBoundary: eligibility.authBoundary,
+    };
+  }
+  if (parameterSource.kind !== 'douyin_self_user_render_data') {
+    return {
+      status: 'skipped',
+      reasonCode: 'runtime_parameter_source_unsupported',
+      replayEndpoint: null,
+      runtimeEndpoint: sanitizeEvidenceRef(endpointTemplate),
+      runtimeParameterSource: parameterSource,
+      buildTimeAuthBoundary: eligibility.authBoundary,
+    };
+  }
+  return {
+    status: 'ready',
+    reasonCode: null,
+    replayEndpoint: endpointTemplate,
+    runtimeEndpoint: sanitizeEvidenceRef(endpointTemplate),
+    runtimeParameterSource: parameterSource,
+    buildTimeAuthBoundary: eligibility.authBoundary,
+  };
+}
+
+async function resolveCookieReplayEndpointForCandidate(context, candidate, eligibility) {
+  const runtime = apiCandidateRuntime(candidate);
+  const parameterSource = runtime.parameterSource ?? null;
+  const endpointTemplate = String(runtime.endpointTemplate ?? '').trim();
+  if (!parameterSource || !endpointTemplate) {
+    return {
+      status: 'ready',
+      reasonCode: null,
+      replayEndpoint: eligibility.replayEndpoint ?? eligibility.endpoint,
+    };
+  }
+  if (parameterSource.kind !== 'douyin_self_user_render_data') {
+    return {
+      status: 'skipped',
+      reasonCode: 'runtime_parameter_source_unsupported',
+      replayEndpoint: null,
+    };
+  }
+  const resolved = await resolveDouyinSelfRuntimeParameters(context, parameterSource);
+  if (!resolved.parameters) {
+    return {
+      status: resolved.status,
+      reasonCode: resolved.reasonCode,
+      replayEndpoint: null,
+    };
+  }
+  return {
+    status: 'ready',
+    reasonCode: null,
+    replayEndpoint: applyDouyinSelfRuntimeParameters(endpointTemplate, resolved.parameters),
+  };
+}
+
 async function runCookieApiReplayFallback(context, {
   endpoint,
   method,
+  responseEvidence = null,
 } = /** @type {any} */ ({})) {
   const cookie = apiReplayCookieHeader(context);
   if (!cookie) {
@@ -5741,7 +5182,7 @@ async function runCookieApiReplayFallback(context, {
       responseKind,
       bodyText,
       authBoundary: 'cookie_replay_only',
-    });
+    }, responseEvidence);
   } catch (error) {
     return {
       status: 'failed',
@@ -5792,6 +5233,7 @@ async function validateApiAdapterCandidate(context, candidateResult, index) {
   let adapter = null;
   let siteAdapterDecision = null;
   let catalogUpgradePolicy = null;
+  let apiSemantics = null;
   let status = 'skipped';
   let reasonCode = 'site_adapter_validation_unavailable';
   try {
@@ -5799,6 +5241,18 @@ async function validateApiAdapterCandidate(context, candidateResult, index) {
     if (typeof adapter?.validateApiCandidate !== 'function') {
       reasonCode = 'site_adapter_validation_unavailable';
     } else {
+      if (typeof adapter.describeApiCandidateSemantics === 'function') {
+        try {
+          apiSemantics = adapter.describeApiCandidateSemantics({
+            candidate,
+            context,
+            site: context.site,
+            profile: context.siteAdapterProfile,
+          }) ?? null;
+        } catch {
+          apiSemantics = null;
+        }
+      }
       siteAdapterDecision = validateApiCandidateWithAdapter(candidate, adapter, {
         validatedAt: context.startedAt,
         scope: {
@@ -5854,6 +5308,7 @@ async function validateApiAdapterCandidate(context, candidateResult, index) {
     adapterVersion: adapter?.version ?? siteAdapterDecision?.adapterVersion ?? null,
     siteAdapterDecision,
     catalogUpgradePolicy,
+    apiSemantics,
   };
   const write = await writeRedactedArtifactWithAudit(context, decisionRelativePath, auditRelativePath, payload);
   return {
@@ -5865,6 +5320,7 @@ async function validateApiAdapterCandidate(context, candidateResult, index) {
     adapterVersion: payload.adapterVersion,
     decision: siteAdapterDecision,
     catalogUpgradePolicy,
+    apiSemantics,
     artifactPath: write.artifactPath,
     redactionAuditPath: write.redactionAuditPath,
     value: write.value,
@@ -5890,6 +5346,18 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
     contentType: null,
     responseKind: null,
   };
+  const runtime = apiCandidateRuntime(candidate);
+  const responseEvidence = runtime.responseEvidence && typeof runtime.responseEvidence === 'object'
+    ? runtime.responseEvidence
+    : null;
+  let runtimeResolution = {
+    status: eligibility.eligible ? 'ready' : 'skipped',
+    reasonCode: eligibility.reasonCode,
+    replayEndpoint: eligibility.replayEndpoint ?? eligibility.endpoint,
+    runtimeEndpoint: eligibility.replayEndpoint ?? eligibility.endpoint,
+    runtimeParameterSource: null,
+    buildTimeAuthBoundary: eligibility.authBoundary,
+  };
   let buildTimeAuthBoundary = eligibility.authBoundary;
   if (decisionRecord.status !== 'accepted') {
     reasonCode = decisionRecord.reasonCode ?? 'adapter_rejected';
@@ -5898,8 +5366,53 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
       reasonCode,
     };
   } else if (eligibility.eligible) {
-    const replayEndpoint = eligibility.replayEndpoint ?? eligibility.endpoint;
-    if (typeof context.options.apiAdapterReplayProvider === 'function') {
+    runtimeResolution = await resolveApiReplayEndpointForCandidate(context, candidate, eligibility);
+    buildTimeAuthBoundary = runtimeResolution.buildTimeAuthBoundary ?? eligibility.authBoundary;
+    if (runtimeResolution.status !== 'ready' || !runtimeResolution.replayEndpoint) {
+      status = runtimeResolution.status === 'failed' ? 'failed' : 'skipped';
+      reasonCode = runtimeResolution.reasonCode ?? 'runtime_parameter_source_unavailable';
+      replaySummary = {
+        status,
+        reasonCode,
+        httpStatus: null,
+        contentType: null,
+        responseKind: null,
+      };
+    } else if (runtimeResolution.runtimeParameterSource && canUseCookieApiReplayFallback(context, eligibility)) {
+      const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
+      if (cookieEndpoint.status === 'ready' && cookieEndpoint.replayEndpoint) {
+        runtimeResolution = {
+          ...runtimeResolution,
+          replayEndpoint: cookieEndpoint.replayEndpoint,
+          bridgeRuntimeEndpoint: cookieEndpoint.replayEndpoint,
+          bridgeRuntimeParameterSource: null,
+          runtimeParameterResolutionBoundary: 'cookie_replay_only',
+        };
+      }
+    }
+    if (replaySummary.status === 'skipped' && replaySummary.reasonCode) {
+      // Keep the earlier runtime-resolution skip.
+    } else if (buildTimeAuthBoundary === 'cookie_replay_only') {
+      const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
+      if (cookieEndpoint.status !== 'ready' || !cookieEndpoint.replayEndpoint) {
+        replaySummary = {
+          status: cookieEndpoint.status === 'failed' ? 'failed' : 'skipped',
+          reasonCode: cookieEndpoint.reasonCode ?? 'runtime_parameter_source_unavailable',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        };
+      } else {
+        replaySummary = await runCookieApiReplayFallback(context, {
+          endpoint: cookieEndpoint.replayEndpoint,
+          method: eligibility.method,
+          responseEvidence,
+        });
+      }
+      buildTimeAuthBoundary = 'cookie_replay_only';
+      status = replaySummary.status;
+      reasonCode = replaySummary.reasonCode;
+    } else if (typeof context.options.apiAdapterReplayProvider === 'function') {
       try {
         const providerResult = await context.options.apiAdapterReplayProvider({
           context,
@@ -5907,8 +5420,13 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
           candidate,
           decision: decisionRecord.decision,
           rawTrace,
-          endpoint: replayEndpoint,
-          redactedEndpoint: eligibility.endpoint,
+          endpoint: runtimeResolution.replayEndpoint,
+          redactedEndpoint: runtimeResolution.runtimeEndpoint ?? eligibility.endpoint,
+          runtimeEndpoint: runtimeResolution.bridgeRuntimeEndpoint ?? runtimeResolution.runtimeEndpoint ?? eligibility.endpoint,
+          runtimeParameterSource: runtimeResolution.bridgeRuntimeParameterSource === undefined
+            ? runtimeResolution.runtimeParameterSource
+            : runtimeResolution.bridgeRuntimeParameterSource,
+          responseEvidence,
           method: eligibility.method,
           authBoundary: eligibility.authBoundary,
           fetchOptions: {
@@ -5920,9 +5438,30 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
             persistResponseBody: false,
           },
         });
-        replaySummary = summarizeApiReplayResult(providerResult);
+        replaySummary = summarizeApiReplayResult(providerResult, responseEvidence);
         status = replaySummary.status;
         reasonCode = replaySummary.reasonCode;
+        if (/^browser_bridge_replay_/u.test(String(reasonCode ?? '')) && canUseCookieApiReplayFallback(context, eligibility)) {
+          const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
+          if (cookieEndpoint.status !== 'ready' || !cookieEndpoint.replayEndpoint) {
+            replaySummary = {
+              status: cookieEndpoint.status === 'failed' ? 'failed' : 'skipped',
+              reasonCode: cookieEndpoint.reasonCode ?? 'runtime_parameter_source_unavailable',
+              httpStatus: null,
+              contentType: null,
+              responseKind: null,
+            };
+          } else {
+            replaySummary = await runCookieApiReplayFallback(context, {
+              endpoint: cookieEndpoint.replayEndpoint,
+              method: eligibility.method,
+              responseEvidence,
+            });
+          }
+          buildTimeAuthBoundary = 'cookie_replay_only';
+          status = replaySummary.status;
+          reasonCode = replaySummary.reasonCode;
+        }
       } catch (error) {
         status = 'failed';
         reasonCode = error?.reasonCode ?? error?.message ?? 'api_replay_failed';
@@ -5934,12 +5473,24 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
           responseKind: null,
         };
       }
-    } else if (context.apiAdapterReplayBrowserBridgeUnavailableReason) {
+    } else if (context.apiAdapterReplayBrowserBridgeUnavailableReason && !runtimeResolution.runtimeParameterSource) {
       if (canUseCookieApiReplayFallback(context, eligibility)) {
-        replaySummary = await runCookieApiReplayFallback(context, {
-          endpoint: replayEndpoint,
-          method: eligibility.method,
-        });
+        const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
+        if (cookieEndpoint.status !== 'ready' || !cookieEndpoint.replayEndpoint) {
+          replaySummary = {
+            status: cookieEndpoint.status === 'failed' ? 'failed' : 'skipped',
+            reasonCode: cookieEndpoint.reasonCode ?? 'runtime_parameter_source_unavailable',
+            httpStatus: null,
+            contentType: null,
+            responseKind: null,
+          };
+        } else {
+          replaySummary = await runCookieApiReplayFallback(context, {
+            endpoint: cookieEndpoint.replayEndpoint,
+            method: eligibility.method,
+            responseEvidence,
+          });
+        }
         buildTimeAuthBoundary = 'cookie_replay_only';
         status = replaySummary.status;
         reasonCode = replaySummary.reasonCode;
@@ -5955,24 +5506,51 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
         };
       }
     } else {
-      replaySummary = summarizeApiReplayResult(await runBrowserBridgeApiReplay({
-        inputUrl: context.site.rootUrl,
-        site: context.site,
-        endpoint: replayEndpoint,
-        method: eligibility.method,
-        options: context.options,
-        robotsPolicy,
-        openBrowser: (targetUrl) => openSystemDefaultBrowser(targetUrl, context.options),
-      }));
+      if (!consumeBrowserBridgeApiReplayBudget(context)) {
+        replaySummary = {
+          status: 'skipped',
+          reasonCode: 'api_replay_budget_deferred',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        };
+      } else {
+        replaySummary = summarizeApiReplayResult(await runBrowserBridgeApiReplay({
+          inputUrl: context.site.rootUrl,
+          site: context.site,
+          endpoint: runtimeResolution.replayEndpoint,
+          method: eligibility.method,
+          runtimeEndpoint: runtimeResolution.bridgeRuntimeEndpoint ?? runtimeResolution.runtimeEndpoint ?? eligibility.endpoint,
+          runtimeParameterSource: runtimeResolution.bridgeRuntimeParameterSource === undefined
+            ? runtimeResolution.runtimeParameterSource
+            : runtimeResolution.bridgeRuntimeParameterSource,
+          responseEvidence,
+          options: apiReplayOptionsForRuntimeResolution(context, runtimeResolution),
+          robotsPolicy,
+          openBrowser: (targetUrl) => openSystemDefaultBrowser(targetUrl, context.options),
+        }), responseEvidence);
+      }
       status = replaySummary.status;
       reasonCode = replaySummary.reasonCode;
       if (/^browser_bridge_replay_/u.test(String(reasonCode ?? ''))) {
         context.apiAdapterReplayBrowserBridgeUnavailableReason = reasonCode;
         if (canUseCookieApiReplayFallback(context, eligibility)) {
-          replaySummary = await runCookieApiReplayFallback(context, {
-            endpoint: replayEndpoint,
-            method: eligibility.method,
-          });
+          const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
+          if (cookieEndpoint.status !== 'ready' || !cookieEndpoint.replayEndpoint) {
+            replaySummary = {
+              status: cookieEndpoint.status === 'failed' ? 'failed' : 'skipped',
+              reasonCode: cookieEndpoint.reasonCode ?? 'runtime_parameter_source_unavailable',
+              httpStatus: null,
+              contentType: null,
+              responseKind: null,
+            };
+          } else {
+            replaySummary = await runCookieApiReplayFallback(context, {
+              endpoint: cookieEndpoint.replayEndpoint,
+              method: eligibility.method,
+              responseEvidence,
+            });
+          }
           buildTimeAuthBoundary = 'cookie_replay_only';
           status = replaySummary.status;
           reasonCode = replaySummary.reasonCode;
@@ -5984,8 +5562,9 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
     && eligibility.eligible === true
     && replaySummary.status === 'verified'
     && eligibility.authBoundary === 'browser_bridge';
+  const runtimeEndpoint = runtimeResolution.runtimeEndpoint ?? eligibility.replayEndpoint ?? eligibility.endpoint;
   const runtimeBindingId = activated
-    ? stableNodeId('api-adapter-runtime-binding', `${context.site.id}:${candidate?.id ?? index}:${eligibility.replayEndpoint ?? eligibility.endpoint}`)
+    ? stableNodeId('api-adapter-runtime-binding', `${context.site.id}:${candidate?.id ?? index}:${runtimeEndpoint}`)
     : null;
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -5999,7 +5578,7 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
     activated,
     runtimeBindingId,
     method: eligibility.method,
-    endpoint: sanitizeEvidenceRef(eligibility.endpoint),
+    endpoint: sanitizeEvidenceRef(runtimeEndpoint),
     authBoundary: eligibility.authBoundary,
     replayPolicy: {
       buildTimeAuthBoundary,
@@ -6011,6 +5590,8 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
       responseMaterial: SANITIZED_SUMMARY_ONLY,
       runtimeRegistration: activated ? 'browser_bridge_required' : 'not_registered',
       genericHttpRuntimeAllowed: false,
+      runtimeParameterSource: runtimeResolution.runtimeParameterSource,
+      responseEvidence,
     },
     response: {
       httpStatus: replaySummary.httpStatus,
@@ -6027,7 +5608,10 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
     reasonCode: payload.reasonCode,
     activated,
     runtimeBindingId,
-    runtimeEndpoint: activated ? eligibility.replayEndpoint : null,
+    runtimeEndpoint: activated ? runtimeEndpoint : null,
+    runtimeParameterSource: runtimeResolution.runtimeParameterSource,
+    responseEvidence,
+    apiSemantics: decisionRecord.apiSemantics ?? null,
     method: eligibility.method,
     endpoint: payload.endpoint,
     authBoundary: eligibility.authBoundary,
@@ -6060,6 +5644,8 @@ async function writeApiAdapterRuntimeBindings(context, activatedAdapters = []) {
       method: adapter.method,
       endpoint: adapter.runtimeEndpoint,
       redactedEndpoint: adapter.endpoint,
+      runtimeParameterSource: adapter.runtimeParameterSource ?? null,
+      responseEvidence: adapter.responseEvidence ?? null,
       authBoundary: 'browser_bridge',
       runtimeMode: BRIDGE_RUNTIME_MODE,
       responseMaterial: SANITIZED_SUMMARY_ONLY,
@@ -6224,6 +5810,64 @@ async function mergeApiAdapterReplayIntoNetworkSummary(context, replaySummary) {
   return await writeArtifactJson(context, 'network_traces.json', updated);
 }
 
+function apiDiscoveryRequestKey(request = /** @type {any} */ ({})) {
+  const method = String(request?.method ?? request?.endpoint?.method ?? 'GET').trim().toUpperCase();
+  const url = String(request?.url ?? request?.endpoint?.url ?? '').trim();
+  return `${method} ${url}`;
+}
+
+function siteAdapterBuildApiDiscoveryRequests(context = /** @type {any} */ ({})) {
+  let adapter = null;
+  try {
+    const rootUrl = context.site?.rootUrl ?? context.setupProfile?.site?.rootUrl;
+    const host = rootUrl ? new URL(rootUrl).hostname : context.site?.allowedDomains?.[0];
+    adapter = resolveSiteAdapter({
+      host,
+      inputUrl: rootUrl,
+      siteContext: context.site,
+      profile: context.siteAdapterProfile,
+    });
+  } catch {
+    adapter = null;
+  }
+  if (typeof adapter?.getBuildApiDiscoverySeeds !== 'function') {
+    return [];
+  }
+  const seeds = adapter.getBuildApiDiscoverySeeds({
+    context,
+    site: context.site,
+    profile: context.siteAdapterProfile,
+    setupProfile: context.setupProfile,
+  });
+  if (!Array.isArray(seeds)) {
+    return [];
+  }
+  return seeds
+    .filter((seed) => seed && typeof seed === 'object')
+    .map((seed, index) => ({
+      ...seed,
+      id: seed.id ?? `site-adapter-api-seed-${index + 1}`,
+      siteKey: seed.siteKey ?? context.site?.id,
+      status: 'observed',
+      source: seed.source ?? 'site-adapter.build-api-seed',
+      observedAt: seed.observedAt ?? context.startedAt,
+    }));
+}
+
+function mergeObservedApiRequests(...groups) {
+  const seen = new Set();
+  const merged = [];
+  for (const request of groups.flat()) {
+    const key = apiDiscoveryRequestKey(request);
+    if (!key.trim() || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(request);
+  }
+  return merged;
+}
+
 async function captureNetworkTracesStage(context) {
   const networkRequested = context.policy.captureNetwork === true || context.options.network === true;
   const internalRawRequested = context.options.internalRawNetwork === true;
@@ -6231,7 +5875,9 @@ async function captureNetworkTracesStage(context) {
   const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
   const internalCapture = context.internalRawNetworkCapture ?? {};
   const rawTraces = Array.isArray(internalCapture.rawTraces) ? internalCapture.rawTraces : [];
-  const observedRequests = Array.isArray(internalCapture.observedRequests) ? internalCapture.observedRequests : [];
+  const capturedObservedRequests = Array.isArray(internalCapture.observedRequests) ? internalCapture.observedRequests : [];
+  const apiSeedRequests = internalRawRequested ? siteAdapterBuildApiDiscoveryRequests(context) : [];
+  const observedRequests = mergeObservedApiRequests(apiSeedRequests, capturedObservedRequests);
   const observedResponseSummaries = Array.isArray(internalCapture.observedResponseSummaries)
     ? internalCapture.observedResponseSummaries
     : [];
@@ -6319,6 +5965,8 @@ async function captureNetworkTracesStage(context) {
     rawTruncatedBodyCount,
     rawSkippedBodyCount,
     observedRequestCount: observedRequests.length,
+    observedNetworkRequestCount: capturedObservedRequests.length,
+    siteAdapterApiSeedCount: apiSeedRequests.length,
     observedResponseSummaryCount: observedResponseSummaries.length,
     apiCandidateArtifacts: apiCandidateSummary.artifacts,
     apiCandidateCount: apiCandidateSummary.count,
@@ -6419,6 +6067,9 @@ async function apiAdapterReplayStage(context, stageResults) {
           adapterVersion: decision.adapterVersion,
           runtimeBindingId: replay.runtimeBindingId,
           runtimeEndpoint: replay.runtimeEndpoint,
+          runtimeParameterSource: replay.runtimeParameterSource ?? null,
+          responseEvidence: replay.responseEvidence ?? null,
+          apiSemantics: replay.apiSemantics ?? decision.apiSemantics ?? null,
           method: replay.method,
           endpoint: replay.endpoint,
           authBoundary: replay.authBoundary,
@@ -7136,7 +6787,7 @@ async function buildSiteGraphStage(context, stageResults) {
     });
   }
 
-  for (const route of knownPolicyPublicRouteTemplates(context).filter((candidate) => candidate.seedable !== true)) {
+  for (const route of knownPolicyPublicRouteTemplatePatterns(context).filter((candidate) => candidate.seedable !== true)) {
     if (route.pattern === '/') {
       continue;
     }
@@ -7709,15 +7360,6 @@ function isNewsCoverageSite(context, nodes = /** @type {any[]} */ ([]), homepage
     return true;
   }
   return newsCount >= 2 && newsCount > catalogOrWorkCount;
-}
-
-function normalizeSetupCapabilityId(value) {
-  return String(value ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/^capability:[^:]+:/u, '')
-    .replace(/[^a-z0-9]+/gu, '-')
-    .replace(/^-+|-+$/gu, '');
 }
 
 function selectedSetupCapabilityIds(context) {
@@ -9544,319 +9186,6 @@ function addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage)
   }
 }
 
-function capabilityRequiresLogin(context, capability = /** @type {any} */ ({}), nodesById = new Map()) {
-  if (capability.authRequired === true) {
-    return true;
-  }
-  const nodes = [
-    ...(capability.entryNodeIds ?? []),
-    ...(capability.requiredNodeIds ?? []),
-  ].map((id) => nodesById.get(id)).filter(Boolean);
-  if (nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)))) {
-    return true;
-  }
-  const text = [
-    capability.name,
-    capability.object,
-    capability.description,
-    capability.category,
-    capability.setupCapabilityId,
-    capability.intentAction,
-  ].join(' ').toLowerCase();
-  if (/notification|bookmark|list-lists|\buser lists?\b|\blist lists\b|lists summary|direct message|\bdm\b|following timeline|followed updates|followed users|recommended timeline|account followers/u.test(text)) {
-    return true;
-  }
-  const requiredLoginIds = new Set(context.crawlContract?.coverageTargets?.requiresLoginCapabilities ?? []);
-  return requiredLoginIds.has(canonicalCapabilitySemanticToken(capability.setupCapabilityId))
-    || requiredLoginIds.has(canonicalCapabilitySemanticToken(capability.name));
-}
-
-function sourceLayerForCapability(capability = /** @type {any} */ ({}), nodesById = new Map()) {
-  const nodes = [
-    ...(capability.entryNodeIds ?? []),
-    ...(capability.requiredNodeIds ?? []),
-  ].map((id) => nodesById.get(id)).filter(Boolean);
-  if (nodes.some((node) => nodeSourceLayer(node) === 'authenticated_overlay')) {
-    return 'authenticated_overlay';
-  }
-  if (nodes.some((node) => nodeSourceLayer(node) === 'authenticated')) {
-    return 'authenticated';
-  }
-  if (nodes.some((node) => nodeSourceLayer(node) === 'authorized_source')) {
-    return 'authorized_source';
-  }
-  if (capability.authRequired === true) {
-    return 'authenticated';
-  }
-  if (nodes.some((node) => nodeSourceLayer(node) === 'public_rendered')) {
-    return 'public_rendered';
-  }
-  return 'public';
-}
-
-function providerIdForCapability(capability = /** @type {any} */ ({}), nodesById = new Map()) {
-  const nodes = [
-    ...(capability.entryNodeIds ?? []),
-    ...(capability.requiredNodeIds ?? []),
-  ].map((id) => nodesById.get(id)).filter(Boolean);
-  const providerIds = uniqueSortedStrings(nodes.map((node) => node.providerId).filter(Boolean));
-  if (providerIds.includes('browser_bridge')) return 'browser_bridge';
-  if (providerIds.includes('cookie_http')) return 'cookie_http';
-  if (providerIds.includes('authorized_summary')) return 'authorized_summary';
-  if (providerIds.includes('public_rendered')) return 'public_rendered';
-  if (providerIds.includes('public_http')) return 'public_http';
-  const sourceLayer = sourceLayerForCapability(capability, nodesById);
-  if (sourceLayer === 'authenticated' || sourceLayer === 'authenticated_overlay') {
-    return 'browser_bridge';
-  }
-  if (sourceLayer === 'authorized_source') {
-    return 'authorized_summary';
-  }
-  if (sourceLayer === 'public_rendered') {
-    return 'public_rendered';
-  }
-  return 'public_http';
-}
-
-function observedCapabilityEvidenceLevel(capability = /** @type {any} */ ({}), nodesById = new Map(), authStateReport = null) {
-  const nodes = [
-    ...(capability.entryNodeIds ?? []),
-    ...(capability.requiredNodeIds ?? []),
-  ].map((id) => nodesById.get(id)).filter(Boolean);
-  const levels = nodes.map((node) => {
-    if (node.evidenceLevel) {
-      return node.evidenceLevel;
-    }
-    if (nodeSourceLayer(node) === 'public_rendered') {
-      return 'public_rendered_verified';
-    }
-    if (nodeSourceLayer(node) === 'authorized_source') {
-      return 'authorized_source_verified';
-    }
-    return node.authRequired ? 'login_route_verified' : 'public_verified';
-  });
-  if (
-    canRunAuthenticatedLayer(authStateReport)
-    && nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)))
-    && nodes.some((node) => node.listPresent === true || Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true)
-  ) {
-    levels.push('capability_verified');
-  }
-  if (capability.capabilityVerified === true || (authStateReport?.capabilityProofs ?? []).some((proof) => {
-    const capabilityId = normalizeSetupCapabilityId(proof.capabilityId);
-    return capabilityId && [
-      capability.setupCapabilityId,
-      capability.name,
-      capability.id,
-    ].map(normalizeSetupCapabilityId).includes(capabilityId);
-  })) {
-    levels.push('capability_verified');
-  }
-  if (capability.apiReplayVerified === true || capability.evidenceModel === 'api_adapter_replay_verified') {
-    levels.push('capability_verified');
-  }
-  return levels.sort((left, right) => evidenceLevelRank(right) - evidenceLevelRank(left))[0] ?? 'candidate';
-}
-
-function nodeHasPublicStructureEvidence(node = /** @type {any} */ ({})) {
-  const layer = nodeSourceLayer(node);
-  if (['route_seed_only', 'link_route_template', 'link_semantic_route_template'].includes(node.evidenceStatus)
-    || node.publicEvidenceStatus === 'public_rendered_route_seed_only') {
-    return false;
-  }
-  if (node.evidenceStatus === 'structure_summary_present') {
-    return true;
-  }
-  if (node.publicEvidenceStatus === 'public_static_structured' || node.staticEvidenceStatus === 'present') {
-    return true;
-  }
-  if (node.listPresent === true || Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true) {
-    return true;
-  }
-  if (Array.isArray(node.routeTemplates) && node.routeTemplates.length > 0) {
-    return true;
-  }
-  if (layer === 'public_rendered' || layer === 'authorized_source') {
-    return ['form', 'component', 'menu', 'tab'].includes(node.type);
-  }
-  return layer === 'public' && ['form', 'component', 'menu', 'tab'].includes(node.type);
-}
-
-function buildCapabilityEvidenceMatrix(context, capability = /** @type {any} */ ({}), nodesById = new Map()) {
-  const authRequired = capabilityRequiresLogin(context, capability, nodesById);
-  const sourceLayer = sourceLayerForCapability({ ...capability, authRequired }, nodesById);
-  const providerId = providerIdForCapability({ ...capability, authRequired }, nodesById);
-  const publicRouteNavigationOnly = capability.evidenceModel === 'public_route_navigation' || capability.publicRouteOnly === true;
-  const publicElementSummary = capability.evidenceModel === 'public_element_summary';
-  const authenticatedRouteOnly = capability.evidenceModel === 'authenticated_route_only';
-  const apiAdapterReplayVerified = capability.evidenceModel === 'api_adapter_replay_verified';
-  const nodes = [
-    ...(capability.entryNodeIds ?? []),
-    ...(capability.requiredNodeIds ?? []),
-  ].map((id) => nodesById.get(id)).filter(Boolean);
-  const observedEvidence = new Set();
-  if (nodes.length > 0) observedEvidence.add('source_node_present');
-  if (Array.isArray(capability.evidence) && capability.evidence.length > 0) observedEvidence.add('sanitized_evidence_present');
-  if (capability.executionPlan?.autoExecute !== true) observedEvidence.add('risk_policy_passed');
-  if (!authRequired) {
-    observedEvidence.add('public_route_accessible');
-  }
-  const hasPublicRouteReference = nodes.some((node) => (
-    isPublicReadSourceLayer(nodeSourceLayer(node))
-    && (
-      ['page', 'route', 'route_template'].includes(node.type)
-      || Boolean(node.normalizedUrl)
-      || Boolean(node.routePattern)
-      || Boolean(node.routeTemplate)
-    )
-  ));
-  if (!authRequired && hasPublicRouteReference) {
-    observedEvidence.add('public_route_template_present');
-  }
-  if (!authRequired && nodes.some((node) => node.evidenceStatus === 'element_instance_summary_present')) {
-    observedEvidence.add('public_element_instance_present');
-  }
-  const hasPublicStructure = nodes.some((node) => nodeHasPublicStructureEvidence(node));
-  if (!authRequired && hasPublicStructure) {
-    if (nodes.some((node) => nodeSourceLayer(node) === 'authorized_source' && nodeHasPublicStructureEvidence(node))) {
-      observedEvidence.add('authorized_source_structure_present');
-    } else if (nodes.some((node) => nodeSourceLayer(node) === 'public_rendered' && nodeHasPublicStructureEvidence(node))) {
-      observedEvidence.add('public_rendered_structure_present');
-    } else {
-      observedEvidence.add('public_structure_present');
-    }
-  }
-  const hasAuthNode = nodes.some((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)));
-  if (authRequired && hasAuthNode) observedEvidence.add('route_accessible');
-  if (authRequired && canRunAuthenticatedLayer(context.authStateReport)) observedEvidence.add('not_login_wall');
-  if (apiAdapterReplayVerified && capability.apiReplayVerified === true) observedEvidence.add('api_replay_verified');
-  const hasListContainer = nodes.some((node) => (
-    node.listPresent === true
-    || node.emptyStatePresent === true
-    || /list|timeline|notification|bookmark|direct_message|following/u.test(String(node.classification ?? node.pageType ?? node.structureType ?? ''))
-  ));
-  if (authRequired && hasListContainer) observedEvidence.add('list_container_present');
-  const hasVisibleItemsOrEmptyState = nodes.some((node) => Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true);
-  if (authRequired && hasVisibleItemsOrEmptyState) observedEvidence.add('visible_item_count_or_empty_state');
-  const requiredEvidence = authRequired
-    ? apiAdapterReplayVerified
-      ? ['source_node_present', 'not_login_wall', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
-      : authenticatedRouteOnly
-      ? ['source_node_present', 'route_accessible', 'not_login_wall', 'sanitized_evidence_present', 'risk_policy_passed']
-      : ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
-    : apiAdapterReplayVerified
-      ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
-      : publicRouteNavigationOnly
-      ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_route_template_present', 'risk_policy_passed']
-      : publicElementSummary
-        ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_element_instance_present', 'risk_policy_passed']
-        : ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'public_structure_present', 'risk_policy_passed'];
-  const observed = uniqueSortedStrings([...observedEvidence]);
-  const missingEvidence = requiredEvidence.filter((item) => (
-    item === 'public_structure_present'
-      ? !observedEvidence.has('public_structure_present') && !observedEvidence.has('public_rendered_structure_present') && !observedEvidence.has('authorized_source_structure_present')
-      : !observedEvidence.has(item)
-  ));
-  const observedEvidenceLevel = observedCapabilityEvidenceLevel(capability, nodesById, context.authStateReport);
-  const requiredEvidenceLevel = authRequired
-    ? (authenticatedRouteOnly && !apiAdapterReplayVerified) ? 'login_route_verified' : 'capability_verified'
-    : 'public_verified';
-  return {
-    capabilityId: capability.id,
-    authRequired,
-    requiredEvidenceLevel,
-    observedEvidenceLevel,
-    sourceLayer,
-    providerId,
-    requiredEvidence,
-    observedEvidence: observed,
-    missingEvidence,
-    activationDecision: missingEvidence.length === 0 ? (authRequired ? 'limited_enabled' : 'active') : 'candidate',
-  };
-}
-
-function applyCapabilityEvidenceMatrix(context, capability = /** @type {any} */ ({}), graph) {
-  const nodesById = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
-  const matrix = buildCapabilityEvidenceMatrix(context, capability, nodesById);
-  const next = {
-    ...capability,
-    authRequired: matrix.authRequired,
-    sourceLayer: matrix.sourceLayer,
-    providerId: matrix.providerId,
-    requiredEvidenceLevel: matrix.requiredEvidenceLevel,
-    observedEvidenceLevel: matrix.observedEvidenceLevel,
-    evidenceMatrix: matrix,
-    activationEvidence: matrix,
-  };
-  const forcedRiskDisabled = ['write_high', 'account_security_critical'].includes(next.risk_level)
-    || ['payment', 'destructive'].includes(next.safetyLevel)
-    || (isReadOnlyFollowSurface(next)
-      ? findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).filter((action) => action !== 'follow' && action !== 'unfollow').length > 0
-      : findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).length > 0);
-  const confirmationRisk = isHighRiskCapability(next) || next.risk_level === 'write_low';
-  if (forcedRiskDisabled) {
-    delete next.executionPlan;
-    next.status = 'disabled';
-    next.enabled_status = 'disabled';
-    next.default_policy = next.enabled_status;
-    next.evidence_status = 'disabled';
-    next.activationBlockedReason = next.activationBlockedReason ?? 'forced-action-disabled';
-    next.evidenceMatrix = {
-      ...matrix,
-      activationDecision: next.enabled_status,
-    };
-    next.activationEvidence = next.evidenceMatrix;
-    return next;
-  }
-  if (confirmationRisk && next.status === 'active') {
-    if (next.executionPlan) {
-      next.executionPlan = {
-        ...next.executionPlan,
-        mode: next.executionPlan.mode === 'read_only' ? 'dry_run' : next.executionPlan.mode,
-        dryRunOnly: true,
-        requiresConfirmation: true,
-        autoExecute: false,
-      };
-    }
-    next.enabled_status = next.enabled_status === 'draft_only' ? 'draft_only' : 'confirmation_required';
-    next.default_policy = next.enabled_status;
-    next.evidenceMatrix = {
-      ...matrix,
-      activationDecision: next.enabled_status,
-    };
-    next.activationEvidence = next.evidenceMatrix;
-  }
-  if (matrix.authRequired && !canRunAuthenticatedLayer(context.authStateReport)) {
-    delete next.executionPlan;
-    next.status = 'candidate';
-    next.enabled_status = 'candidate_debug_only';
-    next.default_policy = 'candidate_debug_only';
-    next.evidence_status = 'candidate';
-    next.activationBlockedReason = 'missing_auth_evidence';
-    next.evidenceMatrix = {
-      ...matrix,
-      activationDecision: 'requires_login',
-    };
-    next.activationEvidence = next.evidenceMatrix;
-    return next;
-  }
-  if (matrix.missingEvidence.length > 0) {
-    delete next.executionPlan;
-    next.status = next.status === 'disabled' ? 'disabled' : 'candidate';
-    next.enabled_status = next.enabled_status === 'disabled' ? 'disabled' : 'candidate_debug_only';
-    next.default_policy = next.enabled_status;
-    next.evidence_status = 'candidate';
-    next.activationBlockedReason = next.activationBlockedReason ?? 'capability-evidence-matrix-incomplete';
-    return next;
-  }
-  if (matrix.authRequired && next.status === 'active') {
-    next.enabled_status = next.enabled_status === 'enabled' ? 'limited_enabled' : (next.enabled_status ?? 'limited_enabled');
-    next.default_policy = next.default_policy === 'read_only' ? 'limited_enabled' : (next.default_policy ?? 'limited_enabled');
-    next.evidence_status = 'verified';
-  }
-  return next;
-}
-
 function apiCandidateCapabilityMetadata(stageResults = /** @type {any} */ ({})) {
   const networkSummary = stageResults.captureNetworkTraces?.summary?.sanitizedSummary
     ?? stageResults.captureNetworkTraces?.summary
@@ -9919,15 +9248,30 @@ function executableApiAdapterCapabilities(context, stageResults = /** @type {any
   const authNode = pageNodes.find((node) => node.authRequired === true || isAuthenticatedSourceLayer(nodeSourceLayer(node)));
   const entryNode = authNode ?? homepage ?? pageNodes[0] ?? null;
   return activatedAdapters.map((adapter, index) => {
+    const semantics = adapter.apiSemantics && typeof adapter.apiSemantics === 'object'
+      ? adapter.apiSemantics
+      : null;
     const shortPath = apiEndpointShortPath(adapter.endpoint);
+    const capabilityName = String(semantics?.name ?? '').trim() || `read API endpoint ${shortPath}`;
+    const capabilityObject = String(semantics?.object ?? '').trim() || 'API endpoint';
+    const outputName = String(semantics?.outputName ?? '').trim() || 'response';
+    const outputType = String(semantics?.outputType ?? '').trim() || 'api_response_summary';
+    const intentExamples = Array.isArray(semantics?.intentExamples) && semantics.intentExamples.length
+      ? semantics.intentExamples.map((example) => String(example ?? '').trim()).filter(Boolean).slice(0, 6)
+      : [
+        `read API endpoint ${shortPath}`,
+        `call replay verified API endpoint ${shortPath}`,
+        `read replay verified API ${shortPath}`,
+      ];
     const capability = makeCapability(context, {
-      name: `read API endpoint ${shortPath}`,
-      description: `Read replay-verified same-site API endpoint ${shortPath} through the Browser Bridge runtime.`,
+      name: capabilityName,
+      description: String(semantics?.description ?? '').trim()
+        || `Read replay-verified same-site API endpoint ${shortPath} through the Browser Bridge runtime.`,
       action: 'view',
-      object: 'API endpoint',
-      userValue: `Read API endpoint ${shortPath}`,
+      object: capabilityObject,
+      userValue: String(semantics?.userValue ?? '').trim() || `Read API endpoint ${shortPath}`,
       entryNodeIds: entryNode ? [entryNode.id] : [],
-      outputs: [{ name: 'response', type: 'api_response_summary' }],
+      outputs: [{ name: outputName, type: outputType }],
       safetyLevel: 'read_only',
       evidence: [
         buildEvidence({
@@ -9966,21 +9310,20 @@ function executableApiAdapterCapabilities(context, stageResults = /** @type {any
         adapterDecisionRef: adapter.adapterDecisionRef,
         replayVerificationRef: adapter.replayVerificationRef,
         runtimeBindingId: adapter.runtimeBindingId,
+        semanticKind: semantics?.semanticKind ?? null,
         method: adapter.method,
         redactedEndpoint: adapter.endpoint,
         authBoundary: adapter.authBoundary,
         responsePolicy: adapter.responsePolicy,
+        runtimeParameterSource: adapter.runtimeParameterSource ?? null,
+        responseEvidence: adapter.responseEvidence ?? null,
         runtime: 'browser_bridge_required',
         requiresFreshBridgeEvidence: true,
         genericHttpRuntimeAllowed: false,
       },
       intents: [{
-        canonicalUtterance: `read API endpoint ${shortPath}`,
-        utteranceExamples: [
-          `read API endpoint ${shortPath}`,
-          `call replay verified API endpoint ${shortPath}`,
-          `读取已验证 API 接口 ${shortPath}`,
-        ],
+        canonicalUtterance: capabilityName,
+        utteranceExamples: intentExamples,
         negativeExamples: ['submit API request', 'update account settings', 'send a POST request'],
         slots: [],
         invocationScore: 0.74,
@@ -9999,6 +9342,8 @@ function executableApiAdapterCapabilities(context, stageResults = /** @type {any
         candidateRef: adapter.candidateRef,
         adapterDecisionRef: adapter.adapterDecisionRef,
         replayVerificationRef: adapter.replayVerificationRef,
+        runtimeParameterSource: adapter.runtimeParameterSource ?? null,
+        responseEvidence: adapter.responseEvidence ?? null,
         authBoundary: 'browser_bridge',
         mode: 'limited_read',
         autoExecute: false,
@@ -10847,16 +10192,6 @@ async function generateSkillStage(context, stageResults) {
 const BRIDGE_RUNTIME_MODE = RUNTIME_MODES.browserBridgeRequired;
 const HTTP_RUNTIME_MODE = RUNTIME_MODES.genericHttpRead;
 
-function bridgeRuntimeMetadata(context) {
-  return runtimeProviderPromotionMetadata('browser_bridge', {
-    authStateReport: context.authStateReport,
-  });
-}
-
-function genericHttpRuntimeMetadata() {
-  return runtimeProviderPromotionMetadata('public_http');
-}
-
 function isBrowserBridgeSourceCapability(capability = /** @type {any} */ ({})) {
   return ['authenticated', 'authenticated_overlay'].includes(nodeSourceLayer(capability));
 }
@@ -10966,7 +10301,7 @@ function isGenericHttpReadSafeCapability(context, capability = /** @type {any} *
     if (kind === 'form_get' && String(step.method ?? 'GET').toUpperCase() !== 'GET') {
       return false;
     }
-    if (kind === 'api_request' && !['GET', 'HEAD'].includes(String(step.method ?? 'GET').toUpperCase())) {
+    if (kind === 'api_request' && !isReadOnlyApiMethod(step.method)) {
       return false;
     }
     return planStepTargetAllowedByRobots(context, step, graph, robotsPolicy);
@@ -10975,7 +10310,7 @@ function isGenericHttpReadSafeCapability(context, capability = /** @type {any} *
 
 function capabilityRuntimeMetadata(context, capability = /** @type {any} */ ({}), graph = /** @type {any} */ ({}), robotsPolicy = null) {
   if (isBridgeRuntimeSafeCapability(capability)) {
-    return bridgeRuntimeMetadata(context);
+    return bridgeRuntimeMetadata(context.authStateReport);
   }
   if (isGenericHttpReadSafeCapability(context, capability, graph, robotsPolicy)) {
     return genericHttpRuntimeMetadata();
@@ -11027,24 +10362,9 @@ function promotableRuntimeCapabilityIds(context, stageResults = /** @type {any} 
 
 function bridgeRuntimeRegistryOptions(context, stageResults) {
   return {
-    ...bridgeRuntimeMetadata(context),
+    ...bridgeRuntimeMetadata(context.authStateReport),
     verificationStatus: 'bridge_runtime_passed',
     capabilityIds: promotableRuntimeCapabilityIds(context, stageResults),
-  };
-}
-
-function registryIntentRuntimeMetadata(intent = /** @type {any} */ ({}), capability = /** @type {any} */ ({}), fallback = /** @type {any} */ (null)) {
-  const runtimeMode = intent.runtimeMode ?? capability.runtimeMode ?? fallback?.runtimeMode ?? null;
-  if (!runtimeMode) {
-    return null;
-  }
-  return {
-    promotionClass: intent.promotionClass ?? capability.promotionClass ?? fallback?.promotionClass ?? null,
-    runtimeMode,
-    requiresFreshBridgeEvidence: Boolean(intent.requiresFreshBridgeEvidence ?? capability.requiresFreshBridgeEvidence ?? fallback?.requiresFreshBridgeEvidence),
-    genericHttpRuntimeAllowed: Boolean(intent.genericHttpRuntimeAllowed ?? capability.genericHttpRuntimeAllowed ?? fallback?.genericHttpRuntimeAllowed),
-    coverageStatus: intent.coverageStatus ?? capability.coverageStatus ?? fallback?.coverageStatus ?? null,
-    runtimeRequirements: intent.runtimeRequirements ?? capability.runtimeRequirements ?? fallback?.runtimeRequirements ?? null,
   };
 }
 
@@ -11203,7 +10523,7 @@ async function verifySkillStage(context, stageResults) {
     ]);
   }
   if (report.status !== 'passed' && canUseBridgeRuntimePromotion(report, stageResults, context)) {
-    const metadata = bridgeRuntimeMetadata(context);
+    const metadata = bridgeRuntimeMetadata(context.authStateReport);
     report.originalStatus = report.status;
     report.status = 'bridge_runtime_passed';
     report.promotionAllowed = true;
@@ -11243,7 +10563,7 @@ async function verifySkillStage(context, stageResults) {
     status: report.status === 'bridge_runtime_passed' ? 'bridge_runtime_passed' : 'passed',
     report: 'verification_report.json',
     invocationLookup: report.gates.registryLookup,
-    ...(report.status === 'bridge_runtime_passed' ? bridgeRuntimeMetadata(context) : {}),
+    ...(report.status === 'bridge_runtime_passed' ? bridgeRuntimeMetadata(context.authStateReport) : {}),
   };
   if (report.status === 'bridge_runtime_passed') {
     const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
@@ -11352,7 +10672,7 @@ async function registerSkillStage(context, stageResults) {
       context,
       writeMode === 'draft_only' ? 'draft' : 'preview',
       writeMode === 'draft_only' ? 'write-mode-draft-only' : 'write-mode-preview-only',
-      { writeMode, ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}) },
+      { writeMode, ...(bridgeRuntime ? bridgeRuntimeMetadata(context.authStateReport) : {}) },
     );
   }
   if (writeMode === 'current_only') {
@@ -11367,7 +10687,7 @@ async function registerSkillStage(context, stageResults) {
         writeMode,
         lastSuccessfulBuildPath,
         promotion,
-        ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
+        ...(bridgeRuntime ? bridgeRuntimeMetadata(context.authStateReport) : {}),
       });
       await finalizeRetainedCurrentPromotion(context.workspace, promotion);
       return result;
@@ -11421,7 +10741,7 @@ async function registerSkillStage(context, stageResults) {
       lastSuccessfulBuildPath,
       lookup,
       promotion,
-      ...(bridgeRuntime ? bridgeRuntimeMetadata(context) : {}),
+      ...(bridgeRuntime ? bridgeRuntimeMetadata(context.authStateReport) : {}),
     };
     const registryReportPath = await writeArtifactJson(context, 'registry_report.json', registryReport);
     await finalizeRetainedCurrentPromotion(context.workspace, promotion);
@@ -11454,982 +10774,8 @@ async function registerSkillStage(context, stageResults) {
   }
 }
 
-function classifyBuildFailure(error, stageRecords) {
-  const explicitErrorReason = error?.reasonCode ? normalizeSiteForgeReason(error.reasonCode) : null;
-  if (explicitErrorReason) {
-    return explicitErrorReason;
-  }
-  const reasonEntries = [
-    ...(error?.verificationReport?.reasonCode ? [{ reasonCode: error.verificationReport.reasonCode }] : []),
-    ...Object.values(stageRecords ?? {}).flatMap((stage) => (stage.reasonCodes ?? []).map((reasonCode) => ({ reasonCode }))),
-  ];
-  if (reasonEntries.length) {
-    return selectSiteForgePrimaryReason(reasonEntries, error?.reasonCode ?? 'validation-failed');
-  }
-  if (error?.reasonCode) {
-    return normalizeSiteForgeReason(error.reasonCode) ?? {
-      failureClass: error.failureClass ?? 'internal',
-      reasonCode: error.reasonCode,
-      action: error.reasonAction ?? null,
-    };
-  }
-  const verificationReason = error?.verificationReport?.reasonCode
-    ? normalizeSiteForgeReason(error.verificationReport.reasonCode)
-    : null;
-  if (verificationReason) {
-    return verificationReason;
-  }
-  const failedStage = Object.values(stageRecords ?? {}).find((stage) => stage.status === 'failed' && stage.reasonCode);
-  if (failedStage?.reasonCode) {
-    return normalizeSiteForgeReason(failedStage.reasonCode) ?? {
-      failureClass: failedStage.failureClass ?? 'internal',
-      reasonCode: failedStage.reasonCode,
-      action: null,
-    };
-  }
-  return selectSiteForgePrimaryReason(
-    Object.values(stageRecords ?? {}).flatMap((stage) => [
-      ...(stage.errors ?? []).map((message) => ({ message })),
-      ...(stage.warnings ?? []).map((message) => ({ message })),
-    ]),
-    'validation-failed',
-  );
-}
-
-function collectionOutcomeReason(value, stageName = '') {
-  const reason = String(value ?? '');
-  const stage = String(stageName ?? '');
-  if (reason === 'capability-specific-evidence-required') {
-    return 'Capability was discovered, but capability-specific evidence is still required before activation.';
-  }
-  if (reason === 'authorized-route-seed-only') {
-    return 'Only an authorized route seed was captured; SiteForge still needs capability-specific content evidence.';
-  }
-  if (reason === 'not-selected-by-setup') {
-    return 'Capability is known for this site policy but was not selected in this setup run.';
-  }
-  if (reason === 'stage-skipped') {
-    return 'Collection stage was skipped in this deterministic build path.';
-  }
-  if (reason === 'stage-failed') {
-    return 'Collection stage failed before producing verified output.';
-  }
-  if (reason === 'stage-blocked') {
-    return 'Collection stage was blocked before producing verified output.';
-  }
-  if (reason === 'dynamic-unsupported' && stage === 'crawlRendered') {
-    return 'Public rendered structural evidence was needed but was not collected; install or point SiteForge at a Chromium browser with --browser-path, or provide a sanitized publicRenderedStructureProvider in tests.';
-  }
-  if (reason === 'dynamic-unsupported' && stage === 'captureNetworkTraces') {
-    return 'Network summary was not requested; raw network tracing is not part of the public build path.';
-  }
-  if (reason === 'build-failed') {
-    return 'Build failed before producing verified output.';
-  }
-  return reason || 'Not enough verified evidence to promote this item.';
-}
-
-function collectionOutcomeKindForStage(stageName) {
-  return COLLECTION_OUTCOME_STAGE_KINDS[stageName] ?? 'stage';
-}
-
-function collectionOutcomeReasonCodeForStage(record) {
-  if (record.reasonCode) {
-    return record.reasonCode;
-  }
-  if (record.status === 'failed') {
-    return 'stage-failed';
-  }
-  if (record.status === 'blocked') {
-    return 'stage-blocked';
-  }
-  return 'stage-skipped';
-}
-
-function collectionOutcomePriority(outcome) {
-  if (outcome.kind === 'build') {
-    return 0;
-  }
-  if (outcome.kind === 'stage') {
-    return 1;
-  }
-  if (outcome.kind === 'node') {
-    return 2;
-  }
-  if (outcome.kind === 'affordance') {
-    return 3;
-  }
-  if (outcome.kind === 'capability' && outcome.status === 'candidate') {
-    return 4;
-  }
-  if (outcome.kind === 'capability') {
-    return 5;
-  }
-  return 6;
-}
-
-function compareCollectionOutcomes(left, right) {
-  const priorityDelta = collectionOutcomePriority(left) - collectionOutcomePriority(right);
-  if (priorityDelta !== 0) {
-    return priorityDelta;
-  }
-  return String(left.target ?? '').localeCompare(String(right.target ?? ''), 'en');
-}
-
-function collectUnsuccessfulCollections(stageResults, stageRecords, status = 'success', error = null) {
-  const outcomes = /** @type {any[]} */ ([]);
-  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
-  for (const capability of capabilities) {
-    if (capability.status === 'active') {
-      continue;
-    }
-    if (isDebugOnlyCapability(capability)) {
-      continue;
-    }
-    const reasonCode = capability.activationBlockedReason ?? `capability-${capability.status ?? 'inactive'}`;
-    outcomes.push({
-      kind: 'capability',
-      target: capability.name,
-      status: capability.status ?? 'unknown',
-      reasonCode,
-      reason: collectionOutcomeReason(reasonCode),
-      selectedBySetup: capability.selectedBySetup === true,
-      browserSeedBacked: capability.browserSeedBacked === true,
-      safetyLevel: capability.safetyLevel ?? null,
-    });
-  }
-  for (const [stageName, record] of Object.entries(stageRecords ?? {})) {
-    if (!record || !COLLECTION_OUTCOME_STAGE_STATUSES.includes(record.status)) {
-      continue;
-    }
-    const reasonCode = collectionOutcomeReasonCodeForStage(record);
-    outcomes.push({
-      kind: collectionOutcomeKindForStage(stageName),
-      target: stageName,
-      status: record.status,
-      reasonCode,
-      reason: collectionOutcomeReason(reasonCode, stageName),
-    });
-  }
-  if (status !== 'success' && error) {
-    const reasonCode = error.reasonCode ?? error.code ?? 'build-failed';
-    outcomes.push({
-      kind: 'build',
-      target: error.stage ?? 'build',
-      status,
-      reasonCode,
-      reason: collectionOutcomeReason(reasonCode),
-    });
-  }
-  const uniqueOutcomes = arrayUniqueBy(
-    outcomes,
-    (item) => `${item.kind}:${item.target}:${item.status}:${item.reasonCode}`,
-  ).sort(compareCollectionOutcomes);
-  const unsuccessful = uniqueOutcomes.slice(0, COLLECTION_OUTCOME_LIMIT);
-  return {
-    unsuccessful,
-    total: uniqueOutcomes.length,
-    truncated: uniqueOutcomes.length > COLLECTION_OUTCOME_LIMIT,
-    limit: COLLECTION_OUTCOME_LIMIT,
-  };
-}
-
-function normalizeReportMode(value, fallback = 'user') {
-  const mode = String(value ?? fallback).trim().toLowerCase();
-  return REPORT_MODES.has(mode) ? mode : fallback;
-}
-
-const DEBUG_ONLY_STATUS_VALUES = new Set(['debug_only', 'candidate_debug_only']);
-
 function normalizeStatusToken(value) {
   return String(value ?? '').trim().toLowerCase();
-}
-
-function isDebugOnlyCapability(capability = /** @type {any} */ ({})) {
-  if (capability.debug_only === true || capability.debugOnly === true || capability.candidate_debug_only === true) {
-    return true;
-  }
-  if (
-    capability.autoGenerated === true
-    && capability.informational === true
-    && normalizeStatusToken(capability.enabled_status) === 'disabled'
-    && ['read_public_low', 'read_personal_medium'].includes(normalizeStatusToken(capability.risk_level ?? capability.riskPolicy?.riskLevel))
-  ) {
-    return true;
-  }
-  const statusFields = [
-    capability.enabled_status,
-    capability.enabledStatus,
-    capability.default_policy,
-    capability.defaultPolicy,
-    capability.strategy,
-    capability.user_strategy,
-    capability.reason_code,
-    capability.reasonCode,
-    capability.activationBlockedReason,
-    capability.evidence_status,
-    capability.evidenceStatus,
-  ].map(normalizeStatusToken);
-  if (statusFields.some((value) => DEBUG_ONLY_STATUS_VALUES.has(value))) {
-    return true;
-  }
-  return normalizeStatusToken(capability.status) === 'candidate';
-}
-
-function capabilitySortText(capability = /** @type {any} */ ({})) {
-  return [
-    capability.category,
-    capability.name,
-    capability.user_facing_name,
-    capability.userFacingName,
-    capability.userValue,
-    capability.description,
-    capability.action,
-    capability.object,
-    capability.setupCapabilityId,
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function capabilityUserSortRank(capability = /** @type {any} */ ({})) {
-  const text = capabilitySortText(capability);
-  const riskLevel = normalizeStatusToken(capability.risk_level ?? capability.riskPolicy?.riskLevel);
-  const defaultPolicy = normalizeStatusToken(capability.default_policy);
-  const enabledStatus = normalizeStatusToken(capability.enabled_status);
-  const status = normalizeStatusToken(capability.status);
-  if (
-    ['write_high', 'account_security_critical'].includes(riskLevel)
-    || (enabledStatus === 'disabled' && /account|security|settings|delete|follow|like|repost|upload|payment|checkout|publish|send/u.test(text))
-  ) {
-    return 80;
-  }
-  if (riskLevel === 'write_low' || defaultPolicy === 'draft_only' || /draft|compose|reply draft|quote-post draft|post draft/u.test(text)) {
-    return 60;
-  }
-  if (/notification|bookmark|\blists?\b|direct message|\bdm\b|following|followers|personal|account profile|timeline/u.test(text)) {
-    return 50;
-  }
-  if (/post detail|post thread|reply tree|replies|quote|media|article detail|product detail|detail/u.test(text)) {
-    return 40;
-  }
-  if (/profile|author|creator|homepage content/u.test(text)) {
-    return 30;
-  }
-  if (/search|query|filter/u.test(text)) {
-    return 20;
-  }
-  if (/homepage|home page|view|browse|timeline|feed|article|product|news|content/u.test(text)) {
-    return 10;
-  }
-  if (status === 'disabled' || enabledStatus === 'disabled') {
-    return 70;
-  }
-  if (/nav|navigate|route|menu|tab|modal|external|explore|open/u.test(text)) {
-    return 65;
-  }
-  return 55;
-}
-
-function sortCapabilitiesForUser(capabilities = /** @type {any[]} */ ([])) {
-  return [...(Array.isArray(capabilities) ? capabilities : [])]
-    .sort((left, right) => (
-      capabilityUserSortRank(left) - capabilityUserSortRank(right)
-      || String(left.user_facing_name ?? left.userFacingName ?? left.userValue ?? left.name ?? left.id ?? '')
-        .localeCompare(String(right.user_facing_name ?? right.userFacingName ?? right.userValue ?? right.name ?? right.id ?? ''), 'zh-Hans')
-      || String(left.id ?? '').localeCompare(String(right.id ?? ''), 'en')
-    ));
-}
-
-const REPORT_ABSOLUTE_PATH_PATTERN = /(?:[A-Za-z]:\\Users\\|\/Users\/|\/home\/)[^\s"',;)]*/giu;
-const REPORT_EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu;
-const REPORT_PHONE_PATTERN = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b|\b1[3-9]\d{9}\b/gu;
-const REPORT_HANDLE_PATTERN = /(^|[^\w/])@[A-Za-z0-9_]{2,15}\b/gu;
-const REPORT_BEARER_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gu;
-const REPORT_SECRET_ASSIGNMENT_PATTERN = /\b(?:access_token|refresh_token|token|auth|api[_-]?key|secret|password|session(?:[_-]?id)?|sid)\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^&\s;'",]+/giu;
-const REPORT_COOKIE_PATTERN = /\bcookie\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^;\s&'",]+/giu;
-const REPORT_AUTH_HEADER_PATTERN = /\bauthorization\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^\r\n]+/giu;
-const REPORT_RAW_MARKUP_PATTERN = /<html[\s>]|<\/html>|<!doctype\s+html|raw[-_\s]*(?:dom|html|body)/iu;
-
-function sanitizeReportString(value) {
-  let text = String(value ?? '');
-  if (REPORT_RAW_MARKUP_PATTERN.test(text)) {
-    text = text.replace(REPORT_RAW_MARKUP_PATTERN, '[REDACTED_HTML]');
-  }
-  return text
-    .replace(REPORT_ABSOLUTE_PATH_PATTERN, '[REDACTED_PATH]')
-    .replace(REPORT_EMAIL_PATTERN, '[REDACTED_EMAIL]')
-    .replace(REPORT_PHONE_PATTERN, '[REDACTED_PHONE]')
-    .replace(REPORT_BEARER_PATTERN, '[REDACTED_AUTH]')
-    .replace(REPORT_SECRET_ASSIGNMENT_PATTERN, '[REDACTED_SECRET]')
-    .replace(REPORT_COOKIE_PATTERN, 'cookie=[REDACTED]')
-    .replace(REPORT_AUTH_HEADER_PATTERN, 'authorization=[REDACTED]')
-    .replace(REPORT_HANDLE_PATTERN, '$1[REDACTED_HANDLE]');
-}
-
-function sanitizeReportPublicValue(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeReportPublicValue(item));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeReportPublicValue(item)]));
-  }
-  return typeof value === 'string' ? sanitizeReportString(value) : value;
-}
-
-function relativeReportPath(cwd, value) {
-  if (!value) {
-    return null;
-  }
-  const relative = path.relative(cwd, value);
-  return relative && !relative.startsWith('..') && !path.isAbsolute(relative)
-    ? relative.replace(/\\/gu, '/')
-    : String(value).replace(/\\/gu, '/');
-}
-
-function userReportGroupForCapability(capability = /** @type {any} */ ({})) {
-  const status = normalizeCapabilityEnablementStatus(capability);
-  if (status === 'enabled') return 'enabled';
-  if (status === 'limited_enabled') return 'limited_enabled';
-  if (status === 'confirmation_required' || status === 'draft_only') return 'confirmation_required';
-  return 'disabled';
-}
-
-function userCapabilityReason(capability = /** @type {any} */ ({})) {
-  if (capability.user_reason) {
-    return capability.user_reason;
-  }
-  const text = `${capability.name ?? ''} ${capability.object ?? ''}`.toLowerCase();
-  if (isDebugOnlyCapability(capability)) {
-    return 'Candidate capability only; evidence is incomplete, so it is not enabled by default.';
-  }
-  if (capability.risk_level === 'account_security_critical') {
-    return 'Account security or payment settings are involved, so the capability is disabled by default.';
-  }
-  if (capability.risk_level === 'write_high') {
-    if (/direct message|dm/u.test(text)) {
-      return 'Direct messages, recipients, or sending actions are involved, so the capability is disabled by default.';
-    }
-    return 'Publishing, interaction, deletion, upload, or follow-style write actions are involved, so the capability is disabled by default.';
-  }
-  if (capability.risk_level === 'read_private_high') {
-    return 'Private body text or personal conversations may be involved, so the capability is disabled by default.';
-  }
-  if (capability.risk_level === 'read_personal_medium') {
-    return 'Personalized or login-only information requires limited summaries or explicit confirmation.';
-  }
-  if (capability.risk_level === 'write_low') {
-    return 'Only draft preview is allowed; SiteForge will not submit the action.';
-  }
-  return 'Only sanitized structural summaries are retained; body text and account-private material are not saved.';
-}
-
-function userCapabilityStrategy(capability = /** @type {any} */ ({})) {
-  if (capability.user_strategy) {
-    return capability.user_strategy;
-  }
-  const status = normalizeCapabilityEnablementStatus(capability);
-  if (status === 'limited_enabled') {
-    return 'Return only limited sanitized summaries.';
-  }
-  if (status === 'confirmation_required') {
-    return 'Require user confirmation before execution.';
-  }
-  if (status === 'draft_only' || capability.default_policy === 'draft_only') {
-    return 'Generate drafts only; do not submit, upload, or select sensitive recipients.';
-  }
-  if (status === 'disabled' || capability.default_policy === 'disabled' || capability.status !== 'active') {
-    return 'Disabled by default and never auto-executed.';
-  }
-  return 'Read-only by default with sanitized output.';
-}
-
-function safeExecutionPlanRoute(value) {
-  if (!value) return null;
-  const text = String(value ?? '').trim();
-  if (!text) return null;
-  if (/^https?:\/\//iu.test(text)) {
-    try {
-      return new URL(text).pathname || '/';
-    } catch {
-      return null;
-    }
-  }
-  if (/^[/?#]/u.test(text)) {
-    return text.split(/[?#]/u)[0] || '/';
-  }
-  return /^[A-Za-z0-9_./:@-]{1,160}$/u.test(text) ? text : null;
-}
-
-function executionPlanCard(plan = null) {
-  if (!plan || typeof plan !== 'object') return {};
-  const steps = Array.isArray(plan.steps) ? plan.steps : [];
-  const firstRoute = steps
-    .map((step) => safeExecutionPlanRoute(step?.routeTemplate ?? step?.route ?? step?.routePath ?? step?.url ?? step?.href ?? step?.endpoint))
-    .find(Boolean);
-  const stepKinds = uniqueSortedStrings(steps
-    .map((step) => String(step?.kind ?? step?.type ?? '').replace(/[^a-z0-9_.:-]+/giu, '_'))
-    .filter(Boolean));
-  return {
-    execution_plan_id: plan.id ?? null,
-    execution_plan_mode: plan.mode ?? null,
-    execution_plan_dry_run_only: plan.dryRunOnly === true,
-    execution_plan_requires_confirmation: plan.requiresConfirmation === true,
-    execution_plan_auto_execute: plan.autoExecute === true,
-    execution_plan_requires_user_approval: plan.requiresUserAuthorization === true
-      || plan.requiresUserApproval === true
-      || steps.some((step) => (
-        step?.requiresUserAuthorization === true
-        || step?.requiresUserApproval === true
-        || step?.reusesExistingLoginState === true
-      )),
-    execution_plan_step_kinds: stepKinds,
-    execution_plan_step_count: steps.length,
-    route_template: safeExecutionPlanRoute(plan.routeTemplate ?? plan.route) ?? firstRoute,
-  };
-}
-
-function buildCapabilityCard(capability = /** @type {any} */ ({})) {
-  const enabledStatus = normalizeCapabilityEnablementStatus(capability);
-  const evidenceStatus = normalizeCapabilityEvidenceStatus(capability, enabledStatus);
-  const safeRemediation = capability.safe_remediation
-    ?? capability.safeRemediation
-    ?? publicSafeRemediation(buildCapabilitySafeRemediationPath(capability));
-  return {
-    id: capability.id ?? null,
-    name: capability.name ?? null,
-    user_facing_name: capability.user_facing_name ?? capability.userValue ?? capability.name ?? null,
-    risk_level: capability.risk_level ?? capability.riskPolicy?.riskLevel ?? null,
-    enabled_status: enabledStatus,
-    report_group: userReportGroupForCapability(capability),
-    default_policy: capability.default_policy ?? null,
-    evidence_status: evidenceStatus,
-    action: capability.action ?? null,
-    status: capability.status ?? null,
-    safety_level: capability.safetyLevel ?? capability.safety ?? null,
-    selected_by_setup: capability.selectedBySetup === true,
-    setup_capability_id: capability.setupCapabilityId ?? null,
-    requires_capability_evidence: capability.requiresCapabilityEvidence === true,
-    capability_verified: capability.capabilityVerified === true,
-    browser_seed_backed: capability.browserSeedBacked === true,
-    proof_summary: capability.proofSummary ?? null,
-    safe_remediation_path: safeRemediation?.path ?? null,
-    safe_remediation: safeRemediation ?? null,
-    ...executionPlanCard(capability.executionPlan),
-    reason: userCapabilityReason(capability),
-    strategy: userCapabilityStrategy(capability),
-  };
-}
-
-function buildCapabilityStateModel(capabilities = /** @type {any[]} */ ([])) {
-  const groups = {
-    enabled: [],
-    limited_enabled: [],
-    confirmation_required: [],
-    disabled: [],
-  };
-  for (const capability of Array.isArray(capabilities) ? capabilities : []) {
-    const card = buildCapabilityCard(capability);
-    groups[card.report_group].push(card);
-  }
-  return {
-    groups,
-    enablement_status_counts: capabilityEnablementStatusCounts(capabilities),
-    evidence_status_summary: capabilityEvidenceStatusSummary(capabilities),
-  };
-}
-
-function isHighRiskOrAccountDisabled(card = /** @type {any} */ ({})) {
-  return card.report_group === 'disabled'
-    && (
-      ['write_high', 'account_security_critical'].includes(card.risk_level)
-      || ['submit', 'upload', 'book', 'purchase', 'login', 'register', 'manage', 'contact'].includes(card.action)
-    );
-}
-
-function partialSuccessReasonFromWarning(warning) {
-  const text = String(warning ?? '').trim();
-  if (!text || /debug/iu.test(text)) {
-    return null;
-  }
-  const reasonCode = (classifySiteForgeWarning(text) ?? normalizeSiteForgeReason(text))?.reasonCode ?? text;
-  if (reasonCode === 'robots-unavailable') {
-    return 'robots.txt could not be fetched, so the live build stopped safely.';
-  }
-  if (reasonCode === 'robots-disallowed') {
-    return 'robots.txt blocked the candidate crawl scope.';
-  }
-  if (reasonCode === 'network-fetch-failed') {
-    return 'Network fetch failed; raw error details were not saved.';
-  }
-  if (reasonCode === 'dynamic-unsupported') {
-    return 'The route appears to require dynamic collection, which was not enabled for this build.';
-  }
-  if (reasonCode === 'validation-failed') {
-    return 'Verification did not pass; see verification_report.json for gate details.';
-  }
-  if (reasonCode === 'report-only-verification-blocked' || /report-only|report_only_blocked/iu.test(text)) {
-    return 'Generated capabilities and intents are available as a report-only partial result; promotion was blocked by external access policy.';
-  }
-  if (/maxSeeds=/u.test(text)) {
-    return 'Seed discovery reached its configured limit; remaining entry points were not collected.';
-  }
-  if (/maxSitemaps=/u.test(text)) {
-    return 'Sitemap discovery reached its configured limit; remaining sitemaps were not collected.';
-  }
-  if (/maxPages=/u.test(text)) {
-    return 'Static crawl reached its configured page limit; remaining pages were not collected.';
-  }
-  if (reasonCode === 'browser-auth-route-coverage-partial' || /browser-auth-route-coverage-partial/iu.test(text)) {
-    return 'Default-browser bridge captured only reachable configured routes; missing routes are reported as authenticated coverage gaps.';
-  }
-  if (/user-authorized browser evidence|sanitized user-authorized browser evidence/iu.test(text)) {
-    return 'Only limited sanitized user-authorized browser evidence summaries were used.';
-  }
-  return null;
-}
-
-function safePublicReasonCode(value) {
-  const text = String(value ?? '').trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9._-]{0,120}$/u.test(text) ? text : null;
-}
-
-function buildPartialSuccessReasons({
-  context,
-  report,
-  setupCollectionReview,
-  capabilityState,
-} = /** @type {any} */ ({})) {
-  const groups = capabilityState?.groups ?? {};
-  const evidenceSummary = capabilityState?.evidence_status_summary ?? {};
-  const reasons = /** @type {any[]} */ ([]);
-  const verificationPassed = report?.summary?.verificationStatus === 'passed'
-    || report?.verificationStatus === 'passed'
-    || report?.verificationReport?.status === 'passed';
-  if (report?.summary?.verificationStatus === 'report_only_blocked'
-    || report?.verificationStatus === 'report_only_blocked'
-    || report?.verificationReport?.status === 'report_only_blocked') {
-    reasons.push('Generated capabilities and intents are available as a report-only partial result; promotion was blocked by external access policy.');
-  }
-  if (report?.summary?.verificationStatus === 'bridge_runtime_passed'
-    || report?.verificationStatus === 'bridge_runtime_passed'
-    || report?.verificationReport?.status === 'bridge_runtime_passed') {
-    reasons.push('Registered as a runtime-routed Skill: captured authenticated capabilities require fresh default-browser bridge evidence; eligible public read-only capabilities can use generic HTTP read.');
-  }
-  const reportReasonCode = safePublicReasonCode(report?.reasonCode);
-  if (reportReasonCode && !(verificationPassed && reportReasonCode === 'validation-failed')) {
-    const publicReason = partialSuccessReasonFromWarning(reportReasonCode);
-    if (publicReason) {
-      reasons.push(publicReason);
-    }
-  }
-  if ((groups.confirmation_required ?? []).length > 0) {
-    reasons.push(`${groups.confirmation_required.length} capabilities require user confirmation or draft-only handling.`);
-  }
-  const highRiskDisabled = (groups.disabled ?? []).filter(isHighRiskOrAccountDisabled).length;
-  if (highRiskDisabled > 0) {
-    reasons.push(`${highRiskDisabled} high-risk write, private, or account capabilities are disabled by default.`);
-  }
-  if (context?.options?.deep !== true) {
-    reasons.push('Deep browser exploration was not enabled for this build.');
-  }
-  if (context?.policy?.captureNetwork !== true) {
-    reasons.push('Sanitized network summary discovery was not enabled for this build.');
-  }
-  const privacyMode = String(context?.options?.privacyMode ?? context?.options?.privacy ?? '').toLowerCase();
-  if (privacyMode === 'strict') {
-    reasons.push('Strict privacy mode skips sensitive personal capabilities.');
-  }
-  if (Number(evidenceSummary.inferred ?? 0) > 0) {
-    reasons.push(`${Number(evidenceSummary.inferred ?? 0)} capabilities still rely on inferred evidence.`);
-  }
-  if ((groups.limited_enabled ?? []).length > 0) {
-    reasons.push(`${groups.limited_enabled.length} sensitive read-only capabilities are limited to sanitized structural summaries.`);
-  }
-  const missingSetupEvidence = Number(setupCollectionReview?.missingRecordCount ?? 0) > 0
-    || Number(setupCollectionReview?.summary?.capabilities?.missing ?? 0) > 0
-    || Number(setupCollectionReview?.summary?.intents?.missing ?? 0) > 0;
-  if (missingSetupEvidence) {
-    reasons.push('Some capabilities still lack confirmation or capability-level evidence.');
-  }
-  const warningReasons = uniqueSortedStrings((report?.warnings ?? [])
-    .map((warning) => {
-      const reasonCode = safePublicReasonCode(warning);
-      if (verificationPassed && reasonCode === 'validation-failed') {
-        return null;
-      }
-      return partialSuccessReasonFromWarning(warning);
-    })
-    .filter(Boolean));
-  if (warningReasons.length) {
-    reasons.push(...warningReasons);
-  } else if ((report?.warnings ?? []).some((warning) => String(warning).trim() && !/debug/iu.test(String(warning)))) {
-    reasons.push('The build has sanitized collection or verification warnings.');
-  }
-  return uniqueSortedStrings(reasons);
-}
-
-function resultStatusFromBuild({
-  legacyStatus,
-  context,
-  report,
-  setupCollectionReview,
-  capabilityState,
-}) {
-  if (legacyStatus !== 'success') {
-    return 'failed';
-  }
-  return buildPartialSuccessReasons({
-    context,
-    report,
-    setupCollectionReview,
-    capabilityState,
-  }).length ? 'partial_success' : 'success';
-}
-
-function browserBridgeCoverageGaps(authStateReport = /** @type {any} */ ({})) {
-  const bridge = authStateReport?.browserBridge ?? {};
-  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
-  return routeResults
-    .filter((result) => !browserBridgeRouteCaptured(result))
-    .map((result) => ({
-      id: result?.routeId ?? null,
-      name: result?.targetRoute ?? result?.routeId ?? 'browser-auth-route',
-      authRequired: true,
-      routeTemplate: result?.targetRoute ?? null,
-      sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
-      status: result?.status ?? 'timeout',
-      reason: result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured',
-      missingEvidence: ['browser_structure_summary'],
-    }));
-}
-
-function summarizeNodes(stageResults = /** @type {any} */ ({})) {
-  const nodes = stageResults.classifyNodes?.graph?.nodes
-    ?? stageResults.buildSiteGraph?.graph?.nodes
-    ?? [];
-  const byType = /** @type {any} */ ({});
-  const byClassification = /** @type {any} */ ({});
-  const bySourceLayer = /** @type {any} */ ({});
-  let authRequired = 0;
-  for (const node of nodes) {
-    const type = node.type ?? 'unknown';
-    const classification = node.classification ?? 'unclassified';
-    const sourceLayer = nodeSourceLayer(node);
-    byType[type] = (byType[type] ?? 0) + 1;
-    byClassification[classification] = (byClassification[classification] ?? 0) + 1;
-    bySourceLayer[sourceLayer] = (bySourceLayer[sourceLayer] ?? 0) + 1;
-    if (node.authRequired === true) {
-      authRequired += 1;
-    }
-  }
-  return {
-    total: nodes.length,
-    nodes_total: nodes.length,
-    page_nodes: byType.page ?? 0,
-    content_nodes: byType.content ?? 0,
-    operation_nodes: byType.operation ?? byType.component ?? byType.action ?? 0,
-    modal_nodes: byType.modal ?? 0,
-    route_templates: (byType.route_template ?? 0) + (byType.route ?? 0),
-    actionable_elements: stageResults.extractAffordances?.affordances?.length
-      ?? stageResults.discoverInteractions?.interactions?.length
-      ?? 0,
-    by_type: byType,
-    by_classification: byClassification,
-    by_source_layer: bySourceLayer,
-    auth_required: authRequired,
-  };
-}
-
-function summarizePrivacy(context, report) {
-  const privacyMode = context.options?.privacyMode ?? context.options?.privacy ?? 'limited';
-  const networkRequested = context.policy?.captureNetwork === true || context.options?.network === true;
-  const rawNetworkTracesPersisted = report.summary?.network?.sanitizedSummary?.rawTracesPersisted === true
-    || report.summary?.network?.rawTracesPersisted === true;
-  const rawPageMaterialPages = Number(report.summary?.rawPageMaterial?.pages ?? 0);
-  return {
-    mode: privacyMode,
-    credential_material_persisted: false,
-    runtime_sensitive_material_persisted: false,
-    browser_state_material_persisted: false,
-    public_page_material_persisted: rawPageMaterialPages > 0,
-    public_page_material_pages: rawPageMaterialPages,
-    public_page_material_redacted: rawPageMaterialPages > 0,
-    private_page_material_persisted: false,
-    raw_network_traces_persisted: rawNetworkTracesPersisted,
-    sanitized_reports: true,
-    network_capture_requested: networkRequested,
-    network_summary_only: networkRequested && !rawNetworkTracesPersisted,
-    redaction_required: true,
-    warning_codes: report.warningCodes ?? [],
-  };
-}
-
-function buildUserFacingWarnings(report, resultStatus, context = null, partialSuccessReasons = /** @type {any[]} */ ([])) {
-  const warnings = uniqueSortedStrings((report.warnings ?? []).map((warning) => displayBuildWarning(warning)));
-  if (resultStatus === 'partial_success') {
-    warnings.push(...partialSuccessReasons);
-  }
-  if (
-    context?.setupProfile?.userAuthorizedEvidence?.autoDiscovery?.status === 'modeled'
-    && (
-      context.setupProfile.userAuthorizedEvidence.autoDiscovery.dynamicEnabled !== true
-      || context.setupProfile.userAuthorizedEvidence.autoDiscovery.networkEnabled !== true
-    )
-  ) {
-    warnings.push('Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.');
-  }
-  if (context?.options?.internalRawNetwork === true) {
-    warnings.push('Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.');
-  }
-  if (resultStatus === 'failed' && report.reason) {
-    warnings.push(report.reason);
-  }
-  return uniqueSortedStrings(warnings);
-}
-
-function buildNextSteps({ resultStatus, context, report, confirmationRequired, disabledCapabilities, confirmationPaths }) {
-  const steps = /** @type {any[]} */ ([]);
-  if (resultStatus === 'success') {
-    steps.push('Use the generated skill for the enabled read-only capabilities.');
-  } else if (resultStatus === 'partial_success') {
-    if (report.summary?.verificationStatus === 'bridge_runtime_passed') {
-      steps.push('Use the registered runtime-routed Skill: public read-only capabilities can use generic HTTP read, while captured authenticated capabilities require the SiteForge Browser Bridge extension.');
-    } else if (report.summary?.verificationStatus === 'report_only_blocked') {
-      steps.push('Review the report-only capabilities and intents; promotion was blocked by external access policy and runtime registry/current outputs were not updated.');
-    } else {
-      steps.push('Use the enabled low-risk read-only capabilities now.');
-    }
-    if (confirmationRequired.length) {
-      if (confirmationPaths?.view_confirmation_required_command) {
-        steps.push(`Review confirmation-required capabilities: ${confirmationPaths.view_confirmation_required_command}.`);
-      }
-      if (confirmationPaths?.sensitive_read?.command) {
-        steps.push(`Confirm limited sensitive-read structure scanning: ${confirmationPaths.sensitive_read.command}.`);
-      }
-      if (confirmationPaths?.draft_write?.command) {
-        steps.push(`Confirm draft-only preparation: ${confirmationPaths.draft_write.command}.`);
-      }
-    }
-    if (context.options?.deep !== true) {
-      steps.push('Run with --deep when you need broader static and sanitized structure discovery; this does not enable browser-rendered crawling.');
-    }
-    if (context.policy?.captureNetwork !== true) {
-      steps.push('Enable rendered discovery when API/network capture evidence is needed; raw network capture is enabled by default for the public build command.');
-    }
-    if (
-      context.setupProfile?.userAuthorizedEvidence?.autoDiscovery?.status === 'modeled'
-      && (
-        context.setupProfile.userAuthorizedEvidence.autoDiscovery.dynamicEnabled !== true
-        || context.setupProfile.userAuthorizedEvidence.autoDiscovery.networkEnabled !== true
-      )
-    ) {
-      steps.push('Internal operator deep mode: node src/entrypoints/build/run-build.mjs <url> --auto --deep --network.');
-    }
-    if (disabledCapabilities.length) {
-      steps.push('For disabled capabilities, write a safe remediation plan: immediate entries use limited summaries or draft previews; adapter entries need explicit site adapter validation before use.');
-      if (confirmationPaths?.disabled?.review_command) {
-        steps.push(`Review disabled capabilities: ${confirmationPaths.disabled.review_command}.`);
-      }
-    }
-  } else {
-    const dynamicBlocked = report.reasonCode === 'dynamic-unsupported'
-      || Object.values(report.stages ?? {}).some((stage) => (stage.reasonCodes ?? []).includes('dynamic-unsupported'));
-    if (dynamicBlocked) {
-      steps.push('For public dynamic pages, SiteForge now attempts a sanitized public rendered structure summary automatically; if the browser cannot launch, rerun with --browser-path pointing to Chrome or Chromium.');
-      steps.push('If the rendered route is a challenge, CAPTCHA, login wall, or access-control page, SiteForge will keep it blocked and will not bypass it.');
-    } else {
-      steps.push(report.reasonAction ?? report.reason ?? 'Fix the reported blocker and rerun the build.');
-    }
-  }
-  return uniqueSortedStrings(steps);
-}
-
-function buildNextStepWorkflows({ resultStatus, report }) {
-  const workflows = /** @type {any[]} */ ([]);
-  const routeCapturePlanPath = report.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? ROUTE_CAPTURE_PLAN_FILE : null;
-  if (report.summary?.verificationStatus === 'bridge_runtime_passed') {
-    workflows.push({
-      id: 'browser-bridge-runtime',
-      status: 'registered',
-      purpose: 'Invoke captured read-only capabilities through the default-browser Bridge with fresh sanitized structure evidence.',
-      promotionAllowed: true,
-      updatesCurrent: true,
-      updatesRegistry: true,
-      runtimeMode: BRIDGE_RUNTIME_MODE,
-      requiresFreshBridgeEvidence: true,
-      genericHttpRuntimeAllowed: false,
-    });
-    workflows.push({
-      id: 'generic-http-read-runtime',
-      status: 'registered-when-eligible',
-      purpose: 'Invoke eligible public read-only capabilities through same-site GET or route navigation without cookies or form submission.',
-      promotionAllowed: true,
-      updatesCurrent: true,
-      updatesRegistry: true,
-      runtimeMode: HTTP_RUNTIME_MODE,
-      requiresFreshBridgeEvidence: false,
-      genericHttpRuntimeAllowed: true,
-    });
-  }
-  if (routeCapturePlanPath && Number(report.summary?.routeCapturePlan?.missingRouteCount ?? 0) > 0) {
-    workflows.push({
-      id: 'browser-bridge-route-retry',
-      status: 'available-for-missing-routes',
-      report: routeCapturePlanPath,
-      purpose: 'Retry only the browser-bridge routes that were not captured; successful retries can update coverage without fabricating blocked routes.',
-      promotionAllowed: false,
-      updatesCurrent: false,
-      updatesRegistry: false,
-      runtimeMode: BRIDGE_RUNTIME_MODE,
-      requiresFreshBridgeEvidence: true,
-    });
-  }
-  const accessPlanPath = report.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ? ACCESS_REMEDIATION_PLAN_FILE : null;
-  if (accessPlanPath) {
-    workflows.push(
-      {
-        id: 'access-remediation-plan',
-        status: 'available',
-        report: accessPlanPath,
-        purpose: 'Use compliant alternatives after robots, challenge, or access-boundary blocks generic live crawling.',
-        promotionAllowed: false,
-        updatesCurrent: false,
-        updatesRegistry: false,
-      },
-      {
-        id: 'official-api-or-feed',
-        status: 'requires-user-input',
-        allowedEvidence: ['response_shape', 'schema_hash', 'rate_limit_policy', 'permission_scope'],
-        promotionAllowed: false,
-      },
-      {
-        id: 'manual-summary',
-        status: 'requires-sanitized-structure-source',
-        allowedEvidence: ['route_template', 'page_type', 'visible_item_count', 'control_type', 'structure_hash'],
-        promotionAllowed: false,
-      },
-      {
-        id: 'local-http-validation',
-        status: 'available-for-tests-only',
-        promotionAllowed: false,
-        liveSupportClaimAllowed: false,
-      },
-    );
-  }
-  if (!workflows.length && resultStatus === 'failed') {
-    workflows.push({
-      id: 'rerun-after-blocker-fixed',
-      status: 'available-after-input-change',
-      promotionAllowed: false,
-      updatesCurrent: false,
-      updatesRegistry: false,
-    });
-  }
-  return workflows;
-}
-
-function buildCoverageReport(context, stageResults = /** @type {any} */ ({}), capabilities = /** @type {any[]} */ ([])) {
-  const nodes = stageResults.classifyNodes?.graph?.nodes
-    ?? stageResults.buildSiteGraph?.graph?.nodes
-    ?? [];
-  const publicStaticNodes = nodes.filter((node) => nodeSourceLayer(node) === 'public');
-  const publicRenderedNodes = nodes.filter((node) => nodeSourceLayer(node) === 'public_rendered');
-  const authorizedSourceNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authorized_source');
-  const publicNodes = [...publicStaticNodes, ...publicRenderedNodes];
-  const authNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authenticated');
-  const overlayNodes = nodes.filter((node) => nodeSourceLayer(node) === 'authenticated_overlay');
-  const publicCapabilities = capabilities.filter((capability) => capability.authRequired !== true);
-  const publicCrawlCapabilities = publicCapabilities.filter((capability) => capability.sourceLayer !== 'authorized_source');
-  const authCapabilities = capabilities.filter((capability) => capability.authRequired === true);
-  const requiresLoginButMissing = authCapabilities
-    .filter((capability) => capability.status !== 'active' && capability.activationBlockedReason === 'missing_auth_evidence')
-    .map((capability) => ({
-      id: capability.id,
-      name: capability.name,
-      missingEvidence: capability.evidenceMatrix?.missingEvidence ?? [],
-    }));
-  const blockedByRisk = capabilities
-    .filter((capability) => capability.status === 'disabled' || ['disabled', 'draft_only', 'confirmation_required'].includes(normalizeStatusToken(capability.enabled_status)))
-    .filter((capability) => isHighRiskCapability(capability) || ['write_low', 'write_high', 'account_security_critical'].includes(capability.risk_level))
-    .map((capability) => ({
-      id: capability.id,
-      name: capability.name,
-      riskLevel: capability.risk_level ?? null,
-      enabledStatus: capability.enabled_status ?? null,
-      reason: capability.activationBlockedReason ?? capability.disabledReason ?? null,
-    }));
-  const blockedByAuth = [
-    ...browserBridgeCoverageGaps(context.authStateReport),
-    ...authCapabilities
-    .filter((capability) => capability.status !== 'active')
-    .filter((capability) => !(
-      isHighRiskCapability(capability)
-      || ['write_low', 'write_high', 'account_security_critical'].includes(capability.risk_level)
-      || ['forced-action-disabled', 'risk-policy-disabled'].includes(capability.activationBlockedReason)
-    ))
-    .map((capability) => ({
-      id: capability.id,
-      name: capability.name,
-      authRequired: true,
-      missingEvidence: capability.evidenceMatrix?.missingEvidence ?? [],
-      reason: capability.activationBlockedReason ?? null,
-    })),
-  ];
-  const browserBridge = authSummaryForReport(context.crawlContract, context.authStateReport).browserBridge;
-  const providerCoverage = evidenceCoverageFromBundles(evidenceBundlesFromStageResults(stageResults));
-  const runtimeCapabilities = {
-    httpRuntimeCapabilities: capabilities.filter((capability) => capability.runtimeMode === HTTP_RUNTIME_MODE).length,
-    browserBridgeRuntimeCapabilities: capabilities.filter((capability) => capability.runtimeMode === BRIDGE_RUNTIME_MODE).length,
-    runtimeIneligibleCapabilities: capabilities.filter((capability) => (
-      capability.status === 'active'
-      && !capability.runtimeMode
-    )).length,
-    blockedChallengeOrRuntimeIneligible: blockedByAuth.length + capabilities.filter((capability) => (
-      capability.status === 'active'
-      && !capability.runtimeMode
-      && ['authenticated', 'authenticated_overlay', 'public_rendered', 'authorized_source'].includes(nodeSourceLayer(capability))
-    )).length,
-  };
-  return {
-    crawlMode: context.crawlContract?.crawlMode ?? 'public_only',
-    authMethod: context.crawlContract?.authMethod ?? context.authStateReport?.authMethod ?? 'none',
-    authVerificationStatus: context.crawlContract?.authVerificationStatus ?? context.authStateReport?.authVerificationStatus ?? null,
-    browserBridge,
-    providers: providerCoverage.providers,
-    evidenceProviders: providerCoverage,
-    runtime: runtimeCapabilities,
-    public: {
-      pages: stageResults.crawlStatic?.summary?.publicPages
-        ?? (stageResults.crawlStatic?.pages ?? []).filter((page) => pageSourceLayer(page) === 'public').length,
-      nodes: publicNodes.length,
-      capabilities: publicCrawlCapabilities.filter((capability) => capability.status === 'active').length,
-    },
-    publicRendered: {
-      pages: stageResults.crawlRendered?.publicRenderedPages?.length ?? 0,
-      nodes: publicRenderedNodes.length,
-      capabilities: publicCapabilities
-        .filter((capability) => capability.status === 'active' && capability.sourceLayer === 'public_rendered').length,
-    },
-    authorizedSource: {
-      pages: stageResults.crawlStatic?.summary?.authorizedSourcePages ?? 0,
-      nodes: authorizedSourceNodes.length,
-      capabilities: publicCapabilities
-        .filter((capability) => capability.status === 'active' && capability.sourceLayer === 'authorized_source').length,
-    },
-    authenticated: {
-      pages: stageResults.crawlAuthenticated?.authenticatedPages?.length ?? 0,
-      nodes: authNodes.length,
-      capabilities: authCapabilities.filter((capability) => capability.status === 'active').length,
-    },
-    overlay: {
-      pagesRevisited: stageResults.crawlAuthenticated?.authenticatedOverlayPages?.length ?? 0,
-      newNodes: overlayNodes.length,
-      newAffordances: (stageResults.extractAffordances?.affordances ?? [])
-        .filter((affordance) => affordance.sourceLayer === 'authenticated_overlay').length,
-    },
-    requiresLoginButMissing,
-    blockedByRisk,
-    blockedByAuth,
-  };
 }
 
 function buildUserReport(context, stageResults, report) {
@@ -12462,19 +10808,16 @@ function buildUserReport(context, stageResults, report) {
     disabledCapabilities: decoratedDisabledCapabilities,
   });
   const fullCapabilityState = buildCapabilityStateModel(capabilities);
-  const partialSuccessReasons = report.partial_success_reasons ?? buildPartialSuccessReasons({
-    context,
-    report,
-    setupCollectionReview: report.setupCollectionReview,
-    capabilityState: fullCapabilityState,
-  });
-  const resultStatus = report.result_status ?? resultStatusFromBuild({
+  const defaultPartialSuccessOutcome = buildPartialSuccessOutcome({
     legacyStatus: report.status,
     context,
     report,
     setupCollectionReview: report.setupCollectionReview,
     capabilityState: fullCapabilityState,
   });
+  const partialSuccessReasons = report.partial_success_reasons
+    ?? defaultPartialSuccessOutcome.partial_success_reasons;
+  const resultStatus = report.result_status ?? defaultPartialSuccessOutcome.result_status;
   const capabilitySummary = {
     ...(report.summary?.capabilities ?? capabilityCounts(capabilities)),
     enabled: enabledCapabilities.length,
@@ -12686,205 +11029,6 @@ function buildUserReport(context, stageResults, report) {
   };
 }
 
-function summarizeStageRecords(stageRecords = /** @type {any} */ ({})) {
-  return Object.fromEntries(Object.entries(stageRecords).map(([name, record]) => [name, {
-    status: record.status ?? null,
-    reasonCode: record.reasonCode ?? null,
-    reasonCodes: record.reasonCodes ?? [],
-    warnings: record.warnings ?? [],
-    errors: record.errors ?? [],
-    summary: record.summary ?? {},
-  }]));
-}
-
-function sanitizedNetworkSummary(context, stageResults = /** @type {any} */ ({})) {
-  const sourceDiagnostics = context.setupProfile?.sourceDiagnostics ?? [];
-  const networkStage = stageResults.captureNetworkTraces ?? null;
-  const stageSummary = networkStage?.summary?.sanitizedSummary ?? networkStage?.summary ?? null;
-  const replaySummary = stageResults.apiAdapterReplay?.summary ?? {};
-  return {
-    requested: context.policy?.captureNetwork === true || context.options?.network === true,
-    raw_traces_persisted: stageSummary?.rawTracesPersisted === true,
-    saved_summary_only: stageSummary?.savedSummaryOnly !== false,
-    raw_artifact_path: stageSummary?.rawArtifactPath ?? null,
-    raw_trace_count: stageSummary?.rawTraceCount ?? stageSummary?.rawTraces ?? 0,
-    raw_truncated_body_count: stageSummary?.rawTruncatedBodyCount ?? 0,
-    api_candidate_count: stageSummary?.apiCandidateCount ?? 0,
-    api_candidate_artifacts: stageSummary?.apiCandidateArtifacts ?? [],
-    adapter_validation_count: replaySummary.adapterDecisionCount ?? stageSummary?.adapterValidationCount ?? 0,
-    adapter_accepted_count: replaySummary.adapterAcceptedCount ?? stageSummary?.adapterAcceptedCount ?? 0,
-    replay_verified_count: replaySummary.replayVerifiedCount ?? stageSummary?.replayVerifiedCount ?? 0,
-    activated_api_adapter_count: replaySummary.activatedApiAdapterCount ?? stageSummary?.activatedApiAdapterCount ?? 0,
-    adapter_skipped_reason_counts: replaySummary.skippedReasonCounts ?? stageSummary?.adapterSkippedReasonCounts ?? {},
-    catalog_promotion_gate_count: replaySummary.catalogPromotionGateCount ?? stageSummary?.catalogPromotionGateCount ?? 0,
-    catalog_promotion_ready_count: replaySummary.catalogPromotionReadyCount ?? stageSummary?.catalogPromotionReadyCount ?? 0,
-    catalog_promotion_blocked_reason_counts: replaySummary.catalogPromotionBlockedReasonCounts ?? stageSummary?.catalogPromotionBlockedReasonCounts ?? {},
-    api_extraction_disabled_reason: stageSummary?.apiExtractionDisabledReason ?? null,
-    source_diagnostic_count: sourceDiagnostics.length,
-    observed_status_codes: uniqueSortedStrings(sourceDiagnostics.map((item) => item?.statusCode).filter(Boolean)),
-    observed_hosts: uniqueSortedStrings(sourceDiagnostics.map((item) => {
-      try {
-        return new URL(item?.sourcePath ?? '').hostname;
-      } catch {
-        return null;
-      }
-    }).filter(Boolean)),
-    collector_status: networkStage?.summary ?? null,
-    adapter_replay_status: stageResults.apiAdapterReplay?.summary ?? null,
-  };
-}
-
-function buildRouteStateGraph(stageResults = /** @type {any} */ ({})) {
-  const nodes = stageResults.classifyNodes?.graph?.nodes
-    ?? stageResults.buildSiteGraph?.graph?.nodes
-    ?? [];
-  return {
-    routes: nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      routePattern: node.routePattern ?? null,
-      routeTemplate: node.routeTemplate ?? null,
-      tabState: node.tabState ?? null,
-      pageType: node.pageType ?? null,
-      classification: node.classification ?? null,
-      authRequired: node.authRequired === true,
-      childNodeIds: node.childNodeIds ?? [],
-    })),
-  };
-}
-
-function buildDebugReport(context, stageResults, stageRecords, report, userReport) {
-  return sanitizeReportPublicValue({
-    schemaVersion: BUILD_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-build-debug-report',
-    result_status: userReport.result_status,
-    legacy_status: report.status,
-    build_id: report.buildId,
-    site_id: report.siteId,
-    skill_id: report.skillId,
-    site_adapter: siteAdapterSummaryForReport(context, { includeSource: true }),
-    site_adapter_profile: context.siteAdapterProfile ?? null,
-    crawl_contract: context.crawlContract ?? null,
-    auth_state_report: context.authStateReport ?? null,
-    coverage: buildCoverageReport(context, stageResults, stageResults.discoverCapabilities?.capabilities ?? []),
-    seeds: stageResults.discoverSeeds?.seeds ?? [],
-    nodes: stageResults.classifyNodes?.graph?.nodes ?? stageResults.buildSiteGraph?.graph?.nodes ?? [],
-    actions: stageResults.extractAffordances?.affordances ?? stageResults.discoverInteractions?.interactions ?? [],
-    capabilities: stageResults.discoverCapabilities?.capabilities ?? [],
-    intents: stageResults.generateIntents?.intents ?? [],
-    evidence_review: {
-      setup_collection_review: report.setupCollectionReview ?? null,
-      collection_outcomes: report.collectionOutcomes ?? null,
-      verification: stageResults.verifySkill?.verificationReport ?? null,
-      registry: stageResults.registerSkill?.registryReport ?? null,
-    },
-    warnings: {
-      codes: report.warningCodes ?? [],
-      messages: report.warnings ?? [],
-      stage_records: summarizeStageRecords(stageRecords),
-    },
-    policy_failures: {
-      failed_stage: report.failedStage ?? null,
-      failure_class: report.failureClass ?? null,
-      reason_code: report.reasonCode ?? null,
-      reason_action: report.reasonAction ?? null,
-      unsuccessful: report.collectionOutcomes?.unsuccessful ?? [],
-    },
-    collector_status: {
-      stages: summarizeStageRecords(stageRecords),
-      network: sanitizedNetworkSummary(context, stageResults),
-    },
-    discovery_graph: stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? null,
-    route_state_graph: buildRouteStateGraph(stageResults),
-    sanitization_report: {
-      redaction_required: true,
-      status: 'pending',
-    },
-    test_metadata: {
-      generated_at: new Date().toISOString(),
-      build_id: context.buildId,
-      site_id: context.site.id,
-      artifact_dir: sanitizeEvidenceRef(context.artifactDir),
-      stage_count: Object.keys(stageRecords ?? {}).length,
-      report_mode: normalizeReportMode(context.options?.reportMode),
-      privacy_mode: context.options?.privacyMode ?? 'limited',
-    },
-  });
-}
-
-function buildReportIndex(report, userReport, debugReport) {
-  const htmlReportPath = report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? null;
-  const pageReconciliationReportPath = report.artifacts?.[PAGE_RECONCILIATION_REPORT_FILE] ?? null;
-  const accessRemediationPlanPath = report.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE] ?? null;
-  const rawPageMaterialManifestPath = report.artifacts?.[RAW_PAGE_MATERIAL_MANIFEST_FILE] ?? null;
-  const authorizedSourceManifestPath = report.artifacts?.[AUTHORIZED_SOURCE_MANIFEST_FILE] ?? null;
-  return {
-    ...report,
-    artifactFamily: 'siteforge-build-report-index',
-    result_status: userReport.result_status,
-    legacy_status: report.status,
-    skill_id: userReport.skill_id,
-    build_id: userReport.build_id,
-    site: userReport.site,
-    reports: {
-      user: {
-        json: report.artifacts?.[USER_REPORT_FILE] ?? null,
-        markdown: report.artifacts?.[USER_REPORT_MARKDOWN_FILE] ?? null,
-        html_capability_intent_summary: htmlReportPath,
-        alias_json: report.artifacts?.[USER_REPORT_JSON_ALIAS] ?? null,
-        alias_markdown: report.artifacts?.[USER_REPORT_MARKDOWN_ALIAS] ?? null,
-      },
-      debug: {
-        json: report.artifacts?.[DEBUG_REPORT_FILE] ?? null,
-        alias_json: report.artifacts?.[DEBUG_REPORT_JSON_ALIAS] ?? null,
-      },
-      index: {
-        json: report.artifacts?.[INDEX_REPORT_FILE] ?? null,
-      },
-      capability_intent_summary_html: htmlReportPath,
-      page_reconciliation_report: pageReconciliationReportPath,
-      raw_page_material_manifest: rawPageMaterialManifestPath,
-      authorized_source_manifest: authorizedSourceManifestPath,
-      ...(accessRemediationPlanPath ? { access_remediation_plan: accessRemediationPlanPath } : {}),
-    },
-    report_index: {
-      default_report: 'user',
-      available_reports: [
-        'user',
-        'debug',
-        'capability_intent_summary_html',
-        'page_reconciliation_report',
-        ...(rawPageMaterialManifestPath ? ['raw_page_material_manifest'] : []),
-        ...(authorizedSourceManifestPath ? ['authorized_source_manifest'] : []),
-        ...(accessRemediationPlanPath ? ['access_remediation_plan'] : []),
-      ],
-      user_report: USER_REPORT_FILE,
-      user_markdown: USER_REPORT_MARKDOWN_FILE,
-      capability_intent_summary_html: CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH,
-      page_reconciliation_report: PAGE_RECONCILIATION_REPORT_FILE,
-      ...(rawPageMaterialManifestPath ? { raw_page_material_manifest: RAW_PAGE_MATERIAL_MANIFEST_RELATIVE_PATH } : {}),
-      ...(authorizedSourceManifestPath ? { authorized_source_manifest: AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH } : {}),
-      ...(accessRemediationPlanPath ? { access_remediation_plan: ACCESS_REMEDIATION_PLAN_FILE } : {}),
-      debug_report: DEBUG_REPORT_FILE,
-      user_report_alias: USER_REPORT_JSON_ALIAS,
-      user_markdown_alias: USER_REPORT_MARKDOWN_ALIAS,
-      debug_report_alias: DEBUG_REPORT_JSON_ALIAS,
-      privacy_mode: userReport.privacy_summary.mode,
-      redacted: true,
-    },
-    user_report: userReport,
-    debug_report_summary: {
-      result_status: debugReport.result_status,
-      seed_count: debugReport.seeds.length,
-      node_count: debugReport.nodes.length,
-      action_count: debugReport.actions.length,
-      capability_count: debugReport.capabilities.length,
-      intent_count: debugReport.intents.length,
-      sanitization_report: debugReport.sanitization_report,
-    },
-  };
-}
-
 async function writeRedactedArtifactJson(context, fileName, payload) {
   const prepared = prepareRedactedArtifactJsonWithAudit(payload);
   const artifactPath = await writeArtifactJson(context, fileName, prepared.value);
@@ -12906,948 +11050,8 @@ function renderBuildUserMarkdown(userReport, report, options = /** @type {any} *
   }, options);
 }
 
-const CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH = `reports/${CAPABILITY_INTENT_SUMMARY_HTML_FILE}`;
-const PAGE_RECONCILIATION_REPORT_FILE = 'page_reconciliation_report.json';
-const ACCESS_REMEDIATION_PLAN_FILE = 'access_remediation_plan.json';
-const HTML_REPORT_MAX_EXAMPLES = 3;
-const HTML_REPORT_FORBIDDEN_PATTERNS = Object.freeze([
-  { code: 'authorization', pattern: /\bauthorization\b/iu },
-  { code: 'bearer', pattern: /\bbearer\b/iu },
-  { code: 'local-storage', pattern: /\blocalStorage\b/u },
-  { code: 'session-storage', pattern: /\bsessionStorage\b/u },
-  { code: 'user-data-dir', pattern: /\buserDataDir\b/u },
-  { code: 'browser-profile', pattern: /\bbrowser profile\b/iu },
-  { code: 'secret-fixture', pattern: /synthetic-secret/iu },
-  { code: 'session-id', pattern: /sessionid\s*=/iu },
-  { code: 'cookie-value', pattern: /\b(?:cookie|sid|uid|session|token)\s*=/iu },
-  { code: 'script-tag', pattern: /<script\b/iu },
-]);
-
 function capabilityIntentSummaryHtmlPath(context) {
   return path.join(context.artifactDir, CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH);
-}
-
-function sanitizeHtmlReportUrl(value) {
-  const text = String(value ?? '');
-  try {
-    const parsed = new URL(text);
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return text;
-  }
-}
-
-function sanitizeHtmlReportString(value) {
-  let text = sanitizeReportString(value);
-  text = text.replace(/https?:\/\/[^\s<>"')]+/giu, (match) => sanitizeHtmlReportUrl(match));
-  text = text
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/giu, '[REDACTED_AUTH]')
-    .replace(/\bauthorization\s*[:=]\s*[^\r\n]+/giu, '[REDACTED_AUTH_HEADER]')
-    .replace(/\bauthorization\b/giu, '[REDACTED_AUTH_HEADER]')
-    .replace(/\bcookies?\s*[:=]\s*[^;\s&'",]+/giu, '[REDACTED_BROWSER_SESSION]')
-    .replace(/\b(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret|password|session[_-]?id|sid)\s*[:=]\s*[^&\s;'",]+/giu, '[REDACTED_SECRET]')
-    .replace(/\bBearer\b/giu, '[REDACTED_AUTH]')
-    .replace(/\blocalStorage\b/gu, '[REDACTED_BROWSER_STORAGE]')
-    .replace(/\bsessionStorage\b/gu, '[REDACTED_BROWSER_STORAGE]')
-    .replace(/\buserDataDir\b/gu, '[REDACTED_BROWSER_STATE]')
-    .replace(/\bbrowser\s+profile\b/giu, '[REDACTED_BROWSER_STATE]')
-    .replace(/raw[-_\s]*(?:dom|html|body)/giu, '[REDACTED_PAGE_SOURCE]')
-    .replace(/<\/?html(?:\s[^>]*)?>/giu, '[REDACTED_PAGE_SOURCE]');
-  return text;
-}
-
-function sanitizeHtmlReportValue(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeHtmlReportValue(item));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value)
-      .filter(([key]) => !/^(?:cookies?|headers?|authorization|token|tokens|profile|userDataDir|localStorage|sessionStorage)$/iu.test(key))
-      .map(([key, item]) => [sanitizeHtmlReportString(key), sanitizeHtmlReportValue(item)]));
-  }
-  return typeof value === 'string' ? sanitizeHtmlReportString(value) : value;
-}
-
-function sanitizeCapabilityIntentHtmlPayload(payload) {
-  return sanitizeHtmlReportValue(sanitizeReportPublicValue(payload));
-}
-
-function escapeHtml(value) {
-  const text = value === null || value === undefined || value === '' ? '-' : sanitizeHtmlReportString(value);
-  return String(text)
-    .replace(/&/gu, '&amp;')
-    .replace(/</gu, '&lt;')
-    .replace(/>/gu, '&gt;')
-    .replace(/"/gu, '&quot;')
-    .replace(/'/gu, '&#39;');
-}
-
-function htmlCell(value, { code = false } = /** @type {any} */ ({})) {
-  const escaped = escapeHtml(value);
-  return code ? `<code>${escaped}</code>` : escaped;
-}
-
-function htmlList(values = /** @type {any[]} */ ([]), { code = true, limit = 8 } = /** @type {any} */ ({})) {
-  const items = Array.isArray(values) ? values.filter((item) => item !== null && item !== undefined && item !== '') : [];
-  if (!items.length) {
-    return '<span class="muted">-</span>';
-  }
-  const rendered = items.slice(0, limit).map((item) => (
-    code ? `<code>${escapeHtml(item)}</code>` : `<span>${escapeHtml(item)}</span>`
-  ));
-  if (items.length > limit) {
-    rendered.push(`<span class="muted">+${items.length - limit}</span>`);
-  }
-  return rendered.join(' ');
-}
-
-function htmlBadge(value, kind = 'muted') {
-  const safeKind = /^[a-z0-9_-]+$/u.test(String(kind ?? '')) ? kind : 'muted';
-  return `<span class="badge badge-${safeKind}">${escapeHtml(value ?? '-')}</span>`;
-}
-
-function htmlStatusBadge(value) {
-  const status = normalizeStatusToken(value);
-  if (['active', 'enabled', 'success', 'passed'].includes(status)) return htmlBadge(value, 'success');
-  if (['limited_enabled'].includes(status)) return htmlBadge(value, 'limited');
-  if (['confirmation_required', 'draft_only', 'candidate', 'candidate_debug_only', 'partial_success'].includes(status)) return htmlBadge(value, 'warning');
-  if (['disabled', 'failed', 'blocked'].includes(status)) return htmlBadge(value, 'danger');
-  return htmlBadge(value ?? '-', 'muted');
-}
-
-function htmlRiskBadge(value) {
-  const risk = normalizeStatusToken(value);
-  if (['write_high', 'account_security_critical', 'read_private_high'].includes(risk)) return htmlBadge(value, 'risk');
-  if (['write_low', 'read_personal_medium'].includes(risk)) return htmlBadge(value, 'warning');
-  if (['read_public_low'].includes(risk)) return htmlBadge(value, 'success');
-  return htmlBadge(value ?? '-', 'muted');
-}
-
-function htmlAuthBadge(value) {
-  return htmlBadge(value ?? '-', 'auth');
-}
-
-function capabilityHtmlGroup(capability = /** @type {any} */ ({})) {
-  const enabled = normalizeStatusToken(capability.enabled_status ?? capability.enabledStatus ?? capability.default_policy);
-  const normalized = enabled || normalizeStatusToken(normalizeCapabilityEnablementStatus(capability));
-  const status = normalizeStatusToken(capability.status);
-  if (['candidate_debug_only', 'debug_only'].includes(normalized)) return normalized;
-  if (status === 'candidate') return 'candidate';
-  if (status === 'disabled' || normalized === 'disabled') return 'disabled';
-  if (normalized === 'limited_enabled') return 'limited_enabled';
-  if (normalized === 'confirmation_required') return 'confirmation_required';
-  if (normalized === 'draft_only') return 'draft_only';
-  if (status === 'active' || normalized === 'enabled') return 'enabled';
-  return normalized || status || 'unknown';
-}
-
-function capabilityHtmlReason(capability = /** @type {any} */ ({})) {
-  if (capability.activationBlockedReason === 'missing_auth_evidence') {
-    return 'This capability needs authenticated structural evidence; this build did not satisfy the required auth evidence, so it remains a candidate.';
-  }
-  if (capability.activationBlockedReason === 'capability-evidence-matrix-incomplete') {
-    return 'The capability evidence matrix is incomplete, so it is not enabled as a callable capability.';
-  }
-  if (capability.status === 'disabled' || normalizeStatusToken(capability.enabled_status) === 'disabled') {
-    return 'This capability involves a high-risk or restricted action, so it is disabled by default and will not auto-execute.';
-  }
-  if (normalizeStatusToken(capability.enabled_status) === 'draft_only') {
-    return 'This capability can only generate a draft or preview; it will not submit anything.';
-  }
-  if (normalizeStatusToken(capability.enabled_status) === 'confirmation_required') {
-    return 'This capability requires explicit confirmation before execution.';
-  }
-  if (capability.authRequired === true) {
-    return 'This capability may only return sanitized structural summaries; body text and account material are not saved.';
-  }
-  return capability.reason ?? capability.activationBlockedReason ?? capability.disabledReason ?? capability.reason_code ?? '-';
-}
-
-function capabilityHtmlStrategy(capability = /** @type {any} */ ({})) {
-  return capability.user_strategy
-    ?? capability.strategy
-    ?? capability.default_policy
-    ?? capability.enabled_status
-    ?? capability.status
-    ?? '-';
-}
-
-function intentCallableLabel(intent = /** @type {any} */ ({}), capability = /** @type {any} */ ({})) {
-  if (intent.callable === false || capability.status !== 'active') {
-    return 'non-callable';
-  }
-  return 'callable';
-}
-
-function summarizeHtmlCoverage(context, stageResults, capabilities, userReport = null, report = null) {
-  return userReport?.coverage
-    ?? report?.summary?.coverage
-    ?? buildCoverageReport(context, stageResults, capabilities);
-}
-
-function capabilitySourceNodesForHtml(capability = /** @type {any} */ ({}), graphNodeById = new Map()) {
-  const ids = uniqueSortedStrings([
-    ...(capability.entryNodeIds ?? []),
-    ...(capability.requiredNodeIds ?? []),
-  ]);
-  return ids.map((id) => graphNodeById.get(id)).filter(Boolean);
-}
-
-function routeTemplatesForHtml(capability = /** @type {any} */ ({}), sourceNodes = /** @type {any[]} */ ([])) {
-  return uniqueSortedStrings([
-    capability.routeTemplate,
-    capability.routePattern,
-    ...(capability.executionPlan?.steps ?? []).map((step) => step.routeTemplate ?? step.routePath ?? null),
-    ...sourceNodes.map((node) => node.instanceRouteTemplate ?? node.routeTemplate ?? node.routePattern ?? null),
-  ].filter(Boolean)).slice(0, 8);
-}
-
-function categoryInstancesForHtml(capability = /** @type {any} */ ({}), sourceNodes = /** @type {any[]} */ ([])) {
-  const instances = [
-    capability.categoryInstance,
-    ...sourceNodes.map((node) => node.categoryInstance),
-  ].filter(Boolean);
-  const seen = new Set();
-  return instances.filter((instance) => {
-    const key = `${instance.kind ?? ''}:${instance.label ?? ''}:${instance.routeTemplate ?? ''}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  }).slice(0, 8).map((instance) => ({
-    kind: instance.kind ?? null,
-    label: instance.label ?? null,
-    routeTemplate: instance.routeTemplate ?? null,
-    sourceLayer: instance.sourceLayer ?? null,
-    evidenceStatus: instance.evidenceStatus ?? null,
-  }));
-}
-
-function htmlCategoryInstanceLabel(instance = /** @type {any} */ ({})) {
-  return [
-    instance.kind ? `${instance.kind}:` : null,
-    instance.label,
-    instance.routeTemplate ? `(${instance.routeTemplate})` : null,
-  ].filter(Boolean).join(' ');
-}
-
-function buildElementCoverageAuditRows(graph = /** @type {any} */ ({}), capabilityRows = /** @type {any[]} */ ([]), intentRows = /** @type {any[]} */ ([])) {
-  const capabilitiesByNodeId = new Map();
-  for (const capability of capabilityRows) {
-    for (const nodeId of capability.sourceNodeIds ?? []) {
-      capabilitiesByNodeId.set(nodeId, [...(capabilitiesByNodeId.get(nodeId) ?? []), capability]);
-    }
-  }
-  const intentsBySourceNodeId = new Map();
-  const intentsByCapabilityId = new Map();
-  for (const intent of intentRows) {
-    if (intent.sourceNodeId) {
-      intentsBySourceNodeId.set(intent.sourceNodeId, [...(intentsBySourceNodeId.get(intent.sourceNodeId) ?? []), intent]);
-    }
-    if (intent.capabilityId) {
-      intentsByCapabilityId.set(intent.capabilityId, [...(intentsByCapabilityId.get(intent.capabilityId) ?? []), intent]);
-    }
-  }
-  return (graph.nodes ?? [])
-    .filter((node) => (
-      ['component', 'operation'].includes(node.type)
-      && node.evidenceStatus === 'element_instance_summary_present'
-      && ['public', 'public_rendered', 'authenticated', 'authenticated_overlay'].includes(nodeSourceLayer(node))
-    ))
-    .map((node) => {
-      const mappedCapabilities = capabilitiesByNodeId.get(node.id) ?? [];
-      const mappedIntents = uniqueSortedStrings([
-        ...(intentsBySourceNodeId.get(node.id) ?? []).map((intent) => intent.id),
-        ...mappedCapabilities.flatMap((capability) => (intentsByCapabilityId.get(capability.id) ?? []).map((intent) => intent.id)),
-      ]);
-      const mappedCapabilityIds = mappedCapabilities.map((capability) => capability.id);
-      const status = mappedCapabilityIds.length && mappedIntents.length
-        ? 'covered'
-        : mappedCapabilityIds.length
-          ? 'missing_intent'
-          : mappedIntents.length
-            ? 'graph_intent_only'
-            : 'missing_capability';
-      return {
-        nodeId: node.id,
-        status,
-        sourceLayer: nodeSourceLayer(node),
-        elementRole: node.elementRole ?? node.linkSemanticKind ?? node.instanceKind ?? null,
-        elementLabel: node.elementLabel ?? node.linkLabel ?? node.instanceLabel ?? node.title ?? null,
-        routeTemplate: node.instanceRouteTemplate ?? node.routeTemplate ?? node.routePattern ?? null,
-        categoryInstance: node.categoryInstance ?? null,
-        evidenceStatus: node.evidenceStatus ?? null,
-        mappedCapabilityIds,
-        mappedCapabilityNames: mappedCapabilities.map((capability) => capability.name).filter(Boolean),
-        mappedIntentIds: mappedIntents,
-      };
-    })
-    .sort((left, right) => (
-      String(left.sourceLayer ?? '').localeCompare(String(right.sourceLayer ?? ''), 'en')
-      || String(left.elementRole ?? '').localeCompare(String(right.elementRole ?? ''), 'en')
-      || String(left.elementLabel ?? '').localeCompare(String(right.elementLabel ?? ''), 'zh-Hans-CN')
-      || String(left.routeTemplate ?? '').localeCompare(String(right.routeTemplate ?? ''), 'en')
-    ))
-    .slice(0, 160);
-}
-
-function elementCoverageAuditSummary(rows = /** @type {any[]} */ ([])) {
-  const counts = {
-    total: rows.length,
-    covered: 0,
-    graphIntentOnly: 0,
-    missingCapability: 0,
-    missingIntent: 0,
-  };
-  for (const row of rows) {
-    if (row.status === 'covered') counts.covered += 1;
-    if (row.status === 'graph_intent_only') counts.graphIntentOnly += 1;
-    if (row.status === 'missing_capability') counts.missingCapability += 1;
-    if (row.status === 'missing_intent') counts.missingIntent += 1;
-  }
-  return counts;
-}
-
-function buildCapabilityIntentHtmlPayload(context, stageResults, report, userReport) {
-  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
-  const intents = stageResults.generateIntents?.intents ?? [];
-  const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? { nodes: [] };
-  const graphNodeById = new Map((graph.nodes ?? []).map((node) => [node.id, node]));
-  const verification = stageResults.verifySkill?.verificationReport ?? null;
-  const registry = stageResults.registerSkill?.registryReport ?? null;
-  const coverage = summarizeHtmlCoverage(context, stageResults, capabilities, userReport, report);
-  const capabilityById = new Map(capabilities.map((capability) => [capability.id, capability]));
-  const intentsByCapability = new Map();
-  for (const intent of intents) {
-    const key = intent.capabilityId ?? 'unknown';
-    intentsByCapability.set(key, [...(intentsByCapability.get(key) ?? []), intent]);
-  }
-  const capabilityRows = capabilities.map((capability) => {
-    const mappedIntents = intentsByCapability.get(capability.id) ?? [];
-    const matrix = capability.evidenceMatrix ?? capability.activationEvidence ?? null;
-    const sourceNodes = capabilitySourceNodesForHtml(capability, graphNodeById);
-    const primaryNode = sourceNodes[0] ?? {};
-    const categoryInstances = categoryInstancesForHtml(capability, sourceNodes);
-    return {
-      id: capability.id,
-      name: capability.name,
-      userFacingName: capability.user_facing_name ?? capability.userFacingName ?? null,
-      userValue: capability.userValue ?? null,
-      action: capability.action ?? null,
-      object: capability.object ?? null,
-      status: capability.status ?? null,
-      enabledStatus: capability.enabled_status ?? capability.enabledStatus ?? normalizeCapabilityEnablementStatus(capability),
-      evidenceStatus: capability.evidence_status ?? capability.evidenceStatus ?? null,
-      riskLevel: capability.risk_level ?? capability.riskLevel ?? null,
-      safetyLevel: capability.safetyLevel ?? capability.safety_level ?? null,
-      authRequired: capability.authRequired === true,
-      requiredEvidenceLevel: capability.requiredEvidenceLevel ?? matrix?.requiredEvidenceLevel ?? null,
-      observedEvidenceLevel: capability.observedEvidenceLevel ?? matrix?.observedEvidenceLevel ?? null,
-      sourceLayer: capability.sourceLayer ?? matrix?.sourceLayer ?? 'public',
-      evidenceModel: capability.evidenceModel ?? null,
-      publicRouteOnly: capability.publicRouteOnly === true,
-      elementRole: capability.elementRole ?? primaryNode.elementRole ?? primaryNode.linkSemanticKind ?? null,
-      elementLabel: capability.elementLabel ?? primaryNode.elementLabel ?? primaryNode.linkLabel ?? primaryNode.title ?? null,
-      sourceNodeIds: sourceNodes.map((node) => node.id).slice(0, 8),
-      sourceNodeLabels: sourceNodes.map((node) => node.elementLabel ?? node.linkLabel ?? node.title ?? node.routeTemplate ?? node.routePattern).filter(Boolean).slice(0, 8),
-      routeTemplates: routeTemplatesForHtml(capability, sourceNodes),
-      categoryInstances,
-      activationDecision: matrix?.activationDecision ?? capability.enabled_status ?? capability.status ?? null,
-      reason: capabilityHtmlReason(capability),
-      strategy: capabilityHtmlStrategy(capability),
-      mappedIntentCount: mappedIntents.length,
-      group: capabilityHtmlGroup(capability),
-      evidenceMatrix: matrix ? {
-        requiredEvidence: matrix.requiredEvidence ?? [],
-        observedEvidence: matrix.observedEvidence ?? [],
-        missingEvidence: matrix.missingEvidence ?? [],
-        activationDecision: matrix.activationDecision ?? null,
-      } : null,
-    };
-  });
-  const intentRows = intents.map((intent) => {
-    const capability = capabilityById.get(intent.capabilityId) ?? {};
-    const sourceNode = graphNodeById.get(intent.sourceNodeId) ?? null;
-    return {
-      id: intent.id,
-      capabilityId: intent.capabilityId,
-      capabilityName: capability.name ?? intent.name ?? null,
-      intentSource: intent.intentSource ?? null,
-      sourceNodeId: intent.sourceNodeId ?? null,
-      sourceLayer: intent.sourceLayer ?? sourceNode?.sourceLayer ?? null,
-      categoryInstance: intent.categoryInstance ?? sourceNode?.categoryInstance ?? null,
-      canonicalUtterance: intent.canonicalUtterance ?? intent.name ?? null,
-      callable: intentCallableLabel(intent, capability),
-      safetyLevel: intent.safetyLevel ?? capability.safetyLevel ?? null,
-      enabledStatus: intent.enabled_status ?? capability.enabled_status ?? normalizeCapabilityEnablementStatus(capability),
-      utteranceExamples: (intent.utteranceExamples ?? []).slice(0, HTML_REPORT_MAX_EXAMPLES),
-      negativeExamples: (intent.negativeExamples ?? []).slice(0, HTML_REPORT_MAX_EXAMPLES),
-      reason: intent.reason ?? capabilityHtmlReason(capability),
-      safeRemediation: intent.safe_remediation ?? capability.safe_remediation ?? capability.safe_remediation_path ?? null,
-    };
-  });
-  const mappingRows = capabilityRows.map((capability) => {
-    const mappedIntents = intentRows.filter((intent) => intent.capabilityId === capability.id);
-    return {
-      capabilityName: capability.name,
-      capabilityId: capability.id,
-      capabilityStatus: capability.status,
-      enabledStatus: capability.enabledStatus,
-      intentCount: mappedIntents.length,
-      canonicalUtterances: mappedIntents.map((intent) => intent.canonicalUtterance).filter(Boolean),
-      callable: mappedIntents.filter((intent) => intent.callable === 'callable').length,
-      nonCallable: mappedIntents.filter((intent) => intent.callable !== 'callable').length,
-      riskLevel: capability.riskLevel,
-      authVerificationStatus: capability.observedEvidenceLevel ?? capability.requiredEvidenceLevel ?? '-',
-      elementLabel: capability.elementLabel ?? null,
-      elementRole: capability.elementRole ?? null,
-      routeTemplates: capability.routeTemplates ?? [],
-      categoryInstances: capability.categoryInstances ?? [],
-    };
-  });
-  const elementCoverageRows = buildElementCoverageAuditRows(graph, capabilityRows, intentRows);
-  const elementCoverage = {
-    summary: elementCoverageAuditSummary(elementCoverageRows),
-    rows: elementCoverageRows,
-  };
-  const blocked = {
-    disabledHighRisk: capabilityRows.filter((capability) => (
-      capability.status === 'disabled'
-      || ['write_high', 'account_security_critical', 'read_private_high'].includes(normalizeStatusToken(capability.riskLevel))
-    )),
-    blockedByAuth: coverage.blockedByAuth ?? [],
-    requiresLogin: coverage.requiresLoginButMissing ?? [],
-    missingEvidence: capabilityRows.filter((capability) => (capability.evidenceMatrix?.missingEvidence ?? []).length > 0),
-    candidateOnly: capabilityRows.filter((capability) => ['candidate', 'candidate_debug_only', 'debug_only'].includes(capability.group)),
-  };
-  const paths = {
-    userReport: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_FILE] ?? path.join(context.artifactDir, USER_REPORT_FILE)),
-    markdownReport: relativeReportPath(context.cwd, report.artifacts?.[USER_REPORT_MARKDOWN_FILE] ?? path.join(context.artifactDir, USER_REPORT_MARKDOWN_FILE)),
-    debugReport: relativeReportPath(context.cwd, report.artifacts?.[DEBUG_REPORT_FILE] ?? path.join(context.artifactDir, DEBUG_REPORT_FILE)),
-    indexReport: relativeReportPath(context.cwd, report.artifacts?.[INDEX_REPORT_FILE] ?? path.join(context.artifactDir, INDEX_REPORT_FILE)),
-    htmlReport: relativeReportPath(context.cwd, report.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE] ?? capabilityIntentSummaryHtmlPath(context)),
-  };
-  return sanitizeCapabilityIntentHtmlPayload({
-    schemaVersion: BUILD_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-capability-intent-html-summary',
-    generatedAt: new Date().toISOString(),
-    meta: {
-      title: 'SiteForge Build Summary',
-      siteUrl: context.site.rootUrl,
-      siteId: report.siteId ?? context.site.id,
-      buildId: report.buildId ?? context.buildId,
-      skillId: report.skillId ?? context.skillId ?? null,
-      crawlMode: userReport.crawlMode ?? report.crawlMode ?? context.crawlContract?.crawlMode ?? 'public_only',
-      authMethod: userReport.authMethod ?? report.authMethod ?? context.crawlContract?.authMethod ?? 'none',
-      authVerificationStatus: userReport.authVerificationStatus ?? report.authVerificationStatus ?? context.authStateReport?.authVerificationStatus ?? 'not_requested',
-      resultStatus: userReport.result_status ?? report.result_status ?? null,
-      legacyStatus: userReport.legacy_status ?? report.legacy_status ?? report.status ?? null,
-      verificationStatus: verification?.status ?? report.summary?.verificationStatus ?? null,
-      registryStatus: registry?.status ?? report.summary?.registryStatus ?? null,
-      promotionClass: verification?.promotionClass ?? registry?.promotionClass ?? report.summary?.promotionClass ?? null,
-      runtimeMode: verification?.runtimeMode ?? registry?.runtimeMode ?? report.summary?.runtimeMode ?? null,
-      coverageStatus: verification?.coverageStatus ?? registry?.coverageStatus ?? report.summary?.coverageStatus ?? null,
-      generatedAt: new Date().toISOString(),
-      completedAt: report.completedAt ?? null,
-      paths,
-    },
-    coverage,
-    counts: {
-      capabilities: capabilityRows.length,
-      intents: intentRows.length,
-      nodes: graph.nodes?.length ?? 0,
-      elementNodes: elementCoverage.summary.total,
-      elementCoverageMissingCapabilities: elementCoverage.summary.missingCapability,
-      elementCoverageMissingIntents: elementCoverage.summary.missingIntent,
-      riskBlocked: blocked.disabledHighRisk.length,
-    },
-    capabilities: capabilityRows,
-    intents: intentRows,
-    mappings: mappingRows,
-    elementCoverage,
-    blocked,
-  });
-}
-
-function renderCapabilityRows(rows = /** @type {any[]} */ ([]), emptyMessage = 'No capabilities available.') {
-  if (!rows.length) {
-    return `<p class="empty">${escapeHtml(emptyMessage)}</p>`;
-  }
-  return `<div class="table-wrapper"><table>
-    <thead><tr>
-      <th>Capability</th><th>ID</th><th>Action</th><th>Element / category</th><th>Status</th><th>Risk</th><th>Auth</th><th>Evidence matrix</th><th>Reason / strategy</th><th>Intent count</th>
-    </tr></thead>
-    <tbody>
-      ${rows.map((capability) => `<tr>
-        <td><strong>${htmlCell(capability.name)}</strong><br><span class="muted">${htmlCell(capability.userValue ?? capability.userFacingName)}</span></td>
-        <td>${htmlCell(capability.id, { code: true })}</td>
-        <td>${htmlCell(capability.action)}<br><span class="muted">${htmlCell(capability.object)}</span></td>
-        <td>
-          <div class="matrix-line"><span>evidenceModel</span>${htmlCell(capability.evidenceModel ?? '-', { code: true })}</div>
-          <div class="matrix-line"><span>element</span>${htmlCell([capability.elementRole, capability.elementLabel].filter(Boolean).join(': ') || '-')}</div>
-          <div class="matrix-line"><span>routeTemplates</span>${htmlList(capability.routeTemplates ?? [], { code: true, limit: 4 })}</div>
-          <div class="matrix-line"><span>categoryInstances</span>${htmlList((capability.categoryInstances ?? []).map(htmlCategoryInstanceLabel), { code: false, limit: 4 })}</div>
-          <div class="matrix-line"><span>sourceNodes</span>${htmlList(capability.sourceNodeIds ?? [], { code: true, limit: 4 })}</div>
-          ${capability.publicRouteOnly ? htmlBadge('route-only summary', 'limited') : ''}
-        </td>
-        <td>${htmlStatusBadge(capability.status)} ${htmlStatusBadge(capability.enabledStatus)}<br><span class="muted">${htmlCell(capability.evidenceStatus)}</span></td>
-        <td>${htmlRiskBadge(capability.riskLevel)}<br><span class="muted">${htmlCell(capability.safetyLevel)}</span></td>
-        <td>${htmlAuthBadge(capability.authRequired ? 'required' : 'public')}<br><code>${escapeHtml(capability.sourceLayer)}</code><br><span class="muted">${htmlCell(capability.requiredEvidenceLevel)} / ${htmlCell(capability.observedEvidenceLevel)}</span></td>
-        <td><div class="matrix-line"><span>requiredEvidence</span>${htmlList(capability.evidenceMatrix?.requiredEvidence ?? [])}</div><div class="matrix-line"><span>observedEvidence</span>${htmlList(capability.evidenceMatrix?.observedEvidence ?? [])}</div><div class="matrix-line"><span>missingEvidence</span>${htmlList(capability.evidenceMatrix?.missingEvidence ?? [])}</div><div>${htmlStatusBadge(capability.activationDecision)}</div></td>
-        <td>${htmlCell(capability.reason)}<br><span class="muted">${htmlCell(capability.strategy)}</span></td>
-        <td>${htmlCell(capability.mappedIntentCount)}</td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>`;
-}
-
-function renderIntentRows(rows = /** @type {any[]} */ ([])) {
-  if (!rows.length) {
-    return '<p class="empty">No intents are available; the build may have failed before intent generation.</p>';
-  }
-  return `<div class="table-wrapper"><table>
-    <thead><tr>
-      <th>Intent</th><th>Capability</th><th>Source</th><th>Callable</th><th>Examples</th><th>Negative examples</th><th>Reason</th>
-    </tr></thead>
-    <tbody>
-      ${rows.map((intent) => `<tr>
-        <td><strong>${htmlCell(intent.canonicalUtterance)}</strong><br>${htmlCell(intent.id, { code: true })}</td>
-        <td>${htmlCell(intent.capabilityName)}<br>${htmlCell(intent.capabilityId, { code: true })}</td>
-        <td>
-          <div class="matrix-line"><span>intentSource</span>${htmlCell(intent.intentSource ?? '-', { code: true })}</div>
-          <div class="matrix-line"><span>sourceNode</span>${htmlCell(intent.sourceNodeId ?? '-', { code: true })}</div>
-          <div class="matrix-line"><span>sourceLayer</span>${htmlCell(intent.sourceLayer ?? '-', { code: true })}</div>
-          <div class="matrix-line"><span>categoryInstance</span>${htmlCell(intent.categoryInstance ? htmlCategoryInstanceLabel(intent.categoryInstance) : '-')}</div>
-        </td>
-        <td>${htmlStatusBadge(intent.callable)}<br><span class="muted">${htmlCell(intent.safetyLevel)} / ${htmlCell(intent.enabledStatus)}</span></td>
-        <td>${htmlList(intent.utteranceExamples, { code: false, limit: HTML_REPORT_MAX_EXAMPLES })}</td>
-        <td>${htmlList(intent.negativeExamples, { code: false, limit: HTML_REPORT_MAX_EXAMPLES })}</td>
-        <td>${htmlCell(intent.reason)}${intent.safeRemediation ? `<br><span class="muted">${htmlCell(JSON.stringify(intent.safeRemediation))}</span>` : ''}</td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>`;
-}
-
-function renderMappingRows(rows = /** @type {any[]} */ ([])) {
-  if (!rows.length) {
-    return '<p class="empty">No capability-intent mappings are available.</p>';
-  }
-  return `<div class="table-wrapper"><table>
-    <thead><tr>
-      <th>Capability</th><th>Status</th><th>Intent count</th><th>Canonical utterances</th><th>Element / route</th><th>Callable</th><th>Risk</th><th>Auth status</th>
-    </tr></thead>
-    <tbody>
-      ${rows.map((row) => `<tr>
-        <td><strong>${htmlCell(row.capabilityName)}</strong><br>${htmlCell(row.capabilityId, { code: true })}</td>
-        <td>${htmlStatusBadge(row.capabilityStatus)} ${htmlStatusBadge(row.enabledStatus)}</td>
-        <td>${htmlCell(row.intentCount)}</td>
-        <td>${htmlList(row.canonicalUtterances, { code: false, limit: 6 })}</td>
-        <td>${htmlCell([row.elementRole, row.elementLabel].filter(Boolean).join(': ') || '-')}<br>${htmlList(row.routeTemplates ?? [], { code: true, limit: 4 })}<br>${htmlList((row.categoryInstances ?? []).map(htmlCategoryInstanceLabel), { code: false, limit: 4 })}</td>
-        <td>${htmlStatusBadge(`${row.callable} callable`)} ${htmlStatusBadge(`${row.nonCallable} non-callable`)}</td>
-        <td>${htmlRiskBadge(row.riskLevel)}</td>
-        <td>${htmlAuthBadge(row.authVerificationStatus)}</td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>`;
-}
-
-function renderBrowserBridgeRouteCoverage(coverage = /** @type {any} */ ({})) {
-  const bridge = coverage.browserBridge ?? {};
-  if (bridge.used !== true && Number(bridge.routeCount ?? 0) <= 0) {
-    return '<p class="empty">本次没有使用默认浏览器 Bridge 路由采集。</p>';
-  }
-  const routeResults = Array.isArray(bridge.routeResults) ? bridge.routeResults : [];
-  const missing = routeResults.filter((result) => !['captured', 'captured_with_warning'].includes(String(result?.status ?? '')));
-  const displayedMissing = missing.slice(0, 40);
-  const omittedMissingCount = Math.max(0, missing.length - displayedMissing.length);
-  const notes = [
-    `默认浏览器 Bridge 最终采集 ${bridge.capturedRouteCount ?? 0}/${bridge.routeCount ?? 0} 条配置路由。`,
-    `系统已自动温和重试 ${bridge.retryAttemptedRouteCount ?? 0} 条路由，重试后新增采集 ${bridge.retryCapturedRouteCount ?? 0} 条。`,
-    '未采集路由只进入覆盖缺口和 route_capture_plan.json，不生成能力或意图，不声明全覆盖。',
-    '系统不会绕过 robots、验证码、MFA、JS challenge、登录墙或访问控制。',
-    omittedMissingCount > 0
-      ? `This HTML table shows the first ${displayedMissing.length} missing routes; the full ${missing.length} route gap list is in route_capture_plan.json.`
-      : null,
-  ].filter(Boolean);
-  const rows = [
-    ['routeCoverageStatus', bridge.routeCoverageStatus ?? '-'],
-    ['retryStatus', bridge.retryStatus ?? '-'],
-    ['retryPasses', bridge.retryPasses ?? 0],
-    ['routeQueueLimit', bridge.routeQueueLimit ?? 0],
-    ['scheduledRouteCount', bridge.scheduledRouteCount ?? 0],
-    ['overflowRouteCount', bridge.overflowRouteCount ?? 0],
-    ['unattemptedRouteCount', bridge.unattemptedRouteCount ?? 0],
-    ['routeQueueTruncated', bridge.routeQueueTruncated === true ? 'true' : 'false'],
-    ['initialCapturedRouteCount', bridge.initialCapturedRouteCount ?? 0],
-    ['finalCapturedRouteCount', bridge.finalCapturedRouteCount ?? bridge.capturedRouteCount ?? 0],
-    ['finalMissingRouteCount', bridge.finalMissingRouteCount ?? bridge.missingRouteCount ?? 0],
-  ];
-  const missingTable = missing.length
-    ? `<h3>未采集路由</h3><div class="table-wrapper"><table>
-      <thead><tr><th>Route</th><th>Layer</th><th>Initial</th><th>Final</th><th>Reason</th><th>Retry</th></tr></thead>
-      <tbody>${displayedMissing.map((route) => `<tr>
-        <td>${htmlCell(route.targetRoute ?? route.routeId ?? '-', { code: true })}</td>
-        <td>${htmlCell(route.sourceLayer ?? '-', { code: true })}</td>
-        <td>${htmlStatusBadge(route.initialStatus ?? route.status ?? '-')}</td>
-        <td>${htmlStatusBadge(route.finalStatus ?? route.status ?? '-')}</td>
-        <td>${htmlCell(route.finalReasonCode ?? route.reasonCode ?? '-')}</td>
-        <td>${htmlCell(`${route.retryAttemptCount ?? 0} / ${route.retryOutcome ?? 'not_attempted'}`)}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>${omittedMissingCount > 0 ? `<p class="muted">Only the first ${displayedMissing.length} missing routes are shown here; ${omittedMissingCount} more are listed in <code>route_capture_plan.json</code>.</p>` : ''}`
-    : '<p class="empty">没有未采集的 Browser Bridge 路由。</p>';
-  return `
-    <div class="summary-row">
-      ${htmlBadge(`captured ${bridge.capturedRouteCount ?? 0}/${bridge.routeCount ?? 0}`, bridge.missingRouteCount ? 'warning' : 'success')}
-      ${htmlBadge(`retry ${bridge.retryStatus ?? 'not_attempted'}`, bridge.retryCapturedRouteCount ? 'limited' : 'muted')}
-      ${htmlBadge(`missing ${bridge.missingRouteCount ?? 0}`, bridge.missingRouteCount ? 'warning' : 'success')}
-      ${Number(bridge.unattemptedRouteCount ?? 0) > 0 ? htmlBadge(`unattempted ${bridge.unattemptedRouteCount}`, 'warning') : ''}
-    </div>
-    <div class="notice-list">
-      ${notes.map((note) => `<div class="notice"><p>${htmlCell(note)}</p></div>`).join('')}
-    </div>
-    <div class="table-wrapper compact"><table>
-      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-      <tbody>${rows.map(([metric, value]) => `<tr><td>${htmlCell(metric)}</td><td>${htmlCell(value)}</td></tr>`).join('')}</tbody>
-    </table></div>
-    ${missingTable}`;
-}
-
-function renderCoverageTable(coverage = /** @type {any} */ ({})) {
-  const rows = [
-    ['public pages', coverage.public?.pages ?? 0],
-    ['public nodes', coverage.public?.nodes ?? 0],
-    ['public capabilities', coverage.public?.capabilities ?? 0],
-    ['public rendered pages', coverage.publicRendered?.pages ?? 0],
-    ['public rendered nodes', coverage.publicRendered?.nodes ?? 0],
-    ['public rendered capabilities', coverage.publicRendered?.capabilities ?? 0],
-    ['authenticated pages', coverage.authenticated?.pages ?? 0],
-    ['authenticated nodes', coverage.authenticated?.nodes ?? 0],
-    ['authenticated capabilities', coverage.authenticated?.capabilities ?? 0],
-    ['browser bridge routes', coverage.browserBridge?.routeCount ?? 0],
-    ['browser bridge captured routes', coverage.browserBridge?.capturedRouteCount ?? 0],
-    ['browser bridge missing routes', coverage.browserBridge?.missingRouteCount ?? 0],
-    ['browser bridge route queue limit', coverage.browserBridge?.routeQueueLimit ?? 0],
-    ['browser bridge scheduled routes', coverage.browserBridge?.scheduledRouteCount ?? 0],
-    ['browser bridge overflow routes', coverage.browserBridge?.overflowRouteCount ?? 0],
-    ['browser bridge unattempted routes', coverage.browserBridge?.unattemptedRouteCount ?? 0],
-    ['browser bridge route queue truncated', coverage.browserBridge?.routeQueueTruncated === true ? 'true' : 'false'],
-    ['browser bridge route coverage status', coverage.browserBridge?.routeCoverageStatus ?? '-'],
-    ['browser bridge retry status', coverage.browserBridge?.retryStatus ?? '-'],
-    ['browser bridge retry passes', coverage.browserBridge?.retryPasses ?? 0],
-    ['browser bridge retry attempted routes', coverage.browserBridge?.retryAttemptedRouteCount ?? 0],
-    ['browser bridge retry captured routes', coverage.browserBridge?.retryCapturedRouteCount ?? 0],
-    ['overlay pages revisited', coverage.overlay?.pagesRevisited ?? 0],
-    ['overlay new nodes', coverage.overlay?.newNodes ?? 0],
-    ['overlay new affordances', coverage.overlay?.newAffordances ?? 0],
-    ['requires-login candidates', coverage.requiresLoginButMissing?.length ?? 0],
-    ['blocked by risk', coverage.blockedByRisk?.length ?? 0],
-    ['blocked by auth', coverage.blockedByAuth?.length ?? 0],
-  ];
-  return `<div class="table-wrapper compact"><table>
-    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-    <tbody>${rows.map(([metric, value]) => `<tr><td>${htmlCell(metric)}</td><td>${htmlCell(value)}</td></tr>`).join('')}</tbody>
-  </table></div>`;
-}
-
-function renderProviderCoverageTable(coverage = /** @type {any} */ ({})) {
-  const providers = Object.entries(coverage.providers ?? {});
-  if (!providers.length) {
-    return '<p class="empty">No normalized evidence provider bundles were recorded.</p>';
-  }
-  return `<div class="table-wrapper compact"><table>
-    <thead><tr><th>Provider</th><th>Status</th><th>Pages</th><th>Routes</th><th>Captured</th><th>Missing</th><th>Source layer</th><th>Auth</th><th>Runtime</th></tr></thead>
-    <tbody>${providers.map(([providerId, row]) => `<tr>
-      <td>${htmlCell(providerId, { code: true })}</td>
-      <td>${htmlStatusBadge(row.status ?? '-')}</td>
-      <td>${htmlCell(row.pages ?? 0)}</td>
-      <td>${htmlCell(row.routeResults ?? 0)}</td>
-      <td>${htmlCell(row.capturedRouteCount ?? 0)}</td>
-      <td>${htmlCell(row.missingRouteCount ?? 0)}</td>
-      <td>${htmlCell(row.sourceLayer ?? '-', { code: true })}</td>
-      <td>${htmlCell(row.authMethod ?? '-', { code: true })}</td>
-      <td>${htmlCell(row.runtimeMode ?? '-', { code: true })}</td>
-    </tr>`).join('')}</tbody>
-  </table></div>`;
-}
-
-function renderElementCoverageAudit(elementCoverage = /** @type {any} */ ({})) {
-  const rows = elementCoverage.rows ?? [];
-  const summary = elementCoverage.summary ?? {};
-  if (!rows.length) {
-    return '<p class="empty">No sanitized page element instances were available for coverage auditing.</p>';
-  }
-  return `
-    <div class="summary-row">
-      ${htmlBadge(`total ${summary.total ?? rows.length}`, 'muted')}
-      ${htmlBadge(`covered ${summary.covered ?? 0}`, 'success')}
-      ${htmlBadge(`graph-only ${summary.graphIntentOnly ?? 0}`, 'limited')}
-      ${htmlBadge(`missing capability ${summary.missingCapability ?? 0}`, (summary.missingCapability ?? 0) ? 'warning' : 'success')}
-      ${htmlBadge(`missing intent ${summary.missingIntent ?? 0}`, (summary.missingIntent ?? 0) ? 'warning' : 'success')}
-    </div>
-    <div class="table-wrapper"><table>
-      <thead><tr>
-        <th>Element</th><th>Source</th><th>Category instance</th><th>Coverage status</th><th>Mapped capabilities</th><th>Mapped intents</th>
-      </tr></thead>
-      <tbody>
-        ${rows.map((row) => `<tr>
-          <td><strong>${htmlCell([row.elementRole, row.elementLabel].filter(Boolean).join(': ') || '-')}</strong><br>${htmlCell(row.routeTemplate, { code: true })}</td>
-          <td>${htmlCell(row.sourceLayer, { code: true })}<br>${htmlCell(row.nodeId, { code: true })}<br><span class="muted">${htmlCell(row.evidenceStatus)}</span></td>
-          <td>${htmlCell(row.categoryInstance ? htmlCategoryInstanceLabel(row.categoryInstance) : '-')}</td>
-          <td>${htmlStatusBadge(row.status)}</td>
-          <td>${htmlList(row.mappedCapabilityNames?.length ? row.mappedCapabilityNames : row.mappedCapabilityIds, { code: false, limit: 5 })}</td>
-          <td>${htmlList(row.mappedIntentIds ?? [], { code: true, limit: 5 })}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>`;
-}
-
-function renderBlockedList(payload) {
-  const blocked = payload.blocked ?? {};
-  const items = [
-    ...(blocked.requiresLogin ?? []).map((item) => ({
-      title: item.name ?? item.id,
-      text: 'This capability requires authenticated structural evidence. It remains a candidate because login was not used or not verified.',
-    })),
-    ...(blocked.disabledHighRisk ?? []).map((item) => ({
-      title: item.name ?? item.id,
-      text: 'This capability involves write actions, account changes, or high-sensitivity reads. It is disabled by default and will not auto-execute.',
-    })),
-    ...(blocked.missingEvidence ?? []).map((item) => ({
-      title: item.name ?? item.id,
-      text: 'The evidence matrix still has gaps, so this is not a callable capability.',
-    })),
-    ...(blocked.candidateOnly ?? []).map((item) => ({
-      title: item.name ?? item.id,
-      text: 'This capability is shown only as a candidate or debug summary and was not promoted into a callable Skill.',
-    })),
-  ];
-  if (!items.length) {
-    return '<p class="empty">No risk blocks or missing-evidence items were reported.</p>';
-  }
-  return `<div class="notice-list">${items.slice(0, 40).map((item) => `<div class="notice">
-    <strong>${htmlCell(item.title)}</strong>
-    <p>${htmlCell(item.text)}</p>
-  </div>`).join('')}</div>`;
-}
-
-export function renderCapabilityIntentSummaryHtml(payload, options = /** @type {any} */ ({})) {
-  const safe = sanitizeCapabilityIntentHtmlPayload(payload);
-  const grouped = new Map();
-  for (const capability of safe.capabilities ?? []) {
-    const group = capability.group ?? 'unknown';
-    grouped.set(group, [...(grouped.get(group) ?? []), capability]);
-  }
-  const groupOrder = [
-    ['enabled', 'enabled'],
-    ['limited_enabled', 'limited_enabled'],
-    ['confirmation_required', 'confirmation_required'],
-    ['draft_only', 'draft_only'],
-    ['candidate', 'candidate'],
-    ['disabled', 'disabled'],
-    ['candidate_debug_only', 'debug_only / candidate_debug_only'],
-    ['debug_only', 'debug_only'],
-    ['unknown', 'other'],
-  ];
-  const meta = safe.meta ?? {};
-  const capabilities = safe.capabilities ?? [];
-  const intents = safe.intents ?? [];
-  const noCapabilityIntent = capabilities.length === 0 && intents.length === 0;
-  const html = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(meta.title ?? 'SiteForge Build Summary')}</title>
-  <style>
-    :root {
-      --bg: #f6f8fb;
-      --panel: #ffffff;
-      --text: #182230;
-      --muted: #667085;
-      --border: #d9e2ec;
-      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-      --success: #0f766e;
-      --limited: #2563eb;
-      --warning: #b45309;
-      --danger: #b91c1c;
-      --auth: #6d28d9;
-      --risk: #be123c;
-      --code-bg: #eef2f7;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font: 14px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
-    header { background: linear-gradient(135deg, #111827, #1f3a5f); color: #fff; padding: 28px 20px; }
-    .container { max-width: 1180px; margin: 0 auto; padding: 0 20px 32px; }
-    header .container { padding-bottom: 0; }
-    h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: 0; }
-    h2 { margin: 0 0 14px; font-size: 20px; letter-spacing: 0; }
-    h3 { margin: 20px 0 10px; font-size: 16px; letter-spacing: 0; }
-    .subtitle { margin: 0; color: rgba(255,255,255,0.78); }
-    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
-    nav a { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,0.28); border-radius: 8px; padding: 6px 10px; }
-    section { margin-top: 22px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); padding: 18px; }
-    section > h2 { position: sticky; top: 0; background: var(--panel); padding: 4px 0 10px; z-index: 1; }
-    .summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
-    .summary-card { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 12px; }
-    .summary-card span { display: block; color: rgba(255,255,255,0.72); font-size: 12px; }
-    .summary-card strong { display: block; margin-top: 4px; font-size: 18px; word-break: break-word; }
-    .meta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-    .meta-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: #fbfdff; }
-    .meta-item span { display: block; color: var(--muted); font-size: 12px; }
-    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 8px; margin: 1px 2px 1px 0; font-size: 12px; font-weight: 650; background: #eef2f7; color: #344054; }
-    .badge-success { background: #ccfbf1; color: var(--success); }
-    .badge-limited { background: #dbeafe; color: var(--limited); }
-    .badge-warning { background: #fef3c7; color: var(--warning); }
-    .badge-danger { background: #fee2e2; color: var(--danger); }
-    .badge-muted { background: #eef2f7; color: #475467; }
-    .badge-auth { background: #ede9fe; color: var(--auth); }
-    .badge-risk { background: #ffe4e6; color: var(--risk); }
-    .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-    .table-wrapper.compact { max-width: 720px; }
-    table { width: 100%; border-collapse: collapse; min-width: 900px; background: #fff; }
-    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); padding: 10px; word-break: break-word; }
-    th { background: #f2f6fb; color: #344054; font-size: 12px; text-transform: uppercase; letter-spacing: 0; }
-    tbody tr:nth-child(even) { background: #fbfdff; }
-    tbody tr:hover { background: #f8fafc; }
-    code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
-    .muted { color: var(--muted); }
-    .empty { color: var(--muted); margin: 8px 0; }
-    .matrix-line { margin: 2px 0; }
-    .matrix-line > span:first-child { display: inline-block; min-width: 64px; color: var(--muted); }
-    .summary-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
-    .notice-list { display: grid; gap: 10px; }
-    .notice { border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 8px; padding: 10px 12px; background: #fffdf7; }
-    .notice p { margin: 4px 0 0; color: var(--muted); }
-    @media (max-width: 860px) {
-      .summary-grid, .meta-grid { grid-template-columns: 1fr; }
-      header { padding: 22px 0; }
-      .container { padding-left: 12px; padding-right: 12px; }
-      section { padding: 14px; }
-      h1 { font-size: 24px; }
-    }
-    @media print {
-      body { background: #fff; }
-      header { background: #fff; color: #000; border-bottom: 1px solid #ccc; }
-      nav { display: none; }
-      section { box-shadow: none; break-inside: avoid; }
-      .summary-card { color: #000; border-color: #ccc; }
-      .summary-card span { color: #444; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="container">
-      <h1>${escapeHtml(meta.title ?? 'SiteForge Build Summary')}</h1>
-      <p class="subtitle">${escapeHtml(meta.siteUrl)} 路 ${escapeHtml(meta.buildId)}</p>
-      <nav>
-        <a href="#overview">Overview</a>
-        <a href="#coverage">Coverage</a>
-        <a href="#evidence-providers">Evidence providers</a>
-        <a href="#browser-bridge-route-coverage">Browser Bridge route coverage</a>
-        <a href="#element-coverage">Element coverage</a>
-        <a href="#capabilities">Capabilities</a>
-        <a href="#intents">Intents</a>
-        <a href="#mapping">Mapping</a>
-        <a href="#blocked">Risk and gaps</a>
-      </nav>
-      <div class="summary-grid">
-        <div class="summary-card"><span>result_status</span><strong>${escapeHtml(meta.resultStatus)}</strong></div>
-        <div class="summary-card"><span>capabilities</span><strong>${escapeHtml(safe.counts?.capabilities ?? 0)}</strong></div>
-        <div class="summary-card"><span>intents</span><strong>${escapeHtml(safe.counts?.intents ?? 0)}</strong></div>
-        <div class="summary-card"><span>auth verification status</span><strong>${escapeHtml(meta.authVerificationStatus)}</strong></div>
-        <div class="summary-card"><span>risk blocked</span><strong>${escapeHtml(safe.counts?.riskBlocked ?? 0)}</strong></div>
-      </div>
-    </div>
-  </header>
-  <main class="container">
-    <section id="overview">
-      <h2>构建概览</h2>
-      <div class="meta-grid">
-        ${[
-          ['站点 URL', meta.siteUrl],
-          ['siteId', meta.siteId],
-          ['buildId', meta.buildId],
-          ['skillId', meta.skillId],
-          ['crawlMode', meta.crawlMode],
-          ['authMethod', meta.authMethod],
-          ['authVerificationStatus', meta.authVerificationStatus],
-          ['result_status', meta.resultStatus],
-          ['legacy_status', meta.legacyStatus],
-          ['verification status', meta.verificationStatus],
-          ['promotionClass', meta.promotionClass],
-          ['runtimeMode', meta.runtimeMode],
-          ['coverageStatus', meta.coverageStatus],
-          ['generatedAt', meta.generatedAt],
-          ['completedAt', meta.completedAt],
-          ['user report', meta.paths?.userReport],
-          ['debug report', meta.paths?.debugReport],
-          ['index report', meta.paths?.indexReport],
-          ['HTML report', meta.paths?.htmlReport],
-        ].map(([label, value]) => `<div class="meta-item"><span>${escapeHtml(label)}</span><strong>${htmlCell(value)}</strong></div>`).join('')}
-      </div>
-    </section>
-    <section id="coverage">
-      <h2>覆盖率概览</h2>
-      ${renderCoverageTable(safe.coverage ?? {})}
-    </section>
-    <section id="evidence-providers">
-      <h2>Evidence Providers</h2>
-      ${renderProviderCoverageTable(safe.coverage ?? {})}
-    </section>
-    <section id="browser-bridge-route-coverage">
-      <h2>Browser Bridge Route Coverage</h2>
-      ${renderBrowserBridgeRouteCoverage(safe.coverage ?? {})}
-    </section>
-    <section id="element-coverage">
-      <h2>页面元素覆盖审计</h2>
-      <p class="muted">逐项列出已保存的脱敏页面元素摘要，并标记是否已经映射为能力和意图。</p>
-      ${renderElementCoverageAudit(safe.elementCoverage ?? {})}
-    </section>
-    <section id="capabilities">
-      <h2>能力汇总</h2>
-      ${noCapabilityIntent ? '<p class="empty">暂无能力和意图，构建在上游阶段失败。</p>' : ''}
-      ${groupOrder.map(([group, label]) => {
-        const rows = grouped.get(group) ?? [];
-        if (!rows.length) return '';
-        return `<h3>${escapeHtml(label)} (${rows.length})</h3>${renderCapabilityRows(rows)}`;
-      }).join('')}
-    </section>
-    <section id="intents">
-      <h2>意图汇总</h2>
-      ${renderIntentRows(intents)}
-    </section>
-    <section id="mapping">
-      <h2>Capability -> Intents</h2>
-      ${renderMappingRows(safe.mappings ?? [])}
-    </section>
-    <section id="blocked">
-      <h2>风险与阻断说明</h2>
-      <p class="muted">本页只展示脱敏结构摘要。涉及写入、账号变更或证据不足的能力不会自动执行。</p>
-      ${renderBlockedList(safe)}
-    </section>
-  </main>
-</body>
-</html>`;
-  assertCapabilityIntentHtmlSafe(html, options);
-  return html;
-}
-
-function assertCapabilityIntentHtmlSafe(html, options = /** @type {any} */ ({})) {
-  if (options.skipSafetyScan === true) {
-    return;
-  }
-  for (const { code, pattern } of HTML_REPORT_FORBIDDEN_PATTERNS) {
-    if (pattern.test(html)) {
-      const error = /** @type {Error & Record<string, any>} */ (new Error(`capability-intent-html-report-unsafe: forbidden pattern ${code}`));
-      error.code = 'capability-intent-html-report-unsafe';
-      error.reasonCode = code;
-      throw error;
-    }
-  }
 }
 
 async function writeCapabilityIntentHtmlReport(context, stageResults, report, userReport) {
@@ -13856,373 +11060,10 @@ async function writeCapabilityIntentHtmlReport(context, stageResults, report, us
   return await writeArtifactText(context, CAPABILITY_INTENT_SUMMARY_HTML_RELATIVE_PATH, html);
 }
 
-function reconciliationRouteKey(urlValue, rootUrl = null) {
-  try {
-    const normalized = rootUrl ? normalizeUrl(urlValue, rootUrl) : normalizeUrl(urlValue);
-    const parsed = new URL(normalized);
-    parsed.hash = '';
-    parsed.search = '';
-    return parsed.toString().replace(/\/$/u, '');
-  } catch {
-    return String(urlValue ?? '').trim().replace(/[?#].*$/u, '').replace(/\/$/u, '');
-  }
-}
-
-function reconciliationLinkUrl(link) {
-  return link?.normalizedHref ?? link?.normalizedUrl ?? link?.href ?? link?.url ?? null;
-}
-
-function reconciliationLinkLabel(link) {
-  return String(link?.text ?? link?.label ?? link?.title ?? '').trim();
-}
-
-function isReconciliationCategoryLink(link) {
-  const url = String(reconciliationLinkUrl(link) ?? '');
-  const label = reconciliationLinkLabel(link);
-  const kind = String(link?.kind ?? link?.semanticKind ?? link?.structureType ?? '').toLowerCase();
-  const haystack = `${url} ${label} ${kind}`.toLowerCase();
-  return /category|categories|genre|genres|channel|channels|section|sections|classify|\bcat\b|分类|类目|類別|频道|頻道|分区|标签|榜单/u.test(haystack);
-}
-
-function isChallengeLikePage(page) {
-  const text = [
-    page?.title,
-    page?.pageType,
-    page?.publicEvidenceStatus,
-    page?.blockerCategory,
-    page?.diagnostics?.publicEvidenceStatus,
-    page?.diagnostics?.blockerCategory,
-    ...(Array.isArray(page?.diagnostics?.warnings) ? page.diagnostics.warnings : []),
-  ].join(' ');
-  return /验证码|验证|风控|安全校验|中间页|captcha|challenge|turnstile|verify|checkpoint|cf-mitigated|cdn-cgi\/challenge-platform|cloudflare/iu.test(text);
-}
-
-function classifyPageReconciliationOutcome(reasonCodes = /** @type {string[]} */ ([]), challengePages = /** @type {any[]} */ ([])) {
-  const codes = new Set(reasonCodes);
-  if (codes.has('challenge_or_probe_detected')) {
-    const challengeText = challengePages.map((page) => `${page.url ?? ''} ${page.title ?? ''}`).join(' ');
-    const primaryReasonCode = /cloudflare|cf-mitigated|cdn-cgi\/challenge-platform/iu.test(challengeText)
-      ? 'blocked-by-cloudflare-challenge'
-      : 'anti-crawl-verify';
-    return {
-      status: 'blocked',
-      blockerClass: 'external_challenge',
-      primaryReasonCode,
-      retryDisposition: 'blocked_no_bypass',
-    };
-  }
-  const internalMissingCodes = [
-    'category_links_missing_from_graph',
-    'category_capability_missing',
-    'category_intent_missing',
-  ];
-  if (internalMissingCodes.some((code) => codes.has(code))) {
-    return {
-      status: 'failed',
-      blockerClass: 'internal_missing',
-      primaryReasonCode: 'page-reconciliation-failed',
-      retryDisposition: 'retryable_internal',
-    };
-  }
-  if (reasonCodes.length) {
-    return {
-      status: 'warning',
-      blockerClass: 'none',
-      primaryReasonCode: null,
-      retryDisposition: 'no_retry',
-    };
-  }
-  return {
-    status: 'passed',
-    blockerClass: 'none',
-    primaryReasonCode: null,
-    retryDisposition: 'no_retry',
-  };
-}
-
-function reconciliationGraphUrlSet(graph, context) {
-  const urls = new Set();
-  for (const node of graph?.nodes ?? []) {
-    const urlValue = node.normalizedUrl ?? node.url ?? null;
-    if (urlValue) {
-      urls.add(reconciliationRouteKey(urlValue, context.site.rootUrl));
-    }
-    const route = node.routePattern ?? node.routeTemplate ?? null;
-    if (route && String(route).startsWith('/')) {
-      urls.add(reconciliationRouteKey(route, context.site.rootUrl));
-    }
-  }
-  return urls;
-}
-
-function hasChineseText(value) {
-  return /[\u3400-\u9fff]/u.test(String(value ?? ''));
-}
-
-const PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN = /categor|category|categories|channel|genre|tag|topic|section|navigation|collections?|lists?|rankings?|classif|book_categories|catalog categories|\u5206\u7c7b|\u6807\u7b7e|\u9891\u9053|\u985e\u5225|\u983b\u9053/iu;
-
-function buildPageReconciliationReport(context, stageResults, report = /** @type {any} */ ({})) {
-  const staticPages = stageResults.crawlStatic?.pages ?? [];
-  const renderedPages = stageResults.crawlRendered?.publicRenderedPages ?? stageResults.crawlRendered?.pages ?? [];
-  const authPages = stageResults.crawlAuthenticated?.authenticatedPages ?? [];
-  const overlayPages = stageResults.crawlAuthenticated?.authenticatedOverlayPages ?? [];
-  const allPages = [...staticPages, ...renderedPages, ...authPages, ...overlayPages];
-  const challengePages = allPages.filter(isChallengeLikePage).map((page) => ({
-    url: sanitizeEvidenceRef(page.normalizedUrl ?? page.url ?? page.sourcePath ?? context.site.rootUrl) ?? null,
-    title: sanitizedStructureText(page.title ?? page.pageType ?? 'challenge-like-page', 80, 'challenge-like-page'),
-    sourceLayer: page.sourceLayer ?? null,
-    reasonCode: 'challenge_or_probe_detected',
-  }));
-  const expectedCategoryLinks = [];
-  const seenCategoryKeys = new Set();
-  const addExpectedCategoryLink = (urlValue, labelValue = '-') => {
-    if (!urlValue) {
-      return;
-    }
-    const key = reconciliationRouteKey(urlValue, context.site.rootUrl);
-    if (seenCategoryKeys.has(key)) {
-      return;
-    }
-    seenCategoryKeys.add(key);
-    expectedCategoryLinks.push({
-      url: sanitizeEvidenceRef(urlValue) ?? null,
-      routeKey: key,
-      label: sanitizedStructureText(labelValue, 80, '-'),
-    });
-  };
-  for (const page of allPages) {
-    const pageUrl = page.normalizedUrl ?? page.url ?? null;
-    const pageLabel = page.pageType ?? page.routeTemplate ?? page.title ?? '-';
-    if (pageUrl && isReconciliationCategoryLink({ href: pageUrl, label: pageLabel, kind: page.pageType })) {
-      addExpectedCategoryLink(pageUrl, pageLabel);
-    }
-    for (const link of page.links ?? []) {
-      const urlValue = reconciliationLinkUrl(link);
-      if (!urlValue || !isReconciliationCategoryLink(link)) {
-        continue;
-      }
-      addExpectedCategoryLink(urlValue, reconciliationLinkLabel(link));
-    }
-  }
-  const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? null;
-  const graphUrls = reconciliationGraphUrlSet(graph, context);
-  const missingCategoryLinks = expectedCategoryLinks
-    .filter((link) => !graphUrls.has(link.routeKey))
-    .map(({ routeKey, ...link }) => link);
-  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
-  const intents = stageResults.generateIntents?.intents ?? [];
-  const categoryCapabilityRecords = capabilities.filter((capability) => PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN.test([
-    capability.name,
-    capability.user_facing_name,
-    capability.userFacingName,
-    capability.userValue,
-    capability.object,
-    capability.category,
-  ].join(' ')));
-  const categoryCapabilityIds = new Set(categoryCapabilityRecords
-    .map((capability) => capability.id ?? capability.capabilityId)
-    .filter(Boolean));
-  const categoryCapabilities = categoryCapabilityRecords.map((capability) => ({
-    id: capability.id ?? capability.capabilityId ?? null,
-    name: sanitizedStructureText(capability.user_facing_name ?? capability.userFacingName ?? capability.userValue ?? capability.name, 100, '-'),
-    status: capability.status ?? null,
-    enabled_status: capability.enabled_status ?? capability.enabledStatus ?? null,
-    hasChineseName: hasChineseText(capability.user_facing_name ?? capability.userFacingName ?? capability.userValue ?? capability.name),
-  }));
-  const categoryIntentRows = intents.filter((intent) => (
-    categoryCapabilityIds.has(intent.capabilityId ?? intent.capability_id)
-    || PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN.test([
-      intent.canonicalUtterance,
-      intent.canonical_utterance,
-      intent.capabilityName,
-      intent.capabilityId,
-    ].join(' '))
-  )).map((intent) => ({
-    id: intent.intentId ?? intent.id ?? null,
-    capabilityId: intent.capabilityId ?? intent.capability_id ?? null,
-    canonicalUtterance: sanitizedStructureText(intent.canonicalUtterance ?? intent.canonical_utterance, 100, '-'),
-    callable: intent.callable === true,
-    hasChineseUtterance: hasChineseText(intent.canonicalUtterance ?? intent.canonical_utterance),
-  }));
-  const reasonCodes = [];
-  if (challengePages.length) reasonCodes.push('challenge_or_probe_detected');
-  if (expectedCategoryLinks.length && missingCategoryLinks.length) reasonCodes.push('category_links_missing_from_graph');
-  if (expectedCategoryLinks.length && !categoryCapabilities.length) reasonCodes.push('category_capability_missing');
-  if (expectedCategoryLinks.length && categoryCapabilities.length && !categoryIntentRows.length) reasonCodes.push('category_intent_missing');
-  if (categoryCapabilities.length && !categoryCapabilities.some((capability) => capability.hasChineseName)) reasonCodes.push('category_capability_missing_chinese_name');
-  if (categoryIntentRows.length && !categoryIntentRows.some((intent) => intent.hasChineseUtterance)) reasonCodes.push('category_intent_missing_chinese_utterance');
-  if (challengePages.length && !expectedCategoryLinks.length && !categoryCapabilities.length) reasonCodes.push('category_links_not_observed');
-  const outcome = classifyPageReconciliationOutcome(reasonCodes, challengePages);
-  const { status } = outcome;
-  const summary = {
-    status,
-    blockerClass: outcome.blockerClass,
-    primaryReasonCode: outcome.primaryReasonCode,
-    retryDisposition: outcome.retryDisposition,
-    challengeLikePages: challengePages.length,
-    expectedCategoryLinks: expectedCategoryLinks.length,
-    missingCategoryLinks: missingCategoryLinks.length,
-    categoryCapabilities: categoryCapabilities.length,
-    categoryIntents: categoryIntentRows.length,
-    reasonCodes: uniqueSortedStrings(reasonCodes),
-    needsRerun: outcome.retryDisposition === 'retryable_internal',
-    rerunBlocked: outcome.status === 'blocked',
-  };
-  return {
-    schemaVersion: BUILD_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-page-reconciliation-report',
-    buildId: context.buildId,
-    siteId: context.site.id,
-    inputUrl: sanitizeEvidenceRef(context.inputUrl ?? context.site.rootUrl) ?? null,
-    status,
-    resultStatus: report.result_status ?? report.status ?? null,
-    summary,
-    challengePages,
-    expectedCategoryLinks: expectedCategoryLinks.map(({ routeKey, ...link }) => link),
-    missingCategoryLinks,
-    categoryCapabilities,
-    categoryIntents: categoryIntentRows,
-    safety: {
-      rawHtmlPersisted: false,
-      bodyTextPersisted: false,
-      cookiePersisted: false,
-      tokenPersisted: false,
-      browserProfilePersisted: false,
-    },
-  };
-}
-
 async function writePageReconciliationReport(context, stageResults, report) {
   const reconciliation = buildPageReconciliationReport(context, stageResults, report);
   const write = await writeRedactedArtifactJson(context, PAGE_RECONCILIATION_REPORT_FILE, reconciliation);
   return write;
-}
-
-function shouldWriteAccessRemediationPlan(pageReconciliation = /** @type {any} */ ({})) {
-  const summary = pageReconciliation.summary ?? pageReconciliation ?? {};
-  const reasonText = [
-    summary.primaryReasonCode,
-    summary.blockerClass,
-    summary.retryDisposition,
-    ...(summary.reasonCodes ?? []),
-  ].join(' ');
-  return summary.retryDisposition === 'blocked_no_bypass'
-    || /robots|challenge|anti-crawl|verify|external_challenge/iu.test(reasonText);
-}
-
-function buildAccessRemediationPlan(context, stageResults, pageReconciliation = /** @type {any} */ ({})) {
-  const summary = pageReconciliation.summary ?? pageReconciliation ?? {};
-  const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
-  const routeOnlyCapabilities = capabilities
-    .filter((capability) => capability.status === 'active' && (
-      capability.publicRouteOnly === true
-      || capability.evidenceModel === 'authenticated_route_only'
-      || capability.evidenceModel === 'public_route_navigation'
-    ))
-    .slice(0, 20)
-    .map((capability) => ({
-      id: capability.id ?? capability.capabilityId ?? null,
-      name: sanitizedStructureText(capability.name ?? capability.userValue ?? 'route-only capability', 120, 'route-only capability'),
-      evidenceModel: capability.evidenceModel ?? null,
-      enabled_status: capability.enabled_status ?? capability.enabledStatus ?? null,
-      sourceLayer: capability.sourceLayer ?? null,
-    }));
-  const remainingUnverified = capabilities
-    .filter((capability) => capability.status !== 'active' && capability.evidenceMatrix?.missingEvidence?.length)
-    .slice(0, 20)
-    .map((capability) => ({
-      id: capability.id ?? capability.capabilityId ?? null,
-      name: sanitizedStructureText(capability.name ?? capability.userValue ?? 'candidate capability', 120, 'candidate capability'),
-      status: capability.status ?? null,
-      enabled_status: capability.enabled_status ?? capability.enabledStatus ?? null,
-      missingEvidence: uniqueSortedStrings(capability.evidenceMatrix?.missingEvidence ?? []),
-    }));
-  return sanitizeReportPublicValue({
-    schemaVersion: BUILD_SCHEMA_VERSION,
-    artifactFamily: 'siteforge-access-remediation-plan',
-    buildId: context.buildId,
-    siteId: context.site.id,
-    inputUrl: sanitizeEvidenceRef(context.inputUrl ?? context.site.rootUrl) ?? null,
-    status: 'blocked',
-    reasonCode: summary.primaryReasonCode ?? 'access-boundary',
-    blockerClass: summary.blockerClass ?? null,
-    retryDisposition: summary.retryDisposition ?? 'blocked_no_bypass',
-    reasonCodes: uniqueSortedStrings(summary.reasonCodes ?? []),
-    partialRouteOnly: {
-      enabledCapabilities: routeOnlyCapabilities,
-      note: 'Route-only capabilities can open or navigate configured/public routes; they do not prove list contents, metadata, or private page bodies.',
-    },
-    remainingUnverified,
-    authorizedSourceManifestTemplate: {
-      artifactFamily: 'siteforge-authorized-source-manifest',
-      schemaVersion: BUILD_SCHEMA_VERSION,
-      sources: [
-        {
-          id: 'official-feed-or-api',
-          kind: 'official_api_or_feed',
-          url: 'https://example.com/feed-or-api',
-          accessBasis: 'site_docs_or_contract',
-          permissionScope: 'public_metadata_or_sanitized_summary_only',
-          allowedEvidence: ['response_shape', 'schema_hash', 'permission_scope', 'rate_limit_policy'],
-          genericCrawlAllowed: false,
-          promotionAllowed: false,
-        },
-        {
-          id: 'user-structure-summary',
-          kind: 'user_sanitized_summary',
-          url: null,
-          accessBasis: 'user_provided_redacted_structure',
-          permissionScope: 'route_template,page_type,visible_item_count,control_type,structure_hash',
-          allowedEvidence: ['route_template', 'page_type', 'visible_item_count', 'structure_hash'],
-          genericCrawlAllowed: false,
-          promotionAllowed: false,
-        },
-      ],
-    },
-    workflows: [
-      {
-        workflowId: 'access:official-api-or-feed',
-        kind: 'official_api_or_feed',
-        status: 'available_if_site_provides_authorized_source',
-        allowedEvidence: ['response_shape', 'schema_hash', 'rate_limit_policy', 'permission_scope'],
-        genericCrawlAllowed: false,
-        promotionAllowed: false,
-        updatesCurrent: false,
-        updatesRegistry: false,
-      },
-      {
-        workflowId: 'access:user-supplied-structure-summary',
-        kind: 'manual_summary',
-        status: 'requires_sanitized_structure_source',
-        allowedEvidence: ['route_template', 'page_type', 'visible_item_count', 'control_type', 'structure_hash'],
-        genericCrawlAllowed: false,
-        promotionAllowed: false,
-        updatesCurrent: false,
-        updatesRegistry: false,
-      },
-      {
-        workflowId: 'access:local-http-validation',
-        kind: 'local_http_validation',
-        status: 'available_for_tests_only',
-        allowedEvidence: ['fixture_http_response', 'fixture_robots_allow'],
-        genericCrawlAllowed: false,
-        liveSupportClaimAllowed: false,
-        promotionAllowed: false,
-        updatesCurrent: false,
-        updatesRegistry: false,
-      },
-    ],
-    safety: {
-      bypassRobots: false,
-      bypassChallenge: false,
-      readBrowserProfile: false,
-      persistCookie: false,
-      persistToken: false,
-      saveRawHtml: false,
-      savePrivateBody: false,
-      rawNetworkPayloadPersisted: false,
-    },
-  });
 }
 
 async function writeAccessRemediationPlanIfNeeded(context, stageResults, pageReconciliation) {
@@ -14232,31 +11073,6 @@ async function writeAccessRemediationPlanIfNeeded(context, stageResults, pageRec
   const plan = buildAccessRemediationPlan(context, stageResults, pageReconciliation);
   const write = await writeRedactedArtifactJson(context, ACCESS_REMEDIATION_PLAN_FILE, plan);
   return write;
-}
-
-function authorizedSourcesSummaryForReport(context) {
-  const sources = context.options?.authorizedSources
-    ?? context.setupProfile?.localBuildConfig?.authorizedSources
-    ?? [];
-  const rows = (Array.isArray(sources) ? sources : [])
-    .slice(0, 20)
-    .map((source, index) => sanitizeReportPublicValue({
-      id: source?.id ?? `authorized-source-${index + 1}`,
-      kind: source?.kind ?? source?.type ?? 'authorized_source',
-      url: source?.url ?? null,
-      accessBasis: source?.accessBasis ?? source?.authorizationBasis ?? 'user_provided_contract',
-      permissionScope: source?.permissionScope ?? 'sanitized_summary_only',
-      allowedEvidence: uniqueSortedStrings(source?.allowedEvidence ?? []),
-      genericCrawlAllowed: false,
-      promotionAllowed: false,
-    }));
-  return {
-    configured: rows.length,
-    sources: rows,
-    note: rows.length
-      ? 'Authorized sources are evidence inputs, not robots/challenge bypasses; promotion remains gated by source authority and evidence policy.'
-      : null,
-  };
 }
 
 function buildBuildReport(context, stageResults, stageRecords, status = 'success', error = null) {
@@ -14277,45 +11093,28 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
     setupCollectionReviewSource,
     context.setupCollectionReviewPath,
   );
-  const warningCodes = uniqueSortedStrings(Object.values(stageRecords)
-    .flatMap((stage) => [
-      ...(stage.reasonCodes ?? []),
-      ...(stage.warnings ?? []).map((warning) => classifySiteForgeWarning(warning)?.reasonCode),
-    ]));
-  const reportWarnings = uniqueSortedStrings([
-    ...context.warnings,
-    ...Object.values(stageRecords).flatMap((stage) => stage.warnings ?? []),
-  ].map((warning) => safeBuildWarningForReport(warning)).filter(Boolean));
+  const {
+    warningCodes,
+    reportWarnings,
+  } = buildReportWarningSummary(stageRecords, context.warnings);
   const capabilityState = buildCapabilityStateModel(capabilities);
-  const partialSuccessReasons = buildPartialSuccessReasons({
-    context,
-    report: {
-      warnings: reportWarnings,
-      failureClass: failureReason?.failureClass ?? null,
-      reasonCode: failureReason?.reasonCode ?? null,
-      summary: {
-        verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
-        verificationReasonCode: stageResults.verifySkill?.verificationReport?.reasonCode ?? null,
-      },
+  const partialSuccessReport = {
+    warnings: reportWarnings,
+    failureClass: failureReason?.failureClass ?? null,
+    reasonCode: failureReason?.reasonCode ?? null,
+    summary: {
+      verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
+      verificationReasonCode: stageResults.verifySkill?.verificationReport?.reasonCode ?? null,
     },
-    setupCollectionReview,
-    capabilityState,
-  });
-  const result_status = resultStatusFromBuild({
+  };
+  const partialSuccessOutcome = buildPartialSuccessOutcome({
     legacyStatus: status,
     context,
-    report: {
-      warnings: reportWarnings,
-      failureClass: failureReason?.failureClass ?? null,
-      reasonCode: failureReason?.reasonCode ?? null,
-      summary: {
-        verificationStatus: stageResults.verifySkill?.verificationReport?.status ?? null,
-        verificationReasonCode: stageResults.verifySkill?.verificationReport?.reasonCode ?? null,
-      },
-    },
+    report: partialSuccessReport,
     setupCollectionReview,
     capabilityState,
   });
+  const { result_status, partial_success_reasons: partialSuccessReasons } = partialSuccessOutcome;
   const registryReport = stageResults.registerSkill?.registryReport ?? null;
   const promotion = stageResults.registerSkill?.promotion ?? registryReport?.promotion ?? null;
   const verificationReport = stageResults.verifySkill?.verificationReport ?? null;
@@ -14478,7 +11277,9 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
   report.artifacts[USER_REPORT_MARKDOWN_FILE] = userMarkdownPath;
   const userMarkdownAliasPath = await writeArtifactText(context, USER_REPORT_MARKDOWN_ALIAS, userMarkdown);
   report.artifacts[USER_REPORT_MARKDOWN_ALIAS] = userMarkdownAliasPath;
-  const debugBase = buildDebugReport(context, stageResults, stageRecords, report, userReportWrite.value);
+  const debugBase = buildDebugReport(context, stageResults, stageRecords, report, userReportWrite.value, {
+    siteAdapter: siteAdapterSummaryForReport(context, { includeSource: true }),
+  });
   const debugPrepared = prepareRedactedArtifactJsonWithAudit(debugBase);
   const debugReport = {
     ...debugPrepared.value,
@@ -14583,7 +11384,9 @@ async function writeFailedBuildReport(context, stageResults, stageRecords, statu
   failedReport.artifacts[USER_REPORT_MARKDOWN_FILE] = userMarkdownPath;
   const userMarkdownAliasPath = await writeArtifactText(context, USER_REPORT_MARKDOWN_ALIAS, userMarkdown);
   failedReport.artifacts[USER_REPORT_MARKDOWN_ALIAS] = userMarkdownAliasPath;
-  const debugBase = buildDebugReport(context, stageResults, stageRecords, failedReport, userReportWrite.value);
+  const debugBase = buildDebugReport(context, stageResults, stageRecords, failedReport, userReportWrite.value, {
+    siteAdapter: siteAdapterSummaryForReport(context, { includeSource: true }),
+  });
   const debugPrepared = prepareRedactedArtifactJsonWithAudit(debugBase);
   const debugReport = {
     ...debugPrepared.value,
@@ -14658,7 +11461,7 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
   await ensureBuildDirectories(context);
   const stageResults = /** @type {any} */ ({});
   const stageRecords = /** @type {any} */ ({});
-  const setupBlock = setupProfileBuildBlock(context.setupProfile);
+  const setupBlock = setupProfileBuildBlock(context.setupProfile, context.options);
   if (setupBlock) {
     const startedAt = new Date().toISOString();
     const error = createBlockedStageError(setupBlock.code, setupBlock.message, {
@@ -14673,11 +11476,11 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
       reasonCode: error.reasonCode,
       reasonCodes: error.reasonCodes ?? [],
       summary: error.summary ?? {},
-    }, startedAt, new Date().toISOString());
+    }, startedAt, new Date().toISOString(), STAGE_DEPENDENCIES);
     for (const skipped of SITEFORGE_BUILD_STAGE_NAMES.slice(1)) {
       stageRecords[skipped] = buildStageRecord(skipped, 'skipped', {
         warnings: ['Skipped because setup profile is not buildable.'],
-      }, new Date().toISOString(), new Date().toISOString());
+      }, new Date().toISOString(), new Date().toISOString(), STAGE_DEPENDENCIES);
     }
     await writeFailedBuildReport(context, stageResults, stageRecords, error.buildStatus ?? 'blocked', error);
     throw error;
@@ -14694,7 +11497,7 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
       context,
       {
         ...stageRecords,
-        [stageName]: buildStageRecord(stageName, 'running', {}, startedAt, null),
+        [stageName]: buildStageRecord(stageName, 'running', {}, startedAt, null, STAGE_DEPENDENCIES),
       },
       stageResults,
       { phase: 'build', status: `running:${stageName}` },
@@ -14703,7 +11506,7 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
       const result = await STAGE_IMPLS[stageName](context, stageResults, stageRecords);
       stageResults[stageName] = result;
       const status = result.status ?? 'success';
-      stageRecords[stageName] = buildStageRecord(stageName, status, result, startedAt, new Date().toISOString());
+      stageRecords[stageName] = buildStageRecord(stageName, status, result, startedAt, new Date().toISOString(), STAGE_DEPENDENCIES);
       updateWebInteractionBuildState(context, stageRecords, stageResults, {
         phase: 'build',
         status: status === 'success' ? `completed:${stageName}` : status,
@@ -14724,11 +11527,11 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
           ...(error?.verificationReportPath ? { verificationReport: error.verificationReportPath } : {}),
         },
         summary: error?.summary ?? {},
-      }, startedAt, new Date().toISOString());
+      }, startedAt, new Date().toISOString(), STAGE_DEPENDENCIES);
       for (const skipped of SITEFORGE_BUILD_STAGE_NAMES.slice(SITEFORGE_BUILD_STAGE_NAMES.indexOf(stageName) + 1)) {
         stageRecords[skipped] = buildStageRecord(skipped, 'skipped', {
           warnings: [`Skipped because ${stageName} ${stageStatus}.`],
-        }, new Date().toISOString(), new Date().toISOString());
+        }, new Date().toISOString(), new Date().toISOString(), STAGE_DEPENDENCIES);
       }
       await writeFailedBuildReport(context, stageResults, stageRecords, error?.buildStatus ?? 'failed', error);
       updateWebInteractionBuildState(context, stageRecords, stageResults, {
@@ -14765,252 +11568,12 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
   return result;
 }
 
-function buildReportPayloadForMode(result, options = /** @type {any} */ ({})) {
-  const mode = normalizeReportMode(options.reportMode ?? options.report);
-  if (mode === 'user') {
-    return result.user_report ?? result.userReport ?? result;
-  }
-  if (mode === 'debug') {
-    return result.debug_report ?? result.debugReport ?? result;
-  }
-  return {
-    result_status: result.result_status ?? result.status ?? null,
-    build_id: result.build_id ?? result.buildId ?? null,
-    skill_id: result.skill_id ?? result.skillId ?? null,
-    user: result.user_report ?? result.userReport ?? null,
-    debug: result.debug_report ?? result.debugReport ?? null,
-    index: result,
-  };
-}
-
 export function siteForgeBuildCliJson(result, options = /** @type {any} */ ({})) {
   return `${prepareRedactedArtifactJsonWithAudit(buildReportPayloadForMode(result, options)).json}\n`;
 }
 
-function displayBuildWarning(value) {
-  const text = String(value ?? '');
-  const translations = new Map([
-    ['Browser-rendered crawl is unavailable for this deterministic static build path.', 'Browser-rendered crawl is unavailable for this deterministic static build path.'],
-    ['Browser-rendered crawl is not part of the public build path; this run used static and sanitized setup evidence only.', 'This build used static and sanitized setup evidence only; browser-rendered crawl is not part of the public build path.'],
-    ['Network summary was not requested; raw network tracing is not part of the public build path.', 'Network summary was not requested; raw network tracing is not part of the public build path.'],
-    ['Network capture requested; raw network traces were not persisted, and this build path only writes a sanitized network summary.', 'Network capture requested; only a sanitized network summary was saved.'],
-    ['Network summary requested; raw network traces were not captured or persisted.', 'Network summary requested; raw network traces were not captured or persisted.'],
-    ['Raw network capture was enabled; raw trace artifacts may contain sensitive material.', 'Raw network capture was enabled; raw trace artifacts may contain sensitive material.'],
-    ['Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.', 'Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.'],
-    ['network-fetch-failed', 'Network fetch failed; raw error details were not saved.'],
-    ['validation-failed', 'Verification did not pass; see verification_report.json.'],
-    ['robots-unavailable', 'robots.txt could not be fetched, so the live build stopped safely.'],
-    ['robots-disallowed', 'robots.txt blocked the candidate crawl scope.'],
-    ['dynamic-unsupported', 'The route appears to require dynamic collection, which was not enabled.'],
-    ['browser-auth-route-coverage-partial', 'Default-browser bridge captured only reachable configured routes; missing routes are reported as authenticated coverage gaps.'],
-    ['Skipped because setup profile is not buildable.', 'Skipped because the setup profile is not buildable.'],
-  ]);
-  if (translations.has(text)) {
-    return translations.get(text);
-  }
-  const skipped = text.match(/^Skipped because ([A-Za-z][A-Za-z0-9]*) ([a-z_]+)\.$/u);
-  if (skipped) return `Skipped because stage ${skipped[1]} status is ${collectionStatusLabel(skipped[2])}.`;
-  const crawlFailed = text.match(/^crawl failed: (.+)$/u);
-  if (crawlFailed) return `Crawl failed: ${crawlFailed[1]}`;
-  return text;
-}
-
-function displayCollectionKind(value) {
-  if (value === 'capability') return 'capability';
-  if (value === 'node') return 'node';
-  if (value === 'affordance') return 'affordance';
-  if (value === 'stage') return 'stage';
-  if (value === 'build') return 'build';
-  return String(value ?? '-');
-}
-
-function displayCollectionTarget(value) {
-  return String(value ?? '') || '-';
-}
-
-function displayCollectionReason(item) {
-  const reasonCode = String(item?.reasonCode ?? '');
-  if (reasonCode === 'capability-specific-evidence-required') return 'Capability-specific evidence is missing.';
-  if (reasonCode === 'authorized-route-seed-only') return 'Only an authorized route seed was collected; page content is not verified.';
-  if (reasonCode === 'not-selected-by-setup') return 'Not selected during setup; kept as a candidate capability.';
-  if (reasonCode === 'capability-candidate') return 'Candidate capability does not yet meet activation criteria.';
-  if (reasonCode === 'stage-skipped') return 'Upstream stage did not complete; this stage was skipped.';
-  if (reasonCode === 'stage-failed') return 'This stage failed and did not produce a verifiable result.';
-  if (reasonCode === 'stage-blocked') return 'This stage was blocked by a safety or evidence gate.';
-  if (reasonCode === 'empty-crawl') return 'Static crawl did not collect verifiable page evidence.';
-  if (reasonCode === 'robots-disallowed') return 'robots.txt blocked the candidate crawl scope.';
-  if (reasonCode === 'robots-unavailable') return 'robots.txt could not be fetched, so the live build stopped safely.';
-  if (reasonCode === 'dynamic-unsupported') return 'The route appears to require dynamic collection, which was not enabled.';
-  if (reasonCode === 'network-fetch-failed') return 'Network fetch failed; no verifiable page evidence was collected.';
-  return displayBuildWarning(item?.reason ?? reasonCode);
-}
-
-function markdownTableCell(value, maxLength = 72) {
-  const text = String(value ?? '-')
-    .replace(/\r?\n/gu, ' ')
-    .replace(/\|/gu, '\\|')
-    .trim();
-  if (text.length <= maxLength) {
-    return text || '-';
-  }
-  return `${text.slice(0, Math.max(1, maxLength - 1))}...`;
-}
-
-function renderCollectionOutcomeTable(outcomes = /** @type {any[]} */ ([])) {
-  const rows = [
-    '  | Type | Target | Status | Reason |',
-    '  | --- | --- | --- | --- |',
-  ];
-  for (const item of outcomes) {
-    rows.push(`  | ${markdownTableCell(displayCollectionKind(item.kind), 12)} | ${markdownTableCell(displayCollectionTarget(item.target), 30)} | ${markdownTableCell(collectionStatusLabel(item.status), 12)} | ${markdownTableCell(displayCollectionReason(item), 88)} |`);
-  }
-  return rows;
-}
-
-function renderSetupCollectionReviewLines(review = null) {
-  if (!review) {
-    return [];
-  }
-  const summary = review.summary ?? {};
-  const capabilityMissing = summary.capabilities?.missing ?? 0;
-  const intentMissing = summary.intents?.missing ?? 0;
-  const lines = [
-    'Collection review:',
-    `  Collected: seeds=${summary.seeds?.collected ?? 0} nodes=${summary.nodes?.collected ?? 0} affordances=${summary.affordances?.collected ?? 0} capabilities=${summary.capabilities?.collected ?? 0} intents=${summary.intents?.collected ?? 0}`,
-    `  Needs more evidence: capabilities=${capabilityMissing} intents=${intentMissing}`,
-  ];
-  const missingRecords = review.missingRecords ?? [];
-  if (missingRecords.length) {
-    lines.push('  Missing evidence:');
-    for (const record of missingRecords.slice(0, 5)) {
-      lines.push(`    - ${record.kind}:${record.label ?? record.id ?? '-'} (${record.reasonCode ?? 'missing-evidence'})`);
-    }
-    if (review.truncated || missingRecords.length > 5) {
-      lines.push('    - See build_report.json for the full collection review.');
-    }
-  }
-  return lines;
-}
-
 function renderSiteForgeUserBuildSummary(result, options = /** @type {any} */ ({})) {
   return renderFriendlySiteForgeUserBuildSummary(result, options);
-}
-
-function numberOrZero(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function renderSiteForgePlainBuildSummary(result = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
-  const report = result.user_report ?? result.userReport ?? {};
-  const summary = result.summary ?? {};
-  const capabilitySummary = report.capability_summary ?? summary.capabilities ?? {};
-  const enabledStatus = capabilitySummary.enabledStatus ?? report.capability_summary?.enabled_status ?? {};
-  const coverage = summary.coverage ?? report.coverage ?? {};
-  const sourceUrl = report.site?.root_url
-    ?? report.site?.input_url
-    ?? result.inputUrl
-    ?? result.site?.rootUrl
-    ?? result.site?.root_url
-    ?? null;
-  const publicUrl = sourceUrl
-    ? sanitizePublicUrl(sourceUrl, { fallback: '<url>', keepPath: false })
-    : '-';
-  const resultStatus = report.result_status ?? result.result_status ?? result.status ?? 'unknown';
-  const legacyStatus = result.status ?? report.legacy_status ?? resultStatus;
-  const skillId = report.skill_id ?? summary.skillId ?? result.skillId ?? '-';
-  const activeCount = numberOrZero(capabilitySummary.active ?? summary.activeCapabilities ?? report.enabled_capabilities?.length);
-  const limitedCount = numberOrZero(enabledStatus.limited_enabled ?? report.limited_enabled_capabilities?.length ?? report.limited_capabilities?.length);
-  const candidateCount = numberOrZero(capabilitySummary.candidate ?? report.debug_candidate_summary?.count);
-  const disabledCount = numberOrZero(capabilitySummary.disabled ?? report.disabled_capabilities?.length);
-  const publicPages = numberOrZero(coverage.public?.pages ?? report.coverage?.public?.pages);
-  const authenticatedPages = numberOrZero(coverage.authenticated?.pages ?? report.coverage?.authenticated?.pages);
-  const overlayPages = numberOrZero(coverage.overlay?.pagesRevisited ?? report.coverage?.overlay?.pagesRevisited);
-  const verificationStatus = summary.verificationStatus ?? report.build_completion?.verification_status ?? '-';
-  const registryStatus = summary.registryStatus ?? (
-    report.build_completion?.registry_registered === true ? 'registered' : 'not_registered'
-  );
-  const reportPath = result.artifacts?.[USER_REPORT_FILE]
-    ?? result.reports?.user?.json
-    ?? report.build_completion?.report_path
-    ?? USER_REPORT_FILE;
-  const htmlPath = capabilityIntentHtmlResultPath(result);
-  const pageReconciliation = result.pageReconciliation
-    ?? result.summary?.pageReconciliation
-    ?? report.pageReconciliation
-    ?? report.summary?.pageReconciliation
-    ?? null;
-  const pageReconciliationPath = pageReconciliationResultPath(result);
-  const lines = [
-    `${legacyStatus === 'success' ? '✓' : '✗'} SiteForge build: ${resultStatus}`,
-    `URL: ${publicUrl}`,
-    `Skill: ${skillId}`,
-    `Capabilities: active ${activeCount} / limited ${limitedCount} / candidate ${candidateCount} / disabled ${disabledCount}`,
-    `Coverage: public ${publicPages} pages / authenticated ${authenticatedPages} pages / overlay ${overlayPages} pages`,
-    `Verification: ${verificationStatus}`,
-    `Registry: ${registryStatus}`,
-    `Report: ${displayReportPath(reportPath, options)}`,
-  ];
-  if (pageReconciliation) {
-    const status = pageReconciliation.status ?? pageReconciliation.summary?.status ?? '-';
-    const reasonCodes = pageReconciliation.reasonCodes ?? pageReconciliation.summary?.reasonCodes ?? [];
-    const suffix = Array.isArray(reasonCodes) && reasonCodes.length
-      ? ` (${reasonCodes.slice(0, 4).join(',')})`
-      : '';
-    lines.push(`Page reconciliation: ${status}${suffix}`);
-  }
-  if (pageReconciliationPath) {
-    lines.push(`Page reconciliation report: ${displayReportPath(pageReconciliationPath, options)}`);
-  }
-  const robotsRemediationPath = robotsRemediationResultPath(result);
-  if (robotsRemediationPath) {
-    lines.push(`Robots remediation plan: ${displayReportPath(robotsRemediationPath, options)}`);
-  }
-  const accessRemediationPath = accessRemediationResultPath(result);
-  if (accessRemediationPath) {
-    lines.push(`Access remediation plan: ${displayReportPath(accessRemediationPath, options)}`);
-  }
-  if (htmlPath) {
-    lines.push(`HTML report: ${displayReportPath(htmlPath, options)}`);
-  }
-  return `${lines.join('\n')}\n`;
-}
-
-function capabilityIntentHtmlResultPath(result = /** @type {any} */ ({})) {
-  return result.artifacts?.[CAPABILITY_INTENT_SUMMARY_HTML_FILE]
-    ?? result.reports?.capability_intent_summary_html
-    ?? result.reports?.user?.html_capability_intent_summary
-    ?? result.user_report?.reports?.capability_intent_summary_html
-    ?? result.user_report?.build_completion?.capability_intent_summary_html
-    ?? result.userReport?.reports?.capability_intent_summary_html
-    ?? result.userReport?.build_completion?.capability_intent_summary_html
-    ?? result.build_completion?.capability_intent_summary_html
-    ?? null;
-}
-
-function pageReconciliationResultPath(result = /** @type {any} */ ({})) {
-  return result.artifacts?.[PAGE_RECONCILIATION_REPORT_FILE]
-    ?? result.reports?.page_reconciliation_report
-    ?? result.user_report?.reports?.page_reconciliation_report
-    ?? result.userReport?.reports?.page_reconciliation_report
-    ?? result.pageReconciliationReport
-    ?? null;
-}
-
-function robotsRemediationResultPath(result = /** @type {any} */ ({})) {
-  return result.artifacts?.['robots_remediation_plan.json']
-    ?? result.reports?.robots_remediation_plan
-    ?? result.user_report?.reports?.robots_remediation_plan
-    ?? result.userReport?.reports?.robots_remediation_plan
-    ?? null;
-}
-
-function accessRemediationResultPath(result = /** @type {any} */ ({})) {
-  return result.artifacts?.[ACCESS_REMEDIATION_PLAN_FILE]
-    ?? result.reports?.access_remediation_plan
-    ?? result.user_report?.reports?.access_remediation_plan
-    ?? result.userReport?.reports?.access_remediation_plan
-    ?? null;
 }
 
 export function renderSiteForgeBuildSummary(result, options = /** @type {any} */ ({})) {

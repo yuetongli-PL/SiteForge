@@ -554,6 +554,9 @@ export function normalizeApiCandidate(raw = {}) {
     fieldMapping: normalizeObject(raw.fieldMapping),
     risk: normalizeObject(raw.risk),
     evidence: normalizeObject(raw.evidence),
+    ...(raw.runtime && typeof raw.runtime === 'object' && !Array.isArray(raw.runtime)
+      ? { runtime: normalizeObject(raw.runtime) }
+      : {}),
     request: {
       headers: redactHeaders(raw.request?.headers ?? raw.headers ?? {}).headers,
       body: normalizeObject(raw.request?.body),

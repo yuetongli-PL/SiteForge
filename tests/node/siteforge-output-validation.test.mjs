@@ -308,7 +308,7 @@ test('output validation accepts a complete graph, capability map, intents, and r
 test('output validation accepts active read-only API request execution plans', async () => {
   const fixture = createValidationFixture();
   const capability = fixture.stageResults.discoverCapabilities.capabilities[0];
-  const plan = capability.executionPlan;
+  const plan = /** @type {any} */ (capability.executionPlan);
   capability.name = 'read API endpoint /api/feed';
   capability.action = 'view';
   capability.object = 'API endpoint';

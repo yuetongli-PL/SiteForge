@@ -244,6 +244,62 @@ test('risk-aware SiteAdapters keep login-required as manual recovery only', () =
   }
 });
 
+test('Douyin adapter exposes build API seeds and semantics for followed users and profile videos', () => {
+  const adapter = listSiteAdapters().find((candidate) => candidate.id === 'douyin');
+  assert.ok(adapter);
+  assert.equal(typeof adapter.getBuildApiDiscoverySeeds, 'function');
+  assert.equal(typeof adapter.describeApiCandidateSemantics, 'function');
+  assert.equal(typeof adapter.validateApiCandidate, 'function');
+
+  const seeds = adapter.getBuildApiDiscoverySeeds({
+    site: { id: 'douyin.com-test' },
+  });
+  const following = seeds.find((seed) => String(seed.url).includes('/aweme/v1/web/user/following/list/'));
+  const videos = seeds.find((seed) => String(seed.url).includes('/aweme/v1/web/aweme/post/'));
+  assert.ok(following);
+  assert.ok(videos);
+  assert.equal(following.runtime.parameterSource.kind, 'douyin_self_user_render_data');
+  assert.equal(videos.runtime.parameterSource.kind, 'douyin_self_user_render_data');
+  assert.equal(following.runtime.responseEvidence.arrayField, 'followings');
+  assert.equal(videos.runtime.responseEvidence.arrayField, 'aweme_list');
+  assert.equal(String(following.url).includes('{self.uid}'), true);
+  assert.equal(String(videos.url).includes('{self.secUid}'), true);
+
+  const followingCandidate = createSyntheticCandidate({
+    id: 'douyin-known-api-following-list',
+    siteKey: 'douyin.com-test',
+    endpoint: {
+      method: 'GET',
+      url: following.url,
+    },
+    runtime: following.runtime,
+  });
+  const videosCandidate = createSyntheticCandidate({
+    id: 'douyin-known-api-aweme-posts',
+    siteKey: 'douyin.com-test',
+    endpoint: {
+      method: 'GET',
+      url: videos.url,
+    },
+    runtime: videos.runtime,
+  });
+
+  const followingSemantics = adapter.describeApiCandidateSemantics({ candidate: followingCandidate });
+  const videosSemantics = adapter.describeApiCandidateSemantics({ candidate: videosCandidate });
+  assert.equal(followingSemantics.semanticKind, 'list-followed-users');
+  assert.equal(followingSemantics.outputName, 'followed_users');
+  assert.equal(videosSemantics.semanticKind, 'list-profile-videos');
+  assert.equal(videosSemantics.outputName, 'videos');
+
+  const followingDecision = adapter.validateApiCandidate({ candidate: followingCandidate });
+  const videosDecision = adapter.validateApiCandidate({ candidate: videosCandidate });
+  assert.equal(followingDecision.decision, 'accepted');
+  assert.equal(videosDecision.decision, 'accepted');
+  const serialized = JSON.stringify({ seeds, followingSemantics, videosSemantics, followingDecision, videosDecision });
+  assert.equal(serialized.includes('synthetic-adapter-token'), false);
+  assert.equal(serialized.includes('SESSDATA='), false);
+});
+
 test('X profile-health-risk adapter mapping is platform risk and not auto-recoverable', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'x');
   assert.ok(adapter);

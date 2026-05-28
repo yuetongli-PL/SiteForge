@@ -1,16 +1,16 @@
 // @ts-check
 
 import {
-  publicEnumValueBuildFlagMap,
-  publicBooleanBuildFlagSet,
-  publicStringValueBuildFlagSet,
-} from './public-build-contract.mjs';
+  acceptedEnumValueBuildFlagMap,
+  acceptedBooleanBuildFlagSet,
+  acceptedStringValueBuildFlagSet,
+} from '../../entrypoints/cli/public-build-contract.mjs';
 
 export const UNIFIED_CLI_ENTRYPOINT = 'siteforge';
 
-const PUBLIC_BOOLEAN_BUILD_FLAGS = publicBooleanBuildFlagSet();
-const PUBLIC_ENUM_VALUE_BUILD_FLAGS = publicEnumValueBuildFlagMap();
-const PUBLIC_STRING_VALUE_BUILD_FLAGS = publicStringValueBuildFlagSet();
+const ACCEPTED_BOOLEAN_BUILD_FLAGS = acceptedBooleanBuildFlagSet();
+const ACCEPTED_ENUM_VALUE_BUILD_FLAGS = acceptedEnumValueBuildFlagMap();
+const ACCEPTED_STRING_VALUE_BUILD_FLAGS = acceptedStringValueBuildFlagSet();
 
 function normalizeScriptPath(scriptPath) {
   return String(scriptPath ?? '').replace(/\\/gu, '/').replace(/^\.\//u, '');
@@ -67,13 +67,13 @@ function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
       continue;
     }
     const flagName = token.split('=')[0];
-    if (PUBLIC_BOOLEAN_BUILD_FLAGS.has(flagName)) {
+    if (ACCEPTED_BOOLEAN_BUILD_FLAGS.has(flagName)) {
       if (token.includes('=')) {
         throw new Error(`Public build flag does not take a value: ${flagName}`);
       }
       continue;
     }
-    const allowedValues = PUBLIC_ENUM_VALUE_BUILD_FLAGS.get(flagName);
+    const allowedValues = ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get(flagName);
     if (allowedValues) {
       const inlineValue = token.includes('=') ? token.slice(flagName.length + 1) : null;
       const value = inlineValue ?? args[index + 1];
@@ -88,7 +88,7 @@ function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
       }
       continue;
     }
-    if (PUBLIC_STRING_VALUE_BUILD_FLAGS.has(flagName)) {
+    if (ACCEPTED_STRING_VALUE_BUILD_FLAGS.has(flagName)) {
       const inlineValue = token.includes('=') ? token.slice(flagName.length + 1) : null;
       const value = inlineValue ?? args[index + 1];
       if (!value || String(value).startsWith('--')) {

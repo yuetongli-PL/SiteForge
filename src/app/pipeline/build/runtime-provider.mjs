@@ -212,3 +212,32 @@ export function runtimeProviderPromotionMetadata(providerId, options = /** @type
   }
   return null;
 }
+
+export function bridgeRuntimeMetadata(authStateReport = /** @type {any} */ ({})) {
+  return runtimeProviderPromotionMetadata('browser_bridge', {
+    authStateReport,
+  });
+}
+
+export function genericHttpRuntimeMetadata() {
+  return runtimeProviderPromotionMetadata('public_http');
+}
+
+export function registryIntentRuntimeMetadata(
+  intent = /** @type {any} */ ({}),
+  capability = /** @type {any} */ ({}),
+  fallback = /** @type {any} */ (null),
+) {
+  const runtimeMode = intent.runtimeMode ?? capability.runtimeMode ?? fallback?.runtimeMode ?? null;
+  if (!runtimeMode) {
+    return null;
+  }
+  return {
+    promotionClass: intent.promotionClass ?? capability.promotionClass ?? fallback?.promotionClass ?? null,
+    runtimeMode,
+    requiresFreshBridgeEvidence: Boolean(intent.requiresFreshBridgeEvidence ?? capability.requiresFreshBridgeEvidence ?? fallback?.requiresFreshBridgeEvidence),
+    genericHttpRuntimeAllowed: Boolean(intent.genericHttpRuntimeAllowed ?? capability.genericHttpRuntimeAllowed ?? fallback?.genericHttpRuntimeAllowed),
+    coverageStatus: intent.coverageStatus ?? capability.coverageStatus ?? fallback?.coverageStatus ?? null,
+    runtimeRequirements: cloneRuntimeValue(intent.runtimeRequirements ?? capability.runtimeRequirements ?? fallback?.runtimeRequirements ?? null),
+  };
+}

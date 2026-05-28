@@ -6,7 +6,6 @@ import {
   DEFAULT_PROGRESS_LANGUAGE,
   SAFETY_STOP_COPY,
   progressText,
-  siteForgeBuildStageTitle,
   statusTitle,
 } from './progress-copy.mjs';
 
@@ -267,12 +266,22 @@ export function redactProgressData(value, key = '') {
 }
 
 function statusFromMethod(method) {
-  switch (method) {
+  switch (String(method ?? '')) {
+    case 'success':
+    case 'succeeded':
     case 'succeed': return 'success';
+    case 'warning':
     case 'warn': return 'warning';
+    case 'failed':
+    case 'failure':
     case 'fail': return 'failed';
+    case 'skipped':
     case 'skip': return 'skipped';
+    case 'cancelled':
+    case 'canceled':
     case 'cancel': return 'cancelled';
+    case 'pending': return 'pending';
+    case 'running': return 'running';
     default: return 'running';
   }
 }
@@ -510,7 +519,7 @@ class ProgressRenderer {
   }
 
   _createStage(task, input = /** @type {any} */ ({})) {
-    const title = input.title ?? siteForgeBuildStageTitle(input.id ?? input.name, this.language);
+    const title = input.title ?? String(input.id ?? input.name ?? '');
     const stage = new ProgressNode(this, task, 'stage', { ...input, title });
     task.currentStage = stage;
     this._emitPlain(stage, 'stage');

@@ -38,6 +38,7 @@ import { parseArgs as parseSocialAuthRecoverArgs } from '../../scripts/social-au
 import { parseArgs as parseSocialHealthWatchArgs } from '../../scripts/social-health-watch.mjs';
 import { parseArgs as parseSocialCommandTemplatesArgs } from '../../scripts/social-command-templates.mjs';
 import {
+  parseProgressCliOption,
   runSingleStageCliWithProgress,
   stripProgressCliOptions,
 } from '../../src/infra/cli/progress-cli.mjs';
@@ -97,8 +98,7 @@ test('build parser keeps human-output flags', () => {
 test('site-doctor parser accepts progress flags while keeping JSON-compatible default output', () => {
   const parsed = parseDoctorArgs([
     'https://www.22biqu.com/',
-    '--progress',
-    'plain',
+    '--progress=plain',
     '--quiet',
     '--json',
     '--no-tty',
@@ -110,6 +110,25 @@ test('site-doctor parser accepts progress flags while keeping JSON-compatible de
   assert.equal(parsed.options.json, true);
   assert.equal(parsed.options.noTty, true);
   assert.equal(parsed.options.capabilityDryRun, true);
+  assert.throws(
+    () => parseDoctorArgs(['https://www.22biqu.com/', '--progress', '--json']),
+    /Missing value for --progress/u,
+  );
+});
+
+test('shared progress parser rejects missing progress mode values before consuming flags', () => {
+  assert.throws(
+    () => parseProgressCliOption(['--progress='], '--progress=', 0, {}),
+    /Missing value for --progress/u,
+  );
+  assert.throws(
+    () => parseProgressCliOption(['--progress', '--json'], '--progress', 0, {}),
+    /Missing value for --progress/u,
+  );
+  const options = {};
+  const parsed = parseProgressCliOption(['--progress', 'plain', '--json'], '--progress', 0, options);
+  assert.deepEqual(parsed, { handled: true, nextIndex: 1 });
+  assert.equal(options.progressMode, 'plain');
 });
 
 test('single-stage progress helper strips UI flags before running stage logic', async () => {

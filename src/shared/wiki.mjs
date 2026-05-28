@@ -1,10 +1,18 @@
 // @ts-check
 
 import path from 'node:path';
-import { readdir } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 
-import { pathExists } from '../infra/io.mjs';
 import { compareNullableStrings, toPosixPath } from './normalize.mjs';
+
+async function pathExists(targetPath) {
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function relativeToKb(kbDir, absolutePath) {
   return toPosixPath(path.relative(kbDir, absolutePath));

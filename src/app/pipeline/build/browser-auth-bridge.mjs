@@ -12,16 +12,22 @@ import {
 import { isInternalUrl, isSameSiteUrl, normalizeUrl } from './models.mjs';
 import { browserStructureCollectorScript } from './browser-structure-collector.mjs';
 import { isUrlAllowedByRobots } from './html.mjs';
+import {
+  API_READ_ONLY_CHALLENGE_PATTERN,
+  isReadOnlyApiMethod,
+  normalizeApiMethod,
+} from './api-readonly-policy.mjs';
+import {
+  bridgeExtensionVersionBlockingSignals,
+  bridgeVersionCompatible,
+} from './browser-bridge-version-policy.mjs';
 
 const MAX_BRIDGE_BODY_BYTES = 256 * 1024;
 const MAX_BRIDGE_ROUTES = 32;
 const MAX_EXTENSION_STAGE_TIMELINE = MAX_BRIDGE_ROUTES * 12;
-const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v6';
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
 const ROUTE_RESULT_MATCH_URL_SYMBOL = Symbol('siteforge.browserBridge.routeResultMatchUrl');
-const API_REPLAY_SAFE_METHODS = new Set(['GET', 'HEAD']);
 const DEFAULT_API_REPLAY_TIMEOUT_MS = 8_000;
-const API_REPLAY_CHALLENGE_PATTERN = /(?:captcha|challenge|verify|verification|required login|login required|sign in|signin|log in|forbidden|access denied|permission denied|risk|anti[- ]?bot|blocked)/iu;
 const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -53,80 +59,6 @@ export function browserBridgeExtensionDirectory() {
 function uniqueStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value ?? '').trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'en'));
-}
-
-function bridgeExtensionVersionSignals(extensionStages = []) {
-  const stages = Array.isArray(extensionStages) ? extensionStages : [];
-  const contentVersions = stages
-    .map((stage) => /^bridge-content-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
-    .filter(Boolean);
-  const backgroundVersions = stages
-    .map((stage) => /^bridge-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
-    .filter(Boolean);
-  const collectorVersionsByRouteId = new Map();
-  for (const stage of stages) {
-    const match = /^collector-version:([^:]+):(.+)$/u.exec(String(stage ?? '').trim());
-    if (!match) {
-      continue;
-    }
-    const routeId = String(match[1] ?? '').trim();
-    const version = String(match[2] ?? '').trim();
-    if (!routeId || !version) {
-      continue;
-    }
-    collectorVersionsByRouteId.set(routeId, uniqueStrings([
-      ...(collectorVersionsByRouteId.get(routeId) ?? []),
-      version,
-    ]));
-  }
-  const collectorVersions = stages
-    .map((stage) => /^collector-version:(.+)$/u.exec(String(stage ?? '').trim())?.[1])
-    .filter(Boolean);
-  return {
-    contentVersions: uniqueStrings(contentVersions),
-    backgroundVersions: uniqueStrings(backgroundVersions),
-    collectorVersions: uniqueStrings(collectorVersions),
-    collectorVersionsByRouteId,
-  };
-}
-
-function collectorVersionMatches(routeResult = /** @type {any} */ ({}), collectorVersionsByRouteId = new Map()) {
-  const routeId = String(routeResult?.routeId ?? '').trim();
-  const payloadVersion = String(routeResult?.collectorVersion ?? '').trim();
-  if (payloadVersion === EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION) {
-    return true;
-  }
-  return routeId
-    ? (collectorVersionsByRouteId.get(routeId) ?? []).includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
-    : false;
-}
-
-function bridgeExtensionVersionBlockingSignals(extensionStages = [], routeResults = []) {
-  const stages = uniqueStrings(extensionStages);
-  if (!stages.length || !stages.some((stage) => /^bridge(?:-content)?-version:/u.test(stage))) {
-    return [];
-  }
-  const { contentVersions, backgroundVersions, collectorVersionsByRouteId } = bridgeExtensionVersionSignals(stages);
-  const submittedRouteIds = stages
-    .map((stage) => /^collector-submit-ok:([^:]+)$/u.exec(String(stage ?? '').trim())?.[1])
-    .filter(Boolean);
-  const capturedRouteResults = (Array.isArray(routeResults) ? routeResults : [])
-    .filter((result) => routeResultCaptured(result) && result?.routeId);
-  const routeIdsRequiringCollectorVersion = uniqueStrings([
-    ...submittedRouteIds,
-    ...capturedRouteResults.map((result) => result.routeId),
-  ]);
-  if (
-    contentVersions.includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
-    && backgroundVersions.includes(EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION)
-    && routeIdsRequiringCollectorVersion.every((routeId) => collectorVersionMatches(
-      (Array.isArray(routeResults) ? routeResults : []).find((result) => result?.routeId === routeId) ?? { routeId },
-      collectorVersionsByRouteId,
-    ))
-  ) {
-    return [];
-  }
-  return ['browser-bridge-extension-stale-or-incompatible'];
 }
 
 function routeStatus(value, fallback = 'timeout') {
@@ -844,7 +776,7 @@ function matchedRouteForPayload(payload, site, routeMaps) {
       return routeById;
     }
     if (
-      payload?.collectorVersion === EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION
+      bridgeVersionCompatible(payload?.collectorVersion)
       && routeSourceLayer(payload?.sourceLayer) === routeById.sourceLayer
       && isInternalUrl(normalizedUrl, site.allowedDomains)
     ) {
@@ -1434,7 +1366,7 @@ function sanitizeBrowserBridgeApiReplayResult(payload = /** @type {any} */ ({}))
     payload.text,
     typeof payload.body === 'string' ? payload.body.slice(0, 600) : '',
   ].filter(Boolean).join(' ');
-  const challengeLike = API_REPLAY_CHALLENGE_PATTERN.test(probeText)
+  const challengeLike = API_READ_ONLY_CHALLENGE_PATTERN.test(probeText)
     || [401, 403, 407, 419, 429].includes(Number(httpStatus));
   const httpOk = httpStatus === null || (httpStatus >= 200 && httpStatus < 300) || httpStatus === 304;
   const statusText = String(payload.status ?? payload.result ?? '').trim().toLowerCase();
@@ -1445,6 +1377,11 @@ function sanitizeBrowserBridgeApiReplayResult(payload = /** @type {any} */ ({}))
     httpStatus,
     contentType,
     responseKind: String(payload.responseKind ?? payload.kind ?? '').trim() || (contentType?.includes('json') ? 'json' : null),
+    responseEvidenceStatus: ['matched', 'failed', 'missing'].includes(String(payload.responseEvidenceStatus ?? '').trim().toLowerCase())
+      ? String(payload.responseEvidenceStatus).trim().toLowerCase()
+      : null,
+    observedStatusCode: Number.isFinite(Number(payload.observedStatusCode)) ? Number(payload.observedStatusCode) : null,
+    observedArrayFieldPresent: typeof payload.observedArrayFieldPresent === 'boolean' ? payload.observedArrayFieldPresent : null,
     responsePolicy: {
       responseMaterial: SANITIZED_SUMMARY_ONLY,
       bodyPersisted: false,
@@ -1462,11 +1399,30 @@ function apiReplayPageUrl(endpoint) {
   return `${parsed.origin}/`;
 }
 
+function apiReplayRuntimePageUrl(endpoint, runtimeParameterSource = null) {
+  const sourcePageUrl = String(runtimeParameterSource?.pageUrl ?? '').trim();
+  if (sourcePageUrl) {
+    try {
+      const endpointUrl = new URL(endpoint);
+      const pageUrl = new URL(sourcePageUrl, endpointUrl.origin);
+      if (pageUrl.hostname === endpointUrl.hostname) {
+        return pageUrl.toString();
+      }
+    } catch {
+      // Fall back to the endpoint origin page.
+    }
+  }
+  return apiReplayPageUrl(endpoint);
+}
+
 async function runBrowserBridgeApiReplayWithExtension({
   inputUrl,
   site,
   endpoint,
   method,
+  runtimeEndpoint = null,
+  runtimeParameterSource = null,
+  responseEvidence = null,
   options = /** @type {any} */ ({}),
   openBrowser,
 } = /** @type {any} */ ({})) {
@@ -1481,6 +1437,7 @@ async function runBrowserBridgeApiReplayWithExtension({
   }
   const replayEndpoint = normalizeUrl(endpoint, site?.rootUrl ?? inputUrl);
   const parsedEndpoint = new URL(replayEndpoint);
+  const replayPageUrl = apiReplayRuntimePageUrl(replayEndpoint, runtimeParameterSource);
   const nonce = randomBytes(16).toString('hex');
   const extensionStages = new Set();
   let resolveSubmission;
@@ -1508,7 +1465,7 @@ async function runBrowserBridgeApiReplayWithExtension({
         response.writeHead(200, bridgeHeaders({ 'content-type': 'application/json; charset=utf-8' }));
         response.end(JSON.stringify(bridgeSession({
           nonce,
-          targetUrl: apiReplayPageUrl(replayEndpoint),
+          targetUrl: replayPageUrl,
           submitUrl,
           collectorUrl: submitUrl,
           extensionStatusUrl,
@@ -1516,10 +1473,13 @@ async function runBrowserBridgeApiReplayWithExtension({
           apiReplay: {
             id: 'api-replay-1',
             endpoint: replayEndpoint,
+            endpointTemplate: runtimeEndpoint ?? replayEndpoint,
             method,
-            pageUrl: apiReplayPageUrl(replayEndpoint),
+            pageUrl: replayPageUrl,
             allowedHost: parsedEndpoint.hostname,
             allowedOrigin: parsedEndpoint.origin,
+            runtimeParameterSource,
+            responseEvidence,
           },
         })));
         return;
@@ -1531,7 +1491,7 @@ async function runBrowserBridgeApiReplayWithExtension({
         response.writeHead(200, bridgeHeaders({ 'content-type': 'text/html; charset=utf-8' }));
         response.end(bridgePageHtml({
           nonce,
-          targetUrl: apiReplayPageUrl(replayEndpoint),
+          targetUrl: replayPageUrl,
           submitUrl,
           collectorUrl: submitUrl,
           sessionUrl,
@@ -1612,12 +1572,15 @@ export async function runBrowserBridgeApiReplay({
   site,
   endpoint,
   method = 'GET',
+  runtimeEndpoint = null,
+  runtimeParameterSource = null,
+  responseEvidence = null,
   options = /** @type {any} */ ({}),
   robotsPolicy = null,
   openBrowser = null,
 } = /** @type {any} */ ({})) {
-  const normalizedMethod = String(method ?? 'GET').trim().toUpperCase();
-  if (!API_REPLAY_SAFE_METHODS.has(normalizedMethod)) {
+  const normalizedMethod = normalizeApiMethod(method);
+  if (!isReadOnlyApiMethod(normalizedMethod)) {
     return {
       status: 'skipped',
       reasonCode: 'method_not_read_only',
@@ -1662,6 +1625,9 @@ export async function runBrowserBridgeApiReplay({
       site,
       endpoint: replayEndpoint,
       method: normalizedMethod,
+      runtimeEndpoint,
+      runtimeParameterSource,
+      responseEvidence,
       options,
       openBrowser,
     });
@@ -1671,6 +1637,9 @@ export async function runBrowserBridgeApiReplay({
       inputUrl,
       site,
       endpoint: replayEndpoint,
+      runtimeEndpoint,
+      runtimeParameterSource,
+      responseEvidence,
       method: normalizedMethod,
       authBoundary: 'browser_bridge',
       runtimeBoundary: 'browser_bridge_page_context_fetch',

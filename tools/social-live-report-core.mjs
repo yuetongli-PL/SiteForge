@@ -4085,11 +4085,13 @@ function routeTemplateParameters(routeTemplate) {
 }
 
 function buildDynamicSeedExpansion({ surfaceRows = [], dynamicSeedCoverage = {}, readCrawlFrontier = {} } = {}) {
-  const seededRouteTemplates = new Set(Array.isArray(dynamicSeedCoverage.routeTemplates)
-    ? dynamicSeedCoverage.routeTemplates
+  const dynamicSeeds = /** @type {any} */ (dynamicSeedCoverage);
+  const frontier = /** @type {any} */ (readCrawlFrontier);
+  const seededRouteTemplates = new Set(Array.isArray(dynamicSeeds.routeTemplates)
+    ? dynamicSeeds.routeTemplates
     : []);
   const frontierBoundaries = new Map(
-    (readCrawlFrontier.dynamicRouteFamilies?.families ?? [])
+    (frontier.dynamicRouteFamilies?.families ?? [])
       .flatMap((family) => family.routeTemplateBoundaries ?? [])
       .map((entry) => [entry.routeTemplate, entry]),
   );

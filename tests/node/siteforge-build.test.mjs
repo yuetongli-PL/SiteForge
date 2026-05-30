@@ -3569,9 +3569,11 @@ test('browser auth bridge can use a managed browser session with the bundled ext
 
     assert.equal(defaultBrowserOpened, false);
     assert.equal(providerClosed, true);
-    assert.equal(providerRequest.cookieCount, 2);
-    assert.equal(providerRequest.extensionDir, browserBridgeExtensionDirectory());
-    assert.equal(providerRequest.launchArgs.includes(`--load-extension=${browserBridgeExtensionDirectory().replaceAll('\\', '/')}`), true);
+    const capturedProviderRequest = /** @type {{ cookieCount: number, extensionDir: string, launchArgs: string[] }} */ (providerRequest);
+    assert.ok(capturedProviderRequest);
+    assert.equal(capturedProviderRequest.cookieCount, 2);
+    assert.equal(capturedProviderRequest.extensionDir, browserBridgeExtensionDirectory());
+    assert.equal(capturedProviderRequest.launchArgs.includes(`--load-extension=${browserBridgeExtensionDirectory().replaceAll('\\', '/')}`), true);
     assert.equal(result.status, 'browser_verified');
     assert.equal(result.bridgeSummary.capturedRouteCount, 1);
     assert.equal(result.bridgeSummary.routeResults[0].targetRoute, '/account');

@@ -600,9 +600,11 @@ test('api_request runtime executes Reddit OAuth read plans without Browser Bridg
     assert.equal(result.runtimePolicy.authorizationPersisted, false);
     assert.equal(result.runtimePolicy.cookieMaterialPersisted, false);
     assert.equal(bridgeFetchCalled, false);
-    assert.equal(fetchRequest.url, 'https://oauth.reddit.com/api/v1/me');
-    assert.equal(fetchRequest.options.headers.authorization, 'Bearer synthetic-reddit-token');
-    assert.equal(fetchRequest.options.headers['user-agent'], 'SiteForgeTest/0.1');
+    const capturedFetchRequest = /** @type {{ url: string, options: { headers: Record<string, string> } }} */ (fetchRequest);
+    assert.ok(capturedFetchRequest);
+    assert.equal(capturedFetchRequest.url, 'https://oauth.reddit.com/api/v1/me');
+    assert.equal(capturedFetchRequest.options.headers.authorization, 'Bearer synthetic-reddit-token');
+    assert.equal(capturedFetchRequest.options.headers['user-agent'], 'SiteForgeTest/0.1');
     const serialized = JSON.stringify(result);
     assert.equal(serialized.includes('synthetic-reddit-token'), false);
     assert.equal(serialized.includes('body-token-is-not-persisted'), false);

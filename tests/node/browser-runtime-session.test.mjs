@@ -149,7 +149,9 @@ test('openBrowserSession forwards launch args to the browser launcher', async ()
   });
 
   try {
-    assert.deepEqual(launchOptions.launchArgs, [
+    const capturedLaunchOptions = /** @type {{ launchArgs: string[] }} */ (launchOptions);
+    assert.ok(capturedLaunchOptions);
+    assert.deepEqual(capturedLaunchOptions.launchArgs, [
       '--load-extension=C:\\SiteForge\\bridge',
       '--disable-extensions-except=C:\\SiteForge\\bridge',
     ]);

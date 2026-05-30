@@ -15,6 +15,10 @@ test('readCliValue rejects missing values and flag-looking next tokens by defaul
     () => readCliValue(['--timeout', '--json'], '--timeout', 0),
     /Missing value for --timeout/u,
   );
+  assert.throws(
+    () => readCliValue(['--timeout', ''], '--timeout', 0),
+    /Missing value for --timeout/u,
+  );
 });
 
 test('readCliValue supports inline values and explicit dash-prefixed values when allowed', () => {

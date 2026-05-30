@@ -1,7 +1,7 @@
 // @ts-check
 
 import { spawn } from 'node:child_process';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
 import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
+import { readJsonFile, writeJsonFile } from '../src/infra/io.mjs';
 import { formatTimestampForDir as timestampForDir } from '../src/shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -780,10 +781,6 @@ async function pathExists(filePath) {
   }
 }
 
-async function readJsonFile(filePath) {
-  return JSON.parse((await readFile(filePath, 'utf8')).replace(/^\uFEFF/u, ''));
-}
-
 async function locateLatestDoctorReport(artifactRoot) {
   if (!await pathExists(artifactRoot)) {
     return null;
@@ -1327,7 +1324,7 @@ async function executePlan(entries, options, runId) {
     status: 'running',
   };
   const manifestPath = path.join(runDir, 'manifest.json');
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await writeJsonFile(manifestPath, manifest);
 
   for (const entry of entries) {
     process.stdout.write(`\n[${entry.id}] ${formatCommand(entry)}\n`);
@@ -1338,11 +1335,11 @@ async function executePlan(entries, options, runId) {
       result.artifactSummary.reason = 'timeout';
     }
     manifest.results.push(result);
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    await writeJsonFile(manifestPath, manifest);
     if (result.exitCode !== 0 && options.failFast) {
       manifest.status = 'failed';
       manifest.finishedAt = new Date().toISOString();
-      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      await writeJsonFile(manifestPath, manifest);
       process.exitCode = result.exitCode ?? 1;
       return manifestPath;
     }
@@ -1350,7 +1347,7 @@ async function executePlan(entries, options, runId) {
 
   manifest.status = aggregateMatrixStatus(manifest.results);
   manifest.finishedAt = new Date().toISOString();
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await writeJsonFile(manifestPath, manifest);
   printSummary(manifest.results);
   if (manifest.status !== 'passed') {
     process.exitCode = 1;

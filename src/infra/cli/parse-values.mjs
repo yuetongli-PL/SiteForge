@@ -104,7 +104,7 @@ export function readCliValue(args, current, index, {
     throw new Error(`Missing value for ${flagName}`);
   }
   const value = String(args[index + 1]);
-  if (!allowDashValue && value.startsWith('--')) {
+  if (value === '' || (!allowDashValue && value.startsWith('--'))) {
     throw new Error(`Missing value for ${flagName}`);
   }
   return { value, nextIndex: index + 1 };
@@ -122,28 +122,6 @@ export function parseIntegerOption(value, flagName, {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
     throw new Error(`${flagName} must be a finite integer`);
-  }
-  if (min !== undefined && parsed < min) {
-    throw new Error(`${flagName} must be at least ${min}`);
-  }
-  if (max !== undefined && parsed > max) {
-    throw new Error(`${flagName} must be at most ${max}`);
-  }
-  return parsed;
-}
-
-/**
- * @param {unknown} value
- * @param {string} flagName
- * @param {NumericRangeOptions} [options]
- */
-export function parseFiniteNumberOption(value, flagName, {
-  min,
-  max,
-} = /** @type {any} */ ({})) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${flagName} must be a finite number`);
   }
   if (min !== undefined && parsed < min) {
     throw new Error(`${flagName} must be at least ${min}`);

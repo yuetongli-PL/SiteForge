@@ -11,10 +11,6 @@ const PROGRESS_OPTION_KEYS = new Set([
   'noTty',
 ]);
 
-export function readCliFlagValue(args, current, index) {
-  return readCliValue(args, current, index);
-}
-
 export function parseProgressCliOption(args, current, index, options) {
   switch (current.split('=')[0]) {
     case '--json':

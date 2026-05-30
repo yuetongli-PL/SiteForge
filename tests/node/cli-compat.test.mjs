@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 import { resolveCliDispatch } from '../../src/entrypoints/cli/index.mjs';
+import { resolveSocialSiteConfig } from '../../src/sites/known-sites/social/actions/router.mjs';
 import {
   ACCEPTED_BOOLEAN_BUILD_FLAGS,
   ACCEPTED_ENUM_VALUE_BUILD_FLAGS,
@@ -141,6 +142,14 @@ test('public SiteForge CLI help routes stay available', () => {
     const dispatch = resolveCliDispatch(args);
     assert.match(dispatch.help, /siteforge build <url>/u);
   }
+});
+
+test('internal social action defaults resolve profiles from repository root', () => {
+  const xConfig = resolveSocialSiteConfig('x');
+  const instagramConfig = resolveSocialSiteConfig('instagram');
+
+  assert.equal(xConfig.defaultProfilePath, path.join(repoRoot, 'profiles', 'x.com.json'));
+  assert.equal(instagramConfig.defaultProfilePath, path.join(repoRoot, 'profiles', 'www.instagram.com.json'));
 });
 
 test('public SiteForge CLI accepts documented and compatibility build flags', () => {

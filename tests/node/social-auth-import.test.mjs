@@ -159,6 +159,13 @@ test('parseArgs supports env-based cookie import without putting secrets in argv
   assert.equal(options.headless, false);
 });
 
+test('parseArgs rejects flag-looking option values', () => {
+  assert.throws(
+    () => parseArgs(['--site', 'x', '--cookie-header-env', '--execute']),
+    /Missing value for --cookie-header-env/u,
+  );
+});
+
 test('parseArgs blocks raw Cookie header argv unless explicitly acknowledged', () => {
   assert.throws(
     () => parseArgs([

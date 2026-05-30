@@ -5,6 +5,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
 import {
   createCliProgressRenderer,
   parseProgressCliOption,
@@ -25,13 +26,6 @@ Public command:
   siteforge build <url>
   Add [--json] [--quiet] [--progress auto|interactive|plain] [--force-tty] [--no-tty] to any command.
 `;
-
-function readValue(argv, index) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${argv[index]}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
-}
 
 export function parseCliArgs(argv) {
   if (!argv.length || argv[0] === '--help' || argv[0] === '-h') {

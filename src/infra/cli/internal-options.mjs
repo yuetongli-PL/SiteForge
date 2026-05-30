@@ -1,8 +1,7 @@
 // @ts-check
 
-export function readCliValue(argv, index, flag = argv[index]) {
-  if (index + 1 >= argv.length) {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return { value: argv[index + 1], nextIndex: index + 1 };
+import { readCliValue as readSharedCliValue } from './parse-values.mjs';
+
+export function readCliValue(argv, index, flag = argv[index], options = /** @type {any} */ ({})) {
+  return readSharedCliValue(argv, flag, index, options);
 }

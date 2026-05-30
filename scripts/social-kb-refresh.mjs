@@ -1,7 +1,7 @@
 // @ts-check
 
 import { spawn } from 'node:child_process';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import { displayCommandForExecutable } from '../src/infra/cli/command-map.mjs';
 import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
+import { readJsonFile, writeJsonFile } from '../src/infra/io.mjs';
 import { formatTimestampForDir as timestampForDir } from '../src/shared/time.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -634,7 +635,7 @@ export function buildRunManifest(entries, options, runId, manifestPath) {
 
 async function writeManifest(manifestPath, manifest) {
   await mkdir(path.dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await writeJsonFile(manifestPath, manifest);
 }
 
 function printPlan(entries, options, manifestPath) {
@@ -666,10 +667,6 @@ async function pathExists(filePath) {
   } catch {
     return false;
   }
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
 }
 
 async function locateDoctorArtifacts(artifactRoot) {

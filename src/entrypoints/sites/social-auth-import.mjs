@@ -10,6 +10,7 @@ import {
   parseProgressCliOption,
   stripProgressCliOptions,
 } from '../../infra/cli/progress-cli.mjs';
+import { readCliValue } from '../../infra/cli/internal-options.mjs';
 import { openBrowserSession } from '../../infra/browser/session.mjs';
 import { resolveSiteBrowserSessionOptions, inspectLoginState } from '../../infra/auth/site-auth.mjs';
 import { ensureDir, readJsonFile, writeTextFile } from '../../infra/io.mjs';
@@ -155,13 +156,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     noTty: false,
   };
 
-  const readValue = (index) => {
-    const value = argv[index + 1];
-    if (!value || value.startsWith('--')) {
-      throw new Error(`Missing value for ${argv[index]}`);
-    }
-    return { value, nextIndex: index + 1 };
-  };
+  const readValue = (index) => readCliValue(argv, index, argv[index]);
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];

@@ -1,6 +1,6 @@
 // @ts-check
 
-import { readdir, readFile, stat, writeFile, mkdir } from 'node:fs/promises';
+import { readdir, stat, mkdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
 import { runSingleStageCliWithProgress } from '../src/infra/cli/progress-cli.mjs';
 import { actionCliCommand } from '../src/infra/cli/command-map.mjs';
+import { readJsonFile, writeJsonFile } from '../src/infra/io.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -134,10 +135,6 @@ async function pathExists(filePath) {
   }
 }
 
-async function readJson(filePath) {
-  return JSON.parse((await readFile(filePath, 'utf8')).replace(/^\uFEFF/u, ''));
-}
-
 async function findJsonFiles(target) {
   const resolved = path.resolve(target);
   const info = await stat(resolved);
@@ -259,7 +256,7 @@ export async function buildResumePlan(options, now = new Date()) {
   const records = [];
   for (const file of files) {
     try {
-      records.push(...extractAttemptRecords(await readJson(file), file));
+      records.push(...extractAttemptRecords(await readJsonFile(file), file));
     } catch {
       // Ignore unrelated JSON while scanning a directory.
     }
@@ -309,7 +306,7 @@ async function writePlan(options, plan) {
   const runDir = path.join(path.resolve(options.runRoot), plan.generatedAt.replace(/[-:]/g, '').replace(/\.(\d{3})Z$/u, '$1Z'));
   await mkdir(runDir, { recursive: true });
   const manifestPath = path.join(runDir, 'manifest.json');
-  await writeFile(manifestPath, `${JSON.stringify(plan, null, 2)}\n`, 'utf8');
+  await writeJsonFile(manifestPath, plan);
   return manifestPath;
 }
 

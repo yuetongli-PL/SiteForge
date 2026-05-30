@@ -184,6 +184,10 @@ test('site login, session, action, and catalog parsers accept shared progress fl
   const bilibili = parseBilibiliActionArgs(['download', 'BV1progress', '--progress', 'plain', '--quiet']);
   assert.equal(bilibili.options.progressMode, 'plain');
   assert.equal(bilibili.options.quiet, true);
+  assert.throws(
+    () => parseBilibiliActionArgs(['download', 'BV1progress', '--out-dir', '--json']),
+    /Missing value for --out-dir/u,
+  );
 
   const douyin = parseDouyinActionArgs(['download', 'https://www.douyin.com/video/1', '--progress', 'plain', '--json']);
   assert.equal(douyin.progressMode, 'plain');
@@ -337,6 +341,22 @@ test('auxiliary site CLIs accept shared progress flags without exposing sensitiv
   ]);
   assert.equal(douyinMedia.options.progressMode, 'plain');
   assert.equal(douyinMedia.options.noTty, true);
+});
+
+test('social action parser applies positional values for action aliases', () => {
+  const routeAlias = parseSocialActionArgs(['route', '/i/bookmarks'], { site: 'x' });
+  assert.equal(routeAlias.action, 'route');
+  assert.equal(routeAlias.route, '/i/bookmarks');
+  assert.equal(routeAlias.account, undefined);
+
+  const appRouteAlias = parseSocialActionArgs(['app-route', '/settings/account'], { site: 'x' });
+  assert.equal(appRouteAlias.route, '/settings/account');
+  assert.equal(appRouteAlias.account, undefined);
+
+  const searchAlias = parseSocialActionArgs(['search-posts', 'openai'], { site: 'x' });
+  assert.equal(searchAlias.action, 'search-posts');
+  assert.equal(searchAlias.query, 'openai');
+  assert.equal(searchAlias.account, undefined);
 });
 
 test('unified CLI facade only routes build commands', () => {

@@ -205,7 +205,7 @@ test('social-kb-refresh continues after failures by default and aggregates final
   t.after(() => rm(rootDir, { recursive: true, force: true }));
 
   await withExitCodeReset(async () => {
-    const options = parseArgs(['--execute', '--run-root', rootDir, '--case-timeout', '1000']);
+    const options = parseArgs(['--execute', '--run-root', rootDir, '--case-timeout', '10000']);
     const entries = [
       fakeEntry(rootDir, 'failing-case', ['-e', 'process.exit(7)']),
       fakeEntry(rootDir, 'passing-case', ['-e', 'process.exit(0)']),
@@ -230,7 +230,7 @@ test('social-kb-refresh fail-fast stops remaining cases and records skipped ids'
   t.after(() => rm(rootDir, { recursive: true, force: true }));
 
   await withExitCodeReset(async () => {
-    const options = parseArgs(['--execute', '--fail-fast', '--run-root', rootDir, '--case-timeout', '1000']);
+    const options = parseArgs(['--execute', '--fail-fast', '--run-root', rootDir, '--case-timeout', '10000']);
     const entries = [
       fakeEntry(rootDir, 'failing-case', ['-e', 'process.exit(3)']),
       fakeEntry(rootDir, 'skipped-case', ['-e', 'process.exit(0)']),

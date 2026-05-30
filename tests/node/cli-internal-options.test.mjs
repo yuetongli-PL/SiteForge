@@ -20,10 +20,19 @@ test('strict internal CLI option parsers preserve existing boolean and number er
   assert.throws(() => parseNonNegativeNumberOption('-1', 'timeoutMs'), /Invalid number for timeoutMs: -1/u);
 });
 
-test('readCliValue returns the next argv token and preserves missing value errors', () => {
+test('internal readCliValue delegates shared CLI value parsing', () => {
   assert.deepEqual(readCliValue(['--out-dir', 'runs/out'], 0, '--out-dir'), {
     value: 'runs/out',
     nextIndex: 1,
   });
+  assert.deepEqual(readCliValue(['--out-dir=runs/out'], 0, '--out-dir=runs/out'), {
+    value: 'runs/out',
+    nextIndex: 0,
+  });
   assert.throws(() => readCliValue(['--out-dir'], 0, '--out-dir'), /Missing value for --out-dir/u);
+  assert.throws(() => readCliValue(['--out-dir', '--json'], 0, '--out-dir'), /Missing value for --out-dir/u);
+  assert.deepEqual(readCliValue(['--pattern', '--literal'], 0, '--pattern', { allowDashValue: true }), {
+    value: '--literal',
+    nextIndex: 1,
+  });
 });

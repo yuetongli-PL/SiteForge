@@ -5,6 +5,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
+import { readCliValue } from '../../infra/cli/internal-options.mjs';
 import {
   parseProgressCliOption,
   runSingleStageCliWithProgress,
@@ -50,12 +51,7 @@ export function parseCliArgs(argv) {
 
   const [action, inputUrl, ...rest] = argv;
   const options = /** @type {any} */ ({});
-  const readValue = (index) => {
-    if (index + 1 >= rest.length) {
-      throw new Error(`Missing value for ${rest[index]}`);
-    }
-    return { value: rest[index + 1], nextIndex: index + 1 };
-  };
+  const readValue = (index) => readCliValue(rest, index, rest[index]);
 
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];

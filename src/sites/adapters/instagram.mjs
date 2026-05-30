@@ -6,6 +6,7 @@ import {
   normalizeSiteAdapterCatalogUpgradePolicy,
 } from '../../domain/capabilities/api-candidates.mjs';
 import { createCatalogAdapter } from './factory.mjs';
+import { endpointParts } from './url-parts.mjs';
 
 const INSTAGRAM_HOSTS = Object.freeze([
   'www.instagram.com',
@@ -117,22 +118,6 @@ function inferInstagramPageType({ pathname = '' } = /** @type {any} */ ({})) {
     return 'author-page';
   }
   return null;
-}
-
-function parseUrl(input) {
-  try {
-    return input ? new URL(input) : null;
-  } catch {
-    return null;
-  }
-}
-
-function endpointParts(candidate = /** @type {any} */ ({})) {
-  const parsed = parseUrl(candidate?.endpoint?.url);
-  return {
-    host: parsed?.hostname.toLowerCase() ?? '',
-    pathname: parsed?.pathname ?? '',
-  };
 }
 
 function isInstagramApiCandidate(candidate = /** @type {any} */ ({})) {

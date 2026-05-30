@@ -6,6 +6,7 @@ import {
   normalizeSiteAdapterCatalogUpgradePolicy,
 } from '../../domain/capabilities/api-candidates.mjs';
 import { createCatalogAdapter } from './factory.mjs';
+import { endpointParts } from './url-parts.mjs';
 
 const X_HOSTS = Object.freeze([
   'x.com',
@@ -111,22 +112,6 @@ function inferXPageType({ pathname = '' } = /** @type {any} */ ({})) {
     return 'author-page';
   }
   return null;
-}
-
-function parseUrl(input) {
-  try {
-    return input ? new URL(input) : null;
-  } catch {
-    return null;
-  }
-}
-
-function endpointParts(candidate = /** @type {any} */ ({})) {
-  const parsed = parseUrl(candidate?.endpoint?.url);
-  return {
-    host: parsed?.hostname.toLowerCase() ?? '',
-    pathname: parsed?.pathname ?? '',
-  };
 }
 
 function isXApiCandidate(candidate = /** @type {any} */ ({})) {

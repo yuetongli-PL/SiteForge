@@ -8,6 +8,7 @@ import {
 import { inferDouyinPageTypeFromUrl } from '../known-sites/douyin/model/site.mjs';
 import { createCatalogAdapter } from './factory.mjs';
 import { normalizeSiteAdapterSemanticEntry } from './generic-navigation.mjs';
+import { endpointParts } from './url-parts.mjs';
 
 const DOUYIN_HOSTS = Object.freeze([
   'www.douyin.com',
@@ -42,22 +43,6 @@ const INTENT_LABELS = Object.freeze({
   'list-followed-users': '\u63d0\u53d6\u5173\u6ce8\u7528\u6237\u5217\u8868',
   'list-followed-updates': '\u63d0\u53d6\u5173\u6ce8\u66f4\u65b0\u89c6\u9891',
 });
-
-function parseUrl(input) {
-  try {
-    return input ? new URL(input) : null;
-  } catch {
-    return null;
-  }
-}
-
-function endpointParts(candidate = /** @type {any} */ ({})) {
-  const parsed = parseUrl(candidate?.endpoint?.url);
-  return {
-    host: parsed?.hostname.toLowerCase() ?? '',
-    pathname: parsed?.pathname ?? '',
-  };
-}
 
 function isDouyinSiteKey(value) {
   const siteKey = String(value ?? '').trim();

@@ -9,6 +9,7 @@ import {
 import { requireReasonCodeDefinition } from '../../domain/risks/reason-codes.mjs';
 import { redactValue } from '../../domain/sessions/security-guard.mjs';
 import { createCatalogAdapter } from './factory.mjs';
+import { endpointParts, parseUrl } from './url-parts.mjs';
 
 const XIAOHONGSHU_HOSTS = Object.freeze([
   'www.xiaohongshu.com',
@@ -47,22 +48,6 @@ const INTENT_LABELS = Object.freeze({
   'list-followed-users': '\u67e5\u8be2\u5173\u6ce8\u7528\u6237\u5217\u8868',
   'list-followed-updates': '\u67e5\u8be2\u5173\u6ce8\u7528\u6237\u6700\u8fd1\u66f4\u65b0',
 });
-
-function parseUrl(input) {
-  try {
-    return input ? new URL(input) : null;
-  } catch {
-    return null;
-  }
-}
-
-function endpointParts(candidate = /** @type {any} */ ({})) {
-  const parsed = parseUrl(candidate?.endpoint?.url);
-  return {
-    host: parsed?.hostname.toLowerCase() ?? '',
-    pathname: parsed?.pathname ?? '',
-  };
-}
 
 function isXiaohongshuApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();

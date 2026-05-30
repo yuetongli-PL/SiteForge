@@ -40,7 +40,7 @@ export function derivePersistentProfileKey(input) {
   return sanitizeHost(normalized);
 }
 
-export function resolvePersistentBrowserRootBrandPaths({
+function resolvePersistentBrowserRootBrandPaths({
   platform = process.platform,
   homeDir = os.homedir(),
   localAppData = process.env.LOCALAPPDATA,
@@ -65,13 +65,6 @@ export function resolvePersistentBrowserRootBrandPaths({
     preferred: path.posix.join(stateRoot, 'siteforge', 'browser-profiles'),
     legacy: path.posix.join(stateRoot, 'browser-wiki-skill', 'browser-profiles'),
   };
-}
-
-export function resolveDefaultPersistentBrowserRoot({
-  brandPaths = resolvePersistentBrowserRootBrandPaths(),
-} = /** @type {any} */ ({})) {
-  const { preferred } = brandPaths;
-  return preferred;
 }
 
 export function resolvePersistentUserDataDir(input, {

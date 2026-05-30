@@ -22,21 +22,6 @@ export function assertRepoRoot(candidatePath) {
   return repoRoot;
 }
 
-export function repoRootFromImportMeta(importMetaUrl) {
-  let cursor = path.dirname(fileURLToPath(importMetaUrl));
-  while (true) {
-    try {
-      return assertRepoRoot(cursor);
-    } catch {
-      const parent = path.dirname(cursor);
-      if (parent === cursor) {
-        throw new Error(`Unable to locate repository root from ${importMetaUrl}`);
-      }
-      cursor = parent;
-    }
-  }
-}
-
 export const REPO_ROOT = assertRepoRoot(path.resolve(MODULE_DIR, '..', '..', '..'));
 
 export function resolveRepoPath(...segments) {

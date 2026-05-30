@@ -196,7 +196,6 @@ test('site modules do not depend directly on entrypoint modules', async () => {
 test('canonical src modules own profile validation and infra implementations', async () => {
   const sourceChecks = [
     ['src/sites/registry/core/profile-validation.mjs', 'lib/profile-validation.mjs'],
-    ['src/infra/browser/benchmark-report.mjs', 'lib/browser-runtime/benchmark-report.mjs'],
     ['src/infra/browser/cdp-client.mjs', 'lib/browser-runtime/cdp-client.mjs'],
     ['src/infra/browser/launcher.mjs', 'lib/browser-runtime/launcher.mjs'],
     ['src/infra/browser/profile-store.mjs', 'lib/browser-runtime/profile-store.mjs'],

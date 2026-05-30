@@ -11,6 +11,8 @@ import {
 } from '../../infra/cli/progress-cli.mjs';
 import { sessionRepairPlanCommand } from '../../infra/cli/command-map.mjs';
 import { readCliValue as readValue } from '../../infra/cli/internal-options.mjs';
+import { inspectReusableSiteSession as inspectReusableSiteSessionRuntime } from '../../infra/auth/site-auth.mjs';
+import { prepareSiteSessionGovernance } from '../../infra/auth/site-session-governance.mjs';
 import { runSessionTask } from '../../domain/sessions/runner.mjs';
 
 const HELP = `Internal script usage:
@@ -136,6 +138,36 @@ function render(result) {
   ].join('\n') + '\n';
 }
 
+function sessionInspectionUrl(siteKey, options = /** @type {any} */ ({})) {
+  const verificationUrl = String(options.verificationUrl ?? '').trim();
+  if (verificationUrl) {
+    return verificationUrl;
+  }
+  const host = String(options.host ?? siteKey ?? '').trim();
+  return host.startsWith('http') ? host : `https://${host}/`;
+}
+
+function defaultSessionTaskDeps(deps = /** @type {any} */ ({})) {
+  const inspectRuntime = deps.inspectReusableSiteSessionRuntime ?? inspectReusableSiteSessionRuntime;
+  return {
+    ...deps,
+    inspectReusableSiteSession: deps.inspectReusableSiteSession
+      ?? ((siteKey, options = /** @type {any} */ ({})) => inspectRuntime(
+        sessionInspectionUrl(siteKey, options),
+        {
+          browserProfileRoot: options.browserProfileRoot,
+          userDataDir: options.userDataDir,
+          reuseLoginState: true,
+        },
+        {
+          profilePath: options.profilePath,
+        },
+        deps.inspectReusableSiteSessionDeps ?? deps,
+      )),
+    prepareSiteSessionGovernance: deps.prepareSiteSessionGovernance ?? prepareSiteSessionGovernance,
+  };
+}
+
 export async function main(argv = process.argv.slice(2), deps = /** @type {any} */ ({})) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -162,7 +194,7 @@ export async function main(argv = process.argv.slice(2), deps = /** @type {any} 
   });
   let result;
   try {
-    result = await (deps.runSessionTask ?? runSessionTask)(stripProgressCliOptions(options), {}, deps);
+    result = await (deps.runSessionTask ?? runSessionTask)(stripProgressCliOptions(options), {}, defaultSessionTaskDeps(deps));
     const manifest = result.manifest ?? {};
     const message = `${manifest.status ?? 'unknown'} ${manifest.reason ?? ''}`.trim();
     if (['ready', 'healthy', 'ok'].includes(String(manifest.status ?? '').toLowerCase())) {

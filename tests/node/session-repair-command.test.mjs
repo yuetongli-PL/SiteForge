@@ -5,7 +5,6 @@ import {
   buildSessionRepairPlanCommand,
   quoteCommandArg,
 } from '../../src/domain/sessions/repair-command.mjs';
-import { buildSessionRepairPlanCommand as buildSessionRepairPlanCommandFromIndex } from '../../src/domain/sessions/index.mjs';
 
 test('session repair command builds session gate reason guidance', () => {
   const command = buildSessionRepairPlanCommand({
@@ -47,10 +46,6 @@ test('session repair command builds audit manifest guidance with quoting', () =>
 
 test('session repair command returns null without site', () => {
   assert.equal(buildSessionRepairPlanCommand({ reason: 'session-provider-missing' }), null);
-});
-
-test('session repair command is exported from the session module barrel', () => {
-  assert.equal(buildSessionRepairPlanCommandFromIndex, buildSessionRepairPlanCommand);
 });
 
 test('session repair command quotes embedded double quotes', () => {

@@ -47,6 +47,14 @@ export const SESSION_SITE_DEFINITIONS = Object.freeze([
     requiredAuthSurfaces: ['/direct', '/accounts/edit'],
     riskStopConditions: ['checkpoint', 'challenge', 'rate-limit', 'api-drift'],
   },
+  {
+    siteKey: 'reddit',
+    host: 'www.reddit.com',
+    verificationUrl: 'https://www.reddit.com/',
+    keepaliveUrl: 'https://www.reddit.com/',
+    requiredAuthSurfaces: ['/message/inbox', '/user/me/saved', '/subreddits/mine/subscriber'],
+    riskStopConditions: ['login-wall', 'network-security-block', 'rate-limit', 'api-drift'],
+  },
 ]);
 
 const SITE_ALIASES = Object.freeze({
@@ -64,6 +72,11 @@ const SITE_ALIASES = Object.freeze({
   ig: 'instagram',
   'instagram.com': 'instagram',
   'www.instagram.com': 'instagram',
+  reddit: 'reddit',
+  'reddit.com': 'reddit',
+  'www.reddit.com': 'reddit',
+  'old.reddit.com': 'reddit',
+  'oauth.reddit.com': 'reddit',
 });
 
 function normalizeList(value = []) {

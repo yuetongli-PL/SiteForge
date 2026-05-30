@@ -188,7 +188,8 @@ function sessionRiskStateForReason(manifest = {}, {
 }
 
 function isNonBlockingSessionHealthSignal(signal) {
-  return signal === 'profile-health-recovered-after-session-reuse';
+  return signal === 'profile-health-recovered-after-session-reuse'
+    || signal === 'auth-session-state-reuse-verified';
 }
 
 /** @param {Record<string, any>} [plan] */
@@ -259,6 +260,7 @@ async function inspectHealthForPlan(plan, request = {}, deps = {}) {
     profilePath: plan.profilePath,
     browserProfileRoot: plan.browserProfileRoot,
     userDataDir: plan.userDataDir,
+    verificationUrl: plan.verificationUrl,
     purpose: plan.purpose,
     operation: plan.purpose,
     sessionRequirement: plan.sessionRequirement,

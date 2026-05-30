@@ -69,6 +69,61 @@ test('session CLI parser accepts health plan flags', () => {
   assert.equal(parsed.json, true);
 });
 
+test('session CLI default deps inspect reusable browser profiles for health plans', async (t) => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-session-cli-default-deps-'));
+  t.after(() => rm(runDir, { recursive: true, force: true }));
+  /** @type {any} */
+  let inspected = null;
+  const writes = [];
+  await main([
+    'health',
+    '--site', 'x',
+    '--profile-path', 'profiles/x.com.json',
+    '--run-dir', runDir,
+    '--json',
+  ], {
+    stdout: {
+      write(value) {
+        writes.push(String(value));
+      },
+    },
+    inspectReusableSiteSessionRuntime: async (inputUrl, settings, options) => {
+      inspected = { inputUrl, settings, options };
+      return {
+        authAvailable: true,
+        identityConfirmed: true,
+        profileHealth: {
+          exists: true,
+          usableForCookies: true,
+          profileLifecycle: 'healthy',
+        },
+        authConfig: {
+          verificationUrl: 'https://x.com/home',
+        },
+        userDataDir: 'C:/profiles/x.com',
+        reuseLoginState: true,
+        sessionOptions: {
+          authConfig: {
+            verificationUrl: 'https://x.com/home',
+          },
+        },
+      };
+    },
+    prepareSiteSessionGovernance: async () => ({
+      policyDecision: { allowed: true },
+    }),
+  });
+
+  const manifest = JSON.parse(writes.join(''));
+  assert.ok(inspected);
+  assert.equal(inspected.inputUrl, 'https://x.com/home');
+  assert.equal(inspected.settings.reuseLoginState, true);
+  assert.match(inspected.options.profilePath, /profiles[\\/]+x\.com\.json/u);
+  assert.equal(manifest.status, 'passed');
+  assert.equal(manifest.health.status, 'ready');
+  assert.equal(manifest.health.authStatus, 'authenticated');
+});
+
 test('session manifest normalizer redacts profile paths and auth material', () => {
   const manifest = normalizeSessionRunManifest({
     plan: {
@@ -259,7 +314,7 @@ test('lifecycle dispatcher rejects composed subscriber failures without running 
   assert.deepEqual(calls, ['first', 'failing']);
 });
 
-test('session site modules expose five auth site definitions and profile auth URLs', async () => {
+test('session site modules expose auth site definitions and profile auth URLs', async () => {
   const definitions = listSessionSiteDefinitions();
   assert.deepEqual(definitions.map((definition) => definition.siteKey), [
     'bilibili',
@@ -267,6 +322,7 @@ test('session site modules expose five auth site definitions and profile auth UR
     'xiaohongshu',
     'x',
     'instagram',
+    'reddit',
   ]);
 
   const resolved = await resolveSessionSiteDefinition({ site: 'xhs' });
@@ -274,6 +330,11 @@ test('session site modules expose five auth site definitions and profile auth UR
   assert.equal(resolved.host, 'www.xiaohongshu.com');
   assert.equal(resolved.verificationUrl, 'https://www.xiaohongshu.com/notification');
   assert.deepEqual(resolved.requiredAuthSurfaces, ['/notification']);
+
+  const reddit = await resolveSessionSiteDefinition({ site: 'oauth.reddit.com' });
+  assert.equal(reddit.siteKey, 'reddit');
+  assert.equal(reddit.host, 'www.reddit.com');
+  assert.equal(reddit.verificationUrl, 'https://www.reddit.com/');
 });
 
 test('session runner writes a ready health manifest without executing repair providers', async (t) => {
@@ -798,6 +859,7 @@ test('session health treats verified reusable profile as recovered from historic
   });
 
   assert.equal(health.status, 'ready');
+  assert.equal(health.authStatus, 'authenticated');
   assert.equal(health.reason, undefined);
   assert.equal(health.repairPlan, undefined);
   assert.deepEqual(health.riskSignals, ['profile-health-recovered-after-session-reuse']);
@@ -923,6 +985,7 @@ test('session health accepts explicit crashed profile lifecycle only when reuse 
   });
 
   assert.equal(health.status, 'ready');
+  assert.equal(health.authStatus, 'authenticated');
   assert.equal(health.reason, undefined);
   assert.equal(health.repairPlan, undefined);
   assert.deepEqual(health.riskSignals, ['profile-health-recovered-after-session-reuse']);
@@ -986,6 +1049,67 @@ test('session health does not let stale healthy timestamps bypass uninitialized 
   assert.equal(health.reason, 'profile-uninitialized');
   assert.equal(health.repairPlan.action, 'site-login');
   assert.equal(health.riskSignals.includes('profile-health-recovered-after-session-reuse'), false);
+});
+
+test('session health accepts recent session reuse state for required archive gates', async () => {
+  const health = await inspectSessionHealth('x', {
+    host: 'x.com',
+    profile: {
+      host: 'x.com',
+      authSession: {
+        reuseLoginStateByDefault: true,
+      },
+    },
+    sessionRequirement: 'required',
+    now: new Date('2026-04-30T13:13:00.000Z'),
+  }, {
+    inspectReusableSiteSession: async () => ({
+      authAvailable: false,
+      reusableProfile: false,
+      userDataDir: 'C:/private/x-profile',
+      reuseLoginState: true,
+      profileHealth: {
+        exists: true,
+        healthy: true,
+        usableForCookies: true,
+        profileLifecycle: 'healthy',
+      },
+      authSessionStateSummary: {
+        lastHealthyAt: '2026-04-30T13:12:42.831Z',
+        lastSessionReuseVerifiedAt: '2026-04-30T13:12:42.831Z',
+        nextSuggestedKeepaliveAt: '2026-04-30T14:12:42.831Z',
+        keepaliveDue: false,
+        keepaliveIntervalMinutes: 60,
+      },
+    }),
+    prepareSiteSessionGovernance: async () => ({
+      policyDecision: {
+        allowed: true,
+        riskCauseCode: null,
+        riskAction: null,
+      },
+      networkDrift: {
+        driftDetected: false,
+        reasons: [],
+      },
+      authSessionSummary: {
+        lastHealthyAt: '2026-04-30T13:12:42.831Z',
+        lastSessionReuseVerifiedAt: '2026-04-30T13:12:42.831Z',
+        nextSuggestedKeepaliveAt: '2026-04-30T14:12:42.831Z',
+        keepaliveDue: false,
+        keepaliveIntervalMinutes: 60,
+      },
+      lease: {
+        leaseId: 'lease-recent-reuse-required-session',
+      },
+    }),
+    releaseGovernanceSessionLease: async () => {},
+  });
+
+  assert.equal(health.status, 'ready');
+  assert.equal(health.reason, undefined);
+  assert.equal(health.repairPlan, undefined);
+  assert.deepEqual(health.riskSignals, ['auth-session-state-reuse-verified']);
 });
 
 test('session CLI prints JSON and writes manifest under runs/session layout', async (t) => {

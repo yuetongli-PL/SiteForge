@@ -68,6 +68,22 @@ function timestampMs(value) {
   return Number.isFinite(time) ? time : null;
 }
 
+function authSummaryConfirmsReusableSession(authSummary = {}, now = new Date()) {
+  const reuseVerifiedAt = timestampMs(authSummary?.lastSessionReuseVerifiedAt);
+  if (!reuseVerifiedAt) {
+    return false;
+  }
+  if (authSummary.keepaliveDue === true) {
+    return false;
+  }
+  const intervalMinutes = Number(authSummary?.keepaliveIntervalMinutes);
+  const maxAgeMinutes = Number.isFinite(intervalMinutes) && intervalMinutes > 0
+    ? intervalMinutes
+    : 120;
+  const ageMinutes = Math.max(0, (now.getTime() - reuseVerifiedAt) / 60_000);
+  return ageMinutes <= maxAgeMinutes;
+}
+
 /** @param {Record<string, any>} [profileHealth] */
 function isProfileHealthRecoveredBySessionReuse(profileHealth = {}, authSummary = {}) {
   if (profileHealth?.profileLifecycle === 'uninitialized' || profileHealth?.profileLifecycle === 'missing') {
@@ -101,6 +117,7 @@ export async function inspectSessionHealth(siteKey, options = {}, deps = {}) {
       ? 'ready'
       : 'manual-required';
     let reason = status === 'ready' ? 'session-ready' : 'login-required';
+    let authStatus = reusable?.authAvailable === true ? 'authenticated' : 'unknown';
     const riskSignals = [];
     const lifecycle = normalizeText(reusable?.profileHealth?.profileLifecycle);
     if (lifecycle === 'uninitialized') {
@@ -114,6 +131,7 @@ export async function inspectSessionHealth(siteKey, options = {}, deps = {}) {
     }
 
     if (typeof deps.prepareSiteSessionGovernance === 'function') {
+      let blockingGovernanceRisk = false;
       const governance = await deps.prepareSiteSessionGovernance(
         authConfig?.verificationUrl ?? options.profile?.authSession?.verificationUrl ?? options.host ?? siteKey,
         {
@@ -138,25 +156,41 @@ export async function inspectSessionHealth(siteKey, options = {}, deps = {}) {
         await deps.releaseGovernanceSessionLease(governance.lease);
       }
       const decision = governance?.policyDecision;
+      const authSummary = governance?.authSessionSummary ?? reusable?.authSessionStateSummary ?? {};
       if (decision && decision.allowed === false) {
-        const authSummary = governance?.authSessionSummary ?? reusable?.authSessionStateSummary ?? {};
         if (
           decision.riskCauseCode === 'profile-health-risk'
           && isProfileHealthRecoveredBySessionReuse(reusable?.profileHealth, authSummary)
         ) {
           status = 'ready';
           reason = null;
+          authStatus = 'authenticated';
           riskSignals.length = 0;
           riskSignals.push('profile-health-recovered-after-session-reuse');
         } else {
           status = decision.riskCauseCode === 'network-identity-drift' ? 'quarantine' : 'manual-required';
           reason = decision.riskCauseCode ?? reason;
+          blockingGovernanceRisk = true;
           riskSignals.push(
             decision.riskCauseCode,
             decision.riskAction,
             ...(Array.isArray(governance?.networkDrift?.reasons) ? governance.networkDrift.reasons : []),
           );
         }
+      }
+      if (
+        !blockingGovernanceRisk
+        && status !== 'ready'
+        && lifecycle !== 'uninitialized'
+        && lifecycle !== 'missing'
+        && reusable?.profileHealth?.exists !== false
+        && authSummaryConfirmsReusableSession(authSummary, options.now instanceof Date ? options.now : new Date())
+      ) {
+        status = 'ready';
+        reason = null;
+        authStatus = 'authenticated';
+        riskSignals.length = 0;
+        riskSignals.push('auth-session-state-reuse-verified');
       }
     }
 
@@ -167,7 +201,7 @@ export async function inspectSessionHealth(siteKey, options = {}, deps = {}) {
       reason,
       riskCauseCode: reason,
       riskSignals,
-      authStatus: reusable?.authAvailable === true ? 'authenticated' : 'unknown',
+      authStatus,
       identityConfirmed: reusable?.identityConfirmed,
     });
     return {

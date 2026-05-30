@@ -109,10 +109,6 @@ def sha256_text(value: Any) -> str:
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
 
 
-def to_relative_posix(base_dir: Path, target_path: Path) -> str:
-    return str(target_path.relative_to(base_dir)).replace("\\", "/")
-
-
 def load_json(path_value: str | Path) -> Any:
     return json.loads(Path(path_value).read_text(encoding="utf-8-sig"))
 
@@ -159,10 +155,6 @@ def child_utf8_env() -> dict[str, str]:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
     return env
-
-
-def path_exists(path_value: str | Path) -> bool:
-    return Path(path_value).exists()
 
 
 def current_run_id(host: str) -> str:
@@ -1185,28 +1177,6 @@ async def fetch_all_chapters(
 
     progress_log(f"[download] chapter fetch complete: total={len(chapters)}")
     return [item for item in results if item is not None]
-
-
-def build_pretty_txt(
-    *,
-    book_title: str,
-    author_name: str,
-    detail_url: str,
-    chapters: list[dict[str, Any]],
-) -> str:
-    parts = [
-        book_title,
-        f"作者：{author_name or '未知'}",
-        f"目录页：{detail_url}",
-        "",
-    ]
-    for chapter in chapters:
-        parts.append(chapter["title"])
-        parts.append("")
-        if chapter["joinedParagraphs"]:
-            parts.extend(chapter["joinedParagraphs"])
-        parts.append("")
-    return "\n".join(parts).rstrip() + "\n"
 
 
 def render_pretty_txt(

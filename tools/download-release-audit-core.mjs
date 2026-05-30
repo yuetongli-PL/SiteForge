@@ -1,12 +1,13 @@
 // @ts-check
 
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runSiteCapabilityCompile } from '../src/entrypoints/sites/site-capability-compile.mjs';
 import { evaluateAuthenticatedSessionReleaseGate } from '../src/domain/sessions/release-gate.mjs';
 import { buildSessionRepairPlanCommand } from '../src/domain/sessions/repair-command.mjs';
+import { readJsonFile, writeJsonFile } from '../src/infra/io.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '..');
@@ -97,10 +98,6 @@ async function findManifestFiles(root) {
   }
   await walk(resolved);
   return files.sort();
-}
-
-async function readJson(filePath) {
-  return JSON.parse((await readFile(filePath, 'utf8')).replace(/^\uFEFF/u, ''));
 }
 
 function normalizeSite(value, fallback = 'unknown') {
@@ -294,7 +291,7 @@ export async function buildAudit(options = {}, deps = {}) {
   const skipped = [];
   for (const manifestPath of explicit) {
     try {
-      rows.push(...auditRowsFromManifest(await readJson(manifestPath), manifestPath));
+      rows.push(...auditRowsFromManifest(await readJsonFile(manifestPath), manifestPath));
     } catch (error) {
       skipped.push({ manifestPath, reason: error?.message ?? String(error) });
     }
@@ -348,7 +345,7 @@ export async function writeAudit(options = {}, audit = {}) {
   await mkdir(outDir, { recursive: true });
   const jsonPath = path.join(outDir, 'download-release-audit.json');
   const markdownPath = path.join(outDir, 'download-release-audit.md');
-  await writeFile(jsonPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
+  await writeJsonFile(jsonPath, audit);
   await writeFile(markdownPath, renderMarkdown(audit), 'utf8');
   return { jsonPath, markdownPath };
 }

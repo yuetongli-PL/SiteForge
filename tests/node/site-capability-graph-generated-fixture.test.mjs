@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
@@ -29,10 +28,6 @@ import {
   validateSiteCapabilityGraph,
 } from '../../src/domain/capabilities/site-capability-graph.mjs';
 import * as SiteCapabilityGraph from '../../src/domain/capabilities/site-capability-graph.mjs';
-import {
-  createGraphDerivedArtifactPlacement,
-  writeGraphDerivedArtifactPair,
-} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 import { assertNoForbiddenPatterns } from '../../src/domain/sessions/security-guard.mjs';
 
 const SITE_CAPABILITIES_URL = new URL('../../config/site-capabilities.json', import.meta.url);
@@ -912,13 +907,9 @@ test('generated synthetic graph fixture covers auth-required read capability req
   assert.equal(assertGraphDerivedArtifactWriteAllowed(docsSummary), true);
 });
 
-test('generated synthetic graph fixture can be persisted as guarded graph inventory artifact', async (t) => {
+test('generated synthetic graph fixture creates a guarded graph inventory artifact descriptor', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-inventory-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   assert.equal(validateSiteCapabilityGraph(graph).result, 'passed');
   assert.equal(assertSchemaCompatible('SiteCapabilityGraph', graph), true);
@@ -927,63 +918,30 @@ test('generated synthetic graph fixture can be persisted as guarded graph invent
     source: 'config-site-capabilities-qidian',
   });
   assert.equal(assertGraphDerivedArtifactWriteAllowed(artifact), true);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-inventory',
-    artifactFamily: 'site-capability-graph-inventory',
-    artifactName: 'qidian-generated-graph',
-  });
-  const result = await writeGraphDerivedArtifactPair(artifact, placement);
-
-  assert.equal(result.artifactPath, placement.artifactPath);
-  assert.equal(result.auditPath, placement.auditPath);
-  const artifactJson = await readFile(result.artifactPath, 'utf8');
-  const auditJson = await readFile(result.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
-test('generated graph inventory artifact fails closed before unsafe writes', async (t) => {
+test('generated graph inventory artifact rejects unsafe or unredacted descriptors', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-inventory-fail-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-inventory-fail',
-    artifactFamily: 'site-capability-graph-inventory',
-    artifactName: 'qidian-generated-graph',
-  });
 
   graph.nodes[0].accessToken = 'synthetic-secret-value';
   assert.throws(
     () => createGraphInventoryArtifact(graph),
     /forbidden field/u,
   );
-  await assert.rejects(access(placement.artifactPath), /ENOENT/u);
-  await assert.rejects(access(placement.auditPath), /ENOENT/u);
 
   const safeGraph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
   const unredactedArtifact = createGraphInventoryArtifact(safeGraph);
   unredactedArtifact.redactionRequired = false;
-  await assert.rejects(
-    () => writeGraphDerivedArtifactPair(unredactedArtifact, placement),
+  assert.throws(
+    () => assertGraphDerivedArtifactWriteAllowed(unredactedArtifact),
     /redactionRequired=true/u,
   );
-  await assert.rejects(access(placement.artifactPath), /ENOENT/u);
-  await assert.rejects(access(placement.auditPath), /ENOENT/u);
 });
 
-test('generated graph inventory command design stays descriptor-only without repo writes', async (t) => {
+test('generated graph inventory command design stays descriptor-only without repo writes', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-command-design-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   const design = createGraphInventoryCommandDesign(graph, {
     inventoryName: 'qidian-generated-graph',
@@ -1000,23 +958,11 @@ test('generated graph inventory command design stays descriptor-only without rep
   assert.equal(design.items[0].liveArtifactWriteEnabled, false);
   assert.equal(design.items[0].externalCommandEnabled, false);
   assert.equal(design.items[0].requiredArtifactFamily, 'site-capability-graph-inventory');
+  assert.equal('requiredPlacementPolicy' in design.items[0], false);
+  assert.equal('requiredWriter' in design.items[0], false);
+  assert.doesNotMatch(JSON.stringify(design), /createGraphDerivedArtifactPlacement|writeGraphDerivedArtifactPair/u);
   assert.equal(design.items[0].inventoryArtifact.artifactFamily, 'site-capability-graph-inventory');
   assert.equal(design.items[0].inventoryArtifact.redactionRequired, true);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-inventory-command-design',
-    artifactFamily: 'site-capability-graph-inventory-command-design',
-    artifactName: 'qidian-generated-graph-command-design',
-  });
-  const result = await writeGraphDerivedArtifactPair(design, placement);
-
-  assert.equal(result.artifactPath, placement.artifactPath);
-  assert.equal(result.auditPath, placement.auditPath);
-  const artifactJson = await readFile(result.artifactPath, 'utf8');
-  const auditJson = await readFile(result.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('generated graph inventory command design rejects runtime generation options', async () => {
@@ -1045,13 +991,9 @@ test('generated graph inventory command design rejects runtime generation option
   );
 });
 
-test('generated graph inventory runtime integration design stays descriptor-only without repo writes', async (t) => {
+test('generated graph inventory runtime integration design stays descriptor-only without repo writes', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-inventory-runtime-design-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   const design = createGraphInventoryRuntimeIntegrationDesign(graph, {
     inventoryName: 'qidian-generated-graph',
@@ -1076,21 +1018,6 @@ test('generated graph inventory runtime integration design stays descriptor-only
   assert.equal(design.items[0].inventoryArtifact.redactionRequired, true);
   assert.equal(design.items[0].commandDesign.artifactFamily, 'site-capability-graph-inventory-command-design');
   assert.equal(design.items[0].commandDesign.redactionRequired, true);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-inventory-runtime-design',
-    artifactFamily: 'site-capability-graph-inventory-runtime-integration-design',
-    artifactName: 'qidian-generated-graph-runtime-design',
-  });
-  const result = await writeGraphDerivedArtifactPair(design, placement);
-
-  assert.equal(result.artifactPath, placement.artifactPath);
-  assert.equal(result.auditPath, placement.auditPath);
-  const artifactJson = await readFile(result.artifactPath, 'utf8');
-  const auditJson = await readFile(result.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('generated graph inventory runtime integration design rejects runtime writes and publish payloads', async () => {
@@ -1155,26 +1082,16 @@ test('generated graph inventory runtime integration design rejects runtime write
   );
 });
 
-test('disabled graph inventory runtime consumer returns blocked descriptor without runtime generation', async (t) => {
+test('disabled graph inventory runtime consumer returns blocked descriptor without runtime generation', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
   const design = createGraphInventoryRuntimeIntegrationDesign(graph, {
     inventoryName: 'qidian-generated-graph',
     source: 'config-site-capabilities-qidian',
   });
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-inventory-consumer-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   const result = createDisabledGraphInventoryRuntimeConsumerResult(design);
   const item = result.items[0];
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-inventory-consumer',
-    artifactFamily: 'site-capability-graph-inventory-runtime-consumer-result',
-    artifactName: 'qidian-generated-graph-inventory-consumer',
-  });
 
   assert.equal(assertDisabledGraphInventoryRuntimeConsumerResultCompatibility(result), true);
   assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
@@ -1201,12 +1118,6 @@ test('disabled graph inventory runtime consumer returns blocked descriptor witho
   assert.equal('outputPath' in item, false);
   assert.equal('sessionView' in item, false);
   assert.equal('standardTaskList' in item, false);
-
-  const written = await writeGraphDerivedArtifactPair(result, placement);
-  const artifactJson = await readFile(written.artifactPath, 'utf8');
-  const auditJson = await readFile(written.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('disabled graph inventory runtime consumer rejects enabled flags and runtime payloads', async () => {
@@ -1277,14 +1188,10 @@ test('disabled graph inventory runtime consumer rejects enabled flags and runtim
   );
 });
 
-test('generated graph inventory repo output dry-run previews contained target without repo writes', async (t) => {
+test('generated graph inventory repo output dry-run previews contained target without repo writes', async () => {
   const descriptor = await readLayerSiteDescriptor('www.qidian.com');
   const graph = createGeneratedSyntheticGraphFromLayerDescriptor(descriptor);
   const targetRelativePath = 'runs/site-capability-graph/qidian-generated-graph-dry-run.json';
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-inventory-output-dry-run-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   await assert.rejects(access(path.join(process.cwd(), targetRelativePath)), /ENOENT/u);
 
@@ -1310,18 +1217,6 @@ test('generated graph inventory repo output dry-run previews contained target wi
   assert.equal(item.explicitValidationRequired, true);
   assert.equal(item.inventoryArtifact.artifactFamily, 'site-capability-graph-inventory');
   assert.equal(item.inventoryArtifact.redactionRequired, true);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-inventory-output-dry-run',
-    artifactFamily: 'site-capability-graph-inventory-repo-output-dry-run',
-    artifactName: 'qidian-generated-graph-output-dry-run',
-  });
-  const written = await writeGraphDerivedArtifactPair(result, placement);
-  const artifactJson = await readFile(written.artifactPath, 'utf8');
-  const auditJson = await readFile(written.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
   await assert.rejects(access(path.join(process.cwd(), targetRelativePath)), /ENOENT/u);
 });
 

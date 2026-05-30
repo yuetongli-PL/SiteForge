@@ -5,10 +5,10 @@ import {
   isBilibiliContext,
   isDouyinContext,
   remapSupportedIntent,
+  resolveSemanticSiteKey,
 } from '../../src/sites/registry/core/site-semantics.mjs';
-import { resolveKnownSiteKey } from '../../src/skills/generation/site-render-inputs.mjs';
 
-test('canonical siteKey from siteContext drives douyin skill/docs routing before host matching', () => {
+test('canonical siteKey from siteContext drives douyin semantics before host matching', () => {
   const context = {
     host: 'example.invalid',
     url: 'https://example.invalid/',
@@ -22,7 +22,7 @@ test('canonical siteKey from siteContext drives douyin skill/docs routing before
     },
   };
 
-  assert.equal(resolveKnownSiteKey(context), 'douyin');
+  assert.equal(resolveSemanticSiteKey(context), 'douyin');
   assert.equal(isDouyinContext(context), true);
   assert.equal(remapSupportedIntent('search-book', context), 'search-video');
   assert.equal(remapSupportedIntent('open-book', context), 'open-video');
@@ -42,7 +42,7 @@ test('canonical bilibili siteKey keeps cross-host remapping independent from raw
     },
   };
 
-  assert.equal(resolveKnownSiteKey(context), 'bilibili');
+  assert.equal(resolveSemanticSiteKey(context), 'bilibili');
   assert.equal(isBilibiliContext(context), true);
   assert.equal(remapSupportedIntent('search-work', context), 'search-video');
   assert.equal(remapSupportedIntent('open-work', context), 'open-video');

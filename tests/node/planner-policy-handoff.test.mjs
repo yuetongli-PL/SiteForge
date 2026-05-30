@@ -25,18 +25,12 @@ import {
   createGraphLayerPolicyPlannerRelationshipEvidence,
   createGraphPlannerRiskBlockingRuntimePreflightContract,
   createGraphPlannerRuntimeIntegrationDesign,
-  createGraphPlannerRouteHandoffArtifact,
   createGraphPlannerRouteHandoff,
   createPlannerPolicyHandoff,
   writeCatalogStorePlannerPolicyHandoffArtifact,
   writePlannerPolicyHandoffArtifact,
 } from '../../src/app/planner/policy-handoff.mjs';
 import * as plannerPolicyHandoff from '../../src/app/planner/policy-handoff.mjs';
-import {
-  createGraphDerivedArtifactPlacement,
-  prepareGraphDerivedArtifactWrite,
-  writeGraphDerivedArtifactPair,
-} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
 import {
   DOWNLOAD_POLICY_SCHEMA_VERSION,
 } from '../../src/domain/policies/download-policy.mjs';
@@ -460,12 +454,8 @@ test('graph planner route handoff rejects Layer runtime products before executio
   );
 });
 
-test('graph planner runtime integration design stays descriptor-only without live route execution', async (t) => {
+test('graph planner runtime integration design stays descriptor-only without live route execution', async () => {
   const graph = await readMinimalGraphFixture();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'graph-planner-runtime-design-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   const design = createGraphPlannerRuntimeIntegrationDesign({
     graph,
@@ -489,18 +479,6 @@ test('graph planner runtime integration design stays descriptor-only without liv
   assert.equal(Object.hasOwn(design.items[0], 'taskList'), false);
   assert.equal(Object.hasOwn(design.items[0], 'downloadPolicy'), false);
   assert.equal(Object.hasOwn(design.items[0], 'sessionView'), false);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-planner-runtime-design',
-    artifactFamily: 'site-capability-graph-planner-runtime-integration-design',
-    artifactName: 'runtime-design',
-  });
-  const result = await writeGraphDerivedArtifactPair(design, placement);
-  const artifactJson = await readFile(result.artifactPath, 'utf8');
-  const auditJson = await readFile(result.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('graph planner runtime integration design carries blocked route reasons without execution', async () => {
@@ -593,12 +571,8 @@ test('graph planner runtime integration design rejects execution and runtime pro
   );
 });
 
-test('disabled graph planner runtime consumer returns blocked descriptor without execution', async (t) => {
+test('disabled graph planner runtime consumer returns blocked descriptor without execution', async () => {
   const graph = await readMinimalGraphFixture();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'graph-planner-disabled-consumer-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
   const design = createGraphPlannerRuntimeIntegrationDesign({
     graph,
     capabilityId: GRAPH_CAPABILITY_ID,
@@ -626,18 +600,6 @@ test('disabled graph planner runtime consumer returns blocked descriptor without
   assert.equal(Object.hasOwn(result.items[0], 'taskList'), false);
   assert.equal(Object.hasOwn(result.items[0], 'downloadPolicy'), false);
   assert.equal(Object.hasOwn(result.items[0], 'sessionView'), false);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-planner-disabled-consumer',
-    artifactFamily: 'site-capability-graph-planner-runtime-consumer-result',
-    artifactName: 'disabled-consumer',
-  });
-  const writeResult = await writeGraphDerivedArtifactPair(result, placement);
-  const artifactJson = await readFile(writeResult.artifactPath, 'utf8');
-  const auditJson = await readFile(writeResult.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('disabled graph planner runtime consumer preserves blocked handoff reason', async () => {
@@ -1809,81 +1771,6 @@ test('graph planner Layer entrypoint live execution denial guard rejects runtime
   const payloadMessage = captureThrownMessage(() => assertDenialGuardCompatibility(unsafePayloadGuard));
   assert.match(payloadMessage, /runtimePayload|Authorization|runtime field|raw sensitive material|descriptor-only/iu);
   assert.doesNotMatch(payloadMessage, /synthetic-secret-value/u);
-});
-
-test('graph planner route handoff can be prepared and written as a guarded graph artifact', async (t) => {
-  const graph = await readMinimalGraphFixture();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'graph-planner-handoff-artifact-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
-
-  const artifact = createGraphPlannerRouteHandoffArtifact({
-    graph,
-    capabilityId: GRAPH_CAPABILITY_ID,
-  });
-  assert.equal(artifact.schemaVersion, 1);
-  assert.equal(artifact.queryName, 'createGraphPlannerRouteHandoff');
-  assert.equal(artifact.artifactFamily, 'site-capability-graph-planner-handoff');
-  assert.equal(artifact.redactionRequired, true);
-  assert.equal(artifact.items[0].executionAllowed, false);
-  assert.equal(artifact.items[0].route.id, GRAPH_ROUTE_ID);
-
-  const prepared = prepareGraphDerivedArtifactWrite(artifact);
-  assert.equal(prepared.artifactFamily, 'site-capability-graph-planner-handoff');
-  assert.equal(JSON.parse(prepared.artifactJson).redactionRequired, true);
-  assert.equal(JSON.parse(prepared.auditJson).schemaVersion, 1);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-plan',
-    artifactFamily: 'site-capability-graph-planner-handoff',
-    artifactName: 'route-plan',
-  });
-  const result = await writeGraphDerivedArtifactPair(artifact, placement);
-
-  assert.equal(result.artifactPath, placement.artifactPath);
-  assert.equal(result.auditPath, placement.auditPath);
-  const artifactJson = await readFile(result.artifactPath, 'utf8');
-  const auditJson = await readFile(result.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-});
-
-test('graph planner route handoff artifact fails closed before unsafe writes', async (t) => {
-  const graph = await readMinimalGraphFixture();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'graph-planner-handoff-artifact-fail-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-plan-fail',
-    artifactFamily: 'site-capability-graph-planner-handoff',
-    artifactName: 'route-plan',
-  });
-  const unsafeArtifact = createGraphPlannerRouteHandoffArtifact({
-    graph,
-    capabilityId: GRAPH_CAPABILITY_ID,
-  });
-  unsafeArtifact.items[0].accessToken = 'synthetic-secret-value';
-
-  await assert.rejects(
-    () => writeGraphDerivedArtifactPair(unsafeArtifact, placement),
-    /forbidden field/u,
-  );
-  await assert.rejects(access(placement.artifactPath), /ENOENT/u);
-  await assert.rejects(access(placement.auditPath), /ENOENT/u);
-
-  const unredactedArtifact = createGraphPlannerRouteHandoffArtifact({
-    graph,
-    capabilityId: GRAPH_CAPABILITY_ID,
-  });
-  unredactedArtifact.redactionRequired = false;
-  assert.throws(
-    () => prepareGraphDerivedArtifactWrite(unredactedArtifact),
-    /redactionRequired=true/u,
-  );
 });
 
 test('planner policy handoff carries graph planner reasonCodes without route execution', async () => {

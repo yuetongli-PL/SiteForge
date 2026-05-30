@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -46,11 +45,6 @@ import {
   listSiteCapabilityGraphSchemaDefinitions,
   renderGraphDocsSummaryMarkdown,
 } from '../../src/domain/capabilities/site-capability-graph.mjs';
-import {
-  createGraphDerivedArtifactPlacement,
-  writeGraphDerivedArtifactPair,
-} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
-
 const MINIMAL_GRAPH_URL = new URL('./fixtures/site-capability-graph/minimal-v1.json', import.meta.url);
 
 async function readMinimalGraphFixture() {
@@ -1320,76 +1314,36 @@ test('docs renderer preserves observed and candidate endpoint lifecycle states w
   }
 });
 
-test('docs markdown artifact descriptor writes through guarded graph artifact writer', async () => {
+test('docs markdown artifact descriptor stays redaction-required and safe', async () => {
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-docs-markdown-'));
 
-  try {
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-001',
-      artifactFamily: 'site-capability-graph-docs-markdown',
-      artifactName: 'graph-docs-summary-markdown',
-    });
-
-    assert.equal(artifact.schemaVersion, 1);
-    assert.equal(artifact.graphVersion, 'synthetic-graph-v1');
-    assert.equal(artifact.queryName, 'renderGraphDocsSummaryMarkdown');
-    assert.equal(artifact.artifactFamily, 'site-capability-graph-docs-markdown');
-    assert.equal(artifact.redactionRequired, true);
-    assert.equal(artifact.items[0].format, 'markdown');
-    assert.match(artifact.items[0].markdown, /^# Site Capability Graph Docs Summary\n/u);
-    assert.doesNotMatch(artifact.items[0].markdown, /auth=/u);
-    assert.equal(assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact), true);
-    assert.equal(assertGraphDerivedArtifactWriteAllowed(artifact), true);
-
-    const result = await writeGraphDerivedArtifactPair(artifact, placement);
-
-    assert.equal(result.artifactPath, placement.artifactPath);
-    assert.equal(result.auditPath, placement.auditPath);
-
-    const writtenArtifact = JSON.parse(await readFile(result.artifactPath, 'utf8'));
-    const writtenAudit = JSON.parse(await readFile(result.auditPath, 'utf8'));
-    assert.equal(writtenArtifact.artifactFamily, 'site-capability-graph-docs-markdown');
-    assert.equal(writtenArtifact.items[0].markdown, artifact.items[0].markdown);
-    assert.equal(writtenAudit.schemaVersion, 1);
-    assert.deepEqual(writtenAudit.findings, []);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(artifact.schemaVersion, 1);
+  assert.equal(artifact.graphVersion, 'synthetic-graph-v1');
+  assert.equal(artifact.queryName, 'renderGraphDocsSummaryMarkdown');
+  assert.equal(artifact.artifactFamily, 'site-capability-graph-docs-markdown');
+  assert.equal(artifact.redactionRequired, true);
+  assert.equal(artifact.items[0].format, 'markdown');
+  assert.match(artifact.items[0].markdown, /^# Site Capability Graph Docs Summary\n/u);
+  assert.doesNotMatch(artifact.items[0].markdown, /auth=/u);
+  assert.equal(assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact), true);
+  assert.equal(assertGraphDerivedArtifactWriteAllowed(artifact), true);
+  assert.doesNotMatch(JSON.stringify(artifact), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('docs markdown artifact consumer contract stays descriptor-only without runtime docs writes', async () => {
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-docs-consumer-'));
 
-  try {
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-docs-consumer',
-      artifactFamily: 'site-capability-graph-docs-markdown',
-      artifactName: 'graph-docs-summary-markdown-consumer',
-    });
-
-    assert.equal(assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact), true);
-    assert.equal(artifact.queryName, 'renderGraphDocsSummaryMarkdown');
-    assert.equal(artifact.artifactFamily, 'site-capability-graph-docs-markdown');
-    assert.equal(artifact.redactionRequired, true);
-    assert.equal(artifact.items[0].format, 'markdown');
-    assert.match(artifact.items[0].markdown, /^# Site Capability Graph Docs Summary\n/u);
-
-    const result = await writeGraphDerivedArtifactPair(artifact, placement);
-    const artifactJson = await readFile(result.artifactPath, 'utf8');
-    const auditJson = await readFile(result.auditPath, 'utf8');
-    assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-    assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(assertGraphDocsMarkdownArtifactConsumerCompatibility(artifact), true);
+  assert.equal(artifact.queryName, 'renderGraphDocsSummaryMarkdown');
+  assert.equal(artifact.artifactFamily, 'site-capability-graph-docs-markdown');
+  assert.equal(artifact.redactionRequired, true);
+  assert.equal(artifact.items[0].format, 'markdown');
+  assert.match(artifact.items[0].markdown, /^# Site Capability Graph Docs Summary\n/u);
+  assert.doesNotMatch(JSON.stringify(artifact), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('docs markdown artifact consumer rejects missing Layer source references', async () => {
@@ -3287,46 +3241,29 @@ test('disabled docs markdown runtime consumer returns blocked descriptor without
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-docs-runtime-consumer-'));
+  const result = createDisabledGraphDocsMarkdownRuntimeConsumerResult(artifact);
+  const item = result.items[0];
 
-  try {
-    const result = createDisabledGraphDocsMarkdownRuntimeConsumerResult(artifact);
-    const item = result.items[0];
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-docs-markdown-runtime-consumer',
-      artifactFamily: 'site-capability-graph-docs-markdown-runtime-consumer-result',
-      artifactName: 'graph-docs-markdown-runtime-consumer',
-    });
-
-    assert.equal(assertDisabledGraphDocsMarkdownRuntimeConsumerResultCompatibility(result), true);
-    assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
-    assert.equal(result.queryName, 'createDisabledGraphDocsMarkdownRuntimeConsumerResult');
-    assert.equal(result.artifactFamily, 'site-capability-graph-docs-markdown-runtime-consumer-result');
-    assert.equal(result.redactionRequired, true);
-    assert.equal(item.consumerMode, 'disabled-feature-flag');
-    assert.equal(item.featureEnabled, false);
-    assert.equal(item.result, 'blocked');
-    assert.equal(item.reasonCode, 'graph-runtime-consumer-disabled');
-    assert.equal(item.reason.code, 'graph-runtime-consumer-disabled');
-    assert.equal(item.sourceArtifact.queryName, artifact.queryName);
-    assert.equal(item.sourceArtifact.artifactFamily, artifact.artifactFamily);
-    assert.equal(item.docsArtifact.artifactFamily, 'site-capability-graph-docs-markdown');
-    assert.equal(item.docsArtifact.redactionRequired, true);
-    assert.equal('outputPath' in item, false);
-    assert.equal('docsWriteEnabled' in item, false);
-    assert.equal('runtimeDocsWriteEnabled' in item, false);
-    assert.equal('sessionView' in item, false);
-    assert.equal('standardTaskList' in item, false);
-
-    const written = await writeGraphDerivedArtifactPair(result, placement);
-    const artifactJson = await readFile(written.artifactPath, 'utf8');
-    const auditJson = await readFile(written.auditPath, 'utf8');
-    assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-    assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(assertDisabledGraphDocsMarkdownRuntimeConsumerResultCompatibility(result), true);
+  assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
+  assert.equal(result.queryName, 'createDisabledGraphDocsMarkdownRuntimeConsumerResult');
+  assert.equal(result.artifactFamily, 'site-capability-graph-docs-markdown-runtime-consumer-result');
+  assert.equal(result.redactionRequired, true);
+  assert.equal(item.consumerMode, 'disabled-feature-flag');
+  assert.equal(item.featureEnabled, false);
+  assert.equal(item.result, 'blocked');
+  assert.equal(item.reasonCode, 'graph-runtime-consumer-disabled');
+  assert.equal(item.reason.code, 'graph-runtime-consumer-disabled');
+  assert.equal(item.sourceArtifact.queryName, artifact.queryName);
+  assert.equal(item.sourceArtifact.artifactFamily, artifact.artifactFamily);
+  assert.equal(item.docsArtifact.artifactFamily, 'site-capability-graph-docs-markdown');
+  assert.equal(item.docsArtifact.redactionRequired, true);
+  assert.equal('outputPath' in item, false);
+  assert.equal('docsWriteEnabled' in item, false);
+  assert.equal('runtimeDocsWriteEnabled' in item, false);
+  assert.equal('sessionView' in item, false);
+  assert.equal('standardTaskList' in item, false);
+  assert.doesNotMatch(JSON.stringify(result), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('disabled docs markdown runtime consumer rejects enabled flag and runtime payloads', async () => {
@@ -3407,31 +3344,11 @@ test('docs markdown artifact fails closed on forbidden summary data or unredacte
   const summary = generateGraphDocsSummary(graph);
   const artifact = createGraphDocsMarkdownArtifact(summary);
   artifact.redactionRequired = false;
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-docs-markdown-'));
 
-  try {
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-001',
-      artifactFamily: 'site-capability-graph-docs-markdown',
-      artifactName: 'graph-docs-summary-markdown',
-    });
-
-    await assert.rejects(
-      () => writeGraphDerivedArtifactPair(artifact, placement),
-      /redactionRequired=true/u,
-    );
-    await assert.rejects(
-      () => readFile(placement.artifactPath, 'utf8'),
-      /ENOENT/u,
-    );
-    await assert.rejects(
-      () => readFile(placement.auditPath, 'utf8'),
-      /ENOENT/u,
-    );
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.throws(
+    () => assertGraphDerivedArtifactWriteAllowed(artifact),
+    /redactionRequired=true/u,
+  );
 });
 
 test('docs renderer fails closed on forbidden fields and value patterns', async () => {
@@ -3501,7 +3418,7 @@ test('migration report generator counts auth-required capabilities from graph de
   assert.equal(assertGraphDerivedArtifactWriteAllowed(report), true);
 });
 
-test('migration report artifact writes through guarded graph artifact writer', async () => {
+test('migration report artifact stays redaction-required and safe', async () => {
   const graph = await readMinimalGraphFixture();
   const report = generateGraphMigrationReport(graph, {
     statusSummary: {
@@ -3512,36 +3429,17 @@ test('migration report artifact writes through guarded graph artifact writer', a
     knownGaps: ['runtime Layer consumer not connected'],
     nextTasks: ['generate graph inventory'],
   });
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-migration-report-'));
 
-  try {
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-001',
-      artifactFamily: 'site-capability-graph-migration-report',
-      artifactName: 'migration-report',
-    });
-
-    assert.equal(assertGraphDerivedArtifactWriteAllowed(report), true);
-    const result = await writeGraphDerivedArtifactPair(report, placement);
-    assert.equal(result.artifactPath, placement.artifactPath);
-    assert.equal(result.auditPath, placement.auditPath);
-
-    const writtenReport = JSON.parse(await readFile(result.artifactPath, 'utf8'));
-    const writtenAudit = JSON.parse(await readFile(result.auditPath, 'utf8'));
-    assert.equal(writtenReport.artifactFamily, 'site-capability-graph-migration-report');
-    assert.equal(writtenReport.redactionRequired, true);
-    assert.deepEqual(writtenReport.items[0].statusSummary, {
-      verified: 0,
-      implemented: 5,
-      partial: 15,
-    });
-    assert.deepEqual(writtenReport.items[0].knownGaps, ['runtime Layer consumer not connected']);
-    assert.equal(writtenAudit.schemaVersion, 1);
-    assert.deepEqual(writtenAudit.findings, []);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(assertGraphDerivedArtifactWriteAllowed(report), true);
+  assert.equal(report.artifactFamily, 'site-capability-graph-migration-report');
+  assert.equal(report.redactionRequired, true);
+  assert.deepEqual(report.items[0].statusSummary, {
+    verified: 0,
+    implemented: 5,
+    partial: 15,
+  });
+  assert.deepEqual(report.items[0].knownGaps, ['runtime Layer consumer not connected']);
+  assert.doesNotMatch(JSON.stringify(report), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('migration report runtime integration design stays descriptor-only without repo writes', async () => {
@@ -3555,39 +3453,22 @@ test('migration report runtime integration design stays descriptor-only without 
     knownGaps: ['runtime Layer consumer not connected'],
     nextTasks: ['wire migration report behind disabled flag'],
   });
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-migration-design-'));
 
-  try {
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-migration-report-design',
-      artifactFamily: 'site-capability-graph-migration-report-runtime-integration-design',
-      artifactName: 'migration-report-design',
-    });
-
-    assert.equal(assertGraphMigrationReportRuntimeIntegrationDesignCompatibility(design), true);
-    assert.equal(assertGraphDerivedArtifactWriteAllowed(design), true);
-    assert.equal(design.queryName, 'createGraphMigrationReportRuntimeIntegrationDesign');
-    assert.equal(design.artifactFamily, 'site-capability-graph-migration-report-runtime-integration-design');
-    assert.equal(design.redactionRequired, true);
-    assert.equal(design.items[0].integrationMode, 'design-only');
-    assert.equal(design.items[0].repoWriteEnabled, false);
-    assert.equal(design.items[0].runtimeArtifactWriteEnabled, false);
-    assert.equal(design.items[0].schedulerPublishEnabled, false);
-    assert.equal(design.items[0].doctorPublishEnabled, false);
-    assert.equal(design.items[0].skillPublishEnabled, false);
-    assert.equal(design.items[0].mcpPublishEnabled, false);
-    assert.equal(design.items[0].report.artifactFamily, 'site-capability-graph-migration-report');
-    assert.equal(design.items[0].report.redactionRequired, true);
-
-    const result = await writeGraphDerivedArtifactPair(design, placement);
-    const artifactJson = await readFile(result.artifactPath, 'utf8');
-    const auditJson = await readFile(result.auditPath, 'utf8');
-    assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-    assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(assertGraphMigrationReportRuntimeIntegrationDesignCompatibility(design), true);
+  assert.equal(assertGraphDerivedArtifactWriteAllowed(design), true);
+  assert.equal(design.queryName, 'createGraphMigrationReportRuntimeIntegrationDesign');
+  assert.equal(design.artifactFamily, 'site-capability-graph-migration-report-runtime-integration-design');
+  assert.equal(design.redactionRequired, true);
+  assert.equal(design.items[0].integrationMode, 'design-only');
+  assert.equal(design.items[0].repoWriteEnabled, false);
+  assert.equal(design.items[0].runtimeArtifactWriteEnabled, false);
+  assert.equal(design.items[0].schedulerPublishEnabled, false);
+  assert.equal(design.items[0].doctorPublishEnabled, false);
+  assert.equal(design.items[0].skillPublishEnabled, false);
+  assert.equal(design.items[0].mcpPublishEnabled, false);
+  assert.equal(design.items[0].report.artifactFamily, 'site-capability-graph-migration-report');
+  assert.equal(design.items[0].report.redactionRequired, true);
+  assert.doesNotMatch(JSON.stringify(design), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('migration report runtime integration design rejects repo writes and publish payloads', async () => {
@@ -3654,48 +3535,31 @@ test('disabled migration report runtime consumer returns blocked descriptor with
     knownGaps: ['runtime migration report writer not connected'],
     nextTasks: ['wire migration report behind disabled flag'],
   });
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-migration-consumer-'));
+  const result = createDisabledGraphMigrationReportRuntimeConsumerResult(design);
+  const item = result.items[0];
 
-  try {
-    const result = createDisabledGraphMigrationReportRuntimeConsumerResult(design);
-    const item = result.items[0];
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-migration-report-consumer',
-      artifactFamily: 'site-capability-graph-migration-report-runtime-consumer-result',
-      artifactName: 'migration-report-consumer',
-    });
-
-    assert.equal(assertDisabledGraphMigrationReportRuntimeConsumerResultCompatibility(result), true);
-    assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
-    assert.equal(result.queryName, 'createDisabledGraphMigrationReportRuntimeConsumerResult');
-    assert.equal(result.artifactFamily, 'site-capability-graph-migration-report-runtime-consumer-result');
-    assert.equal(result.redactionRequired, true);
-    assert.equal(item.consumerMode, 'disabled-feature-flag');
-    assert.equal(item.featureEnabled, false);
-    assert.equal(item.result, 'blocked');
-    assert.equal(item.reasonCode, 'graph-runtime-consumer-disabled');
-    assert.equal(item.reason.code, 'graph-runtime-consumer-disabled');
-    assert.equal(item.repoWriteEnabled, false);
-    assert.equal(item.runtimeArtifactWriteEnabled, false);
-    assert.equal(item.schedulerPublishEnabled, false);
-    assert.equal(item.doctorPublishEnabled, false);
-    assert.equal(item.skillPublishEnabled, false);
-    assert.equal(item.mcpPublishEnabled, false);
-    assert.equal(item.report.artifactFamily, 'site-capability-graph-migration-report');
-    assert.equal(item.report.redactionRequired, true);
-    assert.equal('schedulerPayload' in item, false);
-    assert.equal('artifactPath' in item, false);
-    assert.equal('sessionView' in item, false);
-
-    const written = await writeGraphDerivedArtifactPair(result, placement);
-    const artifactJson = await readFile(written.artifactPath, 'utf8');
-    const auditJson = await readFile(written.auditPath, 'utf8');
-    assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-    assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(assertDisabledGraphMigrationReportRuntimeConsumerResultCompatibility(result), true);
+  assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
+  assert.equal(result.queryName, 'createDisabledGraphMigrationReportRuntimeConsumerResult');
+  assert.equal(result.artifactFamily, 'site-capability-graph-migration-report-runtime-consumer-result');
+  assert.equal(result.redactionRequired, true);
+  assert.equal(item.consumerMode, 'disabled-feature-flag');
+  assert.equal(item.featureEnabled, false);
+  assert.equal(item.result, 'blocked');
+  assert.equal(item.reasonCode, 'graph-runtime-consumer-disabled');
+  assert.equal(item.reason.code, 'graph-runtime-consumer-disabled');
+  assert.equal(item.repoWriteEnabled, false);
+  assert.equal(item.runtimeArtifactWriteEnabled, false);
+  assert.equal(item.schedulerPublishEnabled, false);
+  assert.equal(item.doctorPublishEnabled, false);
+  assert.equal(item.skillPublishEnabled, false);
+  assert.equal(item.mcpPublishEnabled, false);
+  assert.equal(item.report.artifactFamily, 'site-capability-graph-migration-report');
+  assert.equal(item.report.redactionRequired, true);
+  assert.equal('schedulerPayload' in item, false);
+  assert.equal('artifactPath' in item, false);
+  assert.equal('sessionView' in item, false);
+  assert.doesNotMatch(JSON.stringify(result), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('disabled migration report runtime consumer rejects enabled flags and publish payloads', async () => {
@@ -3757,56 +3621,40 @@ test('migration report repo output dry-run previews contained target without rep
   const graph = await readMinimalGraphFixture();
   const targetRelativePath = 'runs/site-capability-graph/generated-migration-report-dry-run.md';
   const repoTargetPath = path.join(process.cwd(), targetRelativePath);
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-migration-report-dry-run-'));
 
-  try {
-    await assert.rejects(() => access(repoTargetPath), /ENOENT/u);
+  await assert.rejects(() => access(repoTargetPath), /ENOENT/u);
 
-    const result = createGraphMigrationReportRepoOutputDryRun(graph, {
-      targetRelativePath,
-      statusSummary: {
-        verified: 0,
-        implemented: 5,
-        partial: 15,
-      },
-      knownGaps: ['runtime migration report writer not connected'],
-      nextTasks: ['keep repo output dry-run until explicit validation exists'],
-    });
-    const item = result.items[0];
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-migration-report-repo-output-dry-run',
-      artifactFamily: 'site-capability-graph-migration-report-repo-output-dry-run',
-      artifactName: 'migration-report-repo-output-dry-run',
-    });
+  const result = createGraphMigrationReportRepoOutputDryRun(graph, {
+    targetRelativePath,
+    statusSummary: {
+      verified: 0,
+      implemented: 5,
+      partial: 15,
+    },
+    knownGaps: ['runtime migration report writer not connected'],
+    nextTasks: ['keep repo output dry-run until explicit validation exists'],
+  });
+  const item = result.items[0];
 
-    assert.equal(assertGraphMigrationReportRepoOutputDryRunCompatibility(result), true);
-    assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
-    assert.equal(result.queryName, 'createGraphMigrationReportRepoOutputDryRun');
-    assert.equal(result.artifactFamily, 'site-capability-graph-migration-report-repo-output-dry-run');
-    assert.equal(result.redactionRequired, true);
-    assert.equal(item.outputMode, 'dry-run-preview');
-    assert.equal(item.dryRunOnly, true);
-    assert.equal(item.targetRelativePath, targetRelativePath);
-    assert.equal(item.repoWriteEnabled, false);
-    assert.equal(item.runtimeArtifactWriteEnabled, false);
-    assert.equal(item.schedulerPublishEnabled, false);
-    assert.equal(item.doctorPublishEnabled, false);
-    assert.equal(item.skillPublishEnabled, false);
-    assert.equal(item.mcpPublishEnabled, false);
-    assert.equal(item.explicitValidationRequired, true);
-    assert.equal(item.report.artifactFamily, 'site-capability-graph-migration-report');
-    assert.equal(item.report.redactionRequired, true);
-
-    const written = await writeGraphDerivedArtifactPair(result, placement);
-    const artifactJson = await readFile(written.artifactPath, 'utf8');
-    const auditJson = await readFile(written.auditPath, 'utf8');
-    assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-    assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-    await assert.rejects(() => access(repoTargetPath), /ENOENT/u);
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.equal(assertGraphMigrationReportRepoOutputDryRunCompatibility(result), true);
+  assert.equal(assertGraphDerivedArtifactWriteAllowed(result), true);
+  assert.equal(result.queryName, 'createGraphMigrationReportRepoOutputDryRun');
+  assert.equal(result.artifactFamily, 'site-capability-graph-migration-report-repo-output-dry-run');
+  assert.equal(result.redactionRequired, true);
+  assert.equal(item.outputMode, 'dry-run-preview');
+  assert.equal(item.dryRunOnly, true);
+  assert.equal(item.targetRelativePath, targetRelativePath);
+  assert.equal(item.repoWriteEnabled, false);
+  assert.equal(item.runtimeArtifactWriteEnabled, false);
+  assert.equal(item.schedulerPublishEnabled, false);
+  assert.equal(item.doctorPublishEnabled, false);
+  assert.equal(item.skillPublishEnabled, false);
+  assert.equal(item.mcpPublishEnabled, false);
+  assert.equal(item.explicitValidationRequired, true);
+  assert.equal(item.report.artifactFamily, 'site-capability-graph-migration-report');
+  assert.equal(item.report.redactionRequired, true);
+  assert.doesNotMatch(JSON.stringify(result), /authorization|cookie|csrf|sessionId|browserProfile/iu);
+  await assert.rejects(() => access(repoTargetPath), /ENOENT/u);
 });
 
 test('migration report repo output dry-run rejects writes, unsafe targets, and unsafe reports', async () => {
@@ -3931,35 +3779,15 @@ test('migration report repo output approval gate stays design-only', async () =>
   );
 });
 
-test('migration report artifact fails closed before unsafe writes', async () => {
+test('migration report artifact rejects unredacted descriptors', async () => {
   const graph = await readMinimalGraphFixture();
   const report = generateGraphMigrationReport(graph);
   report.redactionRequired = false;
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'site-capability-graph-migration-report-'));
 
-  try {
-    const placement = createGraphDerivedArtifactPlacement({
-      outputDir,
-      runId: 'synthetic-run-001',
-      artifactFamily: 'site-capability-graph-migration-report',
-      artifactName: 'migration-report',
-    });
-
-    await assert.rejects(
-      () => writeGraphDerivedArtifactPair(report, placement),
-      /redactionRequired=true/u,
-    );
-    await assert.rejects(
-      () => readFile(placement.artifactPath, 'utf8'),
-      /ENOENT/u,
-    );
-    await assert.rejects(
-      () => readFile(placement.auditPath, 'utf8'),
-      /ENOENT/u,
-    );
-  } finally {
-    await rm(outputDir, { recursive: true, force: true });
-  }
+  assert.throws(
+    () => assertGraphDerivedArtifactWriteAllowed(report),
+    /redactionRequired=true/u,
+  );
 });
 
 test('migration report generator rejects forbidden options before artifact guard', async () => {

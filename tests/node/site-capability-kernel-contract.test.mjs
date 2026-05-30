@@ -8,11 +8,6 @@ import {
   listKernelAllowedResponsibilities,
   normalizeKernelResponsibility,
 } from '../../src/domain/schemas/kernel/site-capability-kernel-contract.mjs';
-import {
-  KERNEL_RUNTIME_READINESS_SCHEMA_VERSION,
-  assertSiteCapabilityKernelRuntimeReadiness,
-  getSiteCapabilityKernelRuntimeReadinessEvidence,
-} from '../../src/domain/schemas/kernel/site-capability-runtime-readiness.mjs';
 
 test('Kernel contract allows only lightweight orchestration and governance responsibilities', () => {
   assert.equal(KERNEL_CONTRACT_SCHEMA_VERSION, 1);
@@ -106,69 +101,4 @@ test('Kernel contract fails closed for unknown responsibilities', () => {
     () => assertKernelContract([]),
     /must declare at least one responsibility/u,
   );
-});
-
-test('Kernel runtime readiness guard composes Kernel contract with schema-governance readiness evidence', () => {
-  const evidence = getSiteCapabilityKernelRuntimeReadinessEvidence();
-  assert.equal(evidence.schemaVersion, KERNEL_RUNTIME_READINESS_SCHEMA_VERSION);
-  assert.equal(evidence.owner, 'Kernel');
-  assert.equal(evidence.guard, 'assertSiteCapabilityKernelRuntimeReadiness');
-  assert.deepEqual(evidence.contract.responsibilityIds, KERNEL_ALLOWED_RESPONSIBILITY_IDS);
-  assert.deepEqual(
-    evidence.contract.responsibilities.map((entry) => entry.id),
-    KERNEL_ALLOWED_RESPONSIBILITY_IDS,
-  );
-  assert.deepEqual(evidence.schemaGovernance.runtimeVersionFamily, {
-    key: 'RuntimeReadiness',
-    section: 12,
-    owner: 'Kernel',
-    producerRole: 'Kernel/SiteAdapter/CapabilityService',
-    consumerRole: 'downloader/runtime handoff',
-    schemaNames: [
-      'LifecycleEvent',
-      'SiteAdapterCandidateDecision',
-      'SiteAdapterCatalogUpgradePolicy',
-      'StandardTaskList',
-      'DownloadPolicy',
-      'SessionView',
-      'RiskState',
-    ],
-  });
-  assert.doesNotMatch(
-    evidence.schemaGovernance.runtimeVersionFamily.schemaNames.join(' '),
-    /\b(?:ApiCandidate|ApiResponseCaptureSummary|ApiCatalogEntry|ApiCatalog|ApiCatalogIndex)\b/u,
-  );
-
-  assert.equal(assertSiteCapabilityKernelRuntimeReadiness(), true);
-});
-
-test('Kernel runtime readiness guard rejects forbidden Kernel ownership at runtime boundary', () => {
-  for (const responsibility of [
-    {
-      id: 'bilibili-page-type-interpretation',
-      description: 'bilibili page type interpretation',
-    },
-    {
-      id: 'raw-cookie-reader',
-      cookie: 'synthetic-cookie-value',
-    },
-    {
-      id: 'downloader-execution',
-      description: 'downloader execution',
-    },
-    {
-      id: 'api-catalog-semantics',
-      description: 'api catalog semantics',
-    },
-  ]) {
-    assert.throws(
-      () => assertSiteCapabilityKernelRuntimeReadiness({
-        responsibilities: [
-          ...listKernelAllowedResponsibilities(),
-          responsibility,
-        ],
-      }),
-      /Kernel must not own/u,
-    );
-  }
 });

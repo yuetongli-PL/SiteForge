@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 import {
   BuildStatus,
@@ -53,8 +52,18 @@ test('status vocabulary stays duplicate-free', () => {
   }
 });
 
-test('result_status and legacy_status compatibility fields carry migration comments', async () => {
-  const source = await readFile(new URL('../../src/app/pipeline/build/pipeline.mjs', import.meta.url), 'utf8');
-  assert.match(source, /Migration: status remains the legacy stage\/build field; result_status/u);
-  assert.match(source, /Migration: keep legacy_status during report consumers' transition/u);
+test('result_status and legacy_status report contracts share public build outcomes', () => {
+  assert.deepEqual(BuildStatus, [
+    'success',
+    'partial_success',
+    'failed',
+    'blocked',
+  ]);
+  assert.deepEqual(OutcomeStatus, [
+    ...BuildStatus,
+    'skipped',
+  ]);
+  for (const status of BuildStatus) {
+    assert.equal(isKnownStatus('OutcomeStatus', status), true);
+  }
 });

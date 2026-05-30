@@ -19,7 +19,6 @@ const FORBIDDEN_IMPORT_PATTERNS = [
   /downloader|download-runner|download-native/iu,
   /browser|playwright|selenium|puppeteer/iu,
   /artifact-service|artifactService/iu,
-  /site-capability-graph-artifact|site-capability-graph-final-validation/iu,
   /entrypoints\//u,
 ];
 
@@ -28,7 +27,6 @@ const FORBIDDEN_IMPORT_FIXTURES = [
   '../download-policy.mjs',
   '../lifecycle-events.mjs',
   '../site-capability-graph.mjs',
-  '../site-capability-graph-artifacts.mjs',
   '../core/adapters/generic-navigation.mjs',
   '../../downloads/executor.mjs',
   '../../sessions/runner.mjs',

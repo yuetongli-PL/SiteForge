@@ -10024,6 +10024,9 @@ export function assertGraphInventoryCommandDesignCompatibility(design = {}) {
     if (item.executionMode !== 'design-only') {
       throw new Error('GraphInventoryCommandDesign executionMode must be design-only');
     }
+    if ('requiredPlacementPolicy' in item || 'requiredWriter' in item) {
+      throw new Error('GraphInventoryCommandDesign must not reference retired graph artifact writers');
+    }
     for (const fieldName of [
       'runtimeGenerationEnabled',
       'repoWriteEnabled',
@@ -10096,8 +10099,6 @@ export function createGraphInventoryCommandDesign(graph = {}, options = {}) {
         'GraphInventoryCommandDesign',
       ),
       requiredArtifactFamily: 'site-capability-graph-inventory',
-      requiredPlacementPolicy: 'createGraphDerivedArtifactPlacement',
-      requiredWriter: 'writeGraphDerivedArtifactPair',
       inventoryArtifact,
     }],
   };

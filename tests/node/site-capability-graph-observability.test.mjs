@@ -34,10 +34,6 @@ import {
 } from '../../src/domain/capabilities/site-capability-graph.mjs';
 import * as siteCapabilityGraph from '../../src/domain/capabilities/site-capability-graph.mjs';
 import {
-  createGraphDerivedArtifactPlacement,
-  writeGraphDerivedArtifactPair,
-} from '../../src/domain/artifacts/site-capability-graph-artifacts.mjs';
-import {
   LIFECYCLE_EVENT_OBSERVABILITY_PROFILES,
   LIFECYCLE_EVENT_SCHEMA_VERSION,
   createLifecycleEventSubscriberRegistry,
@@ -2251,13 +2247,9 @@ test('runtime dispatch live adapter write boundary guard validates source aliase
   assert.doesNotMatch(distinctGuardAliasMessage, /synthetic-secret-value/u);
 });
 
-test('graph docs lifecycle dispatch design stays descriptor-only without external telemetry', async (t) => {
+test('graph docs lifecycle dispatch design stays descriptor-only without external telemetry', async () => {
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'graph-docs-dispatch-design-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
 
   const design = createGraphDocsLifecycleDispatchDesign({
     summary,
@@ -2283,18 +2275,7 @@ test('graph docs lifecycle dispatch design stays descriptor-only without externa
   assert.equal(design.items[0].lifecycleEvent.eventType, GRAPH_DOCS_GENERATION_EVENT_TYPE);
   assert.equal(Object.hasOwn(design.items[0], 'subscribers'), false);
   assert.equal(Object.hasOwn(design.items[0], 'telemetrySink'), false);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-docs-dispatch-design',
-    artifactFamily: 'site-capability-graph-lifecycle-dispatch-design',
-    artifactName: 'dispatch-design',
-  });
-  const result = await writeGraphDerivedArtifactPair(design, placement);
-  const artifactJson = await readFile(result.artifactPath, 'utf8');
-  const auditJson = await readFile(result.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
+  assert.doesNotMatch(JSON.stringify(design), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('graph docs generation lifecycle consumer contract rejects telemetry and runtime payloads', async () => {
@@ -2446,13 +2427,9 @@ test('graph docs lifecycle dispatch design rejects runtime dispatch and telemetr
   );
 });
 
-test('disabled graph docs lifecycle dispatch consumer returns blocked descriptor without dispatch', async (t) => {
+test('disabled graph docs lifecycle dispatch consumer returns blocked descriptor without dispatch', async () => {
   const graph = await readMinimalGraphFixture();
   const summary = generateGraphDocsSummary(graph);
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'graph-docs-disabled-dispatch-consumer-'));
-  t.after(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
   const design = createGraphDocsLifecycleDispatchDesign({
     summary,
     traceId: 'trace-synthetic-graph-docs-disabled-dispatch-consumer',
@@ -2485,18 +2462,7 @@ test('disabled graph docs lifecycle dispatch consumer returns blocked descriptor
   assert.equal(Object.hasOwn(result.items[0], 'subscribers'), false);
   assert.equal(Object.hasOwn(result.items[0], 'telemetrySink'), false);
   assert.equal(Object.hasOwn(result.items[0], 'artifactPath'), false);
-
-  const placement = createGraphDerivedArtifactPlacement({
-    outputDir: tempDir,
-    runId: 'synthetic-run-graph-docs-disabled-dispatch-consumer',
-    artifactFamily: 'site-capability-graph-lifecycle-dispatch-consumer-result',
-    artifactName: 'disabled-dispatch-consumer',
-  });
-  const writeResult = await writeGraphDerivedArtifactPair(result, placement);
-  const artifactJson = await readFile(writeResult.artifactPath, 'utf8');
-  const auditJson = await readFile(writeResult.auditPath, 'utf8');
-  assert.doesNotMatch(artifactJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
-  assert.doesNotMatch(auditJson, /authorization|cookie|csrf|sessionId|browserProfile/iu);
+  assert.doesNotMatch(JSON.stringify(result), /authorization|cookie|csrf|sessionId|browserProfile/iu);
 });
 
 test('graph docs lifecycle dispatch preflight rejects telemetry subscribers and runtime writes before enablement', async () => {

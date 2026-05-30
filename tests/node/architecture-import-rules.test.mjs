@@ -32,6 +32,9 @@ async function pathExists(rootRelativePath) {
 async function listSourceFiles(rootRelativePath) {
   const rootPath = path.join(REPO_ROOT, rootRelativePath);
   const results = /** @type {any[]} */ ([]);
+  if (!await pathExists(rootRelativePath)) {
+    return results;
+  }
   async function walk(currentPath) {
     const entries = await readdir(currentPath, { withFileTypes: true });
     for (const entry of entries) {
@@ -233,15 +236,14 @@ const REDACTION_GUARDED_ARTIFACT_WRITERS = new Set([
   'src/entrypoints/sites/social-auth-import.mjs',
   'src/infra/auth/site-session-governance.mjs',
   'src/sites/known-sites/bilibili/navigation/open.mjs',
+  'src/sites/known-sites/reddit/api-catalog.mjs',
   'src/domain/capabilities/api-candidates.mjs',
   'src/domain/capabilities/api-discovery.mjs',
-  'src/app/planner/data-flow-evidence.mjs',
   'src/domain/policies/execution/layer-runtime-consumer.mjs',
   'src/domain/lifecycle/lifecycle-events.mjs',
   'src/app/planner/plan-artifact.mjs',
   'src/app/planner/policy-handoff.mjs',
   'src/app/pipeline/build/pipeline.mjs',
-  'src/domain/artifacts/site-capability-graph-artifacts.mjs',
   'src/sites/registry/catalog/index.mjs',
   'src/domain/sessions/runner.mjs',
   'src/sites/known-sites/social/actions/router.mjs',
@@ -261,7 +263,6 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
   ['src/sites/known-sites/douyin/queries/follow-query.mjs', 'follow-query cache persistence'],
   ['src/domain/sessions/session-view.mjs', 'SessionView revocation store persistence'],
   ['src/sites/known-sites/xiaohongshu/actions/router.mjs', 'temporary downloader input file for subprocess handoff'],
-  ['src/skills/generation/publisher.mjs', 'generated skill reference publishing'],
 ]);
 
 const ARTIFACT_WRITE_SINK_BASELINE = new Map([
@@ -284,13 +285,12 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/app/pipeline/build/setup-assistant.mjs', 14],
   ['src/app/pipeline/build/workspace.mjs', 2],
   ['src/sites/known-sites/bilibili/navigation/open.mjs', 5],
+  ['src/sites/known-sites/reddit/api-catalog.mjs', 23],
   ['src/domain/capabilities/api-candidates.mjs', 8],
   ['src/domain/capabilities/api-discovery.mjs', 3],
-  ['src/app/planner/data-flow-evidence.mjs', 2],
   ['src/domain/policies/execution/layer-runtime-consumer.mjs', 3],
   ['src/domain/lifecycle/lifecycle-events.mjs', 3],
   ['src/app/planner/policy-handoff.mjs', 2],
-  ['src/domain/artifacts/site-capability-graph-artifacts.mjs', 3],
   ['src/domain/sessions/session-view.mjs', 2],
   ['src/sites/registry/catalog/index.mjs', 2],
   ['src/sites/known-sites/douyin/actions/router.mjs', 2],
@@ -298,7 +298,6 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/domain/sessions/runner.mjs', 5],
   ['src/sites/known-sites/social/actions/router.mjs', 19],
   ['src/sites/known-sites/xiaohongshu/actions/router.mjs', 2],
-  ['src/skills/generation/publisher.mjs', 7],
 ]);
 
 function collectArtifactWriteSinkMatches(sourceText, fileRelativePath) {
@@ -1756,6 +1755,7 @@ test('script shims only target entrypoints, CLI/shared helpers, or tools', async
     }
     return !resolved.startsWith('src/entrypoints/')
       && !resolved.startsWith('src/infra/cli/')
+      && resolved !== 'src/infra/io.mjs'
       && !resolved.startsWith('src/shared/')
       && !resolved.startsWith('tools/');
   });
@@ -1789,21 +1789,5 @@ test('site-doctor entrypoint reaches site-specific scenario suites only through 
     sourceText,
     /site-doctor-scenarios\.mjs/u,
     'src/entrypoints/sites/site-doctor.mjs should import the core doctor scenario registry',
-  );
-});
-
-test('site-renderers facade stays thin and delegates through the renderer registry', async () => {
-  const renderersPath = path.join(REPO_ROOT, 'src', 'skills', 'generation', 'render', 'site-renderers.mjs');
-  const sourceText = await readFile(renderersPath, 'utf8');
-
-  assert.match(
-    sourceText,
-    /site-renderers\/registry\.mjs/u,
-    'src/skills/generation/render/site-renderers.mjs should import the renderer registry',
-  );
-  assert.equal(
-    /^function render(?:Moodyz|Jable|22Biqu|Bilibili|Douyin)/mu.test(sourceText),
-    false,
-    'src/skills/generation/render/site-renderers.mjs should not keep site-specific renderer implementations',
   );
 });

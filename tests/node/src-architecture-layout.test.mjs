@@ -67,7 +67,6 @@ test('src-first code layout exists', async () => {
     expectPathExists('src/infra'),
     expectPathExists('src/infra/cli'),
     expectPathExists('src/shared'),
-    expectPathExists('src/skills'),
   ]);
 });
 
@@ -167,6 +166,7 @@ test('retired compatibility directories stay removed', async () => {
     expectPathMissing('lib'),
     expectPathMissing('src/pipeline'),
     expectPathMissing('src/kernel'),
+    expectPathMissing('src/skills/generation'),
     expectPathMissing('src/sites/core'),
     expectPathMissing('src/sites/catalog'),
     expectPathMissing('src/sites/capability'),
@@ -201,12 +201,10 @@ test('canonical src modules own profile validation and infra implementations', a
     ['src/infra/browser/profile-store.mjs', 'lib/browser-runtime/profile-store.mjs'],
     ['src/infra/browser/session.mjs', 'lib/browser-runtime/session.mjs'],
     ['src/sites/known-sites/bilibili/model/diagnosis.mjs', 'lib/sites/bilibili/diagnosis.mjs'],
-    ['src/sites/known-sites/bilibili/model/surfacing.mjs', 'lib/sites/bilibili/surfacing.mjs'],
     ['src/sites/known-sites/douyin/model/diagnosis.mjs', 'lib/sites/douyin/site.mjs'],
     ['src/infra/cli.mjs', 'lib/cli.mjs'],
     ['src/infra/io.mjs', 'lib/io.mjs'],
     ['src/shared/normalize.mjs', 'lib/normalize.mjs'],
-    ['src/shared/markdown.mjs', 'lib/markdown.mjs'],
     ['src/shared/wiki.mjs', 'lib/wiki-paths.mjs'],
   ];
 
@@ -278,8 +276,10 @@ test('flat site aliases and old microdirectories stay removed', async () => {
     expectPathMissing('src/sites/douyin/site.mjs'),
     expectPathMissing('src/sites/bilibili/action-router.mjs'),
     expectPathMissing('src/sites/bilibili/open.mjs'),
+    expectPathMissing('src/sites/known-sites/bilibili/model/surfacing.mjs'),
     expectPathMissing('src/sites/jable/ranking.mjs'),
     expectPathMissing('src/shared/markdown'),
+    expectPathMissing('src/shared/markdown.mjs'),
     expectPathMissing('src/shared/text'),
     expectPathMissing('src/shared/urls'),
     expectPathMissing('src/infra/fs'),

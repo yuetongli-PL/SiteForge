@@ -7,6 +7,7 @@ import {
 } from '../../domain/capabilities/api-candidates.mjs';
 import { createCatalogAdapter } from './factory.mjs';
 import { normalizeSiteAdapterSemanticEntry } from './generic-navigation.mjs';
+import { endpointParts, parseUrl } from './url-parts.mjs';
 
 export const JABLE_TERMINOLOGY = Object.freeze({
   entityLabel: '\u5f71\u7247',
@@ -71,27 +72,12 @@ function stripJableSuffix(value) {
     .trim();
 }
 
-function parseUrl(input) {
-  try {
-    return input ? new URL(input) : null;
-  } catch {
-    return null;
-  }
-}
-
-function endpointParts(candidate = /** @type {any} */ ({})) {
-  const parsed = parseUrl(candidate?.endpoint?.url);
-  return {
-    host: parsed?.hostname.toLowerCase() ?? '',
-    pathname: parsed?.pathname ?? '',
-  };
-}
-
 function isJableApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'jable'
     && host === 'jable.tv'
+    && ['GET', 'HEAD'].includes(String(candidate?.endpoint?.method ?? candidate?.method ?? 'GET').trim().toUpperCase())
     && pathname.startsWith('/api/');
 }
 
@@ -125,14 +111,6 @@ export function classifyJableModelsPath(pathname) {
     return 'list';
   }
   return 'detail';
-}
-
-export function isJableModelsListPath(pathname) {
-  return classifyJableModelsPath(pathname) === 'list';
-}
-
-export function isJableModelsDetailPath(pathname) {
-  return classifyJableModelsPath(pathname) === 'detail';
 }
 
 export function normalizeJableDisplayLabel(rawValue, { url, pageType, queryText, kind } = /** @type {any} */ ({})) {
@@ -257,6 +235,16 @@ export const jableAdapter = createCatalogAdapter({
     return normalizeJableDisplayLabel(value, options) ?? cleanText(value);
   },
   inferPageType({ pathname }) {
+    const normalizedPath = normalizePathnameValue(pathname);
+    if (normalizedPath === '/') {
+      return 'home';
+    }
+    if (normalizedPath === '/search' || normalizedPath.startsWith('/search/')) {
+      return 'search-results-page';
+    }
+    if (normalizedPath.startsWith('/videos/')) {
+      return 'book-detail-page';
+    }
     const modelsPathKind = classifyJableModelsPath(pathname);
     if (modelsPathKind === 'list') {
       return 'author-list-page';
@@ -264,9 +252,33 @@ export const jableAdapter = createCatalogAdapter({
     if (modelsPathKind === 'detail') {
       return 'author-page';
     }
+    if (
+      normalizedPath === '/categories'
+      || normalizedPath.startsWith('/categories/')
+      || normalizedPath === '/tags'
+      || normalizedPath.startsWith('/tags/')
+      || normalizedPath === '/hot'
+      || normalizedPath === '/latest-updates'
+    ) {
+      return 'category-page';
+    }
     return null;
   },
   classifyPath({ pathname }) {
+    const normalizedPath = normalizePathnameValue(pathname);
+    if (normalizedPath.startsWith('/videos/')) {
+      return { kind: 'content-path', detail: 'video-detail' };
+    }
+    if (
+      normalizedPath === '/categories'
+      || normalizedPath.startsWith('/categories/')
+      || normalizedPath === '/tags'
+      || normalizedPath.startsWith('/tags/')
+      || normalizedPath === '/hot'
+      || normalizedPath === '/latest-updates'
+    ) {
+      return { kind: 'category-path', detail: normalizedPath.split('/').filter(Boolean)[0] ?? 'category' };
+    }
     const modelsPathKind = classifyJableModelsPath(pathname);
     if (!modelsPathKind) {
       return { kind: null, detail: null };

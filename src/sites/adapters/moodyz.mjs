@@ -6,6 +6,12 @@ import {
   normalizeSiteAdapterCatalogUpgradePolicy,
 } from '../../domain/capabilities/api-candidates.mjs';
 import { createCatalogAdapter } from './factory.mjs';
+import { endpointParts, parseUrl } from './url-parts.mjs';
+
+export const MOODYZ_HOSTS = Object.freeze([
+  'moodyz.com',
+  'www.moodyz.com',
+]);
 
 export const MOODYZ_TERMINOLOGY = Object.freeze({
   entityLabel: '浣滃搧',
@@ -19,7 +25,7 @@ export const MOODYZ_TERMINOLOGY = Object.freeze({
   verifiedTaskLabel: '浣滃搧/濂充紭',
 });
 
-const INTENT_LABELS = Object.freeze({
+export const MOODYZ_INTENT_LABELS = Object.freeze({
   'search-work': '鎼滅储浣滃搧',
   'search-book': '鎼滅储浣滃搧',
   'open-work': '鎵撳紑浣滃搧',
@@ -30,35 +36,109 @@ const INTENT_LABELS = Object.freeze({
   'open-utility-page': '鎵撳紑鍔熻兘椤?',
 });
 
-function parseUrl(input) {
-  try {
-    return input ? new URL(input) : null;
-  } catch {
-    return null;
+const WRITE_LIKE_API_SEGMENTS = Object.freeze([
+  'account',
+  'auth',
+  'cart',
+  'checkout',
+  'comment',
+  'create',
+  'delete',
+  'favorite',
+  'follow',
+  'login',
+  'logout',
+  'order',
+  'payment',
+  'purchase',
+  'register',
+  'review',
+  'signin',
+  'signup',
+  'update',
+  'upload',
+]);
+
+function normalizePathname(pathname) {
+  const input = String(pathname ?? '').trim() || '/';
+  const normalized = input.startsWith('/') ? input : `/${input}`;
+  return normalized.replace(/\/{2,}/gu, '/').replace(/\/+$/u, '') || '/';
+}
+
+function candidateMethod(candidate = /** @type {any} */ ({})) {
+  return String(candidate?.endpoint?.method ?? candidate?.method ?? 'GET').trim().toUpperCase();
+}
+
+function isReadOnlyCandidateMethod(candidate = /** @type {any} */ ({})) {
+  return ['GET', 'HEAD'].includes(candidateMethod(candidate));
+}
+
+function pathHasWriteLikeSegment(pathname) {
+  const segments = normalizePathname(pathname)
+    .toLowerCase()
+    .split('/')
+    .filter(Boolean);
+  return segments.some((segment) => WRITE_LIKE_API_SEGMENTS.includes(segment));
+}
+
+function isMoodyzHost(host) {
+  return MOODYZ_HOSTS.includes(String(host ?? '').toLowerCase());
+}
+
+export function inferMoodyzPageType({ pathname = '', inputUrl = '' } = /** @type {any} */ ({})) {
+  const parsedPathname = pathname || parseUrl(inputUrl)?.pathname || '/';
+  const normalizedPath = normalizePathname(parsedPathname).toLowerCase();
+
+  if (normalizedPath === '/') {
+    return 'home';
   }
+  if (normalizedPath === '/search' || normalizedPath.startsWith('/search/')) {
+    return 'search-results-page';
+  }
+  if (normalizedPath === '/works/detail' || normalizedPath.startsWith('/works/detail/')) {
+    return 'book-detail-page';
+  }
+  if (
+    normalizedPath === '/works/date'
+    || normalizedPath === '/works/genre'
+    || normalizedPath === '/works/series'
+    || normalizedPath === '/works/label'
+    || normalizedPath === '/top'
+    || /^\/works\/list\/(?:date\/\d{4}-\d{2}-\d{2}|genre\/[^/]+|series\/[^/]+|label\/[^/]+|release|reserve)(?:\/|$)/u.test(normalizedPath)
+  ) {
+    return 'category-page';
+  }
+  if (/^\/actress(?:\/|$)/u.test(normalizedPath)) {
+    return 'author-page';
+  }
+  if (
+    normalizedPath === '/sitemap'
+    || normalizedPath === '/link'
+    || normalizedPath === '/help'
+    || normalizedPath === '/privacy'
+    || normalizedPath.startsWith('/recruit/')
+  ) {
+    return 'utility-page';
+  }
+  return null;
 }
 
-function endpointParts(candidate = /** @type {any} */ ({})) {
-  const parsed = parseUrl(candidate?.endpoint?.url);
-  return {
-    host: parsed?.hostname.toLowerCase() ?? '',
-    pathname: parsed?.pathname ?? '',
-  };
-}
-
-function isMoodyzApiCandidate(candidate = /** @type {any} */ ({})) {
+export function isMoodyzApiCandidate(candidate = /** @type {any} */ ({})) {
   const siteKey = String(candidate?.siteKey ?? '').trim();
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'moodyz'
-    && host === 'moodyz.com'
-    && pathname.startsWith('/api/');
+    && isReadOnlyCandidateMethod(candidate)
+    && isMoodyzHost(host)
+    && (pathname === '/api' || pathname.startsWith('/api/'))
+    && !pathHasWriteLikeSegment(pathname);
 }
 
 export const moodyzAdapter = createCatalogAdapter({
   id: 'moodyz',
-  hosts: ['moodyz.com'],
+  hosts: MOODYZ_HOSTS,
   terminology: MOODYZ_TERMINOLOGY,
-  intentLabels: INTENT_LABELS,
+  intentLabels: MOODYZ_INTENT_LABELS,
+  inferPageType: inferMoodyzPageType,
   normalizeDisplayLabel: ({ value }) => cleanText(value),
   validateApiCandidate({
     candidate,
@@ -67,6 +147,7 @@ export const moodyzAdapter = createCatalogAdapter({
     validatedAt,
   } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
+    const method = candidateMethod(candidate);
     const accepted = isMoodyzApiCandidate(candidate);
     return normalizeSiteAdapterCandidateDecision({
       adapterId: 'moodyz',
@@ -77,6 +158,7 @@ export const moodyzAdapter = createCatalogAdapter({
         validationMode: 'moodyz-api-candidate',
         endpointHost: host,
         endpointPath: pathname,
+        endpointMethod: method,
         ...scope,
       },
       evidence,
@@ -90,6 +172,7 @@ export const moodyzAdapter = createCatalogAdapter({
     decidedAt,
   } = /** @type {any} */ ({})) {
     const { host, pathname } = endpointParts(candidate);
+    const method = candidateMethod(candidate);
     const accepted = siteAdapterDecision?.decision === 'accepted' && isMoodyzApiCandidate(candidate);
     return normalizeSiteAdapterCatalogUpgradePolicy({
       adapterId: 'moodyz',
@@ -100,6 +183,7 @@ export const moodyzAdapter = createCatalogAdapter({
         policyMode: 'moodyz-api',
         endpointHost: host,
         endpointPath: pathname,
+        endpointMethod: method,
         ...scope,
       },
       evidence,

@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 import {
   isUrlAllowedByRobots,
@@ -3415,6 +3416,168 @@ test('SiteForge setup records partial browser route coverage without blocking ca
   }
 });
 
+test('browser bridge Qidian replay signs with page-global csrf token in main world', async () => {
+  const extensionBackground = await readFile(path.join(browserBridgeExtensionDirectory(), 'background.js'), 'utf8');
+  const state = {
+    capturedFetch: null,
+    initialized: false,
+    signedInput: null,
+  };
+  const context = {
+    URL,
+    setTimeout,
+    clearTimeout,
+    console,
+    document: {
+      cookie: '',
+      getElementById(id) {
+        return id === 'qdcstd' ? { content: '5' } : null;
+      },
+    },
+    Fock: {
+      initialize() {
+        state.initialized = true;
+      },
+      sign(input) {
+        state.signedInput = input;
+        return 'synthetic-qidian-signature';
+      },
+    },
+    _csrfToken: 'synthetic-page-csrf',
+    fetch: async (url, options = {}) => {
+      state.capturedFetch = { url, options };
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: {
+          get(name) {
+            return name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : '';
+          },
+        },
+        clone() {
+          return this;
+        },
+        async json() {
+          return { status_code: 0, data: { ok: true } };
+        },
+      };
+    },
+    chrome: {
+      runtime: { onMessage: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} } },
+      scripting: {
+        async executeScript(options) {
+          assert.equal(options.world, 'MAIN');
+          return [{ result: await options.func(options.args[0]) }];
+        },
+      },
+    },
+  };
+
+  runInNewContext(extensionBackground, context, { filename: 'browser-bridge-extension/background.js' });
+  const result = await context.executeApiReplayFetch(1, {
+    id: 'qidian-replay-test',
+    endpoint: 'https://www.qidian.com/webcommon/user/getUserInfo',
+    endpointTemplate: 'https://www.qidian.com/webcommon/user/getUserInfo',
+    method: 'GET',
+    allowedHost: 'www.qidian.com',
+    runtimeParameterSource: { kind: 'qidian_yuew_sign' },
+    responseEvidence: { statusCode: 0, objectField: 'data' },
+  });
+
+  assert.equal(result.status, 'verified');
+  assert.equal(result.reasonCode, null);
+  assert.equal(state.initialized, true);
+  assert.equal(state.signedInput.endsWith('synthetic-page-csrf'), true);
+  assert.equal(state.capturedFetch.options.headers['X-Yuew-sign'], 'synthetic-qidian-signature');
+});
+
+test('browser auth bridge can use a managed browser session with the bundled extension', async () => {
+  await withTestServer((request, response) => {
+    response.end(testHtmlPage('Managed bridge target', '<main><ul><li>account item</li></ul></main>'));
+  }, async (rootUrl) => {
+    const bridgeVersion = 'route-queue-chinese-semantic-v7';
+    const site = {
+      id: 'managed-browser-bridge-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    let defaultBrowserOpened = false;
+    let providerClosed = false;
+    let providerRequest = null;
+    const result = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeManaged: true,
+        browserBridgeTimeoutMs: 1000,
+        apiReplayCookieHeader: 'sid=SECRET_SESSION_VALUE; theme=dark',
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserBridgeManagedSessionProvider: async (request) => {
+          providerRequest = request;
+          const bridge = new URL(request.bridgeUrl);
+          const sessionUrl = new URL(`/session.json${bridge.search}`, bridge.origin).toString();
+          const session = await (await fetch(sessionUrl)).json();
+          assert.equal(session.routes.length, 1);
+          assert.equal(session.timing.tabStableMaxPolls, 60);
+          assert.equal(session.timing.routeCollectFallbackDelayMs, 12000);
+          for (const stage of [
+            `bridge-content-version:${bridgeVersion}`,
+            `bridge-version:${bridgeVersion}`,
+          ]) {
+            const statusUrl = new URL(session.extensionStatusUrl);
+            statusUrl.searchParams.set('stage', stage);
+            await fetch(statusUrl, { method: 'POST' });
+          }
+          await fetch(session.submitUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              routeResults: [{
+                routeId: session.routes[0].id,
+                targetUrl: session.routes[0].targetUrl,
+                sourceLayer: 'authenticated',
+                status: 'captured',
+                collectorVersion: bridgeVersion,
+              }],
+              authenticatedPages: [{
+                routeId: session.routes[0].id,
+                url: session.routes[0].targetUrl,
+                routeTemplate: '/account',
+                sourceLayer: 'authenticated',
+                pageType: 'authenticated_home',
+                visibleItemCount: 1,
+                listPresent: true,
+              }],
+            }),
+          });
+          return {
+            close: async () => {
+              providerClosed = true;
+            },
+          };
+        },
+      },
+      openBrowser: async () => {
+        defaultBrowserOpened = true;
+      },
+    });
+
+    assert.equal(defaultBrowserOpened, false);
+    assert.equal(providerClosed, true);
+    assert.equal(providerRequest.cookieCount, 2);
+    assert.equal(providerRequest.extensionDir, browserBridgeExtensionDirectory());
+    assert.equal(providerRequest.launchArgs.includes(`--load-extension=${browserBridgeExtensionDirectory().replaceAll('\\', '/')}`), true);
+    assert.equal(result.status, 'browser_verified');
+    assert.equal(result.bridgeSummary.capturedRouteCount, 1);
+    assert.equal(result.bridgeSummary.routeResults[0].targetRoute, '/account');
+  });
+});
+
 test('browser auth bridge serves collector script and rejects sensitive summaries', async () => {
   await withTestServer({
     '/robots.txt': testRobotsTxt('http://example.test/'),
@@ -3454,7 +3617,9 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
         assert.equal(session.nonce, new URL(sessionUrl).searchParams.get('nonce'));
         assert.equal(session.targetUrl, new URL('/account', rootUrl).toString());
         assert.equal(session.allowedHost, new URL(rootUrl).hostname);
+        assert.deepEqual(session.allowedHosts, [new URL(rootUrl).hostname]);
         assert.equal(session.routes.length, 2);
+        assert.deepEqual(session.routes[0].allowedHosts, [new URL(rootUrl).hostname]);
         assert.deepEqual(session.routes.map((route) => route.sourceLayer), ['authenticated', 'authenticated_overlay']);
         assert.equal(session.privacy.cookieRead, false);
         assert.equal(session.privacy.browserProfilePersisted, false);
@@ -3525,8 +3690,8 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     const extensionDir = browserBridgeExtensionDirectory();
     const manifest = JSON.parse(await readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.manifest_version, 3);
-    assert.equal(manifest.version, '0.1.6');
-    assert.match(manifest.name, /v0\.1\.6/u);
+    assert.equal(manifest.version, '0.1.7');
+    assert.match(manifest.name, /v0\.1\.7/u);
     assert.deepEqual(manifest.permissions.sort(), ['scripting', 'tabs']);
     const extensionContent = await readFile(path.join(extensionDir, 'bridge-content.js'), 'utf8');
     assert.equal(extensionContent.includes('siteforge-bridge-session'), true);
@@ -3560,6 +3725,11 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(extensionCollector.includes('media_surface'), true);
     assert.equal(extensionCollector.includes("attr(node, 'aria-label')"), true);
     assert.equal(extensionCollector.includes("attr(node, 'data-testid')"), true);
+    assert.doesNotMatch(extensionCollector, /^\s*'\[class\*="slider" i\]',/mu);
+    assert.doesNotMatch(extensionCollector, /^\s*'\[id\*="slider" i\]',/mu);
+    assert.equal(extensionCollector.includes('[data-verify][class*="slider" i]'), true);
+    assert.equal(extensionCollector.includes('hasSubstantialStructure'), true);
+    assert.equal(extensionCollector.includes("level: 'possible_challenge'"), true);
     const followSemanticIndex = extensionCollector.indexOf('(?:follow|following|followed|followers)');
     const categorySemanticIndex = extensionCollector.indexOf('categor|category');
     assert.equal(followSemanticIndex >= 0, true);
@@ -3723,6 +3893,46 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(JSON.stringify(extensionCanonicalizedUrlForRouteId.bridgeSummary).includes('/unrequested'), false);
     assert.equal(JSON.stringify(extensionCanonicalizedUrlForRouteId.structureSummary).includes('collectorVersion'), false);
 
+    const alternateAllowedHostForRouteId = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site: {
+        ...site,
+        allowedDomains: [new URL(rootUrl).hostname, 'www.so-agent.jp'],
+      },
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          assert.equal(routes[0].allowedHosts.includes('www.so-agent.jp'), true);
+          const redirectedUrl = 'https://www.so-agent.jp/account';
+          return {
+            routeResults: [{
+              routeId: routes[0].id,
+              targetUrl: redirectedUrl,
+              sourceLayer: routes[0].sourceLayer,
+              status: 'captured',
+              collectorVersion: 'route-queue-chinese-semantic-v7',
+            }],
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: redirectedUrl,
+              routeTemplate: '/account',
+              sourceLayer: routes[0].sourceLayer,
+              pageType: 'account_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(alternateAllowedHostForRouteId.status, 'browser_verified');
+    assert.equal(alternateAllowedHostForRouteId.bridgeSummary.capturedRouteCount, 1);
+    assert.equal(alternateAllowedHostForRouteId.structureSummary.authenticatedPages[0].normalizedUrl, 'https://www.so-agent.jp/account');
+
     const mismatchedUrlChallengeForRouteId = await runBrowserAuthBridge({
       inputUrl: rootUrl,
       site,
@@ -3811,6 +4021,41 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     });
     assert.equal(trailingSlashRoute.status, 'browser_verified');
     assert.equal(trailingSlashRoute.bridgeSummary.routeResults[0].targetRoute, '/search/');
+
+    const queryRoute = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          authRoutes: ['/label/page/2?works=bazooka&utm_source=tracking'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          assert.equal(routes[0].targetUrl, new URL('/label/page/2?works=bazooka', rootUrl).toString());
+          return {
+            routeResults: [{
+              routeId: routes[0].id,
+              targetUrl: routes[0].targetUrl,
+              sourceLayer: routes[0].sourceLayer,
+              status: 'captured',
+            }],
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: '/label/page/2',
+              sourceLayer: 'authenticated',
+              pageType: 'catalog',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(queryRoute.status, 'browser_verified');
+    assert.equal(queryRoute.bridgeSummary.routeResults[0].targetRoute, '/label/page/2');
+    assert.equal(JSON.stringify(queryRoute.bridgeSummary).includes('works=bazooka'), false);
 
     const retryRecovered = await runBrowserAuthBridge({
       inputUrl: rootUrl,

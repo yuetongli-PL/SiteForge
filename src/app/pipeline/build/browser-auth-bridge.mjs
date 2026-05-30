@@ -21,6 +21,8 @@ import {
   bridgeExtensionVersionBlockingSignals,
   bridgeVersionCompatible,
 } from './browser-bridge-version-policy.mjs';
+import { openBrowserSession } from '../../../infra/browser/session.mjs';
+import { fileExists } from '../../../infra/browser/launcher.mjs';
 
 const MAX_BRIDGE_BODY_BYTES = 256 * 1024;
 const MAX_BRIDGE_ROUTES = 32;
@@ -28,6 +30,23 @@ const MAX_EXTENSION_STAGE_TIMELINE = MAX_BRIDGE_ROUTES * 12;
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
 const ROUTE_RESULT_MATCH_URL_SYMBOL = Symbol('siteforge.browserBridge.routeResultMatchUrl');
 const DEFAULT_API_REPLAY_TIMEOUT_MS = 8_000;
+const DEFAULT_MANAGED_BRIDGE_VIEWPORT = Object.freeze({
+  width: 1440,
+  height: 900,
+  deviceScaleFactor: 1,
+});
+const DEFAULT_BRIDGE_TIMING = Object.freeze({
+  routeCollectFallbackDelayMs: 6500,
+  routeStableAfterCompleteMs: 1500,
+  tabStableMaxPolls: 16,
+  tabStablePollMs: 500,
+});
+const MANAGED_BRIDGE_TIMING = Object.freeze({
+  routeCollectFallbackDelayMs: 12000,
+  routeStableAfterCompleteMs: 2500,
+  tabStableMaxPolls: 60,
+  tabStablePollMs: 500,
+});
 const BRIDGE_CORS_HEADERS = Object.freeze({
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -54,6 +73,190 @@ const RETRYABLE_BLOCKED_REASON_CODES = new Set([
 
 export function browserBridgeExtensionDirectory() {
   return BROWSER_BRIDGE_EXTENSION_DIR;
+}
+
+function browserBridgeManagedEnabled(options = /** @type {any} */ ({})) {
+  return options.browserBridgeManaged === true || options.managedBrowserBridge === true;
+}
+
+function managedBrowserBridgeLaunchArgs() {
+  const extensionDir = BROWSER_BRIDGE_EXTENSION_DIR.replace(/\\/gu, '/');
+  return [
+    `--disable-extensions-except=${extensionDir}`,
+    `--load-extension=${extensionDir}`,
+  ];
+}
+
+async function detectManagedBrowserBridgeBrowserPath(options = /** @type {any} */ ({})) {
+  const configured = String(options.browserPath ?? '').trim();
+  if (configured) {
+    return configured;
+  }
+  const localAppData = String(process.env.LOCALAPPDATA ?? '').trim();
+  const candidates = process.platform === 'win32'
+    ? [
+      'C:\\Program Files\\Google\\Chrome for Testing\\chrome.exe',
+      localAppData ? path.join(localAppData, 'Google', 'Chrome for Testing', 'chrome.exe') : null,
+      'C:\\Program Files\\Chromium\\Application\\chrome.exe',
+      localAppData ? path.join(localAppData, 'Chromium', 'Application', 'chrome.exe') : null,
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      localAppData ? path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe') : null,
+    ]
+    : [
+      '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/microsoft-edge',
+      '/usr/bin/microsoft-edge-stable',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+    ];
+  for (const candidate of candidates.filter(Boolean)) {
+    if (await fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function managedBrowserBridgeTimeoutMs(options = /** @type {any} */ ({})) {
+  const configured = Number(options.browserBridgeBrowserTimeoutMs ?? options.timeoutMs);
+  return Math.max(1000, Number.isFinite(configured) && configured > 0
+    ? configured
+    : browserBridgeRequestedTimeoutMs(options));
+}
+
+function boundedPositiveInteger(value, fallback, { min = 1, max = 120000 } = /** @type {any} */ ({})) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(number)));
+}
+
+function browserBridgeTiming(options = /** @type {any} */ ({})) {
+  const defaults = browserBridgeManagedEnabled(options) ? MANAGED_BRIDGE_TIMING : DEFAULT_BRIDGE_TIMING;
+  return {
+    routeCollectFallbackDelayMs: boundedPositiveInteger(
+      options.browserBridgeRouteCollectFallbackDelayMs,
+      defaults.routeCollectFallbackDelayMs,
+      { min: 1000, max: 60000 },
+    ),
+    routeStableAfterCompleteMs: boundedPositiveInteger(
+      options.browserBridgeRouteStableAfterCompleteMs,
+      defaults.routeStableAfterCompleteMs,
+      { min: 250, max: 15000 },
+    ),
+    tabStableMaxPolls: boundedPositiveInteger(
+      options.browserBridgeTabStableMaxPolls,
+      defaults.tabStableMaxPolls,
+      { min: 1, max: 120 },
+    ),
+    tabStablePollMs: boundedPositiveInteger(
+      options.browserBridgeTabStablePollMs,
+      defaults.tabStablePollMs,
+      { min: 100, max: 5000 },
+    ),
+  };
+}
+
+function cookieParamsFromHeader(cookieHeader, targetUrl) {
+  const header = String(cookieHeader ?? '').trim();
+  if (!header) {
+    return [];
+  }
+  let sourceUrl = null;
+  try {
+    sourceUrl = new URL(targetUrl).origin;
+  } catch {
+    return [];
+  }
+  return header
+    .split(/;\s*/u)
+    .map((part) => {
+      const separatorIndex = part.indexOf('=');
+      if (separatorIndex <= 0) {
+        return null;
+      }
+      const name = part.slice(0, separatorIndex).trim();
+      const value = part.slice(separatorIndex + 1).trim();
+      if (!name || /[\u0000-\u001f\u007f;=]/u.test(name)) {
+        return null;
+      }
+      return {
+        name,
+        value,
+        url: sourceUrl,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function setManagedBrowserBridgeCookies(session, cookieParams) {
+  if (!cookieParams.length) {
+    return;
+  }
+  await session.client.send('Network.setCookies', { cookies: cookieParams }, session.sessionId);
+}
+
+async function openManagedBrowserBridgeSession({
+  bridgeUrl,
+  site,
+  targetUrl,
+  options = /** @type {any} */ ({}),
+} = /** @type {any} */ ({})) {
+  const launchArgs = managedBrowserBridgeLaunchArgs();
+  const browserPath = await detectManagedBrowserBridgeBrowserPath(options);
+  const cookieParams = cookieParamsFromHeader(
+    options.apiReplayCookieHeader ?? options.cookieHeader,
+    targetUrl ?? site?.rootUrl,
+  );
+  const sessionProvider = options.browserBridgeManagedSessionProvider ?? options.managedBrowserBridgeSessionProvider;
+  if (typeof sessionProvider === 'function') {
+    return await sessionProvider({
+      bridgeUrl,
+      site,
+      targetUrl,
+      options,
+      browserPath,
+      extensionDir: BROWSER_BRIDGE_EXTENSION_DIR,
+      launchArgs,
+      cookieCount: cookieParams.length,
+    });
+  }
+
+  const timeoutMs = managedBrowserBridgeTimeoutMs(options);
+  const viewport = options.browserBridgeViewport && typeof options.browserBridgeViewport === 'object'
+    ? { ...DEFAULT_MANAGED_BRIDGE_VIEWPORT, ...options.browserBridgeViewport }
+    : DEFAULT_MANAGED_BRIDGE_VIEWPORT;
+  const session = await openBrowserSession({
+    browserPath,
+    headless: false,
+    timeoutMs,
+    fullPage: false,
+    viewport,
+    startupUrl: 'about:blank',
+    launchArgs,
+    sessionOpenRetries: 0,
+  }, {
+    userDataDirPrefix: 'siteforge-browser-bridge-',
+  });
+  await setManagedBrowserBridgeCookies(session, cookieParams);
+  await session.navigateAndWait(bridgeUrl, {
+    useLoadEvent: false,
+    useNetworkIdle: false,
+    documentReadyTimeoutMs: Math.min(timeoutMs, 5000),
+    domQuietMs: 0,
+    domQuietTimeoutMs: Math.min(timeoutMs, 5000),
+    idleMs: 0,
+  });
+  return session;
 }
 
 function uniqueStrings(values) {
@@ -153,7 +356,6 @@ function normalizeRouteUrl(value, site) {
   const parsed = new URL(normalized);
   parsed.username = '';
   parsed.password = '';
-  parsed.search = '';
   parsed.hash = '';
   return parsed.toString();
 }
@@ -163,13 +365,15 @@ function browserBridgeRouteAllowedByRobots(urlValue, options = /** @type {any} *
   return !robotsPolicy || isUrlAllowedByRobots(urlValue, robotsPolicy);
 }
 
-function browserBridgeRouteDescriptor(urlValue, sourceLayer, id, reasonCode = null) {
+function browserBridgeRouteDescriptor(urlValue, sourceLayer, id, reasonCode = null, site = null) {
   const parsed = new URL(urlValue);
+  const allowedHosts = uniqueStrings([parsed.hostname, ...(site?.allowedDomains ?? [])]);
   return {
     id,
     targetUrl: urlValue,
     sourceLayer,
     allowedHost: parsed.hostname,
+    allowedHosts,
     allowedOrigin: parsed.origin,
     routeTemplate: routeTemplateFromUrl(urlValue),
     reasonCode,
@@ -226,6 +430,7 @@ function routeQueueFromConfiguredRoutes({
         sourceLayer,
         `robots-blocked-route-${blockedRoutes.length + 1}`,
         'robots-disallowed',
+        site,
       ));
       continue;
     }
@@ -235,10 +440,11 @@ function routeQueueFromConfiguredRoutes({
         sourceLayer,
         `route-limit-exceeded-${blockedRoutes.length + 1}`,
         'browser-bridge-route-limit-exceeded',
+        site,
       ));
       continue;
     }
-    routes.push(browserBridgeRouteDescriptor(normalizedUrl, sourceLayer, `route-${routes.length + 1}`));
+    routes.push(browserBridgeRouteDescriptor(normalizedUrl, sourceLayer, `route-${routes.length + 1}`, null, site));
   }
   return { routes, blockedRoutes };
 }
@@ -302,7 +508,10 @@ const BRIDGE_EXTENSION_STAGE_PATTERNS = Object.freeze([
   new RegExp(`^(?:bridge-content-version|bridge-version):${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
   new RegExp(`^(?:route-opened|route-complete|route-open-failed|route-load-fallback|route-tab-settling|route-tab-stable|route-tab-usable-while-loading|navigation-in-progress|route-host-mismatch|route-login-wall|route-url-canonicalized|route-status-submit-failed|collector-injecting|collector-reinjecting):${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
   new RegExp(`^collector-version:${BRIDGE_STAGE_TOKEN_PATTERN}:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^collector-challenge:${BRIDGE_STAGE_TOKEN_PATTERN}:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
   new RegExp(`^collector-submit-ok:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^(?:api-replay-started|api-replay-page-ready|api-replay-script-started|api-replay-script-finished|api-replay-submit-ok):${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
+  new RegExp(`^qidian-api-replay:${BRIDGE_STAGE_TOKEN_PATTERN}:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
   new RegExp(`^execute-script-failed:${BRIDGE_STAGE_TOKEN_PATTERN}:attempt-[0-9]{1,2}$`, 'u'),
   new RegExp(`^collector-message-failed:${BRIDGE_STAGE_TOKEN_PATTERN}(?::${BRIDGE_STAGE_TOKEN_PATTERN})?:attempt-[0-9]{1,2}$`, 'u'),
   new RegExp(`^route-collect-failed:${BRIDGE_STAGE_TOKEN_PATTERN}:${BRIDGE_STAGE_TOKEN_PATTERN}$`, 'u'),
@@ -776,6 +985,13 @@ function matchedRouteForPayload(payload, site, routeMaps) {
       return routeById;
     }
     if (
+      routeSourceLayer(payload?.sourceLayer) === routeById.sourceLayer
+      && routeTemplateFromUrl(normalizedUrl) === routeTemplateFromUrl(routeById.targetUrl)
+      && isInternalUrl(normalizedUrl, site.allowedDomains)
+    ) {
+      return routeById;
+    }
+    if (
       bridgeVersionCompatible(payload?.collectorVersion)
       && routeSourceLayer(payload?.sourceLayer) === routeById.sourceLayer
       && isInternalUrl(normalizedUrl, site.allowedDomains)
@@ -1237,13 +1453,16 @@ function bridgeSession({
   sourceLayer = 'authenticated',
   routes = [],
   apiReplay = null,
+  timing = DEFAULT_BRIDGE_TIMING,
 }) {
   const parsedTarget = new URL(targetUrl);
+  const sessionAllowedHosts = uniqueStrings([parsedTarget.hostname, ...routes.flatMap((route) => route?.allowedHosts ?? route?.allowedHost ?? [])]);
   const sessionRoutes = routes.length ? routes : [{
     id: 'route-1',
     targetUrl,
     sourceLayer,
     allowedHost: parsedTarget.hostname,
+    allowedHosts: sessionAllowedHosts,
     allowedOrigin: parsedTarget.origin,
     routeTemplate: routeTemplateFromUrl(targetUrl),
   }];
@@ -1256,9 +1475,11 @@ function bridgeSession({
     collectorUrl,
     extensionStatusUrl,
     allowedHost: parsedTarget.hostname,
+    allowedHosts: sessionAllowedHosts,
     allowedOrigin: parsedTarget.origin,
     sourceLayer,
     routes: sessionRoutes,
+    timing,
     ...(apiReplay ? { apiReplay } : {}),
     privacy: {
       rawDom: false,
@@ -1426,7 +1647,8 @@ async function runBrowserBridgeApiReplayWithExtension({
   options = /** @type {any} */ ({}),
   openBrowser,
 } = /** @type {any} */ ({})) {
-  if (typeof openBrowser !== 'function') {
+  const useManagedBridge = browserBridgeManagedEnabled(options);
+  if (!useManagedBridge && typeof openBrowser !== 'function') {
     return {
       status: 'skipped',
       reasonCode: 'browser_bridge_replay_unavailable',
@@ -1470,6 +1692,7 @@ async function runBrowserBridgeApiReplayWithExtension({
           collectorUrl: submitUrl,
           extensionStatusUrl,
           routes: [],
+          timing: browserBridgeTiming(options),
           apiReplay: {
             id: 'api-replay-1',
             endpoint: replayEndpoint,
@@ -1536,9 +1759,24 @@ async function runBrowserBridgeApiReplayWithExtension({
     server.listen({ port: 0, host: '127.0.0.1' }, () => resolve(undefined));
   });
 
+  let managedBridgeSession = null;
   try {
     const bridgeUrl = `http://127.0.0.1:${browserBridgeServerPort(server)}/?nonce=${nonce}`;
-    await openBrowser(bridgeUrl);
+    try {
+      if (useManagedBridge) {
+        managedBridgeSession = await openManagedBrowserBridgeSession({
+          bridgeUrl,
+          site,
+          targetUrl: replayPageUrl,
+          options,
+        });
+      } else {
+        await openBrowser(bridgeUrl);
+      }
+    } catch (error) {
+      await managedBridgeSession?.close?.();
+      throw error;
+    }
     const timeoutMs = browserBridgeApiReplayTimeoutMs(options);
     const replayResult = await Promise.race([
       submission,
@@ -1551,6 +1789,7 @@ async function runBrowserBridgeApiReplayWithExtension({
         httpStatus: null,
         contentType: null,
         responseKind: null,
+        extensionStages: [...extensionStages].sort(),
       };
     }
     return sanitizeBrowserBridgeApiReplayResult(replayResult);
@@ -1563,6 +1802,7 @@ async function runBrowserBridgeApiReplayWithExtension({
       responseKind: null,
     };
   } finally {
+    await managedBridgeSession?.close?.();
     await new Promise((resolve) => server.close(() => resolve(undefined)));
   }
 }
@@ -1843,7 +2083,16 @@ export async function runBrowserAuthBridge({
             return;
           }
           response.writeHead(200, bridgeHeaders({ 'content-type': 'application/json; charset=utf-8' }));
-          response.end(JSON.stringify(bridgeSession({ nonce, targetUrl, submitUrl, collectorUrl, extensionStatusUrl, sourceLayer, routes })));
+          response.end(JSON.stringify(bridgeSession({
+            nonce,
+            targetUrl,
+            submitUrl,
+            collectorUrl,
+            extensionStatusUrl,
+            sourceLayer,
+            routes,
+            timing: browserBridgeTiming(effectiveOptions),
+          })));
           return;
         }
         if (requestUrl.pathname === '/extension-status') {
@@ -1913,8 +2162,16 @@ export async function runBrowserAuthBridge({
   });
 
   const bridgeUrl = `http://127.0.0.1:${browserBridgeServerPort(server)}/?nonce=${nonce}`;
+  let managedBridgeSession = null;
   try {
-    if (typeof openBrowser === 'function') {
+    if (browserBridgeManagedEnabled(effectiveOptions)) {
+      managedBridgeSession = await openManagedBrowserBridgeSession({
+        bridgeUrl,
+        site,
+        targetUrl,
+        options: effectiveOptions,
+      });
+    } else if (typeof openBrowser === 'function') {
       await openBrowser(bridgeUrl);
     }
     const structureSummary = await Promise.race([
@@ -2009,6 +2266,7 @@ export async function runBrowserAuthBridge({
       bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes, extensionStages: [...extensionStages].sort(), extensionStageTimeline }),
     };
   } finally {
+    await managedBridgeSession?.close?.();
     server.closeAllConnections?.();
     server.closeIdleConnections?.();
     await new Promise((resolve) => server.close(() => resolve()));

@@ -3,24 +3,50 @@
 import { hostFromUrl, sanitizeHost } from '../../shared/normalize.mjs';
 import { readSiteContext } from '../registry/core/context.mjs';
 import { maybeLoadValidatedProfileForHost, maybeLoadValidatedProfileForUrl } from '../registry/core/profiles.mjs';
+import { attackersAdapter } from './attackers.mjs';
 import { chapterContentAdapter } from './chapter-content.mjs';
+import { dahliaAdapter } from './dahlia.mjs';
 import { bilibiliAdapter } from './bilibili.mjs';
+import { dogmaAdapter } from './dogma.mjs';
 import { douyinAdapter } from './douyin.mjs';
+import { eightmanAdapter } from './eightman.mjs';
 import { genericNavigationAdapter } from './generic-navigation.mjs';
 import { instagramAdapter } from './instagram.mjs';
 import { jableAdapter } from './jable.mjs';
+import { kmProduceAdapter } from './km-produce.mjs';
+import { madonnaAdapter } from './madonna.mjs';
+import { maxingAdapter } from './maxing.mjs';
 import { moodyzAdapter } from './moodyz.mjs';
+import { qidianAdapter } from './qidian.mjs';
+import { redditAdapter } from './reddit.mjs';
+import { rookieAdapter } from './rookie.mjs';
+import { s1Adapter } from './s1.mjs';
+import { sodAdapter } from './sod.mjs';
+import { tPowersAdapter } from './t-powers.mjs';
 import { xAdapter } from './x.mjs';
 import { xiaohongshuAdapter } from './xiaohongshu.mjs';
 
 const ADAPTERS = Object.freeze([
+  attackersAdapter,
+  dahliaAdapter,
+  dogmaAdapter,
+  eightmanAdapter,
   jableAdapter,
+  kmProduceAdapter,
+  madonnaAdapter,
+  maxingAdapter,
   moodyzAdapter,
+  rookieAdapter,
+  s1Adapter,
+  sodAdapter,
+  tPowersAdapter,
   bilibiliAdapter,
   douyinAdapter,
   xiaohongshuAdapter,
   xAdapter,
   instagramAdapter,
+  redditAdapter,
+  qidianAdapter,
   chapterContentAdapter,
   genericNavigationAdapter,
 ]);

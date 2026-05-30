@@ -872,7 +872,8 @@ function localBuildConfigPaths(cwd) {
 
 async function readLocalBuildConfigFile(configPath) {
   try {
-    return JSON.parse(await readFile(configPath, 'utf8'));
+    const text = await readFile(configPath, 'utf8');
+    return JSON.parse(text.replace(/^\uFEFF/u, ''));
   } catch (error) {
     if (error?.code === 'ENOENT') {
       return null;
@@ -1066,7 +1067,7 @@ function pickLocalBuildSiteConfig(configs, inputUrl) {
   return null;
 }
 
-async function applyLocalBuildConfig(inputUrl, options, {
+export async function applyLocalBuildConfig(inputUrl, options, {
   cwd = process.cwd(),
 } = /** @type {any} */ ({})) {
   const hasExplicitCookieSource = Boolean(options.cookieEnv || options.cookieFile || options.cookieStdin || options.cookieHeader);
@@ -1099,6 +1100,7 @@ async function applyLocalBuildConfig(inputUrl, options, {
     build: {
       deep: build.deep === true,
       renderJs: build.renderJs === true ? true : build.renderJs === false ? false : null,
+      browserBridgeManaged: build.browserBridgeManaged === true,
       maxDepth: Number.isFinite(Number(build.maxDepth)) ? Number(build.maxDepth) : null,
       maxPages: Number.isFinite(Number(build.maxPages)) ? Number(build.maxPages) : null,
       maxSeeds: Number.isFinite(Number(build.maxSeeds)) ? Number(build.maxSeeds) : null,
@@ -1116,6 +1118,7 @@ async function applyLocalBuildConfig(inputUrl, options, {
       disableDefaultApiExtraction(next, 'render-js-disabled-by-local-config');
     }
   }
+  if (build.browserBridgeManaged === true) next.browserBridgeManaged = true;
   if (Number.isFinite(Number(build.maxDepth)) && options.maxDepthExplicit !== true) next.maxDepth = Math.max(1, Number(build.maxDepth));
   if (Number.isFinite(Number(build.maxPages)) && options.maxPagesExplicit !== true) next.maxPages = Math.max(1, Number(build.maxPages));
   if (Number.isFinite(Number(build.maxSeeds)) && options.maxSeedsExplicit !== true) next.maxSeeds = Math.max(1, Number(build.maxSeeds));
@@ -1129,6 +1132,17 @@ async function applyLocalBuildConfig(inputUrl, options, {
   const authRequested = auth.mode === 'cookie' || auth.mode === 'browser' || cookie || cookieEnv || cookieFile;
   if (localBuildConfig.authCheckUrl && !options.authCheckUrl && options.ignoreLocalCookieConfig !== true && (authRequested || ['cookie', 'browser'].includes(options.authMode))) {
     next.authCheckUrl = localBuildConfig.authCheckUrl;
+  }
+  if (options.authModeExplicit === true && options.authMode === 'browser' && options.ignoreLocalCookieConfig !== true) {
+    next.authMode = 'browser';
+    next.strictBrowserAuth = true;
+    if (cookie && !hasExplicitCookieSource) {
+      next.apiReplayCookieHeader = cookie;
+    }
+    if (localBuildConfig.authCheckUrl && !options.authCheckUrl) {
+      next.authCheckUrl = localBuildConfig.authCheckUrl;
+    }
+    return next;
   }
   if (auth.mode === 'browser' && options.ignoreLocalCookieConfig !== true && options.authModeExplicit !== true) {
     next.authMode = 'browser';

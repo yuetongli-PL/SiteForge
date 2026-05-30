@@ -160,6 +160,7 @@ export async function launchBrowser(
     userDataDir = null,
     cleanupUserDataDirOnShutdown = userDataDir ? false : true,
     startupUrl = 'about:blank',
+    launchArgs = [],
   },
 ) {
   const resolvedUserDataDir = userDataDir
@@ -173,6 +174,9 @@ export async function launchBrowser(
   } catch {
     // Ignore stale DevToolsActivePort cleanup errors and let startup continue.
   }
+  const extraLaunchArgs = (Array.isArray(launchArgs) ? launchArgs : [])
+    .map((arg) => String(arg ?? '').trim())
+    .filter(Boolean);
   const args = [
     `--user-data-dir=${resolvedUserDataDir}`,
     '--remote-debugging-port=0',
@@ -188,6 +192,7 @@ export async function launchBrowser(
     '--disable-sync',
     '--metrics-recording-only',
     '--mute-audio',
+    ...extraLaunchArgs,
     String(startupUrl || 'about:blank'),
   ];
 

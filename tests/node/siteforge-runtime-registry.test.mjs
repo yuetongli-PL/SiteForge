@@ -503,6 +503,223 @@ test('api_request runtime executes only through fresh browser bridge evidence', 
   }
 });
 
+test('api_request runtime executes Reddit OAuth read plans without Browser Bridge or cookie material', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-runtime-reddit-'));
+  try {
+    const capabilityId = 'capability:fixture-local:read-api-profile';
+    const executionPlanId = 'plan:fixture-local:read-api-profile';
+    const intentId = 'intent:reddit:read-account-api';
+    const { registryPath } = await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'https://oauth.reddit.com/api/v1/me',
+      stepOverrides: {
+        authBoundary: 'oauth_bearer_token_required',
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        requiresFreshBridgeEvidence: false,
+        tokenEnvVars: ['SITEFORGE_REDDIT_BEARER_TOKEN'],
+        userAgentEnvVars: ['SITEFORGE_REDDIT_USER_AGENT'],
+      },
+      planOverrides: {
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        requiresFreshBridgeEvidence: false,
+      },
+      capabilityOverrides: {
+        name: 'read Reddit account API',
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        promotionClass: 'reddit_oauth_read_runtime',
+        requiresFreshBridgeEvidence: false,
+        apiAdapter: {
+          runtime: RUNTIME_MODES.redditOauthRead,
+          requiresFreshBridgeEvidence: false,
+          genericHttpRuntimeAllowed: false,
+          responsePolicy: 'sanitized_summary_only',
+          tokenEnvVars: ['SITEFORGE_REDDIT_BEARER_TOKEN'],
+          userAgentEnvVars: ['SITEFORGE_REDDIT_USER_AGENT'],
+        },
+      },
+      recordOverrides: {
+        domains: ['oauth.reddit.com', 'reddit.com'],
+        verificationStatus: 'passed',
+        promotionClass: 'reddit_oauth_read_runtime',
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        requiresFreshBridgeEvidence: false,
+        runtimeRequirements: {
+          authMethod: 'oauth_bearer',
+          allowedMethods: ['GET'],
+          requiresFreshBridgeEvidence: false,
+          tokenPersisted: false,
+        },
+        intents: [{
+          intentId,
+          name: 'read Reddit account API',
+          capabilityId,
+          capabilityName: 'read Reddit account API',
+          capabilityAction: 'view',
+          executionPlanId,
+          canonicalUtterance: 'read Reddit account API',
+          utteranceExamples: ['read Reddit account API'],
+          safetyLevel: 'read_only',
+          invocationScore: 1,
+          runtimeMode: RUNTIME_MODES.redditOauthRead,
+          requiresFreshBridgeEvidence: false,
+          genericHttpRuntimeAllowed: false,
+        }],
+      },
+    });
+
+    let fetchRequest = null;
+    let bridgeFetchCalled = false;
+    const result = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'oauth.reddit.com',
+      utterance: 'read Reddit account API',
+      env: {},
+      oauthBearerToken: 'synthetic-reddit-token',
+      userAgent: 'SiteForgeTest/0.1',
+      browserBridgeFetch: async () => {
+        bridgeFetchCalled = true;
+        return { statusCode: 200, body: {} };
+      },
+      fetchImpl: async (url, options) => {
+        fetchRequest = { url, options };
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          text: async () => JSON.stringify({
+            name: 'tester',
+            access_token: 'body-token-is-not-persisted',
+          }),
+        };
+      },
+    });
+
+    assert.equal(result.status, 'success');
+    assert.equal(result.runtimeMode, RUNTIME_MODES.redditOauthRead);
+    assert.equal(result.method, 'GET');
+    assert.equal(result.runtimePolicy.authBoundary, 'oauth_bearer');
+    assert.equal(result.runtimePolicy.authorizationPersisted, false);
+    assert.equal(result.runtimePolicy.cookieMaterialPersisted, false);
+    assert.equal(bridgeFetchCalled, false);
+    assert.equal(fetchRequest.url, 'https://oauth.reddit.com/api/v1/me');
+    assert.equal(fetchRequest.options.headers.authorization, 'Bearer synthetic-reddit-token');
+    assert.equal(fetchRequest.options.headers['user-agent'], 'SiteForgeTest/0.1');
+    const serialized = JSON.stringify(result);
+    assert.equal(serialized.includes('synthetic-reddit-token'), false);
+    assert.equal(serialized.includes('body-token-is-not-persisted'), false);
+    assert.equal(serialized.includes('access_token'), false);
+
+    let fetchCalled = false;
+    const blocked = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'oauth.reddit.com',
+      utterance: 'read Reddit account API',
+      env: {},
+      userAgent: 'SiteForgeTest/0.1',
+      fetchImpl: async () => {
+        fetchCalled = true;
+        return { status: 200, text: async () => '{}' };
+      },
+    });
+    assert.equal(blocked.status, 'blocked');
+    assert.equal(blocked.reasonCode, 'reddit_oauth_bearer_token_required');
+    assert.equal(fetchCalled, false);
+
+    await writeApiRequestRuntimeFixture(workspace, {
+      endpoint: 'https://oauth.reddit.com/comments/{article}',
+      stepOverrides: {
+        authBoundary: 'oauth_bearer_token_required',
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        requiresFreshBridgeEvidence: false,
+        requiresRuntimeParams: true,
+        runtimePathParameters: ['article'],
+      },
+      planOverrides: {
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        requiresFreshBridgeEvidence: false,
+        runtimePathParameters: ['article'],
+      },
+      capabilityOverrides: {
+        name: 'read Reddit comments API',
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        promotionClass: 'reddit_oauth_read_runtime',
+        requiresFreshBridgeEvidence: false,
+        apiAdapter: {
+          runtime: RUNTIME_MODES.redditOauthRead,
+          requiresFreshBridgeEvidence: false,
+          genericHttpRuntimeAllowed: false,
+          responsePolicy: 'sanitized_summary_only',
+        },
+      },
+      recordOverrides: {
+        domains: ['oauth.reddit.com', 'reddit.com'],
+        verificationStatus: 'passed',
+        promotionClass: 'reddit_oauth_read_runtime',
+        runtimeMode: RUNTIME_MODES.redditOauthRead,
+        requiresFreshBridgeEvidence: false,
+        intents: [{
+          intentId: 'intent:reddit:read-comments-api',
+          name: 'read Reddit comments API',
+          capabilityId,
+          capabilityName: 'read Reddit comments API',
+          capabilityAction: 'view',
+          executionPlanId,
+          canonicalUtterance: 'read Reddit comments API',
+          utteranceExamples: ['read Reddit comments API'],
+          safetyLevel: 'read_only',
+          invocationScore: 1,
+          runtimeMode: RUNTIME_MODES.redditOauthRead,
+          requiresFreshBridgeEvidence: false,
+          genericHttpRuntimeAllowed: false,
+        }],
+      },
+    });
+
+    fetchCalled = false;
+    const missingParam = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'oauth.reddit.com',
+      utterance: 'read Reddit comments API',
+      oauthBearerToken: 'synthetic-reddit-token',
+      userAgent: 'SiteForgeTest/0.1',
+      env: {},
+      fetchImpl: async () => {
+        fetchCalled = true;
+        return { status: 200, text: async () => '{}' };
+      },
+    });
+    assert.equal(missingParam.status, 'blocked');
+    assert.equal(missingParam.reasonCode, 'runtime_path_parameters_required');
+    assert.deepEqual(missingParam.missingPathParameters, ['article']);
+    assert.equal(fetchCalled, false);
+
+    let parameterizedUrl = null;
+    const parameterized = await executeApiRequestIntent({
+      registryPath,
+      cwd: workspace,
+      domain: 'oauth.reddit.com',
+      utterance: 'read Reddit comments API',
+      oauthBearerToken: 'synthetic-reddit-token',
+      userAgent: 'SiteForgeTest/0.1',
+      runtimeParams: { article: 'abc123' },
+      env: {},
+      fetchImpl: async (url) => {
+        parameterizedUrl = url;
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          text: async () => JSON.stringify({ comments: [] }),
+        };
+      },
+    });
+    assert.equal(parameterized.status, 'success');
+    assert.equal(parameterizedUrl, 'https://oauth.reddit.com/comments/abc123');
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('api_request runtime allows replay-verified Douyin profile video read path with runtime parameters', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-runtime-douyin-'));
   try {

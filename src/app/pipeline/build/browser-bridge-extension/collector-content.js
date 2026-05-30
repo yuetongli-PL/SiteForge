@@ -35,6 +35,10 @@
       return null;
     }
   };
+  const allowedHostSet = (session) => new Set([
+    session?.allowedHost,
+    ...(Array.isArray(session?.allowedHosts) ? session.allowedHosts : []),
+  ].map((host) => String(host || '').trim()).filter(Boolean));
   const routeTemplateFor = (value) => {
     try {
       const url = new URL(value, window.location.href);
@@ -104,6 +108,22 @@
     });
     return { ok: response.ok, status: response.status, collectorVersion: SITEFORGE_COLLECTOR_CONTENT_VERSION };
   };
+  const reportStage = (session, stage) => {
+    if (!session?.extensionStatusUrl || !stage) {
+      return;
+    }
+    try {
+      const statusUrl = new URL(session.extensionStatusUrl);
+      statusUrl.searchParams.set('stage', stage);
+      fetch(statusUrl.toString(), {
+        method: 'POST',
+        credentials: 'omit',
+        cache: 'no-store',
+      }).catch(() => {});
+    } catch {
+      // Extension-stage telemetry is best-effort only.
+    }
+  };
   const listSelector = 'ul, ol, table, [role="list"], [role="feed"], [data-list], [class*="list"], [class*="grid"], [class*="feed"]';
   const itemSelector = 'article, li, tr, [role="listitem"], [class*="item"], [class*="card"], [data-item]';
   const mediaSelector = [
@@ -155,20 +175,31 @@
     return structureCountSnapshot();
   };
   const challengeAssessment = () => {
-    const definiteNode = document.querySelector([
-      'iframe[src*="captcha" i]',
-      'iframe[src*="challenge" i]',
-      '[class*="captcha" i]',
-      '[id*="captcha" i]',
-      '[class*="slider" i]',
-      '[id*="slider" i]',
-      '[class*="security" i][class*="check" i]',
-      '[id*="security" i][id*="check" i]',
-      '[data-verify][class*="captcha" i]',
-      '[data-verify][class*="slider" i]',
-    ].join(', '));
-    if (definiteNode && visible(definiteNode)) {
-      return { level: 'definite_challenge', reasonCode: 'browser-bridge-definite-challenge' };
+    const currentStructure = structureCountSnapshot();
+    const hasSubstantialStructure = (
+      currentStructure.links >= 12
+      || currentStructure.items >= 8
+      || currentStructure.lists >= 2
+      || currentStructure.landmarks >= 2
+    );
+    const definiteSelectors = [
+      ['captcha-frame', 'iframe[src*="captcha" i]'],
+      ['challenge-frame', 'iframe[src*="challenge" i]'],
+      ['captcha-class', '[class*="captcha" i]'],
+      ['captcha-id', '[id*="captcha" i]'],
+      ['security-check-class', '[class*="security" i][class*="check" i]'],
+      ['security-check-id', '[id*="security" i][id*="check" i]'],
+      ['captcha-verify', '[data-verify][class*="captcha" i]'],
+      ['slider-verify', '[data-verify][class*="slider" i]'],
+    ];
+    for (const [selectorToken, selector] of definiteSelectors) {
+      const definiteNode = document.querySelector(selector);
+      if (definiteNode && visible(definiteNode)) {
+        if (hasSubstantialStructure) {
+          return { level: 'possible_challenge', reasonCode: 'browser-bridge-possible-challenge', selectorToken };
+        }
+        return { level: 'definite_challenge', reasonCode: 'browser-bridge-definite-challenge', selectorToken };
+      }
     }
     const sample = [
       document.title,
@@ -183,13 +214,14 @@
 
   async function collect(session) {
     const current = new URL(window.location.href);
-    if (current.hostname !== String(session?.allowedHost || '')) {
+    if (!allowedHostSet(session).has(current.hostname)) {
       return { ok: false, reason: 'host-mismatch' };
     }
     const sourceLayer = String(session?.sourceLayer || 'authenticated');
     await waitForStructureStability();
     const challenge = challengeAssessment();
     if (challenge.level === 'definite_challenge') {
+      reportStage(session, `collector-challenge:${session.routeId || 'route'}:${challenge.selectorToken || 'unknown'}`);
       return await postPayload(session, {
         nonce: session.nonce,
         routeResults: [{

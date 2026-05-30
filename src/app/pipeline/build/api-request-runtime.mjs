@@ -25,6 +25,15 @@ import {
   normalizeApiMethod,
 } from './api-readonly-policy.mjs';
 const API_RUNTIME_FRESH_EVIDENCE_MAX_AGE_MS = 5 * 60 * 1000;
+const REDDIT_OAUTH_HOST = 'oauth.reddit.com';
+const REDDIT_OAUTH_TOKEN_ENV_VARS = Object.freeze([
+  'SITEFORGE_REDDIT_BEARER_TOKEN',
+  'REDDIT_BEARER_TOKEN',
+]);
+const REDDIT_OAUTH_USER_AGENT_ENV_VARS = Object.freeze([
+  'SITEFORGE_REDDIT_USER_AGENT',
+  'REDDIT_USER_AGENT',
+]);
 
 function sanitizeText(value, maxLength = 160) {
   return redactPublicIdentifierText(String(value ?? ''), { maxLength }).value;
@@ -135,7 +144,36 @@ function hasRequestBody(step = /** @type {any} */ ({})) {
   return hasSubstantiveApiRequestBody(body);
 }
 
-function resolveEndpointUrl(step, site, runtimeBinding = null) {
+function uniqueSortedStrings(values = []) {
+  return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'en'));
+}
+
+function applyRuntimePathParameters(rawEndpoint, runtimeParams = /** @type {any} */ ({})) {
+  const missing = [];
+  const endpoint = String(rawEndpoint ?? '').replace(/\{([A-Za-z_][A-Za-z0-9_.-]*)\}/gu, (match, name) => {
+    const value = runtimeParams?.[name];
+    if (value === undefined || value === null || String(value).trim() === '') {
+      missing.push(name);
+      return match;
+    }
+    return encodeURIComponent(String(value));
+  });
+  return {
+    endpoint,
+    missingPathParameters: uniqueSortedStrings(missing),
+  };
+}
+
+function unresolvedRuntimePathParameters(value) {
+  return uniqueSortedStrings([...String(value ?? '').matchAll(/\{([A-Za-z_][A-Za-z0-9_.-]*)\}/gu)]
+    .map((match) => match[1]));
+}
+
+function resolveEndpointUrl(step, site, runtimeBinding = null, {
+  runtimeParams = null,
+  requireResolvedParameters = false,
+} = /** @type {any} */ ({})) {
   const raw = String(firstValue(runtimeBinding?.endpoint, step?.runtimeEndpoint, step?.endpoint, step?.url) ?? '').trim();
   if (!raw || raw.startsWith('structure-ref:')) {
     return {
@@ -143,9 +181,23 @@ function resolveEndpointUrl(step, site, runtimeBinding = null) {
       reasonCode: 'endpoint_not_runtime_resolvable',
     };
   }
+  const parameterized = runtimeParams
+    ? applyRuntimePathParameters(raw, runtimeParams)
+    : { endpoint: raw, missingPathParameters: [] };
+  const unresolved = unresolvedRuntimePathParameters(parameterized.endpoint);
+  if (requireResolvedParameters && (parameterized.missingPathParameters.length > 0 || unresolved.length > 0)) {
+    return {
+      endpoint: null,
+      reasonCode: 'runtime_path_parameters_required',
+      missingPathParameters: uniqueSortedStrings([
+        ...parameterized.missingPathParameters,
+        ...unresolved,
+      ]),
+    };
+  }
   try {
     return {
-      endpoint: normalizeUrl(raw, site?.rootUrl),
+      endpoint: normalizeUrl(parameterized.endpoint, site?.rootUrl),
       reasonCode: null,
     };
   } catch {
@@ -235,6 +287,85 @@ function validateApiRequestPlan({
   };
 }
 
+function validateRedditOauthApiRequestPlan({
+  lookup,
+  capability,
+  plan,
+  step,
+  runtimeBinding = null,
+  runtimeParams = null,
+  allowedDomains,
+  site,
+} = /** @type {any} */ ({})) {
+  if (!capability || capability.status !== 'active') {
+    return { ok: false, reasonCode: 'active_capability_required' };
+  }
+  if (!plan || plan.autoExecute === true || plan.requiresConfirmation === true) {
+    return { ok: false, reasonCode: 'limited_read_plan_required' };
+  }
+  if (!step || String(step.kind ?? '').trim() !== 'api_request') {
+    return { ok: false, reasonCode: 'api_request_step_required' };
+  }
+  const runtimeMode = runtimeModeFor(lookup, capability, plan, step);
+  if (runtimeMode !== RUNTIME_MODES.redditOauthRead) {
+    return { ok: false, reasonCode: 'reddit_oauth_read_runtime_required' };
+  }
+  const method = normalizeApiMethod(step.method);
+  if (!isReadOnlyApiMethod(method)) {
+    return { ok: false, reasonCode: 'method_not_read_only', method };
+  }
+  if (runtimeBinding?.method && String(runtimeBinding.method).trim().toUpperCase() !== method) {
+    return { ok: false, reasonCode: 'runtime_binding_method_mismatch', method };
+  }
+  if (hasRequestBody(step)) {
+    return { ok: false, reasonCode: 'request_body_present', method };
+  }
+  if (!['limited_read', 'read_only'].includes(String(plan.mode ?? step.mode ?? 'limited_read'))) {
+    return { ok: false, reasonCode: 'limited_read_plan_required', method };
+  }
+  if (String(plan.responseMaterial ?? step.responseMaterial ?? '') !== SANITIZED_SUMMARY_ONLY) {
+    return { ok: false, reasonCode: 'sanitized_summary_response_required', method };
+  }
+  const resolved = resolveEndpointUrl(step, site, runtimeBinding, {
+    runtimeParams,
+    requireResolvedParameters: true,
+  });
+  if (!resolved.endpoint) {
+    return {
+      ok: false,
+      reasonCode: resolved.reasonCode,
+      method,
+      missingPathParameters: resolved.missingPathParameters ?? [],
+    };
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(resolved.endpoint);
+  } catch {
+    return { ok: false, reasonCode: 'endpoint_not_runtime_resolvable', method };
+  }
+  if (parsed.hostname !== REDDIT_OAUTH_HOST) {
+    return { ok: false, reasonCode: 'reddit_oauth_endpoint_required', method, endpoint: resolved.endpoint };
+  }
+  const hostAllowed = allowedDomains.includes(REDDIT_OAUTH_HOST)
+    || allowedDomains.includes('reddit.com')
+    || allowedDomains.includes('www.reddit.com');
+  if (!hostAllowed || !isInternalUrl(resolved.endpoint, [REDDIT_OAUTH_HOST])) {
+    return { ok: false, reasonCode: 'cross_site_endpoint', method, endpoint: resolved.endpoint };
+  }
+  if (apiEndpointLooksWriteLike({ url: resolved.endpoint, method })) {
+    return { ok: false, reasonCode: 'write_like_endpoint', method, endpoint: resolved.endpoint };
+  }
+  if (hasSensitiveApiQueryMaterial(resolved.endpoint, { invalidAsSensitive: true })) {
+    return { ok: false, reasonCode: 'sensitive_query_material', method, endpoint: resolved.endpoint };
+  }
+  return {
+    ok: true,
+    method,
+    endpoint: resolved.endpoint,
+  };
+}
+
 function safeObjectKeys(value, limit = 24) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return [];
@@ -310,6 +441,14 @@ function responseHeader(headers, name) {
     return null;
   }
   const wanted = String(name).toLowerCase();
+  if (typeof headers.entries === 'function') {
+    for (const [key, value] of headers.entries()) {
+      if (String(key).toLowerCase() === wanted) {
+        return String(value ?? '').trim();
+      }
+    }
+    return null;
+  }
   for (const [key, value] of Object.entries(headers)) {
     if (String(key).toLowerCase() === wanted) {
       return String(Array.isArray(value) ? value.join(', ') : value ?? '').trim();
@@ -357,6 +496,193 @@ function blockedResult(reasonCode, details = /** @type {any} */ ({})) {
     reasonCode,
     responseMaterial: SANITIZED_SUMMARY_ONLY,
     ...details,
+  };
+}
+
+function firstEnvValue(env, names = []) {
+  for (const name of names) {
+    const text = String(name ?? '').trim();
+    if (text && String(env?.[text] ?? '').trim()) {
+      return {
+        envName: text,
+        value: String(env[text]).trim(),
+      };
+    }
+  }
+  return { envName: null, value: null };
+}
+
+function credentialEnvNames(...values) {
+  const names = [];
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      names.push(...value);
+    } else if (value) {
+      names.push(value);
+    }
+  }
+  return names.map((name) => String(name ?? '').trim()).filter(Boolean);
+}
+
+function resolveRedditOauthRuntimeCredentials({
+  lookup,
+  capability,
+  plan,
+  step,
+  runtimeBinding,
+  env,
+  oauthBearerToken,
+  userAgent,
+} = /** @type {any} */ ({})) {
+  const tokenEnvNames = credentialEnvNames(
+    runtimeBinding?.tokenEnvVars,
+    runtimeBinding?.tokenEnv,
+    step?.tokenEnvVars,
+    step?.tokenEnv,
+    plan?.tokenEnvVars,
+    plan?.tokenEnv,
+    capability?.apiAdapter?.tokenEnvVars,
+    capability?.apiAdapter?.tokenEnv,
+    lookup?.tokenEnvVars,
+    REDDIT_OAUTH_TOKEN_ENV_VARS,
+  );
+  const userAgentEnvNames = credentialEnvNames(
+    runtimeBinding?.userAgentEnvVars,
+    runtimeBinding?.userAgentEnv,
+    step?.userAgentEnvVars,
+    step?.userAgentEnv,
+    plan?.userAgentEnvVars,
+    plan?.userAgentEnv,
+    capability?.apiAdapter?.userAgentEnvVars,
+    capability?.apiAdapter?.userAgentEnv,
+    lookup?.userAgentEnvVars,
+    REDDIT_OAUTH_USER_AGENT_ENV_VARS,
+  );
+  const tokenFromEnv = firstEnvValue(env, tokenEnvNames);
+  const userAgentFromEnv = firstEnvValue(env, userAgentEnvNames);
+  return {
+    token: String(oauthBearerToken ?? '').trim() || tokenFromEnv.value,
+    tokenEnv: tokenFromEnv.envName,
+    userAgent: String(userAgent ?? '').trim() || userAgentFromEnv.value,
+    userAgentEnv: userAgentFromEnv.envName,
+  };
+}
+
+async function executeRedditOauthReadRequest({
+  validation,
+  lookup,
+  capability,
+  plan,
+  step,
+  runtimeBinding,
+  env,
+  oauthBearerToken,
+  userAgent,
+  fetchImpl,
+} = /** @type {any} */ ({})) {
+  const credentials = resolveRedditOauthRuntimeCredentials({
+    lookup,
+    capability,
+    plan,
+    step,
+    runtimeBinding,
+    env,
+    oauthBearerToken,
+    userAgent,
+  });
+  if (!credentials.token) {
+    return blockedResult('reddit_oauth_bearer_token_required', {
+      lookup,
+      capabilityId: capability.id,
+      executionPlanId: plan.id,
+      endpoint: sanitizeEvidenceRef(validation.endpoint),
+      method: validation.method,
+      credentialSource: {
+        tokenEnv: null,
+        userAgentEnv: credentials.userAgentEnv,
+        tokenPersisted: false,
+      },
+    });
+  }
+  if (!credentials.userAgent) {
+    return blockedResult('reddit_user_agent_required', {
+      lookup,
+      capabilityId: capability.id,
+      executionPlanId: plan.id,
+      endpoint: sanitizeEvidenceRef(validation.endpoint),
+      method: validation.method,
+      credentialSource: {
+        tokenEnv: credentials.tokenEnv,
+        userAgentEnv: null,
+        tokenPersisted: false,
+      },
+    });
+  }
+  if (typeof fetchImpl !== 'function') {
+    return blockedResult('reddit_oauth_fetch_unavailable', {
+      lookup,
+      capabilityId: capability.id,
+      executionPlanId: plan.id,
+      endpoint: sanitizeEvidenceRef(validation.endpoint),
+      method: validation.method,
+    });
+  }
+
+  const response = await fetchImpl(validation.endpoint, {
+    method: validation.method,
+    headers: {
+      authorization: `Bearer ${credentials.token}`,
+      'user-agent': credentials.userAgent,
+      accept: 'application/json',
+    },
+  });
+  const body = typeof response?.text === 'function'
+    ? await response.text()
+    : response?.body ?? response?.bodyText ?? null;
+  const responseSummary = summarizeBridgeResponse({
+    statusCode: response?.status ?? response?.statusCode ?? null,
+    headers: response?.headers ?? {},
+    body,
+    responseKind: responseHeader(response?.headers, 'content-type')?.includes('json') ? 'json' : null,
+  });
+  const common = {
+    lookup,
+    capabilityId: capability.id,
+    executionPlanId: plan.id,
+    runtimeBindingId: runtimeBinding?.id ?? step?.runtimeBindingId ?? lookup.runtimeBindingId ?? null,
+    endpoint: sanitizeEvidenceRef(validation.endpoint),
+    method: validation.method,
+    runtimeMode: RUNTIME_MODES.redditOauthRead,
+    responseMaterial: SANITIZED_SUMMARY_ONLY,
+    credentialSource: {
+      tokenEnv: credentials.tokenEnv,
+      userAgentEnv: credentials.userAgentEnv,
+      tokenPersisted: false,
+    },
+  };
+  if (!responseSummary.ok) {
+    return blockedResult(responseSummary.reasonCode, {
+      ...common,
+      response: responseSummary.summary,
+    });
+  }
+  return {
+    status: 'success',
+    reasonCode: null,
+    ...common,
+    autoExecute: false,
+    requiresConfirmation: false,
+    runtimePolicy: {
+      authBoundary: 'oauth_bearer',
+      credentials: 'authorization_header',
+      genericHttpRuntimeAllowed: false,
+      requiresFreshBridgeEvidence: false,
+      authorizationPersisted: false,
+      cookieMaterialPersisted: false,
+      storageMaterialPersisted: false,
+      bodyPersisted: false,
+    },
+    response: responseSummary.summary,
   };
 }
 
@@ -417,6 +743,11 @@ export async function executeApiRequestIntent({
   robotsPolicy = null,
   freshBridgeEvidence = null,
   browserBridgeFetch = null,
+  fetchImpl = globalThis.fetch,
+  env = process.env,
+  oauthBearerToken = null,
+  userAgent = null,
+  runtimeParams = null,
   now = new Date(),
 } = /** @type {any} */ ({})) {
   const lookup = suppliedLookup ?? await lookupSkillIntent({ registryPath, domain, utterance });
@@ -443,6 +774,41 @@ export async function executeApiRequestIntent({
     lookup,
     site,
   });
+  const runtimeMode = runtimeModeFor(lookup, capability, plan, step);
+  if (runtimeMode === RUNTIME_MODES.redditOauthRead) {
+    const validation = validateRedditOauthApiRequestPlan({
+      lookup,
+      capability,
+      plan,
+      step,
+      runtimeBinding,
+      runtimeParams,
+      allowedDomains: domains,
+      site,
+    });
+    if (!validation.ok) {
+      return blockedResult(validation.reasonCode, {
+        lookup,
+        capabilityId: capability.id,
+        executionPlanId: plan.id,
+        endpoint: validation.endpoint ? sanitizeEvidenceRef(validation.endpoint) : null,
+        method: validation.method ?? null,
+        missingPathParameters: validation.missingPathParameters ?? [],
+      });
+    }
+    return await executeRedditOauthReadRequest({
+      validation,
+      lookup,
+      capability,
+      plan,
+      step,
+      runtimeBinding,
+      env,
+      oauthBearerToken,
+      userAgent,
+      fetchImpl,
+    });
+  }
   const validation = validateApiRequestPlan({
     lookup,
     capability,

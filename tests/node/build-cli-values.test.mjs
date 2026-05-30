@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import { parseCliArgs } from '../../src/entrypoints/build/run-build.mjs';
+import os from 'node:os';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { applyLocalBuildConfig, parseCliArgs } from '../../src/entrypoints/build/run-build.mjs';
 import {
   ACCEPTED_ENUM_VALUE_BUILD_FLAGS,
   PUBLIC_BUILD_HELP,
@@ -105,6 +107,47 @@ test('build CLI parses cookie auth flags without exposing raw cookie argv suppor
   assert.throws(() => parseCliArgs(['https://example.com/', '--cookie', 'sid=secret']), /未知参数: --cookie/u);
   assert.throws(() => parseCliArgs(['https://example.com/', '--cookie-env']), /Missing value for --cookie-env/u);
   assert.throws(() => parseCliArgs(['https://example.com/', '--max-sitemaps']), /Missing value for --max-sitemaps/u);
+});
+
+test('explicit browser auth keeps local cookie config on the Browser Bridge path', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-browser-cookie-config-'));
+  try {
+    await writeFile(
+      path.join(workspace, 'siteforge.local.json'),
+      `\uFEFF${JSON.stringify({
+        sites: [
+          {
+            url: 'https://www.reddit.com/',
+            cookie: 'sid=SYNTHETIC_BROWSER_BRIDGE_COOKIE; uid=123',
+            auth: {
+              mode: 'cookie',
+              authCheckUrl: '/',
+              authRoutes: ['/subreddits/mine/'],
+              publicRevisitRoutes: ['/'],
+            },
+            build: {
+              browserBridgeManaged: true,
+            },
+          },
+        ],
+      })}`,
+      'utf8',
+    );
+
+    const parsed = parseCliArgs(['https://www.reddit.com/', '--auth', 'browser']);
+    const options = await applyLocalBuildConfig('https://www.reddit.com/', parsed.options, { cwd: workspace });
+
+    assert.equal(options.authMode, 'browser');
+    assert.equal(options.strictBrowserAuth, true);
+    assert.equal(options.strictCookieAuth, undefined);
+    assert.equal(options.cookieHeader, undefined);
+    assert.equal(options.apiReplayCookieHeader, 'sid=SYNTHETIC_BROWSER_BRIDGE_COOKIE; uid=123');
+    assert.equal(options.browserBridgeManaged, true);
+    assert.deepEqual(options.localBuildConfig.authRoutes, ['/subreddits/mine/']);
+    assert.deepEqual(options.localBuildConfig.publicRevisitRoutes, ['/']);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('build CLI parses robots remediation plan flag', () => {

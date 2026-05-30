@@ -180,7 +180,7 @@
       ],
       "host": "www.qidian.com",
       "siteKey": "qidian",
-      "adapterId": "chapter-content"
+      "adapterId": "qidian"
     },
     "www.bz888888888.com": {
       "baseUrl": "https://www.bz888888888.com/",
@@ -254,7 +254,7 @@
         "category-page",
         "home",
         "search-results-page",
-        "unknown-page"
+        "utility-page"
       ],
       "capabilityFamilies": [
         "navigate-to-author",
@@ -270,6 +270,134 @@
         "open-utility-page",
         "open-work",
         "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "moodyz-works-date",
+          "path": "/works/date",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-top",
+          "path": "/top",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-reserve-list",
+          "path": "/works/list/reserve",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-release-list",
+          "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "moodyz-genre-list-template",
+          "pathTemplate": "/works/list/genre/{genreId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "moodyz-series-list-template",
+          "pathTemplate": "/works/list/series/{seriesId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "moodyz-label-list-template",
+          "pathTemplate": "/works/list/label/{labelId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "moodyz-recruit-template",
+          "pathTemplate": "/recruit/{page}",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "moodyz-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        }
       ],
       "host": "moodyz.com",
       "safeActionKinds": [],
@@ -310,6 +438,89 @@
       ],
       "approvalActionKinds": [
         "search-submit"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "jable-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "jable-categories",
+          "path": "/categories",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "jable-latest-updates",
+          "path": "/latest-updates",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "jable-hot",
+          "path": "/hot",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "jable-tag-template",
+          "pathTemplate": "/tags/{tag}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "jable-video-detail-template",
+          "pathTemplate": "/videos/{videoId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "jable-models",
+          "path": "/models/",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "jable-model-detail-template",
+          "pathTemplate": "/models/{modelSlug}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "jable-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        }
       ],
       "host": "jable.tv",
       "siteKey": "jable",
@@ -358,6 +569,1457 @@
         "jable-native-resolver-required",
         "schema_validation_failed"
       ]
+    },
+    "www.t-powers.co.jp": {
+      "baseUrl": "https://www.t-powers.co.jp/release/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "category-page",
+        "content-detail-page",
+        "home",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "supportedIntents": [
+        "open-author",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-content"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "t-powers-release",
+          "path": "/release/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-talent",
+          "path": "/talent",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-topics",
+          "path": "/topics",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-event",
+          "path": "/event",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-contact",
+          "path": "/contact",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-blog",
+          "path": "/blog",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-company",
+          "path": "/company",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-recruit",
+          "path": "/recruit",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-recruit-contact",
+          "path": "/recruit/contact",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "t-powers-release-month-template",
+          "pathTemplate": "/release/{year}/{month}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "t-powers-event-month-template",
+          "pathTemplate": "/event/{year}/{month}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "t-powers-topics-month-template",
+          "pathTemplate": "/topics/{year}/{month}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "www.t-powers.co.jp",
+      "siteKey": "t-powers",
+      "adapterId": "t-powers"
+    },
+    "www.8man.jp": {
+      "baseUrl": "https://www.8man.jp/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "category-page",
+        "content-detail-page",
+        "home",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page"
+      ],
+      "supportedIntents": [
+        "open-author",
+        "open-category",
+        "open-utility-page",
+        "open-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "eightman-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "eightman-model",
+          "path": "/model",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "eightman-model-detail-template",
+          "pathTemplate": "/model/{modelSlug}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "eightman-news",
+          "path": "/news",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "eightman-news-detail-template",
+          "pathTemplate": "/news/{newsSlug}",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "eightman-recruit",
+          "path": "/recruit",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [],
+      "host": "www.8man.jp",
+      "siteKey": "eightman",
+      "adapterId": "eightman"
+    },
+    "dahlia-av.jp": {
+      "baseUrl": "https://dahlia-av.jp/work/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "content-detail-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "dahlia-work-list",
+          "path": "/work/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dahlia-work-page-template",
+          "pathTemplate": "/work/page/{page}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-search-template",
+          "pathTemplate": "/?s={query}",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-work-detail-template",
+          "pathTemplate": "/works/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dahlia-actress-detail-template",
+          "pathTemplate": "/actress/{actressSlug}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-news",
+          "path": "/news",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dahlia-news-detail-template",
+          "pathTemplate": "/news/{newsSlug}",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-contact",
+          "path": "/contact",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "dahlia-av.jp",
+      "siteKey": "dahlia",
+      "adapterId": "dahlia"
+    },
+    "www.sod.co.jp": {
+      "baseUrl": "https://www.sod.co.jp/newreleases/archive/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "auth-page",
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "sod-newreleases-archive",
+          "path": "/newreleases/archive/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-genre",
+          "path": "/genre",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-label",
+          "path": "/label",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-maker",
+          "path": "/maker",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-series",
+          "path": "/series",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-performer",
+          "path": "/performer",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "www.sod.co.jp",
+      "siteKey": "sod",
+      "adapterId": "sod"
+    },
+    "s1s1s1.com": {
+      "baseUrl": "https://s1s1s1.com/top",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "auth-page",
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "s1-top",
+          "path": "/top",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-works",
+          "path": "/works",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-works-genre",
+          "path": "/works/genre",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-works-series",
+          "path": "/works/series",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-works-date",
+          "path": "/works/date",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-genre-list-template",
+          "pathTemplate": "/works/list/genre/{genreId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-series-list-template",
+          "pathTemplate": "/works/list/series/{seriesId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "s1s1s1.com",
+      "siteKey": "s1",
+      "adapterId": "s1"
+    },
+    "attackers.net": {
+      "baseUrl": "https://attackers.net/top",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "auth-page",
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "attackers-top",
+          "path": "/top",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-works",
+          "path": "/works",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "attackers.net",
+      "siteKey": "attackers",
+      "adapterId": "attackers"
+    },
+    "www.km-produce.com": {
+      "baseUrl": "https://www.km-produce.com/label/page/2?works=bazooka",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "supportedIntents": [
+        "list-category-videos",
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "km-produce-label-bazooka",
+          "path": "/label/page/2?works=bazooka",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-ranking",
+          "path": "/ranking",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-tag-list",
+          "path": "/tag",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-works",
+          "path": "/works",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-works-vr",
+          "path": "/works-vr",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-works-sell",
+          "path": "/works-sell",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-topic-list",
+          "path": "/topics",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-girls",
+          "path": "/girls",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-event",
+          "path": "/event",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-kmp-movies",
+          "path": "/kmp_movies",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-contents",
+          "path": "/contents",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-company",
+          "path": "/company",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-policy",
+          "path": "/policy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-ad-contact",
+          "path": "/ad_contact",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-recruit",
+          "path": "/recruit",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "www.km-produce.com",
+      "siteKey": "km-produce",
+      "adapterId": "km-produce"
+    },
+    "rookie-av.jp": {
+      "baseUrl": "https://rookie-av.jp/works/list/release",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "rookie-release-list",
+          "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-works-genre",
+          "path": "/works/genre",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-works-series",
+          "path": "/works/series",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-works-date",
+          "path": "/works/date",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-reserve-list",
+          "path": "/works/list/reserve",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-recruit-template",
+          "pathTemplate": "/recruit/{page}",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "rookie-av.jp",
+      "siteKey": "rookie",
+      "adapterId": "rookie"
+    },
+    "madonna-av.com": {
+      "baseUrl": "https://madonna-av.com/works/list/release",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "madonna-release-list",
+          "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-special",
+          "path": "/special",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-works-genre",
+          "path": "/works/genre",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-works-series",
+          "path": "/works/series",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-works-label",
+          "path": "/works/label",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-works-date",
+          "path": "/works/date",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-reserve-list",
+          "path": "/works/list/reserve",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-label-list-template",
+          "pathTemplate": "/works/list/label/{labelId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "madonna-av.com",
+      "siteKey": "madonna",
+      "adapterId": "madonna"
+    },
+    "www.maxing.jp": {
+      "baseUrl": "https://www.maxing.jp/top/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "auth-page",
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "maxing-top",
+          "path": "/top/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-shop-search",
+          "path": "/shop_search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-shop-search-sn-template",
+          "pathTemplate": "/shop_search/sn/{searchId}.html",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "maxing-shop-search-result-template",
+          "pathTemplate": "/shop/sr/{searchId}.html",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "maxing-shop-now-release",
+          "path": "/shop/now_release.html",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-shop-reserve",
+          "path": "/shop/reserve.html",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-shop-reserve-page-template",
+          "pathTemplate": "/shop/reserve/page{page}.html",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "maxing-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-site-map",
+          "path": "/customer/site_map.html",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-contact",
+          "path": "/contact",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-shop",
+          "path": "/shop",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-event",
+          "path": "/event",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "maxing-event-month-template",
+          "pathTemplate": "/event/{year}-{month}.html",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "maxing-product-detail-template",
+          "pathTemplate": "/shop/pid/{workId}.html",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "maxing-actress-page-template",
+          "pathTemplate": "/actress/pd/{actressId}.html",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "maxing-actress-detail-template",
+          "pathTemplate": "/shop/ac/{actressId}.html",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "www.maxing.jp",
+      "siteKey": "maxing",
+      "adapterId": "maxing"
+    },
+    "www.dogma.co.jp": {
+      "baseUrl": "http://www.dogma.co.jp/13-download",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "open-category",
+        "open-utility-page",
+        "open-work",
+        "search-work"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "dogma-download-page",
+          "path": "/13-download",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dogma-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "www.dogma.co.jp",
+      "siteKey": "dogma",
+      "adapterId": "dogma"
     },
     "www.bilibili.com": {
       "baseUrl": "https://www.bilibili.com/",
@@ -512,11 +2174,11 @@
         "book-detail-page",
         "category-page",
         "content-detail-page",
+        "history-page",
         "home",
         "search-results-page"
       ],
       "capabilityFamilies": [
-        "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
@@ -529,7 +2191,6 @@
       ],
       "supportedIntents": [
         "account-info",
-        "download-media",
         "full-archive",
         "list-author-following",
         "list-followed-updates",
@@ -664,6 +2325,66 @@
         ],
         "reasonCode": "download-layer-removed",
         "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
+      }
+    },
+    "www.reddit.com": {
+      "baseUrl": "https://www.reddit.com/",
+      "primaryArchetype": "social-content",
+      "pageTypes": [
+        "auth-page",
+        "author-page",
+        "category-page",
+        "content-detail-page",
+        "home",
+        "message-page",
+        "moderation-page",
+        "notification-page",
+        "search-results-page",
+        "settings-page",
+        "wiki-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "query-account-profile",
+        "query-social-content",
+        "query-social-relations",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "supportedIntents": [
+        "account-info",
+        "list-followed-updates",
+        "list-followed-users",
+        "list-profile-content",
+        "open-auth-page",
+        "open-author",
+        "open-category",
+        "open-post",
+        "open-utility-page",
+        "profile-content",
+        "search-posts"
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "host": "www.reddit.com",
+      "siteKey": "reddit",
+      "adapterId": "reddit",
+      "genericLiveBuild": {
+        "status": "limited",
+        "reasonCode": "robots-restricted-and-auth-required",
+        "reason": "Reddit generic public crawl covers only allowed public navigation; full capability coverage requires a bounded user-authorized Reddit SiteAdapter path plus official API metadata.",
+        "alternativeAccessPaths": [
+          "Use official Reddit API documentation and OAuth read runtime plans for structured read API coverage.",
+          "Use a user-authorized bounded Reddit SiteAdapter workflow with sanitized Browser Bridge summaries for authenticated UI surfaces.",
+          "Keep write, vote, moderation mutation, submit, delete, and account mutation operations disabled by default."
+        ]
       }
     }
   },

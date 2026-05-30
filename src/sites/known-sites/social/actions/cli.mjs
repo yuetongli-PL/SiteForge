@@ -26,6 +26,9 @@ function lastFlagValue(flags, key, fallback = undefined) {
   return value ?? fallback;
 }
 
+const READ_ROUTE_ACTION_TOKENS = new Set(['app-route', 'read-route', 'route', 'route-crawl']);
+const SEARCH_ACTION_TOKENS = new Set(['search', 'search-book', 'search-content', 'search-posts']);
+
 export const SOCIAL_ACTION_HELP = `Internal script usage:
   node src/entrypoints/sites/x-action.mjs <action> [options]
   node src/entrypoints/sites/instagram-action.mjs <action> [options]
@@ -34,14 +37,26 @@ Public command:
   siteforge build <url>
 
 Common actions include profile-content, full-archive, search, profile-following,
-profile-followers, followed-posts-by-date, and account-info.
+profile-followers, followed-posts-by-date, read-route, and account-info.
 
 Options:
   --site <x|instagram>              Override the wrapper default site.
   --account <handle>                Target account or profile handle.
   --query <value>                   Search query.
+  --route <path>                    Safe same-site read-route start path.
+  --community-id <id>               Community id for X community detail read-route surfaces.
+  --list-id <id>                    List id for X list detail read-route surfaces.
+  --space-id <id>                   Space id for X Spaces read-route surfaces.
+  --status-id <id>                  Status id for status read-route surfaces.
+  --media-id <id>                   Media id for status media read-route surfaces.
   --content-type <type>             posts, replies, media, likes, or site-specific tab.
   --download-media                  Record a blocked media-download report; execution is disabled.
+  --probe-read-controls             Execute bounded read-only UI probes; mutations remain blocked.
+  --max-control-probes <n>          Limit read-only UI probes. Default: 8.
+  --crawl-read-surfaces             Follow bounded same-site read-only route queue.
+  --risk-reviewed-read-surfaces     Also navigate discovered risky routes for structure only; controls remain blocked.
+  --max-read-crawl-pages <n>        Limit read-only crawl pages. Default: 20.
+  --max-read-crawl-depth <n>        Limit read-only crawl depth. Default: 1.
   --max-items <n>                   Limit archive or content items.
   --max-users <n>                   Limit relation/followed scans.
   --followed-users-file <path>      Reuse a verified followed-users items.jsonl as the relation seed.
@@ -92,6 +107,8 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = /
 
   const action = positionals[0] ?? lastFlagValue(flags, 'action', defaults.action ?? 'account-info');
   const normalizedActionToken = String(action ?? '').trim().toLowerCase().replace(/_/gu, '-');
+  const isReadRouteAction = READ_ROUTE_ACTION_TOKENS.has(normalizedActionToken);
+  const isSearchAction = SEARCH_ACTION_TOKENS.has(normalizedActionToken);
   const actionRequestsFullArchive = [
     'archive',
     'archive-user-content',
@@ -102,12 +119,19 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = /
   const firstItem = positionals[1] ?? null;
   const site = lastFlagValue(flags, 'site', defaults.site);
   const apiCursorFlag = lastFlagValue(flags, 'api-cursor');
+  const positionalAccount = isReadRouteAction || isSearchAction ? undefined : firstItem;
   return {
     help: flags.help === true,
     site,
     action,
-    account: lastFlagValue(flags, 'account', lastFlagValue(flags, 'handle', lastFlagValue(flags, 'user', firstItem))),
-    query: lastFlagValue(flags, 'query', lastFlagValue(flags, 'keyword', action === 'search' ? firstItem : undefined)),
+    account: lastFlagValue(flags, 'account', lastFlagValue(flags, 'handle', lastFlagValue(flags, 'user', positionalAccount))),
+    query: lastFlagValue(flags, 'query', lastFlagValue(flags, 'keyword', isSearchAction ? firstItem : undefined)),
+    route: lastFlagValue(flags, 'route', lastFlagValue(flags, 'path', isReadRouteAction ? firstItem : undefined)),
+    communityId: lastFlagValue(flags, 'community-id', lastFlagValue(flags, 'communityid')),
+    listId: lastFlagValue(flags, 'list-id', lastFlagValue(flags, 'listid')),
+    spaceId: lastFlagValue(flags, 'space-id', lastFlagValue(flags, 'spaceid')),
+    statusId: lastFlagValue(flags, 'status-id', lastFlagValue(flags, 'tweet-id', lastFlagValue(flags, 'post-id'))),
+    mediaId: lastFlagValue(flags, 'media-id', lastFlagValue(flags, 'photo-id')),
     contentType: lastFlagValue(flags, 'content-type', lastFlagValue(flags, 'tab')),
     date: lastFlagValue(flags, 'date'),
     fromDate: lastFlagValue(flags, 'from', lastFlagValue(flags, 'from-date')),
@@ -131,6 +155,9 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = /
     maxItems: lastFlagValue(flags, 'max-items'),
     maxScrolls: lastFlagValue(flags, 'max-scrolls'),
     maxApiPages: lastFlagValue(flags, 'max-api-pages'),
+    maxControlProbes: lastFlagValue(flags, 'max-control-probes', lastFlagValue(flags, 'max-probes')),
+    maxReadCrawlPages: lastFlagValue(flags, 'max-read-crawl-pages', lastFlagValue(flags, 'max-crawl-pages')),
+    maxReadCrawlDepth: lastFlagValue(flags, 'max-read-crawl-depth', lastFlagValue(flags, 'max-crawl-depth')),
     maxUsers: lastFlagValue(flags, 'max-users'),
     followedUsersFile: lastFlagValue(flags, 'followed-users-file', lastFlagValue(flags, 'following-file')),
     maxDetailPages: lastFlagValue(flags, 'max-detail-pages'),
@@ -146,6 +173,9 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = /
     reuseLoginState: flags['no-reuse-login-state'] === true ? false : flags['reuse-login-state'] === true ? true : undefined,
     autoLogin: flags['no-auto-login'] === true ? false : flags['auto-login'] === true ? true : undefined,
     dryRun: flags['dry-run'] === true,
+    probeReadControls: flags['probe-read-controls'] === true,
+    crawlReadSurfaces: flags['crawl-read-surfaces'] === true,
+    riskReviewedReadSurfaces: flags['risk-reviewed-read-surfaces'] === true || flags['crawl-risky-read-surfaces'] === true,
     resume: flags['no-resume'] === true ? false : flags.resume === true ? true : undefined,
     downloadMedia: flags['download-media'] === true || flags.download === true,
     outputFormat: flags.json === true ? 'json' : lastFlagValue(flags, 'format', 'json'),

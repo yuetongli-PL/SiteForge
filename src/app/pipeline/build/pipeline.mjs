@@ -4809,6 +4809,13 @@ function apiReplayAuthBoundary(context) {
   if (report.authMethod === 'cookie' && canRunAuthenticatedLayer(report)) {
     return 'cookie_replay_only';
   }
+  if (
+    context.options?.allowSetupBlockedApiDiscovery === true
+    && report.authMethod === 'browser'
+    && apiReplayCookieHeader(context)
+  ) {
+    return 'cookie_replay_only';
+  }
   return 'none';
 }
 
@@ -4842,6 +4849,12 @@ function apiReplayEligibility(context, candidate = /** @type {any} */ ({}), rawT
   const authBoundary = apiReplayAuthBoundary(context);
   if (authBoundary === 'none') {
     return { eligible: false, reasonCode: 'authenticated_browser_bridge_unavailable', method, endpoint, authBoundary };
+  }
+  if (authBoundary === 'cookie_replay_only') {
+    if (!apiReplayCookieHeader(context)) {
+      return { eligible: false, reasonCode: 'cookie_replay_unavailable', method, endpoint, authBoundary };
+    }
+    return { eligible: true, reasonCode: null, method, endpoint, replayEndpoint, authBoundary };
   }
   if (authBoundary !== 'browser_bridge') {
     return { eligible: false, reasonCode: 'cookie_replay_not_registered_for_runtime', method, endpoint, authBoundary };
@@ -4881,6 +4894,10 @@ function replayResponseEvidenceMatches(rawResult = /** @type {any} */ ({}), resp
   if (arrayField && !Array.isArray(json?.[arrayField])) {
     return false;
   }
+  const objectField = String(responseEvidence.objectField ?? '').trim();
+  if (objectField && (!json?.[objectField] || typeof json[objectField] !== 'object' || Array.isArray(json[objectField]))) {
+    return false;
+  }
   return true;
 }
 
@@ -4902,6 +4919,7 @@ function summarizeApiReplayResult(rawResult = /** @type {any} */ ({}), responseE
   const evidenceOk = replayResponseEvidenceMatches(rawResult, responseEvidence);
   const skipped = statusText === 'skipped';
   const verified = !challengeLike && httpOk && evidenceOk && ['verified', 'success', 'passed'].includes(statusText || 'verified');
+  const explicitFailureReason = String(rawResult?.reasonCode ?? '').trim() || null;
   return {
     status: verified ? 'verified' : (skipped ? 'skipped' : 'failed'),
     reasonCode: challengeLike
@@ -4909,8 +4927,8 @@ function summarizeApiReplayResult(rawResult = /** @type {any} */ ({}), responseE
       : skipped
         ? (rawResult?.reasonCode ?? null)
         : !evidenceOk
-        ? 'api_replay_response_evidence_failed'
-        : (rawResult?.reasonCode ?? (httpOk ? null : 'api_replay_http_failed')),
+        ? (explicitFailureReason ?? 'api_replay_response_evidence_failed')
+        : (explicitFailureReason ?? (httpOk ? null : 'api_replay_http_failed')),
     httpStatus,
     contentType: contentType || null,
     responseKind: String(rawResult?.responseKind ?? rawResult?.kind ?? '').trim() || null,
@@ -4922,7 +4940,14 @@ function apiReplayCookieHeader(context = /** @type {any} */ ({})) {
   return cookie || null;
 }
 
-function canUseCookieApiReplayFallback(context = /** @type {any} */ ({}), eligibility = /** @type {any} */ ({})) {
+function canUseCookieApiReplayFallback(
+  context = /** @type {any} */ ({}),
+  eligibility = /** @type {any} */ ({}),
+  runtimeParameterSource = null,
+) {
+  if (runtimeParameterSource && runtimeParameterSource.kind !== 'douyin_self_user_render_data') {
+    return false;
+  }
   return eligibility.authBoundary === 'browser_bridge'
     && canRunAuthenticatedLayer(context.authStateReport)
     && Boolean(apiReplayCookieHeader(context));
@@ -4974,6 +4999,19 @@ function apiReplayResponseKind(contentType) {
   if (/html/iu.test(value)) return 'html';
   if (/text\//iu.test(value)) return 'text';
   return value ? 'other' : null;
+}
+
+function bodyLooksJson(text) {
+  const value = String(text ?? '').trim();
+  if (!value || !/^[{[]/u.test(value)) {
+    return false;
+  }
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseDouyinRenderDataFromHtml(html) {
@@ -5078,6 +5116,16 @@ async function resolveApiReplayEndpointForCandidate(context, candidate, eligibil
       buildTimeAuthBoundary: eligibility.authBoundary,
     };
   }
+  if (parameterSource.kind === 'qidian_yuew_sign') {
+    return {
+      status: 'ready',
+      reasonCode: null,
+      replayEndpoint: endpointTemplate,
+      runtimeEndpoint: sanitizeEvidenceRef(endpointTemplate),
+      runtimeParameterSource: parameterSource,
+      buildTimeAuthBoundary: eligibility.authBoundary,
+    };
+  }
   if (parameterSource.kind !== 'douyin_self_user_render_data') {
     return {
       status: 'skipped',
@@ -5162,10 +5210,10 @@ async function runCookieApiReplayFallback(context, {
       signal: controller.signal,
     });
     const contentType = response.headers.get('content-type') ?? '';
-    const responseKind = apiReplayResponseKind(contentType);
     const bodyText = method === 'HEAD'
       ? ''
       : await response.text().then((text) => text.slice(0, 600)).catch(() => '');
+    const responseKind = bodyLooksJson(bodyText) ? 'json' : apiReplayResponseKind(contentType);
     const redirect = response.status >= 300 && response.status < 400;
     const verified = response.ok && responseKind === 'json';
     return summarizeApiReplayResult({
@@ -5378,7 +5426,10 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
         contentType: null,
         responseKind: null,
       };
-    } else if (runtimeResolution.runtimeParameterSource && canUseCookieApiReplayFallback(context, eligibility)) {
+    } else if (
+      runtimeResolution.runtimeParameterSource
+      && canUseCookieApiReplayFallback(context, eligibility, runtimeResolution.runtimeParameterSource)
+    ) {
       const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
       if (cookieEndpoint.status === 'ready' && cookieEndpoint.replayEndpoint) {
         runtimeResolution = {
@@ -5441,7 +5492,10 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
         replaySummary = summarizeApiReplayResult(providerResult, responseEvidence);
         status = replaySummary.status;
         reasonCode = replaySummary.reasonCode;
-        if (/^browser_bridge_replay_/u.test(String(reasonCode ?? '')) && canUseCookieApiReplayFallback(context, eligibility)) {
+        if (
+          /^browser_bridge_replay_/u.test(String(reasonCode ?? ''))
+          && canUseCookieApiReplayFallback(context, eligibility, runtimeResolution.runtimeParameterSource)
+        ) {
           const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
           if (cookieEndpoint.status !== 'ready' || !cookieEndpoint.replayEndpoint) {
             replaySummary = {
@@ -5534,7 +5588,7 @@ async function replayApiAdapterCandidate(context, decisionRecord, rawTrace, robo
       reasonCode = replaySummary.reasonCode;
       if (/^browser_bridge_replay_/u.test(String(reasonCode ?? ''))) {
         context.apiAdapterReplayBrowserBridgeUnavailableReason = reasonCode;
-        if (canUseCookieApiReplayFallback(context, eligibility)) {
+        if (canUseCookieApiReplayFallback(context, eligibility, runtimeResolution.runtimeParameterSource)) {
           const cookieEndpoint = await resolveCookieReplayEndpointForCandidate(context, candidate, eligibility);
           if (cookieEndpoint.status !== 'ready' || !cookieEndpoint.replayEndpoint) {
             replaySummary = {
@@ -8223,6 +8277,9 @@ function publicSearchNodes(graph) {
 }
 
 function publicSearchObject(context, graph) {
+  if (isSocialSiteContext(context)) {
+    return 'posts';
+  }
   const text = [
     context.site?.rootUrl,
     ...(graph?.nodes ?? []).slice(0, 80).flatMap((node) => [
@@ -8573,6 +8630,9 @@ function addGenericPublicCoverageCapabilities(context, capabilities, graph, sear
 }
 
 function addGenericCatalogCoverageCapabilities(context, capabilities, graph, searchForm) {
+  if (isSocialSiteContext(context)) {
+    return;
+  }
   const pageNodes = graph.nodes.filter((node) => node.type === 'page');
   const routeNodes = graph.nodes.filter((node) => node.type === 'route' || node.type === 'route_template');
   if (!isCatalogCoverageSite(context, pageNodes, routeNodes)) {
@@ -9362,6 +9422,7 @@ async function discoverCapabilitiesStage(context, stageResults) {
   const { affordances } = requireStage(stageResults, 'extractAffordances');
   const capabilities = /** @type {any[]} */ ([]);
   const pageNodes = graph.nodes.filter((node) => node.type === 'page');
+  const isSocialSite = isSocialSiteContext(context);
   const publicEvidenceScore = (node) => (
     nodeSourceLayer(node) === 'public_rendered'
       ? 4
@@ -9375,11 +9436,11 @@ async function discoverCapabilitiesStage(context, stageResults) {
     .filter((node) => node.classification === 'homepage')
     .sort((left, right) => publicEvidenceScore(right) - publicEvidenceScore(left))[0]
     ?? pageNodes.sort((left, right) => publicEvidenceScore(right) - publicEvidenceScore(left))[0];
-  const newsChannels = publicReadableNodes(graph, ['news_channel', 'article_list'])
+  const newsChannels = isSocialSite ? [] : publicReadableNodes(graph, ['news_channel', 'article_list'])
     .filter((node) => nodeHasPublicStructureEvidence(node) && node.normalizedUrl);
-  const newsArticle = pageNodes.find((node) => node.classification === 'article_detail');
+  const newsArticle = isSocialSite ? null : pageNodes.find((node) => node.classification === 'article_detail');
   const isRepositorySite = isRepositoryCoverageSite(context, pageNodes);
-  const isNewsSite = !isRepositorySite && isNewsCoverageSite(context, pageNodes, homepage);
+  const isNewsSite = !isSocialSite && !isRepositorySite && isNewsCoverageSite(context, pageNodes, homepage);
   const hasAnyPublicStructureEvidence = graph.nodes.some((node) => (
     node.id !== homepage?.id
     && !node.authRequired
@@ -9387,8 +9448,8 @@ async function discoverCapabilitiesStage(context, stageResults) {
     && nodeHasPublicStructureEvidence(node)
   ));
   const isChapterSite = isChapterContentContext(context) || hasChapterContentCoverageSignals(graph.nodes ?? []);
-  const productList = isChapterSite || isRepositorySite ? null : pageNodes.find((node) => node.classification === 'product_list');
-  const productDetail = isChapterSite || isRepositorySite ? null : pageNodes.find((node) => node.classification === 'product_detail');
+  const productList = isSocialSite || isChapterSite || isRepositorySite ? null : pageNodes.find((node) => node.classification === 'product_list');
+  const productDetail = isSocialSite || isChapterSite || isRepositorySite ? null : pageNodes.find((node) => node.classification === 'product_detail');
   const searchForm = affordances.find((affordance) => affordance.kind === 'form' && affordance.safety === 'read_only' && /search/iu.test(`${affordance.label ?? ''} ${affordance.endpoint ?? ''}`));
   const contactForm = affordances.find((affordance) => affordance.kind === 'form' && affordance.safety === 'state_changing' && /contact|support|message/iu.test(`${affordance.label ?? ''} ${affordance.endpoint ?? ''} ${affordance.evidence?.[0]?.text ?? ''}`));
 

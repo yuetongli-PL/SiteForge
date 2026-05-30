@@ -1380,6 +1380,7 @@ async function openBrowserSessionOnce(
           userDataDir,
           cleanupUserDataDirOnShutdown,
           startupUrl,
+          launchArgs: settings.launchArgs,
         });
         client = new CdpClientImpl(browserInfo.wsUrl, { timeoutMs: settings.timeoutMs });
         await client.connect();

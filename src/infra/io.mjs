@@ -21,7 +21,14 @@ export async function ensureParentDir(filePath) {
 }
 
 export async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'));
+  return JSON.parse((await readFile(filePath, 'utf8')).replace(/^\uFEFF/u, ''));
+}
+
+export async function readJsonFileIfExists(filePath, fallback = null) {
+  if (!filePath || !await pathExists(filePath)) {
+    return fallback;
+  }
+  return await readJsonFile(filePath);
 }
 
 export async function writeJsonFile(filePath, payload) {

@@ -9,6 +9,14 @@ const COLLECTOR_READY_DELAY_MS = 250;
 const COLLECTOR_RETRY_BACKOFF_MS = [1000, 3000, 7000];
 const API_REPLAY_READY_DELAY_MS = 1000;
 
+function timingValue(session, key, fallback, min, max) {
+  const value = Number(session?.timing?.[key]);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
 function safeUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -18,9 +26,16 @@ function safeUrl(value) {
   }
 }
 
-function sameAllowedHost(urlValue, allowedHost) {
+function allowedHostSet(allowedHost, allowedHosts = []) {
+  return new Set([
+    allowedHost,
+    ...(Array.isArray(allowedHosts) ? allowedHosts : []),
+  ].map((host) => String(host || '').trim()).filter(Boolean));
+}
+
+function sameAllowedHost(urlValue, allowedHost, allowedHosts = []) {
   const parsed = safeUrl(urlValue);
-  return Boolean(parsed && parsed.hostname === String(allowedHost || ''));
+  return Boolean(parsed && allowedHostSet(allowedHost, allowedHosts).has(parsed.hostname));
 }
 
 function routePath(urlValue) {
@@ -34,7 +49,7 @@ function routePath(urlValue) {
 function sameRoutePath(urlValue, targetUrl) {
   const parsed = safeUrl(urlValue);
   const target = safeUrl(targetUrl);
-  return Boolean(parsed && target && parsed.hostname === target.hostname && routePath(parsed.toString()) === routePath(target.toString()));
+  return Boolean(parsed && target && routePath(parsed.toString()) === routePath(target.toString()));
 }
 
 function loginLikeUrl(urlValue) {
@@ -77,7 +92,11 @@ function normalizedRoutes(session) {
     .map((route, index) => {
       const target = safeUrl(route?.targetUrl);
       const allowedHost = String(route?.allowedHost || session?.allowedHost || baseTarget?.hostname || '');
-      if (!target || target.hostname !== allowedHost) {
+      const allowedHosts = [...allowedHostSet(allowedHost, [
+        ...(route?.allowedHosts || []),
+        ...(session?.allowedHosts || []),
+      ])];
+      if (!target || !allowedHosts.includes(target.hostname)) {
         return null;
       }
       return {
@@ -85,6 +104,7 @@ function normalizedRoutes(session) {
         targetUrl: target.toString(),
         sourceLayer: route?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
         allowedHost,
+        allowedHosts,
         allowedOrigin: String(route?.allowedOrigin || target.origin),
       };
     })
@@ -98,6 +118,7 @@ function routeSession(session, route) {
     targetUrl: route.targetUrl,
     sourceLayer: route.sourceLayer,
     allowedHost: route.allowedHost,
+    allowedHosts: route.allowedHosts,
     allowedOrigin: route.allowedOrigin,
   };
 }
@@ -124,6 +145,7 @@ function normalizedApiReplay(session) {
     endpointTemplate,
     runtimeParameterSource: apiReplay?.runtimeParameterSource || null,
     responseEvidence: apiReplay?.responseEvidence || null,
+    extensionStatusUrl: session?.extensionStatusUrl || '',
   };
 }
 
@@ -172,7 +194,24 @@ function waitForTabComplete(tabId) {
 async function executeApiReplayFetch(tabId, replay) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async ({ endpoint, endpointTemplate, method, allowedHost, runtimeParameterSource, responseEvidence }) => {
+    world: 'MAIN',
+    func: async ({ endpoint, endpointTemplate, method, allowedHost, runtimeParameterSource, responseEvidence, extensionStatusUrl, replayId }) => {
+      const reportStage = (stage) => {
+        if (!extensionStatusUrl || !stage) {
+          return;
+        }
+        try {
+          const url = new URL(extensionStatusUrl);
+          url.searchParams.set('stage', stage);
+          fetch(url.toString(), {
+            method: 'POST',
+            credentials: 'omit',
+            cache: 'no-store',
+          }).catch(() => {});
+        } catch {
+          // Replay telemetry is best-effort only.
+        }
+      };
       const normalizeTextLocal = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
       const parseRenderData = (encoded) => {
         const text = String(encoded || '');
@@ -206,6 +245,9 @@ async function executeApiReplayFetch(tabId, replay) {
       const resolveRuntimeEndpoint = () => {
         const sourceKind = String(runtimeParameterSource?.kind || '');
         if (!sourceKind) {
+          return { endpoint: endpointTemplate || endpoint, reasonCode: null };
+        }
+        if (sourceKind === 'qidian_yuew_sign') {
           return { endpoint: endpointTemplate || endpoint, reasonCode: null };
         }
         if (sourceKind !== 'douyin_self_user_render_data') {
@@ -244,13 +286,74 @@ async function executeApiReplayFetch(tabId, replay) {
         const arrayField = normalizeTextLocal(responseEvidence.arrayField || '');
         const observedArrayFieldPresent = arrayField ? Array.isArray(json?.[arrayField]) : null;
         const arrayMatches = !arrayField || observedArrayFieldPresent === true;
+        const objectField = normalizeTextLocal(responseEvidence.objectField || '');
+        const observedObjectFieldPresent = objectField
+          ? Boolean(json?.[objectField] && typeof json[objectField] === 'object' && !Array.isArray(json[objectField]))
+          : null;
+        const objectMatches = !objectField || observedObjectFieldPresent === true;
         return {
-          status: statusCodeMatches && arrayMatches ? 'matched' : 'failed',
+          status: statusCodeMatches && arrayMatches && objectMatches ? 'matched' : 'failed',
           observedStatusCode: Number.isFinite(observedStatusCode) ? observedStatusCode : null,
           observedArrayFieldPresent,
+          observedObjectFieldPresent,
         };
       };
+      const cookieValue = (name) => {
+        const wanted = String(name || '');
+        return document.cookie
+          .split(';')
+          .map((part) => part.trim())
+          .find((part) => part.startsWith(`${wanted}=`))
+          ?.slice(wanted.length + 1) || '';
+      };
+      const qidianPageCsrfToken = () => {
+        try {
+          return normalizeTextLocal((typeof _csrfToken === 'undefined' ? '' : _csrfToken) || globalThis._csrfToken || '');
+        } catch {
+          return normalizeTextLocal(globalThis._csrfToken || '');
+        }
+      };
+      const qidianCsrfToken = () => qidianPageCsrfToken() || cookieValue('_csrfToken');
+      const sleepLocal = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitForQidianFock = async () => {
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          if (typeof globalThis.Fock?.sign === 'function') {
+            return globalThis.Fock;
+          }
+          await sleepLocal(500);
+        }
+        return null;
+      };
+      const qidianSignedHeaders = async () => {
+        if (String(runtimeParameterSource?.kind || '') !== 'qidian_yuew_sign') {
+          return { headers: {} };
+        }
+        reportStage(`qidian-api-replay:${replayId || 'replay'}:sign-wait`);
+        const csrf = qidianCsrfToken();
+        const fock = await waitForQidianFock();
+        if (!csrf || typeof fock?.sign !== 'function') {
+          reportStage(`qidian-api-replay:${replayId || 'replay'}:sign-unavailable`);
+          return { error: 'qidian_sign_unavailable' };
+        }
+        try {
+          fock.initialize?.();
+          const timeDistance = Number(document.getElementById('qdcstd')?.content ?? globalThis._timeDistance ?? 0) || 0;
+          const signedTime = String(Math.floor(Date.now() / 1000) + timeDistance);
+          return {
+            headers: {
+              'X-Yuew-time': signedTime,
+              'X-Yuew-sign': fock.sign(`${signedTime}${csrf}`),
+              'X-Requested-With': 'XMLHttpRequest',
+              Accept: 'application/json, text/javascript, */*; q=0.01',
+            },
+          };
+        } catch {
+          reportStage(`qidian-api-replay:${replayId || 'replay'}:sign-failed`);
+          return { error: 'qidian_sign_failed' };
+        }
+      };
       try {
+        reportStage(`api-replay-script-started:${replayId || 'replay'}`);
         const resolved = resolveRuntimeEndpoint();
         if (!resolved.endpoint) {
           return {
@@ -261,12 +364,25 @@ async function executeApiReplayFetch(tabId, replay) {
             responseKind: null,
           };
         }
+        const signedHeaders = await qidianSignedHeaders();
+        if (signedHeaders.error) {
+          return {
+            status: 'failed',
+            reasonCode: signedHeaders.error,
+            httpStatus: null,
+            contentType: null,
+            responseKind: null,
+          };
+        }
+        reportStage(`qidian-api-replay:${replayId || 'replay'}:fetch-started`);
         const response = await fetch(resolved.endpoint, {
           method,
+          headers: signedHeaders.headers,
           credentials: 'include',
           cache: 'no-store',
           redirect: 'follow',
         });
+        reportStage(`qidian-api-replay:${replayId || 'replay'}:fetch-finished`);
         const contentType = response.headers.get('content-type') || '';
         const finalHost = new URL(response.url).hostname;
         const responseKind = /json/iu.test(contentType)
@@ -306,6 +422,7 @@ async function executeApiReplayFetch(tabId, replay) {
           observedArrayFieldPresent: evidence.observedArrayFieldPresent,
         };
       } catch {
+        reportStage(`qidian-api-replay:${replayId || 'replay'}:fetch-failed`);
         return {
           status: 'failed',
           reasonCode: 'api_replay_fetch_failed',
@@ -322,6 +439,8 @@ async function executeApiReplayFetch(tabId, replay) {
       allowedHost: replay.allowedHost,
       runtimeParameterSource: replay.runtimeParameterSource,
       responseEvidence: replay.responseEvidence,
+      extensionStatusUrl: replay.extensionStatusUrl,
+      replayId: replay.id,
     }],
   });
   return results?.[0]?.result || {
@@ -383,15 +502,20 @@ async function runApiReplaySession(session) {
     }).catch(() => {});
     return { ok: false };
   }
+  signal(session, `api-replay-page-ready:${replay.id}`);
   await sleep(API_REPLAY_READY_DELAY_MS);
   const result = await executeApiReplayFetch(tab.id, replay);
+  signal(session, `api-replay-script-finished:${replay.id}`);
   await submitApiReplay(session, replay, result);
   signal(session, `api-replay-submit-ok:${replay.id}`);
   return { ok: true };
 }
 
 async function waitForStableTab(tabId, session, route) {
-  for (let attempt = 0; attempt < TAB_STABLE_MAX_POLLS; attempt += 1) {
+  const maxPolls = timingValue(session, 'tabStableMaxPolls', TAB_STABLE_MAX_POLLS, 1, 120);
+  const pollMs = timingValue(session, 'tabStablePollMs', TAB_STABLE_POLL_MS, 100, 5000);
+  const stableAfterCompleteMs = timingValue(session, 'routeStableAfterCompleteMs', ROUTE_STABLE_AFTER_COMPLETE_MS, 250, 15000);
+  for (let attempt = 0; attempt < maxPolls; attempt += 1) {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
     if (!tab?.id) {
       return { ok: false, reasonCode: 'tab-missing', tab: null };
@@ -399,10 +523,10 @@ async function waitForStableTab(tabId, session, route) {
     const currentUrl = tab.url || tab.pendingUrl || route.targetUrl;
     if (tab.status === 'loading' || tab.pendingUrl) {
       signal(session, `navigation-in-progress:${route.id}`);
-      await sleep(TAB_STABLE_POLL_MS);
+      await sleep(pollMs);
       continue;
     }
-    await sleep(ROUTE_STABLE_AFTER_COMPLETE_MS);
+    await sleep(stableAfterCompleteMs);
     const stableTab = await chrome.tabs.get(tabId).catch(() => null);
     if (!stableTab?.id) {
       return { ok: false, reasonCode: 'tab-missing', tab: null };
@@ -410,12 +534,12 @@ async function waitForStableTab(tabId, session, route) {
     const stableUrl = stableTab.url || stableTab.pendingUrl || currentUrl;
     if (stableTab.status === 'loading' || stableTab.pendingUrl) {
       signal(session, `navigation-in-progress:${route.id}`);
-      await sleep(TAB_STABLE_POLL_MS);
+      await sleep(pollMs);
       continue;
     }
     if (stableUrl !== currentUrl) {
       signal(session, `route-tab-settling:${route.id}`);
-      await sleep(TAB_STABLE_POLL_MS);
+      await sleep(pollMs);
       continue;
     }
     signal(session, `route-tab-stable:${route.id}`);
@@ -423,7 +547,7 @@ async function waitForStableTab(tabId, session, route) {
   }
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const committedUrl = tab?.url || '';
-  if (tab?.id && sameAllowedHost(committedUrl, route.allowedHost) && sameRoutePath(committedUrl, route.targetUrl)) {
+  if (tab?.id && sameAllowedHost(committedUrl, route.allowedHost, route.allowedHosts) && sameRoutePath(committedUrl, route.targetUrl)) {
     signal(session, `route-tab-usable-while-loading:${route.id}`);
     return { ok: true, reasonCode: 'navigation-in-progress', tab, currentUrl: committedUrl };
   }
@@ -536,7 +660,7 @@ function collectRoute(tabId, state, route, triggerStage) {
       return;
     }
     const currentUrl = stableCurrentUrl || tab.url || tab.pendingUrl || route.targetUrl;
-    if (!sameAllowedHost(currentUrl, route.allowedHost)) {
+    if (!sameAllowedHost(currentUrl, route.allowedHost, route.allowedHosts)) {
       signal(state.session, `route-host-mismatch:${route.id}`);
       submitRouteStatus(state.session, route, 'blocked', 'host-mismatch', currentUrl)
         .finally(() => finishRoute(tabId, state, route));
@@ -574,7 +698,7 @@ function scheduleFallbackCollection(state, route) {
       return;
     }
     collectRoute(tabId, latestState, route, 'route-load-fallback');
-  }, ROUTE_COLLECT_FALLBACK_DELAY_MS);
+  }, timingValue(state.session, 'routeCollectFallbackDelayMs', ROUTE_COLLECT_FALLBACK_DELAY_MS, 1000, 60000));
 }
 
 function openRoute(state) {
@@ -666,7 +790,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     activeTabs.delete(tabId);
     return;
   }
-  if (!sameAllowedHost(tab?.url, route.allowedHost)) {
+  if (!sameAllowedHost(tab?.url, route.allowedHost, route.allowedHosts)) {
     signal(state.session, `route-host-mismatch:${route.id}`);
     submitRouteStatus(state.session, route, 'blocked', 'host-mismatch', tab?.url || route.targetUrl)
       .finally(() => finishRoute(tabId, state, route));

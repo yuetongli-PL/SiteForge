@@ -920,7 +920,15 @@ function isFollowingRoutePath(pathName) {
 
 function knownPolicyFollowingRoutePath(knownSitePolicy = null) {
   const siteKey = String(knownSitePolicy?.siteKey ?? knownSitePolicy?.adapterId ?? '').toLowerCase();
+  if (siteKey === 'reddit') {
+    return '/subreddits/mine/';
+  }
   return siteKey === 'douyin' ? '/follow' : '/following';
+}
+
+function knownPolicyHomeRoutePath(knownSitePolicy = null) {
+  const siteKey = String(knownSitePolicy?.siteKey ?? knownSitePolicy?.adapterId ?? '').toLowerCase();
+  return siteKey === 'reddit' ? '/' : '/home';
 }
 
 function knownPolicySearchRoutePath(knownSitePolicy = null) {
@@ -1157,7 +1165,7 @@ function authorizedBrowserRouteSeedsFromFinalUrl(finalUrl, site, knownSitePolicy
   }
 
   if (hasSocialContent) {
-    addSeed(new URL('/home', site.rootUrl).toString(), {
+    addSeed(new URL(knownPolicyHomeRoutePath(knownSitePolicy), site.rootUrl).toString(), {
       routeKind: 'home-timeline',
       capabilityIds: ['recommended-timeline-posts'],
     });
@@ -2176,6 +2184,13 @@ async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, r
   const authOptions = {
     ...options,
   };
+  const policyAuthRoutes = knownPolicyAuthRouteTargets(setupPlan.knownSitePolicy);
+  if (policyAuthRoutes.length) {
+    authOptions.authRoutes = uniqueSortedStrings([
+      ...(authOptions.authRoutes ?? []),
+      ...policyAuthRoutes,
+    ]);
+  }
   delete authOptions.authRuntime;
   delete authOptions.authenticatedStructureSummary;
   const authStateReport = await runDefaultBrowserAuthStateCheck({
@@ -2502,7 +2517,7 @@ function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
   const followingRoutePath = knownPolicyFollowingRoutePath(knownSitePolicy);
   const routes = new Set();
   if (supportsSocialContent) {
-    routes.add('/home');
+    routes.add(knownPolicyHomeRoutePath(knownSitePolicy));
   }
   if (supportsSocialContent) {
     routes.add(followingRoutePath);

@@ -17,9 +17,11 @@ import { parseBoolean } from '../../../../infra/cli/parse-values.mjs';
 import { runSingleStageCliWithProgress } from '../../../../infra/cli/progress-cli.mjs';
 import {
   ensureAuthenticatedSession,
+  inspectReusableSiteSession,
   resolveSiteBrowserSessionOptions,
 } from '../../../../infra/auth/site-auth.mjs';
 import {
+  prepareSiteSessionGovernance,
   readAuthSessionState,
   resolveAuthSessionPolicy,
   writeAuthSessionState,
@@ -52,6 +54,7 @@ import {
   buildSocialArtifactLayout,
   safePlanForArtifact,
   safeSettingsForArtifact,
+  safeUrlForArtifact,
 } from './artifacts.mjs';
 import {
   SOCIAL_ACTION_HELP,
@@ -62,7 +65,7 @@ import { createBlockedMediaDownloadReport } from './download-boundary.mjs';
 export { SOCIAL_ACTION_HELP, parseSocialActionArgs } from './cli.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..');
+const REPO_ROOT = path.resolve(MODULE_DIR, '..', '..', '..', '..', '..');
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_ITEMS = 100;
@@ -73,6 +76,9 @@ const DEFAULT_FULL_ARCHIVE_MAX_SCROLLS = 250;
 const DEFAULT_MAX_API_PAGES = 25;
 const DEFAULT_MAX_USERS = 25;
 const DEFAULT_MAX_DETAIL_PAGES = 60;
+const DEFAULT_MAX_CONTROL_PROBES = 8;
+const DEFAULT_MAX_READ_CRAWL_PAGES = 20;
+const DEFAULT_MAX_READ_CRAWL_DEPTH = 1;
 const DEFAULT_RISK_BACKOFF_MS = 10_000;
 const DEFAULT_RISK_RETRIES = 2;
 const DEFAULT_API_RETRIES = 2;
@@ -221,6 +227,10 @@ const ACTION_ALIASES = Object.freeze({
   'followed-updates': 'followed-posts-by-date',
   'followed-posts-by-date': 'followed-posts-by-date',
   'list-followed-updates': 'followed-posts-by-date',
+  'app-route': 'read-route',
+  'read-route': 'read-route',
+  'route': 'read-route',
+  'route-crawl': 'read-route',
   'search': 'search',
   'search-content': 'search',
   'search-posts': 'search',
@@ -292,6 +302,7 @@ function normalizeAction(action, contentType = null) {
     'profile-followers',
     'followed-users',
     'followed-posts-by-date',
+    'read-route',
     'search',
   ].includes(mapped)) {
     throw new Error(`Unsupported social action ${JSON.stringify(action)}.`);
@@ -402,6 +413,16 @@ function isDateString(value) {
   return /^\d{4}-\d{2}-\d{2}$/u.test(String(value ?? '').trim());
 }
 
+function normalizeNumericId(value) {
+  const text = String(value ?? '').trim();
+  return /^\d+$/u.test(text) ? text : null;
+}
+
+function normalizeOpaqueId(value) {
+  const text = String(value ?? '').trim();
+  return /^[A-Za-z0-9_-]+$/u.test(text) ? text : null;
+}
+
 function normalizeDateWindow({ date, fromDate, toDate } = /** @type {any} */ ({})) {
   const normalizedDate = String(date ?? '').trim();
   const normalizedFrom = String(fromDate ?? '').trim();
@@ -411,6 +432,944 @@ function normalizeDateWindow({ date, fromDate, toDate } = /** @type {any} */ ({}
     fromDate: isDateString(normalizedFrom) ? normalizedFrom : null,
     toDate: isDateString(normalizedTo) ? normalizedTo : null,
   };
+}
+
+const X_READ_ROUTE_ALIASES = Object.freeze({
+  'account-about': '/{account}/about',
+  'account-accessibility': '/{account}/accessibility',
+  'account-articles': '/{account}/articles',
+  'account-communities': '/{account}/communities',
+  'account-communities-explore': '/{account}/communities/explore',
+  'account-photo': '/{account}/photo',
+  articles: '/i/articles',
+  bookmarks: '/i/bookmarks',
+  chat: '/i/chat',
+  communities: '/i/communities',
+  'community-about': '/i/communities/{communityId}/about',
+  'community-detail': '/i/communities/{communityId}',
+  'community-members': '/i/communities/{communityId}/members',
+  'community-members-search': '/i/communities/{communityId}/members/search',
+  'community-search': '/i/communities/{communityId}/search',
+  'communities-explore': '/{account}/communities/explore',
+  'connect-people': '/i/connect_people',
+  connect_people: '/i/connect_people',
+  'compose-post': '/compose/post',
+  'creator-studio': '/i/jf/creators/studio',
+  'creators-studio': '/i/jf/creators/studio',
+  explore: '/explore',
+  'explore-news': '/explore/tabs/news',
+  'explore-trending': '/explore/tabs/trending',
+  'explore-for-you': '/explore/tabs/for-you',
+  foryou: '/explore/tabs/for-you',
+  'for-you': '/explore/tabs/for-you',
+  grok: '/i/grok',
+  home: '/home',
+  'internal-status': '/i/status/{statusId}',
+  'audio-space': '/i/spaces/{spaceId}',
+  'spaces': '/i/spaces/{spaceId}',
+  jobs: '/jobs',
+  'news-stories-home': '/i/jf/stories/home',
+  'keyboard-shortcuts': '/i/keyboard_shortcuts',
+  'list-detail': '/i/lists/{listId}',
+  'list-followers': '/i/lists/{listId}/followers',
+  'list-members': '/i/lists/{listId}/members',
+  lists: '/i/lists',
+  messages: '/messages',
+  mentions: '/notifications/mentions',
+  'notification-mentions': '/notifications/mentions',
+  'notification-verified': '/notifications/verified',
+  notifications: '/notifications',
+  'verified-notifications': '/notifications/verified',
+  'followers-you-follow': '/{account}/followers_you_follow',
+  followers_you_follow: '/{account}/followers_you_follow',
+  'profile-likes': '/{account}/likes',
+  'profile-lists': '/{account}/lists',
+  'premium-sign-up': '/i/premium_sign_up',
+  premium_sign_up: '/i/premium_sign_up',
+  root: '/',
+  search: '/search',
+  'search-empty': '/search',
+  'search-top': '/search?q=:query&src=typed_query',
+  settings: '/settings',
+  'status-analytics': '/{account}/status/{statusId}/analytics',
+  'settings-account': '/settings/account',
+  'settings-account-id-verification': '/settings/account/id_verification',
+  'settings-account-login': '/settings/account/login',
+  'settings-account-login-verification': '/settings/account/login_verification',
+  'settings-account-passkey': '/settings/account/passkey',
+  'settings-accessibility': '/settings/accessibility',
+  'settings-accessibility-display-languages': '/settings/accessibility_display_and_languages',
+  'settings-additional-resources': '/settings/additional_resources',
+  'settings-about': '/settings/about',
+  'settings-about-your-account': '/settings/about_your_account',
+  'settings-autoplay': '/settings/autoplay',
+  'settings-blocked-all': '/settings/blocked/all',
+  'settings-ads-preferences': '/settings/ads_preferences',
+  'settings-audience-and-tagging': '/settings/audience_and_tagging',
+  'settings-connected-accounts': '/settings/connected_accounts',
+  'settings-content-you-see': '/settings/content_you_see',
+  'settings-contacts': '/settings/contacts',
+  'settings-contacts-dashboard': '/settings/contacts_dashboard',
+  'settings-data': '/settings/data',
+  'settings-data-sharing-with-business-partners': '/settings/data_sharing_with_business_partners',
+  'settings-deactivate': '/settings/deactivate',
+  'settings-delegate': '/settings/delegate',
+  'settings-delegate-groups': '/settings/delegate/groups',
+  'settings-delegate-members': '/settings/delegate/members',
+  'settings-direct-messages': '/settings/direct_messages',
+  'settings-display': '/settings/display',
+  'settings-download-your-data': '/settings/download_your_data',
+  'settings-email-notifications': '/settings/email_notifications',
+  'settings-explore': '/settings/explore',
+  'settings-explore-location': '/settings/explore/location',
+  'settings-grok-settings': '/settings/grok_settings',
+  'settings-languages': '/settings/languages',
+  'settings-location-information': '/settings/location_information',
+  'settings-manage-subscriptions': '/settings/manage_subscriptions',
+  'settings-monetization': '/settings/monetization',
+  'settings-mute-and-block': '/settings/mute_and_block',
+  'settings-muted-all': '/settings/muted/all',
+  'settings-muted-keywords': '/settings/muted_keywords',
+  'settings-notifications': '/settings/notifications',
+  'settings-notifications-advanced-filters': '/settings/notifications/advanced_filters',
+  'settings-notifications-email': '/settings/notifications/email_notifications',
+  'settings-notifications-filters': '/settings/notifications/filters',
+  'settings-notifications-preferences': '/settings/notifications/preferences',
+  'settings-notifications-push': '/settings/notifications/push_notifications',
+  'settings-off-twitter-activity': '/settings/off_twitter_activity',
+  'settings-privacy-and-safety': '/settings/privacy_and_safety',
+  'settings-profile': '/settings/profile',
+  'settings-push-notifications': '/settings/push_notifications',
+  'settings-search': '/settings/search',
+  'settings-security': '/settings/security',
+  'settings-security-and-account-access': '/settings/security_and_account_access',
+  'settings-spaces': '/settings/spaces',
+  'settings-your-twitter-data': '/settings/your_twitter_data',
+  'settings-your-twitter-data-account': '/settings/your_twitter_data/account',
+  'settings-your-tweets': '/settings/your_tweets',
+  'status-detail': '/{account}/status/{statusId}',
+  'status-internal': '/i/status/{statusId}',
+  'stories-home': '/i/jf/stories/home',
+  'status-likes': '/{account}/status/{statusId}/likes',
+  'status-photo': '/{account}/status/{statusId}/photo/{mediaId}',
+  'status-quotes': '/{account}/status/{statusId}/quotes',
+  'status-retweets': '/{account}/status/{statusId}/retweets',
+  topsearch: '/search?q=:query&src=typed_query',
+  'verified-followers': '/{account}/verified_followers',
+  verified_followers: '/{account}/verified_followers',
+});
+
+const X_READ_ROUTE_DETAILS = Object.freeze({
+  '/': Object.freeze({
+    routeName: 'root',
+    capability: 'app.root.inspect',
+    intent: 'inspect_root_redirect',
+  }),
+  '/{account}/likes': Object.freeze({
+    routeName: 'profile-likes',
+    capability: 'timeline.likes.inspect',
+    intent: 'inspect_profile_likes',
+    requiresAccount: true,
+  }),
+  '/{account}/lists': Object.freeze({
+    routeName: 'profile-lists',
+    capability: 'profile.lists.inspect',
+    intent: 'inspect_profile_lists',
+    requiresAccount: true,
+  }),
+  '/{account}/followers_you_follow': Object.freeze({
+    routeName: 'followers-you-follow',
+    capability: 'relation.followers-you-follow.inspect',
+    intent: 'inspect_followers_you_follow',
+    requiresAccount: true,
+  }),
+  '/{account}/verified_followers': Object.freeze({
+    routeName: 'verified-followers',
+    capability: 'relation.verified-followers.inspect',
+    intent: 'inspect_verified_followers',
+    requiresAccount: true,
+  }),
+  '/{account}/about': Object.freeze({
+    routeName: 'account-about',
+    capability: 'dynamic.account-about.inspect',
+    intent: 'inspect_account_about_route',
+    requiresAccount: true,
+  }),
+  '/{account}/accessibility': Object.freeze({
+    routeName: 'account-accessibility',
+    capability: 'dynamic.account-accessibility.inspect',
+    intent: 'inspect_account_accessibility_route',
+    requiresAccount: true,
+  }),
+  '/{account}/articles': Object.freeze({
+    routeName: 'account-articles',
+    capability: 'dynamic.account-articles.inspect',
+    intent: 'inspect_account_articles_route',
+    requiresAccount: true,
+  }),
+  '/{account}/photo': Object.freeze({
+    routeName: 'account-photo',
+    capability: 'dynamic.account-photo.inspect',
+    intent: 'inspect_account_photo_route',
+    requiresAccount: true,
+  }),
+  '/{account}/communities': Object.freeze({
+    routeName: 'account-communities',
+    capability: 'dynamic.account-communities.inspect',
+    intent: 'inspect_account_communities_route',
+    requiresAccount: true,
+  }),
+  '/{account}/communities/explore': Object.freeze({
+    routeName: 'account-communities-explore',
+    capability: 'dynamic.account-communities-explore.inspect',
+    intent: 'inspect_account_communities_explore_route',
+    requiresAccount: true,
+  }),
+  '/compose/post': Object.freeze({
+    routeName: 'compose-post',
+    capability: 'risk-reviewed.compose-surface.inspect',
+    intent: 'inspect_compose_surface_without_submit',
+    requiresRiskReviewedRead: true,
+  }),
+  '/i/premium_sign_up': Object.freeze({
+    routeName: 'premium-sign-up',
+    capability: 'commerce.premium-signup.inspect',
+    intent: 'inspect_premium_signup',
+    requiresRiskReviewedRead: true,
+  }),
+  '/i/jf/creators/studio': Object.freeze({
+    routeName: 'creator-studio',
+    capability: 'risk-reviewed.creator-studio.inspect',
+    intent: 'inspect_creator_studio_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/i/jf/stories/home': Object.freeze({
+    routeName: 'news-stories-home',
+    capability: 'app.news-stories.inspect',
+    intent: 'inspect_news_stories_home_surface',
+  }),
+  '/messages': Object.freeze({
+    routeName: 'messages',
+    capability: 'risk-reviewed.messages.inspect',
+    intent: 'inspect_messages_inbox_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/i/chat': Object.freeze({
+    routeName: 'chat',
+    capability: 'risk-reviewed.chat.inspect',
+    intent: 'inspect_chat_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings': Object.freeze({
+    routeName: 'settings',
+    capability: 'risk-reviewed.settings.inspect',
+    intent: 'inspect_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/account': Object.freeze({
+    routeName: 'settings-account',
+    capability: 'risk-reviewed.settings-account.inspect',
+    intent: 'inspect_account_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/account/id_verification': Object.freeze({
+    routeName: 'settings-account-id-verification',
+    capability: 'risk-reviewed.settings-account-id-verification.inspect',
+    intent: 'inspect_account_id_verification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/account/login': Object.freeze({
+    routeName: 'settings-account-login',
+    capability: 'risk-reviewed.settings-account-login.inspect',
+    intent: 'inspect_account_login_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/account/login_verification': Object.freeze({
+    routeName: 'settings-account-login-verification',
+    capability: 'risk-reviewed.settings-account-login-verification.inspect',
+    intent: 'inspect_account_login_verification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/account/passkey': Object.freeze({
+    routeName: 'settings-account-passkey',
+    capability: 'risk-reviewed.settings-account-passkey.inspect',
+    intent: 'inspect_account_passkey_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/accessibility': Object.freeze({
+    routeName: 'settings-accessibility',
+    capability: 'risk-reviewed.settings-accessibility.inspect',
+    intent: 'inspect_accessibility_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/security': Object.freeze({
+    routeName: 'settings-security',
+    capability: 'risk-reviewed.settings-security.inspect',
+    intent: 'inspect_security_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/security_and_account_access': Object.freeze({
+    routeName: 'settings-security-and-account-access',
+    capability: 'risk-reviewed.settings-security-account-access.inspect',
+    intent: 'inspect_security_account_access_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/privacy_and_safety': Object.freeze({
+    routeName: 'settings-privacy-and-safety',
+    capability: 'risk-reviewed.settings-privacy.inspect',
+    intent: 'inspect_privacy_safety_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/profile': Object.freeze({
+    routeName: 'settings-profile',
+    capability: 'risk-reviewed.settings-profile.inspect',
+    intent: 'inspect_profile_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/accessibility_display_and_languages': Object.freeze({
+    routeName: 'settings-accessibility-display-languages',
+    capability: 'risk-reviewed.settings-accessibility-display-languages.inspect',
+    intent: 'inspect_accessibility_display_language_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/additional_resources': Object.freeze({
+    routeName: 'settings-additional-resources',
+    capability: 'risk-reviewed.settings-additional-resources.inspect',
+    intent: 'inspect_additional_resources_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/about': Object.freeze({
+    routeName: 'settings-about',
+    capability: 'risk-reviewed.settings-about.inspect',
+    intent: 'inspect_about_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/about_your_account': Object.freeze({
+    routeName: 'settings-about-your-account',
+    capability: 'risk-reviewed.settings-about-your-account.inspect',
+    intent: 'inspect_about_your_account_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/ads_preferences': Object.freeze({
+    routeName: 'settings-ads-preferences',
+    capability: 'risk-reviewed.settings-ads-preferences.inspect',
+    intent: 'inspect_ads_preferences_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/audience_and_tagging': Object.freeze({
+    routeName: 'settings-audience-and-tagging',
+    capability: 'risk-reviewed.settings-audience-tagging.inspect',
+    intent: 'inspect_audience_tagging_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/autoplay': Object.freeze({
+    routeName: 'settings-autoplay',
+    capability: 'risk-reviewed.settings-autoplay.inspect',
+    intent: 'inspect_autoplay_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/blocked/all': Object.freeze({
+    routeName: 'settings-blocked-all',
+    capability: 'risk-reviewed.settings-blocked-all.inspect',
+    intent: 'inspect_blocked_accounts_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/connected_accounts': Object.freeze({
+    routeName: 'settings-connected-accounts',
+    capability: 'risk-reviewed.settings-connected-accounts.inspect',
+    intent: 'inspect_connected_accounts_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/contacts': Object.freeze({
+    routeName: 'settings-contacts',
+    capability: 'risk-reviewed.settings-contacts.inspect',
+    intent: 'inspect_contacts_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/contacts_dashboard': Object.freeze({
+    routeName: 'settings-contacts-dashboard',
+    capability: 'risk-reviewed.settings-contacts-dashboard.inspect',
+    intent: 'inspect_contacts_dashboard_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/content_you_see': Object.freeze({
+    routeName: 'settings-content-you-see',
+    capability: 'risk-reviewed.settings-content-you-see.inspect',
+    intent: 'inspect_content_you_see_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/data': Object.freeze({
+    routeName: 'settings-data',
+    capability: 'risk-reviewed.settings-data-index.inspect',
+    intent: 'inspect_data_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/data_sharing_with_business_partners': Object.freeze({
+    routeName: 'settings-data-sharing-with-business-partners',
+    capability: 'risk-reviewed.settings-business-data-sharing.inspect',
+    intent: 'inspect_business_data_sharing_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/deactivate': Object.freeze({
+    routeName: 'settings-deactivate',
+    capability: 'risk-reviewed.settings-deactivation.inspect',
+    intent: 'inspect_account_deactivation_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/delegate': Object.freeze({
+    routeName: 'settings-delegate',
+    capability: 'risk-reviewed.settings-delegate.inspect',
+    intent: 'inspect_delegate_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/delegate/groups': Object.freeze({
+    routeName: 'settings-delegate-groups',
+    capability: 'risk-reviewed.settings-delegate-groups.inspect',
+    intent: 'inspect_delegate_groups_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/delegate/members': Object.freeze({
+    routeName: 'settings-delegate-members',
+    capability: 'risk-reviewed.settings-delegate-members.inspect',
+    intent: 'inspect_delegate_members_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/direct_messages': Object.freeze({
+    routeName: 'settings-direct-messages',
+    capability: 'risk-reviewed.settings-direct-messages.inspect',
+    intent: 'inspect_direct_messages_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/display': Object.freeze({
+    routeName: 'settings-display',
+    capability: 'risk-reviewed.settings-display.inspect',
+    intent: 'inspect_display_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/download_your_data': Object.freeze({
+    routeName: 'settings-download-your-data',
+    capability: 'risk-reviewed.settings-download-data.inspect',
+    intent: 'inspect_download_data_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/email_notifications': Object.freeze({
+    routeName: 'settings-email-notifications',
+    capability: 'risk-reviewed.settings-email-notifications-legacy.inspect',
+    intent: 'inspect_legacy_email_notification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/explore': Object.freeze({
+    routeName: 'settings-explore',
+    capability: 'risk-reviewed.settings-explore.inspect',
+    intent: 'inspect_explore_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/explore/location': Object.freeze({
+    routeName: 'settings-explore-location',
+    capability: 'risk-reviewed.settings-explore-location.inspect',
+    intent: 'inspect_explore_location_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/grok_settings': Object.freeze({
+    routeName: 'settings-grok-settings',
+    capability: 'risk-reviewed.settings-grok.inspect',
+    intent: 'inspect_grok_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/languages': Object.freeze({
+    routeName: 'settings-languages',
+    capability: 'risk-reviewed.settings-languages.inspect',
+    intent: 'inspect_language_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/location_information': Object.freeze({
+    routeName: 'settings-location-information',
+    capability: 'risk-reviewed.settings-location-information.inspect',
+    intent: 'inspect_location_information_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/manage_subscriptions': Object.freeze({
+    routeName: 'settings-manage-subscriptions',
+    capability: 'risk-reviewed.settings-manage-subscriptions.inspect',
+    intent: 'inspect_manage_subscriptions_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/monetization': Object.freeze({
+    routeName: 'settings-monetization',
+    capability: 'risk-reviewed.settings-monetization.inspect',
+    intent: 'inspect_monetization_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/mute_and_block': Object.freeze({
+    routeName: 'settings-mute-and-block',
+    capability: 'risk-reviewed.settings-mute-block.inspect',
+    intent: 'inspect_mute_block_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/muted/all': Object.freeze({
+    routeName: 'settings-muted-all',
+    capability: 'risk-reviewed.settings-muted-all.inspect',
+    intent: 'inspect_muted_accounts_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/muted_keywords': Object.freeze({
+    routeName: 'settings-muted-keywords',
+    capability: 'risk-reviewed.settings-muted-keywords.inspect',
+    intent: 'inspect_muted_keywords_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/notifications': Object.freeze({
+    routeName: 'settings-notifications',
+    capability: 'risk-reviewed.settings-notifications.inspect',
+    intent: 'inspect_notification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/notifications/email_notifications': Object.freeze({
+    routeName: 'settings-notifications-email',
+    capability: 'risk-reviewed.settings-email-notifications.inspect',
+    intent: 'inspect_email_notification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/notifications/advanced_filters': Object.freeze({
+    routeName: 'settings-notifications-advanced-filters',
+    capability: 'risk-reviewed.settings-notification-advanced-filters.inspect',
+    intent: 'inspect_notification_advanced_filter_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/notifications/filters': Object.freeze({
+    routeName: 'settings-notifications-filters',
+    capability: 'risk-reviewed.settings-notification-filters.inspect',
+    intent: 'inspect_notification_filter_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/notifications/preferences': Object.freeze({
+    routeName: 'settings-notifications-preferences',
+    capability: 'risk-reviewed.settings-notification-preferences.inspect',
+    intent: 'inspect_notification_preference_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/notifications/push_notifications': Object.freeze({
+    routeName: 'settings-notifications-push',
+    capability: 'risk-reviewed.settings-push-notifications.inspect',
+    intent: 'inspect_push_notification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/off_twitter_activity': Object.freeze({
+    routeName: 'settings-off-twitter-activity',
+    capability: 'risk-reviewed.settings-off-twitter-activity.inspect',
+    intent: 'inspect_off_twitter_activity_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/push_notifications': Object.freeze({
+    routeName: 'settings-push-notifications',
+    capability: 'risk-reviewed.settings-push-notifications-legacy.inspect',
+    intent: 'inspect_legacy_push_notification_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/search': Object.freeze({
+    routeName: 'settings-search',
+    capability: 'risk-reviewed.settings-search.inspect',
+    intent: 'inspect_settings_search_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/spaces': Object.freeze({
+    routeName: 'settings-spaces',
+    capability: 'risk-reviewed.settings-spaces.inspect',
+    intent: 'inspect_spaces_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/your_twitter_data': Object.freeze({
+    routeName: 'settings-your-twitter-data',
+    capability: 'risk-reviewed.settings-data.inspect',
+    intent: 'inspect_account_data_settings_index_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/your_twitter_data/account': Object.freeze({
+    routeName: 'settings-your-twitter-data-account',
+    capability: 'risk-reviewed.settings-data-account.inspect',
+    intent: 'inspect_account_data_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/settings/your_tweets': Object.freeze({
+    routeName: 'settings-your-tweets',
+    capability: 'risk-reviewed.settings-your-tweets.inspect',
+    intent: 'inspect_your_tweets_settings_surface',
+    requiresRiskReviewedRead: true,
+  }),
+  '/i/status/{statusId}': Object.freeze({
+    routeName: 'internal-status',
+    capability: 'content.internal-status.inspect',
+    intent: 'inspect_internal_status_redirect',
+    requiresStatusId: true,
+  }),
+  '/i/spaces/{spaceId}': Object.freeze({
+    routeName: 'audio-space',
+    capability: 'audio.space.inspect',
+    intent: 'inspect_audio_space',
+    requiresSpaceId: true,
+  }),
+  '/{account}/status/{statusId}': Object.freeze({
+    routeName: 'status-detail',
+    capability: 'content.status.inspect',
+    intent: 'inspect_status_detail',
+    requiresAccount: true,
+    requiresStatusId: true,
+  }),
+  '/{account}/status/{statusId}/analytics': Object.freeze({
+    routeName: 'status-analytics',
+    capability: 'risk-reviewed.status-analytics.inspect',
+    intent: 'inspect_status_analytics',
+    requiresAccount: true,
+    requiresStatusId: true,
+    requiresRiskReviewedRead: true,
+  }),
+  '/{account}/status/{statusId}/likes': Object.freeze({
+    routeName: 'status-likes',
+    capability: 'engagement.status-likes.inspect',
+    intent: 'inspect_status_likes',
+    requiresAccount: true,
+    requiresStatusId: true,
+  }),
+  '/{account}/status/{statusId}/photo/{mediaId}': Object.freeze({
+    routeName: 'status-photo',
+    capability: 'media.status-photo.inspect',
+    intent: 'inspect_status_photo',
+    requiresAccount: true,
+    requiresStatusId: true,
+    requiresMediaId: true,
+  }),
+  '/{account}/status/{statusId}/quotes': Object.freeze({
+    routeName: 'status-quotes',
+    capability: 'engagement.status-quotes.inspect',
+    intent: 'inspect_status_quotes',
+    requiresAccount: true,
+    requiresStatusId: true,
+  }),
+  '/{account}/status/{statusId}/retweets': Object.freeze({
+    routeName: 'status-retweets',
+    capability: 'engagement.status-retweets.inspect',
+    intent: 'inspect_status_retweets',
+    requiresAccount: true,
+    requiresStatusId: true,
+  }),
+  '/explore/tabs/news': Object.freeze({
+    routeName: 'explore-news',
+    capability: 'app.explore-news.inspect',
+    intent: 'inspect_news_explore_surface',
+  }),
+  '/explore/tabs/trending': Object.freeze({
+    routeName: 'explore-trending',
+    capability: 'app.explore-trending.inspect',
+    intent: 'inspect_trending_explore_surface',
+  }),
+  '/home': Object.freeze({
+    routeName: 'home',
+    capability: 'app.home.inspect',
+    intent: 'inspect_home_timeline',
+  }),
+  '/explore': Object.freeze({
+    routeName: 'explore',
+    capability: 'app.explore.inspect',
+    intent: 'inspect_explore_surface',
+  }),
+  '/explore/tabs/for-you': Object.freeze({
+    routeName: 'explore-for-you',
+    capability: 'app.explore-for-you.inspect',
+    intent: 'inspect_for_you_explore_surface',
+  }),
+  '/notifications': Object.freeze({
+    routeName: 'notifications',
+    capability: 'app.notifications.inspect',
+    intent: 'inspect_notifications',
+  }),
+  '/notifications/mentions': Object.freeze({
+    routeName: 'notification-mentions',
+    capability: 'app.notification-mentions.inspect',
+    intent: 'inspect_notification_mentions',
+  }),
+  '/notifications/verified': Object.freeze({
+    routeName: 'notification-verified',
+    capability: 'app.notification-verified.inspect',
+    intent: 'inspect_verified_notifications',
+  }),
+  '/search': Object.freeze({
+    routeName: 'search-empty',
+    capability: 'search.surface.inspect',
+    intent: 'inspect_search_surface',
+  }),
+  '/search?q=:query&src=typed_query': Object.freeze({
+    routeName: 'search-top',
+    capability: 'search.top.inspect',
+    intent: 'inspect_search_top_results',
+    requiresQuery: true,
+  }),
+  '/i/bookmarks': Object.freeze({
+    routeName: 'bookmarks',
+    capability: 'app.bookmarks.inspect',
+    intent: 'inspect_bookmarks',
+  }),
+  '/i/keyboard_shortcuts': Object.freeze({
+    routeName: 'keyboard-shortcuts',
+    capability: 'app.keyboard-shortcuts.inspect',
+    intent: 'inspect_keyboard_shortcuts_surface',
+  }),
+  '/i/articles': Object.freeze({
+    routeName: 'articles',
+    capability: 'app.articles.inspect',
+    intent: 'inspect_articles_surface',
+  }),
+  '/i/communities': Object.freeze({
+    routeName: 'communities',
+    capability: 'app.communities.inspect',
+    intent: 'inspect_communities_surface',
+  }),
+  '/i/communities/{communityId}': Object.freeze({
+    routeName: 'community-detail',
+    capability: 'communities.detail.inspect',
+    intent: 'inspect_community_detail',
+    requiresCommunityId: true,
+  }),
+  '/i/communities/{communityId}/about': Object.freeze({
+    routeName: 'community-about',
+    capability: 'communities.about.inspect',
+    intent: 'inspect_community_about',
+    requiresCommunityId: true,
+  }),
+  '/i/communities/{communityId}/members': Object.freeze({
+    routeName: 'community-members',
+    capability: 'communities.members.inspect',
+    intent: 'inspect_community_members',
+    requiresCommunityId: true,
+  }),
+  '/i/communities/{communityId}/members/search': Object.freeze({
+    routeName: 'community-members-search',
+    capability: 'communities.members-search.inspect',
+    intent: 'inspect_community_members_search',
+    requiresCommunityId: true,
+  }),
+  '/i/communities/{communityId}/search': Object.freeze({
+    routeName: 'community-search',
+    capability: 'communities.search.inspect',
+    intent: 'inspect_community_search',
+    requiresCommunityId: true,
+  }),
+  '/i/connect_people': Object.freeze({
+    routeName: 'connect-people',
+    capability: 'app.connect-people.inspect',
+    intent: 'inspect_connect_people',
+  }),
+  '/i/grok': Object.freeze({
+    routeName: 'grok',
+    capability: 'app.grok.inspect',
+    intent: 'inspect_grok_surface',
+  }),
+  '/jobs': Object.freeze({
+    routeName: 'jobs',
+    capability: 'app.jobs.inspect',
+    intent: 'inspect_jobs_surface',
+  }),
+  '/i/lists': Object.freeze({
+    routeName: 'lists',
+    capability: 'app.lists.inspect',
+    intent: 'inspect_lists_surface',
+  }),
+  '/i/lists/{listId}': Object.freeze({
+    routeName: 'list-detail',
+    capability: 'lists.detail.inspect',
+    intent: 'inspect_list_detail',
+    requiresListId: true,
+  }),
+  '/i/lists/{listId}/followers': Object.freeze({
+    routeName: 'list-followers',
+    capability: 'lists.followers.inspect',
+    intent: 'inspect_list_followers',
+    requiresListId: true,
+  }),
+  '/i/lists/{listId}/members': Object.freeze({
+    routeName: 'list-members',
+    capability: 'lists.members.inspect',
+    intent: 'inspect_list_members',
+    requiresListId: true,
+  }),
+});
+
+function normalizeXReadRoutePath(value, config) {
+  const raw = String(value ?? '').trim();
+  if (!raw || config.siteKey !== 'x') {
+    return null;
+  }
+  const alias = X_READ_ROUTE_ALIASES[raw.toLowerCase().replace(/^\/+/u, '')];
+  if (alias) {
+    return { routePath: alias, account: null, query: null };
+  }
+  try {
+    const parsed = new URL(raw, `${config.baseUrl}/`);
+    if (parsed.hostname.toLowerCase() !== config.host) {
+      return null;
+    }
+    const pathname = parsed.pathname.replace(/\/+$/u, '') || '/';
+    if (X_READ_ROUTE_DETAILS[pathname]) {
+      return { routePath: pathname, account: null, query: null };
+    }
+    if (pathname === '/search' && parsed.searchParams.has('q') && parsed.searchParams.has('src') && !parsed.searchParams.has('f')) {
+      return {
+        routePath: '/search?q=:query&src=typed_query',
+        account: null,
+        query: parsed.searchParams.get('q'),
+      };
+    }
+    const parts = pathname.split('/').filter(Boolean);
+    if (parts.length === 3 && parts[0] === 'i' && parts[1] === 'status' && /^\d+$/u.test(parts[2])) {
+      return {
+        routePath: '/i/status/{statusId}',
+        account: null,
+        statusId: parts[2],
+        query: null,
+      };
+    }
+    if (parts.length === 3 && parts[0] === 'i' && parts[1] === 'communities' && /^[A-Za-z0-9_-]+$/u.test(parts[2])) {
+      return {
+        routePath: '/i/communities/{communityId}',
+        account: null,
+        communityId: parts[2],
+        query: null,
+      };
+    }
+    if (
+      parts.length === 4
+      && parts[0] === 'i'
+      && parts[1] === 'communities'
+      && /^[A-Za-z0-9_-]+$/u.test(parts[2])
+      && ['about', 'members', 'search'].includes(parts[3])
+    ) {
+      return {
+        routePath: `/i/communities/{communityId}/${parts[3]}`,
+        account: null,
+        communityId: parts[2],
+        query: null,
+      };
+    }
+    if (
+      parts.length === 5
+      && parts[0] === 'i'
+      && parts[1] === 'communities'
+      && /^[A-Za-z0-9_-]+$/u.test(parts[2])
+      && parts[3] === 'members'
+      && parts[4] === 'search'
+    ) {
+      return {
+        routePath: '/i/communities/{communityId}/members/search',
+        account: null,
+        communityId: parts[2],
+        query: null,
+      };
+    }
+    if (parts.length === 3 && parts[0] === 'i' && parts[1] === 'lists' && /^[A-Za-z0-9_-]+$/u.test(parts[2])) {
+      return {
+        routePath: '/i/lists/{listId}',
+        account: null,
+        listId: parts[2],
+        query: null,
+      };
+    }
+    if (
+      parts.length === 4
+      && parts[0] === 'i'
+      && parts[1] === 'lists'
+      && /^[A-Za-z0-9_-]+$/u.test(parts[2])
+      && ['followers', 'members'].includes(parts[3])
+    ) {
+      return {
+        routePath: `/i/lists/{listId}/${parts[3]}`,
+        account: null,
+        listId: parts[2],
+        query: null,
+      };
+    }
+    if (parts.length === 3 && parts[0] === 'i' && parts[1] === 'spaces' && /^[A-Za-z0-9_-]+$/u.test(parts[2])) {
+      return {
+        routePath: '/i/spaces/{spaceId}',
+        account: null,
+        spaceId: parts[2],
+        query: null,
+      };
+    }
+    if (
+      parts.length === 2
+      && ['articles', 'communities', 'followers_you_follow', 'likes', 'lists', 'photo', 'verified_followers'].includes(parts[1])
+      && !isReservedAccountSegment(parts[0], config)
+    ) {
+      return {
+        routePath: `/{account}/${parts[1]}`,
+        account: parts[0].replace(/^@/u, ''),
+        query: null,
+      };
+    }
+    if (
+      parts.length === 3
+      && parts[1] === 'communities'
+      && parts[2] === 'explore'
+      && !isReservedAccountSegment(parts[0], config)
+    ) {
+      return {
+        routePath: '/{account}/communities/explore',
+        account: parts[0].replace(/^@/u, ''),
+        query: null,
+      };
+    }
+    if (
+      parts.length >= 3
+      && parts[1] === 'status'
+      && /^\d+$/u.test(parts[2])
+      && !isReservedAccountSegment(parts[0], config)
+    ) {
+      if (parts.length === 3) {
+        return {
+          routePath: '/{account}/status/{statusId}',
+          account: parts[0].replace(/^@/u, ''),
+          statusId: parts[2],
+          query: null,
+        };
+      }
+      if (parts.length === 4 && ['analytics', 'likes', 'quotes', 'retweets'].includes(parts[3])) {
+        return {
+          routePath: `/{account}/status/{statusId}/${parts[3]}`,
+          account: parts[0].replace(/^@/u, ''),
+          statusId: parts[2],
+          query: null,
+        };
+      }
+      if (parts.length === 5 && parts[3] === 'photo' && /^\d+$/u.test(parts[4])) {
+        return {
+          routePath: '/{account}/status/{statusId}/photo/{mediaId}',
+          account: parts[0].replace(/^@/u, ''),
+          statusId: parts[2],
+          mediaId: parts[4],
+          query: null,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildXReadRouteUrl(config, routePath, { account = null, query = null, statusId = null, mediaId = null, spaceId = null, communityId = null, listId = null } = /** @type {any} */ ({})) {
+  if (routePath === '/search?q=:query&src=typed_query') {
+    const parsed = new URL('/search', `${config.baseUrl}/`);
+    parsed.searchParams.set('q', normalizeText(query || ''));
+    parsed.searchParams.set('src', 'typed_query');
+    return parsed.toString();
+  }
+  const pathValue = String(routePath)
+    .replace('{account}', account ? encodeURIComponent(account) : '')
+    .replace('{statusId}', statusId ? encodeURIComponent(statusId) : '')
+    .replace('{mediaId}', mediaId ? encodeURIComponent(mediaId) : '')
+    .replace('{spaceId}', spaceId ? encodeURIComponent(spaceId) : '')
+    .replace('{communityId}', communityId ? encodeURIComponent(communityId) : '')
+    .replace('{listId}', listId ? encodeURIComponent(listId) : '');
+  return new URL(pathValue, `${config.baseUrl}/`).toString();
 }
 
 function firstNonEmpty(values = /** @type {any[]} */ ([])) {
@@ -427,8 +1386,20 @@ export function buildSocialActionPlan(input = /** @type {any} */ ({})) {
   const config = resolveSocialSiteConfig(input.site ?? input.siteKey ?? input.host);
   const action = normalizeAction(input.action ?? 'account-info', input.contentType);
   const contentType = normalizeContentType(input.action, input.contentType, config.siteKey);
-  const account = normalizeSocialAccount(input.account ?? input.handle ?? input.user ?? input.profile ?? input.target, config.siteKey);
-  const query = firstNonEmpty([input.query, input.keyword, input.q]);
+  const routeInput = action === 'read-route'
+    ? firstNonEmpty([input.route, input.routePath, input.path, input.url, input.target])
+    : null;
+  const readRoute = routeInput ? normalizeXReadRoutePath(routeInput, config) : null;
+  const account = normalizeSocialAccount(input.account ?? input.handle ?? input.user ?? input.profile ?? readRoute?.account ?? input.target, config.siteKey);
+  const query = firstNonEmpty([input.query, input.keyword, input.q, readRoute?.query]);
+  const statusId = normalizeNumericId(input.statusId ?? input.tweetId ?? input.postId ?? readRoute?.statusId);
+  const mediaId = normalizeNumericId(input.mediaId ?? input.photoId ?? readRoute?.mediaId);
+  const spaceId = normalizeOpaqueId(input.spaceId ?? readRoute?.spaceId);
+  const communityId = normalizeOpaqueId(input.communityId ?? input.community ?? readRoute?.communityId);
+  const listId = normalizeOpaqueId(input.listId ?? input.list ?? readRoute?.listId);
+  const routePath = action === 'read-route'
+    ? readRoute?.routePath ?? null
+    : null;
   const dateWindow = normalizeDateWindow({
     date: input.date,
     fromDate: input.fromDate ?? input.from,
@@ -472,8 +1443,41 @@ export function buildSocialActionPlan(input = /** @type {any} */ ({})) {
       query,
       ...dateWindow,
     });
-    requiresAuth = config.siteKey === 'instagram';
+    requiresAuth = config.siteKey === 'x' || config.siteKey === 'instagram';
+  } else if (action === 'read-route') {
+    if (!routePath) {
+      throw new Error('read-route requires a supported X --route path.');
+    }
+    const detail = X_READ_ROUTE_DETAILS[routePath] ?? {};
+    if (detail.requiresAccount && !account) {
+      throw new Error('read-route requires --account <handle> for this X route.');
+    }
+    if (detail.requiresQuery && !query) {
+      throw new Error('read-route requires --query <value> for this X route.');
+    }
+    if (detail.requiresStatusId && !statusId) {
+      throw new Error('read-route requires --status-id <id> for this X route.');
+    }
+    if (detail.requiresMediaId && !mediaId) {
+      throw new Error('read-route requires --media-id <id> for this X route.');
+    }
+    if (detail.requiresSpaceId && !spaceId) {
+      throw new Error('read-route requires --space-id <id> for this X route.');
+    }
+    if (detail.requiresCommunityId && !communityId) {
+      throw new Error('read-route requires --community-id <id> for this X route.');
+    }
+    if (detail.requiresListId && !listId) {
+      throw new Error('read-route requires --list-id <id> for this X route.');
+    }
+    if (detail.requiresRiskReviewedRead && input.riskReviewedReadSurfaces !== true) {
+      throw new Error('read-route requires --risk-reviewed-read-surfaces for this higher-risk read-only X route.');
+    }
+    url = buildXReadRouteUrl(config, routePath, { account, query, statusId, mediaId, spaceId, communityId, listId });
+    requiresAuth = true;
+    plannerNotes.push('Using a bounded read-only same-site route as the crawl start surface.');
   }
+  const readRouteDetail = routePath ? X_READ_ROUTE_DETAILS[routePath] : null;
 
   return {
     siteKey: config.siteKey,
@@ -482,11 +1486,20 @@ export function buildSocialActionPlan(input = /** @type {any} */ ({})) {
     contentType,
     account,
     query,
+    routePath,
+    routeName: readRouteDetail?.routeName ?? null,
+    statusId,
+    mediaId,
+    spaceId,
+    communityId,
+    listId,
+    capability: readRouteDetail?.capability ?? null,
+    intent: readRouteDetail?.intent ?? null,
     ...dateWindow,
     url,
     requiresAccount,
     requiresAuth,
-    canRunWithoutAccount: ['followed-users', 'followed-posts-by-date', 'search'].includes(action),
+    canRunWithoutAccount: ['followed-users', 'followed-posts-by-date', 'search', 'read-route'].includes(action),
     plannerNotes,
   };
 }
@@ -514,6 +1527,38 @@ function socialStateHasExtractedContent(state = /** @type {any} */ ({})) {
   );
 }
 
+function isNoContentReadRoutePlan(plan = /** @type {any} */ ({})) {
+  const routePath = String(plan?.routePath ?? '');
+  return plan?.siteKey === 'x'
+    && plan?.action === 'read-route'
+    && (
+      routePath === '/messages'
+      || routePath === '/i/chat'
+      || routePath === '/i/keyboard_shortcuts'
+      || routePath === '/notifications'
+      || routePath.startsWith('/notifications/')
+      || routePath === '/settings'
+      || routePath.startsWith('/settings/')
+    );
+}
+
+function noContentRequestForPlan(plan = /** @type {any} */ ({})) {
+  const noContent = isNoContentReadRoutePlan(plan);
+  return {
+    noContent,
+    noContentRouteTemplate: noContent ? plan.routePath : null,
+  };
+}
+
+function contentSuppressionReasonForPlan(plan = /** @type {any} */ ({})) {
+  const routePath = String(plan?.routePath ?? '');
+  if (routePath === '/messages' || routePath === '/i/chat') return 'sensitive-message-surface';
+  if (routePath === '/i/keyboard_shortcuts') return 'structure-only-app-surface';
+  if (routePath === '/notifications' || routePath.startsWith('/notifications/')) return 'sensitive-notification-surface';
+  if (routePath === '/settings' || routePath.startsWith('/settings/')) return 'sensitive-settings-surface';
+  return 'sensitive-read-surface';
+}
+
 function socialStateHasProfileSurface(state = /** @type {any} */ ({})) {
   return Boolean(
     cleanText(state?.account?.displayName || '')
@@ -531,17 +1576,46 @@ function socialStateHasBoundarySignal(state = /** @type {any} */ ({})) {
 
 function isLikelyXBlankShell(state = /** @type {any} */ ({})) {
   const title = cleanText(state?.title || '');
-  return title === 'X'
+  const inventory = state?.surfaceInventory && typeof state.surfaceInventory === 'object'
+    ? state.surfaceInventory
+    : {};
+  const lowInventory = (inventory.linkCount ?? 0) === 0 && (inventory.controlCount ?? 0) <= 3;
+  return (title === 'X' || title === '')
     && !socialStateHasExtractedContent(state)
     && !socialStateHasProfileSurface(state)
-    && !socialStateHasBoundarySignal(state);
+    && !socialStateHasBoundarySignal(state)
+    && lowInventory;
 }
 
-function initialSocialStateReady(config, state = /** @type {any} */ ({})) {
+function isSocialListAction(action) {
+  return [
+    'profile-content',
+    'profile-following',
+    'profile-followers',
+    'followed-users',
+    'followed-posts-by-date',
+    'search',
+  ].includes(String(action ?? ''));
+}
+
+function socialStateHasListSurface(state = /** @type {any} */ ({}), request = /** @type {any} */ ({})) {
+  if (['profile-following', 'profile-followers', 'followed-users'].includes(String(request.action ?? ''))) {
+    return Array.isArray(state.relations) && state.relations.length > 0;
+  }
+  return Array.isArray(state.items) && state.items.length > 0;
+}
+
+function initialSocialStateReady(config, state = /** @type {any} */ ({}), request = /** @type {any} */ ({})) {
   if (!state) {
     return false;
   }
-  if (socialStateHasExtractedContent(state) || socialStateHasProfileSurface(state) || socialStateHasBoundarySignal(state)) {
+  if (socialStateHasBoundarySignal(state)) {
+    return true;
+  }
+  if (config?.siteKey === 'x' && isSocialListAction(request.action)) {
+    return socialStateHasListSurface(state, request);
+  }
+  if (socialStateHasExtractedContent(state) || socialStateHasProfileSurface(state)) {
     return true;
   }
   if (config?.siteKey !== 'x') {
@@ -558,17 +1632,19 @@ async function readInitialSocialState(session, config, plan, settings) {
     date: plan.date,
     fromDate: plan.fromDate,
     toDate: plan.toDate,
+    ...noContentRequestForPlan(plan),
   };
   const startedAt = Date.now();
   const shouldWaitForSpaSurface = config?.siteKey === 'x';
-  const deadline = startedAt + (shouldWaitForSpaSurface ? Math.min(settings.timeoutMs ?? DEFAULT_TIMEOUT_MS, 15_000) : 0);
+  const xSurfaceWaitMs = settings.probeReadControls ? 30_000 : 15_000;
+  const deadline = startedAt + (shouldWaitForSpaSurface ? Math.min(settings.timeoutMs ?? DEFAULT_TIMEOUT_MS, xSurfaceWaitMs) : 0);
   const pollMs = Math.min(700, Math.max(50, settings.scrollWaitMs || 0));
   let attempts = 0;
   let state = null;
   while (true) {
     attempts += 1;
     state = await session.callPageFunction(pageExtractSocialState, config, request);
-    if (initialSocialStateReady(config, state)) {
+    if (initialSocialStateReady(config, state, request)) {
       return {
         state,
         surfaceWait: {
@@ -595,6 +1671,99 @@ async function readInitialSocialState(session, config, plan, settings) {
 
 function pageExtractSocialState(config, request) {
   const normalize = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
+  const normalizeKey = (value) => normalize(value).toLowerCase().replace(/[^a-z0-9:_/-]+/giu, '-').replace(/^-|-$/gu, '').slice(0, 80);
+  const noContent = request?.noContent === true;
+  const safeToken = (value) => {
+    let token = normalizeKey(value).replace(/\d{4,}/gu, ':id');
+    for (const dynamicValue of [request.account, currentProfileLink]) {
+      const dynamicToken = normalizeKey(dynamicValue);
+      if (dynamicToken) {
+        token = token
+          .split(/([:_/-]+)/u)
+          .map((part) => (part === dynamicToken ? ':account' : part))
+          .join('');
+      }
+    }
+    if (/^useravatar-container-[a-z0-9_:-]+$/u.test(token)) {
+      token = 'useravatar-container-:account';
+    }
+    if (!token || /(?:auth|bearer|cookie|ct0|password|secret|session|token)/iu.test(token)) {
+      return null;
+    }
+    return token;
+  };
+  const controlLabelKind = (value) => {
+    const text = normalize(value).toLowerCase();
+    if (!text) return null;
+    /** @type {Array<[string, RegExp]>} */
+    const matches = [
+      ['search', /\bsearch\b|\u641c\u7d22/u],
+      ['post', /\b(?:post|tweet|compose)\b/u],
+      ['reply', /\breply\b/u],
+      ['repost', /\b(?:repost|retweet)\b/u],
+      ['like', /\blike\b/u],
+      ['bookmark', /\bbookmark\b/u],
+      ['share', /\bshare\b/u],
+      ['follow', /\bfollow\b/u],
+      ['menu', /\b(?:more|menu)\b/u],
+      ['close', /\bclose\b/u],
+      ['back', /\bback\b/u],
+      ['next', /\bnext\b/u],
+      ['skip', /\bskip(?: to)?\b|\u8df3\u81f3/u],
+      ['retry', /\b(?:retry|reload|try again)\b/u],
+      ['login', /\b(?:log in|login|sign in)\b/u],
+      ['notifications', /\bnotifications?\b/u],
+      ['messages', /\bmessages?\b/u],
+      ['profile', /\bprofile\b/u],
+      ['translation', /\b(?:show original|translate|translation)\b|\u663e\u793a\u539f\u6587|\u7ffb\u8bd1/u],
+    ];
+    return matches.find(([, pattern]) => pattern.test(text))?.[0] ?? null;
+  };
+  const descendantLabelText = (node) => normalize([...(node.querySelectorAll?.('[aria-label], [title], [alt], title') ?? [])]
+    .map((child) => child.getAttribute?.('aria-label') || child.getAttribute?.('title') || child.getAttribute?.('alt') || child.textContent || '')
+    .filter(Boolean)
+    .join(' '));
+  const controlLabelText = (node) => normalize([
+    node.getAttribute('aria-label') || '',
+    node.getAttribute('name') || '',
+    node.getAttribute('placeholder') || '',
+    node.getAttribute('title') || '',
+    descendantLabelText(node),
+    node.textContent || '',
+  ].filter(Boolean).join(' '));
+  const anonymousControlSignature = (node) => {
+    const closestRoleNode = node.closest?.('[role]');
+    const closestRole = closestRoleNode && closestRoleNode !== node
+      ? normalize(closestRoleNode.getAttribute('role') || '').toLowerCase()
+      : null;
+    return {
+      role: normalize(node.getAttribute('role') || node.tagName || 'control').toLowerCase(),
+      type: safeToken(node.getAttribute('type') || ''),
+      disabled: Boolean(node.disabled || node.getAttribute('aria-disabled') === 'true'),
+      closestRole: safeToken(closestRole),
+      inArticle: Boolean(node.closest?.('article')),
+      inDialog: Boolean(node.closest?.('[role="dialog"], [aria-modal="true"]')),
+      inForm: Boolean(node.closest?.('form')),
+      svgCount: node.querySelectorAll?.('svg').length ?? 0,
+      imageCount: node.querySelectorAll?.('img, video, source').length ?? 0,
+      childElementCount: node.children?.length ?? 0,
+    };
+  };
+  const controlIconSignature = (node) => {
+    const svg = node.querySelector?.('svg');
+    if (!svg) return null;
+    const paths = [...(svg.querySelectorAll?.('path') ?? [])]
+      .map((pathNode) => pathNode.getAttribute?.('d') || '')
+      .filter(Boolean)
+      .slice(0, 6);
+    if (!paths.length) return null;
+    const viewBox = normalize(svg.getAttribute('viewBox') || '');
+    const pathLengths = paths.map((value) => value.length).join('-');
+    const commandShape = paths
+      .map((value) => (value.match(/[a-z]/giu) || []).slice(0, 16).join(''))
+      .join('-');
+    return safeToken(`${viewBox}-${paths.length}-${pathLengths}-${commandShape}`);
+  };
   const absoluteUrl = (value) => {
     try {
       return new URL(value, window.location.origin).toString();
@@ -619,6 +1788,454 @@ function pageExtractSocialState(config, request) {
       // Selector support varies across sites; fall back to child matches only.
     }
     return nodes;
+  };
+  const hostAllowed = (url) => {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.hostname === window.location.hostname || parsed.hostname.endsWith(`.${window.location.hostname}`);
+    } catch {
+      return false;
+    }
+  };
+  const routeTemplateFromHref = (href) => {
+    try {
+      const parsed = new URL(href, window.location.origin);
+      if (!hostAllowed(parsed.href)) {
+        return null;
+      }
+      const safeRouteSegments = new Set([
+        ...config.reservedSegments,
+        'about',
+        'about_your_account',
+        'account',
+        'accessibility_display_and_languages',
+        'additional_resources',
+        'ads_preferences',
+        'accessibility',
+        'affiliates',
+        'analytics',
+        'articles',
+        'audience_and_tagging',
+        'autoplay',
+        'bookmarks',
+        'chat',
+        'communities',
+        'content_you_see',
+        'connect_people',
+        'creators',
+        'data_sharing_with_business_partners',
+        'data_usage',
+        'direct_messages',
+        'discoverability_and_contacts',
+        'display',
+        'email_notifications',
+        'filters',
+        'for-you',
+        'followers',
+        'followers_you_follow',
+        'following',
+        'groups',
+        'grok_settings',
+        'grok',
+        'header_photo',
+        'help',
+        'how-twitter-ads-work.html',
+        'jf',
+        'keyboard_shortcuts',
+        'likes',
+        'lists',
+        'location',
+        'location_information',
+        'media',
+        'members',
+        'mentions',
+        'mute_and_block',
+        'off_twitter_activity',
+        'photo',
+        'post',
+        'premium_sign_up',
+        'preferences',
+        'privacy_and_safety',
+        'push_notifications',
+        'quotes',
+        'retweets',
+        'security',
+        'spaces',
+        'status',
+        'studio',
+        'stories',
+        'tabs',
+        'verified',
+        'troubleshooting',
+        'verified_followers',
+        'with_replies',
+        'your_tweets',
+        'your_twitter_data',
+      ]);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      const isSafeStructureRouteSegment = (part, index) => {
+        const lower = String(part ?? '').toLowerCase();
+        if (index === 0 || !/^[a-z][a-z0-9_]{1,63}$/u.test(lower)) return false;
+        if (/(?:auth|bearer|cookie|ct0|password|secret|session|token)/iu.test(lower)) return false;
+        const root = String(parts[0] ?? '').toLowerCase();
+        return root === 'settings' || root === 'notifications';
+      };
+      const templated = parts.map((part, index) => {
+        const lower = part.toLowerCase();
+        if (/^\d+$/u.test(part)) return ':id';
+        if (index === 0 && !config.reservedSegments.includes(lower)) return ':account';
+        if (safeRouteSegments.has(lower) || isSafeStructureRouteSegment(part, index)) return lower;
+        return ':segment';
+      });
+      const path = `/${templated.join('/')}`.replace(/\/$/u, '') || '/';
+      if (parsed.pathname === '/search') {
+        const q = parsed.searchParams.has('q') ? 'q=:query' : '';
+        const src = parsed.searchParams.has('src') ? 'src=:src' : '';
+        const f = parsed.searchParams.has('f') ? 'f=:filter' : '';
+        const search = [q, src, f].filter(Boolean).join('&');
+        return search ? `${path}?${search}` : path;
+      }
+      return path;
+    } catch {
+      return null;
+    }
+  };
+  const classifyLink = (href, label = '') => {
+    const template = routeTemplateFromHref(href);
+    const text = `${template ?? ''} ${label}`.toLowerCase();
+    if (/\/status(?:\/:id)?/u.test(text)) return 'content-detail';
+    if (/following/u.test(text)) return 'following';
+    if (/followers/u.test(text)) return 'followers';
+    if (/with_replies/u.test(text)) return 'profile-replies';
+    if (/media/u.test(text)) return 'profile-media';
+    if (/highlights/u.test(text)) return 'profile-highlights';
+    if (/\/search/u.test(text)) return 'search';
+    if (/\/home/u.test(text)) return 'home';
+    if (/notifications/u.test(text)) return 'notifications';
+    if (/messages/u.test(text)) return 'messages';
+    if (/bookmarks/u.test(text)) return 'bookmarks';
+    if (template === '/:account') return 'profile';
+    return template ? 'same-site-link' : 'external-or-unsupported';
+  };
+  const classifyControlFunction = (entry = /** @type {any} */ ({})) => {
+    const role = String(entry.role ?? '').toLowerCase();
+    const testId = String(entry.testId ?? '').toLowerCase();
+    const labelKind = String(entry.labelKind ?? '').toLowerCase();
+    const routeTemplate = String(entry.routeTemplate ?? '').toLowerCase();
+    const ancestorTestId = String(entry.ancestorTestId ?? '').toLowerCase();
+    const descendantTestId = String(entry.descendantTestId ?? '').toLowerCase();
+    const descendantLabelKind = String(entry.descendantLabelKind ?? '').toLowerCase();
+    const iconSignature = String(entry.iconSignature ?? '').toLowerCase();
+    const key = `${role} ${testId} ${labelKind} ${routeTemplate} ${ancestorTestId} ${descendantTestId} ${descendantLabelKind} ${iconSignature}`;
+    const has = (...tokens) => tokens.some((token) => key.includes(token));
+    if (entry.disabled === true && ['button', 'link', 'menuitem'].includes(role)) {
+      return {
+        functionKind: 'interactive.disabled-control',
+        intent: 'observe_disabled_interactive_control',
+        executionClass: 'observed-only',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('login', 'sign-in')) {
+      return {
+        functionKind: 'auth.login',
+        intent: 'authenticate_session',
+        executionClass: 'auth-blocked',
+        mutationRisk: 'account-auth',
+      };
+    }
+    if (has('follow', 'unfollow')) {
+      return {
+        functionKind: 'relation.follow-toggle',
+        intent: 'mutate_follow_state',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'relationship-write',
+      };
+    }
+    if (has('like')) {
+      return {
+        functionKind: 'engagement.like-toggle',
+        intent: 'mutate_like_state',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'engagement-write',
+      };
+    }
+    if (has('retweet', 'repost')) {
+      return {
+        functionKind: 'engagement.repost-toggle',
+        intent: 'mutate_repost_state',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'engagement-write',
+      };
+    }
+    if (has('reply')) {
+      return {
+        functionKind: 'compose.reply',
+        intent: 'create_reply',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('bookmark')) {
+      return {
+        functionKind: 'engagement.bookmark-toggle',
+        intent: 'mutate_bookmark_state',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'engagement-write',
+      };
+    }
+    if (has('tweetbutton', 'newtweet', 'compose') || labelKind === 'post') {
+      return {
+        functionKind: 'compose.post',
+        intent: 'create_post',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('contentdisclosurebutton')) {
+      return {
+        functionKind: 'compose.content-disclosure',
+        intent: 'configure_content_disclosure',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('createpollbutton')) {
+      return {
+        functionKind: 'compose.poll',
+        intent: 'add_post_poll',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('gifsearchbutton')) {
+      return {
+        functionKind: 'compose.gif',
+        intent: 'add_post_gif',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('geobutton')) {
+      return {
+        functionKind: 'compose.location',
+        intent: 'add_post_location',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('grokimggen')) {
+      return {
+        functionKind: 'compose.grok-image',
+        intent: 'generate_post_image',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (has('scheduleoption')) {
+      return {
+        functionKind: 'compose.schedule',
+        intent: 'schedule_post',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (ancestorTestId === 'primarycolumn' && iconSignature === '0-0-24-24-1-296-mcszmllvlcllllzm') {
+      return {
+        functionKind: 'compose.reply-permissions',
+        intent: 'configure_reply_permissions',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'content-write',
+      };
+    }
+    if (ancestorTestId === 'primarycolumn' && iconSignature === '0-0-24-24-1-999-mhlclclvlclclhlc') {
+      return {
+        functionKind: 'content.translation-info',
+        intent: 'inspect_translation_info',
+        executionClass: 'read-menu-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (labelKind === 'translation') {
+      return {
+        functionKind: 'content.translation-toggle',
+        intent: 'toggle_content_translation',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (ancestorTestId === 'tweet' && iconSignature === '0-0-24-24-1-199-mllvhvllzmlchcvh') {
+      return {
+        functionKind: 'share.menu',
+        intent: 'open_share_options',
+        executionClass: 'read-menu-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (ancestorTestId === 'primarycolumn' && iconSignature === '0-0-24-24-1-253-mvhvhvhvhvhvhzmh') {
+      return {
+        functionKind: 'account.notifications-toggle',
+        intent: 'mutate_account_notification_state',
+        executionClass: 'mutation-blocked',
+        mutationRisk: 'notification-write',
+      };
+    }
+    if (has('tweet-text-show-more-link', 'show-more')) {
+      return {
+        functionKind: 'content.expand',
+        intent: 'expand_content_text',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('app-bar-back') || labelKind === 'back') {
+      return {
+        functionKind: 'navigation.back',
+        intent: 'navigate_read_surface',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('app-bar-close') || labelKind === 'close') {
+      return {
+        functionKind: 'navigation.close',
+        intent: 'close_current_panel',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (labelKind === 'skip') {
+      return {
+        functionKind: 'navigation.skip',
+        intent: 'skip_to_content',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('chat-drawer', 'grokdrawer', 'accountswitcher')) {
+      return {
+        functionKind: 'menu.open',
+        intent: 'inspect_available_options',
+        executionClass: 'read-menu-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('share')) {
+      return {
+        functionKind: 'share.menu',
+        intent: 'open_share_options',
+        executionClass: 'read-menu-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('searchbox', 'searchfiltersadvancedsearch') || role === 'search' || role === 'combobox' || role === 'input' || labelKind === 'search') {
+      return {
+        functionKind: 'search.input-or-filter',
+        intent: 'refine_search_results',
+        executionClass: 'read-search-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (role === 'tab' || has('tab') || /\/(?:with_replies|media|highlights|following|followers|search)(?:[/?]|$)/u.test(routeTemplate)) {
+      return {
+        functionKind: 'navigation.tab',
+        intent: 'switch_read_surface',
+        executionClass: 'read-tab-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('pilllabel')) {
+      return {
+        functionKind: 'navigation.tab',
+        intent: 'switch_read_surface',
+        executionClass: 'read-tab-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('menu', 'overflow', 'caret', 'useractions')) {
+      return {
+        functionKind: 'menu.open',
+        intent: 'inspect_available_options',
+        executionClass: 'read-menu-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('video', 'player', 'scrollsnap', 'photo', 'media')) {
+      return {
+        functionKind: 'media.viewer-control',
+        intent: 'inspect_media_viewer',
+        executionClass: 'read-media-probe',
+        mutationRisk: 'none',
+      };
+    }
+    const currentRouteTemplate = routeTemplateFromHref(window.location.href);
+    if (
+      currentRouteTemplate?.startsWith('/settings')
+      && role === 'button'
+      && !testId
+      && !labelKind
+      && !routeTemplate
+      && !ancestorTestId
+      && !descendantTestId
+      && !descendantLabelKind
+      && !iconSignature
+    ) {
+      return {
+        functionKind: 'account.settings',
+        intent: 'inspect_account_settings',
+        executionClass: 'side-effect-risk-blocked',
+        mutationRisk: 'account-write-risk',
+      };
+    }
+    if (routeTemplate) {
+      return {
+        functionKind: 'navigation.link',
+        intent: 'navigate_read_surface',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (has('usercell', 'useravatar-container-:account')) {
+      return {
+        functionKind: 'navigation.profile',
+        intent: 'inspect_profile_surface',
+        executionClass: 'read-navigation-probe',
+        mutationRisk: 'none',
+      };
+    }
+    if (['button', 'link', 'menuitem'].includes(role)) {
+      return {
+        functionKind: 'interactive.unclassified-control',
+        intent: 'inspect_unclassified_interactive_control',
+        executionClass: 'unknown-risk-blocked',
+        mutationRisk: 'unknown-interaction-risk',
+      };
+    }
+    return {
+      functionKind: 'surface.display-node',
+      intent: 'observe_surface_structure',
+      executionClass: 'observed-only',
+      mutationRisk: 'none',
+    };
+  };
+  const summarizeEntries = (entries, keyFn, mapper, limit = 40) => {
+    const counts = new Map();
+    const samples = new Map();
+    for (const entry of entries) {
+      const key = keyFn(entry);
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!samples.has(key)) {
+        samples.set(key, mapper(entry));
+      }
+    }
+    return [...counts.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, limit)
+      .map(([key, count]) => ({
+        ...samples.get(key),
+        count,
+      }));
   };
   const oneText = (selectors, root = document) => {
     for (const selector of selectors) {
@@ -736,13 +2353,15 @@ function pageExtractSocialState(config, request) {
     return true;
   };
 
-  const currentProfileLink = all(config.accountSelectors.currentProfileLink)
-    .map((node) => node.getAttribute('href') || node.href || '')
-    .map(pathnameHandle)
-    .find(Boolean) || null;
-  const displayName = oneText([config.accountSelectors.displayName]);
-  const bio = oneText([config.accountSelectors.bio]);
-  const statLinks = all(config.accountSelectors.statLinks).map((node) => ({
+  const currentProfileLink = noContent
+    ? null
+    : all(config.accountSelectors.currentProfileLink)
+      .map((node) => node.getAttribute('href') || node.href || '')
+      .map(pathnameHandle)
+      .find(Boolean) || null;
+  const displayName = noContent ? null : oneText([config.accountSelectors.displayName]);
+  const bio = noContent ? null : oneText([config.accountSelectors.bio]);
+  const statLinks = noContent ? [] : all(config.accountSelectors.statLinks).map((node) => ({
     text: normalize(node.textContent || node.getAttribute('aria-label') || ''),
     url: absoluteUrl(node.getAttribute('href') || node.href || ''),
   })).filter((entry) => entry.text || entry.url);
@@ -784,7 +2403,7 @@ function pageExtractSocialState(config, request) {
     return candidate ? parseCompactCount(candidate.text) : null;
   })();
 
-  const pageMedia = [...mediaFrom(document), ...mediaFromPerformance()]
+  const pageMedia = noContent ? [] : [...mediaFrom(document), ...mediaFromPerformance()]
     .filter((entry) => !isDecorativeMedia(entry));
   const bodyText = normalize(document.body?.innerText || '').slice(0, 12_000);
   const normalizedPath = String(window.location?.pathname ?? '').toLowerCase();
@@ -832,7 +2451,7 @@ function pageExtractSocialState(config, request) {
     && (request.date || request.fromDate || request.toDate)
   );
 
-  let rawItems = all(config.contentSelectors.item)
+  let rawItems = noContent ? [] : all(config.contentSelectors.item)
     .map((root) => {
       const url = findLink(root);
       const timestamp = findTimestamp(root);
@@ -852,7 +2471,8 @@ function pageExtractSocialState(config, request) {
       return dateMatches(entry.timestamp) || (shouldDeferDateFiltering && entry.url && !entry.timestamp);
     });
   if (
-    rawItems.length === 0
+    !noContent
+    && rawItems.length === 0
     && config.siteKey === 'instagram'
     && request.action === 'profile-content'
     && !request.date
@@ -879,7 +2499,7 @@ function pageExtractSocialState(config, request) {
     : config.siteKey === 'x' && isRelationRequest
       ? `main [data-testid="cellInnerDiv"] ${config.accountSelectors.relationLink}`
       : config.accountSelectors.relationLink;
-  const relationAccounts = all(relationSelector)
+  const relationAccounts = noContent ? [] : all(relationSelector)
     .map((node) => {
       const href = node.getAttribute('href') || node.href || '';
       const handle = pathnameHandle(href);
@@ -893,6 +2513,185 @@ function pageExtractSocialState(config, request) {
       };
     })
     .filter(Boolean);
+  const linkEntries = all('a[href]')
+    .map((node) => {
+      const href = node.getAttribute('href') || node.href || '';
+      const routeTemplate = routeTemplateFromHref(href);
+      if (!routeTemplate) {
+        return null;
+      }
+      const label = normalize(node.getAttribute('aria-label') || node.textContent || '');
+      const kind = classifyLink(href, label);
+      return {
+        routeTemplate,
+        kind,
+      };
+    })
+    .filter(Boolean);
+  const controlEntries = all('button, [role="button"], [role="tab"], [role="menuitem"], input, textarea, select, form, [data-testid]')
+    .map((node) => {
+      const tag = String(node.tagName || '').toLowerCase();
+      const role = normalize(node.getAttribute('role') || tag || 'control').toLowerCase();
+      const testId = safeToken(node.getAttribute('data-testid') || '');
+      const labelKind = controlLabelKind(controlLabelText(node));
+      const closestTestIdNode = node.closest?.('[data-testid]');
+      const ancestorTestId = closestTestIdNode && closestTestIdNode !== node
+        ? safeToken(closestTestIdNode.getAttribute('data-testid') || '')
+        : null;
+      const descendantTestId = safeToken(node.querySelector?.('[data-testid]')?.getAttribute('data-testid') || '');
+      const descendantLabelKind = controlLabelKind(descendantLabelText(node));
+      const href = node.getAttribute('href') || '';
+      const routeTemplate = href ? routeTemplateFromHref(href) : null;
+      const controlKey = testId || labelKind || role;
+      if (!controlKey && !routeTemplate) {
+        return null;
+      }
+      const entry = {
+        role,
+        testId: testId || null,
+        labelKind,
+        ancestorTestId,
+        descendantTestId,
+        descendantLabelKind,
+        routeTemplate,
+        disabled: node.matches?.(':disabled') || node.getAttribute('aria-disabled') === 'true',
+        iconSignature: controlIconSignature(node),
+      };
+      return {
+        ...entry,
+        node,
+        anonymousSignature: null,
+        ...classifyControlFunction(entry),
+      };
+    })
+    .filter(Boolean);
+  const iconClassifications = new Map();
+  for (const entry of controlEntries) {
+    if (!entry.iconSignature || entry.functionKind === 'interactive.unclassified-control') continue;
+    if (entry.mutationRisk !== 'none' && !['mutation-blocked', 'auth-blocked', 'side-effect-risk-blocked'].includes(entry.executionClass)) continue;
+    if (!iconClassifications.has(entry.iconSignature)) {
+      iconClassifications.set(entry.iconSignature, {
+        functionKind: entry.functionKind,
+        intent: entry.intent,
+        executionClass: entry.executionClass,
+        mutationRisk: entry.mutationRisk,
+      });
+    }
+  }
+  for (const entry of controlEntries) {
+    if (entry.functionKind !== 'interactive.unclassified-control' || !entry.iconSignature) continue;
+    const matched = iconClassifications.get(entry.iconSignature);
+    if (!matched) continue;
+    Object.assign(entry, matched);
+  }
+  const currentRouteTemplate = routeTemplateFromHref(window.location.href);
+  for (const entry of controlEntries) {
+    if (entry.functionKind === 'interactive.unclassified-control') {
+      const closestLink = entry.node.closest?.('a[href]');
+      const closestLinkHref = closestLink?.getAttribute?.('href') || closestLink?.href || '';
+      const closestLinkRouteTemplate = closestLinkHref ? routeTemplateFromHref(closestLinkHref) : null;
+      const closestLinkLabel = closestLink
+        ? normalize(closestLink.getAttribute?.('aria-label') || closestLink.textContent || '')
+        : '';
+      entry.anonymousSignature = {
+        ...anonymousControlSignature(entry.node),
+        closestLinkRouteTemplate,
+        closestLinkKind: closestLinkRouteTemplate ? classifyLink(closestLinkHref, closestLinkLabel) : null,
+      };
+      const sig = entry.anonymousSignature;
+      if (
+        currentRouteTemplate === '/i/jf/stories/home'
+        && entry.role === 'button'
+        && entry.ancestorTestId === 'primarycolumn'
+        && sig?.closestRole === 'main'
+        && sig?.inDialog !== true
+        && sig?.inForm !== true
+      ) {
+        Object.assign(entry, {
+          functionKind: 'content.news-story-card',
+          intent: 'inspect_news_story_card',
+          executionClass: 'read-navigation-probe',
+          mutationRisk: 'none',
+        });
+        entry.anonymousSignature = null;
+      }
+    } else {
+      entry.anonymousSignature = null;
+    }
+    delete entry.node;
+  }
+  const forms = all('form')
+    .map((node) => ({
+      role: normalize(node.getAttribute('role') || 'form').toLowerCase(),
+      inputCount: all('input, textarea, select', node).length,
+      buttonCount: all('button, [role="button"]', node).length,
+      actionRouteTemplate: routeTemplateFromHref(node.getAttribute('action') || window.location.href),
+    }));
+  const surfaceInventory = {
+    urlRouteTemplate: currentRouteTemplate,
+    linkCount: linkEntries.length,
+    controlCount: controlEntries.length,
+    formCount: forms.length,
+    linkRoutes: summarizeEntries(
+      linkEntries,
+      (entry) => `${entry.kind}:${entry.routeTemplate}`,
+      (entry) => ({
+        kind: entry.kind,
+        routeTemplate: entry.routeTemplate,
+      }),
+    ),
+    controls: summarizeEntries(
+      controlEntries,
+      (entry) => `${entry.role}:${entry.testId || entry.labelKind || entry.routeTemplate || entry.iconSignature || 'anonymous'}`,
+      (entry) => ({
+        role: entry.role,
+        testId: entry.testId,
+        labelKind: entry.labelKind,
+        ancestorTestId: entry.ancestorTestId,
+        descendantTestId: entry.descendantTestId,
+        descendantLabelKind: entry.descendantLabelKind,
+        iconSignature: entry.iconSignature,
+        routeTemplate: entry.routeTemplate,
+        functionKind: entry.functionKind,
+        intent: entry.intent,
+        executionClass: entry.executionClass,
+        mutationRisk: entry.mutationRisk,
+      }),
+    ),
+    controlFunctions: summarizeEntries(
+      controlEntries,
+      (entry) => `${entry.executionClass}:${entry.functionKind}:${entry.intent}:${entry.mutationRisk}`,
+      (entry) => ({
+        functionKind: entry.functionKind,
+        intent: entry.intent,
+        executionClass: entry.executionClass,
+        mutationRisk: entry.mutationRisk,
+      }),
+    ),
+    anonymousControls: summarizeEntries(
+      controlEntries.filter((entry) => entry.functionKind === 'interactive.unclassified-control'),
+      (entry) => {
+        const sig = entry.anonymousSignature || {};
+        return [
+          sig.role,
+          sig.type,
+          sig.disabled ? 'disabled' : 'enabled',
+          sig.closestRole,
+          sig.inArticle ? 'article' : 'no-article',
+          sig.inDialog ? 'dialog' : 'no-dialog',
+          sig.inForm ? 'form' : 'no-form',
+          sig.closestLinkKind,
+          sig.closestLinkRouteTemplate,
+          `svg:${sig.svgCount ?? 0}`,
+          `img:${sig.imageCount ?? 0}`,
+          `children:${sig.childElementCount ?? 0}`,
+        ].join(':');
+      },
+      (entry) => entry.anonymousSignature || {},
+      20,
+    ),
+    forms,
+  };
 
   return {
     url: window.location.href,
@@ -908,9 +2707,659 @@ function pageExtractSocialState(config, request) {
     items: rawItems,
     relations: relationAccounts,
     media: pageMedia,
+    surfaceInventory,
     visibilitySignals: [...new Set(visibilitySignals)],
     riskSignals: [...new Set(riskSignals)],
   };
+}
+function pageProbeReadOnlyControls(config, request = /** @type {any} */ ({})) {
+  const normalize = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
+  const normalizeKey = (value) => normalize(value).toLowerCase().replace(/[^a-z0-9:_/-]+/giu, '-').replace(/^-|-$/gu, '').slice(0, 80);
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  const cssString = (value) => {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(String(value ?? ''));
+    }
+    return String(value ?? '').replace(/["\\]/gu, '\\$&');
+  };
+  const all = (selector, root = document) => {
+    try {
+      return [...root.querySelectorAll(selector)];
+    } catch {
+      return [];
+    }
+  };
+  const safeToken = (value) => {
+    let token = normalizeKey(value).replace(/\d{4,}/gu, ':id');
+    for (const dynamicValue of [request.account]) {
+      const dynamicToken = normalizeKey(dynamicValue);
+      if (dynamicToken) {
+        token = token
+          .split(/([:_/-]+)/u)
+          .map((part) => (part === dynamicToken ? ':account' : part))
+          .join('');
+      }
+    }
+    if (/^useravatar-container-[a-z0-9_:-]+$/u.test(token)) {
+      token = 'useravatar-container-:account';
+    }
+    if (!token || /(?:auth|bearer|cookie|ct0|password|secret|session|token)/iu.test(token)) {
+      return null;
+    }
+    return token;
+  };
+  const hostAllowed = (url) => {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.hostname === window.location.hostname || parsed.hostname.endsWith(`.${window.location.hostname}`);
+    } catch {
+      return false;
+    }
+  };
+  const isBlockedNoContentRoute = (routeTemplate) => {
+    if (request.noContent !== true || !request.noContentRouteTemplate || !routeTemplate) {
+      return false;
+    }
+    const root = String(request.noContentRouteTemplate).replace(/\/+$/u, '');
+    const route = String(routeTemplate).replace(/\/+$/u, '');
+    return route !== root && route.startsWith(`${root}/`);
+  };
+  const routeTemplateFromHref = (href) => {
+    try {
+      const parsed = new URL(href, window.location.origin);
+      if (!hostAllowed(parsed.href)) {
+        return null;
+      }
+      const safeRouteSegments = new Set([
+        ...config.reservedSegments,
+        'about',
+        'about_your_account',
+        'account',
+        'accessibility_display_and_languages',
+        'additional_resources',
+        'ads_preferences',
+        'accessibility',
+        'affiliates',
+        'analytics',
+        'articles',
+        'audience_and_tagging',
+        'autoplay',
+        'bookmarks',
+        'chat',
+        'communities',
+        'content_you_see',
+        'connect_people',
+        'creators',
+        'data_sharing_with_business_partners',
+        'data_usage',
+        'direct_messages',
+        'discoverability_and_contacts',
+        'display',
+        'email_notifications',
+        'filters',
+        'for-you',
+        'followers',
+        'followers_you_follow',
+        'following',
+        'groups',
+        'grok_settings',
+        'grok',
+        'header_photo',
+        'help',
+        'how-twitter-ads-work.html',
+        'jf',
+        'keyboard_shortcuts',
+        'likes',
+        'lists',
+        'location',
+        'location_information',
+        'media',
+        'members',
+        'mentions',
+        'mute_and_block',
+        'off_twitter_activity',
+        'photo',
+        'post',
+        'premium_sign_up',
+        'preferences',
+        'privacy_and_safety',
+        'push_notifications',
+        'quotes',
+        'retweets',
+        'security',
+        'spaces',
+        'status',
+        'studio',
+        'stories',
+        'tabs',
+        'verified',
+        'troubleshooting',
+        'verified_followers',
+        'with_replies',
+        'your_tweets',
+        'your_twitter_data',
+      ]);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      const isSafeStructureRouteSegment = (part, index) => {
+        const lower = String(part ?? '').toLowerCase();
+        if (index === 0 || !/^[a-z][a-z0-9_]{1,63}$/u.test(lower)) return false;
+        if (/(?:auth|bearer|cookie|ct0|password|secret|session|token)/iu.test(lower)) return false;
+        const root = String(parts[0] ?? '').toLowerCase();
+        return root === 'settings' || root === 'notifications';
+      };
+      const templated = parts.map((part, index) => {
+        const lower = part.toLowerCase();
+        if (/^\d+$/u.test(part)) return ':id';
+        if (index === 0 && !config.reservedSegments.includes(lower)) return ':account';
+        if (safeRouteSegments.has(lower) || isSafeStructureRouteSegment(part, index)) return lower;
+        return ':segment';
+      });
+      const path = `/${templated.join('/')}`.replace(/\/$/u, '') || '/';
+      if (parsed.pathname === '/search') {
+        const q = parsed.searchParams.has('q') ? 'q=:query' : '';
+        const src = parsed.searchParams.has('src') ? 'src=:src' : '';
+        const f = parsed.searchParams.has('f') ? 'f=:filter' : '';
+        const search = [q, src, f].filter(Boolean).join('&');
+        return search ? `${path}?${search}` : path;
+      }
+      return path;
+    } catch {
+      return null;
+    }
+  };
+  const controlLabelKind = (value) => {
+    const text = normalize(value).toLowerCase();
+    if (!text) return null;
+    /** @type {Array<[string, RegExp]>} */
+    const matches = [
+      ['search', /\bsearch\b|\u641c\u7d22/u],
+      ['post', /\b(?:post|tweet|compose)\b/u],
+      ['reply', /\breply\b/u],
+      ['repost', /\b(?:repost|retweet)\b/u],
+      ['like', /\blike\b/u],
+      ['bookmark', /\bbookmark\b/u],
+      ['share', /\bshare\b/u],
+      ['follow', /\bfollow\b/u],
+      ['menu', /\b(?:more|menu)\b/u],
+      ['close', /\bclose\b/u],
+      ['back', /\bback\b/u],
+      ['next', /\bnext\b/u],
+      ['skip', /\bskip(?: to)?\b|\u8df3\u81f3/u],
+      ['retry', /\b(?:retry|reload|try again)\b/u],
+      ['login', /\b(?:log in|login|sign in)\b/u],
+      ['notifications', /\bnotifications?\b/u],
+      ['messages', /\bmessages?\b/u],
+      ['profile', /\bprofile\b/u],
+      ['translation', /\b(?:show original|translate|translation)\b|\u663e\u793a\u539f\u6587|\u7ffb\u8bd1/u],
+    ];
+    return matches.find(([, pattern]) => pattern.test(text))?.[0] ?? null;
+  };
+  const descendantLabelText = (node) => normalize([...(node.querySelectorAll?.('[aria-label], [title], [alt], title') ?? [])]
+    .map((child) => child.getAttribute?.('aria-label') || child.getAttribute?.('title') || child.getAttribute?.('alt') || child.textContent || '')
+    .filter(Boolean)
+    .join(' '));
+  const controlLabelText = (node) => normalize([
+    node.getAttribute('aria-label') || '',
+    node.getAttribute('name') || '',
+    node.getAttribute('placeholder') || '',
+    node.getAttribute('title') || '',
+    descendantLabelText(node),
+    node.textContent || '',
+  ].filter(Boolean).join(' '));
+  const classifyControlFunction = (entry = /** @type {any} */ ({})) => {
+    const role = String(entry.role ?? '').toLowerCase();
+    const testId = String(entry.testId ?? '').toLowerCase();
+    const labelKind = String(entry.labelKind ?? '').toLowerCase();
+    const routeTemplate = String(entry.routeTemplate ?? '').toLowerCase();
+    const ancestorTestId = String(entry.ancestorTestId ?? '').toLowerCase();
+    const descendantTestId = String(entry.descendantTestId ?? '').toLowerCase();
+    const descendantLabelKind = String(entry.descendantLabelKind ?? '').toLowerCase();
+    const iconSignature = String(entry.iconSignature ?? '').toLowerCase();
+    const key = `${role} ${testId} ${labelKind} ${routeTemplate} ${ancestorTestId} ${descendantTestId} ${descendantLabelKind} ${iconSignature}`;
+    const has = (...tokens) => tokens.some((token) => key.includes(token));
+    if (entry.disabled === true && ['button', 'link', 'menuitem'].includes(role)) return { functionKind: 'interactive.disabled-control', intent: 'observe_disabled_interactive_control', executionClass: 'observed-only', mutationRisk: 'none' };
+    if (has('login', 'sign-in')) return { functionKind: 'auth.login', intent: 'authenticate_session', executionClass: 'auth-blocked', mutationRisk: 'account-auth' };
+    if (has('follow', 'unfollow')) return { functionKind: 'relation.follow-toggle', intent: 'mutate_follow_state', executionClass: 'mutation-blocked', mutationRisk: 'relationship-write' };
+    if (has('like')) return { functionKind: 'engagement.like-toggle', intent: 'mutate_like_state', executionClass: 'mutation-blocked', mutationRisk: 'engagement-write' };
+    if (has('retweet', 'repost')) return { functionKind: 'engagement.repost-toggle', intent: 'mutate_repost_state', executionClass: 'mutation-blocked', mutationRisk: 'engagement-write' };
+    if (has('reply')) return { functionKind: 'compose.reply', intent: 'create_reply', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('bookmark')) return { functionKind: 'engagement.bookmark-toggle', intent: 'mutate_bookmark_state', executionClass: 'mutation-blocked', mutationRisk: 'engagement-write' };
+    if (has('tweetbutton', 'newtweet', 'compose') || labelKind === 'post') return { functionKind: 'compose.post', intent: 'create_post', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('contentdisclosurebutton')) return { functionKind: 'compose.content-disclosure', intent: 'configure_content_disclosure', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('createpollbutton')) return { functionKind: 'compose.poll', intent: 'add_post_poll', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('gifsearchbutton')) return { functionKind: 'compose.gif', intent: 'add_post_gif', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('geobutton')) return { functionKind: 'compose.location', intent: 'add_post_location', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('grokimggen')) return { functionKind: 'compose.grok-image', intent: 'generate_post_image', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (has('scheduleoption')) return { functionKind: 'compose.schedule', intent: 'schedule_post', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (ancestorTestId === 'primarycolumn' && iconSignature === '0-0-24-24-1-296-mcszmllvlcllllzm') return { functionKind: 'compose.reply-permissions', intent: 'configure_reply_permissions', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    if (ancestorTestId === 'primarycolumn' && iconSignature === '0-0-24-24-1-999-mhlclclvlclclhlc') return { functionKind: 'content.translation-info', intent: 'inspect_translation_info', executionClass: 'read-menu-probe', mutationRisk: 'none' };
+    if (labelKind === 'translation') return { functionKind: 'content.translation-toggle', intent: 'toggle_content_translation', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (ancestorTestId === 'tweet' && iconSignature === '0-0-24-24-1-199-mllvhvllzmlchcvh') return { functionKind: 'share.menu', intent: 'open_share_options', executionClass: 'read-menu-probe', mutationRisk: 'none' };
+    if (ancestorTestId === 'primarycolumn' && iconSignature === '0-0-24-24-1-253-mvhvhvhvhvhvhzmh') return { functionKind: 'account.notifications-toggle', intent: 'mutate_account_notification_state', executionClass: 'mutation-blocked', mutationRisk: 'notification-write' };
+    if (has('tweet-text-show-more-link', 'show-more')) return { functionKind: 'content.expand', intent: 'expand_content_text', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (has('app-bar-back') || labelKind === 'back') return { functionKind: 'navigation.back', intent: 'navigate_read_surface', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (has('app-bar-close') || labelKind === 'close') return { functionKind: 'navigation.close', intent: 'close_current_panel', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (labelKind === 'skip') return { functionKind: 'navigation.skip', intent: 'skip_to_content', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (has('chat-drawer', 'grokdrawer', 'accountswitcher')) return { functionKind: 'menu.open', intent: 'inspect_available_options', executionClass: 'read-menu-probe', mutationRisk: 'none' };
+    if (has('share')) return { functionKind: 'share.menu', intent: 'open_share_options', executionClass: 'read-menu-probe', mutationRisk: 'none' };
+    if (has('searchbox', 'searchfiltersadvancedsearch') || role === 'search' || role === 'combobox' || role === 'input' || labelKind === 'search') return { functionKind: 'search.input-or-filter', intent: 'refine_search_results', executionClass: 'read-search-probe', mutationRisk: 'none' };
+    if (role === 'tab' || has('tab') || /\/(?:with_replies|media|highlights|following|followers|search)(?:[/?]|$)/u.test(routeTemplate)) return { functionKind: 'navigation.tab', intent: 'switch_read_surface', executionClass: 'read-tab-probe', mutationRisk: 'none' };
+    if (has('pilllabel')) return { functionKind: 'navigation.tab', intent: 'switch_read_surface', executionClass: 'read-tab-probe', mutationRisk: 'none' };
+    if (has('menu', 'overflow', 'caret', 'useractions')) return { functionKind: 'menu.open', intent: 'inspect_available_options', executionClass: 'read-menu-probe', mutationRisk: 'none' };
+    if (has('video', 'player', 'scrollsnap', 'photo', 'media')) return { functionKind: 'media.viewer-control', intent: 'inspect_media_viewer', executionClass: 'read-media-probe', mutationRisk: 'none' };
+    const currentRouteTemplate = routeTemplateFromHref(window.location.href);
+    if (
+      currentRouteTemplate?.startsWith('/settings')
+      && role === 'button'
+      && !testId
+      && !labelKind
+      && !routeTemplate
+      && !ancestorTestId
+      && !descendantTestId
+      && !descendantLabelKind
+      && !iconSignature
+    ) return { functionKind: 'account.settings', intent: 'inspect_account_settings', executionClass: 'side-effect-risk-blocked', mutationRisk: 'account-write-risk' };
+    if (routeTemplate) return { functionKind: 'navigation.link', intent: 'navigate_read_surface', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (has('usercell', 'useravatar-container-:account')) return { functionKind: 'navigation.profile', intent: 'inspect_profile_surface', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    if (['button', 'link', 'menuitem'].includes(role)) return { functionKind: 'interactive.unclassified-control', intent: 'inspect_unclassified_interactive_control', executionClass: 'unknown-risk-blocked', mutationRisk: 'unknown-interaction-risk' };
+    return { functionKind: 'surface.display-node', intent: 'observe_surface_structure', executionClass: 'observed-only', mutationRisk: 'none' };
+  };
+  const summarizeEntries = (entries, keyFn, mapper, limit = 80) => {
+    const counts = new Map();
+    const samples = new Map();
+    for (const entry of entries) {
+      const key = keyFn(entry);
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!samples.has(key)) {
+        samples.set(key, mapper(entry));
+      }
+    }
+    return [...counts.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, limit)
+      .map(([key, count]) => ({
+        ...samples.get(key),
+        count,
+      }));
+  };
+  const snapshot = () => ({
+    routeTemplate: routeTemplateFromHref(window.location.href),
+    title: document.title || '',
+    dialogCount: all('[role="dialog"], [aria-modal="true"]').length,
+    menuItemCount: all('[role="menuitem"], [role="menu"] [role], [data-testid*="Dropdown"], [data-testid*="dropdown"]').length,
+    focusedRole: normalize(document.activeElement?.getAttribute?.('role') || document.activeElement?.tagName || '').toLowerCase() || null,
+  });
+  const candidateNodes = all('a[href], button, [role="button"], [role="tab"], [role="menuitem"], input, textarea, select, form, [data-testid]');
+  const entries = candidateNodes.map((node, index) => {
+    const tag = String(node.tagName || '').toLowerCase();
+    const role = normalize(node.getAttribute('role') || tag || 'control').toLowerCase();
+    const rawTestId = node.getAttribute('data-testid') || '';
+    const testId = safeToken(rawTestId);
+    const labelKind = controlLabelKind(controlLabelText(node));
+    const closestTestIdNode = node.closest?.('[data-testid]');
+    const ancestorTestId = closestTestIdNode && closestTestIdNode !== node
+      ? safeToken(closestTestIdNode.getAttribute('data-testid') || '')
+      : null;
+    const descendantTestId = safeToken(node.querySelector?.('[data-testid]')?.getAttribute('data-testid') || '');
+    const descendantLabelKind = controlLabelKind(descendantLabelText(node));
+    const href = node.getAttribute('href') || '';
+    const routeTemplate = href ? routeTemplateFromHref(href) : null;
+    const entry = {
+      index,
+      tag,
+      role,
+      rawTestId,
+      testId,
+      labelKind,
+      ancestorTestId,
+      descendantTestId,
+      descendantLabelKind,
+      href,
+      routeTemplate,
+      disabled: node.matches?.(':disabled') || node.getAttribute('aria-disabled') === 'true',
+    };
+    return {
+      ...entry,
+      ...classifyControlFunction(entry),
+    };
+  });
+  const priority = {
+    'read-tab-probe': 10,
+    'read-menu-probe': 20,
+    'read-search-probe': 30,
+    'read-media-probe': 40,
+    'read-navigation-probe': 50,
+  };
+  const readCandidates = entries
+    .filter((entry) => Object.prototype.hasOwnProperty.call(priority, entry.executionClass))
+    .filter((entry) => entry.functionKind !== 'surface.display-node')
+    .filter((entry) => entry.mutationRisk === 'none')
+    .filter((entry) => !isBlockedNoContentRoute(entry.routeTemplate))
+    .sort((left, right) => priority[left.executionClass] - priority[right.executionClass]);
+  const selected = [];
+  const seen = new Set();
+  for (const entry of readCandidates) {
+    const key = `${entry.executionClass}:${entry.functionKind}:${entry.testId || entry.labelKind || entry.routeTemplate || entry.role}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selected.push(entry);
+    if (selected.length >= Math.max(0, Number(request.maxProbes ?? 8))) {
+      break;
+    }
+  }
+  const findNode = (entry) => {
+    if (entry.rawTestId) {
+      const testIdMatch = document.querySelector(`[data-testid="${cssString(entry.rawTestId)}"]`);
+      if (testIdMatch) return testIdMatch;
+    }
+    if (entry.href) {
+      const hrefMatch = document.querySelector(`a[href="${cssString(entry.href)}"]`);
+      if (hrefMatch) return hrefMatch;
+    }
+    return candidateNodes[entry.index] || null;
+  };
+  const closeTransientUi = () => {
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true }));
+    } catch {
+      // Best-effort close; route restoration below is the stronger guard.
+    }
+  };
+  const probeOne = async (entry) => {
+    const before = snapshot();
+    const node = findNode(entry);
+    if (!node) {
+      return {
+        status: 'skipped',
+        reason: 'control-not-found',
+        functionKind: entry.functionKind,
+        intent: entry.intent,
+        executionClass: entry.executionClass,
+        mutationRisk: entry.mutationRisk,
+        routeTemplate: entry.routeTemplate,
+        controlKey: entry.testId || entry.labelKind || entry.role,
+        before,
+        after: before,
+      };
+    }
+    const action = ['input', 'textarea', 'select', 'combobox', 'search'].includes(entry.role) || ['input', 'textarea', 'select'].includes(entry.tag)
+      ? 'focus'
+      : 'click';
+    try {
+      node.scrollIntoView?.({ block: 'center', inline: 'center' });
+      if (action === 'focus') {
+        node.focus?.();
+      } else {
+        node.click?.();
+      }
+      await wait(Math.max(100, Number(request.settleMs ?? 500)));
+      const after = snapshot();
+      const changedRoute = before.routeTemplate !== after.routeTemplate;
+      if (changedRoute && window.history.length > 1) {
+        window.history.back();
+        await wait(Math.max(100, Number(request.settleMs ?? 500)));
+      }
+      closeTransientUi();
+      return {
+        status: 'passed',
+        action,
+        functionKind: entry.functionKind,
+        intent: entry.intent,
+        executionClass: entry.executionClass,
+        mutationRisk: entry.mutationRisk,
+        routeTemplate: entry.routeTemplate,
+        controlKey: entry.testId || entry.labelKind || entry.role,
+        before,
+        after,
+        changedRoute,
+        openedDialog: after.dialogCount > before.dialogCount,
+        openedMenu: after.menuItemCount > before.menuItemCount,
+      };
+    } catch (error) {
+      return {
+        status: 'failed',
+        reason: 'probe-execution-failed',
+        error: normalize(error?.message || String(error)).slice(0, 120),
+        functionKind: entry.functionKind,
+        intent: entry.intent,
+        executionClass: entry.executionClass,
+        mutationRisk: entry.mutationRisk,
+        routeTemplate: entry.routeTemplate,
+        controlKey: entry.testId || entry.labelKind || entry.role,
+        before,
+        after: snapshot(),
+      };
+    }
+  };
+  return (async () => {
+    const probes = [];
+    for (const entry of selected) {
+      probes.push(await probeOne(entry));
+    }
+    const mutationBlocked = entries.filter((entry) => entry.executionClass === 'mutation-blocked');
+    return {
+      schemaVersion: 1,
+      requested: true,
+      maxProbes: Math.max(0, Number(request.maxProbes ?? 8)),
+      candidateCount: readCandidates.length,
+      selectedCount: selected.length,
+      executedCount: probes.filter((entry) => entry.status === 'passed').length,
+      skippedCount: probes.filter((entry) => entry.status === 'skipped').length,
+      failedCount: probes.filter((entry) => entry.status === 'failed').length,
+      mutationBlockedCount: mutationBlocked.length,
+      mutationBlockedFunctions: summarizeEntries(
+        mutationBlocked,
+        (entry) => `${entry.functionKind}:${entry.intent}:${entry.mutationRisk}`,
+        (entry) => ({
+          functionKind: entry.functionKind,
+          intent: entry.intent,
+          executionClass: entry.executionClass,
+          mutationRisk: entry.mutationRisk,
+        }),
+      ),
+      probes,
+    };
+  })();
+}
+
+function pageCollectReadOnlyRouteCandidates(config, request = /** @type {any} */ ({})) {
+  const normalize = (value) => String(value ?? '').replace(/\s+/gu, ' ').trim();
+  const safeToken = (value) => normalize(value).toLowerCase().replace(/[^a-z0-9:_/-]+/giu, '-').replace(/^-|-$/gu, '').slice(0, 80) || null;
+  const hostAllowed = (url) => {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.hostname === window.location.hostname || parsed.hostname.endsWith(`.${window.location.hostname}`);
+    } catch {
+      return false;
+    }
+  };
+  const routeTemplateFromHref = (href) => {
+    try {
+      const parsed = new URL(href, window.location.origin);
+      if (!hostAllowed(parsed.href)) return null;
+      const safeRouteSegments = new Set([
+        ...config.reservedSegments,
+        'account',
+        'about_your_account',
+        'accessibility_display_and_languages',
+        'additional_resources',
+        'ads_preferences',
+        'articles',
+        'audience_and_tagging',
+        'autoplay',
+        'bookmarks',
+        'chat',
+        'communities',
+        'content_you_see',
+        'connect_people',
+        'creators',
+        'data_sharing_with_business_partners',
+        'data_usage',
+        'direct_messages',
+        'discoverability_and_contacts',
+        'display',
+        'email_notifications',
+        'filters',
+        'for-you',
+        'followers',
+        'followers_you_follow',
+        'following',
+        'groups',
+        'grok_settings',
+        'grok',
+        'highlights',
+        'jf',
+        'keyboard_shortcuts',
+        'likes',
+        'lists',
+        'location',
+        'location_information',
+        'media',
+        'members',
+        'mentions',
+        'mute_and_block',
+        'off_twitter_activity',
+        'photo',
+        'post',
+        'preferences',
+        'privacy_and_safety',
+        'push_notifications',
+        'quotes',
+        'retweets',
+        'security',
+        'spaces',
+        'status',
+        'stories',
+        'tabs',
+        'verified',
+        'verified_followers',
+        'with_replies',
+        'your_tweets',
+        'your_twitter_data',
+      ]);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      const isSafeStructureRouteSegment = (part, index) => {
+        const lower = String(part ?? '').toLowerCase();
+        if (index === 0 || !/^[a-z][a-z0-9_]{1,63}$/u.test(lower)) return false;
+        if (/(?:auth|bearer|cookie|ct0|password|secret|session|token)/iu.test(lower)) return false;
+        const root = String(parts[0] ?? '').toLowerCase();
+        return root === 'settings' || root === 'notifications';
+      };
+      const templated = parts.map((part, index) => {
+        const lower = part.toLowerCase();
+        if (/^\d+$/u.test(part)) return ':id';
+        if (index === 0 && !config.reservedSegments.includes(lower)) return ':account';
+        if (safeRouteSegments.has(lower) || isSafeStructureRouteSegment(part, index)) return lower;
+        return ':segment';
+      });
+      const path = `/${templated.join('/')}`.replace(/\/$/u, '') || '/';
+      if (parsed.pathname === '/search') {
+        const q = parsed.searchParams.has('q') ? 'q=:query' : '';
+        const src = parsed.searchParams.has('src') ? 'src=:src' : '';
+        const f = parsed.searchParams.has('f') ? 'f=:filter' : '';
+        const search = [q, src, f].filter(Boolean).join('&');
+        return search ? `${path}?${search}` : path;
+      }
+      return path;
+    } catch {
+      return null;
+    }
+  };
+  const classifyRoute = (routeTemplate) => {
+    const route = String(routeTemplate ?? '').toLowerCase();
+    if (!route) {
+      return { functionKind: 'navigation.unknown', intent: 'inspect_unknown_route', executionClass: 'observed-only', mutationRisk: 'none' };
+    }
+    const noContentRoot = String(request.noContentRouteTemplate ?? '').toLowerCase().replace(/\/+$/u, '');
+    if (request.noContent === true && noContentRoot && route !== noContentRoot && route.startsWith(`${noContentRoot}/`)) {
+      return { functionKind: 'navigation.link', intent: 'navigate_read_surface', executionClass: 'unknown-risk-blocked', mutationRisk: 'private-content-risk' };
+    }
+    if (/^\/(?:login|signup)(?:\/|$)/u.test(route)) {
+      return { functionKind: 'auth.login', intent: 'authenticate_session', executionClass: 'auth-blocked', mutationRisk: 'account-auth' };
+    }
+    if (/^\/compose(?:\/|$)/u.test(route)) {
+      return { functionKind: 'compose.post', intent: 'create_post', executionClass: 'mutation-blocked', mutationRisk: 'content-write' };
+    }
+    if (/^\/settings(?:\/|$)/u.test(route)) {
+      return { functionKind: 'account.settings', intent: 'inspect_account_settings', executionClass: 'side-effect-risk-blocked', mutationRisk: 'account-write-risk' };
+    }
+    if (/premium_sign_up/u.test(route)) {
+      return { functionKind: 'commerce.premium-signup', intent: 'inspect_premium_signup', executionClass: 'side-effect-risk-blocked', mutationRisk: 'purchase-risk' };
+    }
+    if (/^\/(?:home|explore|notifications|messages|i\/articles|i\/bookmarks|i\/communities|i\/connect_people|i\/chat|i\/grok|i\/keyboard_shortcuts|i\/lists)(?:\/|$)/u.test(route)) {
+      return { functionKind: 'navigation.app-section', intent: 'navigate_read_surface', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    }
+    if (/\/status\/:id/u.test(route)) {
+      return { functionKind: 'navigation.content-detail', intent: 'inspect_content_detail', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    }
+    if (/\/(?:articles|photo|with_replies|media|highlights|following|followers|followers_you_follow|verified_followers)(?:[/?]|$)/u.test(route)) {
+      return { functionKind: 'navigation.profile-tab', intent: 'switch_read_surface', executionClass: 'read-tab-probe', mutationRisk: 'none' };
+    }
+    if (/^\/search(?:[/?]|$)/u.test(route)) {
+      return { functionKind: 'search.results', intent: 'inspect_search_results', executionClass: 'read-search-probe', mutationRisk: 'none' };
+    }
+    if (route === '/:account' || route.startsWith('/:account/')) {
+      return { functionKind: 'navigation.profile', intent: 'inspect_profile_surface', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+    }
+    return { functionKind: 'navigation.link', intent: 'navigate_read_surface', executionClass: 'read-navigation-probe', mutationRisk: 'none' };
+  };
+  const counts = new Map();
+  const samples = new Map();
+  const maxCandidates = Math.max(0, Number(request.maxCandidates ?? 80));
+  for (const link of [...document.querySelectorAll('a[href]')]) {
+    const href = link.getAttribute('href') || link.href || '';
+    let url = null;
+    try {
+      url = new URL(href, window.location.origin).toString();
+    } catch {
+      url = null;
+    }
+    const routeTemplate = url ? routeTemplateFromHref(url) : null;
+    if (!url || !routeTemplate) continue;
+    const classified = classifyRoute(routeTemplate);
+    const key = `${classified.executionClass}:${classified.functionKind}:${routeTemplate}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (!samples.has(key)) {
+      samples.set(key, {
+        url,
+        routeTemplate,
+        controlKey: safeToken(link.getAttribute('data-testid') || link.getAttribute('role') || 'link'),
+        ...classified,
+      });
+    }
+  }
+  const candidates = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, maxCandidates)
+    .map(([key, count]) => ({
+      ...samples.get(key),
+      count,
+    }));
+  return {
+    schemaVersion: 1,
+    routeTemplate: routeTemplateFromHref(window.location.href),
+    linkCount: document.querySelectorAll('a[href]').length,
+    candidateCount: candidates.length,
+    candidates,
+  };
+}
+
+function canRiskReviewedReadNavigate(candidate = /** @type {any} */ ({}), settings = /** @type {any} */ ({})) {
+  if (settings.riskReviewedReadSurfaces !== true || !candidate.url || !candidate.routeTemplate) {
+    return false;
+  }
+  const executionClass = String(candidate.executionClass ?? '');
+  const mutationRisk = String(candidate.mutationRisk ?? '');
+  const routeTemplate = String(candidate.routeTemplate ?? '');
+  if (!['mutation-blocked', 'side-effect-risk-blocked'].includes(executionClass)) {
+    return false;
+  }
+  if (!['account-write-risk', 'content-write', 'purchase-risk'].includes(mutationRisk)) {
+    return false;
+  }
+  return /^\/(?:compose|settings|i\/premium_sign_up)(?:\/|$)/u.test(routeTemplate);
 }
 
 function pageOpenSocialRelationSurface(request) {
@@ -939,6 +3388,206 @@ function pageOpenSocialRelationSurface(request) {
     relation,
     href: target.getAttribute('href') || target.href || '',
     text: target.textContent || '',
+  };
+}
+
+async function runReadOnlyControlProbes(session, config, plan, settings, apiCapture = null) {
+  if (!settings.probeReadControls || settings.maxControlProbes <= 0) {
+    return null;
+  }
+  const apiStartIndex = apiCapture?.mark?.() ?? 0;
+  const startedAt = new Date().toISOString();
+  const result = await session.callPageFunction(pageProbeReadOnlyControls, config, {
+    account: plan.account,
+    action: plan.action,
+    contentType: plan.contentType,
+    maxProbes: settings.maxControlProbes,
+    settleMs: Math.min(Math.max(settings.scrollWaitMs, 300), 1_500),
+    ...noContentRequestForPlan(plan),
+  });
+  const api = await summarizeControlProbeApiCapture(apiCapture, apiStartIndex, Math.min(settings.timeoutMs, 5_000));
+  return {
+    ...(result || {}),
+    startedAt,
+    completedAt: new Date().toISOString(),
+    api,
+  };
+}
+
+async function readCrawlSocialState(session, config, plan, settings) {
+  const deadline = Date.now() + Math.min(settings.timeoutMs ?? DEFAULT_TIMEOUT_MS, settings.probeReadControls ? 15_000 : 8_000);
+  let state = null;
+  while (Date.now() <= deadline) {
+    state = await session.callPageFunction(pageExtractSocialState, config, {
+      account: plan.account,
+      action: plan.action,
+      contentType: plan.contentType,
+      date: plan.date,
+      fromDate: plan.fromDate,
+      toDate: plan.toDate,
+      ...noContentRequestForPlan(plan),
+    });
+    const inventory = state?.surfaceInventory && typeof state.surfaceInventory === 'object'
+      ? state.surfaceInventory
+      : {};
+    const hasUsableReadSurface = socialStateHasBoundarySignal(state)
+      || socialStateHasExtractedContent(state)
+      || socialStateHasProfileSurface(state)
+      || (Number(inventory.linkCount) || 0) > 0
+      || (Number(inventory.controlCount) || 0) > 6;
+    if (hasUsableReadSurface || (config?.siteKey !== 'x' && !isLikelyXBlankShell(state))) {
+      return state;
+    }
+    await sleep(Math.max(250, Math.min(settings.scrollWaitMs || DEFAULT_SCROLL_WAIT_MS, 1_000)));
+  }
+  return state ?? {};
+}
+
+async function runReadOnlySurfaceCrawl(session, config, plan, settings, apiCapture = null) {
+  if (!settings.crawlReadSurfaces || settings.maxReadCrawlPages <= 0) {
+    return null;
+  }
+  const apiStartIndex = apiCapture?.mark?.() ?? 0;
+  const startedAt = new Date().toISOString();
+  let enqueuedCount = 1;
+  const queue = [{
+    url: plan.url,
+    routeTemplate: null,
+    depth: 0,
+    sourceRouteTemplate: null,
+  }];
+  const queuedRouteTemplates = new Set();
+  const visitedRouteTemplates = new Set();
+  const blocked = new Map();
+  const pages = [];
+  const readExecutionClasses = new Set([
+    'read-navigation-probe',
+    'read-search-probe',
+    'read-tab-probe',
+    'risk-reviewed-read-navigation',
+  ]);
+  while (queue.length && pages.length < settings.maxReadCrawlPages) {
+    const current = queue.shift();
+    if (!current?.url) continue;
+    try {
+      const currentPageUrl = await readSessionUrl(session);
+      const canReuseCurrentPage = current.depth === 0
+        && normalizeComparableUrl(currentPageUrl) === normalizeComparableUrl(current.url);
+      if (!canReuseCurrentPage) {
+        await session.navigateAndWait(current.url, createWaitPolicy(settings.timeoutMs));
+      }
+    } catch {
+      pages.push({
+        depth: current.depth,
+        requestedRouteTemplate: current.routeTemplate,
+        routeTemplate: current.routeTemplate,
+        status: 'failed',
+        reason: 'navigation-failed',
+        sourceRouteTemplate: current.sourceRouteTemplate,
+      });
+      continue;
+    }
+    const state = await readCrawlSocialState(session, config, plan, settings);
+    const candidatesResult = await session.callPageFunction(pageCollectReadOnlyRouteCandidates, config, {
+      account: plan.account,
+      maxCandidates: 100,
+      ...noContentRequestForPlan(plan),
+    });
+    const routeTemplate = candidatesResult?.routeTemplate || state?.surfaceInventory?.urlRouteTemplate || current.routeTemplate || null;
+    if (routeTemplate) {
+      visitedRouteTemplates.add(routeTemplate);
+    }
+    const candidates = Array.isArray(candidatesResult?.candidates) ? candidatesResult.candidates : [];
+    const readCandidates = [];
+    for (const candidate of candidates) {
+      const sanitized = {
+        routeTemplate: candidate.routeTemplate ?? null,
+        functionKind: candidate.functionKind ?? null,
+        intent: candidate.intent ?? null,
+        executionClass: candidate.executionClass ?? null,
+        mutationRisk: candidate.mutationRisk ?? null,
+        routeSample: safeRouteSampleFromUrl(candidate.url, candidate.routeTemplate, config),
+        count: candidate.count ?? 1,
+      };
+      const isRead = readExecutionClasses.has(candidate.executionClass) && candidate.mutationRisk === 'none';
+      const riskReviewedRead = canRiskReviewedReadNavigate(candidate, settings);
+      if (!isRead && !riskReviewedRead) {
+        const blockedKey = `${candidate.executionClass}:${candidate.functionKind}:${candidate.routeTemplate}`;
+        if (!blocked.has(blockedKey)) {
+          blocked.set(blockedKey, sanitized);
+        }
+        continue;
+      }
+      const readCandidate = riskReviewedRead
+        ? {
+          ...sanitized,
+          executionClass: 'risk-reviewed-read-navigation',
+          riskReviewed: true,
+          originalExecutionClass: candidate.executionClass ?? null,
+        }
+        : sanitized;
+      readCandidates.push(readCandidate);
+      if (
+        current.depth < settings.maxReadCrawlDepth
+        && candidate.url
+        && candidate.routeTemplate
+        && !visitedRouteTemplates.has(candidate.routeTemplate)
+        && !queuedRouteTemplates.has(candidate.routeTemplate)
+      ) {
+        queue.push({
+          url: candidate.url,
+          routeTemplate: candidate.routeTemplate,
+          depth: current.depth + 1,
+          sourceRouteTemplate: routeTemplate,
+        });
+        enqueuedCount += 1;
+        queuedRouteTemplates.add(candidate.routeTemplate);
+      }
+    }
+    pages.push({
+      depth: current.depth,
+      requestedRouteTemplate: current.routeTemplate ?? routeTemplate,
+      routeTemplate,
+      routeSample: safeRouteSampleFromUrl(current.url, routeTemplate, config),
+      status: isLikelyXBlankShell(state) ? 'degraded' : 'passed',
+      reason: isLikelyXBlankShell(state) ? 'x-blank-shell' : null,
+      sourceRouteTemplate: current.sourceRouteTemplate,
+      linkCount: state?.surfaceInventory?.linkCount ?? candidatesResult?.linkCount ?? 0,
+      controlCount: state?.surfaceInventory?.controlCount ?? 0,
+      candidateCount: candidates.length,
+      readCandidateCount: readCandidates.length,
+      blockedCandidateCount: candidates.length - readCandidates.length,
+      riskReviewedCandidateCount: readCandidates.filter((candidate) => candidate.riskReviewed === true).length,
+      readRouteTemplates: dedupeSortedStrings(readCandidates.map((candidate) => candidate.routeTemplate)).slice(0, 40),
+      readRouteSamples: dedupeRouteSamples(readCandidates.map((candidate) => candidate.routeSample)).slice(0, 40),
+      functionKinds: dedupeSortedStrings(readCandidates.map((candidate) => candidate.functionKind)).slice(0, 20),
+      executionClasses: dedupeSortedStrings(readCandidates.map((candidate) => candidate.executionClass)).slice(0, 20),
+    });
+  }
+  const api = await summarizeControlProbeApiCapture(apiCapture, apiStartIndex, Math.min(settings.timeoutMs, 5_000));
+  const discoveredRouteTemplates = dedupeSortedStrings([
+    ...pages.map((page) => page.routeTemplate),
+    ...pages.flatMap((page) => page.readRouteTemplates ?? []),
+  ]);
+  return {
+    schemaVersion: 1,
+    requested: true,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    maxPages: settings.maxReadCrawlPages,
+    maxDepth: settings.maxReadCrawlDepth,
+    visitedCount: pages.length,
+    queuedCount: enqueuedCount,
+    pendingQueueCount: queue.length,
+    exhausted: queue.length === 0,
+    discoveredRouteTemplateCount: discoveredRouteTemplates.length,
+    discoveredRouteTemplates,
+    functionKinds: dedupeSortedStrings(pages.flatMap((page) => page.functionKinds ?? [])),
+    executionClasses: dedupeSortedStrings(pages.flatMap((page) => page.executionClasses ?? [])),
+    blockedRouteCount: blocked.size,
+    blockedFunctions: [...blocked.values()].slice(0, 80),
+    pages,
+    api,
   };
 }
 
@@ -1059,6 +3708,75 @@ function mergeByKey(items, keyFn, maxItems) {
 function dedupeSortedStrings(values = /** @type {any[]} */ ([])) {
   return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'en'));
+}
+
+function classifyRouteSampleValue(value) {
+  const text = String(value ?? '');
+  if (!text) return 'empty';
+  if (/^\d+$/u.test(text)) return 'digits';
+  if (/^[a-z0-9_]{1,30}$/iu.test(text)) return 'handle-like';
+  if (/^[a-z0-9_-]+$/iu.test(text)) return 'slug';
+  return 'mixed';
+}
+
+function safeRouteSampleFromUrl(url, routeTemplate, config) {
+  const template = String(routeTemplate ?? '').trim();
+  if (!url || !template) return null;
+  try {
+    const parsed = new URL(String(url), `${config.baseUrl}/`);
+    if (parsed.hostname !== config.host && !parsed.hostname.endsWith(`.${config.host}`)) {
+      return null;
+    }
+    const [pathTemplate] = template.split('?', 2);
+    const templateSegments = pathTemplate.split('/').filter(Boolean);
+    const valueSegments = parsed.pathname.split('/').filter(Boolean);
+    const segmentShapes = templateSegments.map((segment, index) => {
+      const value = valueSegments[index] ?? '';
+      if (segment.startsWith(':')) {
+        return {
+          kind: segment.slice(1),
+          valueLength: value.length,
+          valueClass: classifyRouteSampleValue(value),
+        };
+      }
+      return {
+        kind: 'static',
+        value: segment,
+      };
+    });
+    const queryKeys = [...parsed.searchParams.keys()].sort((left, right) => left.localeCompare(right, 'en'));
+    return {
+      routeTemplate: template,
+      pathDepth: templateSegments.length,
+      dynamicSegmentCount: segmentShapes.filter((segment) => segment.kind !== 'static').length,
+      segmentShapes,
+      queryKeys,
+      queryValueShapes: queryKeys.map((key) => {
+        const value = parsed.searchParams.get(key) ?? '';
+        return {
+          key,
+          valueLength: value.length,
+          tokenCount: value.split(/\s+/u).filter(Boolean).length,
+          valueClass: classifyRouteSampleValue(value),
+        };
+      }),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function dedupeRouteSamples(samples = /** @type {any[]} */ ([])) {
+  const seen = new Set();
+  const result = [];
+  for (const sample of samples) {
+    if (!sample?.routeTemplate) continue;
+    const key = JSON.stringify(sample);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(sample);
+  }
+  return result;
 }
 
 function isSocialRelationAction(action) {
@@ -1191,8 +3909,18 @@ function apiPayloadSample(json) {
   };
 }
 
+function apiOperationNameFromResponse(response = /** @type {any} */ ({})) {
+  return response.request?.operationName
+    ?? response.requestTemplate?.operationName
+    ?? response.operationName
+    ?? parseApiRequestDetails(response.url).operationName
+    ?? null;
+}
+
 function summarizeParsedApiResponse(response, parsed, config, plan) {
   const items = Array.isArray(parsed?.items) ? parsed.items : [];
+  const users = Array.isArray(parsed?.users) ? parsed.users : [];
+  const parsedEntries = parsedApiEntries(parsed);
   const media = items.flatMap((item) => item.media || []);
   const missingTimestampCount = items.filter((item) => !item.timestamp).length;
   const missingAuthorCount = items.filter((item) => !hasItemAuthor(item)).length;
@@ -1206,8 +3934,9 @@ function summarizeParsedApiResponse(response, parsed, config, plan) {
     responseHeaders: response.responseHeaders ?? {},
     mimeType: response.mimeType || null,
     type: response.type || null,
-    operationName: response.request?.operationName ?? null,
-    itemCount: items.length,
+    operationName: apiOperationNameFromResponse(response),
+    itemCount: parsedEntries.length,
+    userCount: users.length,
     mediaCount: media.length,
     hasNextCursor: Boolean(parsed?.nextCursor),
     riskSignals,
@@ -1220,8 +3949,9 @@ function summarizeParsedApiResponse(response, parsed, config, plan) {
 }
 
 async function collectSocialPage(session, config, plan, settings) {
+  const noContent = isNoContentReadRoutePlan(plan);
   const maxItems = settings.maxItems;
-  const maxScrolls = settings.maxScrolls;
+  const maxScrolls = noContent ? 0 : settings.maxScrolls;
   const collectedStates = /** @type {any[]} */ ([]);
   let stagnantRounds = 0;
   let previousItemCount = 0;
@@ -1248,6 +3978,7 @@ async function collectSocialPage(session, config, plan, settings) {
         date: plan.date,
         fromDate: plan.fromDate,
         toDate: plan.toDate,
+        ...noContentRequestForPlan(plan),
       });
     collectedStates.push(state);
     if (state?.relationExpectedCount !== null && state?.relationExpectedCount !== undefined && Number.isFinite(Number(state.relationExpectedCount)) && Number(state.relationExpectedCount) >= 0) {
@@ -1346,7 +4077,19 @@ async function collectSocialPage(session, config, plan, settings) {
     : mergedItems;
   const mergedRelations = mergeByKey(allRelations, (entry) => entry.handle || entry.url, maxItems);
   const hasRelationExpectedCount = Number.isFinite(relationExpectedCount);
-  const relationArchive = isSocialRelationAction(plan.action)
+  const noContentArchive = noContent
+    ? {
+      strategy: 'no-content-structure-probe',
+      complete: null,
+      reason: 'content-redacted-for-sensitive-surface',
+      pages: 0,
+      domItemCount: 0,
+      apiItemCount: 0,
+      dedupedItemCount: 0,
+      boundarySignals: [],
+    }
+    : null;
+  const relationArchive = !noContent && isSocialRelationAction(plan.action)
     ? {
       strategy: 'dom-relation-scroll',
       complete: hasRelationExpectedCount
@@ -1379,9 +4122,10 @@ async function collectSocialPage(session, config, plan, settings) {
     relations: mergedRelations,
     media: mergedMedia,
     relationExpectedCount: Number.isFinite(relationExpectedCount) ? relationExpectedCount : null,
-    archive: relationArchive,
+    archive: noContentArchive ?? relationArchive,
     scrollSummary,
     surfaceWait: initialRead.surfaceWait,
+    surfaceInventory: latest.surfaceInventory ?? null,
     visibilitySignals: dedupeSortedStrings(visibilitySignals),
     riskSignals: dedupeSortedStrings(riskSignals),
     riskEvents,
@@ -1392,7 +4136,7 @@ async function collectSocialPage(session, config, plan, settings) {
 function isSocialApiUrl(config, url) {
   const value = String(url ?? '');
   if (config.siteKey === 'x') {
-    return /(?:\/i\/api\/(?:graphql|2\/search)\/|\/graphql\/)/iu.test(value);
+    return /(?:\/i\/api\/(?:graphql|1\.1|2|fleets|badge_count|graphql\.json)(?:\/|[?#])|\/graphql\/|https:\/\/api\.x\.com\/1\.1\/)/iu.test(value);
   }
   if (config.siteKey === 'instagram') {
     return /(?:\/graphql\/query|\/api\/v1\/(?:feed|friendships|media|users|clips)|\/api\/graphql)/iu.test(value);
@@ -1400,7 +4144,7 @@ function isSocialApiUrl(config, url) {
   return false;
 }
 
-const SENSITIVE_API_HEADER_RE = /^(?:authorization|cookie|set-cookie|x-csrf-token|x-ig-www-claim|x-instagram-ajax)$/iu;
+const SENSITIVE_API_HEADER_RE = /^(?:authorization|cookie|origin|referer|set-cookie|x-csrf-token|x-ig-www-claim|x-instagram-ajax)$/iu;
 const FORBIDDEN_FETCH_HEADER_RE = /^(?:accept-encoding|connection|content-length|cookie|host|origin|referer|sec-|user-agent|priority)$/iu;
 const REPLAY_FETCH_HEADER_RE = /^(?:accept|authorization|content-type|x-[a-z0-9-]+)$/iu;
 const API_DEBUG_HEADER_RE = /^(?:retry-after|x-rate-limit-|x-app-limit|x-business-use-case-usage|x-ig-|x-fb-|x-twitter-|cf-|content-type|date)$/iu;
@@ -1512,7 +4256,23 @@ function buildSocialApiReplayRequest(request = /** @type {any} */ ({})) {
   };
 }
 
-async function createSocialApiCapture(session, config, settings) {
+function shouldFallbackCaptureApiBody(candidate = /** @type {any} */ ({}), config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
+  if (config.siteKey !== 'x') {
+    return false;
+  }
+  if (isSocialRelationAction(plan.action)) {
+    return isXRelationApiUrl(candidate.url, plan.action);
+  }
+  if (!requiresTargetTimelineApiSeed(config, plan)) {
+    return false;
+  }
+  return isTargetTimelineApiSummary({
+    operationName: apiOperationNameFromResponse(candidate),
+    url: candidate.url,
+  }, config, plan);
+}
+
+async function createSocialApiCapture(session, config, settings, plan = null) {
   if (typeof session?.send !== 'function' || !session?.client?.on) {
     return null;
   }
@@ -1607,16 +4367,38 @@ async function createSocialApiCapture(session, config, settings) {
         });
         stats.capturedBodies += 1;
       } catch (error) {
-        stats.bodyErrors += 1;
-        errors.push({
-          url: candidate.url,
-          status: candidate.status,
-          mimeType: candidate.mimeType || null,
-          responseHeaders: candidate.responseHeaders || {},
-          operationName: candidate.request?.operationName ?? null,
-          capturedAt: new Date().toISOString(),
-          error: error?.message ?? String(error),
-        });
+        let recovered = false;
+        if (shouldFallbackCaptureApiBody(candidate, config, plan || {})) {
+          try {
+            const result = normalizeApiFetchResult(await session.callPageFunction(pageFetchJson, candidate.replayRequest));
+            if (result.ok && result.json) {
+              responses.push({
+                ...candidate,
+                status: result.status ?? candidate.status,
+                responseHeaders: sanitizeApiDebugHeaders(result.headers || {}),
+                capturedAt: new Date().toISOString(),
+                captureFallback: 'page-fetch-json',
+                json: result.json,
+              });
+              stats.capturedBodies += 1;
+              recovered = true;
+            }
+          } catch {
+            recovered = false;
+          }
+        }
+        if (!recovered) {
+          stats.bodyErrors += 1;
+          errors.push({
+            url: candidate.url,
+            status: candidate.status,
+            mimeType: candidate.mimeType || null,
+            responseHeaders: candidate.responseHeaders || {},
+            operationName: apiOperationNameFromResponse(candidate),
+            capturedAt: new Date().toISOString(),
+            error: error?.message ?? String(error),
+          });
+        }
         // API capture is opportunistic; page extraction remains the fallback.
       } finally {
         requests.delete(params.requestId);
@@ -1685,6 +4467,39 @@ function collectRecursive(value, visitor, seen = new Set()) {
 function normalizeXCreatedAt(value) {
   const parsed = new Date(String(value ?? ''));
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+}
+
+function decodeXNoteTweetStatusId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw || /^\d+$/u.test(raw)) {
+    return raw || null;
+  }
+  try {
+    const decoded = Buffer.from(raw, 'base64').toString('utf8');
+    const match = decoded.match(/^NoteTweet:(\d+)$/u);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeXStatusId(value) {
+  return decodeXNoteTweetStatusId(value) || String(value ?? '').trim() || null;
+}
+
+function xSnowflakeTimestamp(value) {
+  const id = normalizeXStatusId(value);
+  if (!id || !/^\d+$/u.test(id)) {
+    return '';
+  }
+  try {
+    const twitterEpochMs = 1_288_834_974_657n;
+    const timestampMs = (BigInt(id) >> 22n) + twitterEpochMs;
+    const parsed = new Date(Number(timestampMs));
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function finiteNumber(value, fallback = 0) {
@@ -1896,20 +4711,22 @@ function parseXMedia(legacy = /** @type {any} */ ({})) {
 
 function normalizeXTweetResult(result) {
   const tweet = result?.tweet || result;
-  const legacy = tweet?.legacy;
-  const restId = tweet?.rest_id || legacy?.id_str;
+  const legacy = tweet?.legacy || (tweet?.full_text || tweet?.text || tweet?.id_str ? tweet : null);
+  const restId = normalizeXStatusId(tweet?.rest_id || legacy?.id_str || tweet?.id_str || tweet?.id);
   if (!legacy || !restId) {
     return null;
   }
   const screenName = tweet?.core?.user_results?.result?.legacy?.screen_name
     || tweet?.core?.user_results?.result?.core?.screen_name
     || tweet?.core?.user_results?.result?.screen_name
+    || tweet?.user?.screen_name
+    || legacy?.user?.screen_name
     || null;
   return {
     id: restId,
     url: screenName ? `https://x.com/${screenName}/status/${restId}` : `https://x.com/i/status/${restId}`,
     text: cleanText(legacy.full_text || legacy.text || ''),
-    timestamp: normalizeXCreatedAt(legacy.created_at),
+    timestamp: normalizeXCreatedAt(legacy.created_at) || xSnowflakeTimestamp(restId),
     author: screenName ? { handle: screenName, url: `https://x.com/${screenName}` } : null,
     sourceAccount: screenName || null,
     isRetweet: Boolean(legacy.retweeted_status_result || legacy.retweeted_status_id_str || legacy.retweeted_status_id),
@@ -1920,7 +4737,7 @@ function normalizeXTweetResult(result) {
 
 function normalizeXUserResult(result) {
   const user = result?.user || result;
-  const legacy = user?.legacy;
+  const legacy = user?.legacy || (user?.screen_name || user?.name || user?.id_str ? user : null);
   const handle = cleanText(
     legacy?.screen_name
     || user?.core?.screen_name
@@ -1932,14 +4749,14 @@ function normalizeXUserResult(result) {
   }
   return {
     handle,
-    id: user?.rest_id || legacy?.id_str || null,
+    id: user?.rest_id || legacy?.id_str || user?.id_str || user?.id || null,
     url: `https://x.com/${handle}`,
     label: cleanText(legacy?.name || user?.core?.name || ''),
     displayName: cleanText(legacy?.name || user?.core?.name || '') || null,
-    bio: cleanText(legacy?.description || ''),
-    followers: finiteNumber(legacy?.followers_count, null),
-    following: finiteNumber(legacy?.friends_count, null),
-    verified: Boolean(legacy?.verified || user?.is_blue_verified),
+    bio: cleanText(legacy?.description || user?.description || ''),
+    followers: finiteNumber(legacy?.followers_count ?? user?.followers_count, null),
+    following: finiteNumber(legacy?.friends_count ?? user?.friends_count, null),
+    verified: Boolean(legacy?.verified || user?.verified || user?.is_blue_verified),
     source: 'api-relation',
   };
 }
@@ -1948,15 +4765,27 @@ function collectXRelationEntries(json) {
   const users = /** @type {any[]} */ ([]);
   const cursors = /** @type {any[]} */ ([]);
   collectRecursive(json, (node) => {
+    for (const cursorValue of [node?.next_cursor_str, node?.next_cursor]) {
+      if (cursorValue && String(cursorValue) !== '0') {
+        cursors.push(String(cursorValue));
+      }
+    }
     const cursor = xCursorFromTimelineContent(node, node?.entryId || node?.entry_id);
     if (cursor) {
       cursors.push(cursor);
     }
+    const legacyUsers = Array.isArray(node?.users)
+      ? node.users
+      : node?.users && typeof node.users === 'object'
+        ? Object.values(node.users)
+        : [];
     const candidates = [
+      ...legacyUsers,
       node?.itemContent?.user_results?.result,
       node?.user_results?.result,
       node?.userResult?.result,
       node?.__typename === 'User' || node?.legacy?.screen_name ? node : null,
+      node?.screen_name ? node : null,
     ].filter(Boolean);
     for (const candidate of candidates) {
       const user = normalizeXUserResult(candidate);
@@ -1974,8 +4803,8 @@ function collectXRelationEntries(json) {
 function isXRelationApiUrl(url, action) {
   const value = String(url ?? '');
   return action === 'profile-followers'
-    ? /\/i\/api\/graphql\/[^/]+\/Followers\?/u.test(value)
-    : /\/i\/api\/graphql\/[^/]+\/Following\?/u.test(value);
+    ? /(?:\/i\/api\/graphql\/[^/]+\/Followers\?|(?:\/i\/api|https:\/\/api\.x\.com)\/1\.1\/followers\/list\.json(?:[?#]|$))/iu.test(value)
+    : /(?:\/i\/api\/graphql\/[^/]+\/Following\?|(?:\/i\/api|https:\/\/api\.x\.com)\/1\.1\/(?:friends\/following\/list|friends\/list)\.json(?:[?#]|$))/iu.test(value);
 }
 
 function xCursorFromTimelineContent(content = /** @type {any} */ ({}), entryId = '') {
@@ -2271,6 +5100,11 @@ export function parseSocialApiPayload(site, json) {
           if (item) {
             items.push(item);
           }
+        } else if ((node?.full_text || node?.text) && (node?.id_str || node?.id)) {
+          const item = normalizeXTweetResult(node);
+          if (item) {
+            items.push(item);
+          }
         }
         const cursor = xCursorFromTimelineContent(node, node?.entryId);
         if (cursor) {
@@ -2300,6 +5134,23 @@ export function parseSocialApiPayload(site, json) {
   return {
     items: mergeByKey(items, (entry) => entry.id || entry.url, Number.MAX_SAFE_INTEGER),
     nextCursor: cursors[cursors.length - 1] || null,
+    riskSignals: detectApiPayloadRisk(json),
+  };
+}
+
+export function parseSocialRelationApiPayload(site, json) {
+  const config = resolveSocialSiteConfig(site);
+  if (config.siteKey === 'x') {
+    const relation = collectXRelationEntries(json);
+    return {
+      users: relation.users,
+      nextCursor: relation.nextCursor,
+      riskSignals: detectApiPayloadRisk(json),
+    };
+  }
+  return {
+    users: [],
+    nextCursor: null,
     riskSignals: detectApiPayloadRisk(json),
   };
 }
@@ -2585,7 +5436,7 @@ function pageFetchJson(requestOrUrl, replayHeaders = /** @type {any} */ ({})) {
 }
 
 function operationNameFromApiEntry(entry = /** @type {any} */ ({})) {
-  return String(entry.response?.request?.operationName ?? entry.response?.requestTemplate?.operationName ?? '').toLowerCase();
+  return String(apiOperationNameFromResponse(entry.response) ?? '').toLowerCase();
 }
 
 function urlFromApiEntry(entry = /** @type {any} */ ({})) {
@@ -2648,6 +5499,16 @@ function parsedApiEntries(parsed = /** @type {any} */ ({})) {
     return parsed.users;
   }
   return [];
+}
+
+function parsedApiForSummary(parsed = /** @type {any} */ ({}), config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
+  if (config?.siteKey === 'x' && plan?.action === 'profile-content' && plan?.account && Array.isArray(parsed?.items)) {
+    return {
+      ...parsed,
+      items: annotateApiArchiveItems(parsed.items, plan),
+    };
+  }
+  return parsed;
 }
 
 function isTargetTimelineApiSummary(summary, config = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
@@ -2788,15 +5649,31 @@ function summarizeSocialApiCapture(apiCapture, parsedResponses = /** @type {any[
     return null;
   }
   const responses = Array.isArray(apiCapture.responses) ? apiCapture.responses : [];
-  const operations = dedupeSortedStrings(responses.map((response) => response.request?.operationName));
-  const parsedSummaries = parsedResponses.map((entry) => summarizeParsedApiResponse(entry.response, entry.parsed, config || {}, plan || {}));
+  const parsedSummaries = parsedResponses.map((entry) => summarizeParsedApiResponse(
+    entry.response,
+    parsedApiForSummary(entry.parsed, config || {}, plan || {}),
+    config || {},
+    plan || {},
+  ));
+  const targetOperations = dedupeSortedStrings(parsedSummaries
+    .filter((summary) => isTargetTimelineApiSummary(summary, config || {}, plan || {}))
+    .map((summary) => summary.operationName));
+  const backgroundOperations = dedupeSortedStrings(responses
+    .map((response) => apiOperationNameFromResponse(response))
+    .filter((operation) => !targetOperations.includes(String(operation ?? ''))));
+  const operations = [...targetOperations, ...backgroundOperations];
   const driftSamples = parsedSummaries
     .filter((entry) => isSchemaDriftApiSummary(entry, config || {}, plan || {}))
     .map(annotateApiSchemaDriftSummary)
     .slice(-API_CAPTURE_SAMPLE_LIMIT);
   const rawDriftSamples = parsedResponses
     .map((entry) => ({
-      summary: summarizeParsedApiResponse(entry.response, entry.parsed, config || {}, plan || {}),
+      summary: summarizeParsedApiResponse(
+        entry.response,
+        parsedApiForSummary(entry.parsed, config || {}, plan || {}),
+        config || {},
+        plan || {},
+      ),
       payloadSample: apiPayloadSample(entry.response.json),
     }))
     .filter((entry) => isSchemaDriftApiSummary(entry.summary, config || {}, plan || {}))
@@ -2819,6 +5696,44 @@ function summarizeSocialApiCapture(apiCapture, parsedResponses = /** @type {any[
     rawDriftSampleCount: rawDriftSamples.length,
     rawDriftSamples,
     errors: (apiCapture.errors || []).slice(-API_CAPTURE_SAMPLE_LIMIT),
+  };
+}
+
+function missingSocialApiSeedReason({
+  capturedRiskSignals = [],
+  capturedResponses = [],
+  parsedResponses = [],
+  capture = null,
+} = {}) {
+  if (capturedRiskSignals.length) {
+    return apiRiskReasonFromSignals(capturedRiskSignals);
+  }
+  if (!capturedResponses.length) {
+    return 'no-api-seed-captured';
+  }
+  const operationCount = Array.isArray(capture?.operations) ? capture.operations.length : 0;
+  if (operationCount > 0 && parsedResponses.length > 0) {
+    return 'api-operations-no-archive-seed';
+  }
+  return 'no-parseable-api-seed';
+}
+
+async function summarizeControlProbeApiCapture(apiCapture, startIndex = 0, timeoutMs = 1_500) {
+  if (!apiCapture) {
+    return null;
+  }
+  await apiCapture.flush?.(timeoutMs);
+  const responses = Array.isArray(apiCapture.responses)
+    ? apiCapture.responses.slice(Math.max(0, Number(startIndex) || 0))
+    : [];
+  const operations = dedupeSortedStrings(responses.map((response) => apiOperationNameFromResponse(response))).slice(0, API_CAPTURE_SAMPLE_LIMIT);
+  const sideEffectPattern = /(?:mutation|update|subscribe|subscription|authenticate|log(?:\.json)?)/iu;
+  return {
+    responseCount: responses.length,
+    operations,
+    sideEffectRiskOperations: operations.filter((operation) => sideEffectPattern.test(String(operation ?? ''))),
+    readLikeOperations: operations.filter((operation) => !sideEffectPattern.test(String(operation ?? ''))),
+    statusCodes: dedupeSortedStrings(responses.map((response) => response?.status)),
   };
 }
 
@@ -3024,7 +5939,12 @@ async function collectSocialApiArchive(session, config, plan, settings, apiCaptu
     return {
       strategy: 'api-cursor',
       complete: false,
-      reason: capturedRiskSignals.length ? apiRiskReasonFromSignals(capturedRiskSignals) : capturedResponses.length ? 'no-parseable-api-seed' : 'no-api-seed-captured',
+      reason: missingSocialApiSeedReason({
+        capturedRiskSignals,
+        capturedResponses,
+        parsedResponses,
+        capture,
+      }),
       pages: 0,
       items: [],
       media: [],
@@ -3582,24 +6502,35 @@ async function captureXRelationSeedRequest(session, plan, settings) {
   }
 }
 
-async function collectXRelationUsersFromReplayRequest(session, seedRequest, settings) {
+async function collectXRelationUsersFromReplayRequest(session, seedRequest, settings, seedPage = null) {
   let replayRequest = seedRequest;
-  let cursor = null;
-  let pages = 0;
-  let users = /** @type {any[]} */ ([]);
-  let reason = 'no-next-cursor';
+  let cursor = seedPage?.nextCursor || null;
+  let pages = Array.isArray(seedPage?.users) && seedPage.users.length ? 1 : 0;
+  let users = mergeByKey(seedPage?.users || [], (entry) => entry.handle?.toLowerCase() || entry.url, settings.maxItems);
+  let reason = cursor ? 'max-api-pages' : 'no-next-cursor';
   const riskSignals = /** @type {any[]} */ ([]);
   const riskEvents = /** @type {any[]} */ ([]);
 
   while (replayRequest?.url && pages < settings.maxApiPages && users.length < settings.maxItems) {
-    const fetchResult = await fetchCursorReplayJson(session, replayRequest, settings);
+    const nextRequest = pages === 0
+      ? replayRequest
+      : cursor
+        ? buildCursorReplayRequest(replayRequest, cursor)
+        : null;
+    if (!nextRequest?.url) {
+      break;
+    }
+    const fetchResult = await fetchCursorReplayJson(session, nextRequest, settings);
     riskEvents.push(...(fetchResult.attempts || []).map((attempt) => ({
       ...attempt,
-      url: replayRequest.url,
+      url: nextRequest.url,
     })));
     riskSignals.push(...(fetchResult.riskSignals ?? []));
     if (!fetchResult.ok) {
-      reason = fetchResult.reason || 'relation-page-fetch-failed';
+      const status = Number(fetchResult.status);
+      reason = users.length > 0 && pages > 0 && (status === 404 || status === 410)
+        ? 'soft-cursor-exhausted'
+        : fetchResult.reason || 'relation-page-fetch-failed';
       break;
     }
     const parsed = collectXRelationEntries(fetchResult.json);
@@ -3611,7 +6542,7 @@ async function collectXRelationUsersFromReplayRequest(session, seedRequest, sett
     ], (entry) => entry.handle?.toLowerCase() || entry.url, settings.maxItems);
     cursor = parsed.nextCursor;
     if (users.length === before && pages > 1) {
-      reason = 'no-new-users';
+      reason = users.length > 0 ? 'soft-cursor-exhausted' : 'no-new-users';
       break;
     }
     if (!cursor) {
@@ -3622,17 +6553,20 @@ async function collectXRelationUsersFromReplayRequest(session, seedRequest, sett
       reason = 'max-items';
       break;
     }
-    replayRequest = buildCursorReplayRequest(replayRequest, cursor);
+    replayRequest = nextRequest;
     reason = 'max-api-pages';
   }
 
+  if (users.length >= settings.maxItems) {
+    reason = 'max-items';
+  }
   if (pages >= settings.maxApiPages && cursor && users.length < settings.maxItems) {
     reason = 'max-api-pages';
   }
   const boundedBy = boundedReasonFromArchiveReason(reason);
   return {
     strategy: 'api-relation',
-    complete: !boundedBy && !riskSignals.length,
+    complete: ['no-next-cursor', 'soft-cursor-exhausted'].includes(reason) && !boundedBy && !riskSignals.length,
     reason,
     bounded: Boolean(boundedBy),
     boundedBy,
@@ -3658,7 +6592,8 @@ async function collectXRelationApiUsers(session, plan, settings, apiCapture) {
     .filter((entry) => isXRelationApiResponse(entry, plan));
   const seed = parsedResponses
     .sort((left, right) => right.parsed.users.length - left.parsed.users.length)[0];
-  const seedRequest = seed?.parsed?.users?.length
+  const seedUsers = Array.isArray(seed?.parsed?.users) ? seed.parsed.users : [];
+  const seedRequest = seedUsers.length
     ? (seed.response.replayRequest || {
       url: seed.response.url,
       method: 'GET',
@@ -3677,7 +6612,10 @@ async function collectXRelationApiUsers(session, plan, settings, apiCapture) {
     };
   }
 
-  const archive = await collectXRelationUsersFromReplayRequest(session, seedRequest, settings);
+  const archive = await collectXRelationUsersFromReplayRequest(session, seedRequest, settings, seedUsers.length ? {
+    users: seedUsers,
+    nextCursor: seed?.parsed?.nextCursor ?? null,
+  } : null);
   return {
     ...archive,
     seedUrl: seedRequest.url,
@@ -4301,6 +7239,7 @@ async function collectFollowedPostsByProfiles(session, config, plan, settings, c
     relations: users,
     media: mergeByKey(collectedMedia, (entry) => `${entry.type}:${entry.url}`, settings.maxItems * 5),
     surfacePreparation,
+    surfaceInventory: relationResult.surfaceInventory ?? null,
     visibilitySignals: dedupeSortedStrings([
       ...(relationResult.visibilitySignals ?? []),
       ...scannedUsers.flatMap((entry) => entry.visibilitySignals ?? []),
@@ -4354,7 +7293,7 @@ function shouldUseFollowedProfileDateScan(config, plan, settings, pageResult = n
   if (runtimeRiskToStopReason(pickRuntimeRiskSignal(pageResult.riskSignals ?? []))) {
     return false;
   }
-  return ['dom-empty', 'no-results', 'no-api-seed-captured', 'no-parseable-api-seed', 'target-empty'].includes(
+  return ['dom-empty', 'no-results', 'no-api-seed-captured', 'no-parseable-api-seed', 'api-operations-no-archive-seed', 'target-empty'].includes(
     String(pageResult.archive?.reason || pageResult.stopReason || ''),
   );
 }
@@ -4365,7 +7304,30 @@ function selectResultPayload(plan, pageResult) {
     riskSignals: pageResult.riskSignals ?? [],
     riskEvents: pageResult.riskEvents ?? [],
     stopReason: pageResult.stopReason ?? null,
+    controlProbe: pageResult.controlProbe ?? null,
+    readCrawl: pageResult.readCrawl ?? null,
   };
+  if (isNoContentReadRoutePlan(plan)) {
+    return {
+      queryType: plan.action,
+      contentType: plan.contentType,
+      account: {
+        handle: null,
+        displayName: null,
+        bio: null,
+        stats: [],
+      },
+      items: [],
+      media: [],
+      finalUrl: pageResult.finalUrl,
+      title: pageResult.title,
+      surfaceInventory: pageResult.surfaceInventory ?? null,
+      archive: pageResult.archive ?? null,
+      contentSuppressed: true,
+      contentSuppressionReason: contentSuppressionReasonForPlan(plan),
+      ...runtimeFields,
+    };
+  }
   if (plan.action === 'account-info') {
     return {
       queryType: 'account-info',
@@ -4373,6 +7335,7 @@ function selectResultPayload(plan, pageResult) {
       currentAccount: pageResult.currentAccount,
       finalUrl: pageResult.finalUrl,
       title: pageResult.title,
+      surfaceInventory: pageResult.surfaceInventory ?? null,
       ...runtimeFields,
     };
   }
@@ -4383,6 +7346,7 @@ function selectResultPayload(plan, pageResult) {
       users: pageResult.relations,
       finalUrl: pageResult.finalUrl,
       title: pageResult.title,
+      surfaceInventory: pageResult.surfaceInventory ?? null,
       archive: pageResult.archive ?? null,
       ...runtimeFields,
     };
@@ -4395,6 +7359,7 @@ function selectResultPayload(plan, pageResult) {
     media: pageResult.media,
     finalUrl: pageResult.finalUrl,
     title: pageResult.title,
+    surfaceInventory: pageResult.surfaceInventory ?? null,
     archive: pageResult.archive ?? null,
     ...runtimeFields,
   };
@@ -4527,10 +7492,11 @@ function summarizeSocialAuthHealth(plan, settings, authContext = /** @type {any}
 }
 
 function renderMarkdownReport(result) {
+  const safePlan = safePlanForArtifact(result.plan ?? {});
   const lines = [
     `# ${result.siteKey} ${result.plan.action}`,
     '',
-    `- URL: ${result.plan.url}`,
+    `- URL: ${safePlan.url ?? '<redacted-url>'}`,
     `- Status: ${result.ok ? 'ok' : 'failed'}`,
     `- Items: ${result.result?.items?.length ?? 0}`,
     `- Users: ${result.result?.users?.length ?? 0}`,
@@ -4576,6 +7542,20 @@ function renderMarkdownReport(result) {
     lines.push(`- Archive complete: ${formatArchiveComplete(result.result.archive.complete)}`);
     if (result.result.archive.reason) {
       lines.push(`- Archive stop reason: ${result.result.archive.reason}`);
+    }
+  }
+  if (result.result?.controlProbe?.requested) {
+    const probe = result.result.controlProbe;
+    lines.push(`- Read control probes: ${probe.executedCount ?? 0}/${probe.selectedCount ?? 0} executed, failed ${probe.failedCount ?? 0}, mutation-blocked ${probe.mutationBlockedCount ?? 0}`);
+    if (probe.api?.operations?.length) {
+      lines.push(`- Read control probe API: ${probe.api.operations.join(', ')}`);
+    }
+  }
+  if (result.result?.readCrawl?.requested) {
+    const crawl = result.result.readCrawl;
+    lines.push(`- Read surface crawl: visited ${crawl.visitedCount ?? 0}/${crawl.maxPages ?? 0}, routes ${crawl.discoveredRouteTemplateCount ?? 0}, blocked ${crawl.blockedRouteCount ?? 0}`);
+    if (crawl.api?.operations?.length) {
+      lines.push(`- Read surface crawl API: ${crawl.api.operations.join(', ')}`);
     }
   }
   if (result.completeness) {
@@ -4837,7 +7817,8 @@ function renderSocialIndexCsv(result, layout) {
 
 function renderSocialIndexHtml(result, layout) {
   const rows = socialIndexRows(result, layout);
-  const title = `${result.siteKey} ${result.plan?.account || result.plan?.query || result.plan?.action || 'archive'}`;
+  const safePlan = safePlanForArtifact(result.plan ?? {});
+  const title = `${result.siteKey} ${safePlan.account || safePlan.query || safePlan.action || 'archive'}`;
   const bodyRows = rows.map((row) => {
     const links = row.localFiles.length
       ? row.localFiles.map((filePath, index) => {
@@ -4951,6 +7932,18 @@ function buildSocialActionRecoveryCommand(result, layout, extraArgs = /** @type 
   }
   if (plan.query) {
     args.push('--query', plan.query);
+  }
+  if (plan.action === 'read-route' && plan.routePath) {
+    args.push('--route', plan.routePath);
+  }
+  if (plan.action === 'read-route' && plan.statusId) {
+    args.push('--status-id', plan.statusId);
+  }
+  if (plan.action === 'read-route' && plan.mediaId) {
+    args.push('--media-id', plan.mediaId);
+  }
+  if (plan.action === 'read-route' && plan.spaceId) {
+    args.push('--space-id', plan.spaceId);
   }
   args.push(
     '--run-dir',
@@ -5310,7 +8303,7 @@ function summarizeCompleteness(result) {
   const driftReasons = [
     archiveReason,
     ...(archive?.capture?.driftSamples?.length ? ['api-schema-drift-samples'] : []),
-  ].filter((reason) => ['no-api-seed-captured', 'no-parseable-api-seed', 'api-schema-drift-samples'].includes(String(reason)));
+  ].filter((reason) => ['no-api-seed-captured', 'no-parseable-api-seed', 'api-operations-no-archive-seed', 'api-schema-drift-samples'].includes(String(reason)));
   const blockedReasons = [
     ...(result?.runtimeRisk?.hardStop ? [result.runtimeRisk.stopReason || 'runtime-risk'] : []),
     ...boundarySignals.filter((signal) => ['challenge', 'login-wall', 'rate-limited'].includes(signal)),
@@ -5425,7 +8418,7 @@ function summarizeRunOutcome(result, settings) {
       resumable: Boolean(archive?.nextCursor),
     };
   }
-  if (archive?.reason === 'soft-cursor-exhausted' && result.completeness?.itemCount > 0) {
+  if (archive?.reason === 'soft-cursor-exhausted' && ((result.completeness?.itemCount ?? 0) > 0 || (result.completeness?.userCount ?? 0) > 0)) {
     return {
       ok: true,
       status: 'degraded',
@@ -5535,6 +8528,10 @@ function createCheckpointWriter(layout, plan, settings, checkpoint) {
     previousState: checkpoint.previousState,
     previousItems: checkpoint.previousItems,
     async write(patch = /** @type {any} */ ({})) {
+      const safeCurrentUrl = safeUrlForArtifact(
+        Object.hasOwn(patch, 'currentUrl') ? patch.currentUrl : currentState.currentUrl,
+        plan.host,
+      );
       currentState = {
         ...currentState,
         ...patch,
@@ -5542,6 +8539,7 @@ function createCheckpointWriter(layout, plan, settings, checkpoint) {
         updatedAt: new Date().toISOString(),
         siteKey: plan.siteKey,
         plan: safePlanForArtifact(patch.plan || plan),
+        currentUrl: safeCurrentUrl,
         settings: safeSettingsForArtifact(settings),
         artifacts: artifactPathSummary(layout),
       };
@@ -5788,6 +8786,9 @@ async function writeSocialArtifacts(finalResult, layout, checkpointWriter, hookO
     counts,
     completeness: finalResult.completeness ?? null,
     archive: finalResult.result?.archive ?? null,
+    surfaceInventory: finalResult.result?.surfaceInventory ?? null,
+    controlProbe: finalResult.result?.controlProbe ?? null,
+    readCrawl: finalResult.result?.readCrawl ?? null,
     authHealth: finalResult.authHealth ?? null,
     sessionProvider: finalResult.sessionProvider ?? null,
     sessionHealth: finalResult.sessionHealth ?? null,
@@ -5960,6 +8961,9 @@ function normalizeRunSettings(plan, options = /** @type {any} */ ({})) {
     apiCursor: apiCursorSuppressed ? false : requestedApiCursor,
     apiCursorSuppressed,
     maxApiPages: Math.max(0, toNumber(options.maxApiPages, DEFAULT_MAX_API_PAGES)),
+    maxControlProbes: Math.max(0, toNumber(options.maxControlProbes, DEFAULT_MAX_CONTROL_PROBES)),
+    maxReadCrawlPages: Math.max(0, toNumber(options.maxReadCrawlPages, DEFAULT_MAX_READ_CRAWL_PAGES)),
+    maxReadCrawlDepth: Math.max(0, toNumber(options.maxReadCrawlDepth, DEFAULT_MAX_READ_CRAWL_DEPTH)),
     maxUsers: Math.max(1, toNumber(options.maxUsers, DEFAULT_MAX_USERS)),
     maxDetailPages: Math.max(0, toNumber(options.maxDetailPages, DEFAULT_MAX_DETAIL_PAGES)),
     perUserMaxItems: Math.max(1, toNumber(options.perUserMaxItems, DEFAULT_MAX_ITEMS)),
@@ -5969,6 +8973,9 @@ function normalizeRunSettings(plan, options = /** @type {any} */ ({})) {
     apiRetries: Math.max(0, toNumber(options.apiRetries, options.riskRetries ?? DEFAULT_API_RETRIES)),
     followedDateMode: followedDateMode || (plan.siteKey === 'instagram' && plan.action === 'followed-posts-by-date' ? 'followed-profile-date-scan' : 'default'),
     dryRun: toBoolean(options.dryRun, false),
+    probeReadControls: toBoolean(options.probeReadControls, false),
+    crawlReadSurfaces: toBoolean(options.crawlReadSurfaces, false),
+    riskReviewedReadSurfaces: toBoolean(options.riskReviewedReadSurfaces, false),
     downloadMedia: toBoolean(options.downloadMedia, false),
     outputRoot,
     runDir: options.runDir ? path.resolve(options.runDir) : null,
@@ -5979,6 +8986,40 @@ function normalizeRunSettings(plan, options = /** @type {any} */ ({})) {
     sessionManifest: options.sessionManifest ? path.resolve(String(options.sessionManifest)) : null,
     sessionProvider: options.sessionProvider,
     useUnifiedSessionHealth: options.useUnifiedSessionHealth,
+  };
+}
+
+function socialSessionHealthUrl(siteKey, options = /** @type {any} */ ({})) {
+  const host = normalizeText(options.host) || SOCIAL_SITES[siteKey]?.host || siteKey;
+  return SOCIAL_SITES[siteKey]?.homeUrl || `https://${host}/`;
+}
+
+async function inspectReusableSocialSession(siteKey, options = /** @type {any} */ ({}), deps = /** @type {any} */ ({})) {
+  return await (deps.inspectReusableSiteSessionRuntime ?? inspectReusableSiteSession)(
+    socialSessionHealthUrl(siteKey, options),
+    {
+      browserProfileRoot: options.browserProfileRoot,
+      userDataDir: options.userDataDir,
+      reuseLoginState: true,
+    },
+    {
+      profilePath: options.profilePath,
+    },
+    deps.inspectReusableSiteSessionDeps ?? deps,
+  );
+}
+
+function socialSessionRunnerDeps(deps = /** @type {any} */ ({})) {
+  const explicit = deps.sessionRunnerDeps ?? {};
+  return {
+    ...deps,
+    ...explicit,
+    inspectReusableSiteSession: explicit.inspectReusableSiteSession
+      ?? deps.inspectReusableSiteSession
+      ?? ((siteKey, options) => inspectReusableSocialSession(siteKey, options, deps)),
+    prepareSiteSessionGovernance: explicit.prepareSiteSessionGovernance
+      ?? deps.prepareSiteSessionGovernance
+      ?? prepareSiteSessionGovernance,
   };
 }
 
@@ -5994,7 +9035,7 @@ async function resolveSocialSessionMetadata(plan, config, settings, artifactLayo
       userDataDir: settings.userDataDir,
       runDir: path.join(artifactLayout.runDir, 'session-health'),
       sessionRequirement: plan.requiresAuth === true ? 'required' : 'optional',
-    }, {}, deps.sessionRunnerDeps ?? deps);
+    }, {}, socialSessionRunnerDeps(deps));
     return {
       sessionProvider: 'unified-session-runner',
       sessionHealth: summarizeSessionRunManifest(sessionResult.manifest),
@@ -6028,8 +9069,14 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
         apiCursor: settings.apiCursor,
         apiCursorSuppressed: settings.apiCursorSuppressed,
         maxApiPages: settings.maxApiPages,
+        maxControlProbes: settings.maxControlProbes,
+        maxReadCrawlPages: settings.maxReadCrawlPages,
+        maxReadCrawlDepth: settings.maxReadCrawlDepth,
         maxUsers: settings.maxUsers,
         downloadMedia: settings.downloadMedia,
+        probeReadControls: settings.probeReadControls,
+        crawlReadSurfaces: settings.crawlReadSurfaces,
+        riskReviewedReadSurfaces: settings.riskReviewedReadSurfaces,
         riskBackoffMs: settings.riskBackoffMs,
         riskRetries: settings.riskRetries,
         apiRetries: settings.apiRetries,
@@ -6112,7 +9159,9 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
         media: 0,
       },
     });
-    const shouldCaptureApi = (settings.apiCursor && !(config.siteKey === 'instagram' && isSocialRelationAction(plan.action)))
+    const shouldCaptureApi = settings.probeReadControls
+      || settings.crawlReadSurfaces
+      || (settings.apiCursor && !(config.siteKey === 'instagram' && isSocialRelationAction(plan.action)))
       || (config.siteKey === 'x' && isSocialRelationAction(plan.action));
     await checkpoint.write({
       status: 'running',
@@ -6141,7 +9190,7 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
       userDataDirPrefix: `${plan.siteKey}-social-browser-`,
     });
     apiCapture = shouldCaptureApi && typeof session?.send === 'function' && typeof session?.client?.on === 'function'
-      ? await createSocialApiCapture(session, config, settings)
+      ? await createSocialApiCapture(session, config, settings, plan)
       : null;
     await checkpoint.write({
       status: 'running',
@@ -6235,7 +9284,8 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
         ? { ...settings, maxScrolls: Math.min(settings.maxScrolls, 1) }
         : settings;
       const domPageResult = await collectSocialPage(session, config, executionPlan, domPageSettings);
-      const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action));
+      const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action))
+        && !isNoContentReadRoutePlan(executionPlan);
       let apiArchive = /** @type {any} */ (shouldCollectContentApiArchive
         ? await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint, {
           seedOnly: false,
@@ -6308,6 +9358,44 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
           ],
         };
         surfacePreparation = fallbackResult.surfacePreparation ?? surfacePreparation;
+      }
+    }
+    if (settings.probeReadControls) {
+      await checkpoint.write({
+        status: 'running',
+        phase: 'probing-read-controls',
+        updatedAt: new Date().toISOString(),
+        currentUrl: executionPlan.url,
+        counts: {
+          items: pageResult?.items?.length ?? loadedCheckpoint.previousItems.length,
+          media: pageResult?.media?.length ?? 0,
+        },
+      });
+      const controlProbe = await runReadOnlyControlProbes(session, config, executionPlan, settings, apiCapture);
+      if (controlProbe) {
+        pageResult = {
+          ...pageResult,
+          controlProbe,
+        };
+      }
+    }
+    if (settings.crawlReadSurfaces) {
+      await checkpoint.write({
+        status: 'running',
+        phase: 'crawling-read-surfaces',
+        updatedAt: new Date().toISOString(),
+        currentUrl: executionPlan.url,
+        counts: {
+          items: pageResult?.items?.length ?? loadedCheckpoint.previousItems.length,
+          media: pageResult?.media?.length ?? 0,
+        },
+      });
+      const readCrawl = await runReadOnlySurfaceCrawl(session, config, executionPlan, settings, apiCapture);
+      if (readCrawl) {
+        pageResult = {
+          ...pageResult,
+          readCrawl,
+        };
       }
     }
     const resultPayload = mergeCheckpointItemsIntoPayload(

@@ -114,6 +114,50 @@ test('openBrowserSession attaches to the existing startup page target before cre
 
 });
 
+test('openBrowserSession forwards launch args to the browser launcher', async () => {
+  let launchOptions = null;
+
+  const session = await openBrowserSession({
+    headless: false,
+    timeoutMs: 250,
+    fullPage: false,
+    viewport: {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+    },
+    startupUrl: 'about:blank',
+    launchArgs: ['--load-extension=C:\\SiteForge\\bridge', '--disable-extensions-except=C:\\SiteForge\\bridge'],
+  }, {}, {
+    detectBrowserPath: async () => 'C:\\Chrome\\chrome.exe',
+    launchBrowser: async (_browserPath, options) => {
+      launchOptions = options;
+      return {
+        browserProcess: null,
+        userDataDir: 'C:\\profiles\\bridge',
+        cleanupUserDataDirOnShutdown: true,
+        wsUrl: 'ws://127.0.0.1:9222/devtools/browser/test',
+        startupUrl: 'about:blank',
+      };
+    },
+    CdpClient: class extends FakeCdpClient {
+      constructor(wsUrl, options) {
+        super(wsUrl, options);
+        this.targetInfos = [{ targetId: 'existing-target-1', type: 'page', url: 'about:blank' }];
+      }
+    },
+  });
+
+  try {
+    assert.deepEqual(launchOptions.launchArgs, [
+      '--load-extension=C:\\SiteForge\\bridge',
+      '--disable-extensions-except=C:\\SiteForge\\bridge',
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test('openBrowserSession falls back to createTarget when no initial page target becomes available', async () => {
   let clientInstance = null;
 

@@ -13,6 +13,7 @@ export const RUNTIME_PROVIDER_IDS = Object.freeze([
 export const RUNTIME_MODES = Object.freeze({
   genericHttpRead: 'generic_http_read',
   browserBridgeRequired: 'browser_bridge_required',
+  redditOauthRead: 'reddit_oauth_read_runtime',
 });
 
 export const RUNTIME_PROMOTION_CLASSES = Object.freeze({

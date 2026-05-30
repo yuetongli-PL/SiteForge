@@ -40,7 +40,7 @@
       "canonicalBaseUrl": "https://www.qidian.com/",
       "host": "www.qidian.com",
       "siteKey": "qidian",
-      "adapterId": "chapter-content",
+      "adapterId": "qidian",
       "siteArchetype": "chapter-content",
       "repoSkillDir": "skills/qidian",
       "capabilityFamilies": [
@@ -147,6 +147,213 @@
         "reason": "Jable video download routing is an experimental placeholder; no native resource resolver has been safety-reviewed yet."
       },
       "rankingQueryEntrypoint": "src/entrypoints/sites/jable-ranking.mjs"
+    },
+    "www.t-powers.co.jp": {
+      "canonicalBaseUrl": "https://www.t-powers.co.jp/release/",
+      "siteArchetype": "catalog-detail",
+      "host": "www.t-powers.co.jp",
+      "siteKey": "t-powers",
+      "adapterId": "t-powers",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page"
+      ],
+      "accessSignals": {
+        "notes": [
+          "Browser Bridge captured release, talent, topic, blog, contact, and event routes; company and root routes showed challenge surfaces."
+        ]
+      }
+    },
+    "www.8man.jp": {
+      "canonicalBaseUrl": "https://www.8man.jp/",
+      "siteArchetype": "catalog-detail",
+      "host": "www.8man.jp",
+      "siteKey": "eightman",
+      "adapterId": "eightman",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page"
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "browser-bridge-empty-summary",
+          "browser-bridge-no-captured-route"
+        ],
+        "notes": [
+          "Browser Bridge did not capture usable structure for the public root in this run; keep API promotion disabled until stronger evidence exists."
+        ]
+      }
+    },
+    "dahlia-av.jp": {
+      "canonicalBaseUrl": "https://dahlia-av.jp/work/",
+      "siteArchetype": "catalog-detail",
+      "host": "dahlia-av.jp",
+      "siteKey": "dahlia",
+      "adapterId": "dahlia",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ]
+    },
+    "www.sod.co.jp": {
+      "canonicalBaseUrl": "https://www.sod.co.jp/newreleases/archive/",
+      "siteArchetype": "catalog-detail",
+      "host": "www.sod.co.jp",
+      "siteKey": "sod",
+      "adapterId": "sod",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ]
+    },
+    "s1s1s1.com": {
+      "canonicalBaseUrl": "https://s1s1s1.com/top",
+      "siteArchetype": "catalog-detail",
+      "host": "s1s1s1.com",
+      "siteKey": "s1",
+      "adapterId": "s1",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "browser-bridge-route-challenge-detected",
+          "browser-bridge-empty-summary",
+          "browser-bridge-no-captured-route"
+        ],
+        "notes": [
+          "Browser Bridge saw a challenge on /top and no captured route summary; do not bypass challenge surfaces."
+        ]
+      }
+    },
+    "attackers.net": {
+      "canonicalBaseUrl": "https://attackers.net/top",
+      "siteArchetype": "catalog-detail",
+      "host": "attackers.net",
+      "siteKey": "attackers",
+      "adapterId": "attackers",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "browser-bridge-route-challenge-detected",
+          "browser-bridge-empty-summary",
+          "browser-bridge-no-captured-route"
+        ],
+        "notes": [
+          "Browser Bridge saw a challenge on /top and no captured route summary; do not bypass challenge surfaces."
+        ]
+      }
+    },
+    "www.km-produce.com": {
+      "canonicalBaseUrl": "https://www.km-produce.com/label/page/2?works=bazooka",
+      "siteArchetype": "catalog-detail",
+      "host": "www.km-produce.com",
+      "siteKey": "km-produce",
+      "adapterId": "km-produce",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content",
+        "switch-in-page-state"
+      ]
+    },
+    "rookie-av.jp": {
+      "canonicalBaseUrl": "https://rookie-av.jp/works/list/release",
+      "siteArchetype": "catalog-detail",
+      "host": "rookie-av.jp",
+      "siteKey": "rookie",
+      "adapterId": "rookie",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "browser-bridge-route-challenge-detected"
+        ],
+        "notes": [
+          "Browser Bridge captured release list and search routes; detail and reserve routes showed challenge surfaces."
+        ]
+      }
+    },
+    "madonna-av.com": {
+      "canonicalBaseUrl": "https://madonna-av.com/works/list/release",
+      "siteArchetype": "catalog-detail",
+      "host": "madonna-av.com",
+      "siteKey": "madonna",
+      "adapterId": "madonna",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "browser-bridge-route-challenge-detected"
+        ],
+        "notes": [
+          "Browser Bridge captured release list and search routes; detail and reserve routes showed challenge surfaces."
+        ]
+      }
+    },
+    "www.maxing.jp": {
+      "canonicalBaseUrl": "https://www.maxing.jp/top/",
+      "siteArchetype": "catalog-detail",
+      "host": "www.maxing.jp",
+      "siteKey": "maxing",
+      "adapterId": "maxing",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ]
+    },
+    "www.dogma.co.jp": {
+      "canonicalBaseUrl": "http://www.dogma.co.jp/13-download",
+      "siteArchetype": "catalog-detail",
+      "host": "www.dogma.co.jp",
+      "siteKey": "dogma",
+      "adapterId": "dogma",
+      "capabilityFamilies": [
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "accessSignals": {
+        "notes": [
+          "Browser Bridge captured only the public download utility page in this run; no executable read-only endpoints were observed."
+        ]
+      }
     },
     "www.bilibili.com": {
       "canonicalBaseUrl": "https://www.bilibili.com/",
@@ -382,6 +589,43 @@
         "query-social-content",
         "query-social-relations"
       ]
+    },
+    "www.reddit.com": {
+      "canonicalBaseUrl": "https://www.reddit.com/",
+      "siteArchetype": "social-content",
+      "scriptLanguage": "python",
+      "interpreterRequired": "pypy3",
+      "templateVersion": 3,
+      "host": "www.reddit.com",
+      "siteKey": "reddit",
+      "adapterId": "reddit",
+      "downloadSessionRequirement": "required",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "query-account-profile",
+        "query-social-content",
+        "query-social-relations",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "routingNotes": [
+        "Use a user-authorized bounded Reddit SiteAdapter workflow with explicit consent, sanitized SessionView summaries, and no raw credential, cookie, or browser profile persistence.",
+        "Use official Reddit API documentation and OAuth read plans for structured API coverage; keep write and mutation operations disabled by default.",
+        "Do not model Reddit as a book/catalog site."
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "robots.txt restricts selected API, GraphQL, search, media, and write surfaces for generic crawling",
+          "authenticated inbox, notifications, settings, and subscription surfaces require user-authorized browser evidence",
+          "write, vote, moderation, submit, delete, and account mutation surfaces must stay disabled by default"
+        ],
+        "notes": [
+          "Generic public crawl is not sufficient proof for full Reddit capability coverage; prefer authorized bounded adapter evidence and official API metadata."
+        ]
+      }
     }
   },
   "schemaVersion": 1

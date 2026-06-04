@@ -5,7 +5,6 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { normalizeDownloadAvailability } from '../src/sites/availability.mjs';
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, '..');
@@ -21,139 +20,7 @@ function asPosixPath(...segments) {
   return normalizeSlashes(path.join(...segments));
 }
 
-async function readJson(relativePath) {
-  return JSON.parse(await readFile(path.join(REPO_ROOT, relativePath), 'utf8'));
-}
-
-async function loadContext() {
-  const registry = await readJson('config/site-registry.json');
-  const capabilities = await readJson('config/site-capabilities.json');
-  const hosts = Object.keys(registry.sites ?? {});
-  const capabilityHosts = Object.keys(capabilities.sites ?? {});
-  if (hosts.join('\n') !== capabilityHosts.join('\n')) {
-    throw new Error('site-registry and site-capabilities host order must match before README generation.');
-  }
-  return {
-    siteRows: hosts.map((host) => ({
-      host,
-      registry: registry.sites?.[host] ?? {},
-      capabilities: capabilities.sites?.[host] ?? {},
-    })),
-  };
-}
-
-function stringList(values) {
-  return Array.isArray(values)
-    ? values.map((value) => String(value).trim()).filter(Boolean)
-    : [];
-}
-
-function formatList(values, fallback = '无') {
-  const list = stringList(values);
-  return list.length ? list.join(', ') : fallback;
-}
-
-function firstText(...values) {
-  for (const value of values) {
-    const text = String(value ?? '').trim();
-    if (text) {
-      return text;
-    }
-  }
-  return null;
-}
-
-function publicBuildStatus({ registry, capabilities }) {
-  const availability = normalizeDownloadAvailability(registry, capabilities);
-  const liveReason = firstText(
-    registry.genericLiveBuild?.reasonCode,
-    capabilities.genericLiveBuild?.reasonCode,
-    registry.siteAccessStatus,
-    capabilities.siteAccessStatus,
-  );
-  if (availability.publicLiveBlocked) {
-    return `通用实时构建受阻${liveReason ? ` (${liveReason})` : ''}`;
-  }
-  if (availability.blockedTaskTypes.length) {
-    return '只读元数据；下载执行受阻';
-  }
-  if (registry.downloadSessionRequirement === 'required') {
-    return '已记录站点元数据；声明的下载路径需要授权';
-  }
-  if (registry.downloadSessionRequirement === 'optional') {
-    return '已记录站点元数据；声明的下载路径可能需要授权';
-  }
-  return '已记录站点元数据';
-}
-
-function availableSurface({ registry, capabilities }) {
-  const availability = normalizeDownloadAvailability(registry, capabilities);
-  if (availability.publicLiveBlocked) {
-    return '通用实时构建不可用；仅限授权或本地 HTTP 验证路径';
-  }
-  const readOnlyFamilies = stringList(capabilities.capabilityFamilies ?? registry.capabilityFamilies)
-    .filter((family) => family !== 'download-content');
-  const parts = [];
-  if (readOnlyFamilies.length) {
-    parts.push(`只读能力: ${formatList(readOnlyFamilies)}`);
-  }
-  if (capabilities.rankingSupported === true) {
-    parts.push('排名查询');
-  }
-  if (availability.availableTaskTypes.length) {
-    parts.push(`可用下载: ${formatList(availability.availableTaskTypes)}`);
-  }
-  if (availability.runtimeDependencies.length) {
-    parts.push(`运行依赖: ${formatList(availability.runtimeDependencies)}`);
-  }
-  return parts.length ? parts.join('; ') : '仅元数据';
-}
-
-function blockedOrLimitedSummary({ registry, capabilities }) {
-  const availability = normalizeDownloadAvailability(registry, capabilities);
-  const parts = [];
-  if (availability.declaredTaskTypes.length) {
-    parts.push(`已声明下载: ${formatList(availability.declaredTaskTypes)}`);
-    parts.push(`可用: ${formatList(availability.availableTaskTypes)}`);
-  }
-  if (availability.runtimeDependencies.length) {
-    parts.push(`运行依赖: ${formatList(availability.runtimeDependencies)}`);
-  }
-  if (availability.blockedTaskTypes.length) {
-    parts.push(`受阻: ${formatList(availability.blockedTaskTypes)}`);
-  }
-  if (availability.publicLiveBlocked) {
-    const reason = availability.genericLiveReasonCode
-      ? ` (${availability.genericLiveReasonCode})`
-      : '';
-    parts.push(`通用实时采集受阻${reason}`);
-  }
-  if (availability.downloadReasonCode) {
-    parts.push(`下载原因: ${availability.downloadReasonCode}`);
-  } else if (availability.reasonCode) {
-    parts.push(`原因: ${availability.reasonCode}`);
-  }
-  if (availability.dependencyReasonCodes.length) {
-    parts.push(`依赖原因: ${formatList(availability.dependencyReasonCodes)}`);
-  }
-  return parts.length ? parts.join('; ') : '无记录';
-}
-
-function renderSiteTable(siteRows) {
-  const rows = siteRows.map((row) => [
-    `\`${row.host}\``,
-    publicBuildStatus(row),
-    availableSurface(row),
-    blockedOrLimitedSummary(row),
-  ]);
-  return [
-    '| 主机 | 公开构建状态 | 可用公开能力 | 受阻或受限声明 |',
-    '| --- | --- | --- | --- |',
-    ...rows.map((row) => `| ${row.join(' | ')} |`),
-  ].join('\n');
-}
-
-function renderReadme(context) {
+function renderReadme() {
   return `${GENERATED_MARKER}
 
 # SiteForge
@@ -199,14 +66,6 @@ siteforge build https://example.com/
 
 已退役的公开 Web UI、旧能力层、旧 Pipeline engine/runtime/stage 以及旧 kernel 层保持删除状态，并由架构测试守护。下载声明在没有明确记录受约束实现前只作为元数据或站点专用内部路径；受阻占位不会暴露为公开执行能力。
 
-## 已知公开站点记录
-
-稳定配置当前记录了以下主机。表格会区分元数据、可用性、运行依赖和受阻原因，避免把受阻、占位、仅本地验证、需要授权或依赖缺失的记录误表述为通用实时支持。
-
-${renderSiteTable(context.siteRows)}
-
-已删除的内部 catalog 实验不属于公开站点注册表。
-
 ## 本地验证
 
 常用本地检查：
@@ -241,9 +100,8 @@ git diff --check
 
 async function main(argv = process.argv.slice(2)) {
   const check = argv.includes('--check');
-  const context = await loadContext();
   const targetPath = path.join(REPO_ROOT, README_OUTPUT);
-  const nextText = renderReadme(context).replace(/\r\n/gu, '\n');
+  const nextText = renderReadme().replace(/\r\n/gu, '\n');
   if (check) {
     const currentText = (await readFile(targetPath, 'utf8')).replace(/\r\n/gu, '\n');
     if (currentText !== nextText) {

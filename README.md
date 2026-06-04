@@ -43,37 +43,6 @@ siteforge build https://example.com/
 
 已退役的公开 Web UI、旧能力层、旧 Pipeline engine/runtime/stage 以及旧 kernel 层保持删除状态，并由架构测试守护。下载声明在没有明确记录受约束实现前只作为元数据或站点专用内部路径；受阻占位不会暴露为公开执行能力。
 
-## 已知公开站点记录
-
-稳定配置当前记录了以下主机。表格会区分元数据、可用性、运行依赖和受阻原因，避免把受阻、占位、仅本地验证、需要授权或依赖缺失的记录误表述为通用实时支持。
-
-| 主机 | 公开构建状态 | 可用公开能力 | 受阻或受限声明 |
-| --- | --- | --- | --- |
-| `www.22biqu.com` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-chapter, navigate-to-content, navigate-to-utility-page, open-auth-page, search-content; 可用下载: book; 运行依赖: pypy3 | 已声明下载: book; 可用: book; 运行依赖: pypy3; 依赖原因: runtime-dependency-missing |
-| `www.qidian.com` | 已记录站点元数据 | 只读能力: navigate-to-category, navigate-to-chapter, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `www.bz888888888.com` | 通用实时构建受阻 (blocked_live_cloudflare_challenge) | 通用实时构建不可用；仅限授权或本地 HTTP 验证路径 | 已声明下载: book; 可用: 无; 运行依赖: pypy3, tesseract; 受阻: book; 通用实时采集受阻; 下载原因: blocked-by-cloudflare-challenge; 依赖原因: runtime-dependency-missing, ocr-dependency-missing |
-| `moodyz.com` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state | 无记录 |
-| `jable.tv` | 只读元数据；下载执行受阻 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, search-content, switch-in-page-state; 排名查询 | 已声明下载: video, media-bundle; 可用: 无; 受阻: video, media-bundle; 下载原因: jable-native-resolver-required |
-| `www.t-powers.co.jp` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state | 无记录 |
-| `www.8man.jp` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page | 无记录 |
-| `dahlia-av.jp` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `www.sod.co.jp` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `s1s1s1.com` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `attackers.net` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `www.km-produce.com` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state | 无记录 |
-| `rookie-av.jp` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `madonna-av.com` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `www.maxing.jp` | 已记录站点元数据 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `www.dogma.co.jp` | 已记录站点元数据 | 只读能力: navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content | 无记录 |
-| `www.bilibili.com` | 已记录站点元数据；声明的下载路径可能需要授权 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state; 可用下载: video, media-bundle | 已声明下载: video, media-bundle; 可用: video, media-bundle |
-| `www.douyin.com` | 已记录站点元数据；声明的下载路径可能需要授权 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, search-content, switch-in-page-state; 可用下载: video, media-bundle; 运行依赖: pypy3 | 已声明下载: video, media-bundle; 可用: video, media-bundle; 运行依赖: pypy3; 依赖原因: runtime-dependency-missing |
-| `www.xiaohongshu.com` | 已记录站点元数据；声明的下载路径可能需要授权 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, open-auth-page, query-social-content, query-social-relations, search-content; 可用下载: image-note, media-bundle; 运行依赖: pypy3 | 已声明下载: image-note, media-bundle; 可用: image-note, media-bundle; 运行依赖: pypy3; 依赖原因: runtime-dependency-missing |
-| `x.com` | 通用实时构建受阻 (robots-disallowed) | 通用实时构建不可用；仅限授权或本地 HTTP 验证路径 | 已声明下载: social-archive, media-bundle; 可用: 无; 运行依赖: pypy3; 受阻: social-archive, media-bundle; 通用实时采集受阻 (robots-disallowed); 下载原因: download-layer-removed; 依赖原因: runtime-dependency-missing |
-| `www.instagram.com` | 只读元数据；下载执行受阻 | 只读能力: navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, query-account-profile, query-social-content, query-social-relations, search-content, switch-in-page-state; 运行依赖: pypy3 | 已声明下载: social-archive, media-bundle; 可用: 无; 运行依赖: pypy3; 受阻: social-archive, media-bundle; 下载原因: download-layer-removed; 依赖原因: runtime-dependency-missing |
-| `www.reddit.com` | 只读元数据；下载执行受阻 | 只读能力: disabled-social-mutation, navigate-to-author, navigate-to-category, navigate-to-content, navigate-to-utility-page, open-auth-page, query-account-profile, query-comment-thread, query-community-metadata, query-media-content, query-moderation-content, query-notifications, query-private-messages, query-social-content, query-social-relations, query-wiki-content, search-content, switch-in-page-state; 运行依赖: pypy3 | 已声明下载: social-archive, media-bundle; 可用: 无; 运行依赖: pypy3; 受阻: social-archive, media-bundle; 下载原因: download-layer-removed; 依赖原因: runtime-dependency-missing |
-
-已删除的内部 catalog 实验不属于公开站点注册表。
-
 ## 本地验证
 
 常用本地检查：

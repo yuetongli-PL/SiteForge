@@ -48,7 +48,7 @@ function stringList(values) {
     : [];
 }
 
-function formatList(values, fallback = 'none') {
+function formatList(values, fallback = '无') {
   const list = stringList(values);
   return list.length ? list.join(', ') : fallback;
 }
@@ -72,71 +72,71 @@ function publicBuildStatus({ registry, capabilities }) {
     capabilities.siteAccessStatus,
   );
   if (availability.publicLiveBlocked) {
-    return `generic live build blocked${liveReason ? ` (${liveReason})` : ''}`;
+    return `通用实时构建受阻${liveReason ? ` (${liveReason})` : ''}`;
   }
   if (availability.blockedTaskTypes.length) {
-    return 'read-only metadata; download execution blocked';
+    return '只读元数据；下载执行受阻';
   }
   if (registry.downloadSessionRequirement === 'required') {
-    return 'known-site metadata; authorization required for declared download path';
+    return '已记录站点元数据；声明的下载路径需要授权';
   }
   if (registry.downloadSessionRequirement === 'optional') {
-    return 'known-site metadata; authorization may be required for declared download path';
+    return '已记录站点元数据；声明的下载路径可能需要授权';
   }
-  return 'known-site metadata';
+  return '已记录站点元数据';
 }
 
 function availableSurface({ registry, capabilities }) {
   const availability = normalizeDownloadAvailability(registry, capabilities);
   if (availability.publicLiveBlocked) {
-    return 'none through generic live build; use only authorized or local HTTP validation paths';
+    return '通用实时构建不可用；仅限授权或本地 HTTP 验证路径';
   }
   const readOnlyFamilies = stringList(capabilities.capabilityFamilies ?? registry.capabilityFamilies)
     .filter((family) => family !== 'download-content');
   const parts = [];
   if (readOnlyFamilies.length) {
-    parts.push(`read-only: ${formatList(readOnlyFamilies)}`);
+    parts.push(`只读能力: ${formatList(readOnlyFamilies)}`);
   }
   if (capabilities.rankingSupported === true) {
-    parts.push('ranking query');
+    parts.push('排名查询');
   }
   if (availability.availableTaskTypes.length) {
-    parts.push(`downloads available: ${formatList(availability.availableTaskTypes)}`);
+    parts.push(`可用下载: ${formatList(availability.availableTaskTypes)}`);
   }
   if (availability.runtimeDependencies.length) {
-    parts.push(`requires: ${formatList(availability.runtimeDependencies)}`);
+    parts.push(`运行依赖: ${formatList(availability.runtimeDependencies)}`);
   }
-  return parts.length ? parts.join('; ') : 'metadata only';
+  return parts.length ? parts.join('; ') : '仅元数据';
 }
 
 function blockedOrLimitedSummary({ registry, capabilities }) {
   const availability = normalizeDownloadAvailability(registry, capabilities);
   const parts = [];
   if (availability.declaredTaskTypes.length) {
-    parts.push(`downloads declared: ${formatList(availability.declaredTaskTypes)}`);
-    parts.push(`available: ${formatList(availability.availableTaskTypes)}`);
+    parts.push(`已声明下载: ${formatList(availability.declaredTaskTypes)}`);
+    parts.push(`可用: ${formatList(availability.availableTaskTypes)}`);
   }
   if (availability.runtimeDependencies.length) {
-    parts.push(`requires: ${formatList(availability.runtimeDependencies)}`);
+    parts.push(`运行依赖: ${formatList(availability.runtimeDependencies)}`);
   }
   if (availability.blockedTaskTypes.length) {
-    parts.push(`blocked: ${formatList(availability.blockedTaskTypes)}`);
+    parts.push(`受阻: ${formatList(availability.blockedTaskTypes)}`);
   }
   if (availability.publicLiveBlocked) {
     const reason = availability.genericLiveReasonCode
       ? ` (${availability.genericLiveReasonCode})`
       : '';
-    parts.push(`generic live collection blocked${reason}`);
+    parts.push(`通用实时采集受阻${reason}`);
   }
   if (availability.downloadReasonCode) {
-    parts.push(`download reason: ${availability.downloadReasonCode}`);
+    parts.push(`下载原因: ${availability.downloadReasonCode}`);
   } else if (availability.reasonCode) {
-    parts.push(`reason: ${availability.reasonCode}`);
+    parts.push(`原因: ${availability.reasonCode}`);
   }
   if (availability.dependencyReasonCodes.length) {
-    parts.push(`dependency reason: ${formatList(availability.dependencyReasonCodes)}`);
+    parts.push(`依赖原因: ${formatList(availability.dependencyReasonCodes)}`);
   }
-  return parts.length ? parts.join('; ') : 'none recorded';
+  return parts.length ? parts.join('; ') : '无记录';
 }
 
 function renderSiteTable(siteRows) {
@@ -147,7 +147,7 @@ function renderSiteTable(siteRows) {
     blockedOrLimitedSummary(row),
   ]);
   return [
-    '| Host | Public build status | Available public surface | Blocked or limited declarations |',
+    '| 主机 | 公开构建状态 | 可用公开能力 | 受阻或受限声明 |',
     '| --- | --- | --- | --- |',
     ...rows.map((row) => `| ${row.join(' | ')} |`),
   ].join('\n');
@@ -158,58 +158,58 @@ function renderReadme(context) {
 
 # SiteForge
 
-SiteForge turns a public site URL into a local, governed site capability workspace. The public CLI is intentionally small:
+SiteForge 用于把公开网站 URL 转换成本地、受治理的站点能力工作区。公开 CLI 保持克制，目前只暴露一个主要入口：
 
 \`\`\`bash
 siteforge build https://example.com/
 \`\`\`
 
-Builds crawl within bounded site rules, compile sanitized evidence into capability contracts, plan descriptor-only actions, and promote verified outputs under \`.siteforge/sites/<site_id>/\`.
+构建流程会在受约束的站点规则内采集页面证据，将清洗后的证据编译为能力契约，生成仅描述符形式的动作计划，并把已验证产物写入 \`.siteforge/sites/<site_id>/\`。
 
-## Outputs
+## 输出内容
 
-- Site workspace: \`.siteforge/sites/<site_id>/\`.
-- Build reports: \`build_report.user.json\`, \`build_report.user.md\`, \`build_report.debug.json\`, and \`build_report.json\`.
-- Capability contracts: pages, risks, sessions, schemas, policies, and supported actions.
-- Descriptor-only plans: allowed, blocked, or remediation paths without privileged execution.
-- Repo-local Skill material backed by verified capability evidence.
+- 站点工作区：\`.siteforge/sites/<site_id>/\`。
+- 构建报告：\`build_report.user.json\`、\`build_report.user.md\`、\`build_report.debug.json\` 和 \`build_report.json\`。
+- 能力契约：页面、风险、会话、Schema、策略和支持的动作。
+- 仅描述符计划：记录允许、受阻或需要修复的路径，不执行特权操作。
+- 仓库本地 Skill 材料：由已验证的能力证据支撑。
 
-## Architecture
+## 架构
 
-The repository is one package and one public CLI. Dependency direction stays entrypoints -> app -> domain. Pipeline, Compiler, and Planner stay site-agnostic; SiteAdapters own site interpretation; infra supplies IO, browser, auth, network, process, and CLI adapters. Internal Node entrypoints under \`src/entrypoints/\` are operator tools, not public routes.
+仓库保持为一个包和一个公开 CLI。依赖方向固定为 \`entrypoints -> app -> domain\`。Pipeline、Compiler 和 Planner 不绑定具体站点；SiteAdapter 负责站点语义解释；infra 提供 IO、浏览器、认证、网络、进程和 CLI 适配。位于 \`src/entrypoints/\` 下的内部 Node 入口是操作员工具，不属于公开路由。
 
-## Repository Layout
+## 仓库结构
 
-| Path | Responsibility |
+| 路径 | 职责 |
 | --- | --- |
-| \`src/entrypoints/cli/\` | Public CLI facade; only \`siteforge build <url>\` is public. |
-| \`src/entrypoints/operator/\` | Internal operator entrypoints that are not routed through \`siteforge\`. |
-| \`src/entrypoints/build/\` | Internal SiteForge build CLI entrypoint wiring used by the public \`siteforge build\` facade. |
-| \`src/entrypoints/pipeline/\` | Crawler-support entrypoint wiring used by operator flows. |
-| \`src/app/pipeline/build/\` | SiteForge build orchestration, lifecycle, recovery, and validation. |
-| \`src/app/compiler/\` | Evidence and capability compilation. |
-| \`src/app/planner/\` | Descriptor-only plans and policy handoff. |
-| \`src/domain/\` | Capability, policy, schema, risk, session, artifact, and lifecycle contracts. |
-| \`src/sites/\` | SiteAdapter contracts, known-site helpers, and registries. |
-| \`src/infra/\` | Browser, auth, config, filesystem, network, process, and CLI IO. |
-| \`config/\` | Versioned stable site registry and capability records. |
-| \`schema/\` | Published schema/profile definitions. |
-| \`tests/\` | Node and Python tests, fixtures, and regression gates. |
-| \`tools/\` | README, release, cleanup, audit, and verification tooling. |
+| \`src/entrypoints/cli/\` | 公开 CLI 门面；只有 \`siteforge build <url>\` 属于公开命令。 |
+| \`src/entrypoints/operator/\` | 内部操作员入口，不通过 \`siteforge\` 对外路由。 |
+| \`src/entrypoints/build/\` | 公开 \`siteforge build\` 门面使用的内部构建入口接线。 |
+| \`src/entrypoints/pipeline/\` | 操作员流程使用的爬虫辅助入口接线。 |
+| \`src/app/pipeline/build/\` | SiteForge 构建编排、生命周期、恢复和验证。 |
+| \`src/app/compiler/\` | 证据与能力编译。 |
+| \`src/app/planner/\` | 仅描述符计划与策略交接。 |
+| \`src/domain/\` | 能力、策略、Schema、风险、会话、产物和生命周期契约。 |
+| \`src/sites/\` | SiteAdapter 契约、已知站点辅助逻辑和注册表。 |
+| \`src/infra/\` | 浏览器、认证、配置、文件系统、网络、进程和 CLI IO。 |
+| \`config/\` | 版本化的稳定站点注册表和能力记录。 |
+| \`schema/\` | 发布的 Schema 和 Profile 定义。 |
+| \`tests/\` | Node 与 Python 测试、fixture 和回归门禁。 |
+| \`tools/\` | README、发布、清理、审计和验证工具。 |
 
-Retired public Web UI, legacy capability, legacy pipeline engine/runtime/stage, and legacy kernel layers stay removed and are guarded by architecture tests. Download declarations remain metadata or site-specific internal paths unless a bounded implementation is explicitly recorded; blocked placeholders do not expose public execution.
+已退役的公开 Web UI、旧能力层、旧 Pipeline engine/runtime/stage 以及旧 kernel 层保持删除状态，并由架构测试守护。下载声明在没有明确记录受约束实现前只作为元数据或站点专用内部路径；受阻占位不会暴露为公开执行能力。
 
-## Known Public Site Records
+## 已知公开站点记录
 
-Stable config currently keeps records for these hosts. The table separates metadata, availability, runtime dependencies, and blocked reasons so blocked, placeholder, local-validation-only, authorization-required, or dependency-bound records are not presented as generic live support.
+稳定配置当前记录了以下主机。表格会区分元数据、可用性、运行依赖和受阻原因，避免把受阻、占位、仅本地验证、需要授权或依赖缺失的记录误表述为通用实时支持。
 
 ${renderSiteTable(context.siteRows)}
 
-Removed internal catalog experiments are not part of the public site registry.
+已删除的内部 catalog 实验不属于公开站点注册表。
 
-## Verification
+## 本地验证
 
-Useful local checks:
+常用本地检查：
 
 \`\`\`bash
 npm run readme:check
@@ -222,20 +222,20 @@ npm run scan:secrets
 git diff --check
 \`\`\`
 
-Focused groups are available as \`npm run test:cli\`, \`npm run test:pipeline\`, \`npm run test:capability\`, and \`npm run test:core\`. Use \`npm run clean:outputs\` to remove local generated site data before staging.
+聚焦测试组包括 \`npm run test:cli\`、\`npm run test:pipeline\`、\`npm run test:capability\` 和 \`npm run test:core\`。提交前可运行 \`npm run clean:outputs\` 清理本地生成的站点数据。
 
-\`npm run typecheck\` runs TypeScript \`--checkJs\` across the repository \`.mjs\` source globs listed in \`tools/typecheck-scope.json\`; that scope must not defer repository source directories. \`npm run check:syntax\` separately auto-discovers repository \`.mjs\` files and is a syntax gate.
+\`npm run typecheck\` 会按 \`tools/typecheck-scope.json\` 中列出的仓库 \`.mjs\` 源码范围运行 TypeScript \`--checkJs\`；该范围不能遗漏仓库源码目录。\`npm run check:syntax\` 会单独自动发现仓库内的 \`.mjs\` 文件，作为语法门禁。
 
-## Safety
+## 安全边界
 
-- Do not persist raw credentials, cookies, authorization headers, CSRF values, session ids, browser profiles, or tokens.
-- Do not implement CAPTCHA bypass, anti-bot bypass, access-control bypass, credential extraction, or silent privilege expansion.
-- Do not write generated site data into tracked source.
-- Keep generated outputs, logs, downloads, caches, and browser state ignored and removable.
+- 不持久化原始凭证、Cookie、授权头、CSRF 值、会话 ID、浏览器 Profile 或 Token。
+- 不实现验证码绕过、反机器人绕过、访问控制绕过、凭证提取或静默提权。
+- 不把生成的站点数据写入受跟踪源码。
+- 生成产物、日志、下载内容、缓存和浏览器状态必须保持忽略且可清理。
 
-## Release And Versioning
+## 发布与版本
 
-Release readiness is evidence-based. Local tests do not imply a tag, package version bump, push, PR, publication, live capability claim, or live authenticated validation. Incompatible persisted or public contract changes require an explicit version bump and matching tests.
+发布就绪以证据为准。本地测试通过不等于已打 tag、升级包版本、推送、创建 PR、发布、声明实时能力或完成实时授权验证。不兼容的持久化契约或公开契约变更必须显式升级版本，并补齐对应测试。
 `;
 }
 

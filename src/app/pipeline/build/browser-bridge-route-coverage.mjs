@@ -34,6 +34,17 @@ export function browserBridgeRouteRetryable(result = /** @type {any} */ ({})) {
   ].includes(reasonCode);
 }
 
+function routeResultLooksStaticResource(context = /** @type {any} */ ({}), result = /** @type {any} */ ({})) {
+  const values = routeTemplateComparisonValues(context, [
+    result?.targetRoute,
+    result?.routeTemplate,
+    result?.targetUrl,
+    result?.url,
+    result?.normalizedUrl,
+  ]);
+  return values.some((value) => /(?:^|\/)(?:robots\.txt|sitemap(?:[-_.a-z0-9]*)?\.xml)$|\/[^/?#]+\.(?:xml|rss|atom|txt)$/iu.test(String(value ?? '').split(/[?#]/u)[0]));
+}
+
 export function routeTemplateComparisonValues(context = /** @type {any} */ ({}), values = /** @type {any[]} */ ([])) {
   const variants = new Set();
   const addVariant = (value) => {
@@ -146,6 +157,17 @@ export function matchesBrowserBridgeMissingNonRootRoute(context = /** @type {any
   return routeTemplateComparisonValues(context, values).some((variant) => variant !== '/' && missingRouteTemplates.has(variant));
 }
 
+function routeResultMatchesValues(context, result = /** @type {any} */ ({}), values = /** @type {any[]} */ ([])) {
+  const resultVariants = new Set(routeTemplateComparisonValues(context, [
+    result?.targetRoute,
+    result?.routeTemplate,
+    result?.targetUrl,
+    result?.url,
+    result?.normalizedUrl,
+  ]));
+  return routeTemplateComparisonValues(context, values).some((variant) => resultVariants.has(variant));
+}
+
 export function browserBridgePageWasCaptured(context = /** @type {any} */ ({}), page = /** @type {any} */ ({})) {
   if (context.authStateReport?.authMethod !== 'browser') {
     return true;
@@ -163,12 +185,32 @@ export function browserBridgePageWasCaptured(context = /** @type {any} */ ({}), 
       return browserBridgeRouteCaptured(routeResult);
     }
   }
+  const sourceLayer = page?.sourceLayer === 'authenticated_overlay'
+    ? 'authenticated_overlay'
+    : 'authenticated';
   const values = [
     page?.routeTemplate,
     page?.routePattern,
     page?.normalizedUrl,
     page?.url,
   ];
+  const resultSourceLayer = (result) => result?.sourceLayer === 'authenticated_overlay'
+    ? 'authenticated_overlay'
+    : 'authenticated';
+  const sourceLayerRouteResults = routeResults.filter((result) => resultSourceLayer(result) === sourceLayer);
+  const sourceLayerMatches = routeResults.filter((result) => (
+    resultSourceLayer(result) === sourceLayer
+    && routeResultMatchesValues(context, result, values)
+  ));
+  if (sourceLayerMatches.length) {
+    return sourceLayerMatches.some(browserBridgeRouteCaptured);
+  }
+  if (routeResults.length && !sourceLayerRouteResults.length) {
+    return false;
+  }
+  if (sourceLayerRouteResults.length) {
+    return false;
+  }
   if (matchesBrowserBridgeMissingRoute(context, browserBridgeMissingRouteTemplateSet(context), values)) {
     return false;
   }
@@ -182,9 +224,10 @@ export function routeCapturePlanFromAuthState(context, authStateReport = /** @ty
   const missingRoutes = routeResults
     .filter((result) => !browserBridgeRouteCaptured(result))
     .map((result) => {
-      const retryable = browserBridgeRouteRetryable(result);
       const finalReasonCode = result?.finalReasonCode ?? result?.reasonCode ?? result?.status ?? 'browser-auth-route-not-captured';
       const routeLimitExceeded = finalReasonCode === 'browser-bridge-route-limit-exceeded';
+      const staticResourceBoundary = routeResultLooksStaticResource(context, result);
+      const retryable = !staticResourceBoundary && browserBridgeRouteRetryable(result);
       return {
         routeId: result?.routeId ?? null,
         sourceLayer: result?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated',
@@ -198,8 +241,10 @@ export function routeCapturePlanFromAuthState(context, authStateReport = /** @ty
         retryOutcome: result?.retryOutcome ?? 'not_attempted',
         recommendedRetryMode: routeLimitExceeded
           ? 'split_browser_bridge_route_batch'
+          : staticResourceBoundary ? 'static_resource_not_browser_bridge_retry'
           : retryable ? 'browser_bridge_missing_route_retry' : 'access_boundary_no_automatic_retry',
         retryable,
+        staticResourceBoundary,
         capabilityGenerated: false,
       };
     });

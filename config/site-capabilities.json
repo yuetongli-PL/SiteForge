@@ -109,6 +109,42 @@
           "seedable": true
         },
         {
+          "id": "qidian-rank-yuepiao",
+          "path": "/rank/yuepiao/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-rank-yuepiao-all",
+          "path": "/rank/yuepiao/chn0/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-rank-hotsales",
+          "path": "/rank/hotsales/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-rank-newfans",
+          "path": "/rank/newfans/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
           "id": "qidian-finished",
           "path": "/finish/",
           "pageType": "category-page",
@@ -138,6 +174,150 @@
         {
           "id": "qidian-boy",
           "path": "/boy/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-xuanhuan",
+          "path": "/xuanhuan/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-qihuan",
+          "path": "/qihuan/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-wuxia",
+          "path": "/wuxia/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-xianxia",
+          "path": "/xianxia/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-dushi",
+          "path": "/dushi/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-lishi",
+          "path": "/lishi/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-youxi",
+          "path": "/youxi/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-tiyu",
+          "path": "/tiyu/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-kehuan",
+          "path": "/kehuan/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-lingyi",
+          "path": "/lingyi/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-2cy",
+          "path": "/2cy/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-xianshi",
+          "path": "/xianshi/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-category-junshi",
+          "path": "/junshi/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-strongrec",
+          "path": "/strongrec/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-coverrec",
+          "path": "/coverrec/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "qidian-sanjiang",
+          "path": "/sanjiang/",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -257,6 +437,7 @@
         "utility-page"
       ],
       "capabilityFamilies": [
+        "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
@@ -2179,10 +2360,12 @@
         "search-results-page"
       ],
       "capabilityFamilies": [
+        "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
         "navigate-to-utility-page",
+        "open-auth-page",
         "query-account-profile",
         "query-social-content",
         "query-social-relations",
@@ -2332,39 +2515,79 @@
       "primaryArchetype": "social-content",
       "pageTypes": [
         "auth-page",
+        "author-list-page",
         "author-page",
+        "community-directory",
         "category-page",
         "content-detail-page",
+        "history-page",
         "home",
+        "api-read-operation",
+        "api-write-operation-disabled",
         "message-page",
         "moderation-page",
         "notification-page",
         "search-results-page",
         "settings-page",
+        "utility-page",
+        "write-entry-disabled",
         "wiki-page"
       ],
       "capabilityFamilies": [
+        "disabled-social-mutation",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
         "navigate-to-utility-page",
+        "open-auth-page",
         "query-account-profile",
+        "query-comment-thread",
+        "query-community-metadata",
+        "query-media-content",
+        "query-moderation-content",
+        "query-notifications",
+        "query-private-messages",
         "query-social-content",
         "query-social-relations",
+        "query-wiki-content",
         "search-content",
         "switch-in-page-state"
       ],
       "supportedIntents": [
         "account-info",
+        "list-account-library",
+        "list-chat-messages",
+        "list-comment-thread",
+        "list-community-collections",
+        "list-community-directory",
+        "list-community-posts",
+        "list-community-rules",
         "list-followed-updates",
         "list-followed-users",
+        "list-inbox-messages",
+        "list-modmail-threads",
+        "list-moderation-log",
+        "list-moderation-queue",
+        "list-notifications",
         "list-profile-content",
         "open-auth-page",
         "open-author",
         "open-category",
+        "open-comment",
+        "open-media",
+        "open-poll",
         "open-post",
+        "open-settings-page",
         "open-utility-page",
         "profile-content",
+        "read-wiki-page",
+        "record-disabled-award",
+        "record-disabled-comment",
+        "record-disabled-modmail",
+        "record-disabled-report",
+        "record-disabled-save",
+        "record-disabled-submit",
+        "record-disabled-vote",
         "search-posts"
       ],
       "safeActionKinds": [
@@ -2378,7 +2601,7 @@
       "adapterId": "reddit",
       "genericLiveBuild": {
         "status": "limited",
-        "reasonCode": "robots-restricted-and-auth-required",
+        "reasonCode": "robots-disallowed",
         "reason": "Reddit generic public crawl covers only allowed public navigation; full capability coverage requires a bounded user-authorized Reddit SiteAdapter path plus official API metadata.",
         "alternativeAccessPaths": [
           "Use official Reddit API documentation and OAuth read runtime plans for structured read API coverage.",

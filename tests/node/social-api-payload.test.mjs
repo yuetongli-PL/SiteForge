@@ -2,11 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildRecoveryRunbook,
   buildSocialActionPlan,
   parseSocialActionArgs,
   parseSocialApiPayload,
   parseSocialRelationApiPayload,
   runSocialAction,
+  selectSocialApiSeed,
+  socialArchiveItemKey,
 } from '../../src/sites/known-sites/social/actions/router.mjs';
 import { safePlanForArtifact } from '../../src/sites/known-sites/social/actions/artifacts.mjs';
 import { normalizeSessionRunManifest } from '../../src/domain/sessions/contracts.mjs';
@@ -32,6 +35,25 @@ test('X API parser extracts legacy adaptive search tweets', () => {
   assert.equal(parsed.items[0].url, 'https://x.com/siteforge/status/1001');
   assert.equal(parsed.items[0].author.handle, 'siteforge');
   assert.equal(parsed.items[0].timestamp, '2026-05-28T14:00:00.000Z');
+});
+
+test('X relation API parser repairs UTF-8 mojibake in user labels', () => {
+  const parsed = parseSocialRelationApiPayload('x', {
+    users: [{
+      id_str: '1889977189090967552',
+      screen_name: 'fisunianeko',
+      name: 'MiaMiku\u9983\u5bdb',
+      description: 'profile\u9983\u5bdb',
+      followers_count: 20,
+      friends_count: 53,
+    }],
+    next_cursor_str: '0',
+  });
+
+  assert.equal(parsed.users.length, 1);
+  assert.equal(parsed.users[0].displayName, 'MiaMiku\u{1F308}');
+  assert.equal(parsed.users[0].label, 'MiaMiku\u{1F308}');
+  assert.equal(parsed.users[0].bio, 'profile\u{1F308}');
 });
 
 test('X relation parser extracts legacy list users and cursor', () => {
@@ -111,6 +133,118 @@ test('X relation parser extracts GraphQL timeline users and cursor', () => {
   assert.equal(parsed.nextCursor, 'bottom-cursor');
 });
 
+test('X relation parser ignores users mentioned inside relation user metadata', () => {
+  const parsed = parseSocialRelationApiPayload('x', {
+    data: {
+      user: {
+        result: {
+          timeline: {
+            timeline: {
+              instructions: [{
+                entries: [
+                  {
+                    entryId: 'user-42',
+                    content: {
+                      itemContent: {
+                        itemType: 'TimelineUser',
+                        user_results: {
+                          result: {
+                            rest_id: '42',
+                            legacy: {
+                              screen_name: 'ActualFollow',
+                              name: 'Actual Follow',
+                              description: 'works with @MentionedOnly',
+                              entities: {
+                                description: {
+                                  user_mentions: [{
+                                    screen_name: 'MentionedOnly',
+                                    user_results: {
+                                      result: {
+                                        rest_id: '99',
+                                        legacy: {
+                                          screen_name: 'MentionedOnly',
+                                          name: 'Mentioned Only',
+                                        },
+                                      },
+                                    },
+                                  }],
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  {
+                    entryId: 'cursor-bottom-1',
+                    content: {
+                      cursorType: 'Bottom',
+                      value: 'bottom-cursor',
+                    },
+                  },
+                ],
+              }],
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(parsed.users.map((user) => user.handle), ['ActualFollow']);
+  assert.equal(parsed.nextCursor, 'bottom-cursor');
+});
+
+test('X relation parser preserves unavailable relation user placeholders', () => {
+  const parsed = parseSocialRelationApiPayload('x', {
+    data: {
+      user: {
+        result: {
+          timeline: {
+            timeline: {
+              instructions: [{
+                entries: [
+                  {
+                    entryId: 'user-1720997030007300096',
+                    content: {
+                      itemContent: {
+                        itemType: 'TimelineUser',
+                        user_results: {
+                          result: {
+                            __typename: 'UserUnavailable',
+                            message: 'User unavailable',
+                            reason: 'Unavailable',
+                          },
+                        },
+                      },
+                    },
+                  },
+                  {
+                    entryId: 'cursor-bottom-1',
+                    content: {
+                      cursorType: 'Bottom',
+                      value: 'bottom-cursor',
+                    },
+                  },
+                ],
+              }],
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(parsed.users.length, 1);
+  assert.equal(parsed.users[0].handle, null);
+  assert.equal(parsed.users[0].id, '1720997030007300096');
+  assert.equal(parsed.users[0].url, 'https://x.com/i/user/1720997030007300096');
+  assert.equal(parsed.users[0].unavailable, true);
+  assert.equal(parsed.users[0].source, 'api-relation-unavailable');
+  assert.equal(parsed.nextCursor, 'bottom-cursor');
+});
+
 test('X API parser normalizes NoteTweet ids and timestamps from media timelines', () => {
   const parsed = parseSocialApiPayload('x', {
     data: {
@@ -145,6 +279,74 @@ test('X API parser normalizes NoteTweet ids and timestamps from media timelines'
   assert.equal(parsed.items[0].id, '2053939702047346689');
   assert.equal(parsed.items[0].url, 'https://x.com/i/status/2053939702047346689');
   assert.equal(parsed.items[0].timestamp, '2026-05-11T20:45:59.979Z');
+});
+
+test('X profile likes read-route selects the Likes API seed', () => {
+  const plan = {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'profile-likes',
+    routePath: '/{account}/likes',
+  };
+  const home = {
+    response: {
+      url: 'https://x.com/i/api/graphql/home-id/HomeTimeline?variables=%7B%7D',
+      status: 200,
+    },
+    parsed: {
+      nextCursor: 'home-cursor',
+      items: [{ id: 'home-1', text: 'home timeline item' }],
+    },
+  };
+  const likes = {
+    response: {
+      url: 'https://x.com/i/api/graphql/likes-id/Likes?variables=%7B%7D',
+      status: 200,
+    },
+    parsed: {
+      nextCursor: 'likes-cursor',
+      items: [{ id: 'liked-1', text: 'liked item' }],
+    },
+  };
+
+  const seed = selectSocialApiSeed([home, likes], { siteKey: 'x' }, plan);
+
+  assert.equal(seed, likes);
+});
+
+test('X profile likes read-route ignores HomeTimeline when Likes seed is absent', () => {
+  const plan = {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'profile-likes',
+    routePath: '/{account}/likes',
+  };
+  const seed = selectSocialApiSeed([{
+    response: {
+      url: 'https://x.com/i/api/graphql/home-id/HomeTimeline?variables=%7B%7D',
+      status: 200,
+    },
+    parsed: {
+      nextCursor: 'home-cursor',
+      items: [{ id: 'home-1', text: 'home timeline item' }],
+    },
+  }], { siteKey: 'x' }, plan);
+
+  assert.equal(seed, null);
+});
+
+test('social archive item key dedupes API ids against DOM status URLs', () => {
+  const apiItem = {
+    id: '2058522886177226950',
+    url: 'https://x.com/LinZhi999/status/2058522886177226950',
+    source: 'api-cursor',
+  };
+  const domItem = {
+    url: 'https://x.com/LinZhi999/status/2058522886177226950',
+    text: 'same post from DOM without id',
+  };
+
+  assert.equal(socialArchiveItemKey(apiItem), socialArchiveItemKey(domItem));
 });
 
 test('X search action requires authenticated session verification', () => {
@@ -297,6 +499,7 @@ test('X read-route action accepts only supported read-only app routes', () => {
   assert.equal(audioSpace.routeName, 'audio-space');
   assert.equal(audioSpace.url, 'https://x.com/i/spaces/1OyKALLDpNrxb');
   assert.equal(audioSpace.capability, 'audio.space.inspect');
+  assert.equal(safePlanForArtifact(audioSpace).spaceId, ':id');
 
   const communityDetail = buildSocialActionPlan({
     site: 'x',
@@ -308,6 +511,7 @@ test('X read-route action accepts only supported read-only app routes', () => {
   assert.equal(communityDetail.routeName, 'community-detail');
   assert.equal(communityDetail.url, 'https://x.com/i/communities/1493446837214187523');
   assert.equal(communityDetail.capability, 'communities.detail.inspect');
+  assert.equal(safePlanForArtifact(communityDetail).communityId, ':id');
 
   const communityAbout = buildSocialActionPlan({
     site: 'x',
@@ -366,6 +570,7 @@ test('X read-route action accepts only supported read-only app routes', () => {
   assert.equal(listDetail.routeName, 'list-detail');
   assert.equal(listDetail.url, 'https://x.com/i/lists/84839422');
   assert.equal(listDetail.intent, 'inspect_list_detail');
+  assert.equal(safePlanForArtifact(listDetail).listId, ':id');
 
   const listMembers = buildSocialActionPlan({
     site: 'x',
@@ -781,6 +986,47 @@ test('X read-route action accepts only supported read-only app routes', () => {
     }),
     /requires --media-id/u,
   );
+});
+
+test('X read-route recovery command preserves explicit parameters and risk gate', () => {
+  const plan = buildSocialActionPlan({
+    site: 'x',
+    action: 'read-route',
+    route: 'status-analytics',
+    account: 'openai',
+    statusId: '1234567890',
+    riskReviewedReadSurfaces: true,
+  });
+  const runbook = buildRecoveryRunbook({
+    siteKey: 'x',
+    plan,
+    settings: {
+      headless: false,
+      maxItems: 3,
+      timeoutMs: 120000,
+      riskReviewedReadSurfaces: true,
+    },
+    outcome: {
+      resumable: true,
+    },
+    result: {
+      archive: {
+        complete: false,
+        reason: 'test-resume',
+      },
+    },
+  }, {
+    runDir: 'C:/tmp/siteforge-x-status-analytics',
+    manifestPath: 'C:/tmp/siteforge-x-status-analytics/manifest.json',
+  });
+  const command = runbook.commands.find((entry) => entry.id === 'resume-archive')?.command ?? '';
+
+  assert.match(command, /read-route/u);
+  assert.match(command, /--route ["']?\/\{account\}\/status\/\{statusId\}\/analytics/u);
+  assert.match(command, /--account ["']?openai/u);
+  assert.match(command, /--status-id ["']?1234567890/u);
+  assert.match(command, /--risk-reviewed-read-surfaces/u);
+  assert.doesNotMatch(command, /read-route ["']?openai(?:["']?\s|$)/u);
 });
 
 test('X social action unified session health inspects reusable browser profile', async () => {

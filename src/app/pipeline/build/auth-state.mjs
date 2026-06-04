@@ -74,6 +74,7 @@ export const CAPABILITY_EVIDENCE_LEVEL_RANK = Object.freeze({
   public_rendered_verified: 2,
   authorized_source_verified: 2,
   login_user_confirmed: 2,
+  browser_structure_verified: 3,
   login_route_verified: 3,
   login_page_verified: 4,
   capability_verified: 5,
@@ -426,6 +427,16 @@ function cookieInputSummary({ provided = false, source = null, pairCount = 0 } =
     persisted: false,
     redacted: true,
   };
+}
+
+function browserBridgeCookieInputSummary(options = /** @type {any} */ ({})) {
+  const cookieHeader = normalizeCookieHeader(options.apiReplayCookieHeader ?? options.cookieHeader ?? '');
+  const pairCount = cookiePairCount(cookieHeader);
+  return cookieInputSummary({
+    provided: pairCount > 0,
+    source: pairCount > 0 ? 'browser_bridge' : null,
+    pairCount,
+  });
 }
 
 function browserBridgeSummary({
@@ -1026,7 +1037,7 @@ export async function runBrowserAuthStateCheck({
     positiveSignals: verification.positiveSignals,
     verifiedRoutes: verification.verifiedRoutes,
     browserBridge: verification.bridgeSummary,
-    cookieInput: cookieInputSummary(),
+    cookieInput: browserBridgeCookieInputSummary(options),
   }, { site, crawlMode: verification.verified ? 'authenticated_browser' : 'public_only', authMethod: 'browser' });
   if (verification.verified === true && verification.structureSummary) {
     attachAuthRuntimeMaterial(report, {

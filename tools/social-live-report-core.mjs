@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { buildSessionRepairPlanCommand } from '../src/domain/sessions/repair-command.mjs';
+import { scanForbiddenPatterns } from '../src/domain/sessions/security-guard.mjs';
 import { readCliValue as readValue } from '../src/infra/cli/internal-options.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -491,6 +492,13 @@ const API_COVERAGE_EXPANSION_CANDIDATES_BY_SITE = Object.freeze({
       reason: 'Bulk user lookup API was observed as identity support outside target user timelines.',
       nextEvidence: 'Tie UsersByRestIds samples to the route or component that requests bulk identity lookup.',
     }),
+  }),
+});
+
+const PLANNED_ROUTE_TEMPLATE_EQUIVALENTS_BY_SITE = Object.freeze({
+  x: Object.freeze({
+    '/messages': Object.freeze(['/i/chat']),
+    '/settings/monetization': Object.freeze(['/i/jf/creators/studio', '/i/jf/creators/:segment']),
   }),
 });
 
@@ -1166,7 +1174,7 @@ export function parseArgs(argv) {
         throw new Error(`Unknown option: ${token}`);
     }
   }
-  if (!['x', 'instagram', 'all'].includes(String(options.site))) throw new Error(`Invalid --site: ${options.site}`);
+  if (!['x', 'instagram', 'reddit', 'all'].includes(String(options.site))) throw new Error(`Invalid --site: ${options.site}`);
   const limit = Number(options.limit);
   if (!Number.isFinite(limit) || limit < 1) throw new Error(`Invalid --limit: ${options.limit}`);
   return options;
@@ -2435,6 +2443,62 @@ function readCrawlSummaryFromManifest(manifest = {}) {
   };
 }
 
+function readCrawlWithRequestedRouteReplayEvidence(readCrawl = {}, requestedRouteTemplate = null, plan = {}) {
+  const requestedRoute = safeInventoryRouteTemplate(requestedRouteTemplate);
+  const hasExplicitRouteStart = Boolean(cleanString(plan?.routePath) || cleanString(plan?.url));
+  if (
+    !requestedRoute
+    || hasExplicitRouteStart !== true
+    || readCrawl?.requested !== true
+    || !Array.isArray(readCrawl.pages)
+    || readCrawl.pages.length === 0
+  ) {
+    return readCrawl;
+  }
+  const existingCoverage = Array.isArray(readCrawl.routeTemplateReplayCoverage)
+    ? readCrawl.routeTemplateReplayCoverage
+    : [];
+  if (existingCoverage.some((entry) => safeInventoryRouteTemplate(entry?.routeTemplate) === requestedRoute)) {
+    return readCrawl;
+  }
+  const startPage = readCrawl.pages.find((page) => numberOrZero(page?.depth) === 0) ?? readCrawl.pages[0];
+  const actualRoute = safeInventoryRouteTemplate(startPage?.routeTemplate);
+  if (!actualRoute) {
+    return readCrawl;
+  }
+  const requestedEntry = {
+    routeTemplate: requestedRoute,
+    observedAsPageCount: actualRoute === requestedRoute ? 1 : 0,
+    observedAsCandidateCount: 0,
+    blockedFunctionCount: 0,
+    surfaceCount: 1,
+    pageStatuses: dedupeStrings([startPage?.status].filter(Boolean)),
+    functionKinds: dedupeStrings(Array.isArray(startPage?.functionKinds) ? startPage.functionKinds : []),
+    intents: [],
+    executionClasses: dedupeStrings(Array.isArray(startPage?.executionClasses) ? startPage.executionClasses : []),
+    mutationRisks: [],
+    blockedFunctionKinds: [],
+    blockedIntents: [],
+    blockedExecutionClasses: [],
+    blockedMutationRisks: [],
+    redirectedToRouteTemplates: actualRoute === requestedRoute ? [] : [actualRoute],
+    routeSamples: dedupeRouteSamples([startPage?.routeSample]),
+  };
+  requestedEntry.replayDisposition = replayDispositionForRouteAudit(requestedEntry);
+  const routeTemplateReplayCoverage = [requestedEntry, ...existingCoverage].sort((left, right) => (
+    routeAuditDispositionRank(right.replayDisposition) - routeAuditDispositionRank(left.replayDisposition)
+    || String(left.routeTemplate ?? '').localeCompare(String(right.routeTemplate ?? ''))
+  ));
+  return {
+    ...readCrawl,
+    routeTemplateReplayCoverage,
+    routeTemplateReplaySummary: summarizeRouteTemplateReplayCoverage(
+      routeTemplateReplayCoverage,
+      readCrawl.exhausted === true && numberOrZero(readCrawl.pendingQueueCount) === 0,
+    ),
+  };
+}
+
 function coverageFieldsFromManifest(manifest = {}) {
   const site = normalizeSite(manifest?.site ?? manifest?.options?.site ?? manifest?.siteKey);
   const plan = manifest?.plan && typeof manifest.plan === 'object' ? manifest.plan : {};
@@ -2446,13 +2510,17 @@ function coverageFieldsFromManifest(manifest = {}) {
   const capture = captureSummaryFromManifest(manifest, site, surface);
   const inventory = inventorySummaryFromManifest(manifest);
   const controlProbe = controlProbeSummaryFromManifest(manifest);
-  const readCrawl = readCrawlSummaryFromManifest(manifest);
+  const detail = surfaceDetail(site, surface);
+  const readCrawl = readCrawlWithRequestedRouteReplayEvidence(
+    readCrawlSummaryFromManifest(manifest),
+    detail.routeTemplate,
+    plan,
+  );
   const targetOperations = targetOperationsFromSurfaceEvidence(site, surface, {
     capture,
     controlProbe,
     readCrawl,
   });
-  const detail = surfaceDetail(site, surface);
   return {
     surface,
     action: cleanString(plan.action),
@@ -2475,6 +2543,7 @@ function coverageFieldsFromManifest(manifest = {}) {
     surfaceInventory: inventory,
     controlProbe,
     readCrawl,
+    runtimeRisk: compactRuntimeRisk(manifest?.runtimeRisk),
   };
 }
 
@@ -2532,6 +2601,7 @@ function coverageFieldsFromState(state = {}) {
       probes: [],
     },
     readCrawl: emptyReadCrawlSummary(),
+    runtimeRisk: null,
   };
 }
 
@@ -2554,6 +2624,20 @@ function sessionGateFromSummary(summary = {}, manifest = {}) {
   return normalizeSessionGate(summary?.sessionGate ?? manifest?.sessionGate);
 }
 
+function reportArtifactSummary(summary = {}) {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return null;
+  }
+  const artifactSummary = /** @type {any} */ (summary);
+  if (!artifactSummary.summary && !artifactSummary.status) {
+    return null;
+  }
+  return {
+    summary: artifactSummary.summary ?? null,
+    status: artifactSummary.status ?? null,
+  };
+}
+
 function resultRowsFromManifest(manifest, manifestPath, mtimeMs) {
   const rows = [];
   if (Array.isArray(manifest?.results)) {
@@ -2568,6 +2652,7 @@ function resultRowsFromManifest(manifest, manifestPath, mtimeMs) {
         commandStatus: result.status ?? null,
         manifestPath,
         artifactManifestPath: artifactSummary.manifestPath ?? null,
+        artifactSummary: reportArtifactSummary(artifactSummary),
         sessionGate: sessionGateFromSummary(artifactSummary),
         runId: manifest.runId ?? null,
         finishedAt: result.finishedAt ?? manifest.finishedAt ?? manifest.startedAt ?? new Date(mtimeMs).toISOString(),
@@ -3010,12 +3095,28 @@ function selectAuthoritativeReadCrawlsForRouteCoverage(crawls = []) {
   const exhaustedCrawls = observedCrawls.filter((crawl) => crawl.exhausted === true);
   const pool = exhaustedCrawls.length ? exhaustedCrawls : observedCrawls;
   const maxDepth = maxNumber(pool.map((crawl) => crawl.maxDepth));
-  return pool.filter((crawl) => numberOrZero(crawl.maxDepth) === maxDepth);
+  const selected = pool.filter((crawl) => numberOrZero(crawl.maxDepth) === maxDepth);
+  for (const crawl of observedCrawls) {
+    if (selected.includes(crawl)) continue;
+    if (readCrawlHasExactRequestedRouteReplay(crawl)) {
+      selected.push(crawl);
+    }
+  }
+  return selected;
 }
 
 function readCrawlHasRequestedRouteTemplateEvidence(crawl = {}) {
   return Array.isArray(crawl?.pages)
     && crawl.pages.some((page) => safeInventoryRouteTemplate(page?.requestedRouteTemplate));
+}
+
+function readCrawlHasExactRequestedRouteReplay(crawl = {}) {
+  return Array.isArray(crawl?.pages)
+    && crawl.pages.some((page) => {
+      const requested = safeInventoryRouteTemplate(page?.requestedRouteTemplate);
+      const actual = safeInventoryRouteTemplate(page?.routeTemplate);
+      return requested && actual && requested === actual;
+    });
 }
 
 function candidateOnlyRouteHasClosedDynamicBoundary(entry = {}) {
@@ -3025,9 +3126,9 @@ function candidateOnlyRouteHasClosedDynamicBoundary(entry = {}) {
   const family = routeFamilyForTemplate(routeTemplate);
   const shape = routeTemplateShape(routeTemplate);
   const routeSamples = Array.isArray(entry.routeSamples) ? entry.routeSamples : [];
-  return family?.familyKind === 'account-dynamic-route'
-    && shape.genericSegmentCount >= 5
-    && routeSamples.length > 0;
+  if (family?.familyKind !== 'account-dynamic-route' || routeSamples.length === 0) return false;
+  return shape.genericSegmentCount >= 5
+    || routeTemplate === '/:account/:segment/analytics';
 }
 
 function buildCrossSurfaceCoveredCandidateRoutes(surfaceRows = [], siteReplayCoverage = []) {
@@ -3163,10 +3264,83 @@ function buildReadCrawlClosure({
 }
 
 const AUTH_SESSION_BLOCKER_REASON_RE = /(?:login-required|session-health|auth|manual-required)/iu;
+const RATE_LIMIT_BLOCKER_RE = /(?:rate[-_\s]?limited|rate[-_\s]?limit|request-burst|429)/iu;
+const NEGATED_RATE_LIMIT_RE = /(?:not|no)[-_\s]+rate[-_\s]?(?:limited|limit)/iu;
+const REPORT_REDACTION_PLACEHOLDER = '[REDACTED]';
+const RUNTIME_RISK_SENSITIVE_RE = /(?:auth[_-]?token|access[_-]?token|csrf|ct0|bearer\s+[a-z0-9._-]+|cookie|password|secret|session=|[a-f0-9]{32,}|[a-z0-9._-]{48,})/iu;
+const RUNTIME_RISK_LOCAL_PATH_RE = /(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/][^\\/\s]+|\/(?:Users|home|var|tmp|private|mnt|Volumes)\/)/u;
 
 function timeValue(value) {
   const ms = Date.parse(String(value ?? ''));
   return Number.isFinite(ms) ? ms : null;
+}
+
+function safeRuntimeRiskString(value) {
+  const text = cleanString(value);
+  if (!text) return null;
+  if (
+    scanForbiddenPatterns(text).length > 0
+    || RUNTIME_RISK_SENSITIVE_RE.test(text)
+    || RUNTIME_RISK_LOCAL_PATH_RE.test(text)
+  ) {
+    return REPORT_REDACTION_PLACEHOLDER;
+  }
+  return text;
+}
+
+function compactRuntimeRisk(runtimeRisk = null) {
+  if (!runtimeRisk || typeof runtimeRisk !== 'object' || Array.isArray(runtimeRisk)) {
+    return null;
+  }
+  const riskSignals = Array.isArray(runtimeRisk.riskSignals)
+    ? dedupeStrings(runtimeRisk.riskSignals.map(safeRuntimeRiskString)).slice(0, 12)
+    : [];
+  const riskState = runtimeRisk.riskState && typeof runtimeRisk.riskState === 'object'
+    ? runtimeRisk.riskState
+    : null;
+  const recovery = riskState?.recovery && typeof riskState.recovery === 'object'
+    ? riskState.recovery
+    : null;
+  const transition = compactRiskTransition(riskState?.transition);
+  return {
+    stopReason: safeRuntimeRiskString(runtimeRisk.stopReason),
+    suggestedAction: safeRuntimeRiskString(runtimeRisk.suggestedAction),
+    rateLimited: runtimeRisk.rateLimited === true,
+    hardStop: runtimeRisk.hardStop === true,
+    adaptiveThrottleLevel: numberOrZero(runtimeRisk.adaptiveThrottleLevel),
+    adaptiveBackoffMs: numberOrZero(runtimeRisk.adaptiveBackoffMs),
+    riskSignals,
+    riskState: riskState
+      ? {
+        state: safeRuntimeRiskString(riskState.state),
+        scope: safeRuntimeRiskString(riskState.scope),
+        reasonCode: safeRuntimeRiskString(riskState.reasonCode),
+        transition,
+        recovery: recovery
+          ? {
+            retryable: recovery.retryable === true,
+            cooldownNeeded: recovery.cooldownNeeded === true,
+            isolationNeeded: recovery.isolationNeeded === true,
+            manualRecoveryNeeded: recovery.manualRecoveryNeeded === true,
+            degradable: recovery.degradable === true,
+            artifactWriteAllowed: recovery.artifactWriteAllowed === true,
+          }
+          : null,
+      }
+      : null,
+  };
+}
+
+function compactRiskTransition(transition = null) {
+  if (!transition || typeof transition !== 'object' || Array.isArray(transition)) {
+    return safeRuntimeRiskString(transition);
+  }
+  return {
+    from: safeRuntimeRiskString(transition.from),
+    to: safeRuntimeRiskString(transition.to),
+    reasonCode: safeRuntimeRiskString(transition.reasonCode),
+    observedAt: safeRuntimeRiskString(transition.observedAt),
+  };
 }
 
 function isSessionAuthBlocker(row = {}) {
@@ -3203,6 +3377,105 @@ function compactAuthBoundaryRow(row = null) {
   };
 }
 
+function rateLimitReasonText(row = {}) {
+  const transition = row.runtimeRisk?.riskState?.transition;
+  const transitionText = transition && typeof transition === 'object'
+    ? Object.values(transition).filter(Boolean).join(' ')
+    : transition;
+  return [
+    row.reason,
+    row.runtimeRisk?.stopReason,
+    row.runtimeRisk?.suggestedAction,
+    row.runtimeRisk?.riskState?.state,
+    row.runtimeRisk?.riskState?.scope,
+    row.runtimeRisk?.riskState?.reasonCode,
+    transitionText,
+    ...(row.runtimeRisk?.riskSignals ?? []),
+  ].filter(Boolean).join(' ');
+}
+
+function isRateLimitBlocker(row = {}) {
+  const reasonText = rateLimitReasonText(row);
+  const hasRateLimitText = RATE_LIMIT_BLOCKER_RE.test(reasonText)
+    && !NEGATED_RATE_LIMIT_RE.test(reasonText);
+  const status = String(row.status ?? '');
+  return row.runtimeRisk?.rateLimited === true
+    || row.runtimeRisk?.riskState?.state === 'rate_limited'
+    || ((row.runtimeRisk?.hardStop === true || status === 'blocked') && hasRateLimitText);
+}
+
+function isRateLimitRecoveryRow(row = {}, latestBlocker = null) {
+  if (isRateLimitBlocker(row)) return false;
+  if (latestBlocker?.surface && row.surface !== latestBlocker.surface) return false;
+  if (
+    row.status === 'degraded'
+    && row.sessionGate?.status !== 'blocked'
+    && row.runtimeRisk?.rateLimited !== true
+    && row.runtimeRisk?.hardStop !== true
+    && row.readCrawl?.exhausted === true
+    && numberOrZero(row.readCrawl?.pendingQueueCount) === 0
+  ) {
+    return true;
+  }
+  return ['passed', 'bounded'].includes(String(row.status ?? ''))
+    && (row.sessionGate?.status !== 'blocked');
+}
+
+function compactRateLimitBoundaryRow(row = null) {
+  if (!row) return null;
+  return {
+    id: row.id ?? null,
+    surface: row.surface ?? null,
+    status: row.status ?? null,
+    reason: row.reason ?? row.runtimeRisk?.stopReason ?? null,
+    runtimeRisk: row.runtimeRisk ?? null,
+    finishedAt: row.finishedAt ?? null,
+    manifestPath: row.manifestPath ?? null,
+  };
+}
+
+function buildRateLimitBoundary(rows = []) {
+  const blockers = rows.filter(isRateLimitBlocker);
+  const surfaces = dedupeStrings(blockers.map((row) => row.surface ?? 'site'));
+  const activeBlockers = [];
+  for (const surface of surfaces) {
+    const surfaceBlockers = blockers.filter((row) => (row.surface ?? 'site') === surface);
+    const latestSurfaceBlocker = latestByFinishedAt(surfaceBlockers);
+    const recoveriesForSurface = rows.filter((row) => isRateLimitRecoveryRow(row, latestSurfaceBlocker));
+    const latestSurfaceRecovery = latestByFinishedAt(recoveriesForSurface);
+    const latestSurfaceBlockedAt = timeValue(latestSurfaceBlocker?.finishedAt);
+    const latestSurfaceRecoveredAt = timeValue(latestSurfaceRecovery?.finishedAt);
+    if (latestSurfaceBlockedAt !== null && (latestSurfaceRecoveredAt === null || latestSurfaceBlockedAt >= latestSurfaceRecoveredAt)) {
+      activeBlockers.push(latestSurfaceBlocker);
+    }
+  }
+  const latestBlocker = latestByFinishedAt(activeBlockers) ?? latestByFinishedAt(blockers);
+  const recoveries = rows.filter((row) => isRateLimitRecoveryRow(row, latestBlocker));
+  const latestRecovery = latestByFinishedAt(recoveries);
+  const latestBlockedAt = timeValue(latestBlocker?.finishedAt);
+  const latestRecoveredAt = timeValue(latestRecovery?.finishedAt);
+  const activeRateLimitBlocker = activeBlockers.length > 0;
+  return {
+    scope: 'runtime-rate-limit-boundary',
+    activeRateLimitBlocker,
+    blockedRunCount: blockers.length,
+    blockedSurfaceCount: dedupeStrings(blockers.map((row) => row.surface)).length,
+    blockedSurfaces: dedupeStrings(blockers.map((row) => row.surface)),
+    activeBlockedSurfaceCount: dedupeStrings(activeBlockers.map((row) => row.surface)).length,
+    activeBlockedSurfaces: dedupeStrings(activeBlockers.map((row) => row.surface)),
+    reasonCounts: countValues(blockers.map((row) => (
+      row.runtimeRisk?.stopReason
+      ?? row.runtimeRisk?.riskState?.reasonCode
+      ?? row.reason
+      ?? 'rate-limited'
+    ))),
+    latestBlockedAt: latestBlocker?.finishedAt ?? null,
+    latestRecoveredAt: latestRecovery?.finishedAt ?? null,
+    recoveryScope: latestBlocker?.surface ? 'same-surface' : 'site',
+    latestBlocker: compactRateLimitBoundaryRow(latestBlocker),
+  };
+}
+
 function buildSessionAuthBoundary(rows = []) {
   const blockers = rows.filter(isSessionAuthBlocker);
   const passes = rows.filter(isSessionAuthPass);
@@ -3236,7 +3509,9 @@ function buildFullSiteBoundary({
   dynamicSeedCoverage = {},
   dynamicSeedExpansion = {},
   sessionAuthBoundary = {},
+  rateLimitBoundary = {},
   inventoryRouteCoverage = {},
+  plannedRouteTemplateCoverage = {},
 } = {}) {
   const discovered = /** @type {any} */ (discovery);
   const closure = /** @type {any} */ (readCrawlClosure);
@@ -3246,7 +3521,9 @@ function buildFullSiteBoundary({
   const dynamicExpansion = /** @type {any} */ (dynamicSeedExpansion);
   const apiRisk = /** @type {any} */ (apiOperationRiskSummary);
   const sessionAuth = /** @type {any} */ (sessionAuthBoundary);
+  const rateLimit = /** @type {any} */ (rateLimitBoundary);
   const inventoryRoutes = /** @type {any} */ (inventoryRouteCoverage);
+  const plannedRoutes = /** @type {any} */ (plannedRouteTemplateCoverage);
   const missingExpectedSurfaceCount = Array.isArray(missingExpectedSurfaces)
     ? missingExpectedSurfaces.length
     : 0;
@@ -3255,10 +3532,29 @@ function buildFullSiteBoundary({
     : 0;
   const readCrawlControlledReady = closure.controlledScopeClosureReady === true;
   const activeAuthBlocker = sessionAuth.activeAuthBlocker === true;
+  const activeRateLimitBlocker = rateLimit.activeRateLimitBlocker === true;
   const inventoryRouteUncoveredCount = numberOrZero(inventoryRoutes.uncoveredCount);
+  const frontierGapCount = numberOrZero(frontier.gapCount);
+  const frontierDecisionRouteCount = numberOrZero(frontier.decisionSummary?.routeTemplateCount);
+  const frontierDecisionsReady = frontierDecisionRouteCount === 0
+    || frontier.decisionSummary?.readyForControlledScopeClosure === true;
+  const plannedRouteUncoveredCount = numberOrZero(plannedRoutes.uncoveredCount);
+  const plannedRouteWeakEvidenceCount = numberOrZero(plannedRoutes.weakEvidenceCount);
+  const plannedRouteBlockedRiskCount = numberOrZero(plannedRoutes.blockedRiskCount);
+  const plannedRouteCandidateOnlyCount = numberOrZero(plannedRoutes.candidateOnlyCount);
+  const plannedRoutePrivacyGatedCount = numberOrZero(plannedRoutes.privacyGatedCount);
+  const plannedRouteClosureGapCount = plannedRouteUncoveredCount
+    + plannedRouteWeakEvidenceCount
+    + plannedRouteBlockedRiskCount
+    + plannedRouteCandidateOnlyCount
+    + plannedRoutePrivacyGatedCount;
   const controlledScopeClosureReady = readCrawlControlledReady
     && !activeAuthBlocker
-    && inventoryRouteUncoveredCount === 0;
+    && !activeRateLimitBlocker
+    && inventoryRouteUncoveredCount === 0
+    && frontierGapCount === 0
+    && frontierDecisionsReady
+    && plannedRouteClosureGapCount === 0;
   return {
     scope: 'controlled-plan-vs-open-site',
     fullSiteExhaustiveClaim: false,
@@ -3278,14 +3574,50 @@ function buildFullSiteBoundary({
     latestAuthBlockedAt: sessionAuth.latestBlockedAt ?? null,
     latestAuthPassedAt: sessionAuth.latestPassedAt ?? null,
     latestAuthBlocker: sessionAuth.latestBlocker ?? null,
+    activeRateLimitBlocker,
+    rateLimitBlockedRunCount: numberOrZero(rateLimit.blockedRunCount),
+    rateLimitBlockedSurfaceCount: numberOrZero(rateLimit.blockedSurfaceCount),
+    rateLimitBlockedSurfaces: Array.isArray(rateLimit.blockedSurfaces) ? rateLimit.blockedSurfaces : [],
+    rateLimitActiveBlockedSurfaceCount: numberOrZero(rateLimit.activeBlockedSurfaceCount),
+    rateLimitActiveBlockedSurfaces: Array.isArray(rateLimit.activeBlockedSurfaces) ? rateLimit.activeBlockedSurfaces : [],
+    rateLimitReasons: Array.isArray(rateLimit.reasonCounts) ? rateLimit.reasonCounts : [],
+    latestRateLimitedAt: rateLimit.latestBlockedAt ?? null,
+    latestRateLimitRecoveredAt: rateLimit.latestRecoveredAt ?? null,
+    rateLimitRecoveryScope: rateLimit.recoveryScope ?? null,
+    latestRateLimitBlocker: rateLimit.latestBlocker ?? null,
     inventoryRouteCount: numberOrZero(inventoryRoutes.total),
     inventoryRouteCoveredCount: numberOrZero(inventoryRoutes.coveredCount),
     inventoryRouteUncoveredCount,
     inventoryRouteBlockedCount: numberOrZero(inventoryRoutes.blockedCount),
     inventoryRouteCandidateOnlyCount: numberOrZero(inventoryRoutes.candidateOnlyCount),
     inventoryUncoveredRoutes: Array.isArray(inventoryRoutes.uncoveredRoutes) ? inventoryRoutes.uncoveredRoutes : [],
+    plannedRouteTemplateCount: numberOrZero(plannedRoutes.total),
+    plannedSurfaceRouteCount: numberOrZero(plannedRoutes.plannedSurfaceRouteCount),
+    plannedRouteUniqueTemplateCount: numberOrZero(plannedRoutes.uniqueRouteTemplateCount),
+    plannedRouteUniqueNormalizedTemplateCount: numberOrZero(plannedRoutes.uniqueNormalizedRouteTemplateCount),
+    plannedRouteExactReplayCoveredCount: numberOrZero(plannedRoutes.exactReplayCoveredCount),
+    plannedRouteNormalizedEquivalentCoveredCount: numberOrZero(plannedRoutes.normalizedEquivalentCoveredCount),
+    plannedRouteSpecificityEquivalentCoveredCount: numberOrZero(plannedRoutes.specificityEquivalentCoveredCount),
+    plannedRouteAliasEquivalentCoveredCount: numberOrZero(plannedRoutes.aliasEquivalentCoveredCount),
+    plannedRouteReplayCoveredCount: numberOrZero(plannedRoutes.replayCoveredCount),
+    plannedRouteDynamicSeedCoveredCount: numberOrZero(plannedRoutes.dynamicSeedCoveredCount),
+    plannedRouteSurfaceResultOnlyCount: numberOrZero(plannedRoutes.surfaceResultOnlyCount),
+    plannedRouteWeakEvidenceCount,
+    plannedRouteNoReplayEvidenceCount: numberOrZero(plannedRoutes.noReplayEvidenceCount),
+    plannedRouteNonExactEvidenceCount: numberOrZero(plannedRoutes.nonExactEvidenceCount),
+    plannedRouteBlockedRiskCount,
+    plannedRouteCandidateOnlyCount,
+    plannedRoutePrivacyGatedCount,
+    plannedRoutePrivacyGatedRoutes: Array.isArray(plannedRoutes.privacyGatedRoutes) ? plannedRoutes.privacyGatedRoutes : [],
+    plannedRouteUncoveredCount,
+    plannedRouteUncoveredRoutes: Array.isArray(plannedRoutes.uncoveredRoutes) ? plannedRoutes.uncoveredRoutes : [],
+    plannedRouteWeakEvidenceRoutes: Array.isArray(plannedRoutes.weakEvidenceRoutes) ? plannedRoutes.weakEvidenceRoutes : [],
+    plannedRouteBlockedRiskRoutes: Array.isArray(plannedRoutes.blockedRiskRoutes) ? plannedRoutes.blockedRiskRoutes : [],
+    plannedRouteCandidateOnlyRoutes: Array.isArray(plannedRoutes.candidateOnlyRoutes) ? plannedRoutes.candidateOnlyRoutes : [],
+    plannedRouteClosureGapCount,
     unresolvedCandidateOnlyRouteCount: numberOrZero(closure.unresolvedCandidateOnlyRouteCount),
-    frontierGapCount: numberOrZero(frontier.gapCount),
+    frontierGapCount,
+    frontierDecisionsReady,
     plannedCapabilityCount: numberOrZero(discovered.plannedCapabilityCount),
     discoveredCapabilityCount: numberOrZero(discovered.discoveredCapabilityCount),
     plannedIntentCount: numberOrZero(discovered.plannedIntentCount),
@@ -3322,16 +3654,30 @@ function buildFullSiteBoundary({
     dynamicSeedRouteTemplateCount: numberOrZero(dynamicSeeds.routeTemplateCount),
     dynamicSeedSurfaceCount: numberOrZero(dynamicSeeds.surfaceCount),
     dynamicSeedExpansionCandidateCount: numberOrZero(dynamicExpansion.candidateCount),
+    dynamicSeedExpansionExecutedRouteTemplateCount: numberOrZero(dynamicExpansion.executedDynamicSeedRouteTemplateCount),
+    dynamicSeedExpansionAdditionalCandidateCount: numberOrZero(dynamicExpansion.additionalSeedExpansionCandidateCount),
     dynamicSeedExpansionFamilyCount: numberOrZero(dynamicExpansion.familyCount),
     dynamicSeedExpansionRouteTemplateCount: numberOrZero(dynamicExpansion.routeTemplateCount),
     dynamicSeedExpansionRequiresUserApproval: dynamicExpansion.userApprovalRequired === true,
     finiteExhaustiveReason: 'x-has-open-ended-user-content-and-parameterized-route-families',
     nextEvidence: activeAuthBlocker
       ? 'restore-authentication-then-close-pending-planned-surface-queues'
+      : activeRateLimitBlocker
+      ? 'pause-and-retry-after-rate-limit-cooldown'
       : !readCrawlControlledReady
+      ? 'close-pending-planned-surface-queues-and-frontier-gaps'
+      : frontierGapCount > 0
       ? 'close-pending-planned-surface-queues-and-frontier-gaps'
       : inventoryRouteUncoveredCount > 0
       ? 'cover-uncovered-inventory-routes'
+      : plannedRouteBlockedRiskCount > 0
+      ? 'manual-review-or-explicit-user-approved-risk-run'
+      : plannedRouteCandidateOnlyCount > 0
+      ? 'replay-planned-route-template-candidates'
+      : plannedRouteUncoveredCount > 0 || plannedRouteWeakEvidenceCount > 0
+      ? 'replay-planned-route-templates-with-strong-evidence'
+      : plannedRoutePrivacyGatedCount > 0
+      ? 'obtain-explicit-approval-for-current-account-privacy-gated-routes'
       : controlledScopeClosureReady
       ? 'expand-specific-dynamic-route-families-with-user-approved-seeds'
       : 'close-pending-planned-surface-queues-and-frontier-gaps',
@@ -3505,6 +3851,22 @@ function routeTemplateSpecificityCover(genericRoute, sampledRoute) {
   return narrowed;
 }
 
+function plannedRouteSpecificityReplayCovers(replayRouteTemplate, plannedRouteTemplate) {
+  if (!routeTemplateSpecificityCover(replayRouteTemplate, plannedRouteTemplate)) return false;
+  const replay = safeInventoryRouteTemplate(replayRouteTemplate);
+  const planned = safeInventoryRouteTemplate(plannedRouteTemplate);
+  if (!replay || !planned) return false;
+  const [replayPath] = replay.split('?', 2);
+  const [plannedPath] = planned.split('?', 2);
+  const replaySegments = replayPath.split('/').filter(Boolean);
+  const plannedSegments = plannedPath.split('/').filter(Boolean);
+  if (replaySegments.length !== plannedSegments.length) return false;
+  return replaySegments.every((segment, index) => {
+    const plannedSegment = plannedSegments[index];
+    return !segment.startsWith(':') || plannedSegment.startsWith(':');
+  });
+}
+
 function routeTemplatePath(routeTemplate) {
   const route = safeInventoryRouteTemplate(routeTemplate);
   if (!route) return null;
@@ -3587,6 +3949,213 @@ function buildInventoryRouteCoverage({ inventoryLinkRoutes = [], plannedRouteTem
     uncoveredRoutes: uncoveredRoutes.map((entry) => entry.routeTemplate),
     blockedRoutes: blockedRoutes.map((entry) => entry.routeTemplate),
     candidateOnlyRoutes: candidateOnlyRoutes.map((entry) => entry.routeTemplate),
+    routes,
+  };
+}
+
+function replayEntryIsCovered(entry = null) {
+  return ['visited-route', 'redirected-route'].includes(entry?.replayDisposition);
+}
+
+function replayEntryIsNonCoveredBoundary(entry = null) {
+  return ['blocked-risk', 'candidate-only'].includes(entry?.replayDisposition);
+}
+
+function strongestReplayBoundary(entries = []) {
+  return entries
+    .filter(replayEntryIsNonCoveredBoundary)
+    .sort((left, right) => (
+      routeAuditDispositionRank(right.replayDisposition) - routeAuditDispositionRank(left.replayDisposition)
+      || String(left.routeTemplate ?? '').localeCompare(String(right.routeTemplate ?? ''))
+    ))[0] ?? null;
+}
+
+function isCurrentAccountPrivacyGatedRoute(routeTemplate, surfaceStatus = null, hasSurfaceEvidence = false) {
+  const route = safeInventoryRouteTemplate(routeTemplate);
+  return hasSurfaceEvidence === true
+    && route === '/:current_account/following'
+    && !GOOD_COVERAGE_STATUSES.has(String(surfaceStatus ?? ''));
+}
+
+function summarizePlannedRouteTemplateCoverage(routes = []) {
+  const byStatus = countValues(routes.map((entry) => entry.coverageStatus));
+  const countStatus = (status) => routes.filter((entry) => entry.coverageStatus === status).length;
+  const compactRoute = (entry) => ({
+    surface: entry.surface,
+    routeTemplate: entry.routeTemplate,
+    normalizedRouteTemplate: entry.normalizedRouteTemplate,
+    coverageStatus: entry.coverageStatus,
+    coveredBy: entry.coveredBy,
+    surfaceStatus: entry.surfaceStatus,
+    replayRouteTemplate: entry.replayRouteTemplate,
+    replayDisposition: entry.replayDisposition,
+    dynamicSeedEvidenceStatus: entry.dynamicSeedEvidenceStatus,
+  });
+  const exactReplayCoveredCount = countStatus('exact-replay-covered');
+  const normalizedEquivalentCoveredCount = countStatus('normalized-replay-covered');
+  const specificityEquivalentCoveredCount = countStatus('specificity-equivalent-covered');
+  const aliasEquivalentCoveredCount = countStatus('risk-reviewed-alias-covered');
+  const dynamicSeedCoveredCount = countStatus('dynamic-seed-covered');
+  const surfaceResultOnlyCount = countStatus('surface-result-only');
+  const blockedRiskCount = countStatus('blocked-risk');
+  const candidateOnlyCount = countStatus('candidate-only');
+  const privacyGatedCount = countStatus('privacy-gated');
+  const uncoveredCount = countStatus('uncovered');
+  const replayCoveredCount = exactReplayCoveredCount
+    + normalizedEquivalentCoveredCount
+    + specificityEquivalentCoveredCount
+    + aliasEquivalentCoveredCount;
+  const noReplayEvidenceCount = dynamicSeedCoveredCount
+    + surfaceResultOnlyCount
+    + uncoveredCount;
+  return {
+    total: routes.length,
+    plannedSurfaceRouteCount: routes.length,
+    uniqueRouteTemplateCount: dedupeStrings(routes.map((entry) => entry.routeTemplate)).length,
+    uniqueNormalizedRouteTemplateCount: dedupeStrings(routes.map((entry) => entry.normalizedRouteTemplate)).length,
+    exactReplayCoveredCount,
+    normalizedEquivalentCoveredCount,
+    specificityEquivalentCoveredCount,
+    aliasEquivalentCoveredCount,
+    replayCoveredCount,
+    dynamicSeedCoveredCount,
+    surfaceResultOnlyCount,
+    weakEvidenceCount: dynamicSeedCoveredCount + surfaceResultOnlyCount,
+    noReplayEvidenceCount,
+    nonExactEvidenceCount: routes.length - exactReplayCoveredCount,
+    blockedRiskCount,
+    candidateOnlyCount,
+    privacyGatedCount,
+    privacyGatedRoutes: routes
+      .filter((entry) => entry.coverageStatus === 'privacy-gated')
+      .map((entry) => entry.routeTemplate),
+    uncoveredCount,
+    uncoveredRoutes: routes
+      .filter((entry) => entry.coverageStatus === 'uncovered')
+      .map(compactRoute),
+    weakEvidenceRoutes: routes
+      .filter((entry) => ['dynamic-seed-covered', 'surface-result-only'].includes(entry.coverageStatus))
+      .map(compactRoute),
+    blockedRiskRoutes: routes
+      .filter((entry) => entry.coverageStatus === 'blocked-risk')
+      .map(compactRoute),
+    candidateOnlyRoutes: routes
+      .filter((entry) => entry.coverageStatus === 'candidate-only')
+      .map(compactRoute),
+    statusCounts: byStatus,
+  };
+}
+
+/**
+ * @param {{ site?: any, expectedSurfaces?: any[], coveredSurfaces?: Set<any>, surfaceStatusBySurface?: Map<any, any>, surfaceReplayCoverageBySurface?: Map<any, any>, routeTemplateReplayCoverage?: any[], dynamicSeedCoverage?: any }} [options]
+ */
+function buildPlannedRouteTemplateCoverage({
+  site,
+  expectedSurfaces = [],
+  coveredSurfaces = new Set(),
+  surfaceStatusBySurface = new Map(),
+  surfaceReplayCoverageBySurface = new Map(),
+  routeTemplateReplayCoverage = [],
+  dynamicSeedCoverage = {},
+} = {}) {
+  const replayByRoute = new Map(routeTemplateReplayCoverage.map((entry) => [entry.routeTemplate, entry]));
+  const dynamicSeeds = /** @type {any} */ (dynamicSeedCoverage);
+  const dynamicSeedRouteTemplates = new Set(dynamicSeeds.coveredRouteTemplates ?? []);
+  const allDynamicSeedRouteTemplates = new Set(dynamicSeeds.routeTemplates ?? []);
+  const routeEquivalents = PLANNED_ROUTE_TEMPLATE_EQUIVALENTS_BY_SITE[site] ?? {};
+  const hasSurfaceReplayEvidence = surfaceReplayCoverageBySurface.size > 0;
+  const routes = expectedSurfaces.map((surface) => {
+    const detail = surfaceDetail(site, surface);
+    const routeTemplate = cleanString(detail.routeTemplate);
+    const normalizedRouteTemplate = safeInventoryRouteTemplate(routeTemplate);
+    if (!routeTemplate || !normalizedRouteTemplate) return null;
+    const hasSurfaceEvidence = surfaceStatusBySurface.has(surface);
+    const surfaceStatus = surfaceStatusBySurface.get(surface) ?? null;
+    const surfaceReplayCoverage = surfaceReplayCoverageBySurface.get(surface) ?? [];
+    const surfaceReplayByRoute = new Map(surfaceReplayCoverage.map((entry) => [entry.routeTemplate, entry]));
+    const surfaceCoveredReplayRoutes = surfaceReplayCoverage.filter(replayEntryIsCovered);
+    const exactReplay = hasSurfaceReplayEvidence
+      ? surfaceReplayByRoute.get(routeTemplate)
+      : replayByRoute.get(routeTemplate);
+    const normalizedReplay = hasSurfaceReplayEvidence
+      ? surfaceReplayByRoute.get(normalizedRouteTemplate)
+      : replayByRoute.get(normalizedRouteTemplate);
+    const equivalentReplay = (routeEquivalents[routeTemplate] ?? [])
+      .map((route) => surfaceReplayByRoute.get(safeInventoryRouteTemplate(route)))
+      .find(replayEntryIsCovered);
+    const equivalentBoundaryReplay = strongestReplayBoundary((routeEquivalents[routeTemplate] ?? [])
+      .map((route) => surfaceReplayByRoute.get(safeInventoryRouteTemplate(route))));
+    const specificityReplay = surfaceCoveredReplayRoutes.find((entry) => (
+      entry.routeTemplate !== routeTemplate
+      && entry.routeTemplate !== normalizedRouteTemplate
+      && plannedRouteSpecificityReplayCovers(entry.routeTemplate, normalizedRouteTemplate)
+    ));
+    const privacyGated = isCurrentAccountPrivacyGatedRoute(normalizedRouteTemplate, surfaceStatus, hasSurfaceEvidence);
+    let coverageStatus = 'uncovered';
+    let coveredBy = null;
+    let replayRouteTemplate = null;
+    let replayDisposition = null;
+    if (privacyGated) {
+      coverageStatus = 'privacy-gated';
+      coveredBy = 'current-account-approval-required';
+    } else if (replayEntryIsCovered(exactReplay)) {
+      coverageStatus = 'exact-replay-covered';
+      coveredBy = 'exact-replay';
+      replayRouteTemplate = exactReplay.routeTemplate;
+      replayDisposition = exactReplay.replayDisposition;
+    } else if (
+      normalizedRouteTemplate !== routeTemplate
+      && replayEntryIsCovered(normalizedReplay)
+    ) {
+      coverageStatus = 'normalized-replay-covered';
+      coveredBy = 'normalized-replay';
+      replayRouteTemplate = normalizedReplay.routeTemplate;
+      replayDisposition = normalizedReplay.replayDisposition;
+    } else if (specificityReplay) {
+      coverageStatus = 'specificity-equivalent-covered';
+      coveredBy = 'specificity-equivalent-replay';
+      replayRouteTemplate = specificityReplay.routeTemplate;
+      replayDisposition = specificityReplay.replayDisposition;
+    } else if (equivalentReplay) {
+      coverageStatus = 'risk-reviewed-alias-covered';
+      coveredBy = 'route-equivalent-replay';
+      replayRouteTemplate = equivalentReplay.routeTemplate;
+      replayDisposition = equivalentReplay.replayDisposition;
+    } else if (dynamicSeedRouteTemplates.has(normalizedRouteTemplate)) {
+      coverageStatus = 'dynamic-seed-covered';
+      coveredBy = 'executed-dynamic-seed';
+    } else if (strongestReplayBoundary([exactReplay, normalizedReplay, equivalentBoundaryReplay])) {
+      const boundaryReplay = strongestReplayBoundary([exactReplay, normalizedReplay, equivalentBoundaryReplay]);
+      coverageStatus = boundaryReplay.replayDisposition;
+      coveredBy = boundaryReplay.replayDisposition;
+      replayRouteTemplate = boundaryReplay.routeTemplate;
+      replayDisposition = boundaryReplay.replayDisposition;
+    } else if (
+      GOOD_COVERAGE_STATUSES.has(surfaceStatus)
+      || (surfaceStatusBySurface.size === 0 && coveredSurfaces.has(surface))
+    ) {
+      coverageStatus = 'surface-result-only';
+      coveredBy = 'surface-row';
+    }
+    return {
+      surface,
+      routeTemplate,
+      normalizedRouteTemplate,
+      coverageStatus,
+      coveredBy,
+      surfaceStatus,
+      replayRouteTemplate,
+      replayDisposition,
+      dynamicSeedEvidenceStatus: dynamicSeedRouteTemplates.has(normalizedRouteTemplate)
+        ? 'covered-dynamic-seed'
+        : allDynamicSeedRouteTemplates.has(normalizedRouteTemplate)
+        ? 'executed-dynamic-seed-boundary'
+        : 'none',
+    };
+  }).filter(Boolean);
+  return {
+    scope: 'planned-surface-route-template-replay',
+    ...summarizePlannedRouteTemplateCoverage(routes),
     routes,
   };
 }
@@ -3696,6 +4265,23 @@ function frontierGapForRoute(entry = {}) {
       nextEvidence: 'rerun-source-surface-with-route-sample-capture',
       observedAsPageCount: numberOrZero(entry.observedAsPageCount),
       observedAsCandidateCount: numberOrZero(entry.observedAsCandidateCount),
+      functionKinds: entry.functionKinds ?? [],
+      executionClasses: entry.executionClasses ?? [],
+      routeShape: routeTemplateShape(routeTemplate),
+    };
+  }
+  if (expansionStatus === 'unknown') {
+    return {
+      routeTemplate,
+      gapKind: 'unclassified-frontier-route',
+      expansionStatus,
+      replayDisposition: entry.replayDisposition,
+      reason: 'unknown-replay-disposition',
+      nextEvidence: 'route-template-replay-audit',
+      observedAsPageCount: numberOrZero(entry.observedAsPageCount),
+      observedAsCandidateCount: numberOrZero(entry.observedAsCandidateCount),
+      blockedFunctionCount: numberOrZero(entry.blockedFunctionCount),
+      routeSampleCount: routeSamples.length,
       functionKinds: entry.functionKinds ?? [],
       executionClasses: entry.executionClasses ?? [],
       routeShape: routeTemplateShape(routeTemplate),
@@ -4062,6 +4648,9 @@ function buildDynamicSeedInstanceCoverage(rows = []) {
       || left.familyKind.localeCompare(right.familyKind)
     ));
   const routeTemplates = dedupeStrings(seedRuns.map((run) => run.routeTemplate));
+  const coveredRouteTemplates = dedupeStrings(seedRuns
+    .filter((run) => GOOD_COVERAGE_STATUSES.has(run.status))
+    .map((run) => run.routeTemplate));
   return {
     scope: 'executed-dynamic-seed-instances',
     seedRunCount: seedRuns.length,
@@ -4069,6 +4658,8 @@ function buildDynamicSeedInstanceCoverage(rows = []) {
     routeTemplateCount: routeTemplates.length,
     surfaceCount: dedupeStrings(seedRuns.map((run) => run.surface)).length,
     routeTemplates,
+    coveredRouteTemplates,
+    coveredRouteTemplateCount: coveredRouteTemplates.length,
     statuses: countValues(seedRuns.map((run) => run.status)),
     latestFinishedAt: seedRuns
       .map((run) => run.finishedAt)
@@ -4087,7 +4678,10 @@ function routeTemplateParameters(routeTemplate) {
 function buildDynamicSeedExpansion({ surfaceRows = [], dynamicSeedCoverage = {}, readCrawlFrontier = {} } = {}) {
   const dynamicSeeds = /** @type {any} */ (dynamicSeedCoverage);
   const frontier = /** @type {any} */ (readCrawlFrontier);
-  const seededRouteTemplates = new Set(Array.isArray(dynamicSeeds.routeTemplates)
+  const coveredSeedRouteTemplates = new Set(Array.isArray(dynamicSeeds.coveredRouteTemplates)
+    ? dynamicSeeds.coveredRouteTemplates
+    : []);
+  const attemptedSeedRouteTemplates = new Set(Array.isArray(dynamicSeeds.routeTemplates)
     ? dynamicSeeds.routeTemplates
     : []);
   const frontierBoundaries = new Map(
@@ -4103,6 +4697,12 @@ function buildDynamicSeedExpansion({ surfaceRows = [], dynamicSeedCoverage = {},
     if (!family) continue;
     if (!byRoute.has(routeTemplate)) {
       const frontierBoundary = frontierBoundaries.get(routeTemplate) ?? null;
+      const seedEvidenceStatus = coveredSeedRouteTemplates.has(routeTemplate)
+        ? 'executed-dynamic-seed'
+        : attemptedSeedRouteTemplates.has(routeTemplate)
+        ? 'attempted-dynamic-seed-boundary'
+        : 'planned-dynamic-surface';
+      const userApprovalRequired = seedEvidenceStatus !== 'executed-dynamic-seed';
       byRoute.set(routeTemplate, {
         routeTemplate,
         familyKind: family.familyKind,
@@ -4114,12 +4714,12 @@ function buildDynamicSeedExpansion({ surfaceRows = [], dynamicSeedCoverage = {},
         targetOperations: [],
         statuses: [],
         latestFinishedAt: null,
-        seedEvidenceStatus: seededRouteTemplates.has(routeTemplate)
-          ? 'executed-dynamic-seed'
-          : 'planned-dynamic-surface',
+        seedEvidenceStatus,
         frontierSampleStatus: frontierBoundary?.sampleStatus ?? null,
-        userApprovalRequired: true,
-        nextEvidence: 'provide-user-approved-concrete-seed-values-for-this-route-family',
+        userApprovalRequired,
+        nextEvidence: userApprovalRequired
+          ? 'provide-user-approved-concrete-seed-values-for-this-route-family'
+          : null,
       });
     }
     const current = byRoute.get(routeTemplate);
@@ -4138,6 +4738,10 @@ function buildDynamicSeedExpansion({ surfaceRows = [], dynamicSeedCoverage = {},
     left.familyKind.localeCompare(right.familyKind)
     || left.routeTemplate.localeCompare(right.routeTemplate)
   ));
+  const executedDynamicSeedRouteTemplateCount = candidates
+    .filter((entry) => entry.seedEvidenceStatus === 'executed-dynamic-seed')
+    .length;
+  const additionalSeedExpansionCandidateCount = candidates.length - executedDynamicSeedRouteTemplateCount;
   const families = [...new Set(candidates.map((entry) => entry.familyKind))]
     .sort()
     .map((familyKind) => {
@@ -4152,12 +4756,14 @@ function buildDynamicSeedExpansion({ surfaceRows = [], dynamicSeedCoverage = {},
     });
   return {
     scope: 'specific-dynamic-route-family-seed-expansion',
-    userApprovalRequired: candidates.length > 0,
+    userApprovalRequired: additionalSeedExpansionCandidateCount > 0,
     candidateCount: candidates.length,
+    executedDynamicSeedRouteTemplateCount,
+    additionalSeedExpansionCandidateCount,
     familyCount: families.length,
     routeTemplateCount: candidates.length,
     routeTemplates: candidates.map((entry) => entry.routeTemplate),
-    nextEvidence: candidates.length > 0
+    nextEvidence: additionalSeedExpansionCandidateCount > 0
       ? 'provide-user-approved-concrete-seed-values-for-specific-dynamic-route-families'
       : null,
     families,
@@ -4668,6 +5274,7 @@ function compactSurfaceRow(row) {
     readCrawl: row.readCrawl && typeof row.readCrawl === 'object'
       ? row.readCrawl
       : emptyReadCrawlSummary(),
+    runtimeRisk: row.runtimeRisk ?? null,
     evidenceRunCount: numberOrZero(row.evidenceRunCount),
     evidenceManifestPaths: Array.isArray(row.evidenceManifestPaths) ? row.evidenceManifestPaths : [],
     finishedAt: row.finishedAt ?? null,
@@ -4935,6 +5542,7 @@ function buildCoverage(rows) {
     const crawlApiOperationRiskSummary = summarizeApiOperationRisk(crawlApiOperationRisk);
     const dynamicSeedCoverage = buildDynamicSeedInstanceCoverage(rawSiteRows);
     const sessionAuthBoundary = buildSessionAuthBoundary(rawSiteRows);
+    const rateLimitBoundary = buildRateLimitBoundary(rawSiteRows);
     const coveredPlannedSurfaceCount = expectedSurfaces.length
       ? expectedSurfaces.filter((surface) => coveredSurfaces.has(surface)).length
       : null;
@@ -4961,6 +5569,18 @@ function buildCoverage(rows) {
       ],
       routeTemplateReplayCoverage: crawlRouteTemplateReplayCoverage,
     });
+    const plannedRouteTemplateCoverage = buildPlannedRouteTemplateCoverage({
+      site,
+      expectedSurfaces,
+      coveredSurfaces,
+      surfaceStatusBySurface: new Map(surfaceRows.map((row) => [row.surface, row.status])),
+      surfaceReplayCoverageBySurface: new Map(surfaceRows.map((row) => [
+        row.surface,
+        row.readCrawl?.routeTemplateReplayCoverage ?? [],
+      ])),
+      routeTemplateReplayCoverage: crawlRouteTemplateReplayCoverage,
+      dynamicSeedCoverage,
+    });
     const discovery = buildDiscoverySummary({
       site,
       capabilities,
@@ -4985,7 +5605,9 @@ function buildCoverage(rows) {
       dynamicSeedCoverage,
       dynamicSeedExpansion,
       sessionAuthBoundary,
+      rateLimitBoundary,
       inventoryRouteCoverage,
+      plannedRouteTemplateCoverage,
     });
     coverage[site] = {
       plannedSurfaceCount: expectedSurfaces.length || null,
@@ -5022,6 +5644,8 @@ function buildCoverage(rows) {
       dynamicSeedCoverage,
       dynamicSeedExpansion,
       sessionAuthBoundary,
+      rateLimitBoundary,
+      plannedRouteTemplateCoverage,
       inventory: {
         totalLinks: surfaceRows.reduce((sum, row) => sum + numberOrZero(row.surfaceInventory?.linkCount), 0),
         totalControls: surfaceRows.reduce((sum, row) => sum + numberOrZero(row.surfaceInventory?.controlCount), 0),
@@ -5144,12 +5768,10 @@ export async function buildReport(options) {
       // Skip malformed or unrelated state files.
     }
   }
-  const siteFiltered = rows
-    .filter((row) => row.site === 'x' || row.site === 'instagram')
-    .filter((row) => options.site === 'all' || row.site === options.site);
+  const selectedSites = options.site === 'all' ? ['x', 'instagram'] : [options.site];
+  const siteFiltered = rows.filter((row) => selectedSites.includes(row.site));
   const limited = [];
-  for (const site of ['x', 'instagram']) {
-    if (options.site !== 'all' && options.site !== site) continue;
+  for (const site of selectedSites) {
     limited.push(...siteFiltered.filter((row) => row.site === site).slice(0, Number(options.limit)));
   }
   const rowsWithRepairPlans = addSessionRepairPlans(limited);
@@ -5231,12 +5853,28 @@ function markdownReport(report) {
       }
     }
     if (coverage.dynamicSeedExpansion?.candidateCount) {
-      lines.push(`  - dynamic seed expansion candidates: route templates ${coverage.dynamicSeedExpansion.routeTemplateCount}, families ${coverage.dynamicSeedExpansion.familyCount}, user approval required ${coverage.dynamicSeedExpansion.userApprovalRequired ? 'yes' : 'no'}`);
+      lines.push(`  - dynamic seed expansion candidates: route templates ${coverage.dynamicSeedExpansion.routeTemplateCount}, executed seed route templates ${coverage.dynamicSeedExpansion.executedDynamicSeedRouteTemplateCount}, additional candidates ${coverage.dynamicSeedExpansion.additionalSeedExpansionCandidateCount}, families ${coverage.dynamicSeedExpansion.familyCount}, user approval required ${coverage.dynamicSeedExpansion.userApprovalRequired ? 'yes' : 'no'}`);
+    }
+    if (coverage.plannedRouteTemplateCoverage?.total) {
+      const plannedRoutes = coverage.plannedRouteTemplateCoverage;
+      lines.push(`  - planned route replay coverage: rows ${plannedRoutes.plannedSurfaceRouteCount}, unique routes ${plannedRoutes.uniqueRouteTemplateCount}, unique normalized routes ${plannedRoutes.uniqueNormalizedRouteTemplateCount}, exact ${plannedRoutes.exactReplayCoveredCount}/${plannedRoutes.total}, normalized-equivalent ${plannedRoutes.normalizedEquivalentCoveredCount}, specificity-equivalent ${plannedRoutes.specificityEquivalentCoveredCount}, alias-equivalent ${plannedRoutes.aliasEquivalentCoveredCount}, replay-covered ${plannedRoutes.replayCoveredCount}, no-replay-evidence ${plannedRoutes.noReplayEvidenceCount}, dynamic-seed-only ${plannedRoutes.dynamicSeedCoveredCount}, surface-result-only ${plannedRoutes.surfaceResultOnlyCount}, privacy-gated ${plannedRoutes.privacyGatedCount}, blocked-risk ${plannedRoutes.blockedRiskCount}, candidate-only ${plannedRoutes.candidateOnlyCount}, uncovered ${plannedRoutes.uncoveredCount}`);
+      if (plannedRoutes.uncoveredRoutes?.length) {
+        lines.push(`  - planned route uncovered routes: ${plannedRoutes.uncoveredRoutes.map((entry) => `${entry.surface} ${entry.routeTemplate}`).join(', ')}`);
+      }
     }
     if (coverage.fullSiteBoundary) {
       const boundary = coverage.fullSiteBoundary;
       lines.push(`  - full-site boundary: full-site exhaustive claim ${boundary.fullSiteExhaustiveClaim ? 'yes' : 'no'}, controlled scope ready ${boundary.controlledScopeClosureReady ? 'yes' : 'no'}, planned surfaces ${boundary.coveredPlannedSurfaceCount}/${boundary.plannedSurfaceCount}, pending queues ${boundary.pendingReadQueueSurfaceCount}, unresolved candidates ${boundary.unresolvedCandidateOnlyRouteCount}, frontier gaps ${boundary.frontierGapCount}`);
       lines.push(`  - full-site evidence counts: capabilities ${boundary.discoveredCapabilityCount}/${boundary.plannedCapabilityCount}, intents ${boundary.discoveredIntentCount}/${boundary.plannedIntentCount}, functions read ${boundary.readExecutableFunctionKindCount}, blocked ${boundary.blockedFunctionKindCount}, APIs observed ${boundary.observedApiOperationCount}, target ${boundary.targetApiOperationCount}, read-like ${boundary.readReplayEligibleApiOperationCount}, replay-blocked ${boundary.replayBlockedApiOperationCount}, side-effect-risk ${boundary.sideEffectRiskApiOperationCount}`);
+      if (boundary.plannedRouteTemplateCount) {
+        lines.push(`  - full-site planned route replay: rows ${boundary.plannedSurfaceRouteCount}, unique routes ${boundary.plannedRouteUniqueTemplateCount}, unique normalized routes ${boundary.plannedRouteUniqueNormalizedTemplateCount}, exact ${boundary.plannedRouteExactReplayCoveredCount}/${boundary.plannedRouteTemplateCount}, normalized-equivalent ${boundary.plannedRouteNormalizedEquivalentCoveredCount}, specificity-equivalent ${boundary.plannedRouteSpecificityEquivalentCoveredCount}, alias-equivalent ${boundary.plannedRouteAliasEquivalentCoveredCount}, replay-covered ${boundary.plannedRouteReplayCoveredCount}, no-replay-evidence ${boundary.plannedRouteNoReplayEvidenceCount}, dynamic-seed-only ${boundary.plannedRouteDynamicSeedCoveredCount}, surface-result-only ${boundary.plannedRouteSurfaceResultOnlyCount}, privacy-gated ${boundary.plannedRoutePrivacyGatedCount}, blocked-risk ${boundary.plannedRouteBlockedRiskCount}, candidate-only ${boundary.plannedRouteCandidateOnlyCount}, uncovered ${boundary.plannedRouteUncoveredCount}`);
+        if (boundary.plannedRoutePrivacyGatedRoutes?.length) {
+          lines.push(`  - full-site privacy-gated routes: ${boundary.plannedRoutePrivacyGatedRoutes.join(', ')}`);
+        }
+        if (boundary.plannedRouteUncoveredRoutes?.length) {
+          lines.push(`  - full-site planned route uncovered routes: ${boundary.plannedRouteUncoveredRoutes.map((entry) => `${entry.surface} ${entry.routeTemplate}`).join(', ')}`);
+        }
+      }
       if (boundary.dynamicRouteFamilyCount) {
         lines.push(`  - full-site dynamic boundary: families ${boundary.dynamicRouteFamilyCount}, route templates ${boundary.dynamicRouteFamilyRouteTemplateCount}, parameterized families ${boundary.dynamicRouteParameterizedFamilyCount}, parameterized templates ${boundary.dynamicRouteParameterizedTemplateCount}, samples ${boundary.dynamicRouteSampleCount}, sampleless templates ${boundary.dynamicRouteSamplelessTemplateCount}`);
       }
@@ -5244,7 +5882,7 @@ function markdownReport(report) {
         lines.push(`  - full-site dynamic seed evidence: runs ${boundary.dynamicSeedRunCount}, families ${boundary.dynamicSeedFamilyCount}, route templates ${boundary.dynamicSeedRouteTemplateCount}, surfaces ${boundary.dynamicSeedSurfaceCount}`);
       }
       if (boundary.dynamicSeedExpansionCandidateCount) {
-        lines.push(`  - full-site dynamic seed expansion: candidates ${boundary.dynamicSeedExpansionCandidateCount}, families ${boundary.dynamicSeedExpansionFamilyCount}, route templates ${boundary.dynamicSeedExpansionRouteTemplateCount}, user approval required ${boundary.dynamicSeedExpansionRequiresUserApproval ? 'yes' : 'no'}`);
+        lines.push(`  - full-site dynamic seed expansion: candidates ${boundary.dynamicSeedExpansionCandidateCount}, executed seed route templates ${boundary.dynamicSeedExpansionExecutedRouteTemplateCount}, additional candidates ${boundary.dynamicSeedExpansionAdditionalCandidateCount}, families ${boundary.dynamicSeedExpansionFamilyCount}, route templates ${boundary.dynamicSeedExpansionRouteTemplateCount}, user approval required ${boundary.dynamicSeedExpansionRequiresUserApproval ? 'yes' : 'no'}`);
       }
       if (boundary.authBlockedRunCount || boundary.activeAuthBlocker) {
         const authReasons = (boundary.authBlockerReasons ?? [])
@@ -5254,6 +5892,18 @@ function markdownReport(report) {
           ? `, surfaces ${boundary.authBlockedSurfaces.join(', ')}`
           : '';
         lines.push(`  - full-site auth boundary: active ${boundary.activeAuthBlocker ? 'yes' : 'no'}, blocked runs ${boundary.authBlockedRunCount}, blocked surfaces ${boundary.authBlockedSurfaceCount}${authSurfaces}${authReasons ? `, reasons ${authReasons}` : ''}`);
+      }
+      if (boundary.rateLimitBlockedRunCount || boundary.activeRateLimitBlocker) {
+        const rateLimitReasons = (boundary.rateLimitReasons ?? [])
+          .map((entry) => `${entry.value} ${entry.count}`)
+          .join(', ');
+        const rateLimitSurfaces = boundary.rateLimitBlockedSurfaces?.length
+          ? `, surfaces ${boundary.rateLimitBlockedSurfaces.join(', ')}`
+          : '';
+        const activeRateLimitSurfaces = boundary.rateLimitActiveBlockedSurfaces?.length
+          ? `, active surfaces ${boundary.rateLimitActiveBlockedSurfaces.join(', ')}`
+          : '';
+        lines.push(`  - full-site rate-limit boundary: active ${boundary.activeRateLimitBlocker ? 'yes' : 'no'}, blocked runs ${boundary.rateLimitBlockedRunCount}, blocked surfaces ${boundary.rateLimitBlockedSurfaceCount}, active blocked surfaces ${boundary.rateLimitActiveBlockedSurfaceCount}, recovery scope ${boundary.rateLimitRecoveryScope ?? 'n/a'}${rateLimitSurfaces}${activeRateLimitSurfaces}${rateLimitReasons ? `, reasons ${rateLimitReasons}` : ''}`);
       }
       if (boundary.inventoryRouteCount) {
         lines.push(`  - full-site inventory routes: covered ${boundary.inventoryRouteCoveredCount}/${boundary.inventoryRouteCount}, uncovered ${boundary.inventoryRouteUncoveredCount}, blocked ${boundary.inventoryRouteBlockedCount}, candidate-only ${boundary.inventoryRouteCandidateOnlyCount}`);

@@ -72,6 +72,31 @@ const QIDIAN_PAGE_TYPES = new Set([
   'utility-page',
 ]);
 
+const QIDIAN_CATEGORY_PATH_SEGMENTS = new Set([
+  '2cy',
+  'all',
+  'boy',
+  'coverrec',
+  'dushi',
+  'finish',
+  'free',
+  'junshi',
+  'kehuan',
+  'lingyi',
+  'lishi',
+  'mm',
+  'qihuan',
+  'rank',
+  'sanjiang',
+  'strongrec',
+  'tiyu',
+  'wuxia',
+  'xianshi',
+  'xianxia',
+  'xuanhuan',
+  'youxi',
+]);
+
 export const QIDIAN_TERMINOLOGY = Object.freeze({
   entityLabel: 'book',
   entityPlural: 'books',
@@ -126,7 +151,8 @@ function qidianPageTypeFromPath(pathname = '/') {
   if (/^\/chapter\/\d+\/\d+$/iu.test(normalizedPath)) {
     return 'chapter-page';
   }
-  if (/^\/(?:all|rank|finish|free|mm|boy)(?:\/|$)/iu.test(normalizedPath)) {
+  const firstSegment = normalizedPath.split('/').filter(Boolean)[0]?.toLowerCase() ?? '';
+  if (QIDIAN_CATEGORY_PATH_SEGMENTS.has(firstSegment) || /^\/category\/\d+$/iu.test(normalizedPath)) {
     return 'category-page';
   }
   if (/^\/(?:bookcase|user|account|profile|help)(?:\/|$)/iu.test(normalizedPath)) {
@@ -203,7 +229,7 @@ function isQidianHost(host) {
 
 function isQidianExecutableApiPath(pathname) {
   return /^\/(?:ajax|api)\//iu.test(String(pathname ?? ''))
-    || /^\/webcommon\/(?:user|bookstore)\//iu.test(String(pathname ?? ''))
+    || /^\/webcommon\/(?:book|bookstore|chapterreview|portalOps|search|user)\//iu.test(String(pathname ?? ''))
     || /^\/(?:ajaxbook|ajaxchapter|bookstore|search)(?:\/|$)/iu.test(String(pathname ?? ''));
 }
 
@@ -251,6 +277,104 @@ function qidianApiSemanticsForPath(pathname) {
       outputType: 'list',
     };
   }
+  if (/^\/webcommon\/search\/autocomplete$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-search-autocomplete',
+      outputName: 'search_suggestions',
+      outputType: 'list',
+    };
+  }
+  if (/^\/webcommon\/portalops\/getportaladv$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-portal-advertising',
+      outputName: 'portal_advertising',
+      outputType: 'entity',
+    };
+  }
+  if (/^\/webcommon\/portalops\/getrecord$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-portal-game-records',
+      outputName: 'portal_game_records',
+      outputType: 'list',
+    };
+  }
+  if (/^\/webcommon\/chapterreview\/recommendbooks$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-chapter-recommended-books',
+      outputName: 'recommended_books',
+      outputType: 'list',
+    };
+  }
+  if (/^\/ajax\/comment\/index$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-comments',
+      outputName: 'book_comments',
+      outputType: 'list',
+    };
+  }
+  if (/^\/ajax\/book\/getfanshall$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-fans-hall',
+      outputName: 'book_fans_hall',
+      outputType: 'list',
+    };
+  }
+  if (/^\/ajax\/book\/getfansrank$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-fans-rank',
+      outputName: 'book_fans_rank',
+      outputType: 'list',
+    };
+  }
+  if (/^\/webcommon\/book\/category$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-catalog',
+      outputName: 'book_catalog',
+      outputType: 'list',
+    };
+  }
+  if (/^\/webcommon\/book\/fansinfo$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-fans-info',
+      outputName: 'book_fans_info',
+      outputType: 'entity',
+    };
+  }
+  if (/^\/webcommon\/book\/getcopyrightinfo$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-copyright-info',
+      outputName: 'book_copyright_info',
+      outputType: 'entity',
+    };
+  }
+  if (/^\/webcommon\/book\/getuserdonatebalance$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-user-donate-balance',
+      outputName: 'user_donate_balance',
+      outputType: 'entity',
+    };
+  }
+  if (/^\/webcommon\/book\/getusermonthticket$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-user-month-ticket',
+      outputName: 'user_month_ticket',
+      outputType: 'entity',
+    };
+  }
+  if (/^\/webcommon\/book\/getuserrecomticket$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-user-recommend-ticket',
+      outputName: 'user_recommend_ticket',
+      outputType: 'entity',
+    };
+  }
+  if (/^\/webcommon\/book\/readstatus$/iu.test(pathname)) {
+    return {
+      semanticKind: 'read-book-reading-status',
+      outputName: 'book_reading_status',
+      outputType: 'entity',
+    };
+  }
   if (/^\/ajax\/book\//iu.test(pathname) || /^\/bookstore(?:\/|$)/iu.test(pathname)) {
     return {
       semanticKind: 'read-book-metadata',
@@ -273,6 +397,161 @@ function qidianApiSemanticsForPath(pathname) {
 }
 
 const QIDIAN_BUILD_API_SEEDS = Object.freeze([
+  Object.freeze({
+    id: 'qidian-known-api-book-catalog',
+    semanticKind: 'read-book-catalog',
+    url: 'https://www.qidian.com/webcommon/book/category?bookId=1042256511',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-book-comments',
+    semanticKind: 'read-book-comments',
+    url: 'https://www.qidian.com/ajax/comment/index?bookId=1042256511&pageSize=15',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+      pageUrl: 'https://www.qidian.com/book/1042256511',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-book-copyright-info',
+    semanticKind: 'read-book-copyright-info',
+    url: 'https://www.qidian.com/webcommon/book/getCopyRightInfo?bookId=1042256511',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-book-fans-hall',
+    semanticKind: 'read-book-fans-hall',
+    url: 'https://www.qidian.com/ajax/book/getFansHall?bookId=1042256511',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+      pageUrl: 'https://www.qidian.com/book/1042256511',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-book-fans-info',
+    semanticKind: 'read-book-fans-info',
+    url: 'https://www.qidian.com/webcommon/book/fansInfo?bookId=1042256511',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-book-fans-rank',
+    semanticKind: 'read-book-fans-rank',
+    url: 'https://www.qidian.com/ajax/book/GetFansRank?bookId=1042256511',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+      pageUrl: 'https://www.qidian.com/book/1042256511',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-book-read-status',
+    semanticKind: 'read-book-reading-status',
+    url: 'https://www.qidian.com/webcommon/book/readStatus?bookId=1042256511',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-user-donate-balance',
+    semanticKind: 'read-user-donate-balance',
+    url: 'https://www.qidian.com/webcommon/book/getUserDonateBalance',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-user-month-ticket',
+    semanticKind: 'read-user-month-ticket',
+    url: 'https://www.qidian.com/webcommon/book/getUserMonthTicket?bookId=1042256511&userLevel=0',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-user-recommend-ticket',
+    semanticKind: 'read-user-recommend-ticket',
+    url: 'https://www.qidian.com/webcommon/book/getUserRecomTicket?bookId=1042256511&userLevel=0',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-chapter-recommended-books',
+    semanticKind: 'read-chapter-recommended-books',
+    url: 'https://www.qidian.com/webcommon/chapterreview/recommendbooks',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-portal-advertising',
+    semanticKind: 'read-portal-advertising',
+    url: 'https://www.qidian.com/webcommon/portalOps/getPortalAdv',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-portal-game-records',
+    semanticKind: 'read-portal-game-records',
+    url: 'https://www.qidian.com/webcommon/portalOps/getRecord',
+    responseEvidence: Object.freeze({
+      statusCode: 0,
+    }),
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
+  Object.freeze({
+    id: 'qidian-known-api-search-autocomplete',
+    semanticKind: 'read-search-autocomplete',
+    url: 'https://www.qidian.com/webcommon/search/autoComplete?siteid=1&query=%E5%89%91',
+    responseEvidence: null,
+    parameterSource: Object.freeze({
+      kind: 'qidian_yuew_sign',
+    }),
+  }),
   Object.freeze({
     id: 'qidian-known-api-user-info',
     semanticKind: 'read-authenticated-user',
@@ -317,6 +596,7 @@ function buildQidianApiDiscoverySeeds({ siteKey = 'qidian' } = {}) {
     },
     request: {
       headers: {
+        Accept: 'application/json, text/plain;q=0.8, */*;q=0.1',
         Origin: 'https://www.qidian.com',
         Referer: 'https://www.qidian.com/',
       },
@@ -446,7 +726,7 @@ export const qidianAdapter = createCatalogAdapter({
     if (isQidianExecutableApiPath(path)) {
       return recognizedDecision(item, `qidian:observed-api:${path || '/'}`);
     }
-    if (/^\/(?:soushu|book|chapter|all|rank|finish|free|mm|boy|bookcase|user|account|profile|help)(?:\/|$)/iu.test(path) || path === '/') {
+    if (qidianPageTypeFromPath(path)) {
       return recognizedDecision(item, `qidian:page-request:${path || '/'}`);
     }
     return ignoredDecision(

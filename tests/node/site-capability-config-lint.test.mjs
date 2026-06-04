@@ -30,7 +30,7 @@ const ALLOWED_ACTION_KINDS = new Set([
   'search-submit',
 ]);
 
-const SOCIAL_SITE_KEYS = new Set(['x', 'instagram']);
+const SOCIAL_SITE_KEYS = new Set(['x', 'instagram', 'reddit']);
 const VIDEO_SITE_KEYS = new Set(['bilibili', 'douyin', 'jable']);
 const CHAPTER_ADAPTERS = new Set(['chapter-content']);
 

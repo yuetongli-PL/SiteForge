@@ -1,5 +1,6 @@
 // @ts-check
 
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -7,9 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8, writeJsonStdout } from '../../infra/cli.mjs';
 import {
   buildRedditApiRequestPlan,
+  buildRedditApiReadBatchReport,
   buildRedditAuthorizedSourceConfig,
+  buildRedditAuthorizedSourceManifest,
+  buildRedditBrowserBridgeRouteQueue,
   buildRedditComprehensiveCoverageReport,
   buildRedditCoverageAudit,
+  buildRedditLiveReadinessReport,
   buildRedditRuntimePlanIndex,
   countRedditRegisteredRuntimePlans,
   executeRedditApiReadPlan,
@@ -18,9 +23,12 @@ import {
   loadRedditOfficialApiCatalog,
   resolveRedditCredentialEnv,
   writeRedditApiCatalogArtifacts,
+  writeRedditApiReadBatchReportArtifacts,
   writeRedditAuthorizedSourceConfigArtifacts,
+  writeRedditBrowserBridgeRouteQueueArtifacts,
   writeRedditComprehensiveCoverageReportArtifacts,
   writeRedditCoverageAuditArtifacts,
+  writeRedditLiveReadinessReportArtifacts,
   writeRedditApiPlanArtifact,
   writeRedditRuntimePlanIndexArtifacts,
   writeRedditRuntimeSkillRegistration,
@@ -30,11 +38,14 @@ const HELP = `Internal script usage:
   node src/entrypoints/sites/reddit-action.mjs api-catalog [options]
   node src/entrypoints/sites/reddit-action.mjs api-plan --path /api/v1/me --method GET [options]
   node src/entrypoints/sites/reddit-action.mjs api-read --path /api/v1/me --method GET [options]
+  node src/entrypoints/sites/reddit-action.mjs api-read-batch [options]
   node src/entrypoints/sites/reddit-action.mjs api-runtime-index [options]
   node src/entrypoints/sites/reddit-action.mjs api-runtime-register --site-dir <dir> [options]
   node src/entrypoints/sites/reddit-action.mjs authorized-source-config [options]
+  node src/entrypoints/sites/reddit-action.mjs browser-bridge-route-queue [options]
   node src/entrypoints/sites/reddit-action.mjs coverage-audit [options]
   node src/entrypoints/sites/reddit-action.mjs comprehensive-report [options]
+  node src/entrypoints/sites/reddit-action.mjs live-readiness [options]
 
 Public command:
   siteforge build https://www.reddit.com/
@@ -46,16 +57,22 @@ Options:
   --build-report <file>       Include a SiteForge build_report.user.json.
   --coverage-audit <file>     Include reddit_link_function_api_coverage_audit.json.
   --runtime-index <file>      Include reddit_oauth_api_runtime_plan_index.json.
+  --api-batch-report <file>   Include reddit_api_read_batch_report.json.
+  --browser-route-queue <file> Include reddit_browser_bridge_route_queue.json.
+  --browser-cumulative-report <file> Include reddit_browser_bridge_live_cumulative_report.json.
   --cookie-build-report <file> Include the cookie build report.
   --browser-build-report <file> Include the Browser Bridge build report.
   --public-build-report <file> Include the public-only build report.
   --authorized-source-build-report <file> Include an authorized-source-only build report.
   --session-manifest <file>   Include session health manifest.
   --doctor-report <file>      Include site-doctor report.
+  --doctor-report-dir <dir>   Include latest doctor-report.json under a site-doctor output dir.
   --registry <file>           Include or update a SiteForge registry.json.
   --site-dir <dir>            SiteForge site directory for api-runtime-register.
   --skill-dir <dir>           Runtime skill directory for api-runtime-register.
   --limit <n>                 Limit concrete runtime plans during registration.
+  --include-parameterized     Include seeded parameterized GET templates in api-read-batch.
+  --batch-mode <mode>         plan | execute-concrete | preflight-parameterized | execute-parameterized | execute-all.
   --robots-disallow-all       Record current generic robots crawl as blocked.
   --id <operation-id>         Select an operation id from the catalog.
   --anchor-id <anchor-id>     Select a Reddit docs anchor id.
@@ -147,6 +164,13 @@ export function parseRedditActionArgs(argv = process.argv.slice(2)) {
     buildReportPath: lastValue(flags, 'build-report', lastValue(flags, 'build-report-path')),
     coverageAuditPath: lastValue(flags, 'coverage-audit', lastValue(flags, 'coverage-audit-path')),
     runtimeIndexPath: lastValue(flags, 'runtime-index', lastValue(flags, 'runtime-index-path')),
+    apiBatchReportPath: lastValue(flags, 'api-batch-report', lastValue(flags, 'api-read-batch-report')),
+    browserRouteQueuePath: lastValue(flags, 'browser-route-queue', lastValue(flags, 'route-queue')),
+    browserCumulativeReportPath: lastValue(
+      flags,
+      'browser-cumulative-report',
+      lastValue(flags, 'browser-bridge-cumulative-report', lastValue(flags, 'cumulative-browser-bridge-report')),
+    ),
     cookieBuildReportPath: lastValue(flags, 'cookie-build-report', lastValue(flags, 'cookie-build-report-path')),
     browserBuildReportPath: lastValue(flags, 'browser-build-report', lastValue(flags, 'browser-build-report-path')),
     publicBuildReportPath: lastValue(flags, 'public-build-report', lastValue(flags, 'public-build-report-path')),
@@ -157,10 +181,13 @@ export function parseRedditActionArgs(argv = process.argv.slice(2)) {
     ),
     sessionManifestPath: lastValue(flags, 'session-manifest', lastValue(flags, 'session-manifest-path')),
     doctorReportPath: lastValue(flags, 'doctor-report', lastValue(flags, 'doctor-report-path')),
+    doctorReportDir: lastValue(flags, 'doctor-report-dir', lastValue(flags, 'doctor-report-root')),
     registryPath: lastValue(flags, 'registry', lastValue(flags, 'registry-path')),
     siteDir: lastValue(flags, 'site-dir', lastValue(flags, 'site-path')),
     skillDir: lastValue(flags, 'skill-dir', lastValue(flags, 'runtime-skill-dir')),
     limit: lastValue(flags, 'limit') === undefined ? null : Number(lastValue(flags, 'limit')),
+    includeParameterized: flags['include-parameterized'] === true,
+    batchMode: lastValue(flags, 'batch-mode'),
     robotsDisallowAll: flags['robots-disallow-all'] === true,
     id: lastValue(flags, 'id', lastValue(flags, 'operation-id')),
     anchorId: lastValue(flags, 'anchor-id', lastValue(flags, 'anchor')),
@@ -212,6 +239,40 @@ function redditCatalogFromCoverageAudit(coverageAudit = null) {
       runtimeReadyApiRequestPlans: Number(coverageAudit?.summary?.runtimeReadyApiRequestPlans ?? 0) || 0,
     },
   };
+}
+
+async function findLatestRedditDoctorReport(rootDir) {
+  if (!rootDir) {
+    return null;
+  }
+  const resolvedRoot = path.resolve(String(rootDir));
+  const candidates = [];
+  async function visit(dir) {
+    let entries = [];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(fullPath);
+        continue;
+      }
+      if (entry.isFile() && entry.name === 'doctor-report.json') {
+        try {
+          const info = await stat(fullPath);
+          candidates.push({ path: fullPath, mtimeMs: info.mtimeMs });
+        } catch {
+          // Ignore files that disappear during a live run.
+        }
+      }
+    }
+  }
+  await visit(resolvedRoot);
+  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  return candidates[0]?.path ?? null;
 }
 
 function selectOperation(catalog, options) {
@@ -287,6 +348,67 @@ export async function runRedditAction(options = /** @type {any} */ ({}), deps = 
       artifacts,
     };
   }
+  if (action === 'browser-bridge-route-queue' || action === 'bridge-route-queue' || action === 'route-queue') {
+    let authorizedSourceManifest = await loadRedditJsonArtifact(options.manifestPath);
+    if (!authorizedSourceManifest) {
+      const catalog = await buildCatalog(options, deps);
+      authorizedSourceManifest = buildRedditAuthorizedSourceManifest(buildRedditAuthorizedSourceConfig(catalog));
+    }
+    const report = buildRedditBrowserBridgeRouteQueue({
+      authorizedSourceManifest,
+      limit: options.limit,
+    });
+    const artifacts = options.outDir ? await writeRedditBrowserBridgeRouteQueueArtifacts(report, options.outDir) : null;
+    return {
+      ok: true,
+      siteKey: 'reddit',
+      action: 'browser-bridge-route-queue',
+      routeQueue: {
+        summary: report.summary,
+        accessClassCounts: report.accessClassCounts,
+      },
+      artifacts,
+    };
+  }
+  if (action === 'live-readiness' || action === 'readiness' || action === 'live-preflight') {
+    const apiReadBatchReport = await loadRedditJsonArtifact(options.apiBatchReportPath);
+    const browserBridgeRouteQueueReport = await loadRedditJsonArtifact(options.browserRouteQueuePath);
+    const browserBridgeCumulativeReport = await loadRedditJsonArtifact(options.browserCumulativeReportPath);
+    const coverageAudit = await loadRedditJsonArtifact(options.coverageAuditPath);
+    const cookieBuildReport = await loadRedditJsonArtifact(options.cookieBuildReportPath);
+    const browserBuildReport = await loadRedditJsonArtifact(options.browserBuildReportPath);
+    const report = buildRedditLiveReadinessReport({
+      apiReadBatchReport,
+      browserBridgeRouteQueueReport,
+      browserBridgeCumulativeReport,
+      coverageAudit,
+      cookieBuildReport,
+      browserBuildReport,
+      robots: {
+        disallowAllForGenericUserAgent: options.robotsDisallowAll === true,
+      },
+      env: deps.env ?? process.env,
+      commandContext: {
+        sourcePath: options.sourcePath,
+        runtimeIndexPath: options.runtimeIndexPath,
+        manifestPath: options.manifestPath,
+        browserCumulativeReportPath: options.browserCumulativeReportPath,
+        outDir: options.outDir,
+      },
+    });
+    const artifacts = options.outDir ? await writeRedditLiveReadinessReportArtifacts(report, options.outDir) : null;
+    return {
+      ok: true,
+      siteKey: 'reddit',
+      action: 'live-readiness',
+      liveReadiness: {
+        summary: report.summary,
+        status: report.status,
+        nextSteps: report.nextSteps,
+      },
+      artifacts,
+    };
+  }
   if (action === 'comprehensive-report' || action === 'comprehensive' || action === 'execution-coverage') {
     const coverageAudit = await loadRedditJsonArtifact(options.coverageAuditPath);
     let catalog = null;
@@ -299,6 +421,9 @@ export async function runRedditAction(options = /** @type {any} */ ({}), deps = 
       }
     }
     const runtimeIndex = await loadRedditJsonArtifact(options.runtimeIndexPath);
+    const apiReadBatchReport = await loadRedditJsonArtifact(options.apiBatchReportPath);
+    const browserBridgeRouteQueueReport = await loadRedditJsonArtifact(options.browserRouteQueuePath);
+    const browserBridgeCumulativeReport = await loadRedditJsonArtifact(options.browserCumulativeReportPath);
     const registry = await loadRedditJsonArtifact(options.registryPath);
     const authorizedSourceManifest = await loadRedditJsonArtifact(options.manifestPath);
     const buildReport = await loadRedditJsonArtifact(options.buildReportPath);
@@ -307,10 +432,15 @@ export async function runRedditAction(options = /** @type {any} */ ({}), deps = 
     const publicBuildReport = await loadRedditJsonArtifact(options.publicBuildReportPath ?? options.buildReportPath);
     const authorizedSourceBuildReport = await loadRedditJsonArtifact(options.authorizedSourceBuildReportPath);
     const sessionManifest = await loadRedditJsonArtifact(options.sessionManifestPath);
-    const doctorReport = await loadRedditJsonArtifact(options.doctorReportPath);
+    const doctorReportPath = options.doctorReportPath ?? await findLatestRedditDoctorReport(options.doctorReportDir);
+    const doctorReport = await loadRedditJsonArtifact(doctorReportPath);
     const report = buildRedditComprehensiveCoverageReport(catalog, {
       coverageAudit,
       runtimeIndex,
+      apiReadBatchReport,
+      browserBridgeRouteQueueReport,
+      browserBridgeCumulativeReport,
+      browserBridgeCumulativeReportPath: options.browserCumulativeReportPath,
       registry,
       authorizedSourceManifest,
       cookieBuildReport,
@@ -369,6 +499,33 @@ export async function runRedditAction(options = /** @type {any} */ ({}), deps = 
         summary: index.summary,
         runtimeMode: index.runtimeMode,
         authBoundary: index.authBoundary,
+      },
+      artifacts,
+    };
+  }
+  if (action === 'api-read-batch' || action === 'read-batch' || action === 'batch-read') {
+    const catalog = await buildCatalog(options, deps);
+    const runtimeIndex = await loadRedditJsonArtifact(options.runtimeIndexPath);
+    const index = runtimeIndex ?? buildRedditRuntimePlanIndex(catalog);
+    const report = await buildRedditApiReadBatchReport(catalog, {
+      runtimeIndex: index,
+      fetchImpl: deps.fetchImpl,
+      env: deps.env ?? process.env,
+      execute: options.execute === true,
+      includeParameterized: options.includeParameterized === true,
+      batchMode: options.batchMode,
+      limit: options.limit,
+      parameterSeeds: options.pathParams,
+    });
+    const artifacts = options.outDir ? await writeRedditApiReadBatchReportArtifacts(report, options.outDir) : null;
+    return {
+      ok: true,
+      siteKey: 'reddit',
+      action: 'api-read-batch',
+      apiReadBatchReport: {
+        summary: report.summary,
+        status: report.status,
+        credentialSource: report.credentialSource,
       },
       artifacts,
     };

@@ -5,6 +5,7 @@ import { hostFromUrl } from '../../../shared/normalize.mjs';
 export const PROFILE_ARCHETYPES = Object.freeze({
   NAVIGATION_CATALOG: 'navigation-catalog',
   CHAPTER_CONTENT: 'chapter-content',
+  SOCIAL_CONTENT: 'social-content',
 });
 
 const LEGACY_PROFILE_ARCHETYPE_BY_HOST = Object.freeze({
@@ -21,11 +22,14 @@ const PROFILE_ARCHETYPE_ALIASES = Object.freeze({
   'catalog_detail': PROFILE_ARCHETYPES.NAVIGATION_CATALOG,
   'chapter-content': PROFILE_ARCHETYPES.CHAPTER_CONTENT,
   'chapter_content': PROFILE_ARCHETYPES.CHAPTER_CONTENT,
+  'social-content': PROFILE_ARCHETYPES.SOCIAL_CONTENT,
+  'social_content': PROFILE_ARCHETYPES.SOCIAL_CONTENT,
 });
 
 const PRIMARY_ARCHETYPE_BY_PROFILE_ARCHETYPE = Object.freeze({
   [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: 'catalog-detail',
   [PROFILE_ARCHETYPES.CHAPTER_CONTENT]: 'chapter-content',
+  [PROFILE_ARCHETYPES.SOCIAL_CONTENT]: 'social-content',
 });
 
 function resolveHostValue(hostOrUrl) {

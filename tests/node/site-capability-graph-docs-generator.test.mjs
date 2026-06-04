@@ -387,7 +387,6 @@ test('docs generator creates descriptor-only redaction-required summaries', asyn
     'route:synthetic.example:public-page',
   ]);
   assert.deepEqual(summary.sections.layerDesignSourceReferences.map((entry) => entry.path), [
-    'AGENTS.md',
     'README.md',
   ]);
 });
@@ -401,13 +400,12 @@ test('docs generator records current layer source references without retired doc
   assert.equal(summary.redactionRequired, true);
   assert.deepEqual(
     references.filter((entry) => entry.status === 'present-reference').map((entry) => entry.path),
-    ['AGENTS.md', 'README.md'],
+    ['README.md'],
   );
 
   const markdown = renderGraphDocsSummaryMarkdown(summary);
   assert.match(markdown, /## Layer Design Sources/u);
   assert.match(markdown, /status: present-reference/u);
-  assert.match(markdown, /AGENTS\.md/u);
   assert.match(markdown, /README\.md/u);
   assert.equal(assertGraphDerivedArtifactWriteAllowed(summary), true);
 });

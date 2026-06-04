@@ -852,16 +852,27 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
   }
 
   const crawlStatic = getStage(stageResults, 'crawlStatic');
+  const crawlAuthenticated = getStage(stageResults, 'crawlAuthenticated');
+  const crawlRendered = getStage(stageResults, 'crawlRendered');
   const discoverSeeds = getStage(stageResults, 'discoverSeeds');
   ingestStageWarnings(stageResults, acc);
-  const authorizedSourcePages = arrayOf(crawlStatic.pages).filter(isAuthorizedSourceRecord);
+  const staticPages = arrayOf(crawlStatic.pages);
+  const authenticatedPages = [
+    ...arrayOf(crawlAuthenticated.authenticatedPages),
+    ...arrayOf(crawlAuthenticated.authenticatedOverlayPages),
+  ];
+  const publicRenderedPages = arrayOf(crawlRendered.publicRenderedPages).length
+    ? arrayOf(crawlRendered.publicRenderedPages)
+    : arrayOf(crawlRendered.pages);
+  const alternativePageEvidenceCount = authenticatedPages.length + publicRenderedPages.length;
+  const authorizedSourcePages = staticPages.filter(isAuthorizedSourceRecord);
   if (!arrayOf(discoverSeeds.seeds).length && !authorizedSourcePages.length) {
     acc.fail('nodes', 'seeds.empty', 'Seed discovery produced no crawlable URLs.', {
       ...(arrayOf(discoverSeeds.robotsExcludedUrls).length ? normalizeSiteForgeReason('robots-disallowed') : normalizeSiteForgeReason('empty-seed-set')),
       excludedUrls: arrayOf(discoverSeeds.robotsExcludedUrls),
     });
   }
-  if (!arrayOf(crawlStatic.pages).length) {
+  if (!staticPages.length && alternativePageEvidenceCount <= 0) {
     const warningReason = selectSiteForgePrimaryReason(
       arrayOf(crawlStatic.warnings).map((warning) => ({ message: warning })),
       'empty-crawl',
@@ -870,7 +881,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
       ...(warningReason?.reasonCode === 'validation-failed' ? normalizeSiteForgeReason('empty-crawl') : warningReason),
     });
   }
-  const homepageReachable = arrayOf(crawlStatic.pages).some((page) => page.normalizedUrl === context.site.rootUrl);
+  const homepageReachable = staticPages.some((page) => page.normalizedUrl === context.site.rootUrl);
   const robotsPolicy = discoverSeeds.robotsPolicy ?? null;
   const robotsStatus = discoverSeeds.robots?.status ?? (robotsPolicy ? 'parsed' : 'unknown');
   const liveRobotsRequired = Boolean(context?.source);
@@ -1039,6 +1050,10 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
         passed: !acc.errors.some((error) => error.gate === 'nodes'),
         graphExists: Boolean(getStage(stageResults, 'buildSiteGraph').graph),
         classifiedGraphExists: Boolean(getStage(stageResults, 'classifyNodes').graph),
+        pageEvidenceAvailable: staticPages.length + alternativePageEvidenceCount > 0,
+        staticPages: staticPages.length,
+        authenticatedPages: authenticatedPages.length,
+        publicRenderedPages: publicRenderedPages.length,
         homepageReachable,
         homepagePresent: classifiedGraphGate.homepagePresent || graphGate.homepagePresent,
         edgeRefsValid: graphGate.edgeRefsValid && classifiedGraphGate.edgeRefsValid,

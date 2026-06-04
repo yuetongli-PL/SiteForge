@@ -33,7 +33,7 @@ Options:
   --approval-id <id>                Record the operator approval id in plan/manifest metadata.
   --fail-fast                       Stop after the first non-zero command. Default: continue and summarize all cases.
   --case <id>                       Run one matrix case. Can be repeated.
-  --site <x|instagram|all>          Filter site-specific cases. Required.
+  --site <x|instagram|reddit|all>   Filter site-specific cases. Required. Reddit is explicit-only and is not included in all.
   --account <handle>                Account used by both sites when site-specific account is omitted.
   --x-account <handle>              X archive account. Required for selected X cases unless --account is set.
   --ig-account <handle>             Instagram archive account. Required for selected Instagram cases unless --account is set.
@@ -46,6 +46,15 @@ Options:
   --timeout <ms>                    Action timeout flag forwarded to social commands. Required.
   --case-timeout <ms>               Outer timeout per matrix command. Required.
   --run-root <dir>                  Execute manifest/output root. Required.
+  --reddit-source <file>            Optional saved Reddit /dev/api HTML for reddit-comprehensive-report.
+  --reddit-coverage-audit <file>    Optional Reddit coverage audit artifact.
+  --reddit-runtime-index <file>     Optional Reddit runtime index artifact.
+  --reddit-api-batch-report <file>  Optional Reddit API read batch artifact for comprehensive report.
+  --reddit-manifest <file>          Optional Reddit authorized_source_manifest artifact.
+  --reddit-browser-cumulative-report <file> Optional Reddit Browser Bridge cumulative live report.
+  --reddit-browser-build-report <file> Optional Reddit Browser Bridge build report.
+  --reddit-cookie-build-report <file>  Optional Reddit cookie build report.
+  --reddit-registry <file>          Optional Reddit SiteForge registry artifact.
   --browser-path <path>             Forwarded to site-doctor.
   --browser-profile-root <dir>      Forwarded to action and site-doctor commands.
   --user-data-dir <dir>             Forwarded to site-doctor.
@@ -67,6 +76,10 @@ Matrix ids:
   instagram-session-health
   x-auth-doctor
   instagram-auth-doctor
+  reddit-session-health
+  reddit-auth-doctor
+  reddit-comprehensive-report
+  reddit-api-read-batch
   x-kb-refresh
   instagram-kb-refresh
 `;
@@ -100,6 +113,15 @@ export function parseArgs(argv) {
     timeout: null,
     caseTimeout: null,
     runRoot: null,
+    redditSourcePath: null,
+    redditCoverageAuditPath: null,
+    redditRuntimeIndexPath: null,
+    redditApiBatchReportPath: null,
+    redditAuthorizedSourceManifestPath: null,
+    redditBrowserCumulativeReportPath: null,
+    redditBrowserBuildReportPath: null,
+    redditCookieBuildReportPath: null,
+    redditRegistryPath: null,
     browserPath: null,
     browserProfileRoot: null,
     userDataDir: null,
@@ -234,6 +256,44 @@ export function parseArgs(argv) {
         index = nextIndex;
         break;
       }
+      case '--reddit-source':
+      case '--reddit-source-path':
+      case '--reddit-coverage-audit':
+      case '--reddit-coverage-audit-path':
+      case '--reddit-runtime-index':
+      case '--reddit-runtime-index-path':
+      case '--reddit-api-batch-report':
+      case '--reddit-api-read-batch-report':
+      case '--reddit-manifest':
+      case '--reddit-authorized-source-manifest':
+      case '--reddit-browser-cumulative-report':
+      case '--reddit-browser-bridge-cumulative-report':
+      case '--reddit-browser-build-report':
+      case '--reddit-cookie-build-report':
+      case '--reddit-registry': {
+        const { value, nextIndex } = readValue(argv, index, token);
+        const keyByFlag = {
+          '--reddit-source': 'redditSourcePath',
+          '--reddit-source-path': 'redditSourcePath',
+          '--reddit-coverage-audit': 'redditCoverageAuditPath',
+          '--reddit-coverage-audit-path': 'redditCoverageAuditPath',
+          '--reddit-runtime-index': 'redditRuntimeIndexPath',
+          '--reddit-runtime-index-path': 'redditRuntimeIndexPath',
+          '--reddit-api-batch-report': 'redditApiBatchReportPath',
+          '--reddit-api-read-batch-report': 'redditApiBatchReportPath',
+          '--reddit-manifest': 'redditAuthorizedSourceManifestPath',
+          '--reddit-authorized-source-manifest': 'redditAuthorizedSourceManifestPath',
+          '--reddit-browser-cumulative-report': 'redditBrowserCumulativeReportPath',
+          '--reddit-browser-bridge-cumulative-report': 'redditBrowserCumulativeReportPath',
+          '--reddit-browser-build-report': 'redditBrowserBuildReportPath',
+          '--reddit-cookie-build-report': 'redditCookieBuildReportPath',
+          '--reddit-registry': 'redditRegistryPath',
+        };
+        options[keyByFlag[token]] = value;
+        markExplicit(keyByFlag[token]);
+        index = nextIndex;
+        break;
+      }
       case '--headless':
         options.headless = true;
         markExplicit('headless');
@@ -251,7 +311,7 @@ export function parseArgs(argv) {
     options.xAccount = options.account;
     options.igAccount = options.account;
   }
-  if (options.site !== null && !['x', 'instagram', 'all'].includes(String(options.site))) {
+  if (options.site !== null && !['x', 'instagram', 'reddit', 'all'].includes(String(options.site))) {
     throw new Error(`Invalid --site: ${options.site}`);
   }
   if (options.date !== null && !/^\d{4}-\d{2}-\d{2}$/u.test(String(options.date))) {
@@ -280,6 +340,7 @@ export function parseArgs(argv) {
 function selectedSitesFromOptions(options) {
   if (options.site === 'x') return ['x'];
   if (options.site === 'instagram') return ['instagram'];
+  if (options.site === 'reddit') return ['reddit'];
   if (options.site === 'all') return ['x', 'instagram'];
   return [];
 }
@@ -293,8 +354,12 @@ function knownCaseIds() {
     'instagram-media-download-blocked-boundary',
     'x-session-health',
     'instagram-session-health',
+    'reddit-session-health',
     'x-auth-doctor',
     'instagram-auth-doctor',
+    'reddit-auth-doctor',
+    'reddit-comprehensive-report',
+    'reddit-api-read-batch',
     'x-kb-refresh',
     'instagram-kb-refresh',
   ];
@@ -316,14 +381,28 @@ function expandCaseDependencies(caseIds = []) {
     if (id === 'instagram-auth-doctor') {
       add('instagram-session-health');
     }
+    if (id === 'reddit-auth-doctor') {
+      add('reddit-session-health');
+    }
+    if (id === 'reddit-comprehensive-report') {
+      add('reddit-session-health');
+      add('reddit-auth-doctor');
+    }
     add(id);
   }
   return expanded;
 }
 
+const EXPLICIT_ONLY_CASE_IDS = new Set([
+  'reddit-api-read-batch',
+]);
+
 function selectedCaseIdsFromOptions(options) {
   if (options.cases.length > 0) return expandCaseDependencies(options.cases);
   return knownCaseIds().filter((id) => {
+    if (EXPLICIT_ONLY_CASE_IDS.has(id)) {
+      return false;
+    }
     const sites = selectedSitesFromOptions(options);
     return sites.some((site) => id === `${site}-kb-refresh` || id.startsWith(`${site}-`));
   });
@@ -473,6 +552,50 @@ function kbRefreshArgs(site, options, runRoot) {
   return args;
 }
 
+function redditComprehensiveReportArgs(options, outDir, sessionManifestPath, doctorReportDir) {
+  const args = [
+    'comprehensive-report',
+    '--out-dir',
+    outDir,
+    '--robots-disallow-all',
+    '--session-manifest',
+    sessionManifestPath,
+    '--doctor-report-dir',
+    doctorReportDir,
+    '--json',
+  ];
+  addOptional(args, '--source', options.redditSourcePath);
+  addOptional(args, '--coverage-audit', options.redditCoverageAuditPath);
+  addOptional(args, '--runtime-index', options.redditRuntimeIndexPath);
+  addOptional(args, '--api-batch-report', options.redditApiBatchReportPath);
+  addOptional(args, '--manifest', options.redditAuthorizedSourceManifestPath);
+  addOptional(args, '--browser-cumulative-report', options.redditBrowserCumulativeReportPath);
+  addOptional(args, '--browser-build-report', options.redditBrowserBuildReportPath);
+  addOptional(args, '--cookie-build-report', options.redditCookieBuildReportPath);
+  addOptional(args, '--registry', options.redditRegistryPath);
+  return args;
+}
+
+function redditApiReadBatchArgs(options, outDir) {
+  const args = [
+    'api-read-batch',
+    '--out-dir',
+    outDir,
+    '--json',
+    '--limit',
+    String(options.maxItems),
+  ];
+  addOptional(args, '--source', options.redditSourcePath);
+  addOptional(args, '--runtime-index', options.redditRuntimeIndexPath);
+  if (options.execute) {
+    args.push('--batch-mode', 'execute-concrete');
+    args.push('--execute');
+  } else {
+    args.push('--batch-mode', 'plan');
+  }
+  return args;
+}
+
 export function buildMatrix(options, runId) {
   assertLiveSmokeBoundary(options);
   const xAccount = normalizeHandle(options.xAccount);
@@ -481,11 +604,13 @@ export function buildMatrix(options, runId) {
   const commandRoot = path.join(runRoot, runId);
   const xAction = path.join('src', 'entrypoints', 'sites', 'x-action.mjs');
   const igAction = path.join('src', 'entrypoints', 'sites', 'instagram-action.mjs');
+  const redditAction = path.join('src', 'entrypoints', 'sites', 'reddit-action.mjs');
   const siteDoctor = path.join('src', 'entrypoints', 'sites', 'site-doctor.mjs');
   const sessionCli = path.join('src', 'entrypoints', 'sites', 'session.mjs');
   const kbRefresh = path.join('scripts', 'social-kb-refresh.mjs');
   const xProfile = path.join(REPO_ROOT, 'profiles', 'x.com.json');
   const igProfile = path.join(REPO_ROOT, 'profiles', 'www.instagram.com.json');
+  const redditProfile = path.join(REPO_ROOT, 'profiles', 'www.reddit.com.json');
   const caseRoot = (id) => path.join(commandRoot, id);
 
   return [
@@ -534,8 +659,8 @@ export function buildMatrix(options, runId) {
     {
       id: 'x-media-download-blocked-boundary',
       site: 'x',
-      category: 'media download blocked boundary',
-      purpose: 'Confirm X media download requests remain blocked and only write a blocked report.',
+      category: 'media local download',
+      purpose: 'Confirm X media download requests save discovered media binaries locally and write a download manifest.',
       artifactType: 'social-action',
       artifactRoot: caseRoot('x-media-download-blocked-boundary'),
       ...nodeCommand(xAction, [
@@ -550,8 +675,8 @@ export function buildMatrix(options, runId) {
     {
       id: 'instagram-media-download-blocked-boundary',
       site: 'instagram',
-      category: 'media download blocked boundary',
-      purpose: 'Confirm Instagram media download requests remain blocked and only write a blocked report.',
+      category: 'media local download',
+      purpose: 'Confirm Instagram media download requests save discovered media binaries locally and write a download manifest.',
       artifactType: 'social-action',
       artifactRoot: caseRoot('instagram-media-download-blocked-boundary'),
       ...nodeCommand(igAction, [
@@ -594,6 +719,21 @@ export function buildMatrix(options, runId) {
       )),
     },
     {
+      id: 'reddit-session-health',
+      site: 'reddit',
+      category: 'session health',
+      purpose: 'Write a unified Reddit session health manifest before report-only Browser Bridge evidence checks.',
+      artifactType: 'session-health',
+      artifactRoot: caseRoot('reddit-session-health'),
+      ...nodeCommand(sessionCli, sessionHealthArgs(
+        'reddit',
+        'doctor',
+        redditProfile,
+        options,
+        caseRoot('reddit-session-health'),
+      )),
+    },
+    {
       id: 'x-auth-doctor',
       site: 'x',
       category: 'auth recovery/site-doctor',
@@ -623,6 +763,48 @@ export function buildMatrix(options, runId) {
         caseRoot('instagram-auth-doctor'),
         path.join(REPO_ROOT, 'knowledge-base', 'www.instagram.com'),
         path.join(caseRoot('instagram-session-health'), 'manifest.json'),
+      )),
+    },
+    {
+      id: 'reddit-auth-doctor',
+      site: 'reddit',
+      category: 'auth recovery/site-doctor',
+      purpose: 'Verify Reddit authenticated Browser Bridge/session reuse boundaries through site-doctor without executing writes.',
+      artifactType: 'site-doctor',
+      artifactRoot: caseRoot('reddit-auth-doctor'),
+      ...nodeCommand(siteDoctor, siteDoctorArgs(
+        'https://www.reddit.com/',
+        redditProfile,
+        options,
+        caseRoot('reddit-auth-doctor'),
+        path.join(REPO_ROOT, 'knowledge-base', 'www.reddit.com'),
+        path.join(caseRoot('reddit-session-health'), 'manifest.json'),
+      )),
+    },
+    {
+      id: 'reddit-comprehensive-report',
+      site: 'reddit',
+      category: 'execution coverage report',
+      purpose: 'Merge Reddit API, Browser Bridge, session, doctor, robots, and authorized-source evidence into a redacted coverage report.',
+      artifactType: 'reddit-comprehensive-report',
+      artifactRoot: caseRoot('reddit-comprehensive-report'),
+      ...nodeCommand(redditAction, redditComprehensiveReportArgs(
+        options,
+        caseRoot('reddit-comprehensive-report'),
+        path.join(caseRoot('reddit-session-health'), 'manifest.json'),
+        caseRoot('reddit-auth-doctor'),
+      )),
+    },
+    {
+      id: 'reddit-api-read-batch',
+      site: 'reddit',
+      category: 'api read batch',
+      purpose: 'Preflight or execute bounded Reddit OAuth concrete GET runtime plans with sanitized summaries only.',
+      artifactType: 'reddit-api-read-batch',
+      artifactRoot: caseRoot('reddit-api-read-batch'),
+      ...nodeCommand(redditAction, redditApiReadBatchArgs(
+        options,
+        caseRoot('reddit-api-read-batch'),
       )),
     },
     {
@@ -656,18 +838,19 @@ export function buildMatrix(options, runId) {
 
 export function filterMatrix(matrix, options) {
   let selected = matrix;
-  if (options.site !== 'all') {
-    selected = selected.filter((entry) => entry.site === options.site);
-  }
+  const known = new Set(matrix.map((entry) => entry.id));
   if (options.cases.length > 0) {
-    const known = new Set(matrix.map((entry) => entry.id));
     const unknown = [...new Set(options.cases)].filter((id) => !known.has(id));
     if (unknown.length > 0) {
       throw new Error(`Unknown --case id(s): ${unknown.join(', ')}`);
     }
-    const wanted = new Set(expandCaseDependencies(options.cases));
-    selected = selected.filter((entry) => wanted.has(entry.id));
   }
+  const wanted = new Set(selectedCaseIdsFromOptions(options));
+  const selectedSites = new Set(selectedSitesFromOptions(options));
+  if (options.cases.length === 0 && selectedSites.size > 0) {
+    selected = selected.filter((entry) => selectedSites.has(entry.site));
+  }
+  selected = selected.filter((entry) => wanted.has(entry.id));
   return selected;
 }
 
@@ -1190,6 +1373,70 @@ async function summarizeSessionHealthArtifacts(entry) {
   };
 }
 
+async function summarizeRedditComprehensiveReportArtifacts(entry) {
+  const reportPath = path.join(entry.artifactRoot, 'reddit_comprehensive_execution_coverage_report.json');
+  if (!await pathExists(reportPath)) {
+    return {
+      type: entry.artifactType,
+      reportPath,
+      found: false,
+      verdict: 'unknown',
+      reason: 'reddit-comprehensive-report-missing',
+    };
+  }
+  const report = await readJsonFile(reportPath);
+  const fullStatus = normalizedStatus(report.status?.fullSiteAllLinksAndFunctions);
+  const browserStatus = normalizedStatus(report.status?.browserBridgeAuthenticatedRoute);
+  const sessionStatus = normalizedStatus(report.summary?.sessionHealthStatus);
+  const verdict = fullStatus === 'complete'
+    ? 'passed'
+    : (
+      browserStatus.includes('blocked')
+      || sessionStatus === 'manual-required'
+      || sessionStatus === 'blocked'
+        ? 'blocked'
+        : 'unknown'
+    );
+  return {
+    type: entry.artifactType,
+    reportPath,
+    found: true,
+    verdict,
+    reason: verdict === 'passed'
+      ? null
+      : (report.status?.browserBridgeAuthenticatedRoute ?? report.status?.fullSiteAllLinksAndFunctions ?? 'reddit-report-incomplete'),
+    summary: report.summary ?? null,
+    status: report.status ?? null,
+  };
+}
+
+async function summarizeRedditApiReadBatchArtifacts(entry) {
+  const reportPath = path.join(entry.artifactRoot, 'reddit_api_read_batch_report.json');
+  if (!await pathExists(reportPath)) {
+    return {
+      type: entry.artifactType,
+      reportPath,
+      found: false,
+      verdict: 'unknown',
+      reason: 'reddit-api-read-batch-report-missing',
+    };
+  }
+  const report = await readJsonFile(reportPath);
+  const status = normalizedStatus(report.status?.apiBatchReadExecution);
+  const verdict = status === 'executed_success'
+    ? 'passed'
+    : (status.includes('blocked') || status === 'planned_not_executed' ? 'blocked' : 'unknown');
+  return {
+    type: entry.artifactType,
+    reportPath,
+    found: true,
+    verdict,
+    reason: verdict === 'passed' ? null : (report.status?.apiBatchReadExecution ?? 'reddit-api-batch-incomplete'),
+    summary: report.summary ?? null,
+    status: report.status ?? null,
+  };
+}
+
 export function classifyKbRefreshManifest(manifest) {
   const results = Array.isArray(manifest?.results) ? manifest.results : [];
   const blocked = results.find((result) => (
@@ -1240,6 +1487,12 @@ async function summarizeCaseArtifacts(entry) {
     }
     if (entry.artifactType === 'session-health') {
       return await summarizeSessionHealthArtifacts(entry);
+    }
+    if (entry.artifactType === 'reddit-comprehensive-report') {
+      return await summarizeRedditComprehensiveReportArtifacts(entry);
+    }
+    if (entry.artifactType === 'reddit-api-read-batch') {
+      return await summarizeRedditApiReadBatchArtifacts(entry);
     }
   } catch (error) {
     return {

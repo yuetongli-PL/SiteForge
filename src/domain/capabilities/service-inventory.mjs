@@ -179,6 +179,8 @@ const CAPABILITY_SERVICE_INVENTORY = Object.freeze([
     modulePath: API_DISCOVERY_MODULE,
     exportedSymbols: [
       'apiCandidateFromObservedRequest',
+      'classifyObservedRequestApiCandidate',
+      'summarizeObservedRequestApiCandidateFiltering',
       'writeApiCandidateArtifactsFromObservedRequests',
       'writeApiCandidateArtifactsFromCaptureOutput',
       'validateApiCandidateWithAdapter',

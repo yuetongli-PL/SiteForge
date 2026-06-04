@@ -600,6 +600,38 @@
       "siteKey": "reddit",
       "adapterId": "reddit",
       "downloadSessionRequirement": "required",
+      "downloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "declaredDownloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "availableDownloadTaskTypes": [],
+      "blockedDownloadTaskTypes": [
+        "social-archive",
+        "media-bundle"
+      ],
+      "downloadSupport": {
+        "status": "blocked",
+        "supported": false,
+        "taskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "declaredTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "availableTaskTypes": [],
+        "blockedTaskTypes": [
+          "social-archive",
+          "media-bundle"
+        ],
+        "reasonCode": "download-layer-removed",
+        "reason": "Reddit download routing is not exposed as an executable media/archive downloader; use bounded read-only API workflows instead."
+      },
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",

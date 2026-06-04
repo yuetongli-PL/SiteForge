@@ -9,6 +9,9 @@ import {
   parseArgs as parseTemplateArgs,
 } from '../../scripts/social-command-templates.mjs';
 import {
+  buildDynamicSeedExpansionApprovalPlan,
+} from '../../scripts/social-dynamic-seed-plan.mjs';
+import {
   buildHealthPlan,
   parseArgs as parseHealthArgs,
 } from '../../scripts/social-health-watch.mjs';
@@ -29,9 +32,14 @@ import {
 import {
   buildResumePlan,
   parseArgs as parseResumeArgs,
+  planForJsonOutput,
 } from '../../scripts/social-live-resume.mjs';
 import { SOCIAL_OPERATOR_SCRIPT_STATUS } from '../../scripts/social-script-status.mjs';
-import { buildRecoveryRunbook } from '../../src/sites/known-sites/social/actions/router.mjs';
+import {
+  buildRecoveryRunbook,
+  expectedXRelationUserIdFromApiResponses,
+  xRelationUserIdFromApiUrl,
+} from '../../src/sites/known-sites/social/actions/router.mjs';
 import { safePlanForArtifact } from '../../src/sites/known-sites/social/actions/artifacts.mjs';
 
 test('social operator scripts are classified as internal-only maintained scripts', async () => {
@@ -47,10 +55,10 @@ test('social operator scripts are classified as internal-only maintained scripts
     assert.equal(status.visibility, 'internal-operator-only', script);
     assert.match(status.status, /^(active-tested|stale|archived|removed)$/u, script);
   }
-  assert.equal(SOCIAL_OPERATOR_SCRIPT_STATUS['scripts/social-live-verify.mjs'].downloadBoundary, 'blocked-report-only');
+  assert.equal(SOCIAL_OPERATOR_SCRIPT_STATUS['scripts/social-live-verify.mjs'].downloadBoundary, 'local-media-download');
 });
 
-test('social recovery runbook does not suggest media resume when download layer is blocked', () => {
+test('social recovery runbook suggests media resume when local media downloads fail', () => {
   const runbook = buildRecoveryRunbook({
     siteKey: 'x',
     plan: {
@@ -65,10 +73,10 @@ test('social recovery runbook does not suggest media resume when download layer 
       timeoutMs: 30_000,
     },
     download: {
-      blocked: true,
-      supported: false,
-      status: 'blocked',
-      reason: 'download-layer-removed',
+      blocked: false,
+      supported: true,
+      status: 'partial',
+      reason: 'media-download-incomplete',
     },
     outcome: {
       reason: 'media-download-incomplete',
@@ -86,8 +94,182 @@ test('social recovery runbook does not suggest media resume when download layer 
     apiDriftSamplesPath: 'runs/social-action/x-media/api-drift.json',
   });
 
-  assert.equal(runbook.commands.some((command) => command.id === 'resume-media-downloads'), false);
-  assert.equal(runbook.commands.some((command) => command.command.includes('--download-media')), false);
+  assert.equal(runbook.commands.some((command) => command.id === 'resume-media-downloads'), true);
+  assert.equal(runbook.commands.some((command) => command.command.includes('--download-media')), true);
+});
+
+test('x relation archive validates captured seed user id against target account', () => {
+  const lytRelationUrl = 'https://x.com/i/api/graphql/XRzHZz4sLnhSgz55WGMCbg/Following?variables=%7B%22userId%22%3A%221919216984329474048%22%2C%22count%22%3A20%7D';
+  const tinyfoolRelationUrl = 'https://x.com/i/api/graphql/XRzHZz4sLnhSgz55WGMCbg/Following?variables=%7B%22userId%22%3A%225967912%22%2C%22count%22%3A20%7D';
+  const userByScreenNameResponse = {
+    url: 'https://x.com/i/api/graphql/test/UserByScreenName?variables=%7B%22screen_name%22%3A%22lyt_0106%22%7D',
+    request: { operationName: 'UserByScreenName' },
+    json: {
+      data: {
+        user: {
+          result: {
+            rest_id: '1919216984329474048',
+            legacy: {
+              screen_name: 'lyt_0106',
+              name: 'lyt',
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const expectedUserId = expectedXRelationUserIdFromApiResponses([userByScreenNameResponse], {
+    siteKey: 'x',
+    action: 'profile-following',
+    account: 'lyt_0106',
+  });
+
+  assert.equal(expectedUserId, '1919216984329474048');
+  assert.equal(xRelationUserIdFromApiUrl(lytRelationUrl), expectedUserId);
+  assert.notEqual(xRelationUserIdFromApiUrl(tinyfoolRelationUrl), expectedUserId);
+});
+
+test('social dynamic seed plan recovers concrete seeds without live execution', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-dynamic-seed-plan-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeRun(name, surface, routeName, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      siteKey: 'x',
+      generatedAt: extra.finishedAt ?? '2026-04-26T00:00:00.000Z',
+      plan: {
+        siteKey: 'x',
+        action: 'read-route',
+        routeName,
+        account: extra.account ?? null,
+        query: extra.query ?? null,
+        statusId: extra.statusId ?? null,
+        mediaId: extra.mediaId ?? null,
+        communityId: extra.communityId ?? null,
+        listId: extra.listId ?? null,
+        spaceId: extra.spaceId ?? null,
+      },
+      outcome: { ok: true, status: 'degraded', reason: 'api-seed-only' },
+      completeness: { status: 'degraded', itemCount: 1 },
+    }, null, 2)}\n`, 'utf8');
+    if (Array.isArray(extra.items)) {
+      await writeFile(
+        path.join(runDir, 'items.jsonl'),
+        `${extra.items.map((item) => JSON.stringify(item)).join('\n')}\n`,
+        'utf8',
+      );
+    }
+    return {
+      id: name,
+      site: 'x',
+      surface,
+      status: 'degraded',
+      reason: 'api-seed-only',
+      finishedAt: extra.finishedAt ?? '2026-04-26T00:00:00.000Z',
+      manifestPath: path.join(runDir, 'manifest.json'),
+    };
+  }
+
+  const rows = [
+    await writeRun('public-account-about-openaidevs-read-route-openaidevs-posts', 'read-route:account-about', 'account-about', {
+      account: ':account',
+    }),
+    await writeRun('public-status-photo-dotey-2060404667423596843-1-read-route-dotey-posts', 'read-route:status-photo', 'status-photo', {
+      account: ':account',
+      statusId: ':id',
+      mediaId: ':id',
+      items: [{
+        id: '2060404667423596843',
+        url: 'https://x.com/dotey/status/2060404667423596843',
+        author: { handle: 'dotey' },
+      }],
+    }),
+    await writeRun('public-community-about-1493446837214187523-read-route-community-about-posts', 'read-route:community-about', 'community-about', {
+      communityId: ':id',
+    }),
+    await writeRun('fresh-search-openai', 'read-route:search-top', 'search-top', {
+      query: ':query',
+    }),
+  ];
+  const report = {
+    totalRows: rows.length,
+    rows,
+    coverage: {
+      x: {
+        fullSiteBoundary: {
+          controlledScopeClosureReady: true,
+          fullSiteExhaustiveClaim: false,
+        },
+        dynamicSeedExpansion: {
+          candidateCount: 4,
+          executedDynamicSeedRouteTemplateCount: 0,
+          candidates: [
+            {
+              routeTemplate: '/:account/about',
+              familyKind: 'account-about-route',
+              parameters: ['account'],
+              surfaces: ['read-route:account-about'],
+              seedEvidenceStatus: 'attempted-dynamic-seed-boundary',
+              userApprovalRequired: true,
+            },
+            {
+              routeTemplate: '/:account/status/:id/photo/:id',
+              familyKind: 'status-dynamic-route',
+              parameters: ['account', 'id'],
+              surfaces: ['read-route:status-photo'],
+              seedEvidenceStatus: 'attempted-dynamic-seed-boundary',
+              userApprovalRequired: true,
+            },
+            {
+              routeTemplate: '/i/communities/:communityid/about',
+              familyKind: 'other-dynamic-route',
+              parameters: ['communityid'],
+              surfaces: ['read-route:community-about'],
+              seedEvidenceStatus: 'attempted-dynamic-seed-boundary',
+              userApprovalRequired: true,
+            },
+            {
+              routeTemplate: '/search?q=:query&src=:src',
+              familyKind: 'other-dynamic-route',
+              parameters: ['query', 'src'],
+              surfaces: ['read-route:search-top'],
+              seedEvidenceStatus: 'attempted-dynamic-seed-boundary',
+              userApprovalRequired: true,
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const plan = await buildDynamicSeedExpansionApprovalPlan(report, {
+    reportPath: path.join(rootDir, 'social-live-report.json'),
+  });
+  const byRoute = new Map(plan.approvals.map((entry) => [entry.routeTemplate, entry]));
+
+  assert.equal(plan.summary.approvalRequiredCandidateCount, 4);
+  assert.equal(plan.summary.executableAfterApprovalCount, 4);
+  assert.equal(plan.summary.unresolvedConcreteSeedCandidateCount, 0);
+  assert.equal(byRoute.get('/:account/about').recoveredConcreteSeeds.account, 'OpenAIDevs');
+  assert.equal(byRoute.get('/:account/about').suggestedCommand.includes('--query'), false);
+  assert.equal(byRoute.get('/:account/status/:id/photo/:id').recoveredConcreteSeeds.account, 'dotey');
+  assert.equal(byRoute.get('/:account/status/:id/photo/:id').recoveredConcreteSeeds.statusId, '2060404667423596843');
+  assert.equal(byRoute.get('/:account/status/:id/photo/:id').recoveredConcreteSeeds.mediaId, '1');
+  assert.equal(byRoute.get('/i/communities/:communityid/about').recoveredConcreteSeeds.communityId, '1493446837214187523');
+  assert.equal(byRoute.get('/search?q=:query&src=:src').recoveredConcreteSeeds.query, 'OpenAI');
+  for (const approval of plan.approvals) {
+    assert.doesNotMatch(approval.suggestedCommand, /(^|\s)--[a-z-]+\s+:[a-z][\w-]*/iu);
+    if (!approval.requiredConcreteSeedFields.includes('communityId')) {
+      assert.equal(approval.suggestedCommand.includes('--community-id'), false);
+    }
+    if (!approval.requiredConcreteSeedFields.includes('listId')) {
+      assert.equal(approval.suggestedCommand.includes('--list-id'), false);
+    }
+    assert.equal(approval.approvalRequiredBeforeExecution, true);
+  }
 });
 
 test('social-command-templates emits unified X and Instagram commands', () => {
@@ -209,6 +391,75 @@ test('social-live-report aggregates latest X and Instagram manifests and writes 
   assert.equal(report.summary.x.statuses.blocked, 1);
   assert.equal(report.summary.instagram.statuses.passed, 1);
   assert.match(markdown, /x-full-archive/u);
+});
+
+test('social-live-report aggregates explicit Reddit rows without adding them to all-site reports', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-reddit-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'run-reddit');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'run-reddit',
+    status: 'blocked',
+    results: [
+      {
+        id: 'reddit-comprehensive-report',
+        site: 'reddit',
+        status: 'failed',
+        artifactSummary: {
+          verdict: 'blocked',
+          reason: 'blocked_by_robots',
+          summary: {
+            officialApiOperations: 202,
+            readApiTemplates: 78,
+            authorizedSourceBuildCapabilities: 167,
+            authorizedSourceBuildIntents: 501,
+          },
+          status: {
+            browserBridgeAuthenticatedRoute: 'blocked_by_robots',
+            fullSiteAllLinksAndFunctions: 'not_complete',
+          },
+        },
+        finishedAt: '2026-05-31T00:00:00.000Z',
+      },
+      {
+        id: 'reddit-api-read-batch',
+        site: 'reddit',
+        status: 'failed',
+        artifactSummary: {
+          verdict: 'blocked',
+          reason: 'blocked_oauth_or_user_agent_missing',
+          summary: {
+            selectedConcretePlanCount: 42,
+            executedCount: 0,
+            blockedCount: 42,
+          },
+          status: {
+            apiBatchReadExecution: 'blocked_oauth_or_user_agent_missing',
+            oauthCredentialInput: 'missing',
+          },
+        },
+        finishedAt: '2026-05-31T00:00:30.000Z',
+      },
+      {
+        id: 'x-full-archive',
+        site: 'x',
+        status: 'passed',
+        artifactSummary: { verdict: 'passed', reason: null },
+        finishedAt: '2026-05-31T00:01:00.000Z',
+      },
+    ],
+  }, null, 2)}\n`, 'utf8');
+
+  const redditReport = await buildReport(parseReportArgs(['--site', 'reddit', '--runs-root', rootDir]));
+  const allReport = await buildReport(parseReportArgs(['--site', 'all', '--runs-root', rootDir]));
+
+  assert.equal(redditReport.totalRows, 2);
+  assert.equal(redditReport.summary.reddit.statuses.blocked, 2);
+  assert.equal(redditReport.rows[0].artifactSummary.summary.officialApiOperations, 202);
+  assert.equal(redditReport.rows.find((row) => row.id === 'reddit-api-read-batch')?.artifactSummary.summary.selectedConcretePlanCount, 42);
+  assert.equal(allReport.rows.some((row) => row.site === 'reddit'), false);
 });
 
 test('social-live-report reclassifies known X unlabeled controls from safe test ids', async (t) => {
@@ -1492,7 +1743,7 @@ test('social-live-report maps supplemental X read-route surfaces', async (t) => 
   assert.equal(report.coverage.x.discovery.targetApiOperations.includes('useRelayDelegateDataPendingQuery'), true);
 });
 
-test('social-live-report exposes dynamic seed expansion candidates after controlled scope closure', async (t) => {
+test('social-live-report exposes dynamic seed expansion candidates while planned route replay remains weak', async (t) => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-dynamic-seed-expansion-'));
   t.after(() => rm(rootDir, { recursive: true, force: true }));
 
@@ -1555,12 +1806,14 @@ test('social-live-report exposes dynamic seed expansion candidates after control
   }
 
   const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
-  assert.equal(report.coverage.x.fullSiteBoundary.controlledScopeClosureReady, true);
+  assert.equal(report.coverage.x.fullSiteBoundary.controlledScopeClosureReady, false);
   assert.equal(report.coverage.x.fullSiteBoundary.fullSiteExhaustiveClaim, false);
-  assert.equal(report.coverage.x.fullSiteBoundary.nextEvidence, 'expand-specific-dynamic-route-families-with-user-approved-seeds');
-  assert.equal(report.coverage.x.fullSiteBoundary.dynamicSeedExpansionRequiresUserApproval, true);
+  assert.equal(report.coverage.x.fullSiteBoundary.plannedRouteWeakEvidenceCount > 0, true);
+  assert.equal(report.coverage.x.fullSiteBoundary.plannedRouteClosureGapCount > 0, true);
+  assert.equal(report.coverage.x.fullSiteBoundary.nextEvidence, 'replay-planned-route-templates-with-strong-evidence');
+  assert.equal(report.coverage.x.fullSiteBoundary.dynamicSeedExpansionRequiresUserApproval, false);
   assert.equal(report.coverage.x.dynamicSeedExpansion.scope, 'specific-dynamic-route-family-seed-expansion');
-  assert.equal(report.coverage.x.dynamicSeedExpansion.userApprovalRequired, true);
+  assert.equal(report.coverage.x.dynamicSeedExpansion.userApprovalRequired, false);
   assert.equal(report.coverage.x.dynamicSeedExpansion.candidateCount > 0, true);
   const accountCandidate = report.coverage.x.dynamicSeedExpansion.candidates
     .find((entry) => entry.routeTemplate === '/:account');
@@ -1569,7 +1822,222 @@ test('social-live-report exposes dynamic seed expansion candidates after control
   assert.equal(accountCandidate.surfaces.includes('account-info'), true);
   assert.equal(accountCandidate.surfaceCount >= 1, true);
   assert.equal(accountCandidate.seedEvidenceStatus, 'executed-dynamic-seed');
-  assert.equal(accountCandidate.nextEvidence, 'provide-user-approved-concrete-seed-values-for-this-route-family');
+  assert.equal(accountCandidate.userApprovalRequired, false);
+  assert.equal(accountCandidate.nextEvidence, null);
+});
+
+test('social-live-report keeps degraded dynamic seed candidates approval gated', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-degraded-dynamic-seed-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'x-account-about-degraded');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'account-about',
+      account: 'OpenAIDevs',
+    },
+    outcome: { ok: true, status: 'degraded', reason: 'api-seed-only' },
+    completeness: { status: 'degraded', itemCount: 1, userCount: 0, mediaCount: 0 },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const candidate = report.coverage.x.dynamicSeedExpansion.candidates
+    .find((entry) => entry.routeTemplate === '/:account/about');
+
+  assert.equal(report.coverage.x.dynamicSeedCoverage.routeTemplates.includes('/:account/about'), true);
+  assert.equal(report.coverage.x.dynamicSeedCoverage.coveredRouteTemplates.includes('/:account/about'), false);
+  assert.equal(report.coverage.x.dynamicSeedExpansion.executedDynamicSeedRouteTemplateCount, 0);
+  assert.equal(report.coverage.x.dynamicSeedExpansion.additionalSeedExpansionCandidateCount, 1);
+  assert.equal(report.coverage.x.dynamicSeedExpansion.userApprovalRequired, true);
+  assert.equal(candidate.seedEvidenceStatus, 'attempted-dynamic-seed-boundary');
+  assert.equal(candidate.userApprovalRequired, true);
+  assert.equal(candidate.nextEvidence, 'provide-user-approved-concrete-seed-values-for-this-route-family');
+});
+
+test('social-live-report keeps full-site boundary open when frontier gaps remain', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-frontier-gap-boundary-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  function planForSurface(surface) {
+    if (surface.startsWith('profile-content:')) {
+      return { action: 'profile-content', contentType: surface.slice('profile-content:'.length) };
+    }
+    if (surface.startsWith('read-route:')) {
+      return { action: 'read-route', routeName: surface.slice('read-route:'.length) };
+    }
+    return { action: surface };
+  }
+
+  async function writeSurfaceManifest(surface, index, routeTemplate, extraPages = []) {
+    const runDir = path.join(rootDir, `x-${String(index).padStart(3, '0')}-${surface.replace(/[^a-z0-9]+/giu, '-')}`);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      siteKey: 'x',
+      generatedAt: new Date(Date.UTC(2026, 3, 26, 1, 0, index)).toISOString(),
+      plan: planForSurface(surface),
+      outcome: { ok: true, status: 'passed', reason: null },
+      completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+      archive: { pages: 0, capture: null },
+      readCrawl: {
+        requested: true,
+        maxPages: 2,
+        maxDepth: 1,
+        visitedCount: 1 + extraPages.length,
+        queuedCount: 0,
+        pendingQueueCount: 0,
+        exhausted: true,
+        pages: [
+          {
+            depth: 0,
+            requestedRouteTemplate: routeTemplate,
+            routeTemplate,
+            status: 'passed',
+            readRouteTemplates: [],
+            functionKinds: ['navigation.app-section'],
+            executionClasses: ['read-navigation-probe'],
+          },
+          ...extraPages,
+        ],
+      },
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeSurfaceManifest('account-info', 1, '/:account');
+  const seedReport = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routeBySurface = new Map(seedReport.coverage.x.plannedRouteTemplateCoverage.routes
+    .map((entry) => [entry.surface, entry.routeTemplate]));
+  const surfaces = [
+    'account-info',
+    ...seedReport.coverage.x.missingExpectedSurfaces,
+  ];
+  for (const [index, surface] of surfaces.entries()) {
+    const extraPages = surface === 'account-info'
+      ? [{
+        depth: 1,
+        requestedRouteTemplate: '/:account',
+        routeTemplate: '/:account',
+        status: 'passed',
+        readRouteTemplates: [],
+        readRouteSamples: [{
+          routeTemplate: '/experimental_lab/:id',
+          pathDepth: 2,
+          dynamicSegmentCount: 1,
+        }],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['read-navigation-probe'],
+      }]
+      : [];
+    await writeSurfaceManifest(surface, index + 2, routeBySurface.get(surface), extraPages);
+  }
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+
+  assert.equal(report.coverage.x.fullSiteBoundary.plannedRouteClosureGapCount, 0);
+  assert.equal(report.coverage.x.readCrawl.closure.controlledScopeClosureReady, true);
+  assert.equal(report.coverage.x.fullSiteBoundary.frontierGapCount, 1);
+  assert.equal(report.coverage.x.readCrawl.frontier.gaps[0].gapKind, 'unclassified-frontier-route');
+  assert.equal(report.coverage.x.readCrawl.frontier.decisionSummary.readyForControlledScopeClosure, false);
+  assert.equal(report.coverage.x.fullSiteBoundary.frontierDecisionsReady, false);
+  assert.equal(report.coverage.x.fullSiteBoundary.controlledScopeClosureReady, false);
+  assert.equal(report.coverage.x.fullSiteBoundary.nextEvidence, 'close-pending-planned-surface-queues-and-frontier-gaps');
+});
+
+test('social-live-report keeps sampled account analytics candidates inside dynamic frontier families', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-account-analytics-frontier-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  function planForSurface(surface) {
+    if (surface.startsWith('profile-content:')) {
+      return { action: 'profile-content', contentType: surface.slice('profile-content:'.length) };
+    }
+    if (surface.startsWith('read-route:')) {
+      return { action: 'read-route', routeName: surface.slice('read-route:'.length) };
+    }
+    return { action: surface };
+  }
+
+  async function writeSurfaceManifest(surface, index, routeTemplate, extraPages = []) {
+    const runDir = path.join(rootDir, `x-${String(index).padStart(3, '0')}-${surface.replace(/[^a-z0-9]+/giu, '-')}`);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      siteKey: 'x',
+      generatedAt: new Date(Date.UTC(2026, 3, 26, 1, 30, index)).toISOString(),
+      plan: planForSurface(surface),
+      outcome: { ok: true, status: 'passed', reason: null },
+      completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+      archive: { pages: 0, capture: null },
+      readCrawl: {
+        requested: true,
+        maxPages: 2,
+        maxDepth: 1,
+        visitedCount: 1 + extraPages.length,
+        queuedCount: 1 + extraPages.length,
+        pendingQueueCount: 0,
+        exhausted: true,
+        pages: [
+          {
+            depth: 0,
+            requestedRouteTemplate: routeTemplate,
+            routeTemplate,
+            status: 'passed',
+            readRouteTemplates: [],
+            functionKinds: ['navigation.app-section'],
+            executionClasses: ['read-navigation-probe'],
+          },
+          ...extraPages,
+        ],
+      },
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeSurfaceManifest('account-info', 1, '/:account');
+  const seedReport = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routeBySurface = new Map(seedReport.coverage.x.plannedRouteTemplateCoverage.routes
+    .map((entry) => [entry.surface, entry.routeTemplate]));
+  const surfaces = [
+    'account-info',
+    ...seedReport.coverage.x.missingExpectedSurfaces,
+  ];
+  for (const [index, surface] of surfaces.entries()) {
+    const extraPages = surface === 'account-info'
+      ? [{
+        depth: 1,
+        requestedRouteTemplate: '/:account',
+        routeTemplate: '/:account',
+        status: 'passed',
+        readRouteTemplates: ['/:account/:segment/analytics'],
+        readRouteSamples: [{
+          routeTemplate: '/:account/:segment/analytics',
+          pathDepth: 3,
+          dynamicSegmentCount: 2,
+          segmentShapes: [
+            { kind: 'account', valueLength: 2, valueClass: 'handle-like' },
+            { kind: 'segment', valueLength: 11, valueClass: 'handle-like' },
+            { kind: 'static', value: 'analytics' },
+          ],
+          queryKeys: [],
+          queryValueShapes: [],
+        }],
+        functionKinds: ['navigation.profile'],
+        executionClasses: ['read-navigation-probe'],
+      }]
+      : [];
+    await writeSurfaceManifest(surface, index + 2, routeBySurface.get(surface), extraPages);
+  }
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const decision = report.coverage.x.readCrawl.frontier.decisions
+    .find((entry) => entry.routeTemplate === '/:account/:segment/analytics');
+
+  assert.equal(report.coverage.x.fullSiteBoundary.plannedRouteClosureGapCount, 0);
+  assert.equal(report.coverage.x.readCrawl.frontier.gaps.some((entry) => entry.routeTemplate === '/:account/:segment/analytics'), false);
+  assert.equal(decision.decisionKind, 'dynamic-family-parameterized');
+  assert.equal(decision.upgradeAction, 'keep-dynamic-family');
 });
 
 test('social-live-report prefers API evidence when merging equal-status surface runs', async (t) => {
@@ -2765,6 +3233,1075 @@ test('social-live-report surfaces social action session gate summaries', async (
   assert.match(markdown, /siteforge build <url>/u);
 });
 
+test('social-live-report distinguishes planned route replay coverage levels', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-planned-route-coverage-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeManifest(name, plan, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      runId: name,
+      siteKey: 'x',
+      generatedAt: '2026-04-26T00:00:00.000Z',
+      plan,
+      outcome: { ok: true, status: 'passed', reason: null },
+      completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+      ...extra,
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeManifest('account-info-exact', {
+    siteKey: 'x',
+    action: 'account-info',
+    account: 'OpenAIDevs',
+  }, {
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/:account',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.profile'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  });
+  await writeManifest('account-about-specificity', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'account-about',
+    account: 'OpenAIDevs',
+  }, {
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/:account/:segment',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.profile-tab'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  });
+  await writeManifest('search-normalized', {
+    siteKey: 'x',
+    action: 'search',
+    query: 'openai',
+  }, {
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/search?q=openai&src=typed_query&f=live',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['search.results'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  });
+  await writeManifest('community-dynamic-seed-only', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'community-detail',
+    communityId: '1493446837214187523',
+  });
+  await writeManifest('list-detail-specificity', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'list-detail',
+    listId: '84839422',
+  }, {
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/i/lists/:id',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  });
+  await writeManifest('messages-alias-replay', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'messages',
+  }, {
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/i/chat',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['risk-reviewed-read-navigation'],
+      }],
+    },
+  });
+  await writeManifest('settings-monetization-alias-replay', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'settings-monetization',
+  }, {
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/i/jf/creators/studio',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['account.settings'],
+        executionClasses: ['risk-reviewed-read-navigation'],
+      }],
+    },
+  });
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routes = report.coverage.x.plannedRouteTemplateCoverage.routes;
+  const routeFor = (surface) => routes.find((entry) => entry.surface === surface);
+
+  assert.equal(routeFor('account-info').coverageStatus, 'exact-replay-covered');
+  assert.equal(routeFor('read-route:account-about').coverageStatus, 'dynamic-seed-covered');
+  assert.equal(routeFor('search').coverageStatus, 'normalized-replay-covered');
+  assert.equal(routeFor('read-route:community-detail').coverageStatus, 'dynamic-seed-covered');
+  assert.equal(routeFor('read-route:list-detail').coverageStatus, 'specificity-equivalent-covered');
+  assert.equal(routeFor('read-route:list-detail').coveredBy, 'specificity-equivalent-replay');
+  assert.equal(routeFor('read-route:list-detail').replayDisposition, 'visited-route');
+  assert.equal(routeFor('read-route:messages').coverageStatus, 'risk-reviewed-alias-covered');
+  assert.equal(routeFor('read-route:messages').coveredBy, 'route-equivalent-replay');
+  assert.equal(routeFor('read-route:messages').replayRouteTemplate, '/i/chat');
+  assert.equal(routeFor('read-route:messages').replayDisposition, 'visited-route');
+  assert.equal(routeFor('read-route:settings-monetization').coverageStatus, 'risk-reviewed-alias-covered');
+  assert.equal(routeFor('read-route:settings-monetization').coveredBy, 'route-equivalent-replay');
+  assert.equal(routeFor('read-route:settings-monetization').replayRouteTemplate, '/i/jf/creators/studio');
+  assert.equal(routeFor('read-route:settings-monetization').replayDisposition, 'visited-route');
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.exactReplayCoveredCount >= 1, true);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.normalizedEquivalentCoveredCount >= 1, true);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.specificityEquivalentCoveredCount >= 1, true);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.aliasEquivalentCoveredCount >= 2, true);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.dynamicSeedCoveredCount >= 1, true);
+  assert.equal(routeFor('read-route:community-detail').dynamicSeedEvidenceStatus, 'covered-dynamic-seed');
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.plannedSurfaceRouteCount, 117);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.uniqueRouteTemplateCount > 0, true);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.uniqueNormalizedRouteTemplateCount > 0, true);
+  assert.equal(
+    report.coverage.x.plannedRouteTemplateCoverage.replayCoveredCount,
+    report.coverage.x.plannedRouteTemplateCoverage.exactReplayCoveredCount
+      + report.coverage.x.plannedRouteTemplateCoverage.normalizedEquivalentCoveredCount
+      + report.coverage.x.plannedRouteTemplateCoverage.specificityEquivalentCoveredCount
+      + report.coverage.x.plannedRouteTemplateCoverage.aliasEquivalentCoveredCount,
+  );
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.weakEvidenceCount >= 1, true);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.nonExactEvidenceCount > 0, true);
+  assert.equal(
+    report.coverage.x.fullSiteBoundary.plannedRouteTemplateCount,
+    report.coverage.x.plannedRouteTemplateCoverage.total,
+  );
+});
+
+test('social-live-report does not count blocked route rows as planned route coverage', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-planned-route-boundaries-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeManifest(name, plan, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      runId: name,
+      siteKey: 'x',
+      generatedAt: '2026-04-26T00:00:00.000Z',
+      plan,
+      outcome: { ok: false, status: 'blocked', reason: 'test-boundary' },
+      completeness: { status: 'blocked', itemCount: 0, userCount: 0, mediaCount: 0 },
+      ...extra,
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeManifest('blocked-community-detail', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'community-detail',
+    communityId: '1493446837214187523',
+  });
+  await writeManifest('blocked-messages', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'messages',
+  });
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routes = report.coverage.x.plannedRouteTemplateCoverage.routes;
+  const routeFor = (surface) => routes.find((entry) => entry.surface === surface);
+
+  assert.equal(routeFor('read-route:community-detail').coverageStatus, 'uncovered');
+  assert.equal(routeFor('read-route:community-detail').dynamicSeedEvidenceStatus, 'executed-dynamic-seed-boundary');
+  assert.equal(routeFor('read-route:messages').coverageStatus, 'uncovered');
+  assert.equal(
+    report.coverage.x.plannedRouteTemplateCoverage.uncoveredRoutes
+      .some((entry) => entry.surface === 'read-route:community-detail' && entry.routeTemplate === '/i/communities/:communityId'),
+    true,
+  );
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.dynamicSeedCoveredCount, 0);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.surfaceResultOnlyCount, 0);
+});
+
+test('social-live-report marks degraded current-account following as privacy gated', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-current-account-privacy-gate-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'followed-users-degraded');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'followed-users-degraded',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'followed-users',
+    },
+    outcome: { ok: true, status: 'degraded', reason: 'soft-cursor-exhausted' },
+    completeness: { status: 'degraded', userCount: 5, itemCount: 0, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/:current_account/following',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.profile'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+    sessionGate: {
+      ok: true,
+      status: 'passed',
+      reason: 'legacy-session-provider',
+      provider: 'legacy-session-provider',
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const followedRoute = report.coverage.x.plannedRouteTemplateCoverage.routes
+    .find((entry) => entry.surface === 'followed-users');
+
+  assert.equal(followedRoute.coverageStatus, 'privacy-gated');
+  assert.equal(followedRoute.coveredBy, 'current-account-approval-required');
+  assert.equal(followedRoute.replayRouteTemplate, null);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.privacyGatedCount, 1);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.replayCoveredCount, 0);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.noReplayEvidenceCount, 116);
+  assert.equal(report.coverage.x.fullSiteBoundary.plannedRoutePrivacyGatedCount, 1);
+  assert.equal(report.coverage.x.fullSiteBoundary.nextEvidence, 'close-pending-planned-surface-queues-and-frontier-gaps');
+});
+
+test('social-live-report does not privacy-gate unattempted current-account following', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-unattempted-current-account-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'account-info-only');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'account-info-only',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'account-info',
+      account: 'OpenAIDevs',
+    },
+    outcome: { ok: true, status: 'passed', reason: null },
+    completeness: { status: 'passed', userCount: 1, itemCount: 0, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/:account',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.profile'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const followedRoute = report.coverage.x.plannedRouteTemplateCoverage.routes
+    .find((entry) => entry.surface === 'followed-users');
+
+  assert.equal(followedRoute.coverageStatus, 'uncovered');
+  assert.equal(followedRoute.coveredBy, null);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.privacyGatedCount, 0);
+  assert.deepEqual(report.coverage.x.plannedRouteTemplateCoverage.privacyGatedRoutes, []);
+  assert.equal(report.coverage.x.plannedRouteTemplateCoverage.uncoveredCount > 0, true);
+});
+
+test('social-live-report does not alias-cover unattempted planned routes from sibling surfaces', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-alias-sibling-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'chat-only');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'chat-only',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'chat',
+    },
+    outcome: { ok: true, status: 'passed', reason: 'content-redacted-for-sensitive-surface' },
+    completeness: { status: 'passed', itemCount: 0, userCount: 0, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/i/chat',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['risk-reviewed-read-navigation'],
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routes = report.coverage.x.plannedRouteTemplateCoverage.routes;
+  const chatRoute = routes.find((entry) => entry.surface === 'read-route:chat');
+  const messagesRoute = routes.find((entry) => entry.surface === 'read-route:messages');
+
+  assert.equal(chatRoute.coverageStatus, 'exact-replay-covered');
+  assert.equal(messagesRoute.coverageStatus, 'uncovered');
+  assert.equal(messagesRoute.coveredBy, null);
+});
+
+test('social-live-report does not exact-cover duplicate route templates across sibling surfaces', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-exact-sibling-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'account-info-only');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'account-info-only',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'account-info',
+      account: 'OpenAIDevs',
+    },
+    outcome: { ok: true, status: 'passed', reason: null },
+    completeness: { status: 'passed', itemCount: 1, userCount: 1, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/:account',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.profile'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routes = report.coverage.x.plannedRouteTemplateCoverage.routes;
+  const accountInfoRoute = routes.find((entry) => entry.surface === 'account-info');
+  const profilePostsRoute = routes.find((entry) => entry.surface === 'profile-content:posts');
+
+  assert.equal(accountInfoRoute.coverageStatus, 'exact-replay-covered');
+  assert.equal(profilePostsRoute.routeTemplate, '/:account');
+  assert.equal(profilePostsRoute.coverageStatus, 'dynamic-seed-covered');
+  assert.equal(profilePostsRoute.coveredBy, 'executed-dynamic-seed');
+  assert.equal(profilePostsRoute.replayRouteTemplate, null);
+});
+
+test('social-live-report does not specificity-cover unattempted sibling routes', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-specificity-sibling-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'account-about-only');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'account-about-only',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'account-about',
+      account: 'OpenAIDevs',
+    },
+    outcome: { ok: true, status: 'passed', reason: null },
+    completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/:account/:segment',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.profile-tab'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const routes = report.coverage.x.plannedRouteTemplateCoverage.routes;
+  const accountAboutRoute = routes.find((entry) => entry.surface === 'read-route:account-about');
+  const accountAccessibilityRoute = routes.find((entry) => entry.surface === 'read-route:account-accessibility');
+
+  assert.equal(accountAboutRoute.coverageStatus, 'dynamic-seed-covered');
+  assert.equal(accountAboutRoute.replayRouteTemplate, null);
+  assert.equal(accountAccessibilityRoute.coverageStatus, 'uncovered');
+  assert.equal(accountAccessibilityRoute.coveredBy, null);
+});
+
+test('social-live-report records explicit read-route start redirects as replay evidence', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-read-route-start-redirect-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'premium-start-redirect');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'premium-start-redirect',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'premium-sign-up',
+      routePath: 'https://x.com/i/premium_sign_up',
+      url: 'https://x.com/i/premium_sign_up',
+    },
+    outcome: { ok: true, status: 'degraded', reason: 'api-seed-only' },
+    completeness: { status: 'degraded', itemCount: 1, userCount: 0, mediaCount: 0, apiPages: 1 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 1,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        depth: 0,
+        routeTemplate: '/i/:segment',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const row = report.rows.find((entry) => entry.id === 'premium-start-redirect');
+  const replay = row.readCrawl.routeTemplateReplayCoverage
+    .find((entry) => entry.routeTemplate === '/i/premium_sign_up');
+  const premiumRoute = report.coverage.x.plannedRouteTemplateCoverage.routes
+    .find((entry) => entry.surface === 'read-route:premium-sign-up');
+  const creatorStudioRoute = report.coverage.x.plannedRouteTemplateCoverage.routes
+    .find((entry) => entry.surface === 'read-route:creator-studio');
+
+  assert.equal(replay.replayDisposition, 'redirected-route');
+  assert.deepEqual(replay.redirectedToRouteTemplates, ['/i/:segment']);
+  assert.equal(premiumRoute.coverageStatus, 'exact-replay-covered');
+  assert.equal(premiumRoute.replayDisposition, 'redirected-route');
+  assert.equal(creatorStudioRoute.coverageStatus, 'uncovered');
+});
+
+test('social-live-report preserves alias route replay boundaries', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-alias-boundary-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'messages-candidate-alias');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'messages-candidate-alias',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'messages',
+    },
+    outcome: { ok: true, status: 'passed', reason: 'content-redacted-for-sensitive-surface' },
+    completeness: { status: 'passed', itemCount: 0, userCount: 0, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/home',
+        status: 'passed',
+        readRouteTemplates: ['/i/chat'],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['risk-reviewed-read-navigation'],
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const messagesRoute = report.coverage.x.plannedRouteTemplateCoverage.routes
+    .find((entry) => entry.surface === 'read-route:messages');
+
+  assert.equal(messagesRoute.coverageStatus, 'candidate-only');
+  assert.equal(messagesRoute.replayRouteTemplate, '/i/chat');
+  assert.equal(messagesRoute.coveredBy, 'candidate-only');
+});
+
+test('social-live-report ranks alias blocked boundaries over candidates', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-alias-boundary-rank-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'settings-monetization-mixed-alias');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'settings-monetization-mixed-alias',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'settings-monetization',
+    },
+    outcome: { ok: true, status: 'passed', reason: 'content-redacted-for-sensitive-surface' },
+    completeness: { status: 'passed', itemCount: 0, userCount: 0, mediaCount: 0 },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 0,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        routeTemplate: '/home',
+        status: 'passed',
+        readRouteTemplates: ['/i/jf/creators/studio'],
+        functionKinds: ['account.settings'],
+        executionClasses: ['risk-reviewed-read-navigation'],
+      }],
+      blockedFunctions: [{
+        routeTemplate: '/i/jf/creators/studio',
+        functionKind: 'account.settings',
+        intent: 'inspect_account_settings',
+        executionClass: 'unknown-risk-blocked',
+        mutationRisk: 'private-content-risk',
+        count: 1,
+      }],
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const monetizationRoute = report.coverage.x.plannedRouteTemplateCoverage.routes
+    .find((entry) => entry.surface === 'read-route:settings-monetization');
+
+  assert.equal(monetizationRoute.coverageStatus, 'blocked-risk');
+  assert.equal(monetizationRoute.coveredBy, 'blocked-risk');
+  assert.equal(monetizationRoute.replayRouteTemplate, '/i/jf/creators/studio');
+});
+
+test('social-live-report redacts sensitive runtime risk text', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-runtime-risk-redaction-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'runtime-risk-sensitive');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'runtime-risk-sensitive',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'status-likes',
+      account: 'OpenAIDevs',
+      statusId: '2060429591655927942',
+    },
+    outcome: { ok: false, status: 'blocked-risk', reason: 'rate-limited', resumable: false },
+    completeness: { status: 'blocked', blockedReasons: ['rate-limited'], itemCount: 0 },
+    runtimeRisk: {
+      stopReason: 'rate-limited bearer synthetic-runtime-token-abcdefghijklmnopqrstuvwxyz0123456789',
+      suggestedAction: 'inspect C:\\Users\\example\\profile\\cookies.json',
+      rateLimited: true,
+      hardStop: true,
+      riskSignals: [
+        'ct0=syntheticcsrfvalue0123456789abcdef0123456789abcdef',
+        'refresh_token=syntheticrefreshvalue',
+        'api_key=syntheticapikeyvalue',
+        'session_id=syntheticsessionvalue',
+        'rate-limited',
+      ],
+      riskState: {
+        state: 'rate_limited',
+        scope: 'api',
+        reasonCode: 'request-burst',
+        transition: {
+          from: 'normal',
+          to: 'rate_limited',
+          reasonCode: 'auth_token=synthetic',
+          observedAt: '2026-04-26T00:01:00.000Z',
+        },
+      },
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  const row = report.rows.find((entry) => entry.id === 'runtime-risk-sensitive');
+  const text = JSON.stringify(row.runtimeRisk);
+
+  assert.equal(row.runtimeRisk.stopReason, '[REDACTED]');
+  assert.equal(row.runtimeRisk.suggestedAction, '[REDACTED]');
+  assert.equal(row.runtimeRisk.riskSignals.includes('[REDACTED]'), true);
+  assert.equal(row.runtimeRisk.riskSignals.includes('rate-limited'), true);
+  assert.equal(row.runtimeRisk.riskState.reasonCode, 'request-burst');
+  assert.equal(row.runtimeRisk.riskState.transition.reasonCode, '[REDACTED]');
+  assert.doesNotMatch(text, /synthetic-runtime-token|syntheticcsrfvalue|syntheticrefreshvalue|syntheticapikeyvalue|syntheticsessionvalue|auth_token|cookies\.json/u);
+});
+
+test('social-live-report promotes runtime rate limit to a full-site boundary', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-rate-limit-boundary-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const passedRunDir = path.join(rootDir, 'account-info-passed');
+  const limitedRunDir = path.join(rootDir, 'status-likes-rate-limited');
+  await mkdir(passedRunDir, { recursive: true });
+  await mkdir(limitedRunDir, { recursive: true });
+  await writeFile(path.join(passedRunDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'account-info-passed',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'account-info',
+      account: 'OpenAIDevs',
+    },
+    outcome: { ok: true, status: 'passed', reason: null },
+    completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+    sessionGate: {
+      ok: true,
+      status: 'passed',
+      reason: 'legacy-session-provider',
+      provider: 'legacy-session-provider',
+    },
+  }, null, 2)}\n`, 'utf8');
+  await writeFile(path.join(limitedRunDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'status-likes-rate-limited',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:01:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'status-likes',
+      account: 'OpenAIDevs',
+      statusId: '2060429591655927942',
+    },
+    outcome: { ok: false, status: 'blocked-risk', reason: 'rate-limited', resumable: false },
+    completeness: { status: 'blocked', blockedReasons: ['rate-limited'], itemCount: 0 },
+    sessionGate: {
+      ok: true,
+      status: 'passed',
+      reason: 'legacy-session-provider',
+      provider: 'legacy-session-provider',
+    },
+    runtimeRisk: {
+      stopReason: 'rate-limited',
+      suggestedAction: 'pause-and-retry-later',
+      rateLimited: true,
+      hardStop: true,
+      adaptiveThrottleLevel: 1,
+      riskSignals: ['rate-limited'],
+      riskState: {
+        state: 'rate_limited',
+        scope: 'api',
+        reasonCode: 'request-burst',
+        transition: {
+          from: 'normal',
+          to: 'rate_limited',
+          reasonCode: 'request-burst',
+          observedAt: '2026-04-26T00:01:00.000Z',
+        },
+        recovery: {
+          retryable: true,
+          cooldownNeeded: true,
+          isolationNeeded: false,
+          manualRecoveryNeeded: false,
+          degradable: true,
+          artifactWriteAllowed: true,
+        },
+      },
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const outDir = path.join(rootDir, 'report');
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--out-dir', outDir]));
+  const outputs = await writeReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--out-dir', outDir]), report);
+  const markdown = await readFile(outputs.markdownPath, 'utf8');
+
+  assert.equal(report.coverage.x.rateLimitBoundary.activeRateLimitBlocker, true);
+  assert.equal(report.coverage.x.rateLimitBoundary.blockedRunCount, 1);
+  assert.deepEqual(report.coverage.x.rateLimitBoundary.blockedSurfaces, ['read-route:status-likes']);
+  assert.equal(report.coverage.x.rateLimitBoundary.latestBlocker.runtimeRisk.riskState.transition.to, 'rate_limited');
+  assert.equal(report.coverage.x.fullSiteBoundary.activeRateLimitBlocker, true);
+  assert.equal(report.coverage.x.fullSiteBoundary.controlledScopeClosureReady, false);
+  assert.equal(report.coverage.x.fullSiteBoundary.nextEvidence, 'pause-and-retry-after-rate-limit-cooldown');
+  assert.match(markdown, /full-site rate-limit boundary: active yes/u);
+});
+
+test('social-live-report ignores non-blocking rate limit text on passed rows', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-rate-limit-text-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  const runDir = path.join(rootDir, 'status-likes-passed');
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+    runId: 'status-likes-passed',
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:01:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'status-likes',
+      account: 'OpenAIDevs',
+      statusId: '2060429591655927942',
+    },
+    outcome: { ok: true, status: 'passed', reason: 'not-rate-limited' },
+    completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+    sessionGate: {
+      ok: true,
+      status: 'passed',
+      reason: 'legacy-session-provider',
+      provider: 'legacy-session-provider',
+    },
+    runtimeRisk: {
+      stopReason: 'not-rate-limited',
+      suggestedAction: 'continue',
+      rateLimited: false,
+      hardStop: false,
+      riskSignals: ['rate-limit-check-passed'],
+      riskState: {
+        state: 'normal',
+        scope: 'api',
+        reasonCode: 'not-rate-limited',
+      },
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  assert.equal(report.coverage.x.rateLimitBoundary.activeRateLimitBlocker, false);
+  assert.equal(report.coverage.x.rateLimitBoundary.blockedRunCount, 0);
+  assert.equal(report.coverage.x.fullSiteBoundary.activeRateLimitBlocker, false);
+});
+
+test('social-live-report only clears rate limits with same-surface recovery evidence', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-rate-limit-scope-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeManifest(name, generatedAt, plan, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      runId: name,
+      siteKey: 'x',
+      generatedAt,
+      plan,
+      outcome: { ok: true, status: 'passed', reason: null },
+      completeness: { status: 'passed', itemCount: 1, userCount: 0, mediaCount: 0 },
+      sessionGate: {
+        ok: true,
+        status: 'passed',
+        reason: 'legacy-session-provider',
+        provider: 'legacy-session-provider',
+      },
+      ...extra,
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeManifest('status-likes-rate-limited', '2026-04-26T00:01:00.000Z', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'status-likes',
+    account: 'OpenAIDevs',
+    statusId: '2060429591655927942',
+  }, {
+    outcome: { ok: false, status: 'blocked-risk', reason: 'rate-limited', resumable: false },
+    completeness: { status: 'blocked', blockedReasons: ['rate-limited'], itemCount: 0 },
+    runtimeRisk: {
+      stopReason: 'rate-limited',
+      rateLimited: true,
+      hardStop: true,
+      riskState: {
+        state: 'rate_limited',
+        scope: 'api',
+        reasonCode: 'request-burst',
+      },
+    },
+  });
+  await writeManifest('account-info-later-passed', '2026-04-26T00:02:00.000Z', {
+    siteKey: 'x',
+    action: 'account-info',
+    account: 'OpenAIDevs',
+  });
+
+  const stillBlockedReport = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  assert.equal(stillBlockedReport.coverage.x.rateLimitBoundary.activeRateLimitBlocker, true);
+  assert.equal(stillBlockedReport.coverage.x.rateLimitBoundary.latestRecoveredAt, null);
+  assert.equal(stillBlockedReport.coverage.x.rateLimitBoundary.recoveryScope, 'same-surface');
+
+  await writeManifest('status-likes-later-passed', '2026-04-26T00:03:00.000Z', {
+    siteKey: 'x',
+    action: 'read-route',
+    routeName: 'status-likes',
+    account: 'OpenAIDevs',
+    statusId: '2060429591655927942',
+  });
+
+  const recoveredReport = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  assert.equal(recoveredReport.coverage.x.rateLimitBoundary.activeRateLimitBlocker, false);
+  assert.equal(recoveredReport.coverage.x.rateLimitBoundary.latestRecoveredAt, '2026-04-26T00:03:00.000Z');
+});
+
+test('social-live-report tracks active rate limits per surface', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-rate-limit-multi-surface-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeManifest(name, generatedAt, routeName, status, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      runId: name,
+      siteKey: 'x',
+      generatedAt,
+      plan: {
+        siteKey: 'x',
+        action: 'read-route',
+        routeName,
+        account: 'OpenAIDevs',
+        statusId: '2060429591655927942',
+      },
+      outcome: { ok: status === 'passed', status, reason: status === 'passed' ? null : 'rate-limited' },
+      completeness: { status: status === 'passed' ? 'passed' : 'blocked', itemCount: status === 'passed' ? 1 : 0 },
+      sessionGate: {
+        ok: true,
+        status: 'passed',
+        reason: 'legacy-session-provider',
+        provider: 'legacy-session-provider',
+      },
+      ...extra,
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  const runtimeRisk = {
+    stopReason: 'rate-limited',
+    rateLimited: true,
+    hardStop: true,
+    riskState: {
+      state: 'rate_limited',
+      scope: 'api',
+      reasonCode: 'request-burst',
+    },
+  };
+  await writeManifest('likes-rate-limited', '2026-04-26T00:01:00.000Z', 'status-likes', 'blocked-risk', { runtimeRisk });
+  await writeManifest('retweets-rate-limited', '2026-04-26T00:02:00.000Z', 'status-retweets', 'blocked-risk', { runtimeRisk });
+  await writeManifest('retweets-recovered', '2026-04-26T00:03:00.000Z', 'status-retweets', 'passed', {
+    runtimeRisk: { rateLimited: false, hardStop: false },
+  });
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  assert.equal(report.coverage.x.rateLimitBoundary.activeRateLimitBlocker, true);
+  assert.deepEqual(report.coverage.x.rateLimitBoundary.activeBlockedSurfaces, ['read-route:status-likes']);
+  assert.equal(report.coverage.x.rateLimitBoundary.latestBlocker.surface, 'read-route:status-likes');
+});
+
+test('social-live-report does not clear rate limits with degraded same-surface retries', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-rate-limit-degraded-retry-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeManifest(name, generatedAt, status, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      runId: name,
+      siteKey: 'x',
+      generatedAt,
+      plan: {
+        siteKey: 'x',
+        action: 'read-route',
+        routeName: 'status-likes',
+        account: 'OpenAIDevs',
+        statusId: '2060429591655927942',
+      },
+      outcome: { ok: status !== 'blocked-risk', status, reason: status === 'degraded' ? 'api-seed-only' : 'rate-limited' },
+      completeness: { status: status === 'degraded' ? 'degraded' : 'blocked', itemCount: status === 'degraded' ? 1 : 0 },
+      sessionGate: {
+        ok: true,
+        status: 'passed',
+        reason: 'legacy-session-provider',
+        provider: 'legacy-session-provider',
+      },
+      ...extra,
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeManifest('likes-rate-limited', '2026-04-26T00:01:00.000Z', 'blocked-risk', {
+    runtimeRisk: {
+      stopReason: 'rate-limited',
+      rateLimited: true,
+      hardStop: true,
+      riskState: {
+        state: 'rate_limited',
+        scope: 'api',
+        reasonCode: 'request-burst',
+      },
+    },
+  });
+  await writeManifest('likes-degraded-retry', '2026-04-26T00:02:00.000Z', 'degraded', {
+    runtimeRisk: { rateLimited: false, hardStop: false },
+  });
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  assert.equal(report.coverage.x.rateLimitBoundary.activeRateLimitBlocker, true);
+  assert.deepEqual(report.coverage.x.rateLimitBoundary.activeBlockedSurfaces, ['read-route:status-likes']);
+  assert.equal(report.coverage.x.rateLimitBoundary.latestRecoveredAt, null);
+});
+
+test('social-live-report clears rate limits with exhausted same-surface degraded read-crawl recovery', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-rate-limit-degraded-exhausted-recovery-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+
+  async function writeManifest(name, generatedAt, status, extra = {}) {
+    const runDir = path.join(rootDir, name);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), `${JSON.stringify({
+      runId: name,
+      siteKey: 'x',
+      generatedAt,
+      plan: {
+        siteKey: 'x',
+        action: 'read-route',
+        routeName: 'root',
+      },
+      outcome: { ok: status !== 'blocked-risk', status, reason: status === 'degraded' ? 'api-seed-only' : 'rate-limited' },
+      completeness: { status: status === 'degraded' ? 'degraded' : 'blocked', itemCount: status === 'degraded' ? 1 : 0 },
+      sessionGate: {
+        ok: true,
+        status: 'passed',
+        reason: 'legacy-session-provider',
+        provider: 'legacy-session-provider',
+      },
+      ...extra,
+    }, null, 2)}\n`, 'utf8');
+  }
+
+  await writeManifest('root-rate-limited', '2026-04-26T00:01:00.000Z', 'blocked-risk', {
+    runtimeRisk: {
+      stopReason: 'rate-limited',
+      rateLimited: true,
+      hardStop: true,
+      riskState: {
+        state: 'rate_limited',
+        scope: 'api',
+        reasonCode: 'request-burst',
+      },
+    },
+  });
+  await writeManifest('root-degraded-exhausted-recovery', '2026-04-26T00:02:00.000Z', 'degraded', {
+    runtimeRisk: { rateLimited: false, hardStop: false },
+    readCrawl: {
+      requested: true,
+      maxPages: 1,
+      maxDepth: 0,
+      visitedCount: 1,
+      queuedCount: 1,
+      pendingQueueCount: 0,
+      exhausted: true,
+      pages: [{
+        depth: 0,
+        requestedRouteTemplate: '/',
+        routeTemplate: '/',
+        status: 'passed',
+        readRouteTemplates: [],
+        functionKinds: ['navigation.app-section'],
+        executionClasses: ['read-navigation-probe'],
+      }],
+    },
+  });
+
+  const report = await buildReport(parseReportArgs(['--runs-root', rootDir, '--site', 'x', '--no-write']));
+  assert.equal(report.coverage.x.rateLimitBoundary.activeRateLimitBlocker, false);
+  assert.deepEqual(report.coverage.x.rateLimitBoundary.activeBlockedSurfaces, []);
+  assert.equal(report.coverage.x.rateLimitBoundary.latestRecoveredAt, '2026-04-26T00:02:00.000Z');
+});
+
 test('social-live-report surfaces state-only started runs as stale when no process owns them', async (t) => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-report-stale-'));
   t.after(() => rm(rootDir, { recursive: true, force: true }));
@@ -2905,4 +4442,148 @@ test('social-live-resume preserves explicit session manifest resume commands', a
 
   assert.match(plan.candidates[0].resumeCommand, /--session-manifest runs\/session\/instagram\/manifest\.json/u);
   assert.doesNotMatch(plan.candidates[0].resumeCommand, /--session-health-plan/u);
+});
+
+test('social-live-resume recognizes single social action manifests with siteKey', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-resume-sitekey-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  const runDir = path.join(rootDir, 'followed-users-blocked');
+  await mkdir(runDir, { recursive: true });
+  const manifestPath = path.join(runDir, 'manifest.json');
+  await writeFile(manifestPath, `${JSON.stringify({
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'followed-users',
+      account: ':account',
+    },
+    outcome: {
+      ok: false,
+      status: 'blocked-risk',
+      reason: 'api-rate-limited',
+    },
+    archive: {
+      strategy: 'api-relation',
+      complete: false,
+      reason: 'api-rate-limited',
+    },
+    runtimeRisk: {
+      rateLimited: true,
+      hardStop: true,
+      stopReason: 'api-rate-limited',
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const plan = await buildResumePlan(parseResumeArgs([
+    '--state',
+    manifestPath,
+    '--site',
+    'x',
+    '--cooldown-minutes',
+    '30',
+    '--max-attempts',
+    '3',
+  ]), new Date('2026-04-26T00:10:00.000Z'));
+
+  assert.equal(plan.candidates.length, 1);
+  assert.equal(plan.candidates[0].site, 'x');
+  assert.equal(plan.candidates[0].ready, false);
+  assert.equal(plan.candidates[0].blockedReason, 'cooldown');
+  assert.match(plan.candidates[0].resumeCommand, /x-action\.mjs followed-users/u);
+  assert.match(plan.candidates[0].resumeCommand, /--run-dir/u);
+  assert.match(plan.candidates[0].resumeCommand, /--resume/u);
+  assert.doesNotMatch(plan.candidates[0].resumeCommand, /:account/u);
+});
+
+test('social-live-resume restores read-route parameters from single action manifests', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-resume-read-route-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  const runDir = path.join(rootDir, 'home-rate-limited');
+  await mkdir(runDir, { recursive: true });
+  const manifestPath = path.join(runDir, 'manifest.json');
+  await writeFile(manifestPath, `${JSON.stringify({
+    siteKey: 'x',
+    generatedAt: '2026-04-26T00:00:00.000Z',
+    plan: {
+      siteKey: 'x',
+      action: 'read-route',
+      routeName: 'home',
+      routePath: '/home',
+    },
+    outcome: {
+      ok: false,
+      status: 'blocked-risk',
+      reason: 'rate-limited',
+    },
+    archive: {
+      complete: false,
+      reason: 'rate-limited',
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const plan = await buildResumePlan(parseResumeArgs([
+    '--state',
+    manifestPath,
+    '--site',
+    'x',
+    '--cooldown-minutes',
+    '0',
+    '--max-attempts',
+    '3',
+  ]), new Date('2026-04-26T00:10:00.000Z'));
+
+  assert.equal(plan.candidates.length, 1);
+  assert.match(plan.candidates[0].resumeCommand, /x-action\.mjs read-route/u);
+  assert.match(plan.candidates[0].resumeCommand, /--route home/u);
+  assert.match(plan.candidates[0].resumeCommand, /--run-dir/u);
+  assert.match(plan.candidates[0].resumeCommand, /--resume/u);
+});
+
+test('social-live-resume summary output omits bulky archive arrays', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'bwk-social-resume-summary-'));
+  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  const manifestPath = path.join(rootDir, 'manifest.json');
+  await writeFile(manifestPath, `${JSON.stringify({
+    runId: 'run-1',
+    results: [{
+      id: 'x-full-archive',
+      site: 'x',
+      status: 'passed',
+      command: 'node src/entrypoints/sites/x-action.mjs full-archive openai --run-dir runs/x',
+      finishedAt: '2026-04-26T00:00:00.000Z',
+      artifactSummary: {
+        verdict: 'passed',
+        reason: 'max-items',
+        archive: {
+          complete: false,
+          reason: 'max-items',
+          items: [{ id: '1', text: 'large' }],
+          users: [{ handle: 'openai' }],
+          media: [{ url: 'https://example.test/image.jpg' }],
+        },
+      },
+    }],
+  }, null, 2)}\n`, 'utf8');
+
+  const options = parseResumeArgs([
+    '--state',
+    manifestPath,
+    '--site',
+    'x',
+    '--summary',
+    '--json',
+  ]);
+  const plan = await buildResumePlan(options, new Date('2026-04-26T01:00:00.000Z'));
+  const output = planForJsonOutput(plan, options, null);
+
+  assert.equal(output.candidateCount, 1);
+  assert.equal(output.candidates[0].archive.itemCount, 1);
+  assert.equal(output.candidates[0].archive.userCount, 1);
+  assert.equal(output.candidates[0].archive.mediaCount, 1);
+  assert.equal(Object.hasOwn(output.candidates[0].archive, 'items'), false);
+  assert.equal(Object.hasOwn(output.candidates[0].archive, 'users'), false);
+  assert.equal(Object.hasOwn(output.candidates[0].archive, 'media'), false);
+  assert.equal(Object.hasOwn(output.candidates[0].archive, 'requestTemplate'), false);
+  assert.equal(Object.hasOwn(output.candidates[0].archive, 'capture'), false);
 });

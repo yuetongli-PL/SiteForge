@@ -50,6 +50,7 @@ import {
   reusableBuildProfileAuthStateReport,
   reusableBuildProfileCrawlContract,
 } from './build-profile-reuse.mjs';
+import { siteRecordWithKnownAdapterAllowedDomains } from './site-record-hosts.mjs';
 import {
   knownPolicyAllowsUserAuthorizedSetup,
   knownPolicyCapabilityPressure,
@@ -234,7 +235,7 @@ function setupNow(options = /** @type {any} */ ({})) {
 export function buildSetupAssistantPaths(inputUrl, options = /** @type {any} */ ({})) {
   const now = setupNow(options);
   const generatedAt = now.toISOString();
-  const site = createSiteRecord(inputUrl, generatedAt);
+  const site = siteRecordWithKnownAdapterAllowedDomains(createSiteRecord(inputUrl, generatedAt), inputUrl);
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const buildId = options.buildId ?? formatBuildId(now);
   const workspacePaths = createSiteWorkspacePaths({
@@ -1964,6 +1965,76 @@ function browserRoutePartialCoverage(authStateReport = /** @type {any} */ ({})) 
   };
 }
 
+function userAuthorizedBrowserLiveUrls(authStateReport = /** @type {any} */ ({}), site = null) {
+  const routeResults = Array.isArray(authStateReport?.browserBridge?.routeResults)
+    ? authStateReport.browserBridge.routeResults
+    : [];
+  return uniqueSortedStrings(routeResults
+    .filter((result) => browserBridgeRouteCaptured(result))
+    .map((result) => result.targetRoute)
+    .map((targetRoute) => {
+      try {
+        return sanitizeEvidenceRef(normalizeUrl(targetRoute, site?.rootUrl));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean));
+}
+
+function applyUserAuthorizedBrowserLiveReadiness(nextPlan, authStateReport) {
+  const evidenceUrls = userAuthorizedBrowserLiveUrls(authStateReport, nextPlan.site);
+  if (!evidenceUrls.length) {
+    return nextPlan;
+  }
+  const evidenceQuality = {
+    ...(nextPlan.evidenceQuality ?? {}),
+    sourceAvailability: {
+      ...(nextPlan.evidenceQuality?.sourceAvailability ?? {}),
+      userAuthorizedBrowser: true,
+    },
+    sourceStatus: {
+      ...(nextPlan.evidenceQuality?.sourceStatus ?? {}),
+      userAuthorizedBrowser: 'captured',
+    },
+    userAuthorizedBrowserEvidenceCount: evidenceUrls.length,
+    userAuthorizedBrowserEvidenceUrls: evidenceUrls.slice(0, 10),
+  };
+  const buildReadiness = buildSetupReadiness(evidenceQuality);
+  const policyCapabilities = knownPolicyRecommendedCapabilities(nextPlan.knownSitePolicy, {
+    userAuthorized: true,
+  });
+  const recommendedCapabilities = policyCapabilities.length
+    ? [
+      ...(nextPlan.recommendedCapabilities ?? []),
+      ...policyCapabilities,
+    ]
+    : (nextPlan.recommendedCapabilities ?? []);
+  return {
+    ...nextPlan,
+    evidenceQuality,
+    buildReadiness,
+    summary: {
+      ...(nextPlan.summary ?? {}),
+      buildable: buildReadiness.buildable,
+      readinessStatus: buildReadiness.status,
+      recommendedCapabilities: recommendedCapabilities.filter((capability) => capability.recommended === true).length,
+    },
+    recommendedCapabilities,
+    warnings: uniqueSortedStrings([
+      ...(nextPlan.warnings ?? []),
+      'user-authorized-browser-live-evidence-captured',
+    ]),
+    setupAuthorization: {
+      schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+      mode: 'user-authorized-browser-live',
+      sessionMaterialPersisted: false,
+      browserProfilePersisted: false,
+      rawHtmlPersisted: false,
+    },
+  };
+}
+
 function isSetupPlanBuildable(setupPlan) {
   return setupPlan?.buildReadiness?.buildable !== false;
 }
@@ -2199,7 +2270,7 @@ async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, r
     options: authOptions,
     robotsPolicy,
   });
-  const nextPlan = {
+  let nextPlan = {
     ...setupPlan,
     authStateReport,
   };
@@ -2250,6 +2321,13 @@ async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, r
       nextPlan.recommendedCapabilities ?? [],
       nextPlan.buildReadiness,
     );
+  }
+  if (
+    authMode === 'browser'
+    && options.userAuthorizedBrowserLive === true
+    && canRunAuthenticatedLayer(authStateReport)
+  ) {
+    nextPlan = applyUserAuthorizedBrowserLiveReadiness(nextPlan, authStateReport);
   }
   if (
     authMode === 'browser'

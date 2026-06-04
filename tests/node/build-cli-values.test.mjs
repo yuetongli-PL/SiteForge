@@ -101,6 +101,7 @@ test('build CLI parses cookie auth flags without exposing raw cookie argv suppor
   assert.equal(parsed.options.cookieStdin, true);
   assert.equal(parsed.options.authCheckUrl, '/account');
   assert.equal(parsed.options.maxSitemaps, 7);
+  assert.equal(parseCliArgs(['https://example.com/', '--user-authorized-browser-live']).options.userAuthorizedBrowserLive, true);
 
   assert.equal(parseCliArgs(['https://example.com/', '--auth', 'none']).options.authMode, 'none');
   assert.equal(parseCliArgs(['https://example.com/', '--auth', 'browser']).options.authMode, 'browser');

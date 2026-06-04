@@ -143,16 +143,13 @@ test('root only keeps approved project metadata regular files', async () => {
   assert.ok(rootDesignDocs.length <= 1, 'root should not accumulate duplicate Site Capability Layer design docs');
   await Promise.all([
     expectPathExists('README.md'),
-    expectPathExists('AGENTS.md'),
     expectPathExists('package.json'),
   ]);
 
   assert.deepEqual(regularFiles, [
     '.gitattributes',
     '.gitignore',
-    'AGENTS.md',
     'README.md',
-    'SECURITY.md',
     'package.json',
     'requirements.txt',
     'tsconfig.typecheck.json',

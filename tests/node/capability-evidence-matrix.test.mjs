@@ -5,6 +5,9 @@ import {
   applyCapabilityEvidenceMatrix,
   buildCapabilityEvidenceMatrix,
 } from '../../src/app/pipeline/build/capability-evidence-matrix.mjs';
+import {
+  evidenceLevelRank,
+} from '../../src/app/pipeline/build/auth-state.mjs';
 
 function publicContext(overrides = {}) {
   return {
@@ -118,6 +121,41 @@ test('capability evidence matrix limits authenticated capabilities after browser
   assert.equal(applied.default_policy, 'limited_enabled');
   assert.equal(applied.evidence_status, 'verified');
   assert.deepEqual(applied.evidenceMatrix.missingEvidence, []);
+});
+
+test('browser bridge structure evidence satisfies authenticated route-level capabilities', () => {
+  const context = publicContext({
+    authStateReport: {
+      authMethod: 'browser',
+      authVerificationStatus: 'browser_verified',
+      verified: true,
+    },
+  });
+  const capability = {
+    id: 'capability:fixture:authenticated-route',
+    name: 'open authenticated route',
+    status: 'active',
+    enabled_status: 'enabled',
+    evidenceModel: 'authenticated_route_only',
+    evidence: [{ type: 'browser-route', source: 'auth' }],
+    entryNodeIds: ['node:account'],
+    executionPlan: { mode: 'read_only', autoExecute: false },
+  };
+  const nodesById = new Map([[
+    'node:account',
+    {
+      id: 'node:account',
+      type: 'page',
+      sourceLayer: 'authenticated',
+      authRequired: true,
+      evidenceLevel: 'browser_structure_verified',
+    },
+  ]]);
+
+  const matrix = buildCapabilityEvidenceMatrix(context, capability, nodesById);
+  assert.equal(matrix.requiredEvidenceLevel, 'login_route_verified');
+  assert.equal(matrix.observedEvidenceLevel, 'browser_structure_verified');
+  assert.equal(evidenceLevelRank(matrix.observedEvidenceLevel) >= evidenceLevelRank(matrix.requiredEvidenceLevel), true);
 });
 
 test('capability evidence matrix keeps forced-risk capabilities disabled', () => {

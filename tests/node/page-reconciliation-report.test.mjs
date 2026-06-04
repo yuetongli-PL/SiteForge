@@ -23,6 +23,16 @@ test('page reconciliation helpers normalize routes and classify category links',
     'https://example.test/categories',
   );
   assert.equal(isReconciliationCategoryLink({ href: '/categories', label: 'Categories', kind: 'navigation' }), true);
+  assert.equal(isReconciliationCategoryLink({
+    href: '/:segment/:id/:id',
+    label: '第一百零五章：【大佬】标签的能力',
+    kind: 'chapter_link_group',
+  }), false);
+  assert.equal(isReconciliationCategoryLink({
+    href: '/chapter/123/456',
+    label: 'Tags and category metadata inside a chapter title',
+    kind: 'chapter-link',
+  }), false);
   assert.deepEqual(classifyPageReconciliationOutcome([]), {
     status: 'passed',
     blockerClass: 'none',
@@ -37,12 +47,20 @@ test('page reconciliation report passes when category routes, capabilities, and 
       pages: [{
         normalizedUrl: 'https://example.test/',
         title: 'Home',
-        links: [{ href: 'https://example.test/categories?token=synthetic-secret', label: 'Categories' }],
+        links: [
+          { href: 'https://example.test/categories?token=synthetic-secret', label: 'Categories' },
+          { href: 'https://example.test/genre/drama/123', label: 'Drama genre' },
+          { href: 'https://example.test/:segment/:segment/:id', label: 'Template category' },
+          { href: 'https://example.test/%3Asegment/%3Asegment/%3Aid', label: 'Encoded template category' },
+        ],
       }],
     },
     classifyNodes: {
       graph: {
-        nodes: [{ id: 'node-category', normalizedUrl: 'https://example.test/categories' }],
+        nodes: [
+          { id: 'node-category', normalizedUrl: 'https://example.test/categories' },
+          { id: 'node-genre-template', normalizedUrl: 'https://example.test/genre/action/456' },
+        ],
       },
     },
     discoverCapabilities: {
@@ -65,7 +83,7 @@ test('page reconciliation report passes when category routes, capabilities, and 
 
   assert.equal(report.artifactFamily, 'siteforge-page-reconciliation-report');
   assert.equal(report.status, 'passed');
-  assert.equal(report.summary.expectedCategoryLinks, 1);
+  assert.equal(report.summary.expectedCategoryLinks, 2);
   assert.equal(report.summary.missingCategoryLinks, 0);
   assert.equal(report.summary.categoryCapabilities, 1);
   assert.equal(report.summary.categoryIntents, 1);

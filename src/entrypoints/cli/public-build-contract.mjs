@@ -26,6 +26,7 @@ export const COMPAT_BOOLEAN_BUILD_FLAGS = Object.freeze([
   '--cookie-stdin',
   '--login-enhanced',
   '--public-only',
+  '--user-authorized-browser-live',
 ]);
 
 export const ACCEPTED_BOOLEAN_BUILD_FLAGS = Object.freeze([

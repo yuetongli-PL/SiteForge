@@ -419,6 +419,15 @@ const navigationCatalogSchema = {
   },
 };
 
+const socialContentSchema = {
+  ...navigationCatalogSchema,
+  id: 'profile/social-content/v1',
+  properties: {
+    ...navigationCatalogSchema.properties,
+    ...baseProfileProperties(PROFILE_ARCHETYPES.SOCIAL_CONTENT),
+  },
+};
+
 const chapterContentSchema = {
   id: 'profile/chapter-content/v1',
   type: 'object',
@@ -495,6 +504,7 @@ const chapterContentSchema = {
 export const PROFILE_SCHEMAS = Object.freeze({
   [PROFILE_ARCHETYPES.NAVIGATION_CATALOG]: navigationCatalogSchema,
   [PROFILE_ARCHETYPES.CHAPTER_CONTENT]: chapterContentSchema,
+  [PROFILE_ARCHETYPES.SOCIAL_CONTENT]: socialContentSchema,
 });
 
 export function resolveProfileSchema(input) {

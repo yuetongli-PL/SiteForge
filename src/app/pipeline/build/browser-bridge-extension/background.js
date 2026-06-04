@@ -106,6 +106,7 @@ function normalizedRoutes(session) {
         allowedHost,
         allowedHosts,
         allowedOrigin: String(route?.allowedOrigin || target.origin),
+        allowLoginLikeCapture: route?.allowLoginLikeCapture === true || session?.allowLoginLikeCapture === true,
       };
     })
     .filter(Boolean);
@@ -313,7 +314,22 @@ async function executeApiReplayFetch(tabId, replay) {
           return normalizeTextLocal(globalThis._csrfToken || '');
         }
       };
-      const qidianCsrfToken = () => qidianPageCsrfToken() || cookieValue('_csrfToken');
+      const qidianCsrfToken = () => cookieValue('_csrfToken') || qidianPageCsrfToken();
+      const appendQidianCsrfQuery = (endpointValue, csrf) => {
+        if (String(runtimeParameterSource?.kind || '') !== 'qidian_yuew_sign' || !csrf) {
+          return endpointValue;
+        }
+        try {
+          const baseHref = globalThis.location?.href || endpointValue;
+          const nextUrl = new URL(endpointValue, baseHref);
+          if (!nextUrl.searchParams.get('_csrfToken')) {
+            nextUrl.searchParams.set('_csrfToken', csrf);
+          }
+          return nextUrl.toString();
+        } catch {
+          return endpointValue;
+        }
+      };
       const sleepLocal = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const waitForQidianFock = async () => {
         for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -339,13 +355,22 @@ async function executeApiReplayFetch(tabId, replay) {
           fock.initialize?.();
           const timeDistance = Number(document.getElementById('qdcstd')?.content ?? globalThis._timeDistance ?? 0) || 0;
           const signedTime = String(Math.floor(Date.now() / 1000) + timeDistance);
+          const csrfHeaderNames = Array.isArray(runtimeParameterSource?.csrfHeaderNames)
+            ? runtimeParameterSource.csrfHeaderNames
+            : [];
+          const csrfHeaders = csrfHeaderNames
+            .map((name) => normalizeTextLocal(name))
+            .filter((name) => /^[A-Za-z0-9-]+$/u.test(name))
+            .reduce((headers, name) => ({ ...headers, [name]: csrf }), {});
           return {
             headers: {
               'X-Yuew-time': signedTime,
               'X-Yuew-sign': fock.sign(`${signedTime}${csrf}`),
               'X-Requested-With': 'XMLHttpRequest',
               Accept: 'application/json, text/javascript, */*; q=0.01',
+              ...csrfHeaders,
             },
+            csrf,
           };
         } catch {
           reportStage(`qidian-api-replay:${replayId || 'replay'}:sign-failed`);
@@ -375,7 +400,8 @@ async function executeApiReplayFetch(tabId, replay) {
           };
         }
         reportStage(`qidian-api-replay:${replayId || 'replay'}:fetch-started`);
-        const response = await fetch(resolved.endpoint, {
+        const fetchEndpoint = appendQidianCsrfQuery(resolved.endpoint, signedHeaders.csrf);
+        const response = await fetch(fetchEndpoint, {
           method,
           headers: signedHeaders.headers,
           credentials: 'include',
@@ -401,22 +427,25 @@ async function executeApiReplayFetch(tabId, replay) {
             responseKind,
           };
         }
-        const json = responseKind === 'json'
-          ? await response.clone().json().catch(() => null)
-          : null;
+        const json = await response.clone().json().catch(() => null);
+        const effectiveResponseKind = json && typeof json === 'object' ? 'json' : responseKind;
         const evidence = evaluateResponseEvidence(json);
         const evidenceFailed = evidence.status === 'failed';
-        const verified = response.ok && responseKind === 'json' && !evidenceFailed;
+        const qidianLoginRequired = String(runtimeParameterSource?.kind || '') === 'qidian_yuew_sign'
+          && evidence.observedStatusCode === 1000;
+        const verified = response.ok && effectiveResponseKind === 'json' && !evidenceFailed;
         return {
           status: verified ? 'verified' : 'failed',
           reasonCode: verified
             ? null
-            : evidenceFailed
+            : qidianLoginRequired
+              ? 'login_required_response'
+              : evidenceFailed
               ? 'api_replay_response_evidence_failed'
               : (response.ok ? 'api_replay_non_json_response' : 'api_replay_http_failed'),
           httpStatus: response.status,
           contentType,
-          responseKind,
+          responseKind: effectiveResponseKind,
           responseEvidenceStatus: evidence.status,
           observedStatusCode: evidence.observedStatusCode,
           observedArrayFieldPresent: evidence.observedArrayFieldPresent,
@@ -666,7 +695,7 @@ function collectRoute(tabId, state, route, triggerStage) {
         .finally(() => finishRoute(tabId, state, route));
       return;
     }
-    if (loginLikeUrl(currentUrl)) {
+    if (loginLikeUrl(currentUrl) && !(route.allowLoginLikeCapture === true && sameRoutePath(currentUrl, route.targetUrl))) {
       signal(state.session, `route-login-wall:${route.id}`);
       submitRouteStatus(state.session, route, 'blocked', 'login-wall', currentUrl)
         .finally(() => finishRoute(tabId, state, route));
@@ -796,7 +825,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       .finally(() => finishRoute(tabId, state, route));
     return;
   }
-  if (loginLikeUrl(tab?.url)) {
+  if (loginLikeUrl(tab?.url) && !(route.allowLoginLikeCapture === true && sameRoutePath(tab?.url, route.targetUrl))) {
     signal(state.session, `route-login-wall:${route.id}`);
     submitRouteStatus(state.session, route, 'blocked', 'login-wall', tab?.url || route.targetUrl)
       .finally(() => finishRoute(tabId, state, route));

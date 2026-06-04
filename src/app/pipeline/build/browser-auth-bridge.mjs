@@ -25,8 +25,8 @@ import { openBrowserSession } from '../../../infra/browser/session.mjs';
 import { fileExists } from '../../../infra/browser/launcher.mjs';
 
 const MAX_BRIDGE_BODY_BYTES = 256 * 1024;
-const MAX_BRIDGE_ROUTES = 32;
-const MAX_EXTENSION_STAGE_TIMELINE = MAX_BRIDGE_ROUTES * 12;
+const DEFAULT_MAX_BRIDGE_ROUTES = 32;
+const MAX_BRIDGE_ROUTE_QUEUE_LIMIT = 96;
 const BROWSER_BRIDGE_EXTENSION_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'browser-bridge-extension');
 const ROUTE_RESULT_MATCH_URL_SYMBOL = Symbol('siteforge.browserBridge.routeResultMatchUrl');
 const DEFAULT_API_REPLAY_TIMEOUT_MS = 8_000;
@@ -42,9 +42,9 @@ const DEFAULT_BRIDGE_TIMING = Object.freeze({
   tabStablePollMs: 500,
 });
 const MANAGED_BRIDGE_TIMING = Object.freeze({
-  routeCollectFallbackDelayMs: 12000,
+  routeCollectFallbackDelayMs: 6500,
   routeStableAfterCompleteMs: 2500,
-  tabStableMaxPolls: 60,
+  tabStableMaxPolls: 8,
   tabStablePollMs: 500,
 });
 const BRIDGE_CORS_HEADERS = Object.freeze({
@@ -77,6 +77,14 @@ export function browserBridgeExtensionDirectory() {
 
 function browserBridgeManagedEnabled(options = /** @type {any} */ ({})) {
   return options.browserBridgeManaged === true || options.managedBrowserBridge === true;
+}
+
+function browserBridgeRouteQueueLimit(options = /** @type {any} */ ({})) {
+  const value = Number(options.browserBridgeRouteQueueLimit ?? options.browserBridgeMaxRoutes);
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_MAX_BRIDGE_ROUTES;
+  }
+  return Math.max(1, Math.min(MAX_BRIDGE_ROUTE_QUEUE_LIMIT, Math.trunc(value)));
 }
 
 function managedBrowserBridgeLaunchArgs() {
@@ -283,13 +291,35 @@ function browserBridgeMaxRetryPasses(options = /** @type {any} */ ({})) {
 }
 
 function browserBridgePerPassTimeoutMs(options = /** @type {any} */ ({})) {
-  return Math.max(1000, Number(options.browserBridgePerPassTimeoutMs ?? browserBridgeRequestedTimeoutMs(options)) || 30000);
+  return browserBridgePerPassTimeoutMsForRoutes(options, 1);
+}
+
+function browserBridgePerRouteTimeoutMs(options = /** @type {any} */ ({})) {
+  return boundedPositiveInteger(
+    options.browserBridgePerRouteTimeoutMs,
+    browserBridgeManagedEnabled(options) ? 12000 : 9000,
+    { min: 1000, max: 60000 },
+  );
+}
+
+function browserBridgePerPassTimeoutMsForRoutes(options = /** @type {any} */ ({}), routeCount = 1) {
+  const requestedTimeoutMs = browserBridgeRequestedTimeoutMs(options);
+  const routeBudgetMs = Math.max(1, Number(routeCount) || 1) * browserBridgePerRouteTimeoutMs(options) + 2000;
+  const configured = Number(options.browserBridgePerPassTimeoutMs);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(1000, Math.max(configured, routeBudgetMs));
+  }
+  return Math.max(1000, Math.max(requestedTimeoutMs, routeBudgetMs));
 }
 
 function browserBridgeRetryPassTimeoutMs(options = /** @type {any} */ ({}), routeCount = 1) {
   const requestedTimeoutMs = browserBridgeRequestedTimeoutMs(options);
-  const routeBudgetMs = Math.max(15000, Math.min(requestedTimeoutMs, Math.max(1, Number(routeCount) || 1) * 9000));
-  return Math.max(1000, Number(options.browserBridgeRetryPassTimeoutMs ?? routeBudgetMs) || routeBudgetMs);
+  const routeBudgetMs = Math.max(15000, Math.max(requestedTimeoutMs, Math.max(1, Number(routeCount) || 1) * browserBridgePerRouteTimeoutMs(options) + 2000));
+  const configured = Number(options.browserBridgeRetryPassTimeoutMs);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(1000, Math.max(configured, routeBudgetMs));
+  }
+  return Math.max(1000, routeBudgetMs);
 }
 
 function routeStatusCaptured(value) {
@@ -361,6 +391,9 @@ function normalizeRouteUrl(value, site) {
 }
 
 function browserBridgeRouteAllowedByRobots(urlValue, options = /** @type {any} */ ({})) {
+  if (options.userAuthorizedBrowserLive === true || options.browserBridgeUserAuthorizedLive === true) {
+    return true;
+  }
   const robotsPolicy = options.browserBridgeRobotsPolicy ?? null;
   return !robotsPolicy || isUrlAllowedByRobots(urlValue, robotsPolicy);
 }
@@ -386,13 +419,19 @@ function routeQueueFromConfiguredRoutes({
   targetUrl,
   options = /** @type {any} */ ({}),
 } = /** @type {any} */ ({})) {
+  const routeQueueLimit = browserBridgeRouteQueueLimit(options);
+  const coverageTargets = options.coverageTargets && typeof options.coverageTargets === 'object'
+    ? options.coverageTargets
+    : {};
   const authRoutes = [
     ...(options.authRoutes ?? []),
     ...(options.localBuildConfig?.authRoutes ?? []),
+    ...(coverageTargets.authRoutes ?? []),
   ];
   const revisitRoutes = [
     ...(options.publicRevisitRoutes ?? []),
     ...(options.localBuildConfig?.publicRevisitRoutes ?? []),
+    ...(coverageTargets.publicRevisitRoutes ?? []),
   ];
   const routeEntries = [];
   for (const value of authRoutes) {
@@ -434,7 +473,7 @@ function routeQueueFromConfiguredRoutes({
       ));
       continue;
     }
-    if (routes.length >= MAX_BRIDGE_ROUTES) {
+    if (routes.length >= routeQueueLimit) {
       blockedRoutes.push(browserBridgeRouteDescriptor(
         normalizedUrl,
         sourceLayer,
@@ -446,7 +485,7 @@ function routeQueueFromConfiguredRoutes({
     }
     routes.push(browserBridgeRouteDescriptor(normalizedUrl, sourceLayer, `route-${routes.length + 1}`, null, site));
   }
-  return { routes, blockedRoutes };
+  return { routes, blockedRoutes, routeQueueLimit };
 }
 
 function requestedRouteMatchers(options = /** @type {any} */ ({})) {
@@ -743,7 +782,7 @@ function sanitizeRouteResults(value, site) {
   return (Array.isArray(value) ? value : [])
     .map((result) => sanitizeRouteResult(result, site))
     .filter(Boolean)
-    .slice(0, MAX_BRIDGE_ROUTES * 2);
+    .slice(0, DEFAULT_MAX_BRIDGE_ROUTES * 2);
 }
 
 function routeCollectorVersionKey(payload = /** @type {any} */ ({})) {
@@ -828,7 +867,7 @@ function mergeRouteResults(results = []) {
       byKey.set(key, result);
     }
   }
-  return [...byKey.values(), ...unkeyed].slice(0, MAX_BRIDGE_ROUTES * 4);
+  return [...byKey.values(), ...unkeyed].slice(0, DEFAULT_MAX_BRIDGE_ROUTES * 4);
 }
 
 function sanitizeBridgePage(page, site, fallbackUrl) {
@@ -1168,6 +1207,7 @@ function bridgeSummaryFromRoutes(structureSummary, {
   extensionStages = [],
   extensionStageTimeline = [],
   retrySummary = {},
+  routeQueueLimit = DEFAULT_MAX_BRIDGE_ROUTES,
 } = /** @type {any} */ ({})) {
   const routeResults = structureSummary?.routeResults ?? [];
   const routeCount = routes.length || routeResults.length;
@@ -1197,7 +1237,9 @@ function bridgeSummaryFromRoutes(structureSummary, {
     })
     .filter(Boolean)
     .sort((left, right) => left.eventIndex - right.eventIndex);
-  const persistedExtensionStageTimeline = sanitizedExtensionStageTimeline.slice(0, MAX_EXTENSION_STAGE_TIMELINE);
+  const effectiveRouteQueueLimit = Math.max(1, Number(routeQueueLimit) || DEFAULT_MAX_BRIDGE_ROUTES);
+  const extensionStageTimelineLimit = effectiveRouteQueueLimit * 12;
+  const persistedExtensionStageTimeline = sanitizedExtensionStageTimeline.slice(0, extensionStageTimelineLimit);
   return {
     used: used === true,
     persisted: false,
@@ -1208,7 +1250,7 @@ function bridgeSummaryFromRoutes(structureSummary, {
     configuredRouteCount: routeCount,
     eligibleRouteCount: routeCount,
     scheduledRouteCount,
-    routeQueueLimit: MAX_BRIDGE_ROUTES,
+    routeQueueLimit: effectiveRouteQueueLimit,
     overflowRouteCount,
     unattemptedRouteCount: overflowRouteCount,
     routeQueueTruncated: overflowRouteCount > 0,
@@ -1238,7 +1280,7 @@ function bridgeSummaryFromRoutes(structureSummary, {
     extensionStageCount: sanitizedExtensionStages.length,
     extensionStageOmittedCount: 0,
     extensionStages: sanitizedExtensionStages,
-    extensionStageTimelineLimit: MAX_EXTENSION_STAGE_TIMELINE,
+    extensionStageTimelineLimit,
     extensionStageTimelineCount: sanitizedExtensionStageTimeline.length,
     extensionStageTimelineOmittedCount: Math.max(0, sanitizedExtensionStageTimeline.length - persistedExtensionStageTimeline.length),
     extensionStageTimeline: persistedExtensionStageTimeline,
@@ -1332,6 +1374,7 @@ async function maybeRetryBrowserBridge(baseResult, {
   routes,
   targetUrl,
 } = /** @type {any} */ ({})) {
+  const routeQueueLimit = browserBridgeRouteQueueLimit(options);
   const maxRetryPasses = browserBridgeMaxRetryPasses(options);
   if (maxRetryPasses <= 0 || options.browserBridgeRetryPass === true) {
     return stripCollectorVersionsFromResult(baseResult);
@@ -1410,6 +1453,7 @@ async function maybeRetryBrowserBridge(baseResult, {
     routes,
     extensionStages: [...extensionStages].sort(),
     extensionStageTimeline,
+    routeQueueLimit,
     retrySummary: {
       retryPasses,
       initialCapturedRouteCount: initialCapturedIds.size,
@@ -1454,10 +1498,11 @@ function bridgeSession({
   routes = [],
   apiReplay = null,
   timing = DEFAULT_BRIDGE_TIMING,
+  allowLoginLikeCapture = false,
 }) {
   const parsedTarget = new URL(targetUrl);
   const sessionAllowedHosts = uniqueStrings([parsedTarget.hostname, ...routes.flatMap((route) => route?.allowedHosts ?? route?.allowedHost ?? [])]);
-  const sessionRoutes = routes.length ? routes : [{
+  const rawSessionRoutes = routes.length ? routes : [{
     id: 'route-1',
     targetUrl,
     sourceLayer,
@@ -1466,6 +1511,10 @@ function bridgeSession({
     allowedOrigin: parsedTarget.origin,
     routeTemplate: routeTemplateFromUrl(targetUrl),
   }];
+  const sessionRoutes = rawSessionRoutes.map((route) => ({
+    ...route,
+    ...(allowLoginLikeCapture ? { allowLoginLikeCapture: true } : {}),
+  }));
   return {
     schemaVersion: 1,
     artifactFamily: 'siteforge-browser-bridge-session',
@@ -1479,6 +1528,7 @@ function bridgeSession({
     allowedOrigin: parsedTarget.origin,
     sourceLayer,
     routes: sessionRoutes,
+    ...(allowLoginLikeCapture ? { allowLoginLikeCapture: true } : {}),
     timing,
     ...(apiReplay ? { apiReplay } : {}),
     privacy: {
@@ -1934,6 +1984,7 @@ export async function runBrowserAuthBridge({
     targetUrl: requestedTargetUrl,
     options: effectiveOptions,
   });
+  const routeQueueLimit = routeQueue.routeQueueLimit ?? browserBridgeRouteQueueLimit(effectiveOptions);
   const routes = filterRoutesForRetry(routeQueue.routes, effectiveOptions);
   const blockedRoutes = routeQueue.blockedRoutes ?? [];
   const coverageRoutes = [...routes, ...blockedRoutes];
@@ -1956,7 +2007,7 @@ export async function runBrowserAuthBridge({
       blockingSignals: ['robots-disallowed', 'browser-bridge-robots-disallowed', 'browser-bridge-all-routes-robots-disallowed'],
       verifiedRoutes: [],
       structureSummary: null,
-      bridgeSummary: bridgeSummaryFromRoutes(blockedSummary, { routes: blockedRoutes, used: false }),
+      bridgeSummary: bridgeSummaryFromRoutes(blockedSummary, { routes: blockedRoutes, used: false, routeQueueLimit }),
     };
   }
   const targetUrl = routes[0]?.targetUrl ?? requestedTargetUrl;
@@ -1981,7 +2032,7 @@ export async function runBrowserAuthBridge({
       const structureSummary = finalizeStructureSummary(coverageRoutes, aggregateSummary, site);
       const pageCount = structureSummary.authenticatedPages.length;
       const overlayPageCount = structureSummary.authenticatedOverlayPages.length;
-      const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes: coverageRoutes });
+      const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes: coverageRoutes, routeQueueLimit });
       const missingSignals = missingRouteSignals(structureSummary.routeResults);
       const challengeBlocked = missingSignals.includes('browser-bridge-route-challenge-detected');
       const hasStructure = Boolean(pageCount || overlayPageCount);
@@ -2011,12 +2062,12 @@ export async function runBrowserAuthBridge({
         blockingSignals: [error?.code === 'redaction-failed' ? 'browser-bridge-sensitive-payload' : 'browser-bridge-request-failed'],
         verifiedRoutes: [],
         structureSummary: null,
-        bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes }),
+        bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes, routeQueueLimit }),
       };
     }
   }
 
-  const timeoutMs = browserBridgePerPassTimeoutMs(effectiveOptions);
+  const timeoutMs = browserBridgePerPassTimeoutMsForRoutes(effectiveOptions, routes.length);
   const extensionStages = new Set();
   const extensionStageTimeline = [];
   const passIndex = Math.max(0, Number(effectiveOptions.browserBridgePassIndex ?? 0) || 0);
@@ -2092,6 +2143,7 @@ export async function runBrowserAuthBridge({
             sourceLayer,
             routes,
             timing: browserBridgeTiming(effectiveOptions),
+            allowLoginLikeCapture: effectiveOptions.browserBridgeAllowLoginLikeCapture === true,
           })));
           return;
         }
@@ -2212,13 +2264,13 @@ export async function runBrowserAuthBridge({
             authenticatedOverlayPages: [],
             routeResults: emptyRouteResults,
             warnings: [],
-          }, { routes: coverageRoutes, extensionStages: extensionStageList, extensionStageTimeline }),
+          }, { routes: coverageRoutes, extensionStages: extensionStageList, extensionStageTimeline, routeQueueLimit }),
         }, { inputUrl, site, options: effectiveOptions, openBrowser, routes: coverageRoutes, targetUrl });
     }
     const pageCount = structureSummary.authenticatedPages.length;
     const overlayPageCount = structureSummary.authenticatedOverlayPages.length;
     const extensionStageList = [...extensionStages].sort();
-    const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes: coverageRoutes, extensionStages: extensionStageList, extensionStageTimeline });
+    const bridgeSummary = bridgeSummaryFromRoutes(structureSummary, { routes: coverageRoutes, extensionStages: extensionStageList, extensionStageTimeline, routeQueueLimit });
     const versionBlockingSignals = bridgeExtensionVersionBlockingSignals(extensionStageList, structureSummary.routeResults);
     if (versionBlockingSignals.length) {
       return await maybeRetryBrowserBridge({
@@ -2263,7 +2315,7 @@ export async function runBrowserAuthBridge({
       blockingSignals: [error?.code === 'redaction-failed' ? 'browser-bridge-sensitive-payload' : 'browser-bridge-request-failed'],
       verifiedRoutes: [],
       structureSummary: null,
-      bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes, extensionStages: [...extensionStages].sort(), extensionStageTimeline }),
+      bridgeSummary: bridgeSummaryFromRoutes({ authenticatedPages: [], authenticatedOverlayPages: [], routeResults: blockedRouteResults, warnings: [] }, { routes: coverageRoutes, extensionStages: [...extensionStages].sort(), extensionStageTimeline, routeQueueLimit }),
     };
   } finally {
     await managedBridgeSession?.close?.();

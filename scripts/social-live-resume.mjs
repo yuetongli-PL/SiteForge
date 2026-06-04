@@ -33,6 +33,8 @@ Options:
   --max-cycles <n>                  Maximum automatic execution planning cycles. Default: 10.
   --run-root <dir>                  Output root. Default: runs/social-live-resume.
   --format <text|json>              Output format. Default: text.
+  --summary                         Compact JSON output to candidate status and commands.
+  --no-items                        Omit large archive item/user/media arrays from JSON output.
   --json                            Force JSON output and suppress human progress.
   --quiet                           Suppress human progress.
   --progress <auto|interactive|plain>
@@ -52,6 +54,8 @@ export function parseArgs(argv) {
     maxCycles: '10',
     runRoot: DEFAULT_RUN_ROOT,
     format: 'text',
+    summary: false,
+    noItems: false,
     json: false,
     quiet: false,
     progressMode: undefined,
@@ -84,6 +88,12 @@ export function parseArgs(argv) {
       case '--json':
         options.format = 'json';
         options.json = true;
+        break;
+      case '--summary':
+        options.summary = true;
+        break;
+      case '--no-items':
+        options.noItems = true;
         break;
       case '--quiet':
         options.quiet = true;
@@ -166,22 +176,30 @@ function firstString(...values) {
   return values.find((value) => typeof value === 'string' && value.trim()) ?? null;
 }
 
+function concreteAccount(value) {
+  const text = firstString(value);
+  if (!text || /^:account$/iu.test(text)) return null;
+  return text;
+}
+
 function extractAttemptRecords(json, sourcePath) {
   const records = [];
   const push = (candidate, fallback = {}) => {
-    const site = normalizeSite(candidate?.site ?? fallback.site ?? json?.site ?? json?.options?.site);
+    const plan = candidate?.plan ?? fallback.plan ?? json?.plan ?? null;
+    const site = normalizeSite(candidate?.site ?? candidate?.siteKey ?? fallback.site ?? fallback.siteKey ?? json?.site ?? json?.siteKey ?? plan?.siteKey ?? json?.options?.site);
     const id = firstString(candidate?.id, fallback.id, json?.id, json?.runId, path.basename(path.dirname(sourcePath)));
     const command = firstString(candidate?.command, fallback.command);
     const artifactRoot = firstString(candidate?.artifactRoot, fallback.artifactRoot, candidate?.runDir, json?.runDir, path.dirname(sourcePath));
     const manifestPath = firstString(candidate?.manifestPath, fallback.manifestPath, sourcePath);
-    const account = firstString(candidate?.account, json?.account, json?.options?.xAccount, json?.options?.igAccount);
-    const startedAt = firstString(candidate?.startedAt, json?.startedAt);
-    const finishedAt = firstString(candidate?.finishedAt, json?.finishedAt, candidate?.updatedAt, json?.updatedAt);
+    const account = concreteAccount(candidate?.account ?? plan?.account ?? json?.account ?? json?.options?.xAccount ?? json?.options?.igAccount);
+    const action = firstString(candidate?.action, plan?.action, json?.action);
+    const startedAt = firstString(candidate?.startedAt, json?.startedAt, candidate?.updatedAt, json?.updatedAt, json?.generatedAt);
+    const finishedAt = firstString(candidate?.finishedAt, json?.finishedAt, candidate?.updatedAt, json?.updatedAt, json?.generatedAt);
     const status = firstString(candidate?.status, candidate?.artifactSummary?.verdict, json?.status, json?.outcome?.status);
     const reason = firstString(candidate?.reason, candidate?.artifactSummary?.reason, json?.reason, json?.outcome?.reason, json?.archive?.reason, json?.runtimeRisk?.stopReason);
     const archive = candidate?.archive ?? candidate?.artifactSummary?.archive ?? json?.archive ?? null;
     if (!site && !command && !archive && !/x-full-archive|instagram-full-archive/iu.test(String(id))) return;
-    records.push({ id, site, account, command, artifactRoot, manifestPath, startedAt, finishedAt, status, reason, archive, sourcePath });
+    records.push({ id, site, account, action, plan, command, artifactRoot, manifestPath, startedAt, finishedAt, status, reason, archive, sourcePath });
   };
 
   if (Array.isArray(json?.results)) {
@@ -201,13 +219,32 @@ function extractAttemptRecords(json, sourcePath) {
 
 function commandForRecord(record) {
   if (record.command) return ensureActionSessionTraceability(rewriteKnownCommandLine(record.command));
-  const account = record.account ?? '<account>';
-  const command = actionCliCommand(record.site === 'instagram' ? 'instagram' : 'x', [
-    'full-archive',
-    account,
-    '--run-dir',
-    record.artifactRoot,
-  ]);
+  const action = firstString(record.action, record.plan?.action, 'full-archive');
+  const args = [action];
+  if (action === 'read-route') {
+    const route = firstString(record.route, record.routeName, record.plan?.route, record.plan?.routeName, record.plan?.routePath);
+    if (route) {
+      args.push('--route', route);
+    }
+  }
+  if (record.account) {
+    args.push('--account', record.account);
+  }
+  for (const [flag, value] of [
+    ['--query', record.query ?? record.plan?.query],
+    ['--status-id', record.statusId ?? record.plan?.statusId],
+    ['--media-id', record.mediaId ?? record.plan?.mediaId],
+    ['--space-id', record.spaceId ?? record.plan?.spaceId],
+    ['--community-id', record.communityId ?? record.plan?.communityId],
+    ['--list-id', record.listId ?? record.plan?.listId],
+  ]) {
+    const concrete = firstString(value);
+    if (concrete) {
+      args.push(flag, concrete);
+    }
+  }
+  args.push('--run-dir', record.artifactRoot, '--resume');
+  const command = actionCliCommand(record.site === 'instagram' ? 'instagram' : 'x', args);
   return ensureActionSessionTraceability(command);
 }
 
@@ -308,6 +345,97 @@ async function writePlan(options, plan) {
   const manifestPath = path.join(runDir, 'manifest.json');
   await writeJsonFile(manifestPath, plan);
   return manifestPath;
+}
+
+function compactArchive(archive) {
+  if (!archive || typeof archive !== 'object') {
+    return archive ?? null;
+  }
+  const itemCount = Array.isArray(archive.items) ? archive.items.length : undefined;
+  const userCount = Array.isArray(archive.users) ? archive.users.length : undefined;
+  const mediaCount = Array.isArray(archive.media) ? archive.media.length : undefined;
+  const scannedUserCount = Array.isArray(archive.scannedUsers) ? archive.scannedUsers.length : undefined;
+  return {
+    strategy: archive.strategy ?? null,
+    complete: archive.complete ?? null,
+    reason: archive.reason ?? null,
+    confidence: archive.confidence ?? null,
+    partial: archive.partial ?? null,
+    bounded: archive.bounded ?? null,
+    boundedBy: archive.boundedBy ?? null,
+    pages: archive.pages ?? null,
+    nextCursor: archive.nextCursor ?? null,
+    diagnosticCursor: archive.diagnosticCursor ?? null,
+    riskSignals: archive.riskSignals ?? [],
+    riskEventCount: Array.isArray(archive.riskEvents) ? archive.riskEvents.length : undefined,
+    capturedResponseCount: archive.capture?.responseCount ?? undefined,
+    parsedResponseCount: archive.capture?.parsedResponseCount ?? undefined,
+    ...(itemCount !== undefined ? { itemCount } : {}),
+    ...(userCount !== undefined ? { userCount } : {}),
+    ...(mediaCount !== undefined ? { mediaCount } : {}),
+    ...(scannedUserCount !== undefined ? { scannedUserCount } : {}),
+  };
+}
+
+function compactCandidate(candidate) {
+  return {
+    id: candidate.id,
+    site: candidate.site,
+    account: candidate.account,
+    action: candidate.action ?? candidate.plan?.action ?? null,
+    route: candidate.route ?? candidate.routeName ?? candidate.plan?.routeName ?? candidate.plan?.routePath ?? null,
+    status: candidate.status,
+    reason: candidate.reason,
+    finishedAt: candidate.finishedAt,
+    attempts: candidate.attempts,
+    maxAttempts: candidate.maxAttempts,
+    cooldownRemainingMs: candidate.cooldownRemainingMs,
+    ready: candidate.ready,
+    blockedReason: candidate.blockedReason,
+    sourcePath: candidate.sourcePath,
+    artifactRoot: candidate.artifactRoot,
+    manifestPath: candidate.manifestPath,
+    resumeCommand: candidate.resumeCommand,
+    archive: compactArchive(candidate.archive),
+  };
+}
+
+function stripLargeFields(record) {
+  if (!record || typeof record !== 'object') {
+    return record;
+  }
+  return {
+    ...record,
+    archive: compactArchive(record.archive),
+  };
+}
+
+export function planForJsonOutput(plan, options, manifestPath) {
+  if (options.summary) {
+    return {
+      mode: plan.mode,
+      generatedAt: plan.generatedAt,
+      source: plan.source,
+      cooldownMinutes: plan.cooldownMinutes,
+      maxAttempts: plan.maxAttempts,
+      candidateCount: plan.candidates.length,
+      readyCount: plan.ready.length,
+      completedCount: plan.completed.length,
+      candidates: plan.candidates.map(compactCandidate),
+      ready: plan.ready.map(compactCandidate),
+      manifestPath,
+    };
+  }
+  if (options.noItems) {
+    return {
+      ...plan,
+      candidates: plan.candidates.map(stripLargeFields),
+      ready: plan.ready.map(stripLargeFields),
+      completed: plan.completed.map(stripLargeFields),
+      manifestPath,
+    };
+  }
+  return { ...plan, manifestPath };
 }
 
 function printText(plan, manifestPath) {
@@ -483,7 +611,7 @@ export async function main(argv) {
   const plan = await buildResumePlan(options);
   const manifestPath = await writePlan(options, plan);
   if (options.format === 'json') {
-    process.stdout.write(`${JSON.stringify({ ...plan, manifestPath }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(planForJsonOutput(plan, options, manifestPath), null, 2)}\n`);
   } else {
     printText(plan, manifestPath);
   }

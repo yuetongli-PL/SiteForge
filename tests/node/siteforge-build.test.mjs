@@ -2533,6 +2533,268 @@ test('SiteForge setup continues API discovery when strict browser auth blocks de
   }
 });
 
+test('SiteForge setup accepts explicit user-authorized browser live evidence behind robots policy', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-user-authorized-browser-live-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }) },
+      '/': testHtmlPage('Home', '<main>Home</main>'),
+      '/blocked-auth': testHtmlPage('Blocked auth', '<main><ul><li>private summary</li></ul></main>'),
+    }), async (rootUrl) => {
+      const host = new URL(rootUrl).hostname;
+      const configDir = path.join(workspace, 'config');
+      const knownSiteRecord = {
+        [host]: {
+          host,
+          siteKey: 'user-authorized-browser-live-fixture',
+          adapterId: 'user-authorized-browser-live-fixture',
+          capabilityFamilies: ['query-social-content', 'query-notifications'],
+          supportedIntents: ['list-notifications', 'search-posts'],
+        },
+      };
+      await mkdir(configDir, { recursive: true });
+      await writeFile(path.join(configDir, 'site-registry.json'), JSON.stringify({ version: 1, sites: knownSiteRecord }, null, 2), 'utf8');
+      await writeFile(path.join(configDir, 'site-capabilities.json'), JSON.stringify({ version: 1, sites: knownSiteRecord }, null, 2), 'utf8');
+
+      let bridgeRoutes = [];
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'user-authorized-browser-live-setup',
+        now: new Date('2026-06-01T02:00:00.000Z'),
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        userAuthorizedBrowserLive: true,
+        fetchDelayMs: 0,
+        setupOutput: { write() {} },
+        localBuildConfig: {
+          authRoutes: ['/blocked-auth'],
+          publicRevisitRoutes: ['/'],
+        },
+        browserBridgeMaxRetryPasses: 0,
+        browserAuthBridgeProvider: async ({ routes }) => {
+          bridgeRoutes = routes.map((route) => route.routeTemplate);
+          return {
+            authenticatedPages: routes.map((route) => ({
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: route.routeTemplate,
+              pageType: 'authorized_summary',
+              visibleItemCount: 1,
+              listPresent: true,
+            })),
+          };
+        },
+      });
+
+      assert.equal(setup.status, 'created');
+      assert.equal(setup.setupPlan.buildReadiness.buildable, true);
+      assert.equal(setup.setupPlan.buildReadiness.reasonCode, 'setup-user-authorized-browser-evidence');
+      assert.equal(setup.setupPlan.evidenceQuality.sourceStatus.userAuthorizedBrowser, 'captured');
+      assert.equal(setup.setupPlan.evidenceQuality.userAuthorizedBrowserEvidenceCount > 0, true);
+      assert.equal(setup.setupPlan.authStateReport.authVerificationStatus, 'browser_verified_partial');
+      assert.equal(bridgeRoutes.includes('/blocked-auth'), true);
+      assert.doesNotMatch(JSON.stringify(setup.setupPlan), /Cookie:|Bearer\s+|sid=|uid=|SECRET_SESSION_VALUE/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild continues with user-authorized browser routes when public robots seeds are empty', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-user-authorized-route-only-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { disallow: '/', sitemap: false }) },
+      '/': testHtmlPage('Home', '<main>Home</main>'),
+      '/blocked-auth': testHtmlPage('Blocked auth', '<main><button>Open inbox</button><ul><li>private summary</li></ul></main>'),
+    }), async (rootUrl) => {
+      const host = new URL(rootUrl).hostname;
+      const configDir = path.join(workspace, 'config');
+      const knownSiteRecord = {
+        [host]: {
+          host,
+          siteKey: 'user-authorized-route-only-fixture',
+          adapterId: 'user-authorized-route-only-fixture',
+          capabilityFamilies: ['query-social-content', 'query-notifications'],
+          supportedIntents: ['list-notifications', 'search-posts'],
+        },
+      };
+      await mkdir(configDir, { recursive: true });
+      await writeFile(path.join(configDir, 'site-registry.json'), JSON.stringify({ version: 1, sites: knownSiteRecord }, null, 2), 'utf8');
+      await writeFile(path.join(configDir, 'site-capabilities.json'), JSON.stringify({ version: 1, sites: knownSiteRecord }, null, 2), 'utf8');
+
+      const browserAuthBridgeProvider = async ({ routes }) => ({
+        authenticatedPages: routes
+          .filter((route) => route.sourceLayer !== 'authenticated_overlay')
+          .map((route) => ({
+            routeId: route.id,
+            url: route.targetUrl,
+            routeTemplate: route.routeTemplate,
+            pageType: 'authorized_summary',
+            visibleItemCount: 1,
+            listPresent: true,
+            controls: [{ kind: 'button', label: 'Open inbox', selector: 'button' }],
+          })),
+        authenticatedOverlayPages: routes
+          .filter((route) => route.sourceLayer === 'authenticated_overlay')
+          .map((route) => ({
+            routeId: route.id,
+            url: route.targetUrl,
+            routeTemplate: route.routeTemplate,
+            pageType: 'authorized_overlay',
+            visibleItemCount: 1,
+            listPresent: true,
+          })),
+      });
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'user-authorized-route-only-setup',
+        now: new Date('2026-06-01T02:05:00.000Z'),
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        userAuthorizedBrowserLive: true,
+        maxDepth: 1,
+        maxPages: 1,
+        maxSeeds: 1,
+        fetchDelayMs: 0,
+        localBuildConfig: {
+          authRoutes: ['/blocked-auth'],
+          publicRevisitRoutes: ['/'],
+        },
+        browserBridgeMaxRetryPasses: 0,
+        setupOutput: { write() {} },
+        browserAuthBridgeProvider,
+      });
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...setup.buildOptions,
+        buildId: 'user-authorized-route-only-build',
+        now: new Date('2026-06-01T02:05:00.000Z'),
+        maxDepth: 1,
+        maxPages: 1,
+        maxSeeds: 1,
+        fetchDelayMs: 0,
+        browserAuthBridgeProvider,
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(result.result_status, 'partial_success');
+      assert.equal(result.summary.coverage.providers.browser_bridge.status, 'success');
+      assert.equal(result.summary.coverage.providers.browser_bridge.pages > 0, true);
+      assert.equal(result.summary.verificationStatus, 'report_only_blocked');
+
+      const seeds = await readJson(path.join(result.artifactDir, 'seeds.json'));
+      assert.equal(seeds.status, 'authenticated_route_only');
+      assert.equal(seeds.authSeeds.length > 0, true);
+      assert.equal(seeds.publicSeeds.length, 0);
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.status, 'skipped');
+      assert.equal(crawlStatic.summary.staticBlockedReason, 'siteforge-static-crawl-empty');
+
+      const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(crawlAuthenticated.status, 'success');
+      const authenticatedPageCount = (Array.isArray(crawlAuthenticated.authenticatedPages) ? crawlAuthenticated.authenticatedPages.length : 0)
+        + (Array.isArray(crawlAuthenticated.authenticatedOverlayPages) ? crawlAuthenticated.authenticatedOverlayPages.length : 0);
+      assert.equal(authenticatedPageCount > 0 || result.summary.coverage.providers.browser_bridge.pages > 0, true);
+      assert.doesNotMatch(JSON.stringify({ seeds, crawlStatic, crawlAuthenticated }), /Cookie:|Bearer\s+|sid=|uid=|SECRET_SESSION_VALUE/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild continues with verified Browser Bridge structure when static public crawl is empty', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-bridge-static-empty-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl, { sitemap: false }) },
+      '/': testHtmlPage('Home', '<main><a href="/catalog">Catalog</a></main>'),
+      '/catalog': testHtmlPage('Catalog', '<main><ul><li>public item</li></ul></main>'),
+      '/account': testHtmlPage('Account', '<main><button>Open inbox</button><ul><li>private summary</li></ul></main>'),
+    }), async (rootUrl) => {
+      const browserAuthBridgeProvider = async ({ routes }) => ({
+        authenticatedPages: routes
+          .filter((route) => route.sourceLayer !== 'authenticated_overlay')
+          .map((route) => ({
+            routeId: route.id,
+            url: route.targetUrl,
+            routeTemplate: route.routeTemplate,
+            pageType: 'authorized_summary',
+            visibleItemCount: 1,
+            listPresent: true,
+            controls: [{ kind: 'button', label: 'Open inbox', selector: 'button' }],
+            structureItems: [{ structureType: 'list', labelSummary: 'Inbox summary', visibleItemCount: 1 }],
+          })),
+      });
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'browser-bridge-static-empty-setup',
+        now: new Date('2026-06-01T02:10:00.000Z'),
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        userAuthorizedBrowserLive: true,
+        maxDepth: 1,
+        maxPages: 2,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        fetchTimeoutMs: 1000,
+        localBuildConfig: {
+          authRoutes: ['/account'],
+        },
+        browserBridgeMaxRetryPasses: 0,
+        setupOutput: { write() {} },
+        browserAuthBridgeProvider,
+      });
+
+      Object.assign(setup.buildOptions, {
+        buildId: 'browser-bridge-static-empty-build',
+        now: new Date('2026-06-01T02:10:00.000Z'),
+        maxDepth: 1,
+        maxPages: 2,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        fetchTimeoutMs: 1000,
+        env: {
+          HTTP_PROXY: 'http://127.0.0.1:9',
+          http_proxy: 'http://127.0.0.1:9',
+          NO_PROXY: '',
+          no_proxy: '',
+        },
+        browserAuthBridgeProvider,
+      });
+      let result = null;
+      let failure = null;
+      try {
+        result = await runSiteForgeBuild(rootUrl, setup.buildOptions);
+      } catch (error) {
+        failure = error;
+        result = error.buildReport;
+      }
+
+      assert.ok(result);
+      assert.notEqual(failure?.stage, 'buildSiteGraph');
+      assert.notEqual(result.reasonCode, 'empty-crawl');
+      assert.equal(result.summary.coverage.providers.browser_bridge.status, 'success');
+      assert.equal(result.summary.coverage.providers.browser_bridge.pages > 0, true);
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.status, 'skipped');
+      assert.equal(crawlStatic.summary.staticBlockedReason, 'siteforge-static-crawl-empty');
+      assert.equal(crawlStatic.summary.browserBridgeStructurePages > 0, true);
+
+      const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(crawlAuthenticated.status, 'success');
+      assert.equal(crawlAuthenticated.authenticatedPages.length, 1);
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.equal(graph.summary.nodes > 0, true);
+      assert.doesNotMatch(JSON.stringify({ crawlStatic, crawlAuthenticated }), /Cookie:|Bearer\s+|sid=|uid=|SECRET_SESSION_VALUE/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('cookie auth state check gates authenticated layer without persisting cookie material', async () => {
   await withTestSite((rootUrl) => ({
     '/account': testHtmlPage('Account', '<main><ul><li>item</li></ul></main>'),
@@ -2742,6 +3004,7 @@ test('browser auth state check verifies bridge summaries without reading session
     const verifiedBrowserOptions = {
       authMode: 'browser',
       authCheckUrl: '/account',
+      apiReplayCookieHeader: 'sid=SECRET_SESSION_VALUE; uid=123',
       browserAuthBridgeProvider: async ({ targetUrl, routes }) => {
         assert.equal(routes.length, 1);
         return ({
@@ -2778,6 +3041,11 @@ test('browser auth state check verifies bridge summaries without reading session
     assert.equal(verified.browserBridge.routeCount, 1);
     assert.equal(verified.browserBridge.capturedRouteCount, 1);
     assert.equal(verified.browserBridge.missingRouteCount, 0);
+    assert.equal(verified.cookieInput.provided, true);
+    assert.equal(verified.cookieInput.source, 'browser_bridge');
+    assert.equal(verified.cookieInput.pairCount, 2);
+    assert.equal(verified.cookieInput.persisted, false);
+    assert.equal(verified.cookieInput.redacted, true);
     assert.equal(canRunAuthenticatedLayer(verified), true);
     assert.equal(verifiedBrowserOptions.authRuntime, undefined);
     assert.equal(verifiedBrowserOptions.authenticatedStructureSummary, undefined);
@@ -2893,6 +3161,43 @@ test('browser auth bridge filters robots-disallowed configured routes before pro
       result.targetRoute === '/blocked-auth'
       && result.status === 'blocked'
       && result.reasonCode === 'robots-disallowed'
+    )), true);
+
+    let authorizedProviderRoutes = [];
+    const userAuthorized = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      robotsPolicy,
+      options: {
+        authMode: 'browser',
+        userAuthorizedBrowserLive: true,
+        localBuildConfig: {
+          authRoutes: ['/blocked-auth'],
+        },
+        browserBridgeMaxRetryPasses: 0,
+        browserAuthBridgeProvider: async ({ routes }) => {
+          authorizedProviderRoutes = routes;
+          return {
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: '/blocked-auth',
+              pageType: 'blocked_auth',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+    assert.deepEqual(authorizedProviderRoutes.map((route) => route.routeTemplate), ['/blocked-auth']);
+    assert.equal(userAuthorized.status, 'browser_verified');
+    assert.equal(userAuthorized.verified, true);
+    assert.equal(userAuthorized.bridgeSummary.capturedRouteCount, 1);
+    assert.equal(userAuthorized.bridgeSummary.routeResults.some((result) => (
+      result.targetRoute === '/blocked-auth'
+      && result.status === 'captured'
+      && result.reasonCode === null
     )), true);
   });
 });
@@ -3491,6 +3796,213 @@ test('browser bridge Qidian replay signs with page-global csrf token in main wor
   assert.equal(state.initialized, true);
   assert.equal(state.signedInput.endsWith('synthetic-page-csrf'), true);
   assert.equal(state.capturedFetch.options.headers['X-Yuew-sign'], 'synthetic-qidian-signature');
+  assert.equal(new URL(state.capturedFetch.url).searchParams.get('_csrfToken'), 'synthetic-page-csrf');
+});
+
+test('browser bridge Qidian replay prefers cookie csrf token when present', async () => {
+  const extensionBackground = await readFile(path.join(browserBridgeExtensionDirectory(), 'background.js'), 'utf8');
+  const state = {
+    capturedFetch: null,
+    signedInput: null,
+  };
+  const context = {
+    URL,
+    setTimeout,
+    clearTimeout,
+    console,
+    document: {
+      cookie: '_csrfToken=synthetic-cookie-csrf',
+      getElementById(id) {
+        return id === 'qdcstd' ? { content: '5' } : null;
+      },
+    },
+    Fock: {
+      initialize() {},
+      sign(input) {
+        state.signedInput = input;
+        return 'synthetic-qidian-signature';
+      },
+    },
+    _csrfToken: 'synthetic-page-csrf',
+    fetch: async (url, options = {}) => {
+      state.capturedFetch = { url, options };
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: {
+          get(name) {
+            return name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : '';
+          },
+        },
+        clone() {
+          return this;
+        },
+        async json() {
+          return { status_code: 0, data: { ok: true } };
+        },
+      };
+    },
+    chrome: {
+      runtime: { onMessage: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} } },
+      scripting: {
+        async executeScript(options) {
+          return [{ result: await options.func(options.args[0]) }];
+        },
+      },
+    },
+  };
+
+  runInNewContext(extensionBackground, context, { filename: 'browser-bridge-extension/background.js' });
+  const result = await context.executeApiReplayFetch(1, {
+    id: 'qidian-replay-cookie-csrf-test',
+    endpoint: 'https://www.qidian.com/webcommon/user/getUserInfo',
+    endpointTemplate: 'https://www.qidian.com/webcommon/user/getUserInfo',
+    method: 'GET',
+    allowedHost: 'www.qidian.com',
+    runtimeParameterSource: { kind: 'qidian_yuew_sign' },
+    responseEvidence: { statusCode: 0, objectField: 'data' },
+  });
+
+  assert.equal(result.status, 'verified');
+  assert.equal(state.signedInput.endsWith('synthetic-cookie-csrf'), true);
+  assert.equal(new URL(state.capturedFetch.url).searchParams.get('_csrfToken'), 'synthetic-cookie-csrf');
+});
+
+test('browser bridge Qidian replay classifies code 1000 as login required', async () => {
+  const extensionBackground = await readFile(path.join(browserBridgeExtensionDirectory(), 'background.js'), 'utf8');
+  const state = {
+    capturedFetch: null,
+    signedInput: null,
+  };
+  const context = {
+    URL,
+    setTimeout,
+    clearTimeout,
+    console,
+    document: {
+      cookie: '_csrfToken=synthetic-cookie-csrf',
+      getElementById(id) {
+        return id === 'qdcstd' ? { content: '0' } : null;
+      },
+    },
+    Fock: {
+      initialize() {},
+      sign(input) {
+        state.signedInput = input;
+        return 'synthetic-qidian-signature';
+      },
+    },
+    fetch: async (url, options = {}) => {
+      state.capturedFetch = { url, options };
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: {
+          get(name) {
+            return name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : '';
+          },
+        },
+        clone() {
+          return this;
+        },
+        async json() {
+          return { code: 1000, data: {} };
+        },
+      };
+    },
+    chrome: {
+      runtime: { onMessage: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} } },
+      scripting: {
+        async executeScript(options) {
+          return [{ result: await options.func(options.args[0]) }];
+        },
+      },
+    },
+  };
+
+  runInNewContext(extensionBackground, context, { filename: 'browser-bridge-extension/background.js' });
+  const result = await context.executeApiReplayFetch(1, {
+    id: 'qidian-replay-login-required-test',
+    endpoint: 'https://www.qidian.com/webcommon/user/getUserInfo',
+    endpointTemplate: 'https://www.qidian.com/webcommon/user/getUserInfo',
+    method: 'GET',
+    allowedHost: 'www.qidian.com',
+    runtimeParameterSource: { kind: 'qidian_yuew_sign' },
+    responseEvidence: { statusCode: 0, objectField: 'data' },
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.reasonCode, 'login_required_response');
+  assert.equal(result.observedStatusCode, 1000);
+  assert.equal(state.signedInput.endsWith('synthetic-cookie-csrf'), true);
+  assert.equal(new URL(state.capturedFetch.url).searchParams.get('_csrfToken'), 'synthetic-cookie-csrf');
+});
+
+test('browser bridge Qidian replay accepts JSON bodies with an HTML content type', async () => {
+  const extensionBackground = await readFile(path.join(browserBridgeExtensionDirectory(), 'background.js'), 'utf8');
+  const context = {
+    URL,
+    setTimeout,
+    clearTimeout,
+    console,
+    document: {
+      cookie: '_csrfToken=synthetic-cookie-csrf',
+      getElementById(id) {
+        return id === 'qdcstd' ? { content: '0' } : null;
+      },
+    },
+    Fock: {
+      initialize() {},
+      sign() {
+        return 'synthetic-qidian-signature';
+      },
+    },
+    fetch: async (url) => ({
+      ok: true,
+      status: 200,
+      url,
+      headers: {
+        get(name) {
+          return name.toLowerCase() === 'content-type' ? 'text/html' : '';
+        },
+      },
+      clone() {
+        return this;
+      },
+      async json() {
+        return { code: 0, data: { ok: true } };
+      },
+    }),
+    chrome: {
+      runtime: { onMessage: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} } },
+      scripting: {
+        async executeScript(options) {
+          return [{ result: await options.func(options.args[0]) }];
+        },
+      },
+    },
+  };
+
+  runInNewContext(extensionBackground, context, { filename: 'browser-bridge-extension/background.js' });
+  const result = await context.executeApiReplayFetch(1, {
+    id: 'qidian-replay-html-content-type-json-body-test',
+    endpoint: 'https://www.qidian.com/ajax/comment/index?bookId=1042256511&pageSize=15',
+    endpointTemplate: 'https://www.qidian.com/ajax/comment/index?bookId=1042256511&pageSize=15',
+    method: 'GET',
+    allowedHost: 'www.qidian.com',
+    runtimeParameterSource: { kind: 'qidian_yuew_sign' },
+    responseEvidence: { statusCode: 0 },
+  });
+
+  assert.equal(result.status, 'verified');
+  assert.equal(result.reasonCode, null);
+  assert.equal(result.contentType, 'text/html');
+  assert.equal(result.responseKind, 'json');
 });
 
 test('browser auth bridge can use a managed browser session with the bundled extension', async () => {
@@ -3523,8 +4035,8 @@ test('browser auth bridge can use a managed browser session with the bundled ext
           const sessionUrl = new URL(`/session.json${bridge.search}`, bridge.origin).toString();
           const session = await (await fetch(sessionUrl)).json();
           assert.equal(session.routes.length, 1);
-          assert.equal(session.timing.tabStableMaxPolls, 60);
-          assert.equal(session.timing.routeCollectFallbackDelayMs, 12000);
+          assert.equal(session.timing.tabStableMaxPolls, 8);
+          assert.equal(session.timing.routeCollectFallbackDelayMs, 6500);
           for (const stage of [
             `bridge-content-version:${bridgeVersion}`,
             `bridge-version:${bridgeVersion}`,
@@ -3578,6 +4090,425 @@ test('browser auth bridge can use a managed browser session with the bundled ext
     assert.equal(result.bridgeSummary.capturedRouteCount, 1);
     assert.equal(result.bridgeSummary.routeResults[0].targetRoute, '/account');
   });
+});
+
+test('browser auth bridge scales managed pass timeout for multi-route queues', async () => {
+  await withTestServer((request, response) => {
+    response.end(testHtmlPage('Managed route timeout target', '<main><ul><li>route item</li></ul></main>'));
+  }, async (rootUrl) => {
+    const site = {
+      id: 'managed-browser-bridge-scaled-timeout-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    let providerClosed = false;
+    const result = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeManaged: true,
+        browserBridgeTimeoutMs: 1000,
+        browserBridgePerRouteTimeoutMs: 1000,
+        localBuildConfig: {
+          authRoutes: ['/one', '/two'],
+        },
+        browserBridgeManagedSessionProvider: async (request) => {
+          const bridge = new URL(request.bridgeUrl);
+          const sessionUrl = new URL(`/session.json${bridge.search}`, bridge.origin).toString();
+          const session = await (await fetch(sessionUrl)).json();
+          assert.equal(session.routes.length, 2);
+          setTimeout(() => {
+            fetch(session.submitUrl, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                routeResults: session.routes.map((route) => ({
+                  routeId: route.id,
+                  targetUrl: route.targetUrl,
+                  sourceLayer: route.sourceLayer,
+                  status: 'captured',
+                })),
+                authenticatedPages: session.routes.map((route) => ({
+                  routeId: route.id,
+                  url: route.targetUrl,
+                  routeTemplate: new URL(route.targetUrl).pathname,
+                  sourceLayer: route.sourceLayer,
+                  pageType: 'authenticated_route',
+                  visibleItemCount: 1,
+                  listPresent: true,
+                })),
+              }),
+            }).catch(() => {});
+          }, 1200);
+          return {
+            close: async () => {
+              providerClosed = true;
+            },
+          };
+        },
+      },
+    });
+
+    assert.equal(providerClosed, true);
+    assert.equal(result.status, 'browser_verified');
+    assert.equal(result.bridgeSummary.capturedRouteCount, 2);
+  });
+});
+
+test('browser auth bridge includes crawl contract coverage targets in route queue', async () => {
+  await withTestServer({
+    '/robots.txt': testRobotsTxt('http://example.test/'),
+    '/': testHtmlPage('Home', '<main>Home</main>'),
+    '/account': testHtmlPage('Account', '<main>Account</main>'),
+    '/rank/hot': testHtmlPage('Hot rank', '<main>Hot rank</main>'),
+  }, async (rootUrl) => {
+    const site = {
+      id: 'browser-bridge-coverage-targets-test',
+      rootUrl,
+      allowedDomains: [new URL(rootUrl).hostname],
+    };
+    const result = await runBrowserAuthBridge({
+      inputUrl: rootUrl,
+      site,
+      options: {
+        authMode: 'browser',
+        browserBridgeMaxRetryPasses: 0,
+        coverageTargets: {
+          authRoutes: ['/account'],
+          publicRevisitRoutes: ['/rank/hot'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          assert.deepEqual(
+            routes.map((route) => [route.routeTemplate, route.sourceLayer]),
+            [
+              ['/account', 'authenticated'],
+              ['/rank/hot', 'authenticated_overlay'],
+            ],
+          );
+          return {
+            authenticatedPages: [{
+              routeId: routes[0].id,
+              url: routes[0].targetUrl,
+              routeTemplate: '/account',
+              sourceLayer: 'authenticated',
+              pageType: 'account_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+            authenticatedOverlayPages: [{
+              routeId: routes[1].id,
+              url: routes[1].targetUrl,
+              routeTemplate: '/rank/hot',
+              sourceLayer: 'authenticated_overlay',
+              pageType: 'ranking',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      },
+    });
+
+    assert.equal(result.status, 'browser_verified');
+    assert.equal(result.bridgeSummary.routeCount, 2);
+    assert.equal(result.bridgeSummary.capturedRouteCount, 2);
+    assert.equal(result.bridgeSummary.routeResults[1].sourceLayer, 'authenticated_overlay');
+  });
+});
+
+test('runSiteForgeBuild keeps explicit public revisit routes in seed discovery', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-explicit-revisit-routes-'));
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/account', '/catalog']));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage(pathname, '<main><a href="/catalog">Catalog</a><a href="/account">Account</a></main>'));
+    }, async (rootUrl) => {
+      let bridgeRouteTemplates = [];
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'explicit-revisit-routes',
+        now: new Date('2026-05-31T09:00:00.000Z'),
+        maxDepth: 1,
+        maxPages: 10,
+        maxSeeds: 10,
+        renderJs: true,
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        browserBridgeMaxRetryPasses: 0,
+        localBuildConfig: {
+          auth: { mode: 'browser' },
+          authRoutes: ['/account'],
+          publicRevisitRoutes: ['/catalog'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          bridgeRouteTemplates = routes.map((route) => route.routeTemplate);
+          const accountRoute = routes.find((route) => route.routeTemplate === '/account');
+          const catalogRoute = routes.find((route) => route.routeTemplate === '/catalog');
+          return {
+            authenticatedPages: [{
+              routeId: accountRoute?.id,
+              url: accountRoute?.targetUrl,
+              routeTemplate: '/account',
+              pageType: 'account_home',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+            authenticatedOverlayPages: [{
+              routeId: catalogRoute?.id,
+              url: catalogRoute?.targetUrl,
+              routeTemplate: '/catalog',
+              pageType: 'catalog_overlay',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(bridgeRouteTemplates.includes('/catalog'), true);
+      assert.equal(result.crawlContract.coverageTargets.publicRevisitRoutes.includes('/catalog'), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('runSiteForgeBuild promotes observed content links from prior sanitized artifacts as seeds', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-observed-route-seeds-'));
+  try {
+    const observedBookCount = 84;
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/']));
+        return;
+      }
+      if (/^\/book\/\d+$/u.test(pathname)) {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end(testHtmlPage(`Observed book ${pathname}`, '<main><h1>Observed book</h1><p>Book detail evidence.</p></main>'));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Home', '<main><h1>Home</h1><p>No direct book link on this build.</p></main>'));
+    }, async (rootUrl) => {
+      const previousBuildId = '20260530T000000000Z';
+      const previousBuildDir = path.join(siteBuildsDir(workspace, rootUrl), previousBuildId);
+      await mkdir(previousBuildDir, { recursive: true });
+      const observedBookAffordances = Array.from({ length: observedBookCount }, (_, index) => ({
+        kind: 'link',
+        href: `${rootUrl}book/${1000 + index}`,
+        semanticKind: 'work',
+        structureType: 'work_link_group',
+        sourceLayer: 'authenticated',
+      }));
+      await writeFile(path.join(previousBuildDir, 'affordances.json'), `${JSON.stringify({
+        schemaVersion: 1,
+        buildId: previousBuildId,
+        affordances: [...observedBookAffordances, {
+          kind: 'link',
+          href: `${rootUrl}chapter/:bookId/:chapterId`,
+          semanticKind: 'chapter',
+          structureType: 'chapter_link_group',
+          sourceLayer: 'authenticated',
+        }, {
+          kind: 'link',
+          routeTemplate: '/chapter/:bookId/:chapterId',
+          semanticKind: 'chapter',
+          structureType: 'chapter_link_group',
+          sourceLayer: 'authenticated',
+        }],
+      }, null, 2)}\n`, 'utf8');
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'observed-route-seeds-build',
+        now: new Date('2026-05-31T09:05:00.000Z'),
+        maxDepth: 0,
+        maxPages: 100,
+        maxSeeds: 110,
+        maxSitemaps: 1,
+        fetchDelayMs: 0,
+      });
+
+      assert.equal(result.status, 'success');
+      const seeds = await readJson(path.join(result.artifactDir, 'seeds.json'));
+      const bookSeeds = seeds.seeds.filter((seed) => /^\/book\/\d+$/u.test(new URL(seed.normalizedUrl).pathname));
+      assert.equal(bookSeeds.length, observedBookCount);
+      const observedBookSeed = bookSeeds[0];
+      assert.ok(observedBookSeed);
+      assert.equal(observedBookSeed.source, 'observed_route_seed');
+      assert.equal(observedBookSeed.routeTemplate, '/book/:id');
+      assert.equal(observedBookSeed.pageType, 'book-detail-page');
+      assert.equal(observedBookSeed.authRequired, false);
+      assert.equal(observedBookSeed.observedSourceBuildId, previousBuildId);
+      assert.equal(seeds.observedRouteSeedPromotion.addedCount, observedBookCount);
+      assert.equal(seeds.seeds.some((seed) => /\/chapter\//u.test(new URL(seed.normalizedUrl).pathname)), false);
+      assert.equal(seeds.seeds.some((seed) => new URL(seed.normalizedUrl).pathname.includes(':')), false);
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      const crawledBookPages = crawlStatic.pages.filter((page) => /^\/book\/\d+$/u.test(new URL(page.normalizedUrl).pathname));
+      assert.equal(crawledBookPages.length, observedBookCount);
+      assert.equal(crawlStatic.summary.representativeCoverageMode, 'route_family');
+      assert.equal(crawlStatic.warnings.some((warning) => warning.includes('observed route frontier preserved')), true);
+      const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+      assert.equal(buildReport.crawlContract.coverageTargets.publicRoutes.includes('/book/1000'), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('route refresh fallback reports newly requested browser routes as missing', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-route-refresh-fallback-'));
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/rank/hot']));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage(pathname, '<main><a href="/rank/hot">Hot rank</a></main>'));
+    }, async (rootUrl) => {
+      const authStateReport = normalizeAuthStateReport({
+        crawlMode: 'authenticated_browser',
+        authMethod: 'browser',
+        authVerificationStatus: 'browser_verified',
+        verified: true,
+        source: 'default_browser_bridge',
+        finalUrl: rootUrl,
+        blockingSignals: [],
+        positiveSignals: ['browser_bridge_payload_received'],
+        verifiedRoutes: ['/'],
+        browserBridge: {
+          used: true,
+          routeResults: [{
+            routeId: 'route-1',
+            sourceLayer: 'authenticated',
+            targetRoute: '/',
+            status: 'captured',
+          }],
+        },
+      }, {
+        site: {
+          rootUrl,
+          allowedDomains: [new URL(rootUrl).hostname],
+        },
+        crawlMode: 'authenticated_browser',
+        authMethod: 'browser',
+      });
+      const crawlContract = createCrawlContract({
+        site: {
+          rootUrl,
+          allowedDomains: [new URL(rootUrl).hostname],
+        },
+        authStateReport,
+        coverageTargets: {
+          authRoutes: ['/'],
+        },
+      });
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'route-refresh-fallback',
+        now: new Date('2026-05-31T09:05:00.000Z'),
+        maxDepth: 1,
+        maxPages: 10,
+        maxSeeds: 10,
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        browserBridgeMaxRetryPasses: 0,
+        authStateReport,
+        crawlContract,
+        coverageTargets: {
+          publicRevisitRoutes: ['/', '/rank/hot'],
+        },
+        authStateProvider: async () => ({
+          crawlMode: 'public_only',
+          authMethod: 'browser',
+          authVerificationStatus: 'browser_bridge_missing',
+          verified: false,
+          source: 'default_browser_bridge',
+          blockingSignals: ['browser-bridge-timeout'],
+          positiveSignals: [],
+          browserBridge: {
+            used: true,
+            routeResults: [],
+          },
+        }),
+        publicRenderedStructureProvider: async () => ({
+          publicRenderedPages: [{
+            url: new URL('/rank/hot', rootUrl).toString(),
+            routeTemplate: '/rank/hot',
+            pageType: 'ranking_public_rendered',
+            visibleItemCount: 1,
+            listPresent: true,
+          }],
+        }),
+      });
+
+      assert.equal(result.status, 'success');
+      const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
+      assert.equal(authReport.verified, true);
+      assert.equal(authReport.browserBridge.routeCoverageStatus, 'partial');
+      assert.equal(authReport.browserBridge.routeResults.some((route) => (
+        route.sourceLayer === 'authenticated_overlay'
+        && route.targetRoute === '/'
+        && route.reasonCode === 'browser-bridge-route-refresh-failed'
+      )), true);
+      assert.equal(authReport.browserBridge.routeResults.some((route) => (
+        route.sourceLayer === 'authenticated_overlay'
+        && route.targetRoute === '/rank/hot'
+        && route.reasonCode === 'browser-bridge-route-refresh-failed'
+      )), true);
+
+      const routeCapturePlan = await readJson(path.join(result.artifactDir, 'route_capture_plan.json'));
+      assert.equal(routeCapturePlan.missingRoutes.some((route) => (
+        route.targetRoute === '/rank/hot'
+        && route.recommendedRetryMode === 'browser_bridge_missing_route_retry'
+      )), true);
+
+      const crawlRendered = await readJson(path.join(result.artifactDir, 'crawl_rendered.json'));
+      assert.equal(crawlRendered.publicRenderedPages.some((page) => /\/rank\/hot$/u.test(page.normalizedUrl)), true);
+      const graph = await readJson(path.join(result.artifactDir, 'graph.json'));
+      assert.equal(graph.nodes.some((node) => (
+        node.sourceLayer === 'public_rendered'
+        && /\/rank\/hot$/u.test(node.normalizedUrl ?? '')
+      )), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('browser auth bridge serves collector script and rejects sensitive summaries', async () => {
@@ -3711,6 +4642,7 @@ test('browser auth bridge serves collector script and rejects sensitive summarie
     assert.equal(extensionBackground.includes('collector-reinjecting'), true);
     assert.equal(extensionBackground.includes('route-url-canonicalized'), true);
     assert.equal(extensionBackground.includes('login-wall'), true);
+    assert.equal(extensionBackground.includes('allowLoginLikeCapture'), true);
     assert.equal(extensionBackground.includes('browser-bridge-collector-injection-failed'), true);
     assert.equal(extensionBackground.includes('execute-script-failed'), true);
     assert.equal(extensionBackground.includes('collector-message-failed'), true);
@@ -5967,6 +6899,117 @@ test('missing browser auth routes are not revived as public capabilities', async
   }
 });
 
+test('route refresh isolates public revisit routes from previous browser auth route', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-route-refresh-overlay-only-'));
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/', '/rank/hot']));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage(pathname, '<main><a href="/rank/hot">Hot rank</a></main>'));
+    }, async (rootUrl) => {
+      const authStateReport = normalizeAuthStateReport({
+        crawlMode: 'authenticated_browser',
+        authMethod: 'browser',
+        authVerificationStatus: 'browser_verified',
+        verified: true,
+        source: 'default_browser_bridge',
+        finalUrl: rootUrl,
+        blockingSignals: [],
+        positiveSignals: ['browser_bridge_payload_received'],
+        verifiedRoutes: ['/'],
+        browserBridge: {
+          used: true,
+          routeResults: [{
+            routeId: 'route-1',
+            sourceLayer: 'authenticated',
+            targetRoute: '/',
+            status: 'captured',
+          }],
+        },
+      }, {
+        site: {
+          rootUrl,
+          allowedDomains: [new URL(rootUrl).hostname],
+        },
+        crawlMode: 'authenticated_browser',
+        authMethod: 'browser',
+      });
+      const crawlContract = createCrawlContract({
+        site: {
+          rootUrl,
+          allowedDomains: [new URL(rootUrl).hostname],
+        },
+        authStateReport,
+        coverageTargets: {
+          authRoutes: ['/'],
+        },
+      });
+      let bridgeRoutes = [];
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'route-refresh-overlay-only',
+        now: new Date('2026-05-31T09:06:00.000Z'),
+        maxDepth: 1,
+        maxPages: 10,
+        maxSeeds: 10,
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        authStateReport,
+        crawlContract,
+        coverageTargets: {
+          publicRevisitRoutes: ['/rank/hot'],
+        },
+        browserAuthBridgeProvider: async ({ routes }) => {
+          bridgeRoutes = routes.map((route) => [route.sourceLayer, route.routeTemplate]);
+          assert.equal(bridgeRoutes.every(([sourceLayer]) => sourceLayer === 'authenticated_overlay'), true);
+          assert.equal(bridgeRoutes.some(([, routeTemplate]) => /\/rank\/hot\/?$/u.test(routeTemplate ?? '')), true);
+          const rankRoute = routes.find((route) => /\/rank\/hot\/?$/u.test(route.routeTemplate ?? ''));
+          return {
+            authenticatedOverlayPages: [{
+              routeId: rankRoute?.id,
+              url: rankRoute?.targetUrl,
+              routeTemplate: '/rank/hot',
+              pageType: 'ranking_overlay',
+              visibleItemCount: 1,
+              listPresent: true,
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
+      assert.equal(authReport.browserBridge.routeResults.some((route) => (
+        route.sourceLayer === 'authenticated'
+        && route.targetRoute === '/'
+        && route.captured === true
+      )), true);
+      assert.equal(authReport.browserBridge.routeResults.some((route) => (
+        route.sourceLayer === 'authenticated_overlay'
+        && route.captured === true
+      )), true);
+
+      const crawlAuthenticated = await readJson(path.join(result.artifactDir, 'crawl_authenticated.json'));
+      assert.equal(crawlAuthenticated.authenticatedOverlayPages.some((page) => /\/rank\/hot$/u.test(page.normalizedUrl)), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('browser bridge route queue overflow is reported as uncovered routes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-route-overflow-'));
   try {
@@ -6100,6 +7143,71 @@ test('browser bridge route queue overflow is reported as uncovered routes', asyn
       assert.match(htmlReport, /\/route-41/u);
       assert.doesNotMatch(htmlReport, /\/route-42/u);
       assert.match(htmlReport, /unattempted 68/u);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('browser bridge route queue limit can be raised for explicit live batches', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-browser-route-limit-'));
+  try {
+    await withTestServer((request, response) => {
+      const rootUrl = `http://${request.headers.host}/`;
+      const pathname = new URL(request.url ?? '/', rootUrl).pathname;
+      if (pathname === '/robots.txt') {
+        response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        response.end(testRobotsTxt(rootUrl));
+        return;
+      }
+      if (pathname === '/sitemap.xml') {
+        response.writeHead(200, { 'content-type': 'application/xml; charset=utf-8' });
+        response.end(testSitemapXml(rootUrl, ['/']));
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(testHtmlPage('Public', '<main><a href="/catalog">Catalog</a></main>'));
+    }, async (rootUrl) => {
+      const publicRevisitRoutes = Array.from({ length: 40 }, (_, index) => `/route-${index + 1}`);
+      let attemptedRouteCount = 0;
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'browser-route-raised-limit',
+        now: new Date('2026-05-26T09:11:00.000Z'),
+        maxDepth: 1,
+        maxPages: 10,
+        maxSeeds: 10,
+        fetchDelayMs: 0,
+        authMode: 'browser',
+        strictBrowserAuth: true,
+        browserBridgeRouteQueueLimit: 64,
+        browserAuthBridgeProvider: async ({ routes }) => {
+          attemptedRouteCount = routes.length;
+          return {
+            authenticatedOverlayPages: routes.map((route) => ({
+              routeId: route.id,
+              url: route.targetUrl,
+              routeTemplate: route.routeTemplate,
+              pageType: 'authenticated_overlay_summary',
+              visibleItemCount: 1,
+              listPresent: true,
+            })),
+          };
+        },
+        publicRevisitRoutes,
+        coverageTargets: {
+          publicRevisitRoutes,
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(attemptedRouteCount, 40);
+      const authReport = await readJson(path.join(result.artifactDir, 'auth_state_report.json'));
+      assert.equal(authReport.browserBridge.routeQueueLimit, 64);
+      assert.equal(authReport.browserBridge.scheduledRouteCount, 40);
+      assert.equal(authReport.browserBridge.overflowRouteCount, 0);
+      assert.equal(authReport.browserBridge.routeQueueTruncated, false);
+      assert.equal(authReport.browserBridge.capturedRouteCount, 40);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });

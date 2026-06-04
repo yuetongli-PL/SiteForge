@@ -44,6 +44,190 @@ function parseObservedUrl(url) {
   }
 }
 
+const STATIC_RESOURCE_TYPES = Object.freeze(new Set([
+  'document',
+  'font',
+  'image',
+  'imageset',
+  'manifest',
+  'media',
+  'script',
+  'stylesheet',
+  'texttrack',
+]));
+
+const STATIC_PATH_PATTERN = /\.(?:avif|bmp|css|eot|gif|ico|jpe?g|js|mjs|map|mp3|mp4|m4a|m4v|mov|otf|pdf|png|svg|ttf|wav|webm|webp|woff2?)(?:$|[?#])/iu;
+const API_LIKE_PATH_PATTERN = /(?:^|\/)(?:api|ajax|graphql|json|rest|rpc|xhr|wp-json)(?:\/|$)|\.(?:json|graphql)(?:$|[?#])/iu;
+const THIRD_PARTY_TELEMETRY_HOST_PATTERN = /(?:^|\.)((?:google-analytics|googletagmanager|googleadservices|googleads|doubleclick|typekit)\.(?:com|net)|google\.(?:com|cn)|gstatic\.com|facebook\.com|facebook\.net)$/iu;
+const ACCESS_CONTROL_HOST_PATTERN = /(?:^|\.)(?:challenges\.cloudflare\.com|hcaptcha\.com|recaptcha\.net)$/iu;
+
+function normalizeHost(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/\.+$/u, '');
+}
+
+function allowedDomainMatchesHost(host, allowedDomains = []) {
+  const normalizedHost = normalizeHost(host);
+  const domains = (Array.isArray(allowedDomains) ? allowedDomains : [])
+    .map(normalizeHost)
+    .filter(Boolean);
+  if (!domains.length || !normalizedHost) {
+    return true;
+  }
+  if (normalizedHost === 'redacted-ip.invalid') {
+    return domains.some((domain) => domain === 'localhost' || /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(domain) || domain.includes(':'));
+  }
+  return domains.some((domain) => normalizedHost === domain || normalizedHost.endsWith(`.${domain}`));
+}
+
+function isAccessControlProbeRequest({ host, pathname }) {
+  const normalizedHost = normalizeHost(host);
+  const normalizedPath = String(pathname ?? '').trim().toLowerCase();
+  return ACCESS_CONTROL_HOST_PATTERN.test(normalizedHost)
+    || normalizedPath === '/cdn-cgi'
+    || normalizedPath.startsWith('/cdn-cgi/');
+}
+
+function requestAcceptsJson(headers = {}) {
+  const accept = String(headers?.accept ?? headers?.Accept ?? '').toLowerCase();
+  return /\b(?:application|text)\/(?:json|x-json|.*\+json)\b/u.test(accept);
+}
+
+function requestHasJsonBody(headers = {}, body = undefined) {
+  const contentType = String(headers?.['content-type'] ?? headers?.['Content-Type'] ?? '').toLowerCase();
+  if (/\b(?:application|text)\/(?:json|x-json|.*\+json)\b/u.test(contentType)) {
+    return true;
+  }
+  const bodyText = typeof body === 'string' ? body.trim() : '';
+  return bodyText.startsWith('{') || bodyText.startsWith('[');
+}
+
+export function isObservedRequestApiCandidate(candidate = /** @type {any} */ ({}), {
+  allowedDomains = [],
+  observedRequest = null,
+} = /** @type {any} */ ({})) {
+  return classifyObservedRequestApiCandidate(candidate, { allowedDomains, observedRequest }).accepted;
+}
+
+export function classifyObservedRequestApiCandidate(candidate = /** @type {any} */ ({}), {
+  allowedDomains = [],
+  observedRequest = null,
+} = /** @type {any} */ ({})) {
+  const parsed = parseObservedUrl(candidate?.endpoint?.url);
+  const domainParsed = parseObservedUrl(observedRequest?.url ?? observedRequest?.endpoint?.url ?? candidate?.endpoint?.url);
+  const host = normalizeHost(domainParsed?.hostname ?? parsed?.hostname);
+  const pathname = String(parsed?.pathname ?? '').toLowerCase();
+  const resourceType = String(candidate?.target?.resourceType ?? candidate?.resourceType ?? '').trim().toLowerCase();
+  const method = normalizeText(candidate?.endpoint?.method ?? candidate?.method)?.toUpperCase() ?? 'GET';
+  const transport = String(candidate?.target?.transport ?? candidate?.transport ?? '').trim().toLowerCase();
+  const headers = candidate?.request?.headers ?? candidate?.headers ?? {};
+
+  if (!parsed) {
+    return { accepted: false, reasonCode: 'malformed-url' };
+  }
+  if (THIRD_PARTY_TELEMETRY_HOST_PATTERN.test(host)) {
+    return { accepted: false, reasonCode: 'third-party-telemetry' };
+  }
+  if (isAccessControlProbeRequest({ host, pathname })) {
+    return { accepted: false, reasonCode: 'access-control-probe' };
+  }
+  if (!allowedDomainMatchesHost(host, allowedDomains)) {
+    return { accepted: false, reasonCode: 'host-out-of-scope' };
+  }
+  if (transport === 'websocket' || transport === 'sse' || transport === 'preflight') {
+    return { accepted: true, reasonCode: `accepted-${transport}` };
+  }
+  if (!['GET', 'HEAD', 'POST'].includes(method)) {
+    return { accepted: false, reasonCode: 'unsupported-method' };
+  }
+  if (STATIC_PATH_PATTERN.test(pathname)) {
+    return { accepted: false, reasonCode: 'static-resource-path' };
+  }
+  const apiLikePath = API_LIKE_PATH_PATTERN.test(pathname);
+  const jsonLike = requestAcceptsJson(headers) || requestHasJsonBody(headers, candidate?.request?.body);
+  if (STATIC_RESOURCE_TYPES.has(resourceType)) {
+    return apiLikePath
+      ? { accepted: true, reasonCode: 'accepted-api-like-path' }
+      : jsonLike
+        ? { accepted: true, reasonCode: 'accepted-json-like' }
+        : { accepted: false, reasonCode: 'static-resource-type-non-api' };
+  }
+  if (resourceType === 'xhr' || resourceType === 'fetch') {
+    return apiLikePath
+      ? { accepted: true, reasonCode: 'accepted-api-like-path' }
+      : jsonLike
+        ? { accepted: true, reasonCode: 'accepted-json-like' }
+        : method === 'POST'
+          ? { accepted: true, reasonCode: 'accepted-xhr-post' }
+          : { accepted: false, reasonCode: 'xhr-fetch-non-api' };
+  }
+  return apiLikePath
+    ? { accepted: true, reasonCode: 'accepted-api-like-path' }
+    : jsonLike
+      ? { accepted: true, reasonCode: 'accepted-json-like' }
+      : { accepted: false, reasonCode: 'non-api-request' };
+}
+
+function incrementCount(counts, value) {
+  const key = normalizeToken(value) ?? 'unknown';
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function sortedCounts(counts) {
+  return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right, 'en')));
+}
+
+export function summarizeObservedRequestApiCandidateFiltering(requests = [], {
+  allowedDomains = [],
+} = /** @type {any} */ ({})) {
+  if (!Array.isArray(requests)) {
+    throw new Error('Observed requests must be an array');
+  }
+  const summary = {
+    requestCount: requests.length,
+    acceptedCount: 0,
+    rejectedCount: 0,
+    errorCount: 0,
+    reasonCounts: {},
+    acceptedReasonCounts: {},
+    rejectedReasonCounts: {},
+    methodCounts: {},
+    resourceTypeCounts: {},
+    transportCounts: {},
+  };
+  for (const request of requests) {
+    try {
+      const candidate = apiCandidateFromObservedRequest(request);
+      const classification = classifyObservedRequestApiCandidate(candidate, { allowedDomains, observedRequest: request });
+      const reasonCode = classification.reasonCode ?? (classification.accepted ? 'accepted' : 'rejected');
+      incrementCount(summary.reasonCounts, reasonCode);
+      incrementCount(summary.methodCounts, candidate.endpoint?.method);
+      incrementCount(summary.resourceTypeCounts, candidate.target?.resourceType);
+      incrementCount(summary.transportCounts, candidate.target?.transport);
+      if (classification.accepted) {
+        summary.acceptedCount += 1;
+        incrementCount(summary.acceptedReasonCounts, reasonCode);
+      } else {
+        summary.rejectedCount += 1;
+        incrementCount(summary.rejectedReasonCounts, reasonCode);
+      }
+    } catch {
+      summary.errorCount += 1;
+      summary.rejectedCount += 1;
+      incrementCount(summary.reasonCounts, 'candidate-normalization-failed');
+      incrementCount(summary.rejectedReasonCounts, 'candidate-normalization-failed');
+    }
+  }
+  return {
+    ...summary,
+    reasonCounts: sortedCounts(summary.reasonCounts),
+    acceptedReasonCounts: sortedCounts(summary.acceptedReasonCounts),
+    rejectedReasonCounts: sortedCounts(summary.rejectedReasonCounts),
+    methodCounts: sortedCounts(summary.methodCounts),
+    resourceTypeCounts: sortedCounts(summary.resourceTypeCounts),
+    transportCounts: sortedCounts(summary.transportCounts),
+  };
+}
+
 /** @param {Record<string, any>} options */
 function canonicalEndpointKey({ siteKey, method, url }) {
   const parsed = parseObservedUrl(url);
@@ -442,12 +626,16 @@ export function apiCandidateFromObservedRequest(raw = {}) {
   return candidate;
 }
 
-export async function writeApiCandidateArtifactsFromObservedRequests(requests = [], {
-  // @ts-ignore
-  outputDir,
-  // @ts-ignore
-  redactionAuditDir,
-} = {}) {
+/**
+ * @param {any[]} requests
+ * @param {{ outputDir?: string, redactionAuditDir?: string, allowedDomains?: any[] }} [options]
+ */
+export async function writeApiCandidateArtifactsFromObservedRequests(requests = [], options = {}) {
+  const {
+    outputDir,
+    redactionAuditDir,
+    allowedDomains = [],
+  } = options;
   if (!Array.isArray(requests)) {
     throw new Error('Observed requests must be an array');
   }
@@ -456,10 +644,19 @@ export async function writeApiCandidateArtifactsFromObservedRequests(requests = 
     throw new Error('ApiDiscovery outputDir is required');
   }
   const auditDir = normalizeText(redactionAuditDir);
+  const observedCandidates = requests.map((request) => ({
+    candidate: apiCandidateFromObservedRequest(request),
+    request,
+  }));
   const candidates = correlatePreflightCandidates(
-    requests.map((request) => apiCandidateFromObservedRequest(request)),
+    observedCandidates
+      .filter(({ candidate, request }) => classifyObservedRequestApiCandidate(candidate, { allowedDomains, observedRequest: request }).accepted)
+      .map(({ candidate }) => candidate),
   );
   if (candidates.length === 0) {
+    if (observedCandidates.length > 0) {
+      return [];
+    }
     throw createApiDiscoveryFailure(
       'api-candidate-generation-failed',
       'ApiDiscovery did not generate any candidates from observed requests',

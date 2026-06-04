@@ -70,6 +70,23 @@ function boundedArgs(extra = /** @type {any[]} */ ([])) {
   ];
 }
 
+function boundedRedditArgs(extra = /** @type {any[]} */ ([])) {
+  return [
+    '--live',
+    '--site',
+    'reddit',
+    '--max-items',
+    '10',
+    '--timeout',
+    '120000',
+    '--case-timeout',
+    '600000',
+    '--run-root',
+    'C:\\tmp\\social-live-verify',
+    ...extra,
+  ];
+}
+
 test('social-live-verify defaults to not-run until live boundaries are explicit', () => {
   const boundary = evaluateLiveSmokeBoundary(parseArgs([]));
 
@@ -163,6 +180,121 @@ test('social-live-verify --plan-json writes no run artifact', async (t) => {
   assert.deepEqual(await readdir(rootDir), []);
 });
 
+test('social-live-verify supports explicit Reddit report-only planning without social account handles', () => {
+  const options = parseArgs(boundedRedditArgs());
+  const boundary = assertLiveSmokeBoundary(options);
+  const selected = filterMatrix(buildMatrix(options, 'run-1'), options);
+
+  assert.deepEqual(boundary.selectedSites, ['reddit']);
+  assert.deepEqual(selected.map((entry) => entry.id), [
+    'reddit-session-health',
+    'reddit-auth-doctor',
+    'reddit-comprehensive-report',
+  ]);
+  assert.equal(selected.every((entry) => entry.site === 'reddit'), true);
+});
+
+test('social-live-verify only includes Reddit API read batch when explicitly scoped', () => {
+  const defaultOptions = parseArgs(boundedRedditArgs());
+  const scopedOptions = parseArgs(boundedRedditArgs([
+    '--case',
+    'reddit-api-read-batch',
+    '--reddit-source',
+    'runs/reddit/reddit_dev_api.html',
+    '--reddit-runtime-index',
+    'runs/reddit/reddit_oauth_api_runtime_plan_index.json',
+  ]));
+  const defaultIds = filterMatrix(buildMatrix(defaultOptions, 'run-1'), defaultOptions).map((entry) => entry.id);
+  const scoped = filterMatrix(buildMatrix(scopedOptions, 'run-1'), scopedOptions);
+  const batch = scoped.find((entry) => entry.id === 'reddit-api-read-batch');
+
+  assert.equal(defaultIds.includes('reddit-api-read-batch'), false);
+  assert.deepEqual(scoped.map((entry) => entry.id), ['reddit-api-read-batch']);
+  assert.ok(batch);
+  assert.match(batch.args.join(' '), /reddit-action\.mjs api-read-batch/u);
+  assert.match(batch.args.join(' '), /--runtime-index runs\/reddit\/reddit_oauth_api_runtime_plan_index\.json/u);
+  assert.match(batch.args.join(' '), /--batch-mode plan/u);
+  assert.equal(batch.args.includes('api-read-batch'), true);
+});
+
+test('social-live-verify execute mode keeps Reddit API batch concrete-only', () => {
+  const options = parseArgs(boundedRedditArgs([
+    '--execute',
+    '--case',
+    'reddit-api-read-batch',
+    '--reddit-source',
+    'runs/reddit/reddit_dev_api.html',
+    '--reddit-runtime-index',
+    'runs/reddit/reddit_oauth_api_runtime_plan_index.json',
+  ]));
+  const scoped = filterMatrix(buildMatrix(options, 'run-1'), options);
+  const batch = scoped.find((entry) => entry.id === 'reddit-api-read-batch');
+
+  assert.ok(batch);
+  assert.match(batch.args.join(' '), /--batch-mode execute-concrete/u);
+  assert.equal(batch.args.includes('--execute'), true);
+  assert.equal(batch.args.includes('--include-parameterized'), false);
+});
+
+test('social-live-verify keeps Reddit out of all-site planning unless explicitly selected', () => {
+  const options = parseArgs(boundedArgs());
+  const selected = filterMatrix(buildMatrix(options, 'run-1'), options);
+
+  assert.equal(selected.some((entry) => entry.site === 'reddit'), false);
+});
+
+test('social-live-verify honors explicit Reddit cases under all-site planning', () => {
+  const options = parseArgs(boundedArgs(['--case', 'reddit-comprehensive-report']));
+  const selected = filterMatrix(buildMatrix(options, 'run-1'), options);
+
+  assert.deepEqual(selected.map((entry) => entry.id), [
+    'reddit-session-health',
+    'reddit-auth-doctor',
+    'reddit-comprehensive-report',
+  ]);
+  assert.equal(selected.every((entry) => entry.site === 'reddit'), true);
+});
+
+test('social-live-verify auto-selects Reddit session and doctor dependencies for comprehensive report', () => {
+  const options = parseArgs(boundedRedditArgs([
+    '--case',
+    'reddit-comprehensive-report',
+    '--reddit-api-batch-report',
+    'runs/reddit/reddit_api_read_batch_report.json',
+    '--reddit-browser-cumulative-report',
+    'runs/reddit/reddit_browser_bridge_live_cumulative_report.json',
+  ]));
+  const selected = filterMatrix(buildMatrix(options, 'run-1'), options);
+  const ids = selected.map((entry) => entry.id);
+  const report = selected.find((entry) => entry.id === 'reddit-comprehensive-report');
+
+  assert.deepEqual(ids, [
+    'reddit-session-health',
+    'reddit-auth-doctor',
+    'reddit-comprehensive-report',
+  ]);
+  assert.ok(report);
+  assert.match(report.args.join(' '), /reddit-action\.mjs comprehensive-report/u);
+  assert.match(report.args.join(' '), /--doctor-report-dir .*reddit-auth-doctor/u);
+  assert.match(report.args.join(' '), /--session-manifest .*reddit-session-health.*manifest\.json/u);
+  assert.match(report.args.join(' '), /--api-batch-report runs\/reddit\/reddit_api_read_batch_report\.json/u);
+  assert.match(report.args.join(' '), /--browser-cumulative-report runs\/reddit\/reddit_browser_bridge_live_cumulative_report\.json/u);
+});
+
+test('social-live-verify Reddit plan stays report-only and avoids read/write API execution', () => {
+  const options = parseArgs(boundedRedditArgs(['--plan-json']));
+  const selected = filterMatrix(buildMatrix(options, 'run-json'), options);
+  const plan = buildPlanJson(selected, options, 'run-json');
+  const commands = plan.commands.map((command) => command.commandArray.join(' ')).join('\n');
+
+  assert.equal(plan.noWrite, true);
+  assert.equal(commands.includes(' api-read '), false);
+  assert.equal(commands.includes(' api-runtime-register '), false);
+  assert.equal(commands.includes('siteforge build'), false);
+  assert.equal(commands.includes('--download-media'), false);
+  assert.equal(commands.includes('comprehensive-report'), true);
+});
+
 test('social-live-verify includes unified session health before auth doctor cases', () => {
   const options = parseArgs(boundedArgs(['--case', 'x-session-health', '--case', 'x-auth-doctor']));
   const matrix = buildMatrix(options, 'run-1');
@@ -213,7 +345,7 @@ test('social-live-verify adds unified session health plan to social action cases
   }
 });
 
-test('social-live-verify media cases are blocked-boundary checks, not download tuning paths', () => {
+test('social-live-verify media cases are local download checks, not download tuning paths', () => {
   const options = parseArgs(boundedArgs(['--case', 'x-media-download-blocked-boundary']));
   const matrix = buildMatrix(options, 'run-1');
   const mediaCase = matrix.find((entry) => entry.id === 'x-media-download-blocked-boundary');
@@ -222,7 +354,7 @@ test('social-live-verify media cases are blocked-boundary checks, not download t
   assert.equal(mediaCase.args.includes('--download-media'), true);
   assert.equal(mediaCase.args.includes('--max-media-downloads'), false);
   assert.equal(mediaCase.args.includes('--media-download-concurrency'), false);
-  assert.equal(mediaCase.purpose.includes('remain blocked'), true);
+  assert.equal(mediaCase.purpose.includes('save discovered media binaries locally'), true);
 });
 
 test('social-live-verify classifies site-doctor fail statuses as failed', () => {
@@ -300,6 +432,15 @@ test('social-live-verify classifies KB refresh timeout manifest as blocked', () 
 
   assert.equal(classification.verdict, 'blocked');
   assert.equal(classification.reason, 'timeout');
+});
+
+test('social-live-verify classifies social action rate limits as blocked', () => {
+  assert.deepEqual(classifySocialActionManifest({
+    runtimeRisk: {
+      rateLimited: true,
+      stopReason: 'request-burst',
+    },
+  }), { verdict: 'blocked', reason: 'rate-limited' });
 });
 
 test('social-live-verify classifies Instagram action missing login as skipped', () => {

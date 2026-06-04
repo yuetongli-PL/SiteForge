@@ -760,6 +760,9 @@ export function parseCliArgs(argv) {
         options.authModeExplicit = true;
         options.ignoreLocalCookieConfig = true;
         break;
+      case '--user-authorized-browser-live':
+        options.userAuthorizedBrowserLive = true;
+        break;
       case '--render-js':
         options.renderJs = true;
         options.renderJsExplicit = true;

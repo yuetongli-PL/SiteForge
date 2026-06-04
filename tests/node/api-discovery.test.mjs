@@ -14,6 +14,9 @@ import {
 } from '../../src/domain/capabilities/api-candidates.mjs';
 import {
   apiCandidateFromObservedRequest,
+  classifyObservedRequestApiCandidate,
+  isObservedRequestApiCandidate,
+  summarizeObservedRequestApiCandidateFiltering,
   validateApiCandidateWithAdapter,
   writeApiCandidateArtifactsFromCaptureOutput,
   writeApiCandidateArtifactsFromObservedRequests,
@@ -23,6 +26,7 @@ import {
 import { REDACTION_PLACEHOLDER } from '../../src/domain/sessions/security-guard.mjs';
 import { reasonCodeSummary } from '../../src/domain/risks/reason-codes.mjs';
 import { genericNavigationAdapter } from '../../src/sites/adapters/generic-navigation.mjs';
+import { qidianAdapter } from '../../src/sites/adapters/qidian.mjs';
 import { assertSchemaCompatible } from '../../src/domain/schemas/compatibility-registry.mjs';
 
 async function assertMissingFiles(filePaths) {
@@ -136,6 +140,46 @@ test('ApiDiscovery redacts IP hosts and sensitive query key names from observed 
   assert.equal(candidate.target.queryKeys.includes('session_id'), false);
   assert.equal(candidate.target.queryKeys.includes('safe'), true);
   assert.equal(candidate.target.riskClass, 'auth-session-requires-review');
+});
+
+test('ApiDiscovery materializes Qidian build API seeds as redacted candidates', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-qidian-api-seeds-'));
+  try {
+    const seeds = qidianAdapter.getBuildApiDiscoverySeeds({ site: { id: 'qidian' } });
+    const artifacts = await writeApiCandidateArtifactsFromObservedRequests(seeds, {
+      outputDir: path.join(workspace, 'api-candidates'),
+      redactionAuditDir: path.join(workspace, 'api-candidate-redaction-audits'),
+      allowedDomains: ['www.qidian.com'],
+    });
+
+    assert.equal(artifacts.length >= 16, true);
+    const userInfo = artifacts.find((artifact) => artifact.candidate.id === 'qidian-known-api-user-info');
+    assert.ok(userInfo);
+    assert.equal(userInfo.candidate.endpoint.method, 'GET');
+    assert.equal(userInfo.candidate.endpoint.url, 'https://www.qidian.com/webcommon/user/getUserInfo');
+    assert.equal(userInfo.candidate.source, 'site-adapter.build-api-seed');
+    assert.equal(userInfo.candidate.runtime.parameterSource.kind, 'qidian_yuew_sign');
+    assert.equal(userInfo.candidate.runtime.rawParameterMaterialPersisted, false);
+
+    const bookCatalog = artifacts.find((artifact) => artifact.candidate.id === 'qidian-known-api-book-catalog');
+    assert.ok(bookCatalog);
+    assert.equal(bookCatalog.candidate.endpoint.method, 'GET');
+    assert.equal(bookCatalog.candidate.endpoint.url, 'https://www.qidian.com/webcommon/book/category?bookId=1042256511');
+    assert.equal(bookCatalog.candidate.target.queryKeys.includes('bookid'), true);
+    assert.equal(bookCatalog.candidate.runtime.semanticKind, 'read-book-catalog');
+
+    const monthTicket = artifacts.find((artifact) => artifact.candidate.id === 'qidian-known-api-user-month-ticket');
+    assert.ok(monthTicket);
+    assert.equal(monthTicket.candidate.endpoint.method, 'GET');
+    assert.equal(monthTicket.candidate.runtime.semanticKind, 'read-user-month-ticket');
+    assert.equal(monthTicket.candidate.target.queryKeys.includes('userlevel'), true);
+
+    const unsafeSeed = artifacts.find((artifact) => /addbooks|vote|subscribe|validcode/iu.test(artifact.candidate.id)
+      || (/donate/iu.test(artifact.candidate.id) && !/donate-balance/iu.test(artifact.candidate.id)));
+    assert.equal(unsafeSeed, undefined);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test('ApiDiscovery preserves transport surfaces as observed-only candidates', () => {
@@ -459,6 +503,177 @@ test('ApiDiscovery writes redacted candidates from synthetic capture output', as
   } finally {
     await rm(runDir, { force: true, recursive: true });
   }
+});
+
+test('ApiDiscovery filters static and third-party telemetry requests before candidate writes', async () => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'api-discovery-filter-non-api-'));
+  try {
+    const candidatesDir = path.join(runDir, 'api-candidates');
+    const auditsDir = path.join(runDir, 'redaction-audits');
+    const results = await writeApiCandidateArtifactsFromObservedRequests([
+      {
+        siteKey: 'example-site',
+        method: 'GET',
+        url: 'https://example.invalid/assets/app.css',
+        resourceType: 'Stylesheet',
+        source: 'synthetic-static-resource',
+      },
+      {
+        siteKey: 'example-site',
+        method: 'POST',
+        url: 'https://www.google-analytics.com/j/collect',
+        resourceType: 'XHR',
+        source: 'synthetic-telemetry-resource',
+      },
+      {
+        siteKey: 'example-site',
+        method: 'POST',
+        url: 'https://example.invalid/cdn-cgi/challenge-platform/h/g/flow/ov1',
+        resourceType: 'Fetch',
+        source: 'synthetic-access-control-resource',
+      },
+      {
+        siteKey: 'example-site',
+        method: 'GET',
+        url: 'https://example.invalid/api/items?safe=1',
+        resourceType: 'XHR',
+        headers: {
+          accept: 'application/json',
+        },
+        source: 'synthetic-api-resource',
+      },
+    ], {
+      outputDir: candidatesDir,
+      redactionAuditDir: auditsDir,
+      allowedDomains: ['example.invalid'],
+    });
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].candidate.endpoint.url, 'https://example.invalid/api/items?safe=1');
+    await assert.rejects(access(path.join(candidatesDir, 'candidate-0002.json')), /ENOENT/u);
+  } finally {
+    await rm(runDir, { force: true, recursive: true });
+  }
+});
+
+test('ApiDiscovery returns no candidate artifacts when observed batch is only non-API resources', async () => {
+  const runDir = await mkdtemp(path.join(os.tmpdir(), 'api-discovery-static-only-'));
+  try {
+    const candidatesDir = path.join(runDir, 'api-candidates');
+    const results = await writeApiCandidateArtifactsFromObservedRequests([
+      {
+        siteKey: 'example-site',
+        method: 'GET',
+        url: 'https://example.invalid/logo.png',
+        resourceType: 'Image',
+      },
+    ], {
+      outputDir: candidatesDir,
+      redactionAuditDir: path.join(runDir, 'redaction-audits'),
+      allowedDomains: ['example.invalid'],
+    });
+
+    assert.deepEqual(results, []);
+    await assert.rejects(access(path.join(candidatesDir, 'candidate-0001.json')), /ENOENT/u);
+  } finally {
+    await rm(runDir, { force: true, recursive: true });
+  }
+});
+
+test('ApiDiscovery API candidate predicate rejects static resources and accepts same-site JSON APIs', () => {
+  const staticCandidate = apiCandidateFromObservedRequest({
+    siteKey: 'example-site',
+    method: 'GET',
+    url: 'https://example.invalid/style.css',
+    resourceType: 'Stylesheet',
+  });
+  const apiCandidate = apiCandidateFromObservedRequest({
+    siteKey: 'example-site',
+    method: 'GET',
+    url: 'https://example.invalid/wp-json/wp/v2/posts',
+    resourceType: 'XHR',
+    headers: {
+      accept: 'application/json',
+    },
+  });
+  const challengeCandidate = apiCandidateFromObservedRequest({
+    siteKey: 'example-site',
+    method: 'POST',
+    url: 'https://example.invalid/cdn-cgi/challenge-platform/h/g/flow/ov1',
+    resourceType: 'Fetch',
+  });
+  const localApiRequest = {
+    siteKey: 'local-site',
+    method: 'GET',
+    url: 'http://127.0.0.1:3000/api/items',
+    resourceType: 'XHR',
+  };
+  const localApiCandidate = apiCandidateFromObservedRequest(localApiRequest);
+
+  assert.equal(isObservedRequestApiCandidate(staticCandidate, { allowedDomains: ['example.invalid'] }), false);
+  assert.equal(isObservedRequestApiCandidate(apiCandidate, { allowedDomains: ['example.invalid'] }), true);
+  assert.equal(isObservedRequestApiCandidate(challengeCandidate, { allowedDomains: ['example.invalid'] }), false);
+  assert.equal(isObservedRequestApiCandidate(localApiCandidate, {
+    allowedDomains: ['127.0.0.1'],
+    observedRequest: localApiRequest,
+  }), true);
+  assert.deepEqual(
+    classifyObservedRequestApiCandidate(staticCandidate, { allowedDomains: ['example.invalid'] }),
+    { accepted: false, reasonCode: 'static-resource-path' },
+  );
+  assert.deepEqual(
+    classifyObservedRequestApiCandidate(apiCandidate, { allowedDomains: ['example.invalid'] }),
+    { accepted: true, reasonCode: 'accepted-api-like-path' },
+  );
+  assert.deepEqual(
+    classifyObservedRequestApiCandidate(challengeCandidate, { allowedDomains: ['example.invalid'] }),
+    { accepted: false, reasonCode: 'access-control-probe' },
+  );
+});
+
+test('ApiDiscovery summarizes observed request filtering without endpoint material', () => {
+  const summary = summarizeObservedRequestApiCandidateFiltering([
+    {
+      siteKey: 'example-site',
+      method: 'GET',
+      url: 'https://example.invalid/style.css?token=synthetic-token',
+      resourceType: 'Stylesheet',
+    },
+    {
+      siteKey: 'example-site',
+      method: 'GET',
+      url: 'https://example.invalid/wp-json/wp/v2/posts?access_token=synthetic-token',
+      resourceType: 'XHR',
+      headers: { accept: 'application/json' },
+    },
+    {
+      siteKey: 'example-site',
+      method: 'POST',
+      url: 'https://example.invalid/cdn-cgi/challenge-platform/h/g/flow/ov1',
+      resourceType: 'Fetch',
+    },
+    {
+      siteKey: 'example-site',
+      method: 'GET',
+      url: 'https://outside.invalid/collect',
+      resourceType: 'XHR',
+    },
+  ], { allowedDomains: ['example.invalid'] });
+
+  assert.equal(summary.requestCount, 4);
+  assert.equal(summary.acceptedCount, 1);
+  assert.equal(summary.rejectedCount, 3);
+  assert.deepEqual(summary.acceptedReasonCounts, { 'accepted-api-like-path': 1 });
+  assert.deepEqual(summary.rejectedReasonCounts, {
+    'access-control-probe': 1,
+    'host-out-of-scope': 1,
+    'static-resource-path': 1,
+  });
+  assert.deepEqual(summary.methodCounts, { get: 3, post: 1 });
+  assert.deepEqual(summary.resourceTypeCounts, { fetch: 1, stylesheet: 1, xhr: 2 });
+  assert.equal(JSON.stringify(summary).includes('synthetic-token'), false);
+  assert.equal(JSON.stringify(summary).includes('wp-json'), false);
+  assert.equal(JSON.stringify(summary).includes('style.css'), false);
 });
 
 test('ApiDiscovery-produced candidates can enter SiteAdapter validation without catalog promotion', async () => {

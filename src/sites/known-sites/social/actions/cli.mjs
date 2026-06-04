@@ -50,7 +50,7 @@ Options:
   --status-id <id>                  Status id for status read-route surfaces.
   --media-id <id>                   Media id for status media read-route surfaces.
   --content-type <type>             posts, replies, media, likes, or site-specific tab.
-  --download-media                  Record a blocked media-download report; execution is disabled.
+  --download-media                  Download discovered media binaries locally and write media manifests.
   --probe-read-controls             Execute bounded read-only UI probes; mutations remain blocked.
   --max-control-probes <n>          Limit read-only UI probes. Default: 8.
   --crawl-read-surfaces             Follow bounded same-site read-only route queue.

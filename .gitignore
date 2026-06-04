@@ -10,12 +10,16 @@ coverage/
 /report/
 /reports/
 /artifacts/
+/outputs/
 .siteforge/
 *.log
 .env
 .env.*
 !.env.example
 siteforge.local.json
+/*物流*.md
+/*物流*.xlsx
+/*iPhone*.xlsx
 .playwright-mcp/
 profiles/
 skills/

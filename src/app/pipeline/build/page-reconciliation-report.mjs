@@ -25,7 +25,42 @@ function reconciliationLinkLabel(link) {
   return String(link?.text ?? link?.label ?? link?.title ?? '').trim();
 }
 
+function isConcreteReconciliationUrl(urlValue) {
+  const text = String(urlValue ?? '').trim();
+  let decodedText = text;
+  try {
+    decodedText = decodeURIComponent(text);
+  } catch {
+    decodedText = text;
+  }
+  const placeholderRoutePattern = /(?:^|\/)(?::[A-Za-z_][A-Za-z0-9_-]*|\{[^}/]+\})(?:\/|$|[?#])/u;
+  return Boolean(text)
+    && !placeholderRoutePattern.test(text)
+    && !placeholderRoutePattern.test(decodedText);
+}
+
+function reconciliationRouteTemplateKey(urlValue, rootUrl = null) {
+  const exactKey = reconciliationRouteKey(urlValue, rootUrl);
+  const templateKey = sanitizeEvidenceRef(exactKey);
+  return templateKey && /^https?:\/\//iu.test(templateKey)
+    ? templateKey.replace(/\/$/u, '')
+    : null;
+}
+
+function isReconciliationContentDetailLink(link) {
+  const url = String(reconciliationLinkUrl(link) ?? '').toLowerCase();
+  const kind = String(link?.kind ?? link?.semanticKind ?? link?.structureType ?? '').toLowerCase();
+  if (/\/(?:book|chapter)\/|\/:segment\/:id\/:id(?:$|[/?#])/iu.test(url)) {
+    return true;
+  }
+  return /(book|chapter|content)[-_ ]?(link|detail|item|card|group)/iu.test(kind)
+    || /\b(?:book|chapter|content)-link\b/iu.test(kind);
+}
+
 export function isReconciliationCategoryLink(link) {
+  if (isReconciliationContentDetailLink(link)) {
+    return false;
+  }
   const url = String(reconciliationLinkUrl(link) ?? '');
   const label = reconciliationLinkLabel(link);
   const kind = String(link?.kind ?? link?.semanticKind ?? link?.structureType ?? '').toLowerCase();
@@ -90,15 +125,23 @@ export function classifyPageReconciliationOutcome(reasonCodes = /** @type {strin
 }
 
 function reconciliationGraphUrlSet(graph, context) {
-  const urls = new Set();
+  const urls = { exact: new Set(), templates: new Set() };
+  const addGraphUrl = (urlValue) => {
+    const exactKey = reconciliationRouteKey(urlValue, context.site.rootUrl);
+    urls.exact.add(exactKey);
+    const templateKey = reconciliationRouteTemplateKey(urlValue, context.site.rootUrl);
+    if (templateKey) {
+      urls.templates.add(templateKey);
+    }
+  };
   for (const node of graph?.nodes ?? []) {
     const urlValue = node.normalizedUrl ?? node.url ?? null;
     if (urlValue) {
-      urls.add(reconciliationRouteKey(urlValue, context.site.rootUrl));
+      addGraphUrl(urlValue);
     }
     const route = node.routePattern ?? node.routeTemplate ?? null;
     if (route && String(route).startsWith('/')) {
-      urls.add(reconciliationRouteKey(route, context.site.rootUrl));
+      addGraphUrl(route);
     }
   }
   return urls;
@@ -125,7 +168,7 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
   const expectedCategoryLinks = [];
   const seenCategoryKeys = new Set();
   const addExpectedCategoryLink = (urlValue, labelValue = '-') => {
-    if (!urlValue) {
+    if (!isConcreteReconciliationUrl(urlValue)) {
       return;
     }
     const key = reconciliationRouteKey(urlValue, context.site.rootUrl);
@@ -136,6 +179,7 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     expectedCategoryLinks.push({
       url: sanitizeEvidenceRef(urlValue) ?? null,
       routeKey: key,
+      routeTemplateKey: reconciliationRouteTemplateKey(urlValue, context.site.rootUrl),
       label: sanitizedStructureText(labelValue, 80, '-'),
     });
   };
@@ -156,8 +200,9 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
   const graph = stageResults.classifyNodes?.graph ?? stageResults.buildSiteGraph?.graph ?? null;
   const graphUrls = reconciliationGraphUrlSet(graph, context);
   const missingCategoryLinks = expectedCategoryLinks
-    .filter((link) => !graphUrls.has(link.routeKey))
-    .map(({ routeKey, ...link }) => link);
+    .filter((link) => !graphUrls.exact.has(link.routeKey)
+      && !(link.routeTemplateKey && graphUrls.templates.has(link.routeTemplateKey)))
+    .map(({ routeKey, routeTemplateKey, ...link }) => link);
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   const intents = stageResults.generateIntents?.intents ?? [];
   const categoryCapabilityRecords = capabilities.filter((capability) => PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN.test([
@@ -227,7 +272,7 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     resultStatus: report.result_status ?? report.status ?? null,
     summary,
     challengePages,
-    expectedCategoryLinks: expectedCategoryLinks.map(({ routeKey, ...link }) => link),
+    expectedCategoryLinks: expectedCategoryLinks.map(({ routeKey, routeTemplateKey, ...link }) => link),
     missingCategoryLinks,
     categoryCapabilities,
     categoryIntents: categoryIntentRows,

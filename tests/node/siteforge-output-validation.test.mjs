@@ -305,6 +305,35 @@ test('output validation accepts a complete graph, capability map, intents, and r
   assert.equal(report.gates.registryLookup.executionPlanId, 'plan:fixture-local:view-homepage');
 });
 
+test('output validation accepts non-static page evidence when static crawl is empty', async () => {
+  const fixture = createValidationFixture();
+  fixture.stageResults.crawlStatic = {
+    pages: [],
+    warnings: ['Static crawl produced no usable public page evidence; continuing with verified Browser Bridge structure evidence.'],
+    summary: {
+      duplicateRatio: 0,
+      staticBlockedReason: 'siteforge-static-crawl-empty',
+      browserBridgeStructurePages: 1,
+    },
+  };
+  fixture.stageResults.crawlAuthenticated = {
+    authenticatedPages: [{
+      normalizedUrl: 'http://127.0.0.1/account',
+      sourceLayer: 'authenticated',
+    }],
+    authenticatedOverlayPages: [],
+  };
+
+  const report = await validateFixture(fixture);
+  const codes = errorCodes(report);
+
+  assert.equal(report.status, 'passed');
+  assert.equal(codes.has('crawl_static.pages_empty'), false);
+  assert.equal(report.gates.nodeCompleteness.pageEvidenceAvailable, true);
+  assert.equal(report.gates.nodeCompleteness.staticPages, 0);
+  assert.equal(report.gates.nodeCompleteness.authenticatedPages, 1);
+});
+
 test('output validation accepts active read-only API request execution plans', async () => {
   const fixture = createValidationFixture();
   const capability = fixture.stageResults.discoverCapabilities.capabilities[0];

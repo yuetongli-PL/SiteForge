@@ -25,6 +25,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Node.js dependencies
+        run: npm install --no-package-lock
+
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip

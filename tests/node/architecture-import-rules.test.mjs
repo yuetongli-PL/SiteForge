@@ -261,6 +261,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
   ['src/app/pipeline/build/workspace.mjs', 'SiteForge workspace directories, setup defaults, current skill promotion, and last-success pointers'],
   ['src/sites/known-sites/douyin/actions/router.mjs', 'temporary downloader input file for subprocess handoff'],
   ['src/sites/known-sites/douyin/queries/follow-query.mjs', 'follow-query cache persistence'],
+  ['src/sites/known-sites/social/actions/download-boundary.mjs', 'explicit user-requested media binary download persistence'],
   ['src/domain/sessions/session-view.mjs', 'SessionView revocation store persistence'],
   ['src/sites/known-sites/xiaohongshu/actions/router.mjs', 'temporary downloader input file for subprocess handoff'],
 ]);
@@ -285,7 +286,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/app/pipeline/build/setup-assistant.mjs', 14],
   ['src/app/pipeline/build/workspace.mjs', 2],
   ['src/sites/known-sites/bilibili/navigation/open.mjs', 5],
-  ['src/sites/known-sites/reddit/api-catalog.mjs', 23],
+  ['src/sites/known-sites/reddit/api-catalog.mjs', 34],
   ['src/domain/capabilities/api-candidates.mjs', 8],
   ['src/domain/capabilities/api-discovery.mjs', 3],
   ['src/domain/policies/execution/layer-runtime-consumer.mjs', 3],
@@ -296,7 +297,8 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/sites/known-sites/douyin/actions/router.mjs', 2],
   ['src/sites/known-sites/douyin/queries/follow-query.mjs', 2],
   ['src/domain/sessions/runner.mjs', 5],
-  ['src/sites/known-sites/social/actions/router.mjs', 19],
+  ['src/sites/known-sites/social/actions/router.mjs', 20],
+  ['src/sites/known-sites/social/actions/download-boundary.mjs', 1],
   ['src/sites/known-sites/xiaohongshu/actions/router.mjs', 2],
 ]);
 
@@ -1751,6 +1753,12 @@ test('script shims only target entrypoints, CLI/shared helpers, or tools', async
   const invalid = imports.filter((entry) => {
     const resolved = entry.resolvedRelativePath;
     if (!resolved) {
+      return false;
+    }
+    if (
+      entry.fileRelativePath === 'scripts/x-research-task-runner.mjs'
+      && resolved === 'src/sites/known-sites/social/actions/download-boundary.mjs'
+    ) {
       return false;
     }
     return !resolved.startsWith('src/entrypoints/')

@@ -915,6 +915,7 @@ test('signed API replay keeps browser bridge instead of unsupported cookie fallb
       assert.equal(result.status, 'success');
       assert.equal(bridgeReplayRequest.runtimeParameterSource.kind, 'qidian_yuew_sign');
       assert.equal(bridgeReplayRequest.endpoint, new URL('/api/signed/user', rootUrl).toString());
+      assert.equal(bridgeReplayRequest.runtimeEndpoint, new URL('/api/signed/user', rootUrl).toString());
       assert.equal(JSON.stringify(bridgeReplayRequest).includes(cookieSecret), false);
 
       const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
@@ -922,6 +923,187 @@ test('signed API replay keeps browser bridge instead of unsupported cookie fallb
       assert.equal(replayArtifact.activated, true);
       assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'browser_bridge');
       assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.kind, 'qidian_yuew_sign');
+      assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
+
+      const bindingArtifact = await readJson(path.join(result.artifactDir, 'runtime', 'api-adapter-bindings.internal.json'));
+      assert.equal(bindingArtifact.bindings[0].endpoint, new URL('/api/signed/user', rootUrl).toString());
+      assert.equal(bindingArtifact.bindings[0].redactedEndpoint, replayArtifact.endpoint);
+      assert.equal(JSON.stringify(bindingArtifact).includes(cookieSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('signed Qidian API replay prefers captured overlay page for runtime signing', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-qidian-overlay-page-'));
+  const cookieSecret = 'synthetic-qidian-overlay-cookie';
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const authStateReport = {
+        ...browserVerifiedAuthState(rootUrl),
+        authVerificationStatus: 'browser_verified_partial',
+        browserBridge: {
+          routeCoverageStatus: 'partial',
+          routeCount: 3,
+          capturedRouteCount: 2,
+          missingRouteCount: 1,
+          routeResults: [{
+            routeId: 'fixture-root',
+            sourceLayer: 'authenticated',
+            status: 'challenge_detected',
+            captured: false,
+            targetUrl: rootUrl,
+            targetRoute: '/',
+            reasonCode: 'browser-bridge-definite-challenge',
+          }, {
+            routeId: 'fixture-rank',
+            sourceLayer: 'authenticated_overlay',
+            status: 'captured',
+            captured: true,
+            targetUrl: new URL('/rank/', rootUrl).toString(),
+            targetRoute: '/rank/',
+          }, {
+            routeId: 'fixture-search',
+            sourceLayer: 'authenticated_overlay',
+            status: 'captured',
+            captured: true,
+            targetUrl: new URL('/soushu/', rootUrl).toString(),
+            targetRoute: '/soushu/',
+          }],
+        },
+      };
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-qidian-overlay-page-build',
+        now: new Date('2026-05-26T01:04:18.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport,
+        apiReplayCookieHeader: `sid=${cookieSecret}`,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 200,
+            contentType: 'application/json',
+            responseKind: 'json',
+            responseEvidenceStatus: 'matched',
+            observedStatusCode: 0,
+            observedObjectFieldPresent: true,
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawSignedRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedSignedRuntimeApiRequest(rootUrl, context.site.id)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(bridgeReplayRequest.runtimeParameterSource.kind, 'qidian_yuew_sign');
+      assert.equal(bridgeReplayRequest.runtimeParameterSource.pageUrl, new URL('/soushu/', rootUrl).toString());
+      assert.equal(JSON.stringify(bridgeReplayRequest).includes(cookieSecret), false);
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.pageUrl, new URL('/soushu/', rootUrl).toString());
+      assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('signed API replay can use managed browser bridge only for API replay cookies', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-signed-managed-cookie-'));
+  const cookieSecret = 'synthetic-signed-managed-cookie';
+  let managedRequest = null;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-signed-managed-cookie-build',
+        now: new Date('2026-05-26T01:04:20.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiReplayCookieHeader: `sid=${cookieSecret}`,
+        browserBridgeManaged: false,
+        browserBridgeApiReplayManaged: true,
+        browserBridgeApiReplayTimeoutMs: 1000,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeManagedSessionProvider: async (request) => {
+          managedRequest = request;
+          const bridge = new URL(request.bridgeUrl);
+          const sessionUrl = new URL(`/session.json${bridge.search}`, bridge.origin).toString();
+          const session = await (await fetch(sessionUrl)).json();
+          await fetch(session.apiReplaySubmitUrl || session.submitUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              nonce: session.nonce,
+              apiReplay: {
+                status: 'verified',
+                httpStatus: 200,
+                contentType: 'application/json; charset=utf-8',
+                responseKind: 'json',
+                responseEvidenceStatus: 'matched',
+                observedStatusCode: 0,
+                observedObjectFieldPresent: true,
+              },
+            }),
+          });
+          return {
+            close: async () => {},
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawSignedRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedSignedRuntimeApiRequest(rootUrl, context.site.id)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(managedRequest?.cookieCount, 1);
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'browser_bridge');
       assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
     });
   } finally {

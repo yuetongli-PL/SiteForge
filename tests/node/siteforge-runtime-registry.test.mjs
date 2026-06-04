@@ -587,7 +587,7 @@ test('api_request runtime executes Reddit OAuth read plans without Browser Bridg
           headers: new Map([['content-type', 'application/json']]),
           text: async () => JSON.stringify({
             name: 'tester',
-            access_token: 'body-token-is-not-persisted',
+            access_token: 'synthetic-access-token-example',
           }),
         };
       },

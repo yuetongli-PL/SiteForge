@@ -55,6 +55,7 @@ export function createCatalogAdapter({
     ...genericAdapterDefaults,
     id,
     siteKey,
+    hosts: [...normalizedHosts].sort((left, right) => left.localeCompare(right, 'en')),
     matches: resolvedMatches,
     terminology() {
       return { ...(terminology ?? {}) };

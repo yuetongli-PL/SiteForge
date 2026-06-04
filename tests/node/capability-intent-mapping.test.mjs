@@ -49,6 +49,24 @@ test('search-posts prefers search-content and falls back to query-social-content
   );
 });
 
+test('Reddit-specific read and disabled-mutation intents resolve to explicit families', () => {
+  const families = [
+    'disabled-social-mutation',
+    'query-comment-thread',
+    'query-community-metadata',
+    'query-private-messages',
+    'query-moderation-content',
+    'query-wiki-content',
+  ];
+
+  assert.equal(resolveCapabilityFamilyForIntent('list-comment-thread', families, { allowFallback: false }), 'query-comment-thread');
+  assert.equal(resolveCapabilityFamilyForIntent('list-community-directory', families, { allowFallback: false }), 'query-community-metadata');
+  assert.equal(resolveCapabilityFamilyForIntent('list-inbox-messages', families, { allowFallback: false }), 'query-private-messages');
+  assert.equal(resolveCapabilityFamilyForIntent('list-moderation-queue', families, { allowFallback: false }), 'query-moderation-content');
+  assert.equal(resolveCapabilityFamilyForIntent('read-wiki-page', families, { allowFallback: false }), 'query-wiki-content');
+  assert.equal(resolveCapabilityFamilyForIntent('record-disabled-submit', families, { allowFallback: false }), 'disabled-social-mutation');
+});
+
 test('unknown intents fail strict resolution but keep runtime fallback compatibility', () => {
   assert.equal(
     resolveCapabilityFamilyForIntent('custom-local-intent', ['search-content'], { allowFallback: false }),

@@ -76,6 +76,78 @@ test('browser bridge route coverage separates captured and missing pages', () =>
   assert.equal(browserBridgePageWasCaptured(context(), { routeTemplate: '/messages' }), true);
 });
 
+test('browser bridge route coverage keeps auth and overlay root routes distinct', () => {
+  const routeContext = context({
+    authStateReport: {
+      authMethod: 'browser',
+      browserBridge: {
+        routeResults: [
+          {
+            routeId: 'auth-root',
+            sourceLayer: 'authenticated',
+            status: 'challenge_detected',
+            reasonCode: 'browser-bridge-definite-challenge',
+            targetRoute: '/',
+          },
+          {
+            routeId: 'overlay-root',
+            sourceLayer: 'authenticated_overlay',
+            status: 'captured',
+            targetRoute: '/',
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(browserBridgePageWasCaptured(routeContext, {
+    sourceLayer: 'authenticated_overlay',
+    routeTemplate: '/',
+  }), true);
+  assert.equal(browserBridgePageWasCaptured(routeContext, {
+    sourceLayer: 'authenticated',
+    routeTemplate: '/',
+  }), false);
+});
+
+test('browser bridge route coverage does not borrow capture from another source layer', () => {
+  const overlayOnlyContext = context({
+    authStateReport: {
+      authMethod: 'browser',
+      browserBridge: {
+        routeResults: [{
+          routeId: 'overlay-root',
+          sourceLayer: 'authenticated_overlay',
+          status: 'captured',
+          targetRoute: '/',
+        }],
+      },
+    },
+  });
+  const authOnlyContext = context({
+    authStateReport: {
+      authMethod: 'browser',
+      browserBridge: {
+        routeResults: [{
+          routeId: 'auth-root',
+          sourceLayer: 'authenticated',
+          status: 'captured',
+          targetRoute: '/',
+        }],
+      },
+    },
+  });
+
+  assert.equal(browserBridgePageWasCaptured(overlayOnlyContext, {
+    sourceLayer: 'authenticated',
+    routeTemplate: '/',
+  }), false);
+  assert.equal(browserBridgePageWasCaptured(authOnlyContext, {
+    sourceLayer: 'authenticated_overlay',
+    routeTemplate: '/',
+  }), false);
+});
+
 test('browser bridge route capture plan models retry policy and sanitized counts', () => {
   const routeContext = context();
   const authStateReport = {
@@ -136,4 +208,42 @@ test('browser bridge route retry policy treats definite challenges as access bou
   }), true);
   assert.equal(routeTemplateComparisonValues(context(), ['https://example.test/a/b?x=1']).includes('/a/b'), true);
   assert.equal(routeCapturePlanFromAuthState(context(), { authMethod: 'cookie' }), null);
+});
+
+test('browser bridge route capture plan treats sitemap XML as static resource boundary', () => {
+  const plan = routeCapturePlanFromAuthState(context(), {
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified_partial',
+    browserBridge: {
+      routeCoverageStatus: 'partial',
+      capturedRouteCount: 1,
+      routeCount: 3,
+      missingRouteCount: 2,
+      routeResults: [
+        { routeId: 'home', status: 'captured', targetRoute: '/' },
+        {
+          routeId: 'sitemap',
+          sourceLayer: 'authenticated_overlay',
+          status: 'thin_capture',
+          reasonCode: 'browser-bridge-low-structure-evidence',
+          targetRoute: '/sitemap.xml',
+        },
+        {
+          routeId: 'feed',
+          sourceLayer: 'authenticated_overlay',
+          status: 'thin_capture',
+          reasonCode: 'browser-bridge-low-structure-evidence',
+          targetUrl: 'https://example.test/feed.xml?lang=en',
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    plan.missingRoutes.map((route) => [route.routeId, route.retryable, route.recommendedRetryMode, route.staticResourceBoundary]),
+    [
+      ['sitemap', false, 'static_resource_not_browser_bridge_retry', true],
+      ['feed', false, 'static_resource_not_browser_bridge_retry', true],
+    ],
+  );
 });

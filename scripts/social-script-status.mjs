@@ -11,6 +11,11 @@ export const SOCIAL_OPERATOR_SCRIPT_STATUS = Object.freeze({
     visibility: 'internal-operator-only',
     scope: 'operator command template rendering',
   }),
+  'scripts/social-dynamic-seed-plan.mjs': Object.freeze({
+    status: 'active-tested',
+    visibility: 'internal-operator-only',
+    scope: 'dynamic route family seed expansion approval planning',
+  }),
   'scripts/social-health-watch.mjs': Object.freeze({
     status: 'active-tested',
     visibility: 'internal-operator-only',
@@ -40,6 +45,6 @@ export const SOCIAL_OPERATOR_SCRIPT_STATUS = Object.freeze({
     status: 'active-tested',
     visibility: 'internal-operator-only',
     scope: 'bounded live smoke matrix',
-    downloadBoundary: 'blocked-report-only',
+    downloadBoundary: 'local-media-download',
   }),
 });

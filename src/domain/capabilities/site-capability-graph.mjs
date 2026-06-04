@@ -8354,13 +8354,6 @@ function graphPlanResult(graph, fields) {
 
 const GRAPH_LAYER_DESIGN_SOURCE_REFERENCES = Object.freeze([
   Object.freeze({
-    path: 'AGENTS.md',
-    role: 'current-layer-boundary-reference',
-    status: 'present-reference',
-    verified: false,
-    note: 'Local execution and safety guardrail reference.',
-  }),
-  Object.freeze({
     path: 'README.md',
     role: 'current-project-overview-reference',
     status: 'present-reference',
@@ -14758,7 +14751,6 @@ function assertGraphDocsMarkdownLayerSourceReferences(markdown = '') {
   for (const requiredText of [
     '## Layer Design Sources',
     'status: present-reference',
-    'AGENTS.md',
     'README.md',
   ]) {
     if (!markdown.includes(requiredText)) {

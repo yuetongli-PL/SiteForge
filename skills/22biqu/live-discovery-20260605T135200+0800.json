@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "artifactFamily": "siteforge-live-discovery",
   "generatedAt": "2026-06-05T13:52:00+08:00",
+  "updatedAt": "2026-06-05T14:05:00+08:00",
   "target": {
     "host": "www.22biqu.com",
     "baseUrl": "https://www.22biqu.com/",
@@ -106,6 +107,23 @@
       "bodyTextObservedButNotPersisted": true
     },
     {
+      "id": "author-aggregate",
+      "routeType": "derived",
+      "status": "enabled-with-approval",
+      "intent": "open-author",
+      "executionPlan": [
+        "search-book-submit(authorName)",
+        "parse-search-results",
+        "open-book(candidateBookUrl)",
+        "extract-book-metadata",
+        "keep exact normalized authorName matches",
+        "dedupe by canonical book URL then normalized title",
+        "return matchedWorkCount"
+      ],
+      "extractionMode": "metadata-only",
+      "bodyTextPersisted": false
+    },
+    {
       "id": "history",
       "url": "https://www.22biqu.com/history.html",
       "status": "reachable",
@@ -116,9 +134,9 @@
     }
   ],
   "executableAbilityCounts": {
-    "totalExecutableOrApprovalGated": 12,
+    "totalExecutableOrApprovalGated": 13,
     "defaultExecutable": 10,
-    "approvalGated": 2,
+    "approvalGated": 3,
     "disabled": 7
   },
   "finalCapabilitySet": {
@@ -134,7 +152,7 @@
       "open-chapter-metadata",
       "open-utility-page"
     ],
-    "approvalGated": ["search-book-submit", "parse-search-results"],
+    "approvalGated": ["search-book-submit", "parse-search-results", "open-author"],
     "disabledByGeneratedSkill": [
       "download-book",
       "full-book-materialization",
@@ -157,6 +175,10 @@
     {
       "problem": "search requires user-submitted query",
       "resolution": "split into approval-gated submit and parse phases"
+    },
+    {
+      "problem": "author page is not stable enough as a direct route",
+      "resolution": "open-author is implemented as a derived aggregate using search plus book-detail author-field validation"
     },
     {
       "problem": "previous discovery artifact was not saved",

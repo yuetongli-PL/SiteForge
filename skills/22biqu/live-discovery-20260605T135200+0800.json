@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "siteforge-live-discovery",
+  "generatedAt": "2026-06-05T13:52:00+08:00",
+  "target": {
+    "host": "www.22biqu.com",
+    "baseUrl": "https://www.22biqu.com/",
+    "siteKey": "22biqu",
+    "adapterId": "chapter-content",
+    "repoSkillDir": "skills/22biqu"
+  },
+  "mode": "live-public-sampled-metadata-only",
+  "status": "clean-branch-artifacts-written",
+  "branch": "siteforge/22biqu-live-skill-clean-20260605",
+  "repoEvidence": {
+    "registry": {
+      "canonicalBaseUrl": "https://www.22biqu.com/",
+      "repoSkillDir": "skills/22biqu",
+      "downloadSessionRequirement": "none",
+      "downloadEntrypoint": "src/sites/known-sites/chapter-content/download/python/book.py",
+      "siteArchetype": "chapter-content",
+      "scriptLanguage": "python",
+      "interpreterRequired": "pypy3",
+      "templateVersion": 3,
+      "declaredDownloadTaskTypes": ["book"],
+      "downloadSupportStatus": "implemented"
+    },
+    "capabilities": {
+      "pageTypes": [
+        "auth-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "chapter-page",
+        "content-detail-page",
+        "history-page",
+        "home",
+        "search-results-page"
+      ],
+      "capabilityFamilies": [
+        "download-content",
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-chapter",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "download-book",
+        "open-auth-page",
+        "open-author",
+        "open-book",
+        "open-category",
+        "open-chapter",
+        "open-utility-page",
+        "search-book"
+      ],
+      "safeActionKinds": ["download-book", "navigate", "search-submit"],
+      "approvalActionKinds": ["search-submit"],
+      "downloaderStatus": "implemented",
+      "downloaderRequiresLogin": false
+    }
+  },
+  "liveSampledSurfaces": [
+    {
+      "id": "home",
+      "url": "https://www.22biqu.com/",
+      "status": "reachable",
+      "pageType": "home",
+      "observedSignals": ["top category navigation", "reading-history link", "featured/recommended book lists", "latest-added list", "recent-update list"]
+    },
+    {
+      "id": "category",
+      "url": "https://www.22biqu.com/fenlei/1_1.html",
+      "status": "reachable",
+      "pageType": "category-page",
+      "routeTemplate": "/fenlei/{categoryId}_{page}.html",
+      "observedSignals": ["book detail links", "latest chapter links", "author names", "update dates", "pagination links"]
+    },
+    {
+      "id": "completed-category",
+      "url": "https://www.22biqu.com/quanben/fenlei/",
+      "status": "reachable",
+      "pageType": "category-page",
+      "routeTemplate": "/quanben/fenlei/",
+      "observedSignals": ["completed/listing rows", "book detail links", "latest chapter links", "author names", "update dates"]
+    },
+    {
+      "id": "book-detail",
+      "url": "https://www.22biqu.com/biqu100/",
+      "status": "reachable",
+      "pageType": "book-detail-page",
+      "routeTemplate": "/biqu{bookId}/",
+      "observedSignals": ["title", "author", "category", "serial status", "latest chapter", "update time", "chapter index"]
+    },
+    {
+      "id": "chapter-navigation",
+      "url": "https://www.22biqu.com/biqu100/10849559.html",
+      "status": "reachable",
+      "pageType": "chapter-page",
+      "routeTemplate": "/biqu{bookId}/{chapterId}.html",
+      "extractionMode": "metadata-only",
+      "observedSignals": ["breadcrumb", "chapter title", "catalog link", "previous-or-next navigation links", "adjacent-book links"],
+      "bodyTextObservedButNotPersisted": true
+    },
+    {
+      "id": "history",
+      "url": "https://www.22biqu.com/history.html",
+      "status": "reachable",
+      "pageType": "history-page",
+      "routeTemplate": "/history.html",
+      "observedSignals": ["reading-history shell", "top navigation"],
+      "clientStatePersisted": false
+    }
+  ],
+  "executableAbilityCounts": {
+    "totalExecutableOrApprovalGated": 12,
+    "defaultExecutable": 10,
+    "approvalGated": 2,
+    "disabled": 7
+  },
+  "finalCapabilitySet": {
+    "enabled": [
+      "discover-home-links",
+      "open-category",
+      "list-category-books",
+      "list-category-updates",
+      "list-completed-books",
+      "open-book",
+      "extract-book-metadata",
+      "list-chapter-index",
+      "open-chapter-metadata",
+      "open-utility-page"
+    ],
+    "approvalGated": ["search-book-submit", "parse-search-results"],
+    "disabledByGeneratedSkill": [
+      "download-book",
+      "full-book-materialization",
+      "bulk-chapter-body-export",
+      "persist-reading-history",
+      "login-auth-session",
+      "persist-cookies-tokens-sessions",
+      "bypass-access-control"
+    ]
+  },
+  "knownLimitationsResolvedByScope": [
+    {
+      "problem": "download-book registry support could be confused with generated skill support",
+      "resolution": "recorded as registry-supported but disabled by this metadata/navigation-only skill"
+    },
+    {
+      "problem": "chapter page body text could be confused with allowed output",
+      "resolution": "chapter page execution is metadata-only; body text is not persisted"
+    },
+    {
+      "problem": "search requires user-submitted query",
+      "resolution": "split into approval-gated submit and parse phases"
+    },
+    {
+      "problem": "previous discovery artifact was not saved",
+      "resolution": "this clean-branch artifact is saved and verifiable"
+    }
+  ],
+  "safety": {
+    "loginAttempted": false,
+    "authStateCreated": false,
+    "cookiesTokensCredentialsOrProfilesPersisted": false,
+    "accessControlBypassAttempted": false,
+    "bulkTextExportAttempted": false,
+    "chapterBodyPersisted": false,
+    "redacted": true
+  }
+}

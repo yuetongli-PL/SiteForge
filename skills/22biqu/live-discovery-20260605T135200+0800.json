@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactFamily": "siteforge-live-discovery",
   "generatedAt": "2026-06-05T13:52:00+08:00",
-  "updatedAt": "2026-06-05T14:05:00+08:00",
+  "updatedAt": "2026-06-05T14:15:00+08:00",
   "target": {
     "host": "www.22biqu.com",
     "baseUrl": "https://www.22biqu.com/",
@@ -27,37 +27,9 @@
       "downloadSupportStatus": "implemented"
     },
     "capabilities": {
-      "pageTypes": [
-        "auth-page",
-        "author-page",
-        "book-detail-page",
-        "category-page",
-        "chapter-page",
-        "content-detail-page",
-        "history-page",
-        "home",
-        "search-results-page"
-      ],
-      "capabilityFamilies": [
-        "download-content",
-        "navigate-to-author",
-        "navigate-to-category",
-        "navigate-to-chapter",
-        "navigate-to-content",
-        "navigate-to-utility-page",
-        "open-auth-page",
-        "search-content"
-      ],
-      "supportedIntents": [
-        "download-book",
-        "open-auth-page",
-        "open-author",
-        "open-book",
-        "open-category",
-        "open-chapter",
-        "open-utility-page",
-        "search-book"
-      ],
+      "pageTypes": ["auth-page", "author-page", "book-detail-page", "category-page", "chapter-page", "content-detail-page", "history-page", "home", "search-results-page"],
+      "capabilityFamilies": ["download-content", "navigate-to-author", "navigate-to-category", "navigate-to-chapter", "navigate-to-content", "navigate-to-utility-page", "open-auth-page", "search-content"],
+      "supportedIntents": ["download-book", "open-auth-page", "open-author", "open-book", "open-category", "open-chapter", "open-utility-page", "search-book"],
       "safeActionKinds": ["download-book", "navigate", "search-submit"],
       "approvalActionKinds": ["search-submit"],
       "downloaderStatus": "implemented",
@@ -111,15 +83,9 @@
       "routeType": "derived",
       "status": "enabled-with-approval",
       "intent": "open-author",
-      "executionPlan": [
-        "search-book-submit(authorName)",
-        "parse-search-results",
-        "open-book(candidateBookUrl)",
-        "extract-book-metadata",
-        "keep exact normalized authorName matches",
-        "dedupe by canonical book URL then normalized title",
-        "return matchedWorkCount"
-      ],
+      "primaryDiscoveryMethod": "site-search-author-name",
+      "fallbackTitleProbe": "disabled-unless-user-provides-known-title-list",
+      "executionPlan": ["search-book-submit(authorName)", "parse-search-results", "open-book(candidateBookUrl)", "extract-book-metadata", "keep exact normalized authorName matches", "dedupe by canonical book URL then normalized title", "return matchedWorkCount"],
       "extractionMode": "metadata-only",
       "bodyTextPersisted": false
     },
@@ -133,65 +99,18 @@
       "clientStatePersisted": false
     }
   ],
-  "executableAbilityCounts": {
-    "totalExecutableOrApprovalGated": 13,
-    "defaultExecutable": 10,
-    "approvalGated": 3,
-    "disabled": 7
-  },
+  "executableAbilityCounts": {"totalExecutableOrApprovalGated": 13, "defaultExecutable": 10, "approvalGated": 3, "disabled": 7},
   "finalCapabilitySet": {
-    "enabled": [
-      "discover-home-links",
-      "open-category",
-      "list-category-books",
-      "list-category-updates",
-      "list-completed-books",
-      "open-book",
-      "extract-book-metadata",
-      "list-chapter-index",
-      "open-chapter-metadata",
-      "open-utility-page"
-    ],
+    "enabled": ["discover-home-links", "open-category", "list-category-books", "list-category-updates", "list-completed-books", "open-book", "extract-book-metadata", "list-chapter-index", "open-chapter-metadata", "open-utility-page"],
     "approvalGated": ["search-book-submit", "parse-search-results", "open-author"],
-    "disabledByGeneratedSkill": [
-      "download-book",
-      "full-book-materialization",
-      "bulk-chapter-body-export",
-      "persist-reading-history",
-      "login-auth-session",
-      "persist-cookies-tokens-sessions",
-      "bypass-access-control"
-    ]
+    "disabledByGeneratedSkill": ["download-book", "full-book-materialization", "bulk-chapter-body-export", "persist-reading-history", "login-auth-session", "persist-cookies-tokens-sessions", "bypass-access-control"]
   },
   "knownLimitationsResolvedByScope": [
-    {
-      "problem": "download-book registry support could be confused with generated skill support",
-      "resolution": "recorded as registry-supported but disabled by this metadata/navigation-only skill"
-    },
-    {
-      "problem": "chapter page body text could be confused with allowed output",
-      "resolution": "chapter page execution is metadata-only; body text is not persisted"
-    },
-    {
-      "problem": "search requires user-submitted query",
-      "resolution": "split into approval-gated submit and parse phases"
-    },
-    {
-      "problem": "author page is not stable enough as a direct route",
-      "resolution": "open-author is implemented as a derived aggregate using search plus book-detail author-field validation"
-    },
-    {
-      "problem": "previous discovery artifact was not saved",
-      "resolution": "this clean-branch artifact is saved and verifiable"
-    }
+    {"problem": "download-book registry support could be confused with generated skill support", "resolution": "recorded as registry-supported but disabled by this metadata/navigation-only skill"},
+    {"problem": "chapter page body text could be confused with allowed output", "resolution": "chapter page execution is metadata-only; body text is not persisted"},
+    {"problem": "search requires user-submitted query", "resolution": "split into approval-gated submit and parse phases"},
+    {"problem": "author aggregate must use site search for author name rather than known title probing", "resolution": "open-author primary discovery method is direct site search for the requested author name; title probing is disabled unless the user explicitly provides a known-title list"},
+    {"problem": "previous discovery artifact was not saved", "resolution": "this clean-branch artifact is saved and verifiable"}
   ],
-  "safety": {
-    "loginAttempted": false,
-    "authStateCreated": false,
-    "cookiesTokensCredentialsOrProfilesPersisted": false,
-    "accessControlBypassAttempted": false,
-    "bulkTextExportAttempted": false,
-    "chapterBodyPersisted": false,
-    "redacted": true
-  }
+  "safety": {"loginAttempted": false, "authStateCreated": false, "cookiesTokensCredentialsOrProfilesPersisted": false, "accessControlBypassAttempted": false, "bulkTextExportAttempted": false, "chapterBodyPersisted": false, "redacted": true}
 }

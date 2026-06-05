@@ -1,6 +1,6 @@
 ---
 name: 22biqu
-description: Metadata/navigation-only SiteForge skill for www.22biqu.com live public discovery. It supports catalog, book-detail, chapter-navigation, author aggregate, history-page, and search-result metadata. Full chapter-body export is not enabled by this skill.
+description: Metadata/navigation-only SiteForge skill for www.22biqu.com live public discovery. It supports catalog, book-detail, chapter-navigation, direct site author search, history-page, and search-result metadata. Full chapter-body export is not enabled by this skill.
 site:
   host: www.22biqu.com
   base_url: https://www.22biqu.com/
@@ -28,7 +28,7 @@ safety:
 
 This skill was generated from SiteForge registry/capability records and live public metadata sampling of `https://www.22biqu.com/`.
 
-The skill is **metadata/navigation-only**. It records route shapes, page types, intents, author aggregation, and extraction boundaries. It does not enable bulk chapter-body export or full-book materialization.
+The skill is **metadata/navigation-only**. It records route shapes, page types, intents, direct site author-search aggregation, and extraction boundaries. It does not enable bulk chapter-body export or full-book materialization.
 
 ## Live-sampled public surfaces
 
@@ -39,7 +39,7 @@ The skill is **metadata/navigation-only**. It records route shapes, page types, 
 | Completed listing | `/quanben/fenlei/` | live-sampled | completed-list rows, book links, chapter links, authors, update dates, pagination |
 | Book detail | `/biqu{bookId}/` | live-sampled | title, author, category, status, latest chapter, update time, summary metadata, chapter index links |
 | Chapter navigation | `/biqu{bookId}/{chapterId}.html` | live-sampled | breadcrumb, chapter title, previous/catalog/next links, adjacent-book links |
-| Author aggregate | search + book detail validation | derived | author name, matched work count, matched work metadata, unverified candidates |
+| Author aggregate | direct site search for author name + book detail validation | derived | author name, matched work count, matched work metadata, unverified candidates |
 | History utility | `/history.html` | live-sampled | reading-history shell only; do not persist browser/client state |
 
 ## Executable capabilities
@@ -58,7 +58,7 @@ The skill is **metadata/navigation-only**. It records route shapes, page types, 
 | `open-utility-page` | `open-utility-page` | live public navigation | utility shell metadata |
 | `search-book-submit` | `search-book` | approval-gated request | user-directed search response page |
 | `parse-search-results` | `search-book` | approval-gated parsing | search result book metadata |
-| `open-author` | `open-author` | approval-gated derived aggregate | author name, matched work count, matched works, unverified candidates |
+| `open-author` | `open-author` | approval-gated direct site author search aggregate | author name, matched work count, matched works, unverified candidates |
 
 ## Disabled capabilities
 
@@ -108,6 +108,8 @@ routes:
   author_aggregate:
     intent: open-author
     routeType: derived
+    primaryDiscoveryMethod: site-search-author-name
+    fallbackTitleProbe: disabled-unless-user-provides-known-title-list
     executionPlan:
       - search-book-submit(authorName)
       - parse-search-results
@@ -145,16 +147,18 @@ Extract only breadcrumb, book/catalog URL, chapter title, previous chapter URL, 
 
 ### Author aggregate
 
-`open-author(authorName)` is a derived, approval-gated aggregate. It must:
+`open-author(authorName)` is a derived, approval-gated aggregate whose **primary discovery method is direct site search for the author name**. It must:
 
-- submit the author name as a user-directed search query;
-- parse search result metadata;
-- open each candidate book detail page;
-- extract the author field from the book detail page;
+- submit the requested author name directly to the site search form as a user-directed query;
+- parse search result metadata returned by that author-name query;
+- open each candidate book detail page returned by the author-name search;
+- extract the author field from each book detail page;
 - count only records whose normalized author field exactly matches the requested author name;
 - dedupe matches by canonical book URL, then by normalized title;
 - return `matchedWorkCount`, `matchedWorks`, `unverifiedCandidates`, and `countMethod`;
 - avoid returning chapter body text or full-book payloads.
+
+Known-title probing is not the default `open-author` behavior. Use title probing only when the user explicitly provides a known title list and asks to test those titles against 22biqu.
 
 ## Execution guards
 
@@ -208,6 +212,7 @@ Extract only breadcrumb, book/catalog URL, chapter title, previous chapter URL, 
   "siteKey": "22biqu",
   "intent": "open-author",
   "authorName": "辰东",
+  "primaryDiscoveryMethod": "site-search-author-name",
   "executionPlan": [
     "search-book-submit(authorName)",
     "parse-search-results",

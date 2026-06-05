@@ -1,6 +1,6 @@
 ---
 name: 22biqu
-description: Metadata/navigation-only SiteForge skill for www.22biqu.com live public discovery. It supports catalog, book-detail, chapter-navigation, history-page, and search-result metadata. Full chapter-body export is not enabled by this skill.
+description: Metadata/navigation-only SiteForge skill for www.22biqu.com live public discovery. It supports catalog, book-detail, chapter-navigation, author aggregate, history-page, and search-result metadata. Full chapter-body export is not enabled by this skill.
 site:
   host: www.22biqu.com
   base_url: https://www.22biqu.com/
@@ -28,7 +28,7 @@ safety:
 
 This skill was generated from SiteForge registry/capability records and live public metadata sampling of `https://www.22biqu.com/`.
 
-The skill is **metadata/navigation-only**. It records route shapes, page types, intents, and extraction boundaries. It does not enable bulk chapter-body export or full-book materialization.
+The skill is **metadata/navigation-only**. It records route shapes, page types, intents, author aggregation, and extraction boundaries. It does not enable bulk chapter-body export or full-book materialization.
 
 ## Live-sampled public surfaces
 
@@ -39,6 +39,7 @@ The skill is **metadata/navigation-only**. It records route shapes, page types, 
 | Completed listing | `/quanben/fenlei/` | live-sampled | completed-list rows, book links, chapter links, authors, update dates, pagination |
 | Book detail | `/biqu{bookId}/` | live-sampled | title, author, category, status, latest chapter, update time, summary metadata, chapter index links |
 | Chapter navigation | `/biqu{bookId}/{chapterId}.html` | live-sampled | breadcrumb, chapter title, previous/catalog/next links, adjacent-book links |
+| Author aggregate | search + book detail validation | derived | author name, matched work count, matched work metadata, unverified candidates |
 | History utility | `/history.html` | live-sampled | reading-history shell only; do not persist browser/client state |
 
 ## Executable capabilities
@@ -57,6 +58,7 @@ The skill is **metadata/navigation-only**. It records route shapes, page types, 
 | `open-utility-page` | `open-utility-page` | live public navigation | utility shell metadata |
 | `search-book-submit` | `search-book` | approval-gated request | user-directed search response page |
 | `parse-search-results` | `search-book` | approval-gated parsing | search result book metadata |
+| `open-author` | `open-author` | approval-gated derived aggregate | author name, matched work count, matched works, unverified candidates |
 
 ## Disabled capabilities
 
@@ -70,7 +72,7 @@ The skill is **metadata/navigation-only**. It records route shapes, page types, 
 | `persist-cookies-tokens-sessions` | disabled | Credential/session/profile persistence is prohibited. |
 | `bypass-access-control` | disabled | Do not bypass CAPTCHA, risk controls, login walls, rate limits, or other controls. |
 
-## Route templates
+## Route templates and derived plans
 
 ```yaml
 routes:
@@ -103,6 +105,20 @@ routes:
     capabilities: [open-chapter-metadata]
     extractionMode: metadata-only
 
+  author_aggregate:
+    intent: open-author
+    routeType: derived
+    executionPlan:
+      - search-book-submit(authorName)
+      - parse-search-results
+      - open-book(candidateBookUrl)
+      - extract-book-metadata
+      - keep result only when normalized authorName exactly matches requested authorName
+      - dedupe by canonical book URL, then title
+      - return matchedWorkCount and matchedWorks
+    capabilities: [open-author, search-book-submit, parse-search-results, open-book, extract-book-metadata]
+    extractionMode: metadata-only
+
   history:
     path: /history.html
     pageType: history-page
@@ -127,6 +143,19 @@ Extract only book title, author name, category name, serial status, latest chapt
 
 Extract only breadcrumb, book/catalog URL, chapter title, previous chapter URL, next chapter URL, and adjacent-book links. Do not export or persist full chapter body text through this skill.
 
+### Author aggregate
+
+`open-author(authorName)` is a derived, approval-gated aggregate. It must:
+
+- submit the author name as a user-directed search query;
+- parse search result metadata;
+- open each candidate book detail page;
+- extract the author field from the book detail page;
+- count only records whose normalized author field exactly matches the requested author name;
+- dedupe matches by canonical book URL, then by normalized title;
+- return `matchedWorkCount`, `matchedWorks`, `unverifiedCandidates`, and `countMethod`;
+- avoid returning chapter body text or full-book payloads.
+
 ## Execution guards
 
 - Use live public pages only.
@@ -134,7 +163,7 @@ Extract only breadcrumb, book/catalog URL, chapter title, previous chapter URL, 
 - Do not persist cookies, tokens, credentials, authorization headers, session IDs, local storage, or browser profiles.
 - Do not run bulk harvesting.
 - Store artifacts as redacted route/metadata evidence, not full text payloads.
-- Search execution requires explicit user direction and approval.
+- Search and author aggregate execution require explicit user direction and approval.
 
 ## Minimal plans
 
@@ -168,6 +197,27 @@ Extract only breadcrumb, book/catalog URL, chapter title, previous chapter URL, 
   "intent": "open-chapter",
   "urlTemplate": "https://www.22biqu.com/biqu{bookId}/{chapterId}.html",
   "extract": ["breadcrumb", "chapterTitle", "previousChapterUrl", "catalogUrl", "nextChapterUrl"],
+  "extractionMode": "metadata-only"
+}
+```
+
+### `open-author`
+
+```json
+{
+  "siteKey": "22biqu",
+  "intent": "open-author",
+  "authorName": "辰东",
+  "executionPlan": [
+    "search-book-submit(authorName)",
+    "parse-search-results",
+    "open-book(candidateBookUrl)",
+    "extract-book-metadata",
+    "filter authorName exact match",
+    "dedupe canonical book URL/title",
+    "return matchedWorkCount"
+  ],
+  "extract": ["authorName", "matchedWorkCount", "matchedWorks", "unverifiedCandidates", "countMethod"],
   "extractionMode": "metadata-only"
 }
 ```

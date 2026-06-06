@@ -1607,6 +1607,58 @@ test('build entrypoint imports stay behind registries or capability services', a
   ], 'build entrypoints should delegate downloader behavior through runtime/capability boundaries');
 });
 
+test('controlled runtime provider implementations stay behind app runtime boundary', async () => {
+  const providerImplementationPaths = [
+    'src/app/runtime/providers/api-read-provider.mjs',
+    'src/app/runtime/providers/download-provider.mjs',
+    'src/app/runtime/providers/browser-action-provider.mjs',
+    'src/app/runtime/mock-providers.mjs',
+    'src/app/runtime/mock-session-vault.mjs',
+    'src/app/runtime/testing.mjs',
+  ];
+  const layerImports = [
+    ...await collectResolvedImports('src/app/pipeline'),
+    ...await collectResolvedImports('src/app/compiler'),
+    ...await collectResolvedImports('src/app/planner'),
+    ...await collectResolvedImports('src/domain'),
+  ];
+  assertNoResolvedPaths(
+    layerImports,
+    providerImplementationPaths,
+    'pipeline/compiler/planner/domain should not import runtime provider implementations or testing APIs',
+  );
+
+  const runBuildImports = await collectResolvedImportsFromFile('src/entrypoints/build/run-build.mjs');
+  assertNoResolvedPaths(
+    runBuildImports,
+    providerImplementationPaths,
+    'run-build.mjs should use runtime public API instead of provider implementations',
+  );
+  assert.equal(
+    runBuildImports.some((entry) => entry.resolvedRelativePath === 'src/app/runtime/index.mjs'),
+    true,
+    'run-build.mjs should import createProductionRuntimeProviderRegistry through runtime public API',
+  );
+
+  const runnerSource = await readFile(path.join(REPO_ROOT, 'src', 'app', 'runtime', 'execution-runner.mjs'), 'utf8');
+  assert.doesNotMatch(
+    runnerSource,
+    /\b(?:createProductionRuntimeProviderRegistry|mock-providers|mock-session-vault|runtime\/testing|providers\/index|api-read-provider|download-provider|browser-action-provider)\b/u,
+    'execution-runner.mjs should not create default registries or fall back to mock/provider implementations',
+  );
+
+  const runtimeIndexSource = await readFile(path.join(REPO_ROOT, 'src', 'app', 'runtime', 'index.mjs'), 'utf8');
+  assert.doesNotMatch(
+    runtimeIndexSource,
+    /\b(?:mock-providers|mock-session-vault|testing\.mjs)\b/u,
+    'runtime/index.mjs should not export mock providers, mock session vault, or testing API',
+  );
+
+  const runtimeTestingSource = await readFile(path.join(REPO_ROOT, 'src', 'app', 'runtime', 'testing.mjs'), 'utf8');
+  assert.match(runtimeTestingSource, /mock-providers\.mjs/u);
+  assert.match(runtimeTestingSource, /mock-session-vault\.mjs/u);
+});
+
 test('domain services do not depend on concrete sites or runtime orchestration layers', async () => {
   const imports = await collectResolvedImports('src/domain');
   for (const forbiddenPrefix of [

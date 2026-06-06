@@ -205,6 +205,17 @@ test('focused pipeline suite includes capability evidence matrix coverage', asyn
   );
 });
 
+test('focused capability suite includes runtime contract conformance coverage', async () => {
+  const scripts = await readPackageScripts();
+  const capabilityTestFiles = scriptTestFiles(scripts['test:capability']);
+
+  assert.equal(
+    capabilityTestFiles.has('tests/node/capability-contract-conformance.test.mjs'),
+    true,
+    'test:capability should cover Controlled Runtime capability contract conformance',
+  );
+});
+
 test('focused core suite includes shared wiki and architecture gate coverage', async () => {
   const scripts = await readPackageScripts();
   const focusedScript = scripts['test:node:focused'] ?? '';

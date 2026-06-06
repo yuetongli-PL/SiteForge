@@ -1,0 +1,82 @@
+{
+  "name": "browser-write-uncontrolled",
+  "description": "Concrete ordinary write blocks without explicit controlled runtime flags, even for localhost-like inputs.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:browser-write-uncontrolled",
+    "executionContractRef": "execution-contract:conformance:browser-write-uncontrolled",
+    "policyDecisionRef": "policy:conformance:browser-write-uncontrolled",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": true,
+    "downloaderInvocationAllowed": false
+  },
+  "executionContract": {
+    "capabilityKind": "write",
+    "operationKind": "form_or_action",
+    "contractKind": "form_or_action",
+    "runtimeBindingRef": "runtime-binding:conformance:browser-action",
+    "runtimeBinding": { "kind": "browser_bridge" },
+    "browserActionDescriptor": {
+      "selector": "[data-siteforge-action=\"contact-form\"]",
+      "actionRef": "action:fixture-contact-submit",
+      "routeRef": "route:fixture-contact",
+      "requiredSlots": ["message"]
+    },
+    "payloadTemplate": {
+      "material": "template_only",
+      "slotBindings": [
+        { "name": "message", "type": "string", "required": true }
+      ],
+      "steps": [
+        {
+          "kind": "form_submit",
+          "selector": "[data-siteforge-action=\"contact-form\"]",
+          "actionRef": "action:fixture-contact-submit",
+          "routeRef": "route:fixture-contact"
+        }
+      ]
+    }
+  },
+  "capability": {
+    "id": "capability:conformance:browser-write-uncontrolled",
+    "capabilityKind": "write",
+    "operationKind": "form_or_action"
+  },
+  "runtimeContext": {
+    "siteUrl": "http://localhost/synthetic.test/contact",
+    "fixturePath": "tests/node/fixtures/capability-contract-conformance/browser-write-uncontrolled.json",
+    "taskText": "I confirm this local-looking form submission",
+    "slotValues": {
+      "message": "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR"
+    }
+  },
+  "expected": {
+    "status": "provider_not_executable",
+    "providerId": "browser_action_provider",
+    "providerInvoked": false,
+    "sideEffectAttempted": false,
+    "blockedReason": "runtime.browser_action_uncontrolled_site",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

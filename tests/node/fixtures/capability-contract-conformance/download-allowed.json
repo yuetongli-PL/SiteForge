@@ -1,0 +1,87 @@
+{
+  "name": "download-allowed",
+  "description": "Controlled download with satisfied output gate writes confined artifact output and sanitized metadata.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:download-allowed",
+    "executionContractRef": "execution-contract:conformance:download-allowed",
+    "policyDecisionRef": "policy:conformance:download-allowed",
+    "verdictHint": "controlled",
+    "requiredGates": ["output_path_required"]
+  },
+  "policyDecision": {
+    "verdict": "controlled",
+    "gates": ["output_path_required"],
+    "gateStatus": {
+      "allSatisfied": true,
+      "output_path_required": { "satisfied": true }
+    },
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": false,
+    "downloaderInvocationAllowed": true
+  },
+  "executionContract": {
+    "capabilityKind": "download",
+    "operationKind": "download",
+    "contractKind": "download",
+    "runtimeBindingRef": "runtime-binding:conformance:download",
+    "downloadDescriptor": {
+      "filename": "catalog-export.txt"
+    },
+    "redactionRequired": true
+  },
+  "capability": {
+    "id": "capability:conformance:download-allowed",
+    "capabilityKind": "download",
+    "operationKind": "download"
+  },
+  "runtimeContext": {
+    "outputDir": "{{outputDir}}",
+    "downloadFilename": "catalog-export.txt",
+    "fixtureText": "controlled fixture export\n",
+    "mimeType": "text/plain",
+    "sentinelBag": {
+      "rawResponseBody": "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+      "rawRequestBody": "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+      "rawHeader": "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+      "cookie": "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+      "token": "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+      "credential": "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+      "authorization": "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+      "submittedValue": "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+      "dom": "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+      "sessionMaterial": "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+      "browserProfile": "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+      "privatePayload": "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+    }
+  },
+  "expected": {
+    "status": "completed",
+    "providerId": "download_provider",
+    "providerInvoked": true,
+    "sideEffectAttempted": true,
+    "resultOutcome": "download_completed",
+    "artifactMetadata": {
+      "filename": "catalog-export.txt",
+      "mimeType": "text/plain",
+      "artifactRef": "artifact:runtime-download:catalog-export.txt"
+    },
+    "outputPathConfined": true,
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

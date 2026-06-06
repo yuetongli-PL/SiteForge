@@ -1,0 +1,73 @@
+{
+  "name": "api-read",
+  "description": "Descriptor-only API read resolves to api_read_provider and keeps reports sanitized.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:api-read",
+    "executionContractRef": "execution-contract:conformance:api-read",
+    "policyDecisionRef": "policy:conformance:api-read",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": true,
+    "downloaderInvocationAllowed": false
+  },
+  "executionContract": {
+    "capabilityKind": "api",
+    "operationKind": "api_request",
+    "contractKind": "api_request",
+    "requestSchemaRef": "schema:conformance:api-read:request",
+    "runtimeBindingRef": "runtime-binding:conformance:api-read",
+    "runtimeBoundary": "app/runtime",
+    "descriptorOnly": true,
+    "redactionRequired": true
+  },
+  "capability": {
+    "id": "capability:conformance:api-read",
+    "capabilityKind": "api",
+    "operationKind": "api_request"
+  },
+  "runtimeContext": {
+    "sentinelBag": {
+      "rawResponseBody": "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+      "rawRequestBody": "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+      "rawHeader": "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+      "cookie": "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+      "token": "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+      "credential": "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+      "authorization": "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+      "submittedValue": "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+      "dom": "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+      "sessionMaterial": "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+      "browserProfile": "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+      "privatePayload": "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+    }
+  },
+  "expected": {
+    "status": "completed",
+    "providerId": "api_read_provider",
+    "providerInvoked": true,
+    "sideEffectAttempted": true,
+    "resultOutcome": "api_read_completed",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

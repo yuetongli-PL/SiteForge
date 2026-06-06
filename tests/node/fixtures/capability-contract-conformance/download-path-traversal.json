@@ -1,0 +1,61 @@
+{
+  "name": "download-path-traversal",
+  "description": "Download rejects path traversal before provider run.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:download-path-traversal",
+    "executionContractRef": "execution-contract:conformance:download-path-traversal",
+    "policyDecisionRef": "policy:conformance:download-path-traversal",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": false,
+    "downloaderInvocationAllowed": true
+  },
+  "executionContract": {
+    "capabilityKind": "download",
+    "operationKind": "download",
+    "contractKind": "download",
+    "runtimeBindingRef": "runtime-binding:conformance:download",
+    "redactionRequired": true
+  },
+  "capability": {
+    "id": "capability:conformance:download-path-traversal",
+    "capabilityKind": "download",
+    "operationKind": "download"
+  },
+  "runtimeContext": {
+    "outputPolicy": { "approved": true },
+    "outputDir": "{{outputDir}}",
+    "downloadFilename": "../escape.txt"
+  },
+  "expected": {
+    "status": "provider_not_executable",
+    "providerId": "download_provider",
+    "providerInvoked": false,
+    "sideEffectAttempted": false,
+    "blockedReason": "runtime.download_path_traversal_rejected",
+    "noArtifactWritten": true,
+    "outsidePathMustNotExist": "{{traversalTarget}}",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

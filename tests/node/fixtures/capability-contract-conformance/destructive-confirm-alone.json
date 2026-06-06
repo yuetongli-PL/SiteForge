@@ -1,0 +1,83 @@
+{
+  "name": "destructive-confirm-alone",
+  "description": "Confirm-destructive equivalent context is not enough to execute destructive actions.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:destructive-confirm-alone",
+    "executionContractRef": "execution-contract:conformance:destructive-confirm-alone",
+    "policyDecisionRef": "policy:conformance:destructive-confirm-alone",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": true,
+    "downloaderInvocationAllowed": false
+  },
+  "executionContract": {
+    "capabilityKind": "destructive",
+    "operationKind": "delete",
+    "contractKind": "form_or_action",
+    "destructiveAction": true,
+    "runtimeBinding": { "kind": "browser_bridge" },
+    "browserActionDescriptor": {
+      "selector": "[data-siteforge-action=\"delete-record\"]",
+      "actionRef": "action:delete-record",
+      "routeRef": "route:record-danger-zone",
+      "requiredSlots": ["recordAlias"]
+    },
+    "payloadTemplate": {
+      "material": "template_only",
+      "slotBindings": [
+        { "name": "recordAlias", "type": "string", "required": true }
+      ],
+      "steps": [
+        {
+          "kind": "form_submit",
+          "selector": "[data-siteforge-action=\"delete-record\"]",
+          "actionRef": "action:delete-record",
+          "routeRef": "route:record-danger-zone"
+        }
+      ]
+    }
+  },
+  "capability": {
+    "id": "capability:conformance:destructive-confirm-alone",
+    "capabilityKind": "destructive",
+    "operationKind": "delete",
+    "destructiveAction": true
+  },
+  "runtimeContext": {
+    "controlledBrowserRuntime": true,
+    "confirmDestructive": true,
+    "taskText": "I confirm delete this record",
+    "slotValues": {
+      "recordAlias": "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+    }
+  },
+  "expected": {
+    "status": "blocked",
+    "providerId": null,
+    "providerInvoked": false,
+    "sideEffectAttempted": false,
+    "blockedReason": "runtime.destructive_execution_blocked",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "name": "browser-write-controlled-local-fixture",
+  "description": "Concrete ordinary write executes only because localFixture is explicitly true.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:browser-write-local-fixture",
+    "executionContractRef": "execution-contract:conformance:browser-write-local-fixture",
+    "policyDecisionRef": "policy:conformance:browser-write-local-fixture",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": true,
+    "downloaderInvocationAllowed": false
+  },
+  "executionContract": {
+    "capabilityKind": "write",
+    "operationKind": "form_or_action",
+    "contractKind": "form_or_action",
+    "runtimeBindingRef": "runtime-binding:conformance:browser-action",
+    "runtimeBinding": { "kind": "browser_bridge" },
+    "requestSchemaRef": "schema:conformance:browser-action:request",
+    "browserActionDescriptor": {
+      "selector": "[data-siteforge-action=\"contact-form\"]",
+      "actionRef": "action:fixture-contact-submit",
+      "routeRef": "route:fixture-contact",
+      "requiredSlots": ["message"]
+    },
+    "payloadTemplate": {
+      "material": "template_only",
+      "redactionRequired": true,
+      "savedMaterial": "sanitized_summary_only",
+      "slotBindings": [
+        { "name": "message", "type": "string", "required": true }
+      ],
+      "steps": [
+        {
+          "kind": "form_submit",
+          "selector": "[data-siteforge-action=\"contact-form\"]",
+          "actionRef": "action:fixture-contact-submit",
+          "routeRef": "route:fixture-contact",
+          "submit": true,
+          "finalSubmit": false,
+          "autoExecute": false,
+          "savedMaterial": "sanitized_summary_only"
+        }
+      ]
+    }
+  },
+  "capability": {
+    "id": "capability:conformance:browser-write-local-fixture",
+    "capabilityKind": "write",
+    "operationKind": "form_or_action"
+  },
+  "runtimeContext": {
+    "localFixture": true,
+    "slotValues": {
+      "message": "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR"
+    },
+    "rawDomSnapshot": "SENTINEL_DOM_SHOULD_NOT_APPEAR"
+  },
+  "expected": {
+    "status": "completed",
+    "providerId": "browser_action_provider",
+    "providerInvoked": true,
+    "sideEffectAttempted": true,
+    "resultOutcome": "browser_action_completed",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

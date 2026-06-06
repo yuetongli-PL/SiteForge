@@ -1,0 +1,61 @@
+{
+  "name": "download-outside-output-dir",
+  "description": "Download rejects absolute output filename outside the approved output directory.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:download-outside-output-dir",
+    "executionContractRef": "execution-contract:conformance:download-outside-output-dir",
+    "policyDecisionRef": "policy:conformance:download-outside-output-dir",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": false,
+    "downloaderInvocationAllowed": true
+  },
+  "executionContract": {
+    "capabilityKind": "export",
+    "operationKind": "export",
+    "contractKind": "download",
+    "runtimeBindingRef": "runtime-binding:conformance:download",
+    "redactionRequired": true
+  },
+  "capability": {
+    "id": "capability:conformance:download-outside-output-dir",
+    "capabilityKind": "export",
+    "operationKind": "export"
+  },
+  "runtimeContext": {
+    "outputPolicy": { "approved": true },
+    "outputDir": "{{outputDir}}",
+    "downloadFilename": "{{outsideFile}}"
+  },
+  "expected": {
+    "status": "provider_not_executable",
+    "providerId": "download_provider",
+    "providerInvoked": false,
+    "sideEffectAttempted": false,
+    "blockedReason": "runtime.download_path_traversal_rejected",
+    "noArtifactWritten": true,
+    "outsidePathMustNotExist": "{{outsideFile}}",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

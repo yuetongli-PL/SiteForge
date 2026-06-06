@@ -1,0 +1,82 @@
+{
+  "name": "payment",
+  "description": "Payment-shaped contract is blocked and not executed by any default production provider.",
+  "request": {
+    "siteId": "synthetic.example",
+    "capabilityId": "capability:conformance:payment",
+    "executionContractRef": "execution-contract:conformance:payment",
+    "policyDecisionRef": "policy:conformance:payment",
+    "verdictHint": "allow",
+    "requiredGates": []
+  },
+  "policyDecision": {
+    "verdict": "allow",
+    "gates": [],
+    "runtimeDispatchAllowed": true,
+    "siteAdapterInvocationAllowed": true,
+    "downloaderInvocationAllowed": false
+  },
+  "executionContract": {
+    "capabilityKind": "payment",
+    "operationKind": "payment",
+    "contractKind": "form_or_action",
+    "paymentOrFundsAction": true,
+    "runtimeBinding": { "kind": "browser_bridge" },
+    "browserActionDescriptor": {
+      "selector": "[data-siteforge-action=\"pay-now\"]",
+      "actionRef": "action:pay-now",
+      "routeRef": "route:checkout",
+      "requiredSlots": ["paymentAlias"]
+    },
+    "payloadTemplate": {
+      "material": "template_only",
+      "slotBindings": [
+        { "name": "paymentAlias", "type": "string", "required": true }
+      ],
+      "steps": [
+        {
+          "kind": "form_submit",
+          "selector": "[data-siteforge-action=\"pay-now\"]",
+          "actionRef": "action:pay-now",
+          "routeRef": "route:checkout"
+        }
+      ]
+    }
+  },
+  "capability": {
+    "id": "capability:conformance:payment",
+    "capabilityKind": "payment",
+    "operationKind": "payment",
+    "paymentOrFundsAction": true
+  },
+  "runtimeContext": {
+    "controlledBrowserRuntime": true,
+    "taskText": "I confirm payment execution",
+    "slotValues": {
+      "paymentAlias": "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+    }
+  },
+  "expected": {
+    "status": "blocked",
+    "providerId": null,
+    "providerInvoked": false,
+    "sideEffectAttempted": false,
+    "blockedReason": "runtime.payment_execution_blocked",
+    "auditSanitized": true,
+    "reportSanitized": true
+  },
+  "forbiddenSentinels": [
+    "SENTINEL_RAW_RESPONSE_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_REQUEST_BODY_SHOULD_NOT_APPEAR",
+    "SENTINEL_RAW_HEADER_SHOULD_NOT_APPEAR",
+    "SENTINEL_COOKIE_SHOULD_NOT_APPEAR",
+    "SENTINEL_TOKEN_SHOULD_NOT_APPEAR",
+    "SENTINEL_CREDENTIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_AUTHORIZATION_SHOULD_NOT_APPEAR",
+    "SENTINEL_SUBMITTED_VALUE_SHOULD_NOT_APPEAR",
+    "SENTINEL_DOM_SHOULD_NOT_APPEAR",
+    "SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR",
+    "SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR",
+    "SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR"
+  ]
+}

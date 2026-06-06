@@ -229,6 +229,7 @@ test('focused core suite includes shared wiki and architecture gate coverage', a
   for (const file of [
     'tests/node/architecture-import-rules.test.mjs',
     'tests/node/test-coverage-regression.test.mjs',
+    'tests/node/controlled-browser-runtime-v2.test.mjs',
     'tests/node/shared-wiki.test.mjs',
     'tests/node/site-doctor-progress-copy.test.mjs',
   ]) {

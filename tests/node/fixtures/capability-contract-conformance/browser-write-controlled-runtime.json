@@ -27,14 +27,31 @@
       "selector": "[data-siteforge-action=\"contact-form\"]",
       "actionRef": "action:fixture-contact-submit",
       "routeRef": "route:fixture-contact",
-      "requiredSlots": ["message"]
+      "requiredSlots": ["message"],
+      "selectors": {
+        "fields": {
+          "message": "[data-siteforge-field=\"message\"]"
+        },
+        "submit": "[data-siteforge-action=\"contact-form\"]"
+      },
+      "completionSignal": {
+        "kind": "selectorVisible",
+        "selector": "[data-siteforge-completion=\"contact-submitted\"]",
+        "timeoutMs": 250
+      }
     },
     "payloadTemplate": {
       "material": "template_only",
       "redactionRequired": true,
       "savedMaterial": "sanitized_summary_only",
       "slotBindings": [
-        { "name": "message", "type": "string", "required": true }
+        {
+          "name": "message",
+          "type": "string",
+          "required": true,
+          "binding": "payload.message",
+          "selector": "[data-siteforge-field=\"message\"]"
+        }
       ],
       "steps": [
         {
@@ -57,6 +74,23 @@
   },
   "runtimeContext": {
     "controlledBrowserRuntime": true,
+    "browserRuntime": {
+      "mode": "controlled",
+      "engine": "chromium",
+      "startUrl": "http://127.0.0.1:41001/contact",
+      "allowedOrigins": ["http://127.0.0.1:41001"],
+      "allowExternalNetwork": false,
+      "allowDownloads": false,
+      "allowPopups": false,
+      "persistProfile": false,
+      "recordDom": false,
+      "recordScreenshots": false,
+      "recordVideo": false,
+      "recordFullTrace": false,
+      "timeoutMs": 500,
+      "actionTimeoutMs": 250,
+      "completionTimeoutMs": 250
+    },
     "siteUrl": "http://localhost/synthetic.test/contact",
     "taskText": "please submit and confirm this harmless local fixture",
     "slotValues": {

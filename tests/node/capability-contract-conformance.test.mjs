@@ -145,7 +145,9 @@ function createPolicyFromFixture(fixture, invocationRequest) {
 
 function createInstrumentedProductionRegistry() {
   const runCalls = [];
-  const providers = createProductionRuntimeProviderRegistry().list().map((provider) => ({
+  const providers = createProductionRuntimeProviderRegistry({
+    browserRuntimeDeps: createConformanceBrowserRuntimeDeps(),
+  }).list().map((provider) => ({
     ...provider,
     async run(options) {
       runCalls.push(provider.id);
@@ -155,6 +157,42 @@ function createInstrumentedProductionRegistry() {
   return {
     providerRegistry: createRuntimeProviderRegistryWith(providers),
     runCalls,
+  };
+}
+
+function createConformanceBrowserRuntimeDeps() {
+  return {
+    openBrowserSession: async () => ({
+      client: {
+        on() {
+          return () => {};
+        },
+        async send() {
+          return {};
+        },
+      },
+      sessionId: 'session-conformance',
+      targetId: 'target-conformance',
+      async navigateAndWait() {},
+      async send() {
+        return {};
+      },
+      async callPageFunction(fn) {
+        switch (fn.name) {
+          case 'selectorInspection':
+            return { count: 1, actionable: true, visible: true };
+          case 'fillSelectorValue':
+            return { filled: true };
+          case 'clickSelector':
+            return { clicked: true };
+          case 'observeCompletionSignal':
+            return true;
+          default:
+            throw new Error(`Unexpected conformance browser function: ${fn.name}`);
+        }
+      },
+      async close() {},
+    }),
   };
 }
 

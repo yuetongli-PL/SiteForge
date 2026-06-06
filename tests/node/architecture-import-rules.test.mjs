@@ -259,6 +259,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
   ['src/app/pipeline/build/capability-interaction.mjs', 'site-local capability confirmation decision metadata without raw material'],
   ['src/app/pipeline/build/setup-assistant.mjs', 'first-run setup plan, choices, capability hints, and build profile artifacts'],
   ['src/app/pipeline/build/workspace.mjs', 'SiteForge workspace directories, setup defaults, current skill promotion, and last-success pointers'],
+  ['src/app/runtime/providers/download-provider.mjs', 'controlled runtime download output after output policy gate and path confinement'],
   ['src/sites/known-sites/douyin/actions/router.mjs', 'temporary downloader input file for subprocess handoff'],
   ['src/sites/known-sites/douyin/queries/follow-query.mjs', 'follow-query cache persistence'],
   ['src/sites/known-sites/social/actions/download-boundary.mjs', 'explicit user-requested media binary download persistence'],
@@ -281,10 +282,11 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/infra/auth/site-session-governance.mjs', 8],
   ['src/infra/io.mjs', 12],
   ['src/app/pipeline/build/artifact-store.mjs', 5],
-  ['src/app/pipeline/build/pipeline.mjs', 43],
+  ['src/app/pipeline/build/pipeline.mjs', 49],
   ['src/app/pipeline/build/capability-interaction.mjs', 3],
   ['src/app/pipeline/build/setup-assistant.mjs', 14],
   ['src/app/pipeline/build/workspace.mjs', 2],
+  ['src/app/runtime/providers/download-provider.mjs', 2],
   ['src/sites/known-sites/bilibili/navigation/open.mjs', 5],
   ['src/sites/known-sites/reddit/api-catalog.mjs', 34],
   ['src/domain/capabilities/api-candidates.mjs', 8],
@@ -1711,6 +1713,35 @@ test('planner policy handoff stays independent from downloader execution and ses
     matches,
     [],
     'planner policy handoff should not trigger downloader, network, browser, or session runtime behavior',
+  );
+});
+
+test('planner runtime invocation request stays descriptor-only and site-neutral', async () => {
+  const imports = await collectResolvedImportsFromFile('src/app/planner/runtime-invocation-request.mjs');
+  assertDependencyAllowlist(imports, {
+    allowedPaths: [
+      'src/app/planner/schema.mjs',
+      'src/domain/policies/execution/index.mjs',
+      'src/domain/policies/execution/schema.mjs',
+      'src/domain/policies/execution/validator.mjs',
+      'src/domain/policies/execution/layer-handoff.mjs',
+      'src/domain/policies/execution/artifact-guard.mjs',
+      'src/domain/policies/execution/policy-gate.mjs',
+      'src/domain/policies/execution/coverage-delta-queue.mjs',
+      'src/domain/policies/execution/layer-runtime-consumer.mjs',
+      'src/domain/sessions/security-guard.mjs',
+    ],
+  }, 'planner runtime invocation request should only depend on schema and execution policy contracts');
+
+  const forbiddenRuntimePattern = /\b(?:fetch|globalThis\.fetch|openBrowserSession|ensureAuthenticatedSession|resolveSiteBrowserSessionOptions|runDownloadTask|executeMediaDownloads|acquireDownloadSession|resolveDownloader|sessionLease|SiteAdapter)\b/gu;
+  const matches = await collectFileSourcePatternMatches(
+    'src/app/planner/runtime-invocation-request.mjs',
+    forbiddenRuntimePattern,
+  );
+  assert.deepEqual(
+    matches,
+    [],
+    'planner runtime invocation request should not trigger downloader, network, browser, site adapter, or session runtime behavior',
   );
 });
 

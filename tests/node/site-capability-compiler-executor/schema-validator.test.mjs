@@ -331,6 +331,130 @@ test('Compiler validators reject raw sensitive fields and values without echoing
   }
 });
 
+test('Compiler validators allow structured execution descriptors but reject raw runtime material', () => {
+  const executionDescriptor = {
+    executionContractRef: 'execution-contract:example:update-record',
+    requestSchemaRef: 'schema:example:update-record:request',
+    runtimeBindingRef: 'runtime-binding:example:update-record',
+    sessionRequirementRef: 'session-requirement:example:authenticated',
+    payloadTemplate: {
+      csrfToken: '{{runtime.secret.csrf}}',
+      shippingAddress: {
+        type: 'string',
+        source: 'slot:shipping-address',
+        persisted: false,
+      },
+    },
+    headerSchema: {
+      Authorization: {
+        type: 'string',
+        source: 'runtime_secret_placeholder',
+      },
+      Cookie: {
+        type: 'string',
+        source: 'runtime_secret_placeholder',
+      },
+      'X-CSRF-Token': {
+        type: 'string',
+        source: 'runtime_secret_placeholder',
+      },
+    },
+    downloaderTaskDescriptor: {
+      taskKind: 'download',
+      outputPathConstraint: {
+        type: 'workspace_relative',
+        value: '{{slot:outputPath}}',
+      },
+      maxFiles: 1,
+    },
+  };
+
+  assert.equal(assertNoCompilerSensitiveMaterial(executionDescriptor), true);
+  assert.equal(assertSiteCompileManifestCompatible(createCompileManifest({
+    inventories: {
+      nodes: [],
+      capabilities: [
+        {
+          id: 'capability:example:update-record',
+          ...executionDescriptor,
+        },
+      ],
+      executionPaths: [
+        executionDescriptor,
+      ],
+      requirements: [],
+    },
+  })), true);
+
+  const rejectedDescriptors = [
+    {
+      name: 'raw authorization header value',
+      value: {
+        headerSchema: {
+          Authorization: {
+            value: 'Bearer synthetic-secret-value',
+          },
+        },
+      },
+    },
+    {
+      name: 'raw request headers container',
+      value: {
+        payloadTemplate: {
+          requestHeaders: {
+            Authorization: '{{runtime.secret.authorization}}',
+          },
+        },
+      },
+    },
+    {
+      name: 'browser profile path',
+      value: {
+        runtimeBindingRef: 'runtime-binding:example:update-record',
+        payloadTemplate: {
+          outputPath: 'C:/Users/example/AppData/Local/BrowserProfile',
+        },
+      },
+    },
+    {
+      name: 'function value',
+      value: {
+        payloadTemplate: {
+          transform: () => 'unsafe',
+        },
+      },
+    },
+    {
+      name: 'dynamic import code string',
+      value: {
+        downloaderTaskDescriptor: {
+          loader: 'import("unsafe-adapter")',
+        },
+      },
+    },
+    {
+      name: 'unsafe session secret ref',
+      value: {
+        executionContractRef: 'execution-contract:example:cookie-session',
+      },
+    },
+  ];
+
+  for (const { name, value } of rejectedDescriptors) {
+    assert.throws(
+      () => assertNoCompilerSensitiveMaterial(value),
+      (error) => {
+        // @ts-ignore
+        assert.equal(error.code, 'compiler.raw_sensitive_material_rejected');
+        // @ts-ignore
+        assert.doesNotMatch(error.message, /synthetic-secret-value|BrowserProfile|unsafe-adapter/u);
+        return true;
+      },
+      `${name} should be rejected`,
+    );
+  }
+});
+
 test('Compiler validators reject unsafe source and evidence refs', () => {
   const unsafeSourceRefs = [
     'https://example.test/public/manifest.json',

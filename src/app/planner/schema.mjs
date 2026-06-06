@@ -44,6 +44,7 @@ const PLANNER_SCHEMA_NAMES = Object.freeze([
   'PlannerLifecycleEvent',
   'PlannerDryRunResult',
   'PlannerLayerHandoffDescriptor',
+  'RuntimeInvocationRequest',
   'PlannerCompatibilityDeclaration',
 ]);
 

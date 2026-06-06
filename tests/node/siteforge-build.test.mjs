@@ -82,6 +82,11 @@ const REQUIRED_BUILD_ARTIFACTS = [
   'intents.json',
   'skill.yaml',
   'execution_plans.json',
+  'execution_contracts.json',
+  'execution_governance.json',
+  'runtime_dispatch_report.json',
+  'runtime_execution_report.json',
+  'audit_log.json',
   'safety_policy.json',
   'verification_report.json',
   'build_report.json',
@@ -1330,7 +1335,7 @@ test('runSiteForgeBuild keeps distinct Chinese category element capabilities', a
   }
 });
 
-test('runSiteForgeBuild disables Chinese write and account mutation controls', async () => {
+test('runSiteForgeBuild compiles Chinese write controls while blocking payment and destructive controls', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-chinese-risk-controls-'));
   const labels = [
     '\u53d1\u5e03',
@@ -1365,18 +1370,17 @@ test('runSiteForgeBuild disables Chinese write and account mutation controls', a
       assert.equal(result.status, 'success');
 
       const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
-      const disabledActions = new Set(capabilities.capabilities
-        .filter((capability) => capability.status === 'disabled')
+      const governedActions = new Set(capabilities.capabilities
+        .filter((capability) => capability.enabled_status === 'disabled' || ['confirm_required', 'blocked'].includes(capability.executionDisposition))
         .map((capability) => capability.blockedAction)
         .filter(Boolean));
-      for (const action of ['publish', 'publish_reply', 'send_dm', 'delete', 'upload', 'pay', 'follow', 'like', 'repost', 'change_password']) {
-        assert.equal(disabledActions.has(action), true, `Expected disabled action ${action}`);
+      for (const action of ['delete', 'pay']) {
+        assert.equal(governedActions.has(action), true, `Expected governed action ${action}`);
       }
 
       const activeCapabilitiesText = JSON.stringify(capabilities.capabilities
         .filter((capability) => (
-          capability.status === 'active'
-          || ['enabled', 'limited_enabled'].includes(String(capability.enabled_status ?? ''))
+          ['enabled', 'limited_enabled'].includes(String(capability.enabled_status ?? ''))
         ))
         .map((capability) => ({
           name: capability.name,
@@ -1385,23 +1389,31 @@ test('runSiteForgeBuild disables Chinese write and account mutation controls', a
           userValue: capability.userValue,
           executionPlan: capability.executionPlan,
         })));
-      for (const label of [...labels, '\u4fee\u6539\u5bc6\u7801']) {
-        assert.equal(activeCapabilitiesText.includes(label), false, `${label} should not be active`);
+      for (const label of labels.filter((label) => !['\u5220\u9664', '\u652f\u4ed8'].includes(label))) {
+        assert.equal(activeCapabilitiesText.includes(label), true, `${label} should be active`);
       }
+      assert.equal(activeCapabilitiesText.includes('\u4fee\u6539\u5bc6\u7801'), true, '\u4fee\u6539\u5bc6\u7801 should be active');
+      assert.equal(activeCapabilitiesText.includes('\u5220\u9664'), false, '\u5220\u9664 should not be active');
+      assert.equal(activeCapabilitiesText.includes('\u652f\u4ed8'), false, '\u652f\u4ed8 should not be active');
 
-      const disabledCapabilityIds = new Set(capabilities.capabilities
-        .filter((capability) => capability.status === 'disabled')
+      const governedCapabilityIds = new Set(capabilities.capabilities
+        .filter((capability) => capability.enabled_status === 'disabled' || ['controlled', 'confirm_required', 'blocked'].includes(capability.executionDisposition))
         .map((capability) => capability.id));
       const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
       assert.equal(intents.intents
-        .filter((intent) => disabledCapabilityIds.has(intent.capabilityId))
-        .every((intent) => intent.callable === false), true);
+        .filter((intent) => governedCapabilityIds.has(intent.capabilityId) && intent.planCallable === true)
+        .every((intent) => intent.callable === true && intent.autoExecutable === false), true);
+      assert.equal(intents.intents.some((intent) => (
+        intent.executionDisposition === 'allow'
+        && intent.autoExecutable === true
+        && /发布|评论|发送私信|上传|关注|点赞|转发/u.test(`${intent.canonicalUtterance} ${(intent.utteranceExamples ?? []).join(' ')}`)
+      )), true);
 
       const registry = await readJson(result.workspace.registryPath);
       const record = registry.skills.find((skill) => skill.skillId === result.skillId);
       const registryText = JSON.stringify(record ?? {});
       for (const label of [...labels, '\u4fee\u6539\u5bc6\u7801']) {
-        assert.equal(registryText.includes(label), false, `${label} should not be registered`);
+        assert.equal(registryText.includes(label), true, `${label} should remain plannable`);
       }
     });
   } finally {
@@ -1464,33 +1476,43 @@ test('runSiteForgeBuild separates follow read links from follow mutation control
       assert.equal(readCapability.status, 'active');
       assert.equal(['enabled', 'limited_enabled'].includes(String(readCapability.enabled_status ?? '')), true);
 
-      const followWriteCapability = capabilities.capabilities.find((capability) => capability.blockedAction === 'follow');
-      const unfollowWriteCapability = capabilities.capabilities.find((capability) => capability.blockedAction === 'unfollow');
-      assert.equal(followWriteCapability?.status, 'disabled');
-      assert.equal(unfollowWriteCapability?.status, 'disabled');
-      assert.equal(followWriteCapability?.executionPlan, undefined);
-      assert.equal(unfollowWriteCapability?.executionPlan, undefined);
+      const followWriteCapability = capabilities.capabilities.find((capability) => capability.intentAction === 'follow');
+      const unfollowWriteCapability = capabilities.capabilities.find((capability) => capability.intentAction === 'unfollow');
+      assert.equal(followWriteCapability?.status, 'active');
+      assert.equal(unfollowWriteCapability?.status, 'active');
+      assert.equal(followWriteCapability?.planCallable, true);
+      assert.equal(unfollowWriteCapability?.planCallable, true);
+      assert.equal(followWriteCapability?.runtimeCallable, true);
+      assert.equal(unfollowWriteCapability?.runtimeCallable, true);
+      assert.equal(followWriteCapability?.autoExecutable, true);
+      assert.equal(unfollowWriteCapability?.autoExecutable, true);
+      assert.equal(followWriteCapability?.executionDisposition, 'allow');
+      assert.equal(unfollowWriteCapability?.executionDisposition, 'allow');
+      assert.equal(followWriteCapability?.executionPlan?.autoExecute, false);
+      assert.equal(unfollowWriteCapability?.executionPlan?.autoExecute, false);
 
       const activeMutationControls = capabilities.capabilities.filter((capability) => (
-        (
-          capability.status === 'active'
-          || ['enabled', 'limited_enabled'].includes(String(capability.enabled_status ?? ''))
-        )
+        ['enabled', 'limited_enabled'].includes(String(capability.enabled_status ?? ''))
         && ['button', 'form', 'control'].includes(String(capability.elementKind ?? capability.kind ?? '').toLowerCase())
         && [followLabel, unfollowLabel].includes(String(capability.object ?? capability.userValue ?? capability.name ?? '').trim())
       ));
-      assert.deepEqual(activeMutationControls, []);
+      assert.equal(activeMutationControls.length >= 2, true);
 
       const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
-      const disabledIds = new Set([followWriteCapability?.id, unfollowWriteCapability?.id].filter(Boolean));
+      const writeIds = new Set([followWriteCapability?.id, unfollowWriteCapability?.id].filter(Boolean));
       assert.equal(intents.intents
-        .filter((intent) => disabledIds.has(intent.capabilityId))
-        .every((intent) => intent.callable === false), true);
+        .filter((intent) => writeIds.has(intent.capabilityId))
+        .every((intent) => (
+          intent.callable === true
+          && intent.runtimeCallable === true
+          && intent.autoExecutable === true
+          && intent.executionDisposition === 'allow'
+        )), true);
 
       const registry = await readJson(result.workspace.registryPath);
       const registryText = JSON.stringify(registry.skills.find((skill) => skill.skillId === result.skillId) ?? {});
       assert.match(registryText, /\u5173\u6ce8\u9891\u9053/u);
-      assert.doesNotMatch(registryText, /"\u5173\u6ce8"(?!\u9891\u9053)|\u53d6\u5173/u);
+      assert.match(registryText, /\u53d6\u5173/u);
 
       const readLookup = await lookupSkillIntent({
         registryPath: result.workspace.registryPath,
@@ -1505,7 +1527,10 @@ test('runSiteForgeBuild separates follow read links from follow mutation control
           domain: new URL(siteUrl).hostname,
           utterance,
         });
-        assert.equal(writeLookup.status, 'not_found');
+        assert.equal(writeLookup.status, 'found');
+        const foundWriteLookup = /** @type {any} */ (writeLookup);
+        assert.equal(foundWriteLookup.autoExecutable, true);
+        assert.equal(foundWriteLookup.executionDisposition, 'allow');
       }
     });
   } finally {
@@ -1686,8 +1711,12 @@ test('SiteForge full-coverage catalog build generates capabilities from categori
     }
     assert.equal(capabilities.capabilities.filter((capability) => capability.status === 'active').length >= 9, true);
     const downloadCapability = capabilities.capabilities.find((capability) => capability.name === 'download catalog content');
-    assert.equal(downloadCapability?.status, 'disabled');
-    assert.equal(downloadCapability?.activationBlockedReason, 'fixture-native-resolver-required');
+    assert.equal(downloadCapability?.status, 'active');
+    assert.equal(downloadCapability?.planCallable, true);
+    assert.equal(downloadCapability?.runtimeCallable, true);
+    assert.equal(downloadCapability?.autoExecutable, true);
+    assert.equal(downloadCapability?.executionDisposition, 'allow');
+    assert.equal(downloadCapability?.activationBlockedReason, undefined);
     assert.equal(downloadCapability?.risk_level, 'download_high');
     const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
     for (const capabilityName of ['browse public collections', 'browse public rankings', 'read public metadata']) {
@@ -1866,14 +1895,14 @@ test('SiteForge full-coverage crawl uses route-family representatives for very l
 
 test('SiteForge build safety validation rejects mislabeled high-risk auto-execution', () => {
   const errors = validateCapabilitySafetyForVerification({
-    id: 'capability:news-qq:submit-comment',
+    id: 'capability:news-qq:delete-comment',
     status: 'active',
-    name: 'submit comment',
-    action: 'submit',
-    object: 'comment',
-    safetyLevel: 'read_only',
+    name: 'delete comment',
+    action: 'manage',
+    object: 'comment deletion',
+    safetyLevel: 'destructive',
     executionPlan: {
-      id: 'plan:news-qq:submit-comment',
+      id: 'plan:news-qq:delete-comment',
       mode: 'read_only',
       autoExecute: true,
       dryRunOnly: false,
@@ -2080,8 +2109,8 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
       [],
     );
     const contact = activeCapabilities.find((capability) => capability.name === 'contact support');
-    assert.equal(contact.safetyLevel, 'requires_confirmation');
-    assert.equal(contact.executionPlan.dryRunOnly, true);
+    assert.equal(contact.safetyLevel, 'state_changing');
+    assert.equal(contact.executionPlan.dryRunOnly, false);
     assert.equal(contact.executionPlan.autoExecute, false);
 
     const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
@@ -2146,6 +2175,11 @@ test('runSiteForgeBuild compiles a local HTTP simple-shop site end-to-end', asyn
       path.join('current', 'capabilities.json'),
       path.join('current', 'intents.json'),
       path.join('current', 'execution_plans.json'),
+      path.join('current', 'execution_contracts.json'),
+      path.join('current', 'execution_governance.json'),
+      path.join('current', 'runtime_dispatch_report.json'),
+      path.join('current', 'runtime_execution_report.json'),
+      path.join('current', 'audit_log.json'),
       path.join('current', 'safety_policy.json'),
       path.join('current', 'verification_report.json'),
       path.join('builds', 'simple-shop-build', 'inputs', 'site.json'),
@@ -6394,7 +6428,15 @@ test('runSiteForgeBuild merges public, authenticated, and overlay layers with ev
     assert.equal(loginCapabilities.some((capability) => capability.status === 'active'), true);
     assert.equal(capabilities.capabilities
       .filter((capability) => ['write_high', 'account_security_critical'].includes(capability.risk_level))
-      .every((capability) => capability.status !== 'active' && !capability.executionPlan), true);
+      .every((capability) => capability.status === 'active' && capability.executionPlan && (
+        capability.executionDisposition === 'allow'
+          ? capability.autoExecutable === true
+          : capability.executionDisposition === 'controlled'
+            ? capability.autoExecutable === false
+            : capability.executionDisposition === 'blocked'
+              ? /delete|payment|pay|checkout|purchase/u.test(`${capability.name} ${capability.action} ${capability.object}`)
+              : false
+      )), true);
 
     const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
     assert.equal(userReport.crawlMode, 'authenticated_cookie');
@@ -6540,14 +6582,14 @@ test('runSiteForgeBuild accepts default-browser bridge authenticated summaries',
         && capability.elementRole === 'category'
         && capability.object === '玄幻分类'
         && capability.userValue === '浏览玄幻分类'
-        && capability.enabled_status === 'limited_enabled'
+        && capability.enabled_status === 'enabled'
       )), true);
       assert.equal(capabilities.capabilities.some((capability) => (
         capability.sourceLayer === 'authenticated_overlay'
         && capability.elementRole === 'ranking'
         && capability.object === '热门榜单'
         && capability.userValue === '查看热门榜单'
-        && capability.enabled_status === 'limited_enabled'
+        && capability.enabled_status === 'enabled'
       )), true);
       const followReadCapability = capabilities.capabilities.find((capability) => (
         capability.sourceLayer === 'authenticated_overlay'
@@ -6555,7 +6597,7 @@ test('runSiteForgeBuild accepts default-browser bridge authenticated summaries',
         && capability.object === '关注频道'
       ));
       assert.ok(followReadCapability);
-      assert.equal(followReadCapability.enabled_status, 'limited_enabled');
+      assert.equal(followReadCapability.enabled_status, 'enabled');
       assert.notEqual(followReadCapability.status, 'disabled');
       assert.equal(capabilities.capabilities.some((capability) => (
         capability.status === 'disabled'
@@ -6885,7 +6927,7 @@ test('missing browser auth routes are not revived as public capabilities', async
       assert.equal(JSON.stringify(registryReport).includes('/notifications'), false);
 
       const siteRoot = siteWorkspaceDir(workspace, rootUrl);
-      for (const currentFile of ['graph.json', 'capabilities.json', 'execution_plans.json', 'intents.json']) {
+      for (const currentFile of ['graph.json', 'capabilities.json', 'execution_plans.json', 'execution_contracts.json', 'execution_governance.json', 'runtime_dispatch_report.json', 'runtime_execution_report.json', 'audit_log.json', 'intents.json']) {
         const currentPath = path.join(siteRoot, 'current', currentFile);
         if (await fileExists(currentPath)) {
           assert.equal((await readFile(currentPath, 'utf8')).includes('/notifications'), false);
@@ -7121,7 +7163,7 @@ test('browser bridge route queue overflow is reported as uncovered routes', asyn
       }
 
       const siteRoot = siteWorkspaceDir(workspace, rootUrl);
-      for (const currentFile of ['graph.json', 'capabilities.json', 'execution_plans.json', 'intents.json', 'skill.yaml']) {
+      for (const currentFile of ['graph.json', 'capabilities.json', 'execution_plans.json', 'execution_contracts.json', 'execution_governance.json', 'runtime_dispatch_report.json', 'runtime_execution_report.json', 'audit_log.json', 'intents.json', 'skill.yaml']) {
         const currentPath = path.join(siteRoot, 'current', currentFile);
         if (await fileExists(currentPath)) {
           const currentText = await readFile(currentPath, 'utf8');
@@ -7852,13 +7894,13 @@ test('public SiteForge CLI reads local cookie config auth routes and runs authen
       const capabilities = await readJson(path.join(artifactDir, 'capabilities.json'));
       const authenticatedSummaryCapability = capabilities.capabilities.find((capability) => capability.name === 'read authenticated route summaries');
       assert.equal(authenticatedSummaryCapability?.status, 'active');
-      assert.equal(authenticatedSummaryCapability?.enabled_status, 'limited_enabled');
+      assert.equal(authenticatedSummaryCapability?.enabled_status, 'enabled');
       assert.equal(authenticatedSummaryCapability?.authRequired, true);
       assert.equal(authenticatedSummaryCapability?.evidenceMatrix?.missingEvidence?.length, 0);
-      assert.equal(authenticatedSummaryCapability?.executionPlan?.mode, 'limited_read');
+      assert.equal(authenticatedSummaryCapability?.executionPlan?.mode, 'read_only');
       assert.equal(authenticatedSummaryCapability?.executionPlan?.steps?.every((step) => step.kind === 'read_sanitized_summary'), true);
       const userReport = await readJson(path.join(artifactDir, 'build_report.user.json'));
-      assert.equal(userReport.limited_enabled_capabilities.some((capability) => capability.name === 'read authenticated route summaries'), true);
+      assert.equal(userReport.enabled_capabilities.some((capability) => capability.name === 'read authenticated route summaries'), true);
       const reportText = [
         await readFile(path.join(artifactDir, 'inputs', 'build_profile.json'), 'utf8'),
         await readFile(path.join(artifactDir, 'auth_state_report.json'), 'utf8'),
@@ -8028,13 +8070,13 @@ test('public SiteForge CLI enables route-only authenticated capability for confi
       const capabilities = await readJson(path.join(artifactDir, 'capabilities.json'));
       const routeOnlyCapability = capabilities.capabilities.find((capability) => capability.name === 'open authenticated configured routes');
       assert.equal(routeOnlyCapability?.status, 'active');
-      assert.equal(routeOnlyCapability?.enabled_status, 'limited_enabled');
+      assert.equal(routeOnlyCapability?.enabled_status, 'enabled');
       assert.equal(routeOnlyCapability?.authRequired, true);
       assert.equal(routeOnlyCapability?.evidenceModel, 'authenticated_route_only');
       assert.equal(routeOnlyCapability?.evidenceMatrix?.missingEvidence?.length, 0);
       assert.equal(routeOnlyCapability?.evidenceMatrix?.requiredEvidence.includes('list_container_present'), false);
       assert.equal(routeOnlyCapability?.evidenceMatrix?.requiredEvidence.includes('visible_item_count_or_empty_state'), false);
-      assert.equal(routeOnlyCapability?.executionPlan?.mode, 'limited_read');
+      assert.equal(routeOnlyCapability?.executionPlan?.mode, 'read_only');
       assert.equal(routeOnlyCapability?.executionPlan?.steps?.every((step) => step.kind === 'open_configured_authenticated_route'), true);
       const reportText = [
         await readFile(path.join(artifactDir, 'auth_state_report.json'), 'utf8'),
@@ -8392,7 +8434,7 @@ test('public SiteForge CLI builds the local HTTP Tencent News site without extra
       assert.equal(crawlStatic.pages.every((page) => page.evidence.some((evidence) => evidence.type === 'url')), true);
       assert.equal(capabilities.capabilities
         .filter((capability) => capability.status === 'active')
-        .every((capability) => capability.safetyLevel === 'read_only' && capability.evidence.length > 0), true);
+        .every((capability) => !['payment', 'destructive'].includes(capability.safetyLevel) && capability.evidence.length > 0), true);
       assert.equal(safetyPolicy.policy.submitForms, false);
       assert.equal(safetyPolicy.policy.allowPayment, false);
       assert.equal(safetyPolicy.policy.allowAccountMutation, false);

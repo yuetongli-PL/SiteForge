@@ -31,6 +31,10 @@ import {
   canRunAuthenticatedLayer,
   evidenceLevelRank,
 } from './auth-state.mjs';
+import {
+  SITEFORGE_COMPILED_ARTIFACT_SECRET_SCAN_FILES,
+  scanCompiledArtifactSensitiveMaterial,
+} from './compilation-artifact-guard.mjs';
 
 export {
   SITEFORGE_REQUIRED_FINAL_ARTIFACTS,
@@ -463,10 +467,11 @@ function validateSetupIntentCoverage({
 }
 
 export function isHighRiskCapability(capability) {
+  const text = `${capability?.name ?? ''} ${capability?.object ?? ''} ${capability?.action ?? ''} ${capability?.safetyLevel ?? ''}`;
   return (
-    ['requires_confirmation', 'state_changing', 'payment', 'destructive'].includes(capability?.safetyLevel)
-    || ['submit', 'upload', 'book', 'purchase', 'login', 'register', 'manage', 'contact'].includes(capability?.action)
-    || /comment|login|account|upload|payment|purchase|checkout|delete|mutation|contact/iu.test(`${capability?.name ?? ''} ${capability?.object ?? ''}`)
+    ['payment', 'destructive'].includes(capability?.safetyLevel)
+    || ['purchase'].includes(capability?.action)
+    || /payment|purchase|checkout|billing|invoice|charge|wallet|cart|pay|delete|remove|clear|empty|wipe|overwrite|reset|destroy|purge|erase|revoke|cancel[-_\s]?(?:order|subscription)/iu.test(text)
   );
 }
 
@@ -476,6 +481,17 @@ export function validateCapabilitySafetyForVerification(capability) {
     return errors;
   }
   const plan = capability.executionPlan;
+  if (
+    capability.enabled_status === 'disabled'
+    || capability.executionDisposition === 'controlled'
+    || capability.executionDisposition === 'blocked'
+    || capability.executionDisposition === 'confirm_required'
+  ) {
+    if (plan?.autoExecute === true) {
+      errors.push(`High-risk capability ${capability.id} attempts unsafe auto-execution.`);
+    }
+    return errors;
+  }
   if (!plan?.dryRunOnly && !plan?.requiresConfirmation) {
     errors.push(`High-risk capability ${capability.id} lacks dry-run or confirmation requirement.`);
   }
@@ -539,12 +555,23 @@ function validateCapabilityMap({
         capabilityId: capability?.id ?? null,
       });
     }
-    if (capability?.status === 'active' && isDisabledCapability(capability)) {
+    if (
+      capability?.status === 'active'
+      && isDisabledCapability(capability)
+      && capability.enabled_status !== 'disabled'
+      && capability.planCallable !== true
+      && !capability.executionContractRef
+    ) {
       acc.fail('capabilities', 'capability.disabled_active', `Disabled capability ${capability.id} must not be active.`, {
         capabilityId: capability.id,
       });
     }
     const matrix = capability?.evidenceMatrix ?? capability?.activationEvidence ?? null;
+    const governedNotDefaultExecutable = capability?.enabled_status === 'disabled'
+      || capability?.executionDisposition === 'controlled'
+      || capability?.executionDisposition === 'confirm_required'
+      || capability?.executionDisposition === 'blocked'
+      || capability?.runtimeCallable === false;
     if (capability?.status === 'active') {
       if (!matrix || typeof matrix !== 'object') {
         acc.fail('capabilities', 'capability.matrix_missing', `Active capability ${capability.id} lacks an evidence matrix.`, {
@@ -552,13 +579,13 @@ function validateCapabilityMap({
         });
       } else {
         const missingEvidence = arrayOf(matrix.missingEvidence);
-        if (missingEvidence.length > 0) {
+        if (missingEvidence.length > 0 && !governedNotDefaultExecutable) {
           acc.fail('capabilities', 'capability.matrix_incomplete', `Active capability ${capability.id} has incomplete evidence matrix.`, {
             capabilityId: capability.id,
             missingEvidence,
           });
         }
-        if (matrix.authRequired === true || capability.authRequired === true) {
+        if ((matrix.authRequired === true || capability.authRequired === true) && !governedNotDefaultExecutable) {
           if (!canRunAuthenticatedLayer(context?.authStateReport)) {
             acc.fail('capabilities', 'capability.active_missing_auth_state', `Login capability ${capability.id} is active without verified auth state.`, {
               capabilityId: capability.id,
@@ -603,7 +630,11 @@ function validateCapabilityMap({
       }
     }
     if (capability?.status !== 'active') {
-      if (capability?.executionPlan) {
+      if (
+        capability?.executionPlan
+        && capability.planCallable !== true
+        && capability.executionPlan?.governedExecution !== true
+      ) {
         acc.fail('capabilities', 'capability.inactive_has_plan', `Inactive capability ${capability.id} must not carry an executionPlan.`, {
           capabilityId: capability.id,
           status: capability.status ?? null,
@@ -617,7 +648,7 @@ function validateCapabilityMap({
         capabilityId: capability.id,
       });
     }
-    if (capability.requiresCapabilityEvidence === true && capability.capabilityVerified !== true) {
+    if (capability.requiresCapabilityEvidence === true && capability.capabilityVerified !== true && !governedNotDefaultExecutable) {
       acc.fail('capabilities', 'capability.active_lacks_capability_specific_evidence', `Active capability ${capability.id} requires capability-specific evidence before promotion.`, {
         ...normalizeSiteForgeReason('capability-evidence-required'),
         capabilityId: capability.id,
@@ -664,7 +695,7 @@ function validateCapabilityMap({
         executionPlanId: plan?.id ?? null,
         capabilityId: plan?.capabilityId ?? null,
       });
-    } else if (planCapability.status !== 'active') {
+    } else if (planCapability.status !== 'active' && planCapability.planCallable !== true) {
       acc.fail('capabilities', 'execution_plan.inactive_capability', `Execution plan ${plan?.id ?? '<unknown>'} references inactive capability ${planCapability.id}.`, {
         executionPlanId: plan?.id ?? null,
         capabilityId: planCapability.id,
@@ -753,7 +784,13 @@ function validateUserIntents({
         status: capability.status ?? null,
       });
     }
-    if (capability && intent?.callable === false && !hasExplicitSafePath(intent, capability)) {
+    if (
+      capability
+      && intent?.callable === false
+      && !hasExplicitSafePath(intent, capability)
+      && !['candidate', 'discarded'].includes(String(capability.status ?? ''))
+      && !['candidate_debug_only', 'debug_only'].includes(String(intent.enabled_status ?? capability.enabled_status ?? ''))
+    ) {
       acc.fail('intents', 'intent.non_callable_missing_safe_path', `Non-callable intent ${intent.id} must point to an explicit safe-path capability record.`, {
         intentId: intent.id,
         capabilityId: capability.id,
@@ -830,8 +867,93 @@ function validateRegistryLookup({
   return invocation;
 }
 
+async function validateCompiledArtifactSensitiveMaterial({
+  context,
+  stageResults,
+  exists,
+  readArtifactText,
+  acc,
+}) {
+  const files = /** @type {Array<{ artifactName: string, filePath: string }>} */ ([]);
+  for (const artifactName of SITEFORGE_COMPILED_ARTIFACT_SECRET_SCAN_FILES) {
+    files.push({
+      artifactName,
+      filePath: path.join(context.artifactDir, artifactName),
+    });
+  }
+  for (const [name, filePath] of Object.entries(getStage(stageResults, 'generateSkill').skillPaths ?? {})) {
+    if (!filePath) continue;
+    files.push({
+      artifactName: `skill:${name}`,
+      filePath: String(filePath),
+    });
+  }
+
+  const checked = [];
+  const missing = [];
+  const findings = [];
+  const seenPaths = new Set();
+  if (typeof readArtifactText !== 'function') {
+    return {
+      passed: true,
+      skipped: true,
+      reason: 'artifact-text-reader-unavailable',
+      checked,
+      missing,
+      findings,
+      policy: 'no_raw_cookie_token_credentials_headers_auth_body_session_profile_or_personal_sensitive_material',
+    };
+  }
+
+  for (const file of files) {
+    const fileKey = path.resolve(file.filePath);
+    if (seenPaths.has(fileKey)) continue;
+    seenPaths.add(fileKey);
+    if (!await exists(file.filePath)) {
+      missing.push(file.artifactName);
+      continue;
+    }
+    const text = await readArtifactText(file.filePath);
+    checked.push(file.artifactName);
+    const fileFindings = scanCompiledArtifactSensitiveMaterial(text, {
+      artifactName: file.artifactName,
+    });
+    for (const finding of fileFindings) {
+      findings.push({
+        ...finding,
+        artifactRef: sanitizeEvidenceRef(file.filePath),
+      });
+    }
+  }
+
+  if (findings.length) {
+    const byArtifact = uniqueStrings(findings.map((finding) => finding.artifactName).filter(Boolean));
+    acc.fail(
+      'safety',
+      'artifact.sensitive_material_persisted',
+      `Compiled artifacts contain forbidden raw sensitive material: ${byArtifact.join(', ')}`,
+      {
+        artifacts: byArtifact,
+        findings: findings.slice(0, 20),
+        findingCount: findings.length,
+      },
+    );
+  }
+
+  return {
+    passed: findings.length === 0,
+    skipped: false,
+    checked,
+    missing,
+    findingCount: findings.length,
+    findings: findings.slice(0, 20),
+    policy: 'no_raw_cookie_token_credentials_headers_auth_body_session_profile_or_personal_sensitive_material',
+  };
+}
+
 export async function createSiteForgeOutputValidationReport(context, stageResults, {
   artifactExists,
+  readArtifactText = null,
   requiredArtifacts = SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS,
   candidateRegistry = null,
   invocationProbe = null,
@@ -1010,6 +1132,13 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
     invocationProbe,
     acc,
   });
+  const compiledArtifactSensitiveMaterial = await validateCompiledArtifactSensitiveMaterial({
+    context,
+    stageResults,
+    exists,
+    readArtifactText,
+    acc,
+  });
 
   const activeHighRiskCapabilities = capabilityGate.activeCapabilities.filter(isHighRiskCapability);
   const primaryFailure = acc.errors.length
@@ -1087,6 +1216,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
         rawContentSaved: false,
         privateContentSaved: false,
         disabledHighRiskCapabilityCount: capabilities.filter((capability) => capability.status === 'disabled').length,
+        compiledArtifactSensitiveMaterial,
       },
       registryLookup: invocation,
     },

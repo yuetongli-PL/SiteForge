@@ -105,6 +105,26 @@ function graphEdgesFromManifest(manifest) {
       ));
     }
   }
+  for (const contract of manifest.inventories.nodes.filter((node) => node.type === 'ExecutionContractNode')) {
+    edges.push(edge(
+      `edge:${contract.capabilityRef}:execution-contract:${contract.id}`,
+      'capability_has_execution_contract',
+      contract.capabilityRef,
+      contract.id,
+    ));
+    edges.push(edge(
+      `edge:${contract.id}:runtime-binding:${contract.runtimeBindingRef}`,
+      'execution_contract_bound_to_runtime',
+      contract.id,
+      contract.runtimeBindingRef,
+    ));
+    edges.push(edge(
+      `edge:${contract.id}:governance-policy:${contract.governancePolicyRef}`,
+      'execution_contract_governed_by_policy',
+      contract.id,
+      contract.governancePolicyRef,
+    ));
+  }
   edges.push(edge(
     'edge:artifact:compiler-graph-validation-report:redaction',
     'artifact_guarded_by_redaction',

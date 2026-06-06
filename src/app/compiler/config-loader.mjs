@@ -183,10 +183,17 @@ function deriveCapabilities(capabilitySite = {}, registrySite = {}) {
       urlPattern: `${capabilitySite.baseUrl ?? registrySite.canonicalBaseUrl ?? 'https://example.invalid/'}${intent}/:id`,
       pageType: capabilitySite.primaryArchetype ?? registrySite.siteArchetype ?? 'public-detail',
       mode,
-      agentExposed: downloadIntent ? downloadExecutable : true,
-      executable: downloadIntent ? downloadExecutable : true,
+      agentExposed: true,
+      executable: true,
       availability: downloadIntent ? downloadAvailability : undefined,
       enablementStatus: downloadIntent && !downloadExecutable ? 'disabled' : 'enabled',
+      executionDisposition: downloadIntent
+        ? downloadExecutable ? 'allow' : 'blocked'
+        : mode === 'readOnly' && !requiresLogin ? 'allow' : 'controlled',
+      runtimeCallable: downloadIntent ? downloadExecutable : true,
+      autoExecutable: downloadIntent
+        ? downloadExecutable
+        : mode === 'readOnly' && !requiresLogin,
       requiresApproval,
       requiresAuth: requiresLogin,
       requiresSession: requiresLogin,

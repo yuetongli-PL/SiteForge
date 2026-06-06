@@ -2,6 +2,34 @@
 
 # SiteForge
 
+## Public Site Availability
+
+| Site | Download availability |
+| --- | --- |
+| `attackers.net` | no download availability declared |
+| `dahlia-av.jp` | no download availability declared |
+| `jable.tv` | downloads declared: video, media-bundle; available: none; blocked: video, media-bundle; reason: jable-native-resolver-required |
+| `madonna-av.com` | no download availability declared |
+| `moodyz.com` | no download availability declared |
+| `rookie-av.jp` | no download availability declared |
+| `s1s1s1.com` | no download availability declared |
+| `www.22biqu.com` | downloads declared: book; available: book; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.8man.jp` | no download availability declared |
+| `www.bilibili.com` | downloads declared: video, media-bundle; available: video, media-bundle |
+| `www.bz888888888.com` | downloads declared: book; available: none; blocked: book; reason: blocked-by-cloudflare-challenge; requires: pypy3, tesseract; dependency reason: runtime-dependency-missing, ocr-dependency-missing |
+| `www.dogma.co.jp` | no download availability declared |
+| `www.douyin.com` | downloads declared: video, media-bundle; available: video, media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.instagram.com` | downloads declared: social-archive, media-bundle; available: none; blocked: social-archive, media-bundle; reason: download-layer-removed; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.km-produce.com` | no download availability declared |
+| `www.maxing.jp` | no download availability declared |
+| `www.qidian.com` | no download availability declared |
+| `www.reddit.com` | downloads declared: social-archive, media-bundle; available: none; blocked: social-archive, media-bundle; reason: download-layer-removed; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.sod.co.jp` | no download availability declared |
+| `www.t-powers.co.jp` | no download availability declared |
+| `www.xiaohongshu.com` | downloads declared: image-note, media-bundle; available: image-note, media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `x.com` | downloads declared: social-archive, media-bundle; available: none; blocked: social-archive, media-bundle; reason: download-layer-removed; requires: pypy3; dependency reason: runtime-dependency-missing |
+
+
 SiteForge 用于把公开网站 URL 转换成本地、受治理的站点能力工作区。公开 CLI 保持克制，目前只暴露一个主要入口：
 
 ```bash

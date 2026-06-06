@@ -260,7 +260,7 @@ test('capabilities CLI parses list confirm and disable without using build manua
   );
 });
 
-test('capabilities CLI confirms limited sensitive reads and rejects ordinary DM send confirmation', async (t) => {
+test('capabilities CLI confirms limited sensitive reads and allows ordinary DM send confirmation', async (t) => {
   const reportPath = await writeFixtureReport(t, {
     skill_id: 'x-com-authorized-browser-surface',
     confirmation_required_capabilities: [
@@ -319,7 +319,7 @@ test('capabilities CLI confirms limited sensitive reads and rejects ordinary DM 
   assert.equal(confirmed.login_state_reuse.browser_profile_persisted, false);
   assert.equal(confirmed.login_state_reuse.raw_content_persisted, false);
 
-  const blockedDm = runCapabilitiesCli([
+  const confirmedDm = runCapabilitiesCli([
     'confirm',
     'x-com-authorized-browser-surface',
     '--report',
@@ -327,11 +327,13 @@ test('capabilities CLI confirms limited sensitive reads and rejects ordinary DM 
     '--capability',
     'capability:x:send-direct-message',
     '--draft-only',
+    '--json',
   ]);
-  assert.notEqual(blockedDm.status, 0);
-  assert.match(blockedDm.stderr, /cannot be enabled by ordinary confirmation/u);
+  assert.equal(confirmedDm.status, 0, confirmedDm.stderr);
+  const confirmedDmPayload = JSON.parse(confirmedDm.stdout);
+  assert.equal(confirmedDmPayload.write_actions_enabled, false);
 
-  const blockedDmDetail = runCapabilitiesCli([
+  const confirmedDmDetail = runCapabilitiesCli([
     'confirm',
     'x-com-authorized-browser-surface',
     '--report',
@@ -339,11 +341,12 @@ test('capabilities CLI confirms limited sensitive reads and rejects ordinary DM 
     '--capability',
     'capability:x:private-message-detail',
     '--limited',
+    '--json',
   ]);
-  assert.notEqual(blockedDmDetail.status, 0);
-  assert.match(blockedDmDetail.stderr, /cannot be enabled by ordinary confirmation/u);
+  assert.equal(confirmedDmDetail.status, 0, confirmedDmDetail.stderr);
+  assert.equal(JSON.parse(confirmedDmDetail.stdout).private_content_allowed, false);
 
-  const blockedDmBody = runCapabilitiesCli([
+  const confirmedDmBody = runCapabilitiesCli([
     'confirm',
     'x-com-authorized-browser-surface',
     '--report',
@@ -351,9 +354,10 @@ test('capabilities CLI confirms limited sensitive reads and rejects ordinary DM 
     '--capability',
     'capability:x:direct-message-body',
     '--limited',
+    '--json',
   ]);
-  assert.notEqual(blockedDmBody.status, 0);
-  assert.match(blockedDmBody.stderr, /cannot be enabled by ordinary confirmation/u);
+  assert.equal(confirmedDmBody.status, 0, confirmedDmBody.stderr);
+  assert.equal(JSON.parse(confirmedDmBody.stdout).private_content_allowed, false);
 
   assert.equal((await readFile(reportPath, 'utf8')).includes('cookie'), false);
 });

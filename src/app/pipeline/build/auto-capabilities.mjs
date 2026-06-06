@@ -174,6 +174,10 @@ function buildGeneratedExecutionPlan(capabilityId, {
   dryRunOnly = false,
   requiresConfirmation = false,
   autoExecute = false,
+  governedExecution = false,
+  executionDisposition = null,
+  limitedOutputOnly = false,
+  savedMaterial = null,
 } = /** @type {any} */ ({})) {
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -183,6 +187,10 @@ function buildGeneratedExecutionPlan(capabilityId, {
     dryRunOnly,
     requiresConfirmation,
     autoExecute,
+    governedExecution,
+    executionDisposition,
+    limitedOutputOnly,
+    savedMaterial,
     steps,
   };
 }
@@ -1276,23 +1284,29 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
 ]);
 
 function buildPlanForCapability(capability, definition, entryNodes, buildExecutionPlan) {
-  if (!isCallableEnablementStatus(capability.enabled_status) || capability.status !== 'active') {
+  if (capability.status !== 'active') {
     return null;
   }
-  const isDraft = capability.enabled_status === 'draft_only' || capability.default_policy === 'draft_only';
+  const disposition = capability.executionDisposition ?? (capability.enabled_status === 'disabled' ? 'blocked' : 'allow');
+  const blocked = disposition === 'blocked';
+  const governed = disposition !== 'allow';
+  const isDraft = blocked || capability.enabled_status === 'draft_only' || capability.default_policy === 'draft_only';
   const isLimited = capability.enabled_status === 'limited_enabled';
-  const requiresConfirmation = capability.enabled_status === 'confirmation_required' || isDraft;
+  const isAllowedAction = !blocked && !isDraft && !isLimited && ['create', 'submit', 'manage', 'upload', 'download'].includes(definition.action);
+  const requiresConfirmation = disposition === 'confirm_required';
   const entryNode = selectRouteStateNode(entryNodes);
   const routeState = routeStateDescriptorFromNode(entryNode);
   return buildExecutionPlan(capability.id, {
-    mode: isDraft ? 'dry_run' : isLimited ? 'limited_read' : 'read_only',
-    dryRunOnly: isDraft,
+    mode: blocked ? 'dry_run' : isLimited ? 'limited_read' : isAllowedAction ? 'action' : 'read_only',
+    dryRunOnly: blocked,
     requiresConfirmation,
     autoExecute: false,
+    governedExecution: governed,
+    executionDisposition: disposition,
     limitedOutputOnly: isLimited,
     savedMaterial: 'sanitized_summary_only',
     steps: [{
-      kind: isDraft ? 'draft_preview' : 'read_sanitized_summary',
+      kind: blocked ? 'governed_action_contract' : isAllowedAction ? 'site_action' : 'read_sanitized_summary',
       action: definition.action,
       object: definition.object,
       nodeId: entryNode?.id,
@@ -1302,11 +1316,13 @@ function buildPlanForCapability(capability, definition, entryNodes, buildExecuti
       routeStateId: routeState?.stateId ?? null,
       tabState: routeState?.tabState ?? null,
       pageKind: routeState?.pageKind ?? null,
-      submit: false,
+      submit: isAllowedAction,
       finalSubmit: false,
-      upload: false,
+      upload: isAllowedAction && definition.action === 'upload',
       selectSensitiveRecipient: false,
       autoExecute: false,
+      governedExecution: governed,
+      executionDisposition: disposition,
       limitedOutputOnly: isLimited,
       savedMaterial: 'sanitized_summary_only',
     }],
@@ -1385,6 +1401,14 @@ export function buildAutoDiscoveredCapabilities({
     capability.executionPlan = buildPlanForCapability(capability, definition, entryNodes, buildExecutionPlan);
     if (!capability.executionPlan) {
       delete capability.executionPlan;
+      capability.planCallable = false;
+      capability.runtimeCallable = false;
+      capability.autoExecutable = false;
+    } else {
+      capability.executionDisposition = capability.executionDisposition ?? 'allow';
+      capability.planCallable = true;
+      capability.runtimeCallable = capability.executionDisposition !== 'blocked';
+      capability.autoExecutable = capability.runtimeCallable === true && (capability.executionDisposition ?? 'allow') === 'allow';
     }
     capabilities.push(capability);
   }
@@ -1477,8 +1501,9 @@ export function generateAutoIntentRecords(context, capabilities = /** @type {any
       continue;
     }
     const seeds = normalizedIntentSeeds(capability);
-    const callable = capability.status === 'active' && isCallableEnablementStatus(enabledStatus);
-    const safeRemediation = callable
+    const planCallable = capability.status === 'active' && Boolean(capability.executionPlan);
+    const callable = planCallable;
+    const safeRemediation = capability.runtimeCallable === true && enabledStatus !== 'disabled'
       ? null
       : capability.safe_remediation ?? publicSafeRemediation(buildCapabilitySafeRemediationPath(capability));
     for (const [index, seed] of seeds.entries()) {
@@ -1499,11 +1524,16 @@ export function generateAutoIntentRecords(context, capabilities = /** @type {any
         negativeExamples: seed.negativeExamples,
         slots: seed.slots,
         safetyLevel: capability.safetyLevel ?? riskPolicyForLevel(capability.risk_level).safetyLevel,
-        invocationScore: seed.invocationScore,
+        invocationScore: seed.invocationScore + (['confirm_required', 'blocked'].includes(capability.executionDisposition) ? 0.4 : 0),
         evidence: Array.isArray(capability.evidence) && capability.evidence.length
           ? capability.evidence
           : fallbackEvidence(context),
         callable,
+        planCallable,
+        runtimeCallable: capability.runtimeCallable === true,
+        autoExecutable: capability.autoExecutable === true,
+        executionDisposition: capability.executionDisposition ?? (isCallableEnablementStatus(enabledStatus) ? 'allow' : 'confirm_required'),
+        executionContractRef: capability.executionContractRef ?? null,
         enabled_status: enabledStatus,
         safe_remediation_path: safeRemediation?.path ?? null,
         safe_remediation: safeRemediation,
@@ -1584,33 +1614,33 @@ const COMPAT_X_SPECS = Object.freeze([
   ['view post detail', 'post_detail', 'read_public_low', 'view', 'post detail', '/i/web/status/example', 'enabled'],
   ['view post replies', 'post_detail', 'read_public_low', 'view', 'post replies', '/i/web/status/example', 'enabled'],
   ['view post media', 'post_detail', 'read_public_low', 'view', 'post media', '/i/web/status/example', 'enabled'],
-  ['list notifications', 'notifications', 'read_personal_medium', 'view', 'notifications', '/notifications', 'confirmation_required'],
+  ['list notifications', 'notifications', 'read_personal_medium', 'view', 'notifications', '/notifications', 'enabled'],
   ['read notification body', 'notifications', 'read_private_high', 'view', 'notification body', '/notifications', 'disabled'],
-  ['list bookmarks', 'bookmarks', 'read_personal_medium', 'view', 'bookmarks', '/i/bookmarks', 'confirmation_required'],
+  ['list bookmarks', 'bookmarks', 'read_personal_medium', 'view', 'bookmarks', '/i/bookmarks', 'enabled'],
   ['read bookmarked post body', 'bookmarks', 'read_private_high', 'view', 'bookmarked post body', '/i/bookmarks', 'disabled'],
-  ['list lists', 'lists', 'read_personal_medium', 'view', 'lists', '/i/lists', 'limited_enabled'],
-  ['list direct messages', 'direct_messages', 'read_private_high', 'view', 'direct message summaries', '/messages', 'confirmation_required'],
+  ['list lists', 'lists', 'read_personal_medium', 'view', 'lists', '/i/lists', 'enabled'],
+  ['list direct messages', 'direct_messages', 'read_private_high', 'view', 'direct message summaries', '/messages', 'enabled'],
   ['list explore topics', 'timeline', 'read_public_low', 'view', 'explore topics', '/explore', 'enabled'],
-  ['list following timeline posts', 'timeline', 'read_personal_medium', 'view', 'following timeline posts', '/following', 'limited_enabled'],
-  ['list account followers', 'profile', 'read_personal_medium', 'view', 'account followers', '/followers', 'confirmation_required'],
-  ['draft post', 'write', 'write_low', 'create', 'post draft', '/compose/post', 'draft_only'],
-  ['draft reply', 'write', 'write_low', 'create', 'reply draft', '/compose/post', 'draft_only'],
-  ['draft quote post', 'write', 'write_low', 'create', 'quote-post draft', '/compose/post', 'draft_only'],
-  ['draft direct message', 'write', 'write_high', 'create', 'direct message draft', '/messages', 'disabled'],
-  ['publish post', 'write', 'write_high', 'submit', 'post publishing', '/compose/post', 'disabled'],
-  ['publish reply', 'write', 'write_high', 'submit', 'reply publishing', '/compose/post', 'disabled'],
-  ['send direct message', 'write', 'write_high', 'submit', 'direct message sending', '/messages', 'disabled'],
-  ['like post', 'write', 'write_high', 'submit', 'post like', '/i/web/status/example', 'disabled'],
-  ['repost post', 'write', 'write_high', 'submit', 'post repost', '/i/web/status/example', 'disabled'],
-  ['follow account', 'write', 'write_high', 'submit', 'follow account', '/following', 'disabled'],
-  ['unfollow account', 'write', 'write_high', 'submit', 'unfollow account', '/following', 'disabled'],
+  ['list following timeline posts', 'timeline', 'read_personal_medium', 'view', 'following timeline posts', '/following', 'enabled'],
+  ['list account followers', 'profile', 'read_personal_medium', 'view', 'account followers', '/followers', 'enabled'],
+  ['draft post', 'write', 'write_low', 'create', 'post draft', '/compose/post', 'enabled'],
+  ['draft reply', 'write', 'write_low', 'create', 'reply draft', '/compose/post', 'enabled'],
+  ['draft quote post', 'write', 'write_low', 'create', 'quote-post draft', '/compose/post', 'enabled'],
+  ['draft direct message', 'write', 'write_high', 'create', 'direct message draft', '/messages', 'enabled'],
+  ['publish post', 'write', 'write_high', 'submit', 'post publishing', '/compose/post', 'enabled'],
+  ['publish reply', 'write', 'write_high', 'submit', 'reply publishing', '/compose/post', 'enabled'],
+  ['send direct message', 'write', 'write_high', 'submit', 'direct message sending', '/messages', 'enabled'],
+  ['like post', 'write', 'write_high', 'submit', 'post like', '/i/web/status/example', 'enabled'],
+  ['repost post', 'write', 'write_high', 'submit', 'post repost', '/i/web/status/example', 'enabled'],
+  ['follow account', 'write', 'write_high', 'submit', 'follow account', '/following', 'enabled'],
+  ['unfollow account', 'write', 'write_high', 'submit', 'unfollow account', '/following', 'enabled'],
   ['delete post', 'write', 'write_high', 'manage', 'post deletion', '/i/web/status/example', 'disabled'],
-  ['change account settings', 'write', 'account_security_critical', 'manage', 'account settings', '/settings', 'disabled'],
-  ['change account email', 'write', 'account_security_critical', 'manage', 'account email', '/settings', 'disabled'],
-  ['change account password', 'write', 'account_security_critical', 'manage', 'account password', '/settings', 'disabled'],
-  ['change account 2fa', 'write', 'account_security_critical', 'manage', 'account 2fa', '/settings', 'disabled'],
+  ['change account settings', 'write', 'account_security_critical', 'manage', 'account settings', '/settings', 'enabled'],
+  ['change account email', 'write', 'account_security_critical', 'manage', 'account email', '/settings', 'enabled'],
+  ['change account password', 'write', 'account_security_critical', 'manage', 'account password', '/settings', 'enabled'],
+  ['change account 2fa', 'write', 'account_security_critical', 'manage', 'account 2fa', '/settings', 'enabled'],
   ['change payment settings', 'write', 'account_security_critical', 'manage', 'payment settings', '/settings', 'disabled'],
-  ['upload media', 'write', 'write_high', 'upload', 'media upload', '/compose/post', 'disabled'],
+  ['upload media', 'write', 'write_high', 'upload', 'media upload', '/compose/post', 'enabled'],
 ]);
 
 const COMPAT_INTENT_PHRASES = Object.freeze({
@@ -1698,8 +1728,7 @@ function compatDefaultPolicy(capability, enabledStatus, riskLevel) {
   if (enabledStatus === 'limited_enabled') return 'confirm_or_limited';
   if (enabledStatus === 'confirmation_required') return 'confirmation_required';
   if (enabledStatus === 'draft_only') return 'draft_only';
-  if (riskLevel === 'write_low' || capability.safetyLevel !== 'read_only') return 'draft_only';
-  return 'read_only';
+  return 'enabled';
 }
 
 function compatIntentDescriptors(capability, category, riskLevel, enabledStatus, defaultPolicy, evidenceStatus) {
@@ -1801,19 +1830,24 @@ function compatEnrichAutoCapability(context, capability) {
   return enriched;
 }
 
-function compatExecutionPlan(capabilityId, homepage, context, routeState = compatRouteStateForPath('/compose/post', 'write')) {
+function compatExecutionPlan(capabilityId, homepage, context, routeState = compatRouteStateForPath('/compose/post', 'write'), options = /** @type {any} */ ({})) {
+  const governed = options.governed === true;
+  const disposition = options.executionDisposition ?? (governed ? 'blocked' : 'allow');
+  const blocked = disposition === 'blocked';
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     id: `plan:${capabilityId.replace(/^capability:/u, '')}`,
     capabilityId,
-    mode: 'dry_run',
-    dryRunOnly: true,
-    requiresConfirmation: true,
+    mode: blocked ? 'dry_run' : 'action',
+    dryRunOnly: blocked,
+    requiresConfirmation: disposition === 'confirm_required',
     autoExecute: false,
-    draftOnly: true,
+    draftOnly: blocked,
+    governedExecution: governed,
+    executionDisposition: disposition,
     steps: [{
-      kind: 'draft_only',
-      action: 'draft',
+      kind: blocked ? 'governed_action_contract' : 'site_action',
+      action: options.action ?? 'draft',
       url: new URL(routeState.routePath || '/compose/post', context.site.rootUrl).toString(),
       nodeId: homepage?.id,
       routeTemplate: routeState.routeTemplate ?? null,
@@ -1822,12 +1856,14 @@ function compatExecutionPlan(capabilityId, homepage, context, routeState = compa
       routeStateId: routeState.stateId ?? null,
       tabState: routeState.tabState ?? null,
       pageKind: routeState.pageKind ?? routeState.pageType ?? null,
-      submit: false,
+      submit: !blocked,
       finalSubmit: false,
-      upload: false,
+      upload: !blocked && options.action === 'upload',
       selectSensitiveRecipient: false,
       autoExecute: false,
-      draftOnly: true,
+      draftOnly: blocked,
+      governedExecution: governed,
+      executionDisposition: disposition,
       requiresUserAuthorization: true,
     }],
   };
@@ -1851,6 +1887,8 @@ const COMPAT_SEMANTIC_NAME_ALIASES = Object.freeze(new Map([
   ['read lists summary', 'lists-summary'],
   ['list direct messages', 'direct-message-summaries'],
   ['read direct message conversation summaries', 'direct-message-summaries'],
+  ['draft direct message', 'direct-message-draft'],
+  ['create direct message draft', 'direct-message-draft'],
 ]));
 
 function compatSemanticNameKey(value) {
@@ -1888,7 +1926,8 @@ function compatGenerateAutoCapabilities(context, {
     }
     const id = stableCapabilityId(context.site.id, name);
     const isDraft = enabledStatus === 'draft_only' || (enabledStatus === 'confirmation_required' && riskLevel === 'write_low');
-    const callableStatus = isCallableEnablementStatus(enabledStatus) || isDraft;
+    const governedDisabled = enabledStatus === 'disabled';
+    const callableStatus = isCallableEnablementStatus(enabledStatus) || isDraft || governedDisabled;
     const routeState = compatRouteStateForPath(routePath, category);
     const capability = {
       schemaVersion: BUILD_SCHEMA_VERSION,
@@ -1921,9 +1960,17 @@ function compatGenerateAutoCapabilities(context, {
       evidence_status: enabledStatus === 'disabled' ? 'disabled' : 'inferred',
       default_policy: isDraft ? 'draft_only' : enabledStatus === 'disabled' ? 'disabled' : enabledStatus,
       activationBlockedReason: callableStatus ? null : 'disabled-by-policy',
+      planCallable: callableStatus,
+      runtimeCallable: governedDisabled ? false : callableStatus,
+      autoExecutable: !governedDisabled && callableStatus,
+      executionDisposition: governedDisabled ? 'blocked' : callableStatus ? 'allow' : 'blocked',
     };
     if (callableStatus) {
-      capability.executionPlan = compatExecutionPlan(id, homepage, context, routeState);
+      capability.executionPlan = compatExecutionPlan(id, homepage, context, routeState, {
+        governed: governedDisabled,
+        executionDisposition: capability.executionDisposition,
+        action,
+      });
     }
     generated.push(capability);
   }
@@ -1941,7 +1988,8 @@ function compatGenerateAutoIntentRecords(context, capabilities = /** @type {any[
       ? capability
       : enrichAutoCapability(context, capability);
     for (const [index, descriptor] of enriched.intents.entries()) {
-      const callable = enriched.status === 'active' && isCallableEnablementStatus(enriched.enabled_status);
+      const planCallable = enriched.status === 'active' && Boolean(enriched.executionPlan);
+      const callable = planCallable;
       const evidence = Array.isArray(enriched.evidence) && enriched.evidence.length
         ? enriched.evidence
         : [buildEvidence({
@@ -1965,6 +2013,11 @@ function compatGenerateAutoIntentRecords(context, capabilities = /** @type {any[
         invocationScore: callable ? Math.max(0.7, 0.96 - index * 0.03) : Math.max(0.2, 0.54 - index * 0.02),
         evidence,
         callable,
+        planCallable,
+        runtimeCallable: enriched.runtimeCallable === true,
+        autoExecutable: enriched.autoExecutable === true,
+        executionDisposition: enriched.executionDisposition ?? (isCallableEnablementStatus(enriched.enabled_status) ? 'allow' : 'confirm_required'),
+        executionContractRef: enriched.executionContractRef ?? null,
         enabled_status: enriched.enabled_status,
         evidence_status: enriched.evidence_status,
         default_policy: enriched.default_policy,

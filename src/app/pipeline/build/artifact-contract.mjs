@@ -19,6 +19,11 @@ export const SITEFORGE_REQUIRED_PRE_PROMOTION_ARTIFACTS = Object.freeze([
   'intents.json',
   'skill.yaml',
   'execution_plans.json',
+  'execution_contracts.json',
+  'execution_governance.json',
+  'runtime_dispatch_report.json',
+  'runtime_execution_report.json',
+  'audit_log.json',
   'safety_policy.json',
 ]);
 

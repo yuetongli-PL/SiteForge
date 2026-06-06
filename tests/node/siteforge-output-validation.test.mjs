@@ -17,6 +17,9 @@ import {
   lookupSkillIntent,
   normalizeEvidenceObject,
   runSiteForgeBuild,
+  buildExecutionContract,
+  evaluateExecutionGovernance,
+  buildRuntimeDispatchReport,
   upsertSkillRegistryRecord,
   validateCapabilitySafeRemediationPath,
   validateExecutionPlanAgainstRiskPolicy,
@@ -31,6 +34,12 @@ import {
 import {
   selectSiteForgePrimaryReason,
 } from '../../src/app/pipeline/build/output-validation.mjs';
+import {
+  createMockRuntimeProviderRegistry,
+} from '../../src/app/runtime/testing.mjs';
+import {
+  applyDefaultProductionRuntimeProviderRegistry,
+} from '../../src/entrypoints/build/run-build.mjs';
 
 const NOW = '2026-05-16T00:00:00.000Z';
 
@@ -41,6 +50,348 @@ async function readJson(filePath) {
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
+
+test('execution governance blocks destructive tasks unless explicit gates are all satisfied', () => {
+  const capability = {
+    id: 'delete-record-capability',
+    name: 'Delete record',
+    action: 'delete',
+    object: 'record',
+    status: 'active',
+    authRequired: true,
+    risk_level: 'write_high',
+    executionPlan: {
+      id: 'plan-delete-record',
+      autoExecute: false,
+      requiresConfirmation: true,
+      steps: [
+        {
+          kind: 'form',
+          action: 'delete_record',
+          nodeId: 'node:record-admin',
+          submit: true,
+          finalSubmit: true,
+        },
+      ],
+    },
+    inputs: [
+      { name: 'recordRef', type: 'string', required: true },
+    ],
+  };
+  const baseContext = {
+    buildId: 'destructive-governance-test',
+    site: { id: 'synthetic-site' },
+    options: {
+      execute: true,
+      executionTask: capability.id,
+    },
+    policy: {},
+  };
+  const contract = buildExecutionContract({
+    context: baseContext,
+    capability,
+    intents: [{ id: 'intent-delete-record', capabilityId: capability.id }],
+  });
+
+  assert.equal(contract.destructiveAction, true);
+  assert.equal(contract.highRiskAction, true);
+  assert.equal(contract.executionDisposition, 'blocked');
+  assert.equal(contract.executionVerdict, 'blocked');
+  assert.deepEqual(contract.executionGates, [
+    'confirm_required',
+    'audit_required',
+    'session_required',
+    'permission_required',
+  ]);
+  assert.equal(contract.impactScope.level, 'destructive');
+  assert.equal(contract.requiresStrongConfirmation, true);
+  assert.equal(contract.confirmationPolicy.naturalLanguageRequestGrantsExecution, false);
+  assert.equal(contract.auditPolicy.required, true);
+  assert.equal(contract.executionPrerequisites.sitePolicyExplicitAllowRequired, true);
+  assert.equal(contract.executionPrerequisites.strongConfirmationRequired, true);
+  assert.equal(contract.executionPrerequisites.auditRequired, true);
+
+  const naturalLanguageOnlyGovernance = evaluateExecutionGovernance({
+    context: baseContext,
+    contracts: [contract],
+  });
+  const naturalLanguageOnlyDecision = naturalLanguageOnlyGovernance.decisions[0];
+  assert.equal(naturalLanguageOnlyDecision.runtimeDispatchAllowed, false);
+  assert.equal(naturalLanguageOnlyDecision.verdict, 'blocked');
+  assert.deepEqual(naturalLanguageOnlyDecision.gates, [
+    'confirm_required',
+    'audit_required',
+    'session_required',
+    'permission_required',
+  ]);
+  assert.equal(naturalLanguageOnlyDecision.disposition, 'blocked');
+  assert.equal(naturalLanguageOnlyDecision.naturalLanguageRequestGrantsExecution, false);
+  assert.equal(naturalLanguageOnlyDecision.governanceGates.sitePolicyExplicitAllow.satisfied, false);
+  assert.equal(naturalLanguageOnlyDecision.governanceGates.strongConfirmation.satisfied, false);
+  assert.equal(naturalLanguageOnlyDecision.reasonCode, 'execution.destructive_default_blocked');
+  assert.equal(buildRuntimeDispatchReport({
+    context: baseContext,
+    contracts: [contract],
+    governance: naturalLanguageOnlyGovernance,
+  }).status, 'blocked_by_policy');
+
+  const plannedOnlyReport = buildRuntimeDispatchReport({
+    context: {
+      ...baseContext,
+      options: {
+        executionTask: capability.id,
+      },
+    },
+    contracts: [contract],
+    governance: naturalLanguageOnlyGovernance,
+  });
+  assert.equal(plannedOnlyReport.status, 'planned_no_execute_flag');
+  assert.equal(plannedOnlyReport.runtimeInvocationRequest.requestType, 'RuntimeInvocationRequest');
+  assert.equal(plannedOnlyReport.runtimeDecision, null);
+  assert.equal(plannedOnlyReport.runtimeExecuted, false);
+  assert.equal(plannedOnlyReport.sideEffectAttempted, false);
+
+  const runtimeFlagsWithoutSitePolicy = evaluateExecutionGovernance({
+    context: {
+      ...baseContext,
+      options: {
+        ...baseContext.options,
+        allowDestructiveExecution: true,
+        confirmDestructive: contract.id,
+        auditExecution: true,
+        destructiveExecutionGrant: true,
+      },
+      authStateReport: { verified: true },
+    },
+    contracts: [contract],
+  }).decisions[0];
+  assert.equal(runtimeFlagsWithoutSitePolicy.runtimeDispatchAllowed, false);
+  assert.equal(runtimeFlagsWithoutSitePolicy.governanceGates.sitePolicyExplicitAllow.satisfied, false);
+
+  const missingAuditDecision = evaluateExecutionGovernance({
+    context: {
+      ...baseContext,
+      options: {
+        ...baseContext.options,
+        allowDestructiveExecution: true,
+        confirmDestructive: contract.id,
+        destructiveExecutionGrant: true,
+      },
+      policy: { allowDestructiveActions: true },
+      authStateReport: { verified: true },
+    },
+    contracts: [contract],
+  }).decisions[0];
+  assert.equal(missingAuditDecision.runtimeDispatchAllowed, false);
+  assert.equal(missingAuditDecision.verdict, 'controlled');
+  assert.equal(missingAuditDecision.gateStatus.audit_required.satisfied, false);
+  assert.equal(missingAuditDecision.reasonCode, 'execution.audit_required');
+
+  const allowedGovernance = evaluateExecutionGovernance({
+    context: {
+      ...baseContext,
+      options: {
+        ...baseContext.options,
+        allowDestructiveExecution: true,
+        confirmDestructive: contract.id,
+        auditExecution: true,
+        destructiveExecutionGrant: true,
+      },
+      policy: { allowDestructiveActions: true },
+      authStateReport: { verified: true },
+    },
+    contracts: [contract],
+  });
+  const allowedDecision = allowedGovernance.decisions[0];
+  assert.equal(allowedDecision.runtimeDispatchAllowed, true);
+  assert.equal(allowedDecision.verdict, 'controlled');
+  assert.equal(allowedDecision.gateStatus.allSatisfied, true);
+  assert.equal(allowedDecision.disposition, 'controlled');
+  assert.equal(allowedDecision.governanceGates.allSatisfied, true);
+  assert.equal(allowedDecision.siteAdapterInvocationAllowed, false);
+  assert.equal(buildRuntimeDispatchReport({
+    context: {
+      ...baseContext,
+      options: {
+        ...baseContext.options,
+        allowDestructiveExecution: true,
+        confirmDestructive: contract.id,
+        auditExecution: true,
+        destructiveExecutionGrant: true,
+      },
+      policy: { allowDestructiveActions: true },
+      authStateReport: { verified: true },
+    },
+    contracts: [contract],
+    governance: allowedGovernance,
+  }).status, 'ready_for_controlled_runtime');
+});
+
+test('runtime dispatch report separates default build, task planning, and governed runtime request', () => {
+  const writeCapability = {
+    id: 'update-profile-capability',
+    name: 'Update profile',
+    action: 'update',
+    object: 'profile',
+    status: 'active',
+    risk_level: 'write_low',
+    executionPlan: {
+      id: 'plan-update-profile',
+      steps: [
+        {
+          kind: 'form',
+          action: 'update_profile',
+          nodeId: 'node:profile',
+          submit: true,
+          finalSubmit: true,
+        },
+      ],
+    },
+    inputs: [{ name: 'displayName', type: 'string', required: true }],
+  };
+  const downloadCapability = {
+    id: 'download-manual-capability',
+    name: 'Download product manual',
+    action: 'download',
+    object: 'manual',
+    status: 'active',
+    risk_level: 'read_public_low',
+    executionPlan: {
+      id: 'plan-download-invoice',
+      steps: [
+        {
+          kind: 'download',
+          action: 'download_manual',
+          nodeId: 'node:manual',
+        },
+      ],
+    },
+  };
+  const context = {
+    buildId: 'runtime-dispatch-test',
+    buildDir: 'artifact:runtime-dispatch-test',
+    artifactStore: { buildDir: 'artifact:runtime-dispatch-test' },
+    site: { id: 'synthetic-site' },
+    options: {},
+    policy: {},
+  };
+  const contracts = [writeCapability, downloadCapability].map((capability) => buildExecutionContract({
+    context,
+    capability,
+    intents: [{ id: `intent-${capability.id}`, capabilityId: capability.id }],
+  }));
+  const governance = evaluateExecutionGovernance({ context, contracts });
+
+  const defaultReport = buildRuntimeDispatchReport({ context, contracts, governance });
+  assert.equal(defaultReport.status, 'compiled_no_task');
+  assert.equal(defaultReport.taskPlanningRequested, false);
+  assert.equal(defaultReport.runtimeInvocationRequest, null);
+  assert.equal(defaultReport.runtimeDecision, null);
+  assert.equal(defaultReport.runtimeExecuted, false);
+
+  const plannedReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: { executionTask: writeCapability.id },
+    },
+    contracts,
+    governance,
+  });
+  assert.equal(plannedReport.status, 'planned_no_execute_flag');
+  assert.equal(plannedReport.runtimeInvocationRequest.requestType, 'RuntimeInvocationRequest');
+  assert.deepEqual(plannedReport.runtimeInvocationRequest.requiredGates, []);
+  assert.equal(plannedReport.runtimeDecision, null);
+  assert.equal(plannedReport.sideEffectAttempted, false);
+
+  const writeExecuteReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: writeCapability.id,
+        execute: true,
+      },
+    },
+    contracts,
+    governance,
+  });
+  assert.equal(writeExecuteReport.status, 'ready_for_direct_runtime');
+  assert.equal(writeExecuteReport.runtimeDecision.verdict, 'allow');
+  assert.deepEqual(writeExecuteReport.runtimeDecision.gates, []);
+  assert.equal(writeExecuteReport.runtimeDispatchAllowed, true);
+  assert.equal(writeExecuteReport.runtimeExecuted, false);
+
+  const downloadExecuteReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: downloadCapability.id,
+        execute: true,
+      },
+    },
+    contracts,
+    governance,
+  });
+  assert.equal(downloadExecuteReport.status, 'ready_for_direct_runtime');
+  assert.equal(downloadExecuteReport.runtimeDecision.verdict, 'allow');
+  assert.deepEqual(downloadExecuteReport.runtimeDecision.gates, []);
+  assert.equal(downloadExecuteReport.runtimeDispatchAllowed, true);
+  assert.equal(downloadExecuteReport.runtimeExecuted, false);
+});
+
+test('payment task execution remains blocked without a dedicated payment authorization policy', () => {
+  const capability = {
+    id: 'pay-invoice-capability',
+    name: 'Pay invoice',
+    action: 'pay',
+    object: 'invoice',
+    status: 'active',
+    safetyLevel: 'payment',
+    risk_level: 'write_high',
+    executionPlan: {
+      id: 'plan-pay-invoice',
+      requiresConfirmation: true,
+      steps: [
+        {
+          kind: 'form',
+          action: 'pay_invoice',
+          nodeId: 'node:invoice-payment',
+          submit: true,
+          finalSubmit: true,
+        },
+      ],
+    },
+  };
+  const context = {
+    buildId: 'payment-governance-test',
+    site: { id: 'synthetic-site' },
+    options: {
+      executionTask: capability.id,
+      execute: true,
+      confirmPayment: 'pay-invoice-capability',
+      auditExecution: true,
+      paymentExecutionGrant: true,
+    },
+    policy: {
+      allowPaymentActions: true,
+      fullExecutionAudit: true,
+    },
+  };
+  const contract = buildExecutionContract({
+    context,
+    capability,
+    intents: [{ id: 'intent-pay-invoice', capabilityId: capability.id }],
+  });
+  const governance = evaluateExecutionGovernance({ context, contracts: [contract] });
+  const report = buildRuntimeDispatchReport({ context, contracts: [contract], governance });
+
+  assert.equal(contract.paymentOrFundsAction, true);
+  assert.equal(contract.executionDisposition, 'blocked');
+  assert.equal(governance.decisions[0].verdict, 'blocked');
+  assert.equal(report.status, 'blocked_by_policy');
+  assert.equal(report.runtimeDecision.verdict, 'blocked');
+  assert.equal(report.runtimeDispatchAllowed, false);
+  assert.equal(report.runtimeExecuted, false);
+});
 
 test('page reconciliation failure takes priority over crawl warning reasons', () => {
   const reason = selectSiteForgePrimaryReason([
@@ -305,6 +656,47 @@ test('output validation accepts a complete graph, capability map, intents, and r
   assert.equal(report.gates.registryLookup.executionPlanId, 'plan:fixture-local:view-homepage');
 });
 
+test('output validation rejects compiled artifacts with raw runtime material', async () => {
+  const fixture = createValidationFixture();
+  const report = await createSiteForgeOutputValidationReport(fixture.context, fixture.stageResults, {
+    artifactExists: async () => true,
+    readArtifactText: async (filePath) => {
+      if (String(filePath).endsWith('capabilities.json')) {
+        return JSON.stringify({
+          schemaVersion: 1,
+          capabilities: [{
+            id: 'capability:fixture-local:unsafe',
+            request: {
+              headers: {
+                authorization: 'Bearer synthetic-output-validation-token',
+              },
+              body: {
+                message: 'hello',
+              },
+            },
+          }],
+        });
+      }
+      return JSON.stringify({
+        schemaVersion: 1,
+        headerNames: ['authorization', 'cookie'],
+        authType: 'runtime_session',
+        bodySchema: { type: 'object' },
+        payloadTemplate: { material: 'template_only' },
+      });
+    },
+    candidateRegistry: fixture.registry,
+    invocationProbe: fixture.invocationProbe,
+    successfulBuild: true,
+  });
+
+  const codes = errorCodes(report);
+  assert.equal(report.status, 'failed');
+  assert.equal(codes.has('artifact.sensitive_material_persisted'), true);
+  assert.equal(report.gates.safety.compiledArtifactSensitiveMaterial.passed, false);
+  assert.equal(report.gates.safety.compiledArtifactSensitiveMaterial.findings.some((finding) => finding.artifactName === 'capabilities.json'), true);
+});
+
 test('output validation accepts non-static page evidence when static crawl is empty', async () => {
   const fixture = createValidationFixture();
   fixture.stageResults.crawlStatic = {
@@ -371,32 +763,36 @@ test('output validation accepts active read-only API request execution plans', a
 
 test('risk policy defaults encode privacy and forced-disabled action boundaries', () => {
   assert.deepEqual(RISK_LEVEL_DEFAULTS.read_public_low.defaultAction, 'enabled');
-  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_personal_medium.defaultAction, 'confirm_or_limited');
-  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_private_high.defaultAction, 'disabled_or_confirm_limited');
-  assert.deepEqual(RISK_LEVEL_DEFAULTS.write_low.defaultAction, 'draft_only');
-  assert.deepEqual(RISK_LEVEL_DEFAULTS.write_high.defaultAction, 'disabled');
-  assert.deepEqual(RISK_LEVEL_DEFAULTS.account_security_critical.defaultAction, 'disabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_personal_medium.defaultAction, 'enabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_private_high.defaultAction, 'enabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.write_low.defaultAction, 'enabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.write_high.defaultAction, 'enabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.download_high.defaultAction, 'enabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.account_security_critical.defaultAction, 'enabled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_public_low.executionDisposition, 'allow');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_personal_medium.executionDisposition, 'controlled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.read_private_high.executionDisposition, 'controlled');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.write_low.executionDisposition, 'allow');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.write_high.executionDisposition, 'allow');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.download_high.executionDisposition, 'allow');
+  assert.deepEqual(RISK_LEVEL_DEFAULTS.account_security_critical.executionDisposition, 'controlled');
   for (const action of [
-    'submit',
-    'send',
     'delete',
+    'clear',
+    'empty',
+    'overwrite',
+    'reset',
+    'cancel_order',
+    'cancel_subscription',
+    'void',
+    'destroy',
+    'purge',
+    'erase',
+    'revoke',
     'pay',
     'checkout',
-    'upload',
-    'change_password',
-    'change_email',
-    'change_2fa',
+    'purchase',
     'change_payment',
-    'edit_profile',
-    'follow',
-    'unfollow',
-    'like',
-    'repost',
-    'publish',
-    'publish_reply',
-    'send_reply',
-    'send_dm',
-    'select_sensitive_recipient',
   ]) {
     assert.equal(FORCED_DISABLED_ACTIONS.includes(action), true);
   }
@@ -404,21 +800,15 @@ test('risk policy defaults encode privacy and forced-disabled action boundaries'
 
 test('risk policy recognizes Chinese forced-disabled action labels', () => {
   const cases = [
-    ['\u53d1\u5e03', 'publish'],
-    ['\u8bc4\u8bba', 'publish_reply'],
-    ['\u53d1\u9001\u79c1\u4fe1', 'send_dm'],
     ['\u5220\u9664', 'delete'],
-    ['\u4e0a\u4f20', 'upload'],
+    ['\u6e05\u7a7a', 'clear'],
+    ['\u8986\u76d6', 'overwrite'],
+    ['\u91cd\u7f6e', 'reset'],
+    ['\u53d6\u6d88\u8ba2\u5355', 'cancel_order'],
+    ['\u64a4\u9500', 'revoke'],
     ['\u652f\u4ed8', 'pay'],
-    ['\u5173\u6ce8', 'follow'],
-    ['\u53d6\u5173', 'unfollow'],
-    ['\u70b9\u8d5e', 'like'],
-    ['\u8f6c\u53d1', 'repost'],
-    ['\u4fee\u6539\u5bc6\u7801', 'change_password'],
-    ['\u4fee\u6539\u90ae\u7bb1', 'change_email'],
-    ['\u4fee\u65392FA', 'change_2fa'],
+    ['\u7ed3\u8d26', 'checkout'],
     ['\u4fee\u6539\u4ed8\u6b3e\u65b9\u5f0f', 'change_payment'],
-    ['\u4fee\u6539\u8d44\u6599', 'edit_profile'],
   ];
   for (const [label, action] of cases) {
     assert.equal(findForcedDisabledActions(label).includes(action), true, `${label} should map to ${action}`);
@@ -482,8 +872,9 @@ test('risk defaults separate limited sensitive reads, confirmation gates, and di
     privacy: 'limited',
   });
   assert.equal(recommended.risk_level, 'read_personal_medium');
-  assert.equal(recommended.enabled_status, 'limited_enabled');
-  assert.equal(recommended.default_policy, 'limited_enabled');
+  assert.equal(recommended.enabled_status, 'enabled');
+  assert.equal(recommended.default_policy, 'enabled');
+  assert.equal(recommended.executionDisposition, 'controlled');
 
   const followers = applyRiskDefaults({
     id: 'capability:x:followers',
@@ -500,8 +891,9 @@ test('risk defaults separate limited sensitive reads, confirmation gates, and di
     enabledStatus: 'confirmation_required',
     defaultPolicy: 'confirmation_required',
   });
-  assert.equal(followers.enabled_status, 'confirmation_required');
-  assert.equal(followers.default_policy, 'confirmation_required');
+  assert.equal(followers.enabled_status, 'enabled');
+  assert.equal(followers.default_policy, 'enabled');
+  assert.equal(followers.executionDisposition, 'controlled');
 
   const dmDraft = applyRiskDefaults({
     id: 'capability:x:dm-draft',
@@ -524,9 +916,13 @@ test('risk defaults separate limited sensitive reads, confirmation gates, and di
   }, {
     riskLevel: 'write_high',
   });
-  assert.equal(dmDraft.status, 'disabled');
-  assert.equal(dmDraft.enabled_status, 'disabled');
-  assert.equal(dmDraft.executionPlan, undefined);
+  assert.equal(dmDraft.status, 'active');
+  assert.equal(dmDraft.enabled_status, 'enabled');
+  assert.equal(dmDraft.default_policy, 'enabled');
+  assert.equal(dmDraft.disabledByPolicy, undefined);
+  assert.equal(dmDraft.executionDisposition, 'controlled');
+  assert.equal(dmDraft.executionPlan.governedExecution, true);
+  assert.equal(dmDraft.executionPlan.autoExecute, false);
 
   const videoDownload = applyRiskDefaults({
     id: 'capability:jable:download-content',
@@ -549,16 +945,19 @@ test('risk defaults separate limited sensitive reads, confirmation gates, and di
   }, {
     riskLevel: 'download_high',
   });
-  assert.equal(RISK_LEVEL_DEFAULTS.download_high.enabled, false);
+  assert.equal(RISK_LEVEL_DEFAULTS.download_high.enabled, true);
   assert.equal(videoDownload.risk_level, 'download_high');
-  assert.equal(videoDownload.status, 'disabled');
-  assert.equal(videoDownload.enabled_status, 'disabled');
-  assert.equal(videoDownload.default_policy, 'disabled');
-  assert.equal(videoDownload.riskPolicy.safetyLevel, 'destructive');
-  assert.equal(videoDownload.executionPlan, undefined);
+  assert.equal(videoDownload.status, 'active');
+  assert.equal(videoDownload.enabled_status, 'enabled');
+  assert.equal(videoDownload.default_policy, 'enabled');
+  assert.equal(videoDownload.riskPolicy.safetyLevel, 'read_only');
+  assert.equal(videoDownload.disabledByPolicy, undefined);
+  assert.equal(videoDownload.executionDisposition, 'controlled');
+  assert.equal(videoDownload.executionPlan.governedExecution, true);
+  assert.equal(videoDownload.executionPlan.autoExecute, false);
 });
 
-test('risk validation rejects sensitive recipient selection inside draft plans', () => {
+test('risk validation allows non-destructive write slots inside executable plans', () => {
   const errors = validateExecutionPlanAgainstRiskPolicy({
     id: 'capability:x:draft-reply',
     siteId: 'x',
@@ -581,10 +980,10 @@ test('risk validation rejects sensitive recipient selection inside draft plans',
       }],
     },
   });
-  assert.equal(errors.some((error) => error.code === 'capability.forced_action_execution_blocked'), true);
+  assert.equal(errors.some((error) => error.code === 'capability.forced_action_execution_blocked'), false);
 });
 
-test('risk validation blocks delete upload follow DM and account-security plan aliases', () => {
+test('risk validation blocks destructive and payment plan aliases', () => {
   const errors = validateExecutionPlanAgainstRiskPolicy({
     id: 'capability:x:misclassified-read',
     siteId: 'x',
@@ -599,21 +998,17 @@ test('risk validation blocks delete upload follow DM and account-security plan a
       autoExecute: false,
       steps: [
         { kind: 'inspect', deleteAccount: true },
-        { kind: 'inspect', upload: true },
-        { kind: 'inspect', follow: true },
-        { kind: 'inspect', sendDm: true },
-        { kind: 'inspect', changePassword: true },
+        { kind: 'inspect', pay: true },
+        { kind: 'inspect', changePayment: true },
       ],
     },
   });
   const forced = errors.find((error) => error.code === 'capability.forced_action_execution_blocked');
   assert.ok(forced);
   assert.deepEqual(forced.forcedDisabledActions, [
-    'change_password',
+    'change_payment',
     'delete',
-    'follow',
-    'send_dm',
-    'upload',
+    'pay',
   ]);
 });
 
@@ -625,8 +1020,8 @@ test('risk validation rejects unsafe remediation plans without exposing raw mate
     rawMaterialAllowed: true,
     privateContentAllowed: true,
     steps: [{
-      kind: 'follow',
-      follow: true,
+      kind: 'delete',
+      delete: true,
       savedMaterial: 'private_message_body',
     }],
   };
@@ -741,7 +1136,7 @@ test('safe remediation model rejects high-risk write auto-prepare', async () => 
   assert.equal(codes.has('capability.safe_remediation_privacy_boundary_invalid'), true);
 });
 
-test('output validation rejects active or planned forced-disabled actions', async () => {
+test('output validation rejects ungoverned live forced-risk execution', async () => {
   const fixture = createValidationFixture();
   const capability = fixture.stageResults.discoverCapabilities.capabilities[0];
   capability.name = 'checkout now';
@@ -749,15 +1144,22 @@ test('output validation rejects active or planned forced-disabled actions', asyn
   capability.object = 'checkout';
   capability.safetyLevel = 'payment';
   capability.executionPlan.mode = 'live';
+  capability.executionPlan.autoExecute = true;
+  capability.executionPlan.governedExecution = false;
+  capability.autoExecutable = true;
+  capability.executionDisposition = 'allow';
   capability.executionPlan.steps[0].kind = 'checkout';
+  capability.executionPlan.steps[0].autoExecute = true;
+  capability.executionPlan.steps[0].submit = true;
+  capability.executionPlan.steps[0].finalSubmit = true;
   fixture.stageResults.generateIntents.intents[0].safetyLevel = 'payment';
 
   const report = await validateFixture(fixture);
   const codes = errorCodes(report);
 
   assert.equal(report.status, 'failed');
-  assert.equal(codes.has('capability.risk_policy_active_disabled'), true);
   assert.equal(codes.has('capability.forced_action_execution_blocked'), true);
+  assert.equal(codes.has('capability.high_risk_auto_execution'), true);
   assert.equal(report.gates.safety.passed, false);
 });
 
@@ -1116,6 +1518,215 @@ test('valid local HTTP build writes a verification report with populated gate co
       && item.private_content_saved === false
     )), true);
     assert.deepEqual(verificationReport.errors, []);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('build pipeline writes runtime execution reports only executing providers for --task --execute', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-runtime-execution-pipeline-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const defaultResult = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'runtime-execution-default-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+      });
+      const defaultDispatch = await readJson(path.join(defaultResult.artifactDir, 'runtime_dispatch_report.json'));
+      const defaultExecution = await readJson(path.join(defaultResult.artifactDir, 'runtime_execution_report.json'));
+      const contractsPayload = await readJson(path.join(defaultResult.artifactDir, 'execution_contracts.json'));
+      const taskContract = contractsPayload.executionContracts.find((contract) => (
+        contract.capabilityId.includes('submit-action')
+        && contract.executionVerdict === 'allow'
+      )) ?? contractsPayload.executionContracts.find((contract) => contract.executionVerdict === 'allow');
+      const browserTaskContract = contractsPayload.executionContracts.find((contract) => (
+        contract.operationKind === 'form_or_action'
+        && contract.executionVerdict === 'allow'
+        && contract.payloadTemplate?.slotBindings?.some((slot) => slot?.name === 'message')
+      )) ?? taskContract;
+      const readTaskContract = contractsPayload.executionContracts.find((contract) => (
+        contract.capabilityId.includes('search-products')
+        && contract.executionVerdict === 'allow'
+      )) ?? contractsPayload.executionContracts.find((contract) => (
+        ['navigate', 'api_request'].includes(contract.operationKind)
+        && contract.executionVerdict === 'allow'
+      ));
+
+      assert.ok(taskContract);
+      assert.ok(browserTaskContract);
+      assert.ok(readTaskContract);
+      assert.equal(defaultDispatch.status, 'compiled_no_task');
+      assert.equal(defaultDispatch.runtimeInvocationRequest, null);
+      assert.equal(defaultDispatch.sideEffectAttempted, false);
+      assert.equal(defaultExecution.status, 'compiled_no_task');
+      assert.equal(defaultExecution.executionAttempted, false);
+      assert.equal(defaultExecution.providerInvoked, false);
+      assert.equal(defaultExecution.sideEffectAttempted, false);
+
+      const plannedResult = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'runtime-execution-planned-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: taskContract.capabilityId,
+      });
+      const plannedDispatch = await readJson(path.join(plannedResult.artifactDir, 'runtime_dispatch_report.json'));
+      const plannedExecution = await readJson(path.join(plannedResult.artifactDir, 'runtime_execution_report.json'));
+      assert.equal(plannedDispatch.status, 'planned_no_execute_flag');
+      assert.equal(plannedDispatch.runtimeInvocationRequest.requestType, 'RuntimeInvocationRequest');
+      assert.equal(plannedDispatch.runtimeDecision, null);
+      assert.equal(plannedExecution.status, 'planned_no_execute_flag');
+      assert.equal(plannedExecution.executionAttempted, false);
+      assert.equal(plannedExecution.providerInvoked, false);
+      assert.equal(plannedExecution.sideEffectAttempted, false);
+
+      const executeResult = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'runtime-execution-execute-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: taskContract.capabilityId,
+        execute: true,
+      });
+      const executeDispatch = await readJson(path.join(executeResult.artifactDir, 'runtime_dispatch_report.json'));
+      const executeExecution = await readJson(path.join(executeResult.artifactDir, 'runtime_execution_report.json'));
+      const executeAuditText = await readFile(path.join(executeResult.artifactDir, 'audit_log.json'), 'utf8');
+      const executeSkillYaml = await readFile(path.join(executeResult.artifactDir, 'skill.yaml'), 'utf8');
+
+      assert.equal(executeDispatch.status, 'ready_for_direct_runtime');
+      assert.equal(executeDispatch.runtimeDispatchAllowed, true);
+      assert.equal(executeDispatch.runtimeExecuted, false);
+      assert.equal(executeDispatch.sideEffectAttempted, false);
+      assert.equal(executeExecution.status, 'blocked');
+      assert.equal(executeExecution.runtimeDispatchAllowed, true);
+      assert.equal(executeExecution.executionAttempted, false);
+      assert.equal(executeExecution.providerInvoked, false);
+      assert.equal(executeExecution.providerId, null);
+      assert.equal(executeExecution.sideEffectAttempted, false);
+      assert.equal(executeExecution.sideEffectSucceeded, false);
+      assert.equal(executeExecution.sideEffectFailed, false);
+      assert.equal(executeExecution.blockedReason, 'runtime.provider_registry_unavailable');
+      assert.match(executeSkillYaml, /optionalArtifacts:/u);
+      assert.match(executeSkillYaml, /runtime_execution_report\.json/u);
+      assert.doesNotMatch(JSON.stringify(executeExecution), /Bearer|set-cookie|rawRequestBody|rawResponseBody|browserProfilePath|userDataDir/iu);
+      assert.doesNotMatch(JSON.stringify(executeDispatch), /Bearer|set-cookie|rawRequestBody|rawResponseBody|browserProfilePath|userDataDir/iu);
+      assert.doesNotMatch(executeAuditText, /cookie|token|credential|raw header|raw body|session material|browser profile path|browserProfilePath|userDataDir/iu);
+
+      const productionReadResult = await runSiteForgeBuild(rootUrl, applyDefaultProductionRuntimeProviderRegistry({
+        cwd: workspace,
+        buildId: 'runtime-execution-production-read-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: readTaskContract.capabilityId,
+        execute: true,
+      }));
+      const productionReadExecution = await readJson(path.join(productionReadResult.artifactDir, 'runtime_execution_report.json'));
+      const productionReadAuditText = await readFile(path.join(productionReadResult.artifactDir, 'audit_log.json'), 'utf8');
+      assert.equal(productionReadExecution.status, 'completed');
+      assert.equal(productionReadExecution.runtimeDispatchAllowed, true);
+      assert.equal(productionReadExecution.executionAttempted, true);
+      assert.equal(productionReadExecution.providerInvoked, true);
+      assert.equal(productionReadExecution.providerId, 'api_read_provider');
+      assert.equal(productionReadExecution.sideEffectAttempted, true);
+      assert.equal(productionReadExecution.sideEffectSucceeded, true);
+      assert.equal(productionReadExecution.sideEffectFailed, false);
+      assert.equal(productionReadExecution.resultSummary.outcome, 'api_read_completed');
+      assert.doesNotMatch(JSON.stringify(productionReadExecution), /Bearer|set-cookie|Authorization|rawRequestBody|rawResponseBody|requestBody|responseBody|browserProfilePath|userDataDir/iu);
+      assert.doesNotMatch(productionReadAuditText, /cookie|token|credential|raw header|raw body|session material|browser profile path|browserProfilePath|userDataDir/iu);
+
+      const productionWriteUncontrolledResult = await runSiteForgeBuild(rootUrl, applyDefaultProductionRuntimeProviderRegistry({
+        cwd: workspace,
+        buildId: 'runtime-execution-production-write-uncontrolled-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: browserTaskContract.capabilityId,
+        execute: true,
+      }));
+      const productionWriteUncontrolledExecution = await readJson(path.join(productionWriteUncontrolledResult.artifactDir, 'runtime_execution_report.json'));
+      assert.equal(productionWriteUncontrolledExecution.status, 'provider_not_executable');
+      assert.equal(productionWriteUncontrolledExecution.runtimeDispatchAllowed, true);
+      assert.equal(productionWriteUncontrolledExecution.providerId, 'browser_action_provider');
+      assert.equal(productionWriteUncontrolledExecution.executionAttempted, false);
+      assert.equal(productionWriteUncontrolledExecution.providerInvoked, false);
+      assert.equal(productionWriteUncontrolledExecution.sideEffectAttempted, false);
+      assert.equal(productionWriteUncontrolledExecution.blockedReason, 'runtime.browser_action_uncontrolled_site');
+
+      const browserSlotNames = browserTaskContract.payloadTemplate?.slotBindings
+        ?.map((slot) => slot?.name)
+        ?.filter(Boolean) ?? [];
+      const controlledRequiredSlots = browserSlotNames.includes('message') ? ['message'] : [];
+      const productionWriteControlledResult = await runSiteForgeBuild(rootUrl, applyDefaultProductionRuntimeProviderRegistry({
+        cwd: workspace,
+        buildId: 'runtime-execution-production-write-controlled-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: browserTaskContract.capabilityId,
+        execute: true,
+        runtimeExecutionContext: {
+          localFixture: true,
+          slotValues: {
+            message: 'private fixture value that must not persist',
+          },
+          browserActionDescriptors: {
+            [browserTaskContract.capabilityId]: {
+              selector: '[data-siteforge-action="contact-form"]',
+              actionRef: 'action:fixture-contact-submit',
+              routeRef: 'route:fixture-contact',
+              requiredSlots: controlledRequiredSlots,
+            },
+          },
+        },
+      }));
+      const productionWriteControlledExecution = await readJson(path.join(productionWriteControlledResult.artifactDir, 'runtime_execution_report.json'));
+      const productionWriteControlledAuditText = await readFile(path.join(productionWriteControlledResult.artifactDir, 'audit_log.json'), 'utf8');
+      assert.equal(productionWriteControlledExecution.status, 'completed');
+      assert.equal(productionWriteControlledExecution.runtimeDispatchAllowed, true);
+      assert.equal(productionWriteControlledExecution.providerId, 'browser_action_provider');
+      assert.equal(productionWriteControlledExecution.executionAttempted, true);
+      assert.equal(productionWriteControlledExecution.providerInvoked, true);
+      assert.equal(productionWriteControlledExecution.sideEffectAttempted, true);
+      assert.equal(productionWriteControlledExecution.sideEffectSucceeded, true);
+      assert.equal(productionWriteControlledExecution.resultSummary.outcome, 'browser_action_completed');
+      assert.equal(productionWriteControlledExecution.resultSummary.actionRef, 'action:fixture-contact-submit');
+      assert.equal(productionWriteControlledExecution.resultSummary.routeRef, 'route:fixture-contact');
+      assert.deepEqual(productionWriteControlledExecution.resultSummary.slotNames, controlledRequiredSlots);
+      assert.doesNotMatch(JSON.stringify(productionWriteControlledExecution), /private fixture value|Bearer|set-cookie|Authorization|rawRequestBody|rawResponseBody|requestBody|responseBody|browserProfilePath|userDataDir|querySelector|raw DOM/iu);
+      assert.doesNotMatch(productionWriteControlledAuditText, /private fixture value|cookie|token|credential|raw header|raw body|session material|browser profile path|browserProfilePath|userDataDir/iu);
+
+      const mockExecuteResult = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'runtime-execution-mock-execute-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: taskContract.capabilityId,
+        execute: true,
+        runtimeProviderRegistry: createMockRuntimeProviderRegistry(),
+      });
+      const mockExecution = await readJson(path.join(mockExecuteResult.artifactDir, 'runtime_execution_report.json'));
+      assert.equal(mockExecution.status, 'completed');
+      assert.equal(mockExecution.runtimeDispatchAllowed, true);
+      assert.equal(mockExecution.executionAttempted, true);
+      assert.equal(mockExecution.providerInvoked, true);
+      assert.equal(mockExecution.providerId, 'mock-runtime-write');
+      assert.equal(mockExecution.sideEffectAttempted, true);
+      assert.equal(mockExecution.sideEffectSucceeded, true);
+      assert.equal(mockExecution.sideEffectFailed, false);
+
+      const unresolvedExecuteResult = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'runtime-execution-unresolved-build',
+        now: new Date(NOW),
+        fetchDelayMs: 0,
+        executionTask: 'task-that-does-not-exist',
+        execute: true,
+      });
+      const unresolvedExecution = await readJson(path.join(unresolvedExecuteResult.artifactDir, 'runtime_execution_report.json'));
+      assert.equal(unresolvedExecution.status, 'blocked_task_not_resolved');
+      assert.equal(unresolvedExecution.executionAttempted, false);
+      assert.equal(unresolvedExecution.providerInvoked, false);
+      assert.equal(unresolvedExecution.sideEffectAttempted, false);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });

@@ -40,6 +40,70 @@ export function safeBuildMessagesForReport(messages, fallbackReasonCode = 'valid
     .filter(Boolean));
 }
 
+function safeBuildSubstepText(value, maxLength = 240) {
+  const text = String(value ?? '').replace(/\s+/gu, ' ').trim();
+  if (!text) {
+    return null;
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function safeBuildSubstepNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function safeBuildSubstepRecordForReport(id, record, fallbackReasonCode = 'validation-failed') {
+  if (!record || typeof record !== 'object') {
+    return {
+      id,
+      status: String(record ?? 'pending'),
+    };
+  }
+  return {
+    id: record.id ?? id,
+    label: record.label ?? null,
+    order: Number.isFinite(Number(record.order)) ? Number(record.order) : null,
+    status: record.status ?? 'pending',
+    startedAt: record.startedAt ?? null,
+    completedAt: record.completedAt ?? record.finishedAt ?? record.endedAt ?? null,
+    reasonCode: record.reasonCode ?? null,
+    message: safeBuildSubstepText(record.message),
+    currentItem: safeBuildSubstepText(record.currentItem, 320),
+    processedCount: safeBuildSubstepNumber(record.processedCount),
+    totalCount: safeBuildSubstepNumber(record.totalCount),
+    discoveredCount: safeBuildSubstepNumber(record.discoveredCount),
+    skippedCount: safeBuildSubstepNumber(record.skippedCount),
+    elapsedMs: safeBuildSubstepNumber(record.elapsedMs),
+    warnings: safeBuildMessagesForReport(record.warnings, fallbackReasonCode),
+    errors: safeBuildMessagesForReport(record.errors, fallbackReasonCode),
+  };
+}
+
+export function safeBuildSubstepsForReport(substeps, fallbackReasonCode = 'validation-failed') {
+  if (!substeps) {
+    return {};
+  }
+  if (Array.isArray(substeps)) {
+    return Object.fromEntries(substeps
+      .filter((record) => record?.id)
+      .map((record) => [
+        record.id,
+        safeBuildSubstepRecordForReport(record.id, record, fallbackReasonCode),
+      ]));
+  }
+  if (typeof substeps === 'object') {
+    return Object.fromEntries(Object.entries(substeps).map(([id, record]) => [
+      id,
+      safeBuildSubstepRecordForReport(id, record, fallbackReasonCode),
+    ]));
+  }
+  return {};
+}
+
 export function buildReportWarningSummary(
   stageRecords = /** @type {Record<string, any>} */ ({}),
   contextWarnings = /** @type {any[]} */ ([]),
@@ -93,6 +157,8 @@ export function buildStageRecord(
     reasonCodes,
     warnings: safeBuildMessagesForReport(result.warnings, primaryReason?.reasonCode ?? explicitReason?.reasonCode ?? 'validation-failed'),
     errors: safeBuildMessagesForReport(result.errors, primaryReason?.reasonCode ?? explicitReason?.reasonCode ?? 'validation-failed'),
+    activeSubstep: result.activeSubstep ?? null,
+    substeps: safeBuildSubstepsForReport(result.substeps, primaryReason?.reasonCode ?? explicitReason?.reasonCode ?? 'validation-failed'),
     artifactPaths: result.artifactPaths ?? {},
     summary: result.summary ?? {},
   };

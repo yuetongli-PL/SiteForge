@@ -214,12 +214,7 @@ const DISABLED_GRAPH_DOCS_LIFECYCLE_OBSERVABILITY_ADAPTER_RUNTIME_PRODUCT_KEYS =
   'runtimeLog',
   'logPath',
   'sessionView',
-  'siteAdapter',
   'siteAdapterPayload',
-  'downloader',
-  'downloadPolicy',
-  'standardTaskList',
-  'taskList',
   'handler',
   'publisher',
 ]);
@@ -233,6 +228,9 @@ export const GRAPH_NODE_TYPES = Object.freeze([
   'SessionRequirementNode',
   'SignerNode',
   'RiskPolicyNode',
+  'ExecutionContractNode',
+  'RuntimeBindingNode',
+  'GovernancePolicyNode',
   'SchemaNode',
   'ArtifactContractNode',
   'ArtifactNode',
@@ -254,6 +252,9 @@ export const GRAPH_EDGE_TYPES = Object.freeze([
   'endpoint_requires_signer',
   'capability_guarded_by_risk_policy',
   'endpoint_guarded_by_risk_policy',
+  'capability_has_execution_contract',
+  'execution_contract_bound_to_runtime',
+  'execution_contract_governed_by_policy',
   'node_validated_by_schema',
   'node_produces_artifact',
   'artifact_guarded_by_redaction',
@@ -293,6 +294,28 @@ export const GRAPH_RISK_STATES = Object.freeze([
   'isolated',
   'manual_recovery_required',
   'blocked',
+]);
+
+export const GRAPH_EXECUTION_DISPOSITIONS = Object.freeze([
+  'allow',
+  'controlled',
+  'confirm_required',
+  'blocked',
+]);
+
+export const GRAPH_EXECUTION_VERDICTS = Object.freeze([
+  'allow',
+  'controlled',
+  'blocked',
+]);
+
+export const GRAPH_EXECUTION_GATES = Object.freeze([
+  'confirm_required',
+  'audit_required',
+  'session_required',
+  'permission_required',
+  'output_path_required',
+  'dry_run_required',
 ]);
 
 export const GRAPH_VALIDATION_RESULT_VALUES = Object.freeze([
@@ -408,6 +431,19 @@ function assertStringArray(value, fieldName, label, { required = false } = {}) {
   for (const entry of value) {
     if (!normalizeText(entry)) {
       throw new Error(`${label} ${fieldName} entries must be non-empty strings`);
+    }
+  }
+  return true;
+}
+
+function assertExecutionGateArray(value, fieldName, label) {
+  assertStringArray(value, fieldName, label);
+  if (value === undefined || value === null) {
+    return true;
+  }
+  for (const gate of value) {
+    if (!GRAPH_EXECUTION_GATES.includes(gate)) {
+      throw new Error(`${label} ${fieldName} contains unsupported execution gate`);
     }
   }
   return true;
@@ -583,6 +619,18 @@ export function assertCapabilityNodeCompatible(node = {}) {
   if (node.agentExposed !== undefined && node.agentExposed !== null) {
     assertBoolean(node.agentExposed, 'agentExposed', 'CapabilityNode');
   }
+  if (node.executable !== undefined && node.executable !== null) {
+    assertBoolean(node.executable, 'executable', 'CapabilityNode');
+  }
+  if (node.executionDisposition !== undefined && node.executionDisposition !== null) {
+    assertEnumValue(node.executionDisposition, GRAPH_EXECUTION_DISPOSITIONS, 'executionDisposition', 'CapabilityNode');
+  }
+  if (node.runtimeCallable !== undefined && node.runtimeCallable !== null) {
+    assertBoolean(node.runtimeCallable, 'runtimeCallable', 'CapabilityNode');
+  }
+  if (node.autoExecutable !== undefined && node.autoExecutable !== null) {
+    assertBoolean(node.autoExecutable, 'autoExecutable', 'CapabilityNode');
+  }
   return true;
 }
 
@@ -693,6 +741,95 @@ export function assertRiskPolicyNodeCompatible(node = {}) {
 }
 
 /** @param {Record<string, any>} [node] */
+export function assertExecutionContractNodeCompatible(node = {}) {
+  assertCommonNodeFields(node, 'ExecutionContractNode');
+  assertEnumValue(node.type, ['ExecutionContractNode'], 'type', 'ExecutionContractNode');
+  assertRequiredText(node.siteKey, 'siteKey', 'ExecutionContractNode');
+  assertGraphRef(node.capabilityRef, 'capabilityRef', 'ExecutionContractNode', { required: true });
+  assertRequiredText(node.operationKind, 'operationKind', 'ExecutionContractNode');
+  assertGraphRef(node.requestSchemaRef, 'requestSchemaRef', 'ExecutionContractNode', { required: true });
+  assertGraphRef(node.responseSchemaRef, 'responseSchemaRef', 'ExecutionContractNode');
+  assertGraphRef(node.runtimeBindingRef, 'runtimeBindingRef', 'ExecutionContractNode', { required: true });
+  assertGraphRef(node.sessionRequirementRef, 'sessionRequirementRef', 'ExecutionContractNode');
+  assertGraphRef(node.authRequirementRef, 'authRequirementRef', 'ExecutionContractNode');
+  assertGraphRef(node.riskPolicyRef, 'riskPolicyRef', 'ExecutionContractNode', { required: true });
+  assertGraphRef(node.governancePolicyRef, 'governancePolicyRef', 'ExecutionContractNode', { required: true });
+  assertEnumValue(node.executionDisposition, GRAPH_EXECUTION_DISPOSITIONS, 'executionDisposition', 'ExecutionContractNode');
+  assertOptionalEnumValue(node.executionVerdict, GRAPH_EXECUTION_VERDICTS, 'executionVerdict', 'ExecutionContractNode');
+  assertExecutionGateArray(node.executionGates, 'executionGates', 'ExecutionContractNode');
+  assertBoolean(node.planCallable, 'planCallable', 'ExecutionContractNode');
+  assertBoolean(node.runtimeCallable, 'runtimeCallable', 'ExecutionContractNode');
+  assertBoolean(node.autoExecutable, 'autoExecutable', 'ExecutionContractNode');
+  assertBoolean(node.redactionRequired, 'redactionRequired', 'ExecutionContractNode');
+  assertOptionalObject(node.payloadTemplate, 'payloadTemplate', 'ExecutionContractNode');
+  assertOptionalObject(node.impactScope, 'impactScope', 'ExecutionContractNode');
+  assertOptionalObject(node.executionPrerequisites, 'executionPrerequisites', 'ExecutionContractNode');
+  assertOptionalObject(node.confirmationPolicy, 'confirmationPolicy', 'ExecutionContractNode');
+  assertOptionalObject(node.auditPolicy, 'auditPolicy', 'ExecutionContractNode');
+  if (node.destructiveAction !== undefined && node.destructiveAction !== null) {
+    assertBoolean(node.destructiveAction, 'destructiveAction', 'ExecutionContractNode');
+  }
+  if (node.highRiskAction !== undefined && node.highRiskAction !== null) {
+    assertBoolean(node.highRiskAction, 'highRiskAction', 'ExecutionContractNode');
+  }
+  if (node.paymentOrFundsAction !== undefined && node.paymentOrFundsAction !== null) {
+    assertBoolean(node.paymentOrFundsAction, 'paymentOrFundsAction', 'ExecutionContractNode');
+  }
+  assertStringArray(node.sourceRefs, 'sourceRefs', 'ExecutionContractNode');
+  assertStringArray(node.testEvidenceRefs, 'testEvidenceRefs', 'ExecutionContractNode');
+  return true;
+}
+
+/** @param {Record<string, any>} [node] */
+export function assertRuntimeBindingNodeCompatible(node = {}) {
+  assertCommonNodeFields(node, 'RuntimeBindingNode');
+  assertEnumValue(node.type, ['RuntimeBindingNode'], 'type', 'RuntimeBindingNode');
+  assertRequiredText(node.siteKey, 'siteKey', 'RuntimeBindingNode');
+  assertRequiredText(node.bindingKind, 'bindingKind', 'RuntimeBindingNode');
+  assertStringArray(node.allowedMaterial, 'allowedMaterial', 'RuntimeBindingNode');
+  assertStringArray(node.forbiddenMaterial, 'forbiddenMaterial', 'RuntimeBindingNode');
+  assertBoolean(node.redactionRequired, 'redactionRequired', 'RuntimeBindingNode');
+  assertRequiredText(node.credentialMaterialPolicy, 'credentialMaterialPolicy', 'RuntimeBindingNode');
+  assertStringArray(node.sourceRefs, 'sourceRefs', 'RuntimeBindingNode');
+  return true;
+}
+
+/** @param {Record<string, any>} [node] */
+export function assertGovernancePolicyNodeCompatible(node = {}) {
+  assertCommonNodeFields(node, 'GovernancePolicyNode');
+  assertEnumValue(node.type, ['GovernancePolicyNode'], 'type', 'GovernancePolicyNode');
+  assertEnumValue(node.executionDisposition, GRAPH_EXECUTION_DISPOSITIONS, 'executionDisposition', 'GovernancePolicyNode');
+  assertOptionalEnumValue(node.executionVerdict, GRAPH_EXECUTION_VERDICTS, 'executionVerdict', 'GovernancePolicyNode');
+  assertExecutionGateArray(node.executionGates, 'executionGates', 'GovernancePolicyNode');
+  assertBoolean(node.auditRequired, 'auditRequired', 'GovernancePolicyNode');
+  assertBoolean(node.confirmationRequired, 'confirmationRequired', 'GovernancePolicyNode');
+  assertBoolean(node.destructiveConfirmationRequired, 'destructiveConfirmationRequired', 'GovernancePolicyNode');
+  if (node.paymentConfirmationRequired !== undefined && node.paymentConfirmationRequired !== null) {
+    assertBoolean(node.paymentConfirmationRequired, 'paymentConfirmationRequired', 'GovernancePolicyNode');
+  }
+  if (node.strongConfirmationRequired !== undefined && node.strongConfirmationRequired !== null) {
+    assertBoolean(node.strongConfirmationRequired, 'strongConfirmationRequired', 'GovernancePolicyNode');
+  }
+  if (node.sitePolicyExplicitAllowRequired !== undefined && node.sitePolicyExplicitAllowRequired !== null) {
+    assertBoolean(node.sitePolicyExplicitAllowRequired, 'sitePolicyExplicitAllowRequired', 'GovernancePolicyNode');
+  }
+  if (node.runtimeConstraintRequired !== undefined && node.runtimeConstraintRequired !== null) {
+    assertBoolean(node.runtimeConstraintRequired, 'runtimeConstraintRequired', 'GovernancePolicyNode');
+  }
+  if (node.naturalLanguageRequestGrantsExecution !== undefined && node.naturalLanguageRequestGrantsExecution !== null) {
+    assertBoolean(node.naturalLanguageRequestGrantsExecution, 'naturalLanguageRequestGrantsExecution', 'GovernancePolicyNode');
+  }
+  assertBoolean(node.runtimeDispatchAllowedByDefault, 'runtimeDispatchAllowedByDefault', 'GovernancePolicyNode');
+  assertOptionalObject(node.impactScope, 'impactScope', 'GovernancePolicyNode');
+  assertOptionalObject(node.executionPrerequisites, 'executionPrerequisites', 'GovernancePolicyNode');
+  assertOptionalObject(node.confirmationPolicy, 'confirmationPolicy', 'GovernancePolicyNode');
+  assertOptionalObject(node.auditPolicy, 'auditPolicy', 'GovernancePolicyNode');
+  assertStringArray(node.reasonCodeRefs, 'reasonCodeRefs', 'GovernancePolicyNode');
+  assertStringArray(node.sourceRefs, 'sourceRefs', 'GovernancePolicyNode');
+  return true;
+}
+
+/** @param {Record<string, any>} [node] */
 export function assertSchemaNodeCompatible(node = {}) {
   assertCommonNodeFields(node, 'SchemaNode');
   assertEnumValue(node.type, ['SchemaNode'], 'type', 'SchemaNode');
@@ -780,6 +917,9 @@ const NODE_ASSERTIONS = Object.freeze({
   SessionRequirementNode: assertSessionRequirementNodeCompatible,
   SignerNode: assertSignerNodeCompatible,
   RiskPolicyNode: assertRiskPolicyNodeCompatible,
+  ExecutionContractNode: assertExecutionContractNodeCompatible,
+  RuntimeBindingNode: assertRuntimeBindingNodeCompatible,
+  GovernancePolicyNode: assertGovernancePolicyNodeCompatible,
   SchemaNode: assertSchemaNodeCompatible,
   ArtifactContractNode: assertArtifactContractNodeCompatible,
   ArtifactNode: assertArtifactNodeCompatible,
@@ -7974,6 +8114,40 @@ export function validateSiteCapabilityGraph(graph = {}) {
           message: 'Observed or candidate EndpointNode must not be treated as cataloged',
           nodeId: node.id,
           field: 'cataloged',
+        }));
+      }
+    }
+    if (node.type === 'ExecutionContractNode') {
+      if (!findGraphNode(nodeById, node.capabilityRef, 'CapabilityNode')) {
+        findings.push(publicFinding({
+          reasonCode: 'execution_contract_missing_capability',
+          message: `ExecutionContractNode capabilityRef does not resolve to a CapabilityNode: ${node.capabilityRef}`,
+          nodeId: node.id,
+          field: 'capabilityRef',
+        }));
+      }
+      if (!findGraphNode(nodeById, node.runtimeBindingRef, 'RuntimeBindingNode')) {
+        findings.push(publicFinding({
+          reasonCode: 'execution_contract_missing_runtime_binding',
+          message: `ExecutionContractNode runtimeBindingRef does not resolve to a RuntimeBindingNode: ${node.runtimeBindingRef}`,
+          nodeId: node.id,
+          field: 'runtimeBindingRef',
+        }));
+      }
+      if (!findGraphNode(nodeById, node.riskPolicyRef, 'RiskPolicyNode')) {
+        findings.push(publicFinding({
+          reasonCode: 'execution_contract_missing_risk_policy',
+          message: `ExecutionContractNode riskPolicyRef does not resolve to a RiskPolicyNode: ${node.riskPolicyRef}`,
+          nodeId: node.id,
+          field: 'riskPolicyRef',
+        }));
+      }
+      if (!findGraphNode(nodeById, node.governancePolicyRef, 'GovernancePolicyNode')) {
+        findings.push(publicFinding({
+          reasonCode: 'execution_contract_missing_governance_policy',
+          message: `ExecutionContractNode governancePolicyRef does not resolve to a GovernancePolicyNode: ${node.governancePolicyRef}`,
+          nodeId: node.id,
+          field: 'governancePolicyRef',
         }));
       }
     }

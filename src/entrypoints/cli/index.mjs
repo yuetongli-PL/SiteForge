@@ -113,6 +113,11 @@ function validateBuildEnumFlagValue(flagName, value) {
   }
 }
 
+function consumeOptionalBuildFlagValue(args, index) {
+  const next = args[index + 1];
+  return next && !String(next).startsWith('--') ? index + 1 : index;
+}
+
 function validateBuildArgs(args) {
   let url = null;
   for (let index = 0; index < args.length; index += 1) {
@@ -122,6 +127,10 @@ function validateBuildArgs(args) {
     }
     if (String(token).startsWith('--')) {
       const flagName = splitFlagName(token);
+      if (flagName === '--confirm-destructive') {
+        index = String(token).includes('=') ? index : consumeOptionalBuildFlagValue(args, index);
+        continue;
+      }
       if (ACCEPTED_BOOLEAN_BUILD_FLAGS.has(flagName)) {
         if (String(token).includes('=')) {
           errorWithHelp(`Flag does not take a value: ${flagName}`);

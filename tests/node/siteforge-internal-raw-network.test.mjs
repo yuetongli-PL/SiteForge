@@ -362,7 +362,7 @@ function catalogAllowingFixtureApiAdapter() {
   };
 }
 
-test('plain build defaults write raw traces and API candidates while keeping public summaries sanitized', async () => {
+test('plain build keeps raw traces in memory and writes only redacted API candidates', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-internal-raw-network-'));
   const secret = 'synthetic-internal-raw-token';
   try {
@@ -396,19 +396,15 @@ test('plain build defaults write raw traces and API candidates while keeping pub
       });
 
       const rawPath = path.join(result.artifactDir, 'discovery', 'network_traces.raw.json');
-      const rawArtifact = await readJson(rawPath);
-      assert.equal(rawArtifact.artifactFamily, 'siteforge-internal-raw-network-traces');
-      assert.equal(rawArtifact.internalOnly, true);
-      assert.equal(rawArtifact.redactionApplied, false);
-      assert.equal(rawArtifact.containsSensitiveMaterial, true);
-      assert.equal(rawArtifact.captureScope, 'api-json-text');
-      assert.equal(JSON.stringify(rawArtifact).includes(secret), true);
+      assert.equal(await fileExists(rawPath), false);
 
       const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
       assert.equal(summaryArtifact.status, 'success');
       assert.deepEqual(summaryArtifact.traces, []);
       assert.deepEqual(summaryArtifact.observedRequests, []);
-      assert.equal(summaryArtifact.sanitizedSummary.rawTracesPersisted, true);
+      assert.equal(summaryArtifact.sanitizedSummary.rawTracesPersisted, false);
+      assert.equal(summaryArtifact.sanitizedSummary.rawArtifactPresent, false);
+      assert.equal(summaryArtifact.sanitizedSummary.rawArtifactPath, null);
       assert.equal(summaryArtifact.sanitizedSummary.rawTraceCount, 1);
       assert.equal(summaryArtifact.sanitizedSummary.apiCandidateCount, 1);
       assert.equal(JSON.stringify(summaryArtifact).includes(secret), false);
@@ -425,18 +421,18 @@ test('plain build defaults write raw traces and API candidates while keeping pub
 
       const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));
       const userReportText = JSON.stringify(userReport);
-      assert.equal(userReport.privacy_summary.raw_network_traces_persisted, true);
-      assert.equal(userReport.privacy_summary.network_summary_only, false);
+      assert.equal(userReport.privacy_summary.raw_network_traces_persisted, false);
+      assert.equal(userReport.privacy_summary.network_summary_only, true);
       assert.equal(userReportText.includes(secret), false);
       assert.equal(userReportText.includes('network_traces.raw.json'), false);
       assert.equal(userReport.api_discovery_summary.api_candidate_count, 1);
-      assert.equal(userReport.api_discovery_summary.raw_network_traces_persisted, true);
-      assert.equal(userReport.warnings_user_facing.some((warning) => /Raw network capture was enabled/u.test(warning)), true);
+      assert.equal(userReport.api_discovery_summary.raw_network_traces_persisted, false);
+      assert.equal(userReport.warnings_user_facing.some((warning) => /in-memory replay only/u.test(warning)), true);
 
       const debugReport = await readJson(path.join(result.artifactDir, 'build_report.debug.json'));
-      assert.equal(debugReport.collector_status.network.raw_traces_persisted, true);
+      assert.equal(debugReport.collector_status.network.raw_traces_persisted, false);
       assert.equal(debugReport.collector_status.network.raw_trace_count, 1);
-      assert.match(JSON.stringify(debugReport), /network_traces\.raw\.json/u);
+      assert.equal(JSON.stringify(debugReport).includes('network_traces.raw.json'), false);
 
       assert.equal(await fileExists(path.join(result.buildContext.workspace.paths.currentDir, 'network_traces.raw.json')), false);
       const registry = await readJson(result.buildContext.workspace.paths.registryPath);
@@ -1457,13 +1453,11 @@ test('default raw network capture is best effort when the browser is unavailable
 
       assert.equal(result.status, 'success');
       const rawPath = path.join(result.artifactDir, 'discovery', 'network_traces.raw.json');
-      assert.equal(await fileExists(rawPath), true);
-      const rawArtifact = await readJson(rawPath);
-      assert.equal(rawArtifact.captureStatus, 'unavailable');
-      assert.equal(rawArtifact.summary.traces, 0);
+      assert.equal(await fileExists(rawPath), false);
       const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
       assert.equal(summaryArtifact.status, 'success');
       assert.equal(summaryArtifact.sanitizedSummary.apiCandidateStatus, 'empty');
+      assert.equal(summaryArtifact.sanitizedSummary.rawTracesPersisted, false);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });

@@ -35,7 +35,7 @@ test('user report warnings add modeled auto-discovery and raw-network notices', 
   );
 
   assert.equal(warnings.includes('Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.'), true);
-  assert.equal(warnings.includes('Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.'), true);
+  assert.equal(warnings.includes('Raw network capture was enabled for controlled in-memory replay only; raw headers, bodies, cookies, tokens, and session material were not persisted.'), true);
 });
 
 test('user report warnings include failure reason only for failed results', () => {

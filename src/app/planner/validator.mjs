@@ -5,6 +5,13 @@ import {
   isSensitiveFieldName,
 } from '../../domain/sessions/security-guard.mjs';
 import {
+  isSafeStructuredSensitiveDescriptorValue,
+  isStructuredExecutionDescriptorPath,
+  isStructuredExecutionRefFieldName,
+  scanUnsafeDescriptorRuntimeValues,
+  structuredExecutionRefFieldNames,
+} from '../../shared/descriptor-safety.mjs';
+import {
   PLANNER_PLAN_STATUSES,
   PLANNER_REQUEST_MODES,
   PLANNER_SELECTED_ROUTE_SOURCE,
@@ -14,6 +21,7 @@ import {
 
 const FORBIDDEN_PLANNER_FIELD_PATTERNS = Object.freeze([
   /(?:^|[_-])raw[_-]?(?:credential|secret|token|cookie|header|session|profile)(?:$|[_-])/iu,
+  /(?:^|[_-])raw[_-]?(?:body|request|response|payload)(?:$|[_-])/iu,
   /^headers$/iu,
   /^requestHeaders$/iu,
   /^responseHeaders$/iu,
@@ -28,8 +36,25 @@ const FORBIDDEN_PLANNER_FIELD_PATTERNS = Object.freeze([
   /^revocationHandle$/iu,
   /^sid$/iu,
   /^profileRef$/iu,
+  /^profilePath$/iu,
+  /^browserProfilePath$/iu,
+  /^userDataDir$/iu,
+  /^localFilePath$/iu,
+  /^privateFilePath$/iu,
+  /^persistentSessionPath$/iu,
+  /^sessionPath$/iu,
+  /^dynamicImport$/iu,
   /(?:^|[_-])account[_-]?(?:id|identifier)(?:$|[_-])/iu,
   /(?:^|[_-])user[_-]?(?:id|identifier|account)(?:$|[_-])/iu,
+  /(?:^|[_-])profile[_-]?data(?:$|[_-])/iu,
+  /(?:^|[_-])submitted[_-]?(?:content|body|form)(?:$|[_-])/iu,
+  /(?:^|[_-])user[_-]?submitted[_-]?(?:content|body|form)(?:$|[_-])/iu,
+  /(?:^|[_-])order[_-]?(?:data|details?|record|id)(?:$|[_-])/iu,
+  /(?:^|[_-])shipping[_-]?address(?:$|[_-])/iu,
+  /(?:^|[_-])billing[_-]?address(?:$|[_-])/iu,
+  /(?:^|[_-])address(?:$|[_-])/iu,
+  /(?:^|[_-])payment[_-]?(?:field|fields|data|method|instrument|token)?(?:$|[_-])/iu,
+  /(?:^|[_-])card[_-]?(?:number|holder|expiry|cvv|cvc)?(?:$|[_-])/iu,
   /(?:^|[_-])ip[_-]?(?:address)?(?:$|[_-])/iu,
   /(?:^|[_-])network[_-]?identifier(?:$|[_-])/iu,
   /(?:^|[_-])device[_-]?fingerprint(?:$|[_-])/iu,
@@ -50,17 +75,17 @@ const FORBIDDEN_PLANNER_FIELD_PATTERNS = Object.freeze([
 ]);
 
 const FORBIDDEN_RUNTIME_FIELD_PATTERNS = Object.freeze([
-  /^downloadPolicy$/iu,
-  /^standardTaskList$/iu,
   /^sessionView$/iu,
-  /^siteAdapterDecision$/iu,
   /^siteAdapterRuntime$/iu,
-  /^resolvedResources$/iu,
   /^downloaderPayload$/iu,
   /^downloaderTask$/iu,
   /^downloaderCommand$/iu,
   /^taskRunner$/iu,
+  /^standardTaskList$/iu,
   /^browserContext$/iu,
+  /^siteAdapterDecision$/iu,
+  /^siteAdapterInstance$/iu,
+  /^adapterInstance$/iu,
   /^runtimeHandler$/iu,
   /^handler$/iu,
   /^execute$/iu,
@@ -72,6 +97,63 @@ const SAFE_CONTROL_FLAG_FIELDS = Object.freeze([
   'sessionMaterializationAllowed',
 ]);
 
+const PLANNER_REF_FIELD_NAMES = Object.freeze(new Set([
+  'artifactRef',
+  'artifactRefs',
+  'capabilityPlanRef',
+  'evidenceRef',
+  'evidenceRefs',
+  'intentRef',
+  'planRef',
+  'plannerHandoffRef',
+  'policyDecisionRef',
+  'runtimeInvocationRequestRef',
+  ...structuredExecutionRefFieldNames(),
+]));
+
+const ALWAYS_FORBIDDEN_PLANNER_DESCRIPTOR_FIELD_PATTERNS = Object.freeze([
+  /(?:^|[_-])raw[_-]?(?:credential|secret|token|cookie|header|session|profile|body|request|response|payload)(?:$|[_-])/iu,
+  /^headers$/iu,
+  /^requestHeaders$/iu,
+  /^responseHeaders$/iu,
+  /^requestPayload$/iu,
+  /^responsePayload$/iu,
+  /^requestBody$/iu,
+  /^responseBody$/iu,
+  /^cookieJar$/iu,
+  /^storageState$/iu,
+  /^credentialRef$/iu,
+  /^authStoreRef$/iu,
+  /^revocationHandle$/iu,
+  /^sid$/iu,
+  /^profileRef$/iu,
+  /^profilePath$/iu,
+  /^browserProfilePath$/iu,
+  /^userDataDir$/iu,
+  /^localFilePath$/iu,
+  /^privateFilePath$/iu,
+  /^persistentSessionPath$/iu,
+  /^sessionPath$/iu,
+  /^dynamicImport$/iu,
+  /captcha[_-]?bypass/iu,
+  /captcha[_-]?(?:solve|solver|unlock)/iu,
+  /(?:solve|solver|unlock)[_-]?captcha/iu,
+  /anti[_-]?bot[_-]?bypass/iu,
+  /access[_-]?control[_-]?bypass/iu,
+  /bypass[_-]?access[_-]?control/iu,
+  /mfa[_-]?bypass|multi[_-]?factor[_-]?bypass|2fa[_-]?bypass/iu,
+  /platform[_-]?risk[_-]?(?:bypass|evasion|evade)/iu,
+  /risk[_-]?control[_-]?(?:bypass|evasion|evade)/iu,
+  /permission[_-]?bypass|paywall[_-]?bypass|vip[_-]?bypass/iu,
+  /credential[_-]?extraction/iu,
+  /privilege[_-]?expansion/iu,
+  /privilege[_-]?(?:escalation|escalate)/iu,
+]);
+
+const ALLOWED_PLANNER_REF_PATTERN =
+  /^(?:artifact|auth-requirement|capability|compiler|coverage|downloader-task|execution|execution-contract|governance-policy|graph|intent|layer|manifest|node|plan|planner|planner-handoff|policy|policy-decision|risk-policy|route|runtime-binding|runtime-invocation|schema|session-requirement|test):[a-z0-9._:/-]+$/iu;
+const ALLOWED_PLANNER_CONFIG_REF_PATTERN = /^config\/(?:site-registry|site-capabilities)\.json(?:#[a-z0-9._:-]+)?$/iu;
+
 function isPlainObject(value) {
   return value !== null
     && typeof value === 'object'
@@ -79,10 +161,13 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function fail(message, code) {
+function fail(message, code, details = undefined) {
   /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
+  if (details !== undefined) {
+    error.details = details;
+  }
   throw error;
 }
 
@@ -98,6 +183,35 @@ function assertNonEmptyString(value, name) {
   }
 }
 
+function isUnsafeRefSyntax(value) {
+  const text = String(value ?? '').trim();
+  return text === ''
+    || text.length > 240
+    || text !== value
+    || /[\s"'`<>]/u.test(text)
+    || /[?&=%#]/u.test(text)
+    || /^https?:\/\//iu.test(text)
+    || /^[a-z]:[\\/]/iu.test(text)
+    || /^\\\\/u.test(text)
+    || /^\//u.test(text)
+    || /(?:^|\/)\.\.(?:\/|$)/u.test(text)
+    || /\b\d{1,3}(?:\.\d{1,3}){3}\b/u.test(text)
+    || /@/u.test(text)
+    || /\.(?:cmd|bat|ps1|sh|exe|dll|mjs|cjs|js)(?:$|[#:/])/iu.test(text)
+    || /\b(?:cookie|authorization|credential|sessdata|csrf|access[_-]?token|refresh[_-]?token|session[_-]?id|browser[_-]?profile|user[_-]?data[_-]?dir)\b/iu.test(text);
+}
+
+function assertPlannerEvidenceRefAllowed(value, name) {
+  assertNonEmptyString(value, name);
+  if (
+    isUnsafeRefSyntax(value)
+    || (!ALLOWED_PLANNER_REF_PATTERN.test(value) && !ALLOWED_PLANNER_CONFIG_REF_PATTERN.test(value))
+  ) {
+    fail(`${name} must be a sanitized planner evidence ref`, 'planner.sensitive_material_forbidden');
+  }
+  return true;
+}
+
 function assertCompatibleSchemaVersion(value, name) {
   if (value === undefined || value === null || value === '') {
     fail(`${name} schemaVersion is required`, 'planner.version_incompatible');
@@ -107,16 +221,34 @@ function assertCompatibleSchemaVersion(value, name) {
   }
 }
 
-function isForbiddenPlannerFieldName(name) {
+function isStructuredDescriptorAllowedField(name, value, path = []) {
+  if (ALWAYS_FORBIDDEN_PLANNER_DESCRIPTOR_FIELD_PATTERNS.some((pattern) => pattern.test(String(name ?? '')))) {
+    return false;
+  }
+  const childPath = [...path, String(name ?? '')];
+  if (!isStructuredExecutionDescriptorPath(path) && !isStructuredExecutionDescriptorPath(childPath)) {
+    return false;
+  }
+  return isSafeStructuredSensitiveDescriptorValue(value, childPath, {
+    isSensitiveFieldName,
+  });
+}
+
+function isForbiddenPlannerFieldName(name, value, path = []) {
   const normalized = String(name ?? '').trim();
   if (SAFE_CONTROL_FLAG_FIELDS.includes(normalized)) {
     return false;
   }
-  return Boolean(normalized) && (
-    isSensitiveFieldName(normalized)
-    || FORBIDDEN_PLANNER_FIELD_PATTERNS.some((pattern) => pattern.test(normalized))
-    || FORBIDDEN_RUNTIME_FIELD_PATTERNS.some((pattern) => pattern.test(normalized))
-  );
+  if (!normalized) {
+    return false;
+  }
+  const sensitive = isSensitiveFieldName(normalized);
+  const forbiddenPlannerField = FORBIDDEN_PLANNER_FIELD_PATTERNS.some((pattern) => pattern.test(normalized));
+  const forbiddenRuntimeField = FORBIDDEN_RUNTIME_FIELD_PATTERNS.some((pattern) => pattern.test(normalized));
+  if ((sensitive || forbiddenPlannerField) && isStructuredDescriptorAllowedField(normalized, value, path)) {
+    return false;
+  }
+  return sensitive || forbiddenPlannerField || forbiddenRuntimeField;
 }
 
 function scanForbiddenPlannerFields(value, findings, path = []) {
@@ -130,7 +262,7 @@ function scanForbiddenPlannerFields(value, findings, path = []) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
-    if (isForbiddenPlannerFieldName(key)) {
+    if (isForbiddenPlannerFieldName(key, child, path)) {
       findings.push({
         path: [...path, key].join('.'),
       });
@@ -140,11 +272,49 @@ function scanForbiddenPlannerFields(value, findings, path = []) {
   }
 }
 
+function scanPlannerEvidenceRefs(value, findings, path = []) {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      scanPlannerEvidenceRefs(item, findings, [...path, String(index)]);
+    }
+    return;
+  }
+  if (!isPlainObject(value)) {
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = [...path, key];
+    if (PLANNER_REF_FIELD_NAMES.has(key) || isStructuredExecutionRefFieldName(key)) {
+      if (child === undefined || child === null) {
+        continue;
+      }
+      const values = Array.isArray(child) ? child : [child];
+      for (const [index, refValue] of values.entries()) {
+        try {
+          assertPlannerEvidenceRefAllowed(refValue, `${childPath.join('.')}.${index}`);
+        } catch {
+          findings.push({ path: `${childPath.join('.')}.${index}` });
+        }
+      }
+      continue;
+    }
+    scanPlannerEvidenceRefs(child, findings, childPath);
+  }
+}
+
 export function assertNoPlannerSensitiveMaterial(value) {
   const findings = [];
   scanForbiddenPlannerFields(value, findings);
   if (findings.length > 0) {
-    fail('Planner data contains forbidden sensitive or runtime fields', 'planner.sensitive_material_forbidden');
+    fail('Planner data contains forbidden sensitive or runtime fields', 'planner.sensitive_material_forbidden', { findings });
+  }
+  scanUnsafeDescriptorRuntimeValues(value, findings);
+  if (findings.length > 0) {
+    fail('Planner data contains forbidden runtime values', 'planner.sensitive_material_forbidden', { findings });
+  }
+  scanPlannerEvidenceRefs(value, findings);
+  if (findings.length > 0) {
+    fail('Planner data contains unsafe evidence refs', 'planner.sensitive_material_forbidden', { findings });
   }
   try {
     assertNoForbiddenPatterns(value);

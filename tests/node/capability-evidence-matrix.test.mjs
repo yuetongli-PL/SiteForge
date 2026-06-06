@@ -56,7 +56,7 @@ test('capability evidence matrix activates public structured read capabilities',
   assert.equal(applied.executionPlan.mode, 'read_only');
 });
 
-test('capability evidence matrix blocks authenticated capabilities without fresh auth evidence', () => {
+test('capability evidence matrix keeps authenticated capabilities controlled without fresh auth evidence', () => {
   const capability = {
     id: 'capability:fixture:notifications',
     name: 'list notifications',
@@ -77,10 +77,17 @@ test('capability evidence matrix blocks authenticated capabilities without fresh
   }];
 
   const applied = applyCapabilityEvidenceMatrix(publicContext(), capability, graph(nodes));
-  assert.equal(applied.status, 'candidate');
-  assert.equal(applied.enabled_status, 'candidate_debug_only');
+  assert.equal(applied.status, 'active');
+  assert.equal(applied.enabled_status, 'enabled');
   assert.equal(applied.activationBlockedReason, 'missing_auth_evidence');
-  assert.equal(applied.executionPlan, undefined);
+  assert.equal(applied.executionPlan.governedExecution, true);
+  assert.equal(applied.executionPlan.executionDisposition, 'controlled');
+  assert.equal(applied.executionPlan.autoExecute, false);
+  assert.equal(applied.planCallable, true);
+  assert.equal(applied.runtimeCallable, true);
+  assert.equal(applied.autoExecutable, false);
+  assert.equal(applied.executionDisposition, 'controlled');
+  assert.equal(applied.executionGates.includes('session_required'), true);
   assert.equal(applied.evidenceMatrix.activationDecision, 'requires_login');
 });
 
@@ -117,8 +124,8 @@ test('capability evidence matrix limits authenticated capabilities after browser
 
   const applied = applyCapabilityEvidenceMatrix(context, capability, graph(nodes));
   assert.equal(applied.status, 'active');
-  assert.equal(applied.enabled_status, 'limited_enabled');
-  assert.equal(applied.default_policy, 'limited_enabled');
+  assert.equal(applied.enabled_status, 'enabled');
+  assert.equal(applied.default_policy, 'enabled');
   assert.equal(applied.evidence_status, 'verified');
   assert.deepEqual(applied.evidenceMatrix.missingEvidence, []);
 });
@@ -158,7 +165,7 @@ test('browser bridge structure evidence satisfies authenticated route-level capa
   assert.equal(evidenceLevelRank(matrix.observedEvidenceLevel) >= evidenceLevelRank(matrix.requiredEvidenceLevel), true);
 });
 
-test('capability evidence matrix keeps forced-risk capabilities disabled', () => {
+test('capability evidence matrix keeps forced-risk capabilities governed', () => {
   const capability = {
     id: 'capability:fixture:delete',
     name: 'delete post',
@@ -181,9 +188,13 @@ test('capability evidence matrix keeps forced-risk capabilities disabled', () =>
   }];
 
   const applied = applyCapabilityEvidenceMatrix(publicContext(), capability, graph(nodes));
-  assert.equal(applied.status, 'disabled');
+  assert.equal(applied.status, 'active');
   assert.equal(applied.enabled_status, 'disabled');
   assert.equal(applied.evidence_status, 'disabled');
   assert.equal(applied.activationBlockedReason, 'forced-action-disabled');
-  assert.equal(applied.executionPlan, undefined);
+  assert.equal(applied.planCallable, true);
+  assert.equal(applied.autoExecutable, false);
+  assert.equal(applied.executionDisposition, 'blocked');
+  assert.equal(applied.executionPlan.governedExecution, true);
+  assert.equal(applied.executionPlan.autoExecute, false);
 });

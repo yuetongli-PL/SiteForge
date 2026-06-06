@@ -113,7 +113,7 @@ test('site archetypes reject drifted book, chapter, social, and media intents', 
   }
 });
 
-test('blocked download declarations do not become executable or agent exposed capabilities', async () => {
+test('blocked download declarations stay compiled and agent-visible with blocked runtime disposition', async () => {
   for (const siteKey of ['jable', 'x', 'instagram']) {
     const manifest = await createStaticSiteCompileManifestFromConfig({
       request: {
@@ -133,7 +133,11 @@ test('blocked download declarations do not become executable or agent exposed ca
     });
     const downloadCapabilities = manifest.inventories.capabilities.filter((capability) => isDownloadIntent(capability.normalizedIntent));
     assert.equal(downloadCapabilities.length > 0, true, `${siteKey} should keep descriptor-only blocked download capabilities`);
-    assert.deepEqual(downloadCapabilities.map((capability) => capability.agentExposed), downloadCapabilities.map(() => false));
+    assert.deepEqual(downloadCapabilities.map((capability) => capability.agentExposed), downloadCapabilities.map(() => true));
+    assert.deepEqual(downloadCapabilities.map((capability) => capability.executable), downloadCapabilities.map(() => true));
+    assert.deepEqual(downloadCapabilities.map((capability) => capability.enablementStatus), downloadCapabilities.map(() => 'disabled'));
+    assert.deepEqual(downloadCapabilities.map((capability) => capability.executionDisposition), downloadCapabilities.map(() => 'blocked'));
+    assert.deepEqual(downloadCapabilities.map((capability) => capability.runtimeCallable), downloadCapabilities.map(() => false));
   }
 });
 

@@ -310,7 +310,7 @@ test('capability interaction writes remediation plans without enabling disabled 
   assert.equal(plan.plans.some((entry) => entry.pathType === 'user_mediated_safe_action_path' && entry.resultingStatus === 'confirmation_required'), true);
 });
 
-test('capability interaction blocks unsafe write and raw-material plans from confirmation', async (t) => {
+test('capability interaction allows ordinary writes but blocks raw-material plans from confirmation', async (t) => {
   const siteDir = await createSiteDir(t);
   const unsafeFollow = capability('误判为只读的关注动作', {
     executionPlan: {
@@ -353,14 +353,14 @@ test('capability interaction blocks unsafe write and raw-material plans from con
   };
 
   const state = capabilityInteractionState(buildResult);
-  assert.equal(state.safeConfirmable.length, 0);
-  assert.equal(state.blockedConfirmable.length, 2);
+  assert.equal(state.safeConfirmable.length, 1);
+  assert.equal(state.blockedConfirmable.length, 1);
   assert.equal(state.blockedConfirmable.every((entry) => /不能启用/u.test(entry.interaction_blocked_reason)), true);
 
   const recorded = await writeCapabilityInteractionDecisions(buildResult, [unsafeFollow, unsafeRaw], { siteDir });
-  assert.equal(recorded.status, 'skipped');
-  assert.equal(recorded.count, 0);
-  assert.equal(recorded.decisions.length, 0);
+  assert.equal(recorded.status, 'recorded');
+  assert.equal(recorded.count, 1);
+  assert.equal(recorded.decisions.length, 1);
 });
 
 test('disabled high-risk capabilities get review remediation without becoming confirmable', async () => {

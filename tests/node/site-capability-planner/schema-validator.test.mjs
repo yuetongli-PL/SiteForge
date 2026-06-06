@@ -248,6 +248,107 @@ test('CapabilityPlan accepts a minimal plan with Graph-sourced route and redacti
   assert.equal(assertCapabilityPlanCompatible(plan), true);
 });
 
+test('Planner validators allow structured execution descriptors but reject raw runtime material', () => {
+  const structuredPlan = createCapabilityPlan({
+    executionContractRef: 'execution-contract:example:download-invoice',
+    requestSchemaRef: 'schema:example:download-invoice:request',
+    runtimeBindingRef: 'runtime-binding:example:download-invoice',
+    sessionRequirementRef: 'session-requirement:example:authenticated',
+    payloadTemplate: {
+      csrfToken: '{{runtime.secret.csrf}}',
+      orderId: {
+        type: 'string',
+        source: 'slot:order-id',
+        persisted: false,
+      },
+    },
+    headerSchema: {
+      Authorization: {
+        type: 'string',
+        source: 'runtime_secret_placeholder',
+      },
+      Cookie: {
+        type: 'string',
+        source: 'runtime_secret_placeholder',
+      },
+    },
+    downloaderTaskDescriptor: {
+      taskKind: 'download',
+      outputPathConstraint: {
+        type: 'workspace_relative',
+        value: '{{slot:outputPath}}',
+      },
+    },
+  });
+
+  assert.equal(assertCapabilityPlanCompatible(structuredPlan), true);
+
+  const rejectedDescriptors = [
+    {
+      name: 'raw authorization header value',
+      value: {
+        headerSchema: {
+          Authorization: {
+            value: 'Bearer synthetic-secret-value',
+          },
+        },
+      },
+    },
+    {
+      name: 'raw downloader task',
+      value: {
+        downloaderTask: {
+          id: 'task:synthetic',
+        },
+      },
+    },
+    {
+      name: 'local profile path',
+      value: {
+        payloadTemplate: {
+          profilePath: 'C:/Users/example/AppData/Local/BrowserProfile',
+        },
+      },
+    },
+    {
+      name: 'function value',
+      value: {
+        payloadTemplate: {
+          transform: () => 'unsafe',
+        },
+      },
+    },
+    {
+      name: 'dynamic import code string',
+      value: {
+        downloaderTaskDescriptor: {
+          loader: 'import("unsafe-adapter")',
+        },
+      },
+    },
+    {
+      name: 'unsafe credential ref',
+      value: {
+        executionContractRef: 'execution-contract:example:credential',
+      },
+    },
+  ];
+
+  for (const { name, value } of rejectedDescriptors) {
+    assert.throws(
+      () => assertNoPlannerSensitiveMaterial(value),
+      (error) => {
+        // @ts-ignore
+        assert.equal(error.code, 'planner.sensitive_material_forbidden');
+        // @ts-ignore
+        assert.doesNotMatch(error.message, /synthetic-secret-value|BrowserProfile|unsafe-adapter/u);
+        return true;
+      },
+      `${name} should be rejected`,
+    );
+  }
+});
+
 test('CapabilityPlan requires version fields and Graph-sourced selectedRoute', () => {
   assert.throws(
     () => assertCapabilityPlanCompatible(createCapabilityPlan({

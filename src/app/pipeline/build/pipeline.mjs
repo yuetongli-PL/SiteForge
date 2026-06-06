@@ -2,7 +2,7 @@
 
 import path from 'node:path';
 import process from 'node:process';
-import { readdir, rm } from 'node:fs/promises';
+import { readFile, readdir, rm } from 'node:fs/promises';
 import { displayPath } from '../../../infra/cli/path-display.mjs';
 import { buildStatusLabel, verificationStatusLabel } from './status-labels.mjs';
 import { openBrowserSession } from '../../../infra/browser/session.mjs';
@@ -88,6 +88,22 @@ import {
   sanitizeEvidenceRef,
 } from './risk-policy.mjs';
 import {
+  AUDIT_LOG_ARTIFACT,
+  EXECUTION_CONTRACTS_ARTIFACT,
+  EXECUTION_GOVERNANCE_ARTIFACT,
+  RUNTIME_DISPATCH_REPORT_ARTIFACT,
+  RUNTIME_EXECUTION_REPORT_ARTIFACT,
+  attachExecutionContractRefs,
+  buildExecutionAuditLog,
+  buildExecutionContracts,
+  buildRuntimeDispatchReport,
+  buildRuntimeExecutionReport,
+  evaluateExecutionGovernance,
+} from './execution-governance.mjs';
+import {
+  executeRuntimeInvocation,
+} from '../../runtime/index.mjs';
+import {
   extractElementInstances,
   isUrlAllowedByRobots,
   parseHtmlDocument,
@@ -162,6 +178,10 @@ import {
   SITEFORGE_BUILD_STAGE_NAMES,
   assertSiteForgeBuildStagePlan,
 } from './stage-plan.mjs';
+import {
+  createStageSubstepRecords,
+  siteForgeBuildStageSubsteps,
+} from './stage-substeps.mjs';
 import {
   buildReportWarningSummary,
   buildStageRecord,
@@ -913,19 +933,16 @@ function formSafety(form) {
   const method = String(form.method ?? 'GET').toUpperCase();
   const haystack = `${form.label ?? ''} ${form.action ?? ''} ${form.textSummary ?? ''}`.toLowerCase();
   const forcedActions = findForcedDisabledActions(haystack);
-  if (forcedActions.some((action) => ['pay', 'checkout', 'change_payment'].includes(action))) {
+  if (forcedActions.some((action) => ['pay', 'checkout', 'purchase', 'change_payment'].includes(action))) {
     return 'payment';
-  }
-  if (forcedActions.some((action) => action === 'delete' || action.startsWith('change_') || action === 'edit_profile')) {
-    return 'destructive';
   }
   if (forcedActions.length > 0) {
-    return 'state_changing';
+    return 'destructive';
   }
-  if (/checkout|payment|purchase|order|billing/u.test(haystack)) {
+  if (/checkout|payment|purchase|billing|pay|cart|wallet|recharge/u.test(haystack)) {
     return 'payment';
   }
-  if (/delete|remove|destroy|cancel account/u.test(haystack)) {
+  if (/delete|remove|clear|empty|wipe|overwrite|reset|destroy|revoke|cancel[-_\s]?(?:order|subscription|account)/u.test(haystack)) {
     return 'destructive';
   }
   if (method === 'GET' && isSearchForm(form)) {
@@ -966,19 +983,16 @@ function controlSafety(control) {
   const type = String(control.type ?? '').toLowerCase();
   const haystack = `${control.label ?? ''} ${control.name ?? ''} ${type} ${control.attrs?.role ?? ''}`.toLowerCase();
   const forcedActions = findForcedDisabledActions(haystack);
-  if (forcedActions.some((action) => ['pay', 'checkout', 'change_payment'].includes(action))) {
+  if (forcedActions.some((action) => ['pay', 'checkout', 'purchase', 'change_payment'].includes(action))) {
     return 'payment';
-  }
-  if (forcedActions.some((action) => action === 'delete' || action.startsWith('change_') || action === 'edit_profile')) {
-    return 'destructive';
   }
   if (forcedActions.length > 0) {
-    return 'state_changing';
+    return 'destructive';
   }
-  if (/checkout|payment|purchase|order|billing/u.test(haystack)) {
+  if (/checkout|payment|purchase|billing|pay|cart|wallet|recharge/u.test(haystack)) {
     return 'payment';
   }
-  if (/delete|remove|destroy|cancel account/u.test(haystack)) {
+  if (/delete|remove|clear|empty|wipe|overwrite|reset|destroy|revoke|cancel[-_\s]?(?:order|subscription|account)/u.test(haystack)) {
     return 'destructive';
   }
   if (type === 'submit') {
@@ -998,7 +1012,7 @@ function capabilitySafetyFromAffordance(affordance) {
     return 'destructive';
   }
   if (affordance.safety === 'state_changing') {
-    return 'requires_confirmation';
+    return 'state_changing';
   }
   return 'read_only';
 }
@@ -1208,6 +1222,10 @@ function buildSafeRuntimeOptions(options = /** @type {any} */ ({})) {
   delete safeOptions.authRuntime;
   delete safeOptions.authenticatedStructureSummary;
   delete safeOptions.apiReplayCookieHeader;
+  delete safeOptions.runtimeProviderRegistry;
+  delete safeOptions.runtimeProviderRegistryFactory;
+  delete safeOptions.runtimeContext;
+  delete safeOptions.runtimeExecutionContext;
   return safeOptions;
 }
 
@@ -1219,7 +1237,161 @@ function clearRuntimeAuthInputOptions(options = /** @type {any} */ ({})) {
   delete options.cookieEnv;
   delete options.cookieFile;
   delete options.cookieStdin;
+  delete options.runtimeProviderRegistry;
+  delete options.runtimeProviderRegistryFactory;
+  delete options.runtimeContext;
+  delete options.runtimeExecutionContext;
   return options;
+}
+
+function resolveRuntimeProviderRegistryFromOptions(options = /** @type {any} */ ({}), site = null, buildId = null) {
+  if (options.runtimeProviderRegistry && typeof options.runtimeProviderRegistry.resolve === 'function') {
+    return options.runtimeProviderRegistry;
+  }
+  if (typeof options.runtimeProviderRegistryFactory === 'function') {
+    const registry = options.runtimeProviderRegistryFactory({
+      site,
+      buildId,
+      runtimeBoundary: 'app/runtime',
+    });
+    return registry && typeof registry.resolve === 'function' ? registry : null;
+  }
+  return null;
+}
+
+function runtimeExecutionContextFromOptions(options = /** @type {any} */ ({})) {
+  const source = options.runtimeExecutionContext ?? options.runtimeContext ?? null;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return {};
+  }
+  return {
+    localFixture: source.localFixture === true,
+    controlledBrowserRuntime: source.controlledBrowserRuntime === true,
+    slotValues: source.slotValues && typeof source.slotValues === 'object' && !Array.isArray(source.slotValues)
+      ? source.slotValues
+      : undefined,
+    fixtureSlotValues: source.fixtureSlotValues && typeof source.fixtureSlotValues === 'object' && !Array.isArray(source.fixtureSlotValues)
+      ? source.fixtureSlotValues
+      : undefined,
+    browserActionDescriptor: source.browserActionDescriptor && typeof source.browserActionDescriptor === 'object' && !Array.isArray(source.browserActionDescriptor)
+      ? source.browserActionDescriptor
+      : undefined,
+    browserActionDescriptors: source.browserActionDescriptors && typeof source.browserActionDescriptors === 'object' && !Array.isArray(source.browserActionDescriptors)
+      ? source.browserActionDescriptors
+      : undefined,
+  };
+}
+
+function sanitizedString(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function sanitizedExecutionRef(value) {
+  const text = sanitizedString(value);
+  if (!text) return null;
+  return text
+    .toLowerCase()
+    .replace(/\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/gu, '$1-$2-$3-$4')
+    .replace(/[^a-z0-9._:/-]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 220) || null;
+}
+
+function sanitizeBrowserActionDescriptor(descriptor = null) {
+  if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) {
+    return null;
+  }
+  const requiredSlots = Array.isArray(descriptor.requiredSlots)
+    ? descriptor.requiredSlots.map((slot) => sanitizedString(slot)).filter(Boolean)
+    : [];
+  return {
+    selector: sanitizedString(descriptor.selector ?? descriptor.targetSelector)
+      ?.replace(/[?&](?:token|auth|sid|session|cookie|csrf|access_token|refresh_token)=[^"'\]\s&]+/giu, '') ?? null,
+    actionRef: sanitizedString(descriptor.actionRef ?? descriptor.actionId),
+    routeRef: sanitizedString(descriptor.routeRef ?? descriptor.routeId),
+    requiredSlots,
+    savedMaterial: SANITIZED_SUMMARY_ONLY,
+    redactionRequired: true,
+  };
+}
+
+function browserActionDescriptorForRuntime(context, selectedContract) {
+  const runtimeContext = context?.runtimeExecutionContext ?? {};
+  const descriptors = runtimeContext.browserActionDescriptors;
+  const explicitDescriptor = selectedContract?.browserActionDescriptor
+    ?? descriptors?.[selectedContract?.capabilityId]
+    ?? descriptors?.[selectedContract?.id]
+    ?? runtimeContext.browserActionDescriptor
+    ?? null;
+  return sanitizeBrowserActionDescriptor(explicitDescriptor);
+}
+
+function browserActionRuntimeContext(context, selectedContract = null) {
+  const kind = String(selectedContract?.operationKind ?? selectedContract?.runtimeBinding?.kind ?? '').toLowerCase();
+  if (!kind.includes('form_or_action') && !kind.includes('write') && !kind.includes('submit') && selectedContract?.capabilityKind !== 'write') {
+    return null;
+  }
+  const source = context.runtimeExecutionContext ?? {};
+  return {
+    localFixture: source.localFixture === true,
+    controlledBrowserRuntime: source.controlledBrowserRuntime === true,
+    slotValues: source.slotValues,
+    fixtureSlotValues: source.fixtureSlotValues,
+  };
+}
+
+function runtimeContractDescriptorForDispatch(selectedContract, dispatchReport, context = null) {
+  if (!selectedContract || !dispatchReport.runtimeInvocationRequest) {
+    return null;
+  }
+  const browserActionDescriptor = browserActionDescriptorForRuntime(context, selectedContract);
+  return {
+    id: dispatchReport.runtimeInvocationRequest.executionContractRef,
+    executionContractRef: dispatchReport.runtimeInvocationRequest.executionContractRef,
+    capabilityId: selectedContract.capabilityId,
+    capabilityKind: selectedContract.capabilityKind ?? null,
+    operationKind: selectedContract.operationKind ?? null,
+    contractKind: selectedContract.contractKind ?? selectedContract.capabilityKind ?? selectedContract.operationKind ?? 'runtime_contract',
+    destructiveAction: selectedContract.destructiveAction === true,
+    highRiskAction: selectedContract.highRiskAction === true,
+    paymentOrFundsAction: selectedContract.paymentOrFundsAction === true,
+    runtimeBinding: selectedContract.runtimeBinding
+      ? {
+        kind: selectedContract.runtimeBinding.kind ?? null,
+        providerId: null,
+        downloaderTaskDescriptor: selectedContract.runtimeBinding.downloaderTaskDescriptor
+          ? {
+            material: selectedContract.runtimeBinding.downloaderTaskDescriptor.material ?? 'descriptor_only',
+            networkResolveAllowedAtRuntime: selectedContract.runtimeBinding.downloaderTaskDescriptor.networkResolveAllowedAtRuntime === true,
+            savedMaterial: selectedContract.runtimeBinding.downloaderTaskDescriptor.savedMaterial ?? SANITIZED_SUMMARY_ONLY,
+          }
+          : null,
+      }
+      : null,
+    requestSchemaRef: sanitizedExecutionRef(selectedContract.requestSchemaRef),
+    responseSchemaRef: sanitizedExecutionRef(selectedContract.responseSchemaRef),
+    payloadTemplate: selectedContract.payloadTemplate ?? null,
+    browserActionDescriptor,
+    runtimeBoundary: 'app/runtime',
+    descriptorOnly: true,
+    redactionRequired: true,
+  };
+}
+
+function downloadRuntimeOutputContext(context, selectedContract = null) {
+  const kind = String(selectedContract?.operationKind ?? selectedContract?.runtimeBinding?.kind ?? '').toLowerCase();
+  if (!kind.includes('download') && !kind.includes('export') && selectedContract?.runtimeBinding?.kind !== 'downloader') {
+    return null;
+  }
+  return {
+    outputPolicy: {
+      approved: true,
+      root: 'build_artifact_dir',
+    },
+    outputDir: context.artifactDir,
+    downloadFilename: 'siteforge-controlled-download.txt',
+  };
 }
 
 function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
@@ -1262,6 +1434,8 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
   const apiReplayCookieHeader = typeof options.apiReplayCookieHeader === 'string'
     ? options.apiReplayCookieHeader.trim()
     : null;
+  const runtimeProviderRegistry = resolveRuntimeProviderRegistryFromOptions(options, site, buildId);
+  const runtimeExecutionContext = runtimeExecutionContextFromOptions(options);
   const safeOptions = buildSafeRuntimeOptions(options);
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -1293,6 +1467,8 @@ function createInitialContext(inputUrl, options = /** @type {any} */ ({})) {
     policy,
     options: safeOptions,
     apiReplayCookieHeader,
+    runtimeProviderRegistry,
+    runtimeExecutionContext,
     authRuntime: runtimeAuth.authRuntime,
     authenticatedStructureSummary: runtimeAuth.authenticatedStructureSummary,
     source: createBuildSource(inputUrl, {
@@ -1436,6 +1612,193 @@ function updateWebInteractionBuildState(context, stageRecords, stageResults, {
   } catch {
     // The build must not fail because the optional local interaction page is closed or stale.
   }
+}
+
+function stageSubstepSnapshot(context, stageName = context?._stageSubstepRuntime?.stageName) {
+  const runtime = context?._stageSubstepRuntime;
+  if (!runtime || runtime.stageName !== stageName) {
+    return {
+      activeSubstep: null,
+      substeps: {},
+    };
+  }
+  return {
+    activeSubstep: runtime.activeSubstep ?? null,
+    substeps: jsonClone(runtime.substeps ?? {}),
+  };
+}
+
+function beginStageSubsteps(context, stageRecords, stageResults, stageName, startedAt) {
+  const substeps = createStageSubstepRecords(stageName);
+  const first = siteForgeBuildStageSubsteps(stageName)[0]?.id ?? null;
+  if (first && substeps[first]) {
+    substeps[first] = {
+      ...substeps[first],
+      status: 'running',
+      startedAt,
+    };
+  }
+  context._stageSubstepRuntime = {
+    stageName,
+    stageRecords,
+    stageResults,
+    startedAt,
+    activeSubstep: first,
+    substeps,
+  };
+  return stageSubstepSnapshot(context, stageName);
+}
+
+function markStageSubstep(context, substepId, status = 'running', details = /** @type {any} */ ({})) {
+  const runtime = context?._stageSubstepRuntime;
+  if (!runtime || !substepId || !runtime.substeps?.[substepId]) {
+    return;
+  }
+  const now = new Date().toISOString();
+  if (status === 'running' && runtime.activeSubstep && runtime.activeSubstep !== substepId) {
+    const previous = runtime.substeps[runtime.activeSubstep];
+    if (previous?.status === 'running') {
+      runtime.substeps[runtime.activeSubstep] = {
+        ...previous,
+        status: 'success',
+        completedAt: previous.completedAt ?? now,
+      };
+    }
+  }
+  const previous = runtime.substeps[substepId] ?? {};
+  const progressNumber = (key) => {
+    if (!Object.prototype.hasOwnProperty.call(details, key)) {
+      return previous[key] ?? null;
+    }
+    const value = details[key];
+    if (value === null || value === undefined || value === '') {
+      return previous[key] ?? null;
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? number : previous[key] ?? null;
+  };
+  runtime.substeps[substepId] = {
+    ...previous,
+    status,
+    startedAt: previous.startedAt ?? now,
+    completedAt: ['success', 'failed', 'blocked', 'skipped'].includes(status)
+      ? now
+      : previous.completedAt ?? null,
+    reasonCode: details.reasonCode ?? previous.reasonCode ?? null,
+    message: details.message ?? previous.message ?? null,
+    currentItem: details.currentItem ?? previous.currentItem ?? null,
+    processedCount: progressNumber('processedCount'),
+    totalCount: progressNumber('totalCount'),
+    discoveredCount: progressNumber('discoveredCount'),
+    skippedCount: progressNumber('skippedCount'),
+    elapsedMs: progressNumber('elapsedMs'),
+    warnings: Array.isArray(details.warnings) ? details.warnings : previous.warnings ?? [],
+    errors: Array.isArray(details.errors) ? details.errors : previous.errors ?? [],
+  };
+  runtime.activeSubstep = status === 'running' ? substepId : null;
+  const payload = stageSubstepSnapshot(context, runtime.stageName);
+  runtime.stageRecords[runtime.stageName] = buildStageRecord(
+    runtime.stageName,
+    'running',
+    payload,
+    runtime.startedAt,
+    null,
+    STAGE_DEPENDENCIES,
+  );
+  updateWebInteractionBuildState(context, runtime.stageRecords, runtime.stageResults, {
+    phase: 'build',
+    status: `running:${runtime.stageName}.${substepId}`,
+  });
+}
+
+function markStageSubstepProgress(context, substepId, details = /** @type {any} */ ({})) {
+  const runtime = context?._stageSubstepRuntime;
+  markStageSubstep(context, substepId, 'running', {
+    ...details,
+    currentItem: safeSubstepCurrentItem(details.currentItem),
+    elapsedMs: details.elapsedMs ?? (runtime?.startedAt ? Date.now() - Date.parse(runtime.startedAt) : null),
+  });
+}
+
+function safeSubstepCurrentItem(value, maxLength = 320) {
+  const text = String(value ?? '').replace(/\s+/gu, ' ').trim();
+  if (!text) {
+    return null;
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function timeoutError(message, reasonCode) {
+  const error = new Error(message);
+  error.reasonCode = reasonCode;
+  error.code = reasonCode;
+  return error;
+}
+
+async function withOperationTimeout(operation, timeoutMs, message, reasonCode) {
+  const ms = Math.max(1, Number(timeoutMs ?? 0));
+  let timeout = null;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(timeoutError(message, reasonCode)), ms);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function finishStageSubsteps(context, stageName, finalStatus = 'success') {
+  const runtime = context?._stageSubstepRuntime;
+  if (!runtime || runtime.stageName !== stageName) {
+    return {
+      activeSubstep: null,
+      substeps: {},
+    };
+  }
+  const now = new Date().toISOString();
+  const terminalStatus = finalStatus === 'success' ? 'success' : finalStatus;
+  for (const [substepId, record] of Object.entries(runtime.substeps ?? {})) {
+    let status = record.status;
+    if (status === 'pending') {
+      status = finalStatus === 'success' ? 'success' : 'skipped';
+    } else if (status === 'running') {
+      status = terminalStatus === 'success' ? 'success' : terminalStatus;
+    }
+    const elapsedMs = Number.isFinite(Number(record.elapsedMs))
+      ? Number(record.elapsedMs)
+      : Date.now() - Date.parse(record.startedAt ?? runtime.startedAt ?? now);
+    const fallbackProcessedCount = Number.isFinite(Number(record.processedCount))
+      ? Number(record.processedCount)
+      : 0;
+    const fallbackTotalCount = Number.isFinite(Number(record.totalCount))
+      ? Number(record.totalCount)
+      : fallbackProcessedCount;
+    const fallbackDiscoveredCount = Number.isFinite(Number(record.discoveredCount))
+      ? Number(record.discoveredCount)
+      : 0;
+    const fallbackSkippedCount = Number.isFinite(Number(record.skippedCount))
+      ? Number(record.skippedCount)
+      : (status === 'skipped' ? 1 : 0);
+    runtime.substeps[substepId] = {
+      ...record,
+      status,
+      completedAt: record.completedAt ?? now,
+      processedCount: fallbackProcessedCount,
+      totalCount: fallbackTotalCount,
+      discoveredCount: fallbackDiscoveredCount,
+      skippedCount: fallbackSkippedCount,
+      elapsedMs: Number.isFinite(elapsedMs) ? elapsedMs : 0,
+    };
+  }
+  runtime.activeSubstep = null;
+  const payload = stageSubstepSnapshot(context, stageName);
+  delete context._stageSubstepRuntime;
+  return payload;
 }
 
 function dedicatedSiteAdapterId(context) {
@@ -1866,7 +2229,28 @@ async function writeCrawlCheckpoint(context, {
 }
 
 async function registerSiteStage(context) {
+  markStageSubstepProgress(context, 'normalizeInput', {
+    message: '规范化输入 URL 和站点根地址。',
+    processedCount: 1,
+    totalCount: 1,
+    discoveredCount: context.site.allowedDomains?.length ?? 0,
+    currentItem: context.site.rootUrl,
+  });
+  markStageSubstepProgress(context, 'resolveIdentity', {
+    message: '解析站点标识和主机键。',
+    processedCount: 1,
+    totalCount: 1,
+    discoveredCount: context.site.allowedDomains?.length ?? 0,
+    currentItem: context.site.id,
+  });
   const sitePath = await writeArtifactJson(context, 'site.json', context.site);
+  markStageSubstepProgress(context, 'createWorkspace', {
+    message: '创建隔离站点工作区和基础产物。',
+    processedCount: 1,
+    totalCount: 3,
+    discoveredCount: 1,
+    currentItem: context.artifactDir,
+  });
   const safetyPolicy = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -1892,6 +2276,12 @@ async function registerSiteStage(context) {
       privateContentSaved: false,
     },
   };
+  markStageSubstepProgress(context, 'loadPolicy', {
+    message: '合并构建策略、安全策略和抓取契约。',
+    processedCount: Object.keys(context.policy ?? {}).length,
+    totalCount: Object.keys(context.policy ?? {}).length,
+    discoveredCount: FORCED_DISABLED_ACTIONS.length,
+  });
   const safetyPolicyPath = await writeArtifactJson(context, 'safety_policy.json', safetyPolicy);
   const generatedAdapter = await writeGeneratedSiteAdapterProfile(context, {
     status: 'initialized',
@@ -2419,6 +2809,13 @@ function buildRobotsDiscoveryReport(context, {
 }
 
 async function discoverSeedsStage(context) {
+  markStageSubstepProgress(context, 'loadKnownPolicy', {
+    message: '加载已知站点策略和 robots 候选。',
+    processedCount: 0,
+    totalCount: context.site.allowedDomains?.length ?? 1,
+    discoveredCount: knownPolicyPublicSeedRoutes(context).length,
+    currentItem: context.site.rootUrl,
+  });
   const seeds = /** @type {any[]} */ ([]);
   const warnings = /** @type {any[]} */ ([]);
   const reasonCodes = new Set();
@@ -2465,6 +2862,30 @@ async function discoverSeedsStage(context) {
   };
   const sitemapUrls = new Set();
   const processedSitemaps = new Set();
+  const sitemapProgressStartedAt = Date.now();
+  let skippedSitemapCount = 0;
+  const sitemapReadTimeoutMs = Math.max(1_000, Number(
+    context.options.sitemapReadTimeoutMs
+    ?? context.options.sitemapTimeoutMs
+    ?? Math.min(Number(context.policy.fetchTimeoutMs ?? 10_000) || 10_000, 15_000),
+  ));
+  const sitemapDiscoveryTimeoutMs = Math.max(sitemapReadTimeoutMs, Number(
+    context.options.sitemapDiscoveryTimeoutMs
+    ?? context.options.sitemapTotalTimeoutMs
+    ?? 90_000,
+  ));
+  const markSitemapProgress = (message, currentItem = null, totalCount = sitemapUrls.size) => {
+    markStageSubstep(context, 'readSitemaps', 'running', {
+      message,
+      currentItem: safeSubstepCurrentItem(currentItem),
+      processedCount: processedSitemaps.size,
+      totalCount,
+      discoveredCount: seeds.length,
+      skippedCount: skippedSitemapCount,
+      elapsedMs: Date.now() - sitemapProgressStartedAt,
+    });
+  };
+  markSitemapProgress('准备读取 robots 和 sitemap 候选。');
   const writeBlockedSeedsAndThrow = async (code, message) => {
     const deduped = arrayUniqueBy(seeds, (seed) => seed.normalizedUrl)
       .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
@@ -2488,6 +2909,14 @@ async function discoverSeedsStage(context) {
       summary: layeredSeedsSummary(layeredSeeds),
       warnings,
     };
+    markStageSubstepProgress(context, 'emitBoundary', {
+      message: '写入阻断状态的 seed 边界产物。',
+      processedCount: deduped.length,
+      totalCount: deduped.length,
+      discoveredCount: deduped.length,
+      skippedCount: robotsExcludedUrls.length,
+      currentItem: code,
+    });
     const seedsPath = await writeArtifactJson(context, 'seeds.json', payload);
     const generatedAdapter = await writeGeneratedSiteAdapterProfile(context, {
       seeds: deduped,
@@ -2588,13 +3017,28 @@ async function discoverSeedsStage(context) {
   const maxSitemaps = Math.max(1, Number(context.policy.maxSitemaps ?? 10));
   const pendingSitemaps = [...sitemapUrls].sort((left, right) => left.localeCompare(right, 'en'));
   for (let index = 0; index < pendingSitemaps.length && processedSitemaps.size < maxSitemaps; index += 1) {
+    if (Date.now() - sitemapProgressStartedAt > sitemapDiscoveryTimeoutMs) {
+      const warning = `sitemap discovery timed out after ${sitemapDiscoveryTimeoutMs}ms; ${Math.max(0, pendingSitemaps.length - processedSitemaps.size)} sitemap URLs were left out.`;
+      warnings.push(warning);
+      reasonCodes.add('sitemap-discovery-timeout');
+      markSitemapProgress('sitemap 发现达到总耗时保护，跳过剩余 sitemap。', null, pendingSitemaps.length);
+      break;
+    }
     const sitemapUrl = pendingSitemaps[index];
     if (processedSitemaps.has(sitemapUrl)) {
+      skippedSitemapCount += 1;
+      markSitemapProgress('跳过已处理 sitemap。', sitemapUrl, pendingSitemaps.length);
       continue;
     }
+    markSitemapProgress('正在读取 sitemap。', sitemapUrl, pendingSitemaps.length);
     processedSitemaps.add(sitemapUrl);
     try {
-      const sitemap = await context.source.read(sitemapUrl);
+      const sitemap = await withOperationTimeout(
+        context.source.read(sitemapUrl),
+        sitemapReadTimeoutMs,
+        `sitemap read timed out after ${sitemapReadTimeoutMs}ms: ${sitemapUrl}`,
+        'sitemap-read-timeout',
+      );
       const locs = parseSitemapUrls(sitemap.body, context.site.rootUrl);
       if (/<sitemapindex\b/iu.test(sitemap.body)) {
         for (const loc of locs) {
@@ -2608,10 +3052,12 @@ async function discoverSeedsStage(context) {
           }
         }
         pendingSitemaps.sort((left, right) => left.localeCompare(right, 'en'));
+        markSitemapProgress(`读取 sitemap 索引，新增 ${locs.length} 个候选。`, sitemapUrl, pendingSitemaps.length);
         continue;
       }
+      let addedFromSitemap = 0;
       for (const loc of locs) {
-        addSeed(loc, 'sitemap', 0.95, [
+        const added = addSeed(loc, 'sitemap', 0.95, [
           buildEvidence({
             type: 'url',
             source: sitemap.sourcePath ?? sitemapUrl,
@@ -2619,16 +3065,26 @@ async function discoverSeedsStage(context) {
             confidence: 0.95,
           }),
         ]);
+        if (added) {
+          addedFromSitemap += 1;
+        }
       }
+      markSitemapProgress(`读取 sitemap 完成，新增 ${addedFromSitemap} 个 seed。`, sitemapUrl, pendingSitemaps.length);
     } catch (error) {
+      skippedSitemapCount += 1;
       const warning = `sitemap unavailable: ${sitemapUrl}: ${error?.message ?? String(error)}`;
       warnings.push(warning);
       const classified = classifySiteForgeWarning(warning);
       if (classified?.reasonCode) {
         reasonCodes.add(classified.reasonCode);
       }
+      if (error?.reasonCode) {
+        reasonCodes.add(error.reasonCode);
+      }
+      markSitemapProgress(`sitemap 读取失败：${error?.reasonCode ?? error?.message ?? 'unavailable'}`, sitemapUrl, pendingSitemaps.length);
     }
   }
+  markSitemapProgress('sitemap 发现完成。', null, pendingSitemaps.length);
   if (pendingSitemaps.length > processedSitemaps.size) {
     warnings.push(`sitemap discovery truncated at maxSitemaps=${maxSitemaps}; ${pendingSitemaps.length - processedSitemaps.size} sitemap URLs were left out.`);
   }
@@ -2705,9 +3161,23 @@ async function discoverSeedsStage(context) {
     warnings.push(`observed route seed promotion truncated ${observedRouteSeedPromotion.truncatedCount} candidate routes at maxSeeds=${maxSeeds}.`);
   }
 
+  markStageSubstepProgress(context, 'rankSeeds', {
+    message: '排序、去重并限制种子 URL。',
+    processedCount: seeds.length,
+    totalCount: seeds.length,
+    discoveredCount: observedRouteSeedAddedCount,
+    skippedCount: robotsExcludedUrls.length + (observedRouteSeedPromotion.truncatedCount ?? 0),
+  });
   const dedupedAll = arrayUniqueBy(seeds, (seed) => seed.normalizedUrl)
     .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
   const deduped = dedupedAll.slice(0, maxSeeds);
+  markStageSubstepProgress(context, 'rankSeeds', {
+    message: '种子 URL 排序完成。',
+    processedCount: deduped.length,
+    totalCount: dedupedAll.length,
+    discoveredCount: deduped.length,
+    skippedCount: Math.max(0, dedupedAll.length - deduped.length) + robotsExcludedUrls.length,
+  });
   if (deduped.length < dedupedAll.length) {
     warnings.push(`seed discovery truncated at maxSeeds=${maxSeeds}; ${dedupedAll.length - deduped.length} seeds were left out.`);
   }
@@ -2730,10 +3200,15 @@ async function discoverSeedsStage(context) {
     ...(context.options.authRoutes ?? []),
     ...(context.options.localBuildConfig?.authRoutes ?? []),
   ]);
-  const automaticPublicRevisitRoutes = publicRoutes.slice(
-    0,
-    Math.max(0, AUTO_PUBLIC_REVISIT_ROUTE_BUDGET - configuredAuthRoutes.length),
-  );
+  const cookieAuthenticatedCrawl = context.authRuntime?.method === 'cookie'
+    || context.authStateReport?.authMethod === 'cookie'
+    || context.options?.authMode === 'cookie';
+  const automaticPublicRevisitRoutes = cookieAuthenticatedCrawl
+    ? []
+    : publicRoutes.slice(
+      0,
+      Math.max(0, AUTO_PUBLIC_REVISIT_ROUTE_BUDGET - configuredAuthRoutes.length),
+    );
   const configuredPublicRevisitRoutes = currentCoverageTargets.publicRevisitRoutes ?? [];
   const explicitPublicRevisitRoutes = [
     ...(context.options.publicRevisitRoutes ?? []),
@@ -2805,6 +3280,14 @@ async function discoverSeedsStage(context) {
     summary: layeredSeedsSummary(layeredSeeds),
     warnings,
   };
+  markStageSubstepProgress(context, 'emitBoundary', {
+    message: '写入抓取边界、seed 和 adapter 产物。',
+    processedCount: deduped.length,
+    totalCount: dedupedAll.length,
+    discoveredCount: (layeredSeeds.publicSeeds?.length ?? 0) + (layeredSeeds.authSeeds?.length ?? 0) + (layeredSeeds.revisitSeeds?.length ?? 0),
+    skippedCount: Math.max(0, dedupedAll.length - deduped.length) + robotsExcludedUrls.length,
+    currentItem: payload.status,
+  });
   const seedsPath = await writeArtifactJson(context, 'seeds.json', payload);
   const generatedAdapter = await writeGeneratedSiteAdapterProfile(context, {
     seeds: deduped,
@@ -3364,6 +3847,20 @@ async function crawlStaticStage(context, stageResults) {
     seed?.normalizedUrl,
     seed?.url,
   ));
+  markStageSubstepProgress(context, 'prepareQueue', {
+    message: '准备公开抓取队列。',
+    processedCount: 0,
+    totalCount: publicSeedInputs.length,
+    discoveredCount: publicCrawlSeeds.length,
+    skippedCount: Math.max(0, publicSeedInputs.length - publicCrawlSeeds.length),
+    currentItem: publicCrawlSeeds[0]?.normalizedUrl ?? publicCrawlSeeds[0]?.url ?? null,
+  });
+  markStageSubstepProgress(context, 'checkRobots', {
+    message: '检查公开种子与 robots 抓取策略。',
+    processedCount: 0,
+    totalCount: publicCrawlSeeds.length,
+    discoveredCount: publicCrawlSeeds.length,
+  });
   const coveragePlan = planRepresentativeCrawlCoverage(context, publicCrawlSeeds, { maxPages });
   const queue = coveragePlan.seeds.map((seed) => ({
     url: seed.normalizedUrl,
@@ -3385,6 +3882,16 @@ async function crawlStaticStage(context, stageResults) {
   ];
   const reasonCodes = new Set();
   const robotsExcludedUrls = /** @type {any[]} */ ([]);
+  const markStaticCrawlProgress = (message, currentItem = null) => {
+    markStageSubstepProgress(context, 'fetchPages', {
+      message,
+      currentItem,
+      processedCount: visited.size,
+      totalCount: Math.min(effectiveMaxPages, Math.max(queue.length, coveragePlan.seeds.length)),
+      discoveredCount: pages.length,
+      skippedCount: failures.length + robotsExcludedUrls.length,
+    });
+  };
   let lastCrawlFetchStartedAt = 0;
   const waitForRobotsCrawlDelay = async () => {
     if (!effectiveCrawlFetchDelayMs || !lastCrawlFetchStartedAt) {
@@ -3570,6 +4077,7 @@ async function crawlStaticStage(context, stageResults) {
     }
   };
 
+  markStaticCrawlProgress('准备抓取静态页面。', queue[0]?.url ?? null);
   let index = 0;
   while (index < queue.length && visited.size < effectiveMaxPages) {
     const batch = /** @type {any[]} */ ([]);
@@ -3589,6 +4097,7 @@ async function crawlStaticStage(context, stageResults) {
     if (!batch.length) {
       continue;
     }
+    markStaticCrawlProgress(`正在抓取 ${batch.length} 个静态页面。`, batch.map((entry) => entry.url).join(', '));
     const results = await mapWithConcurrency(batch, crawlConcurrency, crawlEntry);
     for (const result of results) {
       warnings.push(...result.warnings);
@@ -3619,15 +4128,30 @@ async function crawlStaticStage(context, stageResults) {
         });
       }
     }
+    markStaticCrawlProgress('静态页面批次抓取完成。', batch[batch.length - 1]?.url ?? null);
   }
   if (index < queue.length && visited.size >= effectiveMaxPages) {
     warnings.push(`crawl truncated at maxPages=${effectiveMaxPages}; ${queue.length - index} queued URLs were not fetched.`);
   }
 
+  markStageSubstepProgress(context, 'sanitizeMaterial', {
+    message: '清洗并去重静态页面材料。',
+    processedCount: pages.length,
+    totalCount: pages.length + authorizedSourceManifest.pages.length,
+    discoveredCount: rawPageMaterialByUrl.size,
+    skippedCount: failures.length,
+  });
   const dedupedPages = arrayUniqueBy([...pages, ...authorizedSourceManifest.pages], (page) => pageIdentity(page))
     .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
   const dedupedFailures = arrayUniqueBy(failures, (failure) => failure.normalizedUrl)
     .sort((left, right) => left.normalizedUrl.localeCompare(right.normalizedUrl, 'en'));
+  markStageSubstepProgress(context, 'writeManifests', {
+    message: '写入页面材料和授权来源清单。',
+    processedCount: 0,
+    totalCount: dedupedPages.length,
+    discoveredCount: dedupedPages.length,
+    skippedCount: dedupedFailures.length,
+  });
   const rawPageMaterialWrite = await writePublicRawPageMaterialArtifacts(context, dedupedPages, rawPageMaterialByUrl);
   const authorizedSourceWrite = await writeRedactedArtifactJson(context, AUTHORIZED_SOURCE_MANIFEST_RELATIVE_PATH, authorizedSourceManifest.manifest);
   for (const page of dedupedPages) {
@@ -4065,6 +4589,12 @@ function browserBridgeCoverageNeedsRefresh(context = /** @type {any} */ ({})) {
 }
 
 async function authStateCheckStage(context, stageResults = /** @type {any} */ ({})) {
+  markStageSubstepProgress(context, 'readSetupProfile', {
+    message: '读取设置档案和认证提示。',
+    processedCount: context.setupProfile ? 1 : 0,
+    totalCount: 1,
+    discoveredCount: context.setupProfile?.collectionReview ? 1 : 0,
+  });
   const setupBlockedApiDiscoveryOnly = context.options.allowSetupBlockedApiDiscovery === true
     && context.options.authMode === 'browser';
   const browserBridgeNeedsRouteRefresh = context.options.authMode === 'browser'
@@ -4083,6 +4613,13 @@ async function authStateCheckStage(context, stageResults = /** @type {any} */ ({
     ? browserBridgeRefreshAuthOptions(context, mergedCoverageTargets, previousAuthStateReport)
     : null;
   let routeRefreshFallbackUsed = false;
+  markStageSubstepProgress(context, 'classifyAccess', {
+    message: needsAuthCheck ? '运行认证状态检查。' : '复用已有认证状态。',
+    currentItem: context.options.authMode ?? context.authStateReport?.authMethod ?? 'none',
+    processedCount: 0,
+    totalCount: 1,
+    discoveredCount: mergedCoverageTargets.authRoutes?.length ?? 0,
+  });
   let baseReport = needsAuthCheck
     ? await runDefaultBrowserAuthStateCheck({
       inputUrl: context.inputUrl,
@@ -4091,6 +4628,14 @@ async function authStateCheckStage(context, stageResults = /** @type {any} */ ({
       robotsPolicy,
     })
     : context.authStateReport ?? createPublicOnlyAuthStateReport({ site: context.site, authMethod: 'none' });
+  markStageSubstepProgress(context, 'detectBlockers', {
+    message: '识别认证阻断和路由覆盖缺口。',
+    currentItem: baseReport?.authVerificationStatus ?? baseReport?.crawlMode ?? 'public_only',
+    processedCount: 1,
+    totalCount: 1,
+    discoveredCount: baseReport?.verifiedRoutes?.length ?? 0,
+    skippedCount: baseReport?.blockingSignals?.length ?? 0,
+  });
   if (
     browserBridgeNeedsRouteRefresh
     && canRunAuthenticatedLayer(previousAuthStateReport)
@@ -4137,6 +4682,13 @@ async function authStateCheckStage(context, stageResults = /** @type {any} */ ({
       ...verifiedAuthRoutes,
     ]);
   }
+  markStageSubstepProgress(context, 'planRoutes', {
+    message: '生成认证和公开重访路由计划。',
+    processedCount: coverageTargets.authRoutes?.length ?? 0,
+    totalCount: (coverageTargets.authRoutes?.length ?? 0) + (coverageTargets.publicRevisitRoutes?.length ?? 0),
+    discoveredCount: coverageTargets.publicRoutes?.length ?? 0,
+    skippedCount: normalizedReport.browserBridge?.missingRouteCount ?? 0,
+  });
   const nextContract = createCrawlContract({
     site: context.site,
     authStateReport: normalizedReport,
@@ -4150,6 +4702,14 @@ async function authStateCheckStage(context, stageResults = /** @type {any} */ ({
     fetchDelayMs: context.policy.fetchDelayMs,
     fetchTimeoutMs: context.policy.fetchTimeoutMs,
     authRuntime: null,
+  });
+  markStageSubstepProgress(context, 'writeAuthReport', {
+    message: '写入认证状态报告。',
+    currentItem: AUTH_STATE_REPORT_FILE,
+    processedCount: 0,
+    totalCount: 1,
+    discoveredCount: canRunAuthenticatedLayer(normalizedReport) ? 1 : 0,
+    skippedCount: normalizedReport.blockingSignals?.length ?? 0,
   });
   const authStateReportPath = await writeArtifactJson(context, AUTH_STATE_REPORT_FILE, normalizedReport);
   if (context.options.strictCookieAuth === true && context.options.authMode === 'cookie' && !canRunAuthenticatedLayer(normalizedReport)) {
@@ -4570,7 +5130,22 @@ async function crawlAuthenticatedStage(context, stageResults) {
   const crawlContract = context.crawlContract ?? requireStage(stageResults, 'authStateCheck').crawlContract;
   const canRunAuth = ['authenticated_cookie', 'authenticated_browser'].includes(crawlContract?.crawlMode) && canRunAuthenticatedLayer(authStateReport);
   const warnings = /** @type {string[]} */ ([]);
+  markStageSubstepProgress(context, 'prepareSession', {
+    message: canRunAuth ? '准备认证采集运行时。' : '认证采集未启用或未验证。',
+    currentItem: authStateReport?.authMethod ?? 'none',
+    processedCount: canRunAuth ? 1 : 0,
+    totalCount: 1,
+    discoveredCount: authStateReport?.verifiedRoutes?.length ?? 0,
+    skippedCount: canRunAuth ? 0 : 1,
+  });
   if (!canRunAuth) {
+    markStageSubstepProgress(context, 'summarizeAuthenticatedPages', {
+      message: '认证页面采集跳过。',
+      processedCount: 0,
+      totalCount: 0,
+      discoveredCount: 0,
+      skippedCount: 1,
+    });
     const reason = 'Authenticated crawl skipped because runtime authentication was not requested or did not verify successfully.';
     warnings.push(reason);
     const skippedProviderId = authStateReport?.authMethod === 'browser'
@@ -4635,6 +5210,12 @@ async function crawlAuthenticatedStage(context, stageResults) {
 
   let provided = null;
   if (typeof context.options.authenticatedStructureProvider === 'function') {
+    markStageSubstepProgress(context, 'openRoutes', {
+      message: '调用认证结构提供器。',
+      processedCount: 0,
+      totalCount: 1,
+      discoveredCount: 0,
+    });
     provided = await context.options.authenticatedStructureProvider({
       context,
       site: context.site,
@@ -4648,7 +5229,21 @@ async function crawlAuthenticatedStage(context, stageResults) {
   const authSeeds = stageResults.discoverSeeds?.authSeeds ?? [];
   const revisitSeeds = stageResults.discoverSeeds?.revisitSeeds ?? [];
   const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? setupProfileRobotsPolicy(context);
+  markStageSubstepProgress(context, 'openRoutes', {
+    message: '打开认证和重访路由队列。',
+    processedCount: 0,
+    totalCount: authSeeds.length + revisitSeeds.length,
+    discoveredCount: authSeeds.length,
+    skippedCount: 0,
+  });
   if (!provided) {
+    markStageSubstepProgress(context, 'collectStructure', {
+      message: '采集认证页面结构。',
+      processedCount: 0,
+      totalCount: authSeeds.length + revisitSeeds.length,
+      discoveredCount: 0,
+      skippedCount: 0,
+    });
     provided = {
       authenticatedPages: await collectAuthenticatedStructurePages(context, authSeeds, {
         sourceLayer: 'authenticated',
@@ -4663,6 +5258,13 @@ async function crawlAuthenticatedStage(context, stageResults) {
       }),
     };
   }
+  markStageSubstepProgress(context, 'mergeBridgeDiagnostics', {
+    message: '合并认证桥接诊断。',
+    processedCount: (provided.authenticatedPages ?? provided.pages ?? []).length,
+    totalCount: (provided.authenticatedPages ?? provided.pages ?? []).length + (provided.authenticatedOverlayPages ?? provided.overlayPages ?? []).length,
+    discoveredCount: authSeeds.length + revisitSeeds.length,
+    skippedCount: warnings.length,
+  });
   const authenticatedPages = arrayUniqueBy((provided.authenticatedPages ?? provided.pages ?? [])
     .map((page, index) => normalizeAuthenticatedStructurePage(context, page, {
       sourceLayer: 'authenticated',
@@ -4699,6 +5301,13 @@ async function crawlAuthenticatedStage(context, stageResults) {
     }), (page) => pageIdentity(page))
     .sort((left, right) => pageIdentity(left).localeCompare(pageIdentity(right), 'en'));
   warnings.push(...(Array.isArray(provided.warnings) ? provided.warnings.map(String) : []));
+  markStageSubstepProgress(context, 'summarizeAuthenticatedPages', {
+    message: '汇总认证页面证据。',
+    processedCount: authenticatedPages.length + authenticatedOverlayPages.length,
+    totalCount: authSeeds.length + revisitSeeds.length,
+    discoveredCount: authenticatedPages.length + authenticatedOverlayPages.length,
+    skippedCount: warnings.length,
+  });
   const authCoverageSummary = {
     authenticatedPages: authenticatedPages.length,
     authenticatedOverlayPages: authenticatedOverlayPages.length,
@@ -5145,7 +5754,21 @@ async function crawlRenderedStage(context, stageResults) {
   const hasPublicStaticGaps = (stageResults.crawlStatic?.pages ?? []).some((page) => !hasUsableStaticPageEvidence(page));
   const renderRequested = canAttemptPublicRenderedLayer(context, { renderedRequired })
     || (hasPublicStaticGaps && targets.length > 0 && canAutoAttemptPublicRenderedLayer(context));
+  markStageSubstepProgress(context, 'selectRenderedTargets', {
+    message: '选择需要浏览器渲染的公开页面。',
+    processedCount: 0,
+    totalCount: targets.length,
+    discoveredCount: targets.length,
+    skippedCount: renderRequested ? 0 : targets.length,
+  });
   if (!renderRequested) {
+    markStageSubstepProgress(context, 'dedupeRenderedPages', {
+      message: '渲染采集未请求，跳过渲染页面去重。',
+      processedCount: 0,
+      totalCount: targets.length,
+      discoveredCount: 0,
+      skippedCount: targets.length,
+    });
     const evidenceBundles = [
       normalizeEvidenceBundle({
         providerId: 'public_rendered',
@@ -5193,6 +5816,12 @@ async function crawlRenderedStage(context, stageResults) {
     };
   }
   let provided = null;
+  markStageSubstepProgress(context, 'launchBrowserRuntime', {
+    message: '准备浏览器渲染运行时。',
+    processedCount: 0,
+    totalCount: targets.length,
+    discoveredCount: 0,
+  });
   if (typeof context.options.publicRenderedStructureProvider === 'function') {
     provided = await context.options.publicRenderedStructureProvider({
       context,
@@ -5205,10 +5834,24 @@ async function crawlRenderedStage(context, stageResults) {
     provided = context.options.publicRenderedStructureSummary;
   }
   if (!provided) {
+    markStageSubstepProgress(context, 'captureRenderedFacts', {
+      message: '采集浏览器渲染结构事实。',
+      currentItem: targets[0] ?? null,
+      processedCount: 0,
+      totalCount: targets.length,
+      discoveredCount: 0,
+    });
     provided = {
       publicRenderedPages: await collectPublicRenderedStructurePagesWithBrowser(context, targets, warnings),
     };
   }
+  markStageSubstepProgress(context, 'dedupeRenderedPages', {
+    message: '去重并清洗渲染页面证据。',
+    processedCount: (provided.publicRenderedPages ?? provided.pages ?? []).length,
+    totalCount: targets.length,
+    discoveredCount: (provided.publicRenderedPages ?? provided.pages ?? []).length,
+    skippedCount: warnings.length,
+  });
   const blockedPages = [];
   const publicRenderedPages = arrayUniqueBy((provided.publicRenderedPages ?? provided.pages ?? [])
     .map((page, index) => normalizePublicRenderedStructurePage(context, page, {
@@ -5310,6 +5953,21 @@ async function crawlRenderedStage(context, stageResults) {
 async function discoverInteractionsStage(context, stageResults) {
   const pages = pagesFromStageResults(stageResults);
   const interactions = /** @type {any[]} */ ([]);
+  const totalLinkCount = pages.reduce((sum, page) => sum + (page.links?.length ?? 0), 0);
+  const totalControlCount = pages.reduce((sum, page) => sum + (page.controls?.length ?? 0) + (page.forms?.length ?? 0), 0);
+  markStageSubstepProgress(context, 'scanLinks', {
+    message: '扫描页面链接和导航入口。',
+    processedCount: 0,
+    totalCount: pages.length,
+    discoveredCount: totalLinkCount,
+  });
+  markStageSubstepProgress(context, 'scanControls', {
+    message: '扫描按钮、表单和可操作控件。',
+    processedCount: 0,
+    totalCount: pages.length,
+    discoveredCount: totalControlCount,
+  });
+  let scannedPages = 0;
   for (const page of pages) {
     for (const form of page.forms) {
       const safety = formSafety(form);
@@ -5373,7 +6031,22 @@ async function discoverInteractionsStage(context, stageResults) {
         ],
       });
     }
+    scannedPages += 1;
+    markStageSubstepProgress(context, 'scanControls', {
+      message: '扫描页面交互控件。',
+      currentItem: page.normalizedUrl ?? page.url ?? null,
+      processedCount: scannedPages,
+      totalCount: pages.length,
+      discoveredCount: interactions.length,
+    });
   }
+  markStageSubstepProgress(context, 'classifySafeActions', {
+    message: '分类安全交互候选。',
+    processedCount: interactions.length,
+    totalCount: interactions.length,
+    discoveredCount: interactions.filter((interaction) => ['safe', 'read_only'].includes(interaction.safety)).length,
+    skippedCount: interactions.filter((interaction) => !['safe', 'read_only'].includes(interaction.safety)).length,
+  });
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -5381,6 +6054,13 @@ async function discoverInteractionsStage(context, stageResults) {
     interactions,
     summary: { interactions: interactions.length },
   };
+  markStageSubstepProgress(context, 'writeDiagnostics', {
+    message: '写入交互诊断产物。',
+    processedCount: interactions.length,
+    totalCount: interactions.length,
+    discoveredCount: interactions.length,
+    skippedCount: 0,
+  });
   const interactionsPath = await writeArtifactJson(context, 'interactions.json', payload);
   return {
     interactions,
@@ -6709,34 +7389,32 @@ async function captureNetworkTracesStage(context) {
     redactionAuditArtifacts: [],
   };
   const warnings = /** @type {string[]} */ ([]);
+  markStageSubstepProgress(context, 'checkCapturePolicy', {
+    message: networkRequested ? '网络摘要采集已请求。' : '网络摘要未请求。',
+    processedCount: networkRequested ? 1 : 0,
+    totalCount: 1,
+    discoveredCount: observedRequests.length,
+    skippedCount: networkRequested ? 0 : 1,
+  });
 
+  markStageSubstepProgress(context, 'collectRequests', {
+    message: '汇总已观察请求和 site-adapter API 种子。',
+    processedCount: capturedObservedRequests.length,
+    totalCount: observedRequests.length,
+    discoveredCount: observedRequests.length,
+    skippedCount: 0,
+  });
   if (internalRawRequested) {
-    const rawPayload = {
-      schemaVersion: BUILD_SCHEMA_VERSION,
-      artifactFamily: 'siteforge-internal-raw-network-traces',
-      buildId: context.buildId,
-      siteId: context.site.id,
-      internalOnly: true,
-      redactionApplied: false,
-      containsSensitiveMaterial: true,
-      captureScope: 'api-json-text',
-      limits: {
-        maxTraces: 100,
-        maxResponseBodyBytes: 256 * 1024,
-      },
-      captureStatus: internalCapture.status ?? 'unavailable',
-      traces: rawTraces,
-      summary: {
-        traces: rawTraceCount,
-        responseBodies: rawResponseBodyCount,
-        truncatedBodies: rawTruncatedBodyCount,
-        skippedBodies: rawSkippedBodyCount,
-      },
-    };
-    rawNetworkPath = await writeArtifactJson(context, path.join('discovery', 'network_traces.raw.json'), rawPayload);
-    warnings.push('Raw network capture was enabled; raw trace artifacts may contain sensitive material.');
+    warnings.push('Raw network capture was enabled for in-memory API replay only; raw trace artifacts were not persisted.');
   }
 
+  markStageSubstepProgress(context, 'redactSensitiveHeaders', {
+    message: '脱敏请求摘要并生成 API 候选。',
+    processedCount: 0,
+    totalCount: observedRequests.length,
+    discoveredCount: 0,
+    skippedCount: 0,
+  });
   if (observedRequests.length) {
     try {
       apiCandidateArtifacts = await writeApiCandidateArtifactsFromObservedRequests(observedRequests, {
@@ -6750,6 +7428,13 @@ async function captureNetworkTracesStage(context) {
         artifacts: apiCandidateArtifacts.map((artifact) => relativeReportPath(context.cwd, artifact.artifactPath)),
         redactionAuditArtifacts: apiCandidateArtifacts.map((artifact) => relativeReportPath(context.cwd, artifact.redactionAuditPath)),
       };
+      markStageSubstepProgress(context, 'redactSensitiveHeaders', {
+        message: 'API 候选脱敏完成。',
+        processedCount: observedRequests.length,
+        totalCount: observedRequests.length,
+        discoveredCount: apiCandidateArtifacts.length,
+        skippedCount: Math.max(0, observedRequests.length - apiCandidateArtifacts.length),
+      });
     } catch (error) {
       apiCandidateSummary = {
         status: 'failed',
@@ -6772,7 +7457,7 @@ async function captureNetworkTracesStage(context) {
   const candidateArtifactsWritten = apiCandidateArtifacts.length > 0;
   const captureSucceeded = internalRawRequested || candidateArtifactsWritten;
   const reason = internalRawRequested
-    ? 'Raw network capture was enabled; public summary excludes raw headers, bodies, cookies, and tokens.'
+    ? 'Raw network capture was enabled for controlled in-memory replay; raw headers, bodies, cookies, and tokens were not persisted.'
     : candidateArtifactsWritten
       ? 'Network summary requested; site-adapter API seeds were materialized as redacted candidates without raw network persistence.'
       : apiExtractionDisabledReason
@@ -6784,6 +7469,13 @@ async function captureNetworkTracesStage(context) {
     warnings.push('Site-adapter API seeds were materialized as redacted candidates without raw network trace persistence.');
   }
 
+  markStageSubstepProgress(context, 'summarizeOperations', {
+    message: '汇总网络 API 发现结果。',
+    processedCount: observedRequests.length,
+    totalCount: observedRequests.length,
+    discoveredCount: apiCandidateSummary.count,
+    skippedCount: warnings.length,
+  });
   const sanitizedSummary = {
     requested: networkRequested,
     internalRawNetworkEnabled: internalRawRequested,
@@ -6877,12 +7569,32 @@ async function apiAdapterReplayStage(context, stageResults) {
   const decisions = /** @type {any[]} */ ([]);
   const replayVerifications = /** @type {any[]} */ ([]);
   const activatedAdapters = /** @type {any[]} */ ([]);
+  markStageSubstepProgress(context, 'loadCandidates', {
+    message: '加载 API adapter 候选。',
+    processedCount: 0,
+    totalCount: candidateResults.length,
+    discoveredCount: candidateResults.length,
+  });
 
+  markStageSubstepProgress(context, 'applyReadonlyPolicy', {
+    message: '应用只读 adapter 验证策略。',
+    processedCount: 0,
+    totalCount: candidateResults.length,
+    discoveredCount: 0,
+  });
   for (const [index, candidateResult] of candidateResults.entries()) {
     try {
       const decision = await validateApiAdapterCandidate(context, candidateResult, index);
       decisions.push(decision);
       const rawTrace = rawTraceForApiCandidate(decision.candidate, rawTraces);
+      markStageSubstepProgress(context, 'replayRequests', {
+        message: '回放符合条件的 API 请求。',
+        currentItem: decision.candidate?.endpoint?.url ?? decision.candidate?.url ?? decision.candidate?.id ?? null,
+        processedCount: replayVerifications.length,
+        totalCount: candidateResults.length,
+        discoveredCount: activatedAdapters.length,
+        skippedCount: decisions.filter((item) => item.status !== 'accepted').length,
+      });
       const replay = await replayApiAdapterCandidate(context, decision, rawTrace, robotsPolicy);
       replayVerifications.push(replay);
       if (replay.activated) {
@@ -6908,12 +7620,26 @@ async function apiAdapterReplayStage(context, stageResults) {
     } catch (error) {
       warnings.push(`api-adapter-replay:${error?.reasonCode ?? error?.message ?? 'failed'}`);
     }
+    markStageSubstepProgress(context, 'applyReadonlyPolicy', {
+      message: 'API adapter 策略验证进行中。',
+      processedCount: index + 1,
+      totalCount: candidateResults.length,
+      discoveredCount: decisions.filter((decision) => decision.status === 'accepted').length,
+      skippedCount: warnings.length,
+    });
   }
 
   const skippedRecords = [
     ...decisions.filter((decision) => decision.status !== 'accepted'),
     ...replayVerifications.filter((verification) => verification.status !== 'verified'),
   ];
+  markStageSubstepProgress(context, 'validateBindings', {
+    message: '验证 API runtime binding。',
+    processedCount: replayVerifications.length,
+    totalCount: candidateResults.length,
+    discoveredCount: activatedAdapters.length,
+    skippedCount: skippedRecords.length,
+  });
   const runtimeBindingsPath = await writeApiAdapterRuntimeBindings(context, activatedAdapters);
   const promotionGates = [];
   for (const replay of replayVerifications) {
@@ -7002,6 +7728,20 @@ async function buildSiteGraphStage(context, stageResults) {
   const edges = /** @type {any[]} */ ([]);
   const nodeByPageKey = new Map();
   const routeNodes = new Map();
+  const apiAdapters = stageResults.apiAdapterReplay?.activatedAdapters ?? [];
+  const graphProgress = (substepId, message, extra = /** @type {any} */ ({})) => markStageSubstepProgress(context, substepId, {
+    message,
+    processedCount: extra.processedCount ?? nodes.length,
+    totalCount: extra.totalCount ?? Math.max(pages.length, nodes.length),
+    discoveredCount: extra.discoveredCount ?? nodes.length,
+    skippedCount: extra.skippedCount ?? 0,
+    currentItem: extra.currentItem ?? null,
+  });
+  graphProgress('mergePages', '合并静态、渲染和认证页面证据。', {
+    processedCount: 0,
+    totalCount: pages.length,
+    discoveredCount: pages.length,
+  });
   const isMissingBrowserBridgeRoute = (sourceLayer, ...values) => (
     isAuthenticatedSourceLayer(sourceLayer)
       ? matchesMissingBrowserBridgeRouteForSourceLayer(context, sourceLayer, values)
@@ -7134,7 +7874,12 @@ async function buildSiteGraphStage(context, stageResults) {
     }
   };
 
-  for (const page of pages) {
+  graphProgress('mergeInteractions', '附加页面链接、控件、表单和结构节点。', {
+    processedCount: 0,
+    totalCount: pages.length,
+    discoveredCount: nodes.length,
+  });
+  for (const [pageIndex, page] of pages.entries()) {
     const sourceLayer = pageSourceLayer(page);
     if (isMissingBrowserBridgeRoute(sourceLayer, page.routeTemplate, page.routePattern, page.normalizedUrl, page.url)) {
       continue;
@@ -7274,6 +8019,12 @@ async function buildSiteGraphStage(context, stageResults) {
         evidence: elementNode.evidence,
       });
     }
+    graphProgress('mergeInteractions', '页面交互证据合并中。', {
+      processedCount: pageIndex + 1,
+      totalCount: pages.length,
+      discoveredCount: nodes.length,
+      currentItem: page.normalizedUrl ?? page.url ?? null,
+    });
   }
 
   for (const page of pages) {
@@ -7654,11 +8405,30 @@ async function buildSiteGraphStage(context, stageResults) {
     });
   }
 
+  graphProgress('mergeApiEvidence', '合并 API 回放证据和路由模板。', {
+    processedCount: apiAdapters.length,
+    totalCount: apiAdapters.length,
+    discoveredCount: routeNodes.size,
+    skippedCount: 0,
+  });
   nodes.push(...routeNodes.values());
-  for (const node of nodes) {
+  graphProgress('validateGraph', '验证图谱节点和边。', {
+    processedCount: 0,
+    totalCount: nodes.length,
+    discoveredCount: edges.length,
+  });
+  for (const [nodeIndex, node] of nodes.entries()) {
     node.parentNodeIds = uniqueSortedStrings(node.parentNodeIds);
     node.childNodeIds = uniqueSortedStrings(node.childNodeIds);
     assertSiteNode(node);
+    if (nodeIndex === 0 || nodeIndex === nodes.length - 1 || nodeIndex % 50 === 0) {
+      graphProgress('validateGraph', '图谱节点验证中。', {
+        processedCount: nodeIndex + 1,
+        totalCount: nodes.length,
+        discoveredCount: edges.length,
+        currentItem: node.id,
+      });
+    }
   }
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -7696,7 +8466,13 @@ async function buildSiteGraphStage(context, stageResults) {
 
 async function classifyNodesStage(context, stageResults) {
   const graph = clone(requireStage(stageResults, 'buildSiteGraph').graph);
-  for (const node of graph.nodes) {
+  markStageSubstepProgress(context, 'assignPageTypes', {
+    message: '为图谱节点分配页面、路由和组件类型。',
+    processedCount: 0,
+    totalCount: graph.nodes.length,
+    discoveredCount: 0,
+  });
+  for (const [nodeIndex, node] of graph.nodes.entries()) {
     if (node.type === 'page') {
       node.classification = classifyPage(node, context);
     } else if (node.type === 'form') {
@@ -7737,7 +8513,22 @@ async function classifyNodesStage(context, stageResults) {
         ?? genericPublicClassification(node.routePattern ?? '', node.pageType ?? '', `${node.title ?? ''} ${node.textSummary ?? ''}`, node)
         ?? (/product-\d+|:id/u.test(node.routePattern ?? '') ? 'entity_route' : 'route');
     }
+    if (nodeIndex === 0 || nodeIndex === graph.nodes.length - 1 || nodeIndex % 50 === 0) {
+      markStageSubstepProgress(context, 'assignPageTypes', {
+        message: '节点类型分类中。',
+        processedCount: nodeIndex + 1,
+        totalCount: graph.nodes.length,
+        discoveredCount: new Set(graph.nodes.slice(0, nodeIndex + 1).map((candidate) => candidate.classification ?? candidate.type)).size,
+        currentItem: node.id,
+      });
+    }
   }
+  markStageSubstepProgress(context, 'mapRiskVocabulary', {
+    message: '映射风险词表和来源层级。',
+    processedCount: graph.nodes.filter((node) => node.riskLevel).length,
+    totalCount: graph.nodes.length,
+    discoveredCount: Object.keys(countBy(graph.nodes, (node) => nodeSourceLayer(node))).length,
+  });
   graph.summary = {
     ...graph.summary,
     classifications: Object.fromEntries(
@@ -7747,10 +8538,23 @@ async function classifyNodesStage(context, stageResults) {
       }, {})).sort(([left], [right]) => left.localeCompare(right, 'en')),
     ),
   };
+  markStageSubstepProgress(context, 'summarizeCoverage', {
+    message: '汇总图谱覆盖和分类分布。',
+    processedCount: graph.nodes.length,
+    totalCount: graph.nodes.length,
+    discoveredCount: Object.keys(graph.summary.classifications ?? {}).length,
+  });
   context.skillId = resolveSkillId(context, graph);
   context.skillDir = resolveSkillDir(context);
   context.draftSkillDir = context.skillDir;
   context.activeSkillDir = resolveActiveSkillDir(context);
+  markStageSubstepProgress(context, 'emitClassifiedGraph', {
+    message: '写入分类后的图谱。',
+    processedCount: graph.nodes.length,
+    totalCount: graph.nodes.length,
+    discoveredCount: graph.edges?.length ?? 0,
+    currentItem: context.skillId,
+  });
   const classifiedGraphPath = await writeArtifactJson(context, 'classified_graph.json', graph);
   return {
     graph,
@@ -7762,13 +8566,32 @@ async function classifyNodesStage(context, stageResults) {
 async function extractAffordancesStage(context, stageResults) {
   const pages = pagesFromStageResults(stageResults);
   const graph = requireStage(stageResults, 'classifyNodes').graph;
+  const totalRawControls = pages.reduce((count, page) => (
+    count
+    + (Array.isArray(page.links) ? page.links.length : 0)
+    + (Array.isArray(page.forms) ? page.forms.length : 0)
+    + (Array.isArray(page.controls) ? page.controls.length : 0)
+  ), 0);
+  markStageSubstepProgress(context, 'normalizeControls', {
+    message: '规范化页面链接、表单和控件。',
+    processedCount: 0,
+    totalCount: pages.length,
+    discoveredCount: totalRawControls,
+  });
   const pageNodeByKey = new Map(graph.nodes.filter((node) => node.type === 'page').map((node) => [
     pageIdentity(node),
     node,
   ]));
   const affordances = /** @type {any[]} */ ([]);
+  let skippedAffordancePages = 0;
+  markStageSubstepProgress(context, 'bindEvidence', {
+    message: '绑定页面节点和可操作证据。',
+    processedCount: 0,
+    totalCount: pages.length,
+    discoveredCount: affordances.length,
+  });
   const commonAffordanceMetadata = (page, safety = 'read_only') => {
-    const highRisk = ['state_changing', 'destructive', 'payment'].includes(safety);
+    const defaultBlocked = ['destructive', 'payment'].includes(safety);
     const sourceLayer = pageSourceLayer(page);
     return {
       sourceLayer,
@@ -7782,15 +8605,24 @@ async function extractAffordancesStage(context, stageResults) {
           : safety === 'state_changing'
             ? 'write_low'
             : page.riskLevel ?? 'read_public_low',
-      activationDecision: highRisk
-        ? (safety === 'state_changing' ? 'confirmation_required' : 'disabled')
+      activationDecision: defaultBlocked
+        ? 'disabled'
         : 'candidate_evidence',
     };
   };
 
-  for (const page of pages) {
+  for (const [pageIndex, page] of pages.entries()) {
     const pageNode = pageNodeByKey.get(pageIdentity(page));
     if (!pageNode) {
+      skippedAffordancePages += 1;
+      markStageSubstepProgress(context, 'bindEvidence', {
+        message: '跳过缺少图谱节点的页面。',
+        processedCount: pageIndex + 1,
+        totalCount: pages.length,
+        discoveredCount: affordances.length,
+        skippedCount: skippedAffordancePages,
+        currentItem: page.normalizedUrl ?? page.url ?? null,
+      });
       continue;
     }
     for (const link of page.links) {
@@ -7895,6 +8727,13 @@ async function extractAffordancesStage(context, stageResults) {
         confidence: safety === 'safe' ? 0.78 : 0.7,
       });
     }
+    markStageSubstepProgress(context, 'bindEvidence', {
+      message: '页面可操作项提取中。',
+      processedCount: pageIndex + 1,
+      totalCount: pages.length,
+      discoveredCount: affordances.length,
+      currentItem: page.normalizedUrl ?? page.url ?? null,
+    });
   }
 
   for (const routeNode of graph.nodes.filter((node) => node.type === 'route' || node.type === 'route_template')) {
@@ -7918,6 +8757,12 @@ async function extractAffordancesStage(context, stageResults) {
     });
   }
 
+  markStageSubstepProgress(context, 'dedupeAffordances', {
+    message: '去重并验证可操作项。',
+    processedCount: affordances.length,
+    totalCount: affordances.length,
+    discoveredCount: 0,
+  });
   const deduped = arrayUniqueBy(affordances, (affordance) => affordance.id)
     .sort((left, right) => left.id.localeCompare(right.id, 'en'));
   for (const affordance of deduped) {
@@ -7936,6 +8781,13 @@ async function extractAffordancesStage(context, stageResults) {
       }, {})).sort(([left], [right]) => left.localeCompare(right, 'en'))),
     },
   };
+  markStageSubstepProgress(context, 'emitAffordances', {
+    message: '写入可操作项列表。',
+    processedCount: deduped.length,
+    totalCount: affordances.length,
+    discoveredCount: deduped.length,
+    skippedCount: Math.max(0, affordances.length - deduped.length),
+  });
   const affordancesPath = await writeArtifactJson(context, 'affordances.json', payload);
   return {
     affordances: deduped,
@@ -8013,6 +8865,10 @@ function buildExecutionPlan(capabilityId, {
   dryRunOnly = false,
   requiresConfirmation = false,
   autoExecute = false,
+  governedExecution = false,
+  executionDisposition = null,
+  limitedOutputOnly = false,
+  savedMaterial = null,
 } = /** @type {any} */ ({})) {
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -8022,6 +8878,10 @@ function buildExecutionPlan(capabilityId, {
     dryRunOnly,
     requiresConfirmation,
     autoExecute,
+    governedExecution,
+    executionDisposition,
+    limitedOutputOnly,
+    savedMaterial,
     steps,
   };
 }
@@ -8038,41 +8898,76 @@ function disabledActionForAffordance(affordance) {
   const forced = isReadOnlyFollowSurface(affordance)
     ? findForcedDisabledActions(text).filter((action) => action !== 'follow' && action !== 'unfollow')
     : findForcedDisabledActions(text);
-  if (affordance?.kind === 'upload') {
-    forced.push('upload');
-  }
   if (affordance?.safety === 'payment') {
     forced.push(/checkout/iu.test(text) ? 'checkout' : 'pay');
   }
   if (affordance?.safety === 'destructive') {
     forced.push('delete');
   }
-  if (affordance?.kind === 'form' && affordance?.safety === 'state_changing') {
-    forced.push('submit');
-  }
   return uniqueSortedStrings(forced);
 }
 
+function writeActionForAffordance(affordance) {
+  const text = [
+    affordance?.kind,
+    affordance?.label,
+    affordance?.method,
+    affordance?.endpoint,
+    affordance?.href,
+    affordance?.safety,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (!text || isReadOnlyFollowSurface(affordance) || ['payment', 'destructive'].includes(String(affordance?.safety ?? ''))) {
+    return null;
+  }
+  if (affordance?.kind === 'upload' || /\bupload\b|\u4e0a\u4f20/u.test(text)) return 'upload';
+  if (/\bpublish(?:\s+post)?\b|\u53d1\u5e03|\u53d1\u5e16|\u53d1\u52a8\u6001|\u53d1\u5fae\u535a/u.test(text)) return 'publish';
+  if (/\b(?:comment|reply)\b|\u8bc4\u8bba|\u56de\u590d/u.test(text)) return 'publish_reply';
+  if (/\b(?:send\s+dm|direct\s+message|private\s+message)\b|\u53d1\u9001\u79c1\u4fe1|\u79c1\u4fe1/u.test(text)) return 'send_dm';
+  if (/\bsend\b|\u53d1\u9001/u.test(text)) return 'send';
+  if (/\bunfollow\b|\u53d6\u6d88\u5173\u6ce8|\u53d6\u5173/u.test(text)) return 'unfollow';
+  if (/\bfollow\b|\u5173\u6ce8/u.test(text)) return 'follow';
+  if (/\blike\b|\u70b9\u8d5e/u.test(text)) return 'like';
+  if (/\brepost\b|\bretweet\b|\u8f6c\u53d1/u.test(text)) return 'repost';
+  if (/\bchange[-_\s]?password\b|\u4fee\u6539\u5bc6\u7801|\u66f4\u6539\u5bc6\u7801/u.test(text)) return 'change_password';
+  if (affordance?.kind === 'form' && affordance?.safety === 'state_changing') return 'submit';
+  return null;
+}
+
 function capabilityActionForBlockedAction(action) {
+  if (action === 'pay' || action === 'checkout' || action === 'purchase' || action === 'change_payment') return 'purchase';
   if (action === 'upload') return 'upload';
-  if (action === 'pay' || action === 'checkout' || action === 'change_payment') return 'purchase';
-  if (action === 'submit' || action === 'send' || action === 'send_dm') return 'submit';
+  if (action === 'publish' || action === 'publish_reply' || action === 'send' || action === 'send_dm' || action === 'submit') return 'submit';
+  if (action === 'follow' || action === 'unfollow' || action === 'like' || action === 'repost') return 'submit';
   return 'manage';
 }
 
 function blockedActionDisplayLabel(action) {
   const labels = {
     checkout: 'checkout',
-    change_2fa: 'change 2FA',
-    change_email: 'change email',
-    change_password: 'change password',
     change_payment: 'change payment',
+    change_password: 'change password',
+    clear: 'clear',
+    destroy: 'destroy',
     delete: 'delete',
+    empty: 'empty',
+    erase: 'erase',
+    overwrite: 'overwrite',
     pay: 'pay',
+    publish: 'publish',
+    publish_reply: 'publish reply',
+    purchase: 'purchase',
+    purge: 'purge',
+    repost: 'repost',
+    reset: 'reset',
+    revoke: 'revoke',
     send: 'send',
     send_dm: 'send direct message',
     submit: 'submit form',
+    follow: 'follow',
+    unfollow: 'unfollow',
+    like: 'like',
     upload: 'upload',
+    void: 'void',
   };
   return labels[action] ?? String(action ?? 'high risk action').replace(/_/gu, ' ');
 }
@@ -8089,34 +8984,153 @@ function addDisabledRiskCapabilities(context, capabilities, affordances = /** @t
       }
       seen.add(id);
       const blockedLabel = blockedActionDisplayLabel(blockedAction);
-      capabilities.push(makeCapability(context, {
+      const sourceLabel = String(
+        affordance?.label
+        ?? affordance?.text
+        ?? affordance?.ariaLabel
+        ?? affordance?.name
+        ?? '',
+      ).trim();
+      const displayLabel = sourceLabel || blockedLabel;
+      const capability = makeCapability(context, {
         name,
-        description: 'Risk policy keeps this high-risk action visible as disabled and non-executable.',
+        description: 'Runtime policy keeps this payment or destructive action visible as blocked and non-executable by default.',
         action: capabilityActionForBlockedAction(blockedAction),
         object: 'high-risk action',
-        userValue: `Disabled high-risk action: ${blockedLabel}`,
+        userValue: `Blocked payment or destructive action: ${displayLabel}`,
         entryNodeIds: affordance?.nodeId ? [affordance.nodeId] : [],
         requiredNodeIds: affordance?.nodeId ? [affordance.nodeId] : [],
         inputs: affordance?.inputs ?? [],
         outputs: [{ name: 'blocked_action', type: 'safety_boundary' }],
-        safetyLevel: blockedAction === 'pay' || blockedAction === 'checkout' || blockedAction === 'change_payment'
+        safetyLevel: blockedAction === 'pay' || blockedAction === 'checkout' || blockedAction === 'purchase' || blockedAction === 'change_payment'
           ? 'payment'
-          : blockedAction.startsWith('change_') || blockedAction === 'delete'
-            ? 'destructive'
-            : 'state_changing',
+          : 'destructive',
         evidence: affordance?.evidence ?? [],
         confidence: Math.min(0.7, Number(affordance?.confidence ?? 0.5) || 0.5),
         status: 'disabled',
         informational: true,
         blockedAction,
+        sourceLabel: sourceLabel || null,
         activationBlockedReason: 'forced-action-disabled',
         intents: [
-          `why ${blockedLabel} is disabled`,
+          ...(sourceLabel ? [{
+            canonicalUtterance: sourceLabel,
+            utteranceExamples: [sourceLabel],
+            invocationScore: 1.2,
+          }] : []),
+          ...(sourceLabel && ['follow', 'unfollow'].includes(blockedAction) ? [
+            {
+              canonicalUtterance: `${sourceLabel}\u8d26\u53f7`,
+              utteranceExamples: [`${sourceLabel}\u8d26\u53f7`],
+              invocationScore: 1.2,
+            },
+            {
+              canonicalUtterance: `${sourceLabel}\u7528\u6237`,
+              utteranceExamples: [`${sourceLabel}\u7528\u6237`],
+              invocationScore: 1.2,
+            },
+          ] : []),
+          `why ${blockedLabel} is blocked`,
           `${blockedLabel} safety boundary`,
-          `keep ${blockedLabel} disabled`,
+          `keep ${blockedLabel} blocked`,
         ],
-      }));
+      });
+      capability.executionPlan = buildExecutionPlan(capability.id, {
+        mode: 'dry_run',
+        dryRunOnly: true,
+        requiresConfirmation: true,
+        autoExecute: false,
+        governedExecution: true,
+        executionDisposition: 'blocked',
+        steps: [{
+          kind: 'governed_action_contract',
+          action: blockedAction,
+          nodeId: affordance?.nodeId ?? null,
+          endpoint: affordance?.endpoint ?? null,
+          method: affordance?.method ?? null,
+          submit: false,
+          finalSubmit: false,
+          autoExecute: false,
+          governedExecution: true,
+          executionDisposition: 'blocked',
+          savedMaterial: SANITIZED_SUMMARY_ONLY,
+        }],
+      });
+      capabilities.push(capability);
     }
+    if (blockedActions.length > 0) {
+      continue;
+    }
+    const writeAction = writeActionForAffordance(affordance);
+    if (!writeAction) {
+      continue;
+    }
+    const sourceLabel = String(
+      affordance?.label
+      ?? affordance?.text
+      ?? affordance?.ariaLabel
+      ?? affordance?.name
+      ?? '',
+    ).trim();
+    const actionLabel = blockedActionDisplayLabel(writeAction);
+    const displayLabel = sourceLabel || actionLabel;
+    const name = `${writeAction.replace(/_/gu, ' ')} action`;
+    const id = stableCapabilityId(context.site.id, `${name}:${displayLabel}`);
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    const capability = makeCapability(context, {
+      name,
+      description: 'Compile this site write control as a directly callable runtime action.',
+      action: capabilityActionForBlockedAction(writeAction),
+      object: displayLabel,
+      userValue: displayLabel,
+      entryNodeIds: affordance?.nodeId ? [affordance.nodeId] : [],
+      requiredNodeIds: affordance?.nodeId ? [affordance.nodeId] : [],
+      inputs: affordance?.inputs ?? [],
+      outputs: [{ name: 'action_result', type: 'runtime_action_result' }],
+      safetyLevel: 'state_changing',
+      evidence: affordance?.evidence ?? [],
+      confidence: Math.min(0.78, Number(affordance?.confidence ?? 0.62) || 0.62),
+      status: 'active',
+      informational: false,
+      intentAction: writeAction,
+      sourceLabel: sourceLabel || null,
+      intents: [
+        ...(sourceLabel ? [sourceLabel] : []),
+        ...(sourceLabel && ['follow', 'unfollow'].includes(writeAction) ? [
+          `${sourceLabel}\u8d26\u53f7`,
+          `${sourceLabel}\u7528\u6237`,
+        ] : []),
+        actionLabel,
+        `${actionLabel} action`,
+      ],
+    });
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'action',
+      dryRunOnly: false,
+      requiresConfirmation: false,
+      autoExecute: false,
+      governedExecution: false,
+      executionDisposition: 'allow',
+      steps: [{
+        kind: 'site_action',
+        action: writeAction,
+        nodeId: affordance?.nodeId ?? null,
+        selector: affordance?.selector ?? null,
+        endpoint: affordance?.endpoint ?? null,
+        method: affordance?.method ?? null,
+        submit: true,
+        finalSubmit: false,
+        upload: writeAction === 'upload',
+        autoExecute: false,
+        governedExecution: false,
+        executionDisposition: 'allow',
+        savedMaterial: SANITIZED_SUMMARY_ONLY,
+      }],
+    });
+    capabilities.push(capability);
   }
 }
 
@@ -8424,7 +9438,7 @@ function addCatalogCoverageCapability(context, capabilities, {
     action,
     object,
     userValue,
-    entryNodeIds: status === 'active' ? nodes.slice(0, 20).map((node) => node.id) : [],
+    entryNodeIds: nodes.slice(0, 20).map((node) => node.id),
     requiredNodeIds: status === 'active' ? nodes.slice(0, 20).map((node) => node.id) : [],
     outputs: resolvedOutputs,
     safetyLevel: 'read_only',
@@ -8453,6 +9467,27 @@ function addCatalogCoverageCapability(context, capabilities, {
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
       steps: canUseRouteOnlyEvidence ? catalogRouteOnlySteps(nodes) : catalogCoverageSteps(nodes),
+    });
+  } else if (riskLevel === 'download_high') {
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'download',
+      dryRunOnly: false,
+      requiresConfirmation: false,
+      autoExecute: false,
+      governedExecution: false,
+      executionDisposition: 'allow',
+      steps: [{
+        kind: 'downloader_task_descriptor',
+        nodeIds: nodes.slice(0, 20).map((node) => node.id),
+        routeTemplate: routeState?.routeTemplate ?? null,
+        routePath: routeState?.routePath ?? null,
+        submit: true,
+        finalSubmit: false,
+        autoExecute: false,
+        governedExecution: false,
+        executionDisposition: 'allow',
+        savedMaterial: SANITIZED_SUMMARY_ONLY,
+      }],
     });
   }
   capabilities.push(capability);
@@ -8595,8 +9630,8 @@ function addAuthenticatedReadCoverageCapabilities(context, capabilities, graph) 
       sourceLayer: layer,
       authRequired: true,
       risk_level: 'read_personal_medium',
-      enabled_status: 'limited_enabled',
-      default_policy: 'limited_enabled',
+      enabled_status: 'enabled',
+      default_policy: 'enabled',
       evidence_status: 'verified',
       saved_material: ['sanitized_summary_only'],
       raw_content_saved: false,
@@ -8610,7 +9645,7 @@ function addAuthenticatedReadCoverageCapabilities(context, capabilities, graph) 
         : ['查看登录态页面摘要', 'read authenticated route summaries', 'show authenticated route structure'],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
-      mode: 'limited_read',
+      mode: 'read_only',
       dryRunOnly: false,
       requiresConfirmation: false,
       autoExecute: false,
@@ -8659,8 +9694,8 @@ function addAuthenticatedReadCoverageCapabilities(context, capabilities, graph) 
       sourceLayer: layer,
       authRequired: true,
       risk_level: 'read_personal_medium',
-      enabled_status: 'limited_enabled',
-      default_policy: 'limited_enabled',
+      enabled_status: 'enabled',
+      default_policy: 'enabled',
       evidence_status: 'verified',
       saved_material: ['sanitized_route_access_only'],
       raw_content_saved: false,
@@ -8674,7 +9709,7 @@ function addAuthenticatedReadCoverageCapabilities(context, capabilities, graph) 
         : ['open authenticated routes', 'show authenticated route access'],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
-      mode: 'limited_read',
+      mode: 'read_only',
       dryRunOnly: false,
       requiresConfirmation: false,
       autoExecute: false,
@@ -8873,8 +9908,8 @@ function addPublicElementInstanceCapabilities(context, capabilities, graph, robo
       sourceLayer: layer,
       authRequired,
       risk_level: authRequired ? 'read_personal_medium' : 'read_public_low',
-      enabled_status: authRequired ? 'limited_enabled' : 'enabled',
-      default_policy: authRequired ? 'limited_enabled' : 'read_only',
+      enabled_status: 'enabled',
+      default_policy: 'enabled',
       evidence_status: 'verified',
       evidenceModel: authRequired ? 'authenticated_route_only' : 'public_element_summary',
       elementKind: node.elementKind ?? null,
@@ -9660,17 +10695,16 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
   if (knownPolicyCapabilityFamilies(context).has('download-content')) {
     addCatalogCoverageCapability(context, capabilities, {
       name: 'download catalog content',
-      description: 'Keep discovered download-capable content visible, but disabled until a safety-reviewed site adapter exists.',
+      description: 'Compile discovered download-capable content as a direct downloader task descriptor.',
       action: 'download',
       object: 'catalog content',
-      userValue: 'Download content is disabled until a reviewed site adapter exists.',
+      userValue: 'Download catalog content through the compiled downloader capability.',
       nodes: details.length ? details : publicMetadataNodes,
-      outputs: [{ name: 'download_task', type: 'disabled_safety_boundary' }],
+      outputs: [{ name: 'download_task', type: 'downloader_task_descriptor' }],
       intents: ['download catalog content', 'download video', 'save catalog item', 'download work'],
       confidence: 0.5,
-      status: 'disabled',
+      status: 'active',
       riskLevel: 'download_high',
-      activationBlockedReason: knownPolicyDownloadReasonCode(context),
     });
   }
 }
@@ -10132,8 +11166,8 @@ function executableApiAdapterCapabilities(context, stageResults = /** @type {any
       providerId: 'browser_bridge',
       evidenceModel: 'api_adapter_replay_verified',
       apiReplayVerified: true,
-      enabled_status: 'limited_enabled',
-      default_policy: 'limited_enabled',
+      enabled_status: 'enabled',
+      default_policy: 'enabled',
       evidence_status: 'verified',
       risk_level: 'read_personal_medium',
       apiAdapter: {
@@ -10386,41 +11420,53 @@ async function discoverCapabilitiesStage(context, stageResults) {
     const safetyLevel = capabilitySafetyFromAffordance(contactForm);
     const capability = makeCapability(context, {
       name: 'contact support',
-      description: 'Prepare a contact-support form submission as confirmation-required dry-run only.',
+      description: 'Submit a contact-support form through the compiled site action capability.',
       action: 'contact',
       object: 'support',
-      userValue: 'Prepare a contact form draft without submitting it.',
+      userValue: 'Submit a contact support message.',
       entryNodeIds: [contactForm.nodeId],
       requiredNodeIds: [contactForm.nodeId],
       inputs: contactForm.inputs ?? [],
-      outputs: [{ name: 'draft', type: 'form_submission_preview' }],
+      outputs: [{ name: 'action_result', type: 'runtime_action_result' }],
       safetyLevel,
       evidence: contactForm.evidence,
       confidence: 0.75,
       intents: [
-        'create contact form draft',
-        'preview contact form',
-        'prepare support message without submitting',
+        'contact support',
+        'submit contact form',
+        'send support message',
       ],
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
-      mode: 'dry_run',
-      dryRunOnly: true,
-      requiresConfirmation: true,
+      mode: 'action',
+      dryRunOnly: false,
+      requiresConfirmation: false,
       autoExecute: false,
+      governedExecution: false,
+      executionDisposition: 'allow',
       steps: [{
-        kind: 'form_post_preview',
+        kind: 'form_submit',
         nodeId: contactForm.nodeId,
         selector: contactForm.selector,
         endpoint: contactForm.endpoint,
         method: contactForm.method,
-        submit: false,
+        submit: true,
+        finalSubmit: false,
+        autoExecute: false,
+        governedExecution: false,
+        executionDisposition: 'allow',
       }],
     });
     capabilities.push(capability);
   }
 
   const robotsPolicy = stageResults.discoverSeeds?.robotsPolicy ?? null;
+  markStageSubstepProgress(context, 'promoteAffordances', {
+    message: '将页面、可操作项和 API 证据提升为能力候选。',
+    processedCount: capabilities.length,
+    totalCount: affordances.length + graph.nodes.length,
+    discoveredCount: capabilities.length,
+  });
   addGenericPublicCoverageCapabilities(context, capabilities, graph, searchForm);
   addPublicElementInstanceCapabilities(context, capabilities, graph, robotsPolicy);
   addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy);
@@ -10463,6 +11509,21 @@ async function discoverCapabilitiesStage(context, stageResults) {
     adapterSkippedReasonCounts: apiCandidateMetadata.adapterSkippedReasonCounts,
   }));
 
+  markStageSubstepProgress(context, 'promoteAffordances', {
+    message: '能力候选生成完成。',
+    processedCount: affordances.length + graph.nodes.length,
+    totalCount: affordances.length + graph.nodes.length,
+    discoveredCount: capabilities.length,
+    skippedCount: apiCandidateMetadata.adapterSkippedReasonCounts
+      ? Object.values(apiCandidateMetadata.adapterSkippedReasonCounts).reduce((sum, count) => sum + Number(count ?? 0), 0)
+      : 0,
+  });
+  markStageSubstepProgress(context, 'evaluatePolicy', {
+    message: '评估能力安全策略和证据矩阵。',
+    processedCount: 0,
+    totalCount: capabilities.length,
+    discoveredCount: 0,
+  });
   const policyApplied = dedupeSemanticCapabilities(arrayUniqueBy(capabilities, (capability) => capability.id)
     .map((capability) => enrichAutoCapability(context, capability))
     .map((capability) => applyCapabilityRiskPolicy(capability))
@@ -10479,9 +11540,24 @@ async function discoverCapabilitiesStage(context, stageResults) {
       graph,
       stageResults.discoverSeeds?.robotsPolicy ?? null,
     ));
+  const mergedCounts = capabilityCounts(merged);
+  markStageSubstepProgress(context, 'evaluatePolicy', {
+    message: '能力策略评估完成。',
+    processedCount: capabilities.length,
+    totalCount: capabilities.length,
+    discoveredCount: mergedCounts.active,
+    skippedCount: Math.max(0, policyApplied.length - privacyFiltered.length),
+  });
   for (const capability of merged) {
     assertCapability(capability);
   }
+  markStageSubstepProgress(context, 'buildEvidenceMatrix', {
+    message: '构建可执行能力的证据和执行计划。',
+    processedCount: merged.filter((capability) => capability.executionPlan).length,
+    totalCount: merged.length,
+    discoveredCount: mergedCounts.active,
+    skippedCount: mergedCounts.disabled ?? 0,
+  });
   const executionPlans = merged
     .filter((capability) => capability.executionPlan)
     .map((capability) => capability.executionPlan)
@@ -10490,10 +11566,10 @@ async function discoverCapabilitiesStage(context, stageResults) {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
     siteId: context.site.id,
-    status: capabilityCounts(merged).active > 0 ? 'success' : 'blocked',
+    status: mergedCounts.active > 0 ? 'success' : 'blocked',
     capabilities: merged,
-    errors: capabilityCounts(merged).active > 0 ? [] : ['Capability discovery produced no active capabilities; build stopped before draft skill generation.'],
-    summary: capabilityCounts(merged),
+    errors: mergedCounts.active > 0 ? [] : ['Capability discovery produced no active capabilities; build stopped before draft skill generation.'],
+    summary: mergedCounts,
   };
   const plansPayload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
@@ -10501,6 +11577,13 @@ async function discoverCapabilitiesStage(context, stageResults) {
     siteId: context.site.id,
     executionPlans,
   };
+  markStageSubstepProgress(context, 'writeStateReport', {
+    message: '写入能力和执行计划产物。',
+    processedCount: merged.length,
+    totalCount: merged.length,
+    discoveredCount: executionPlans.length,
+    skippedCount: mergedCounts.disabled ?? 0,
+  });
   const capabilitiesPath = await writeArtifactJson(context, 'capabilities.json', payload);
   const executionPlansPath = await writeArtifactJson(context, 'execution_plans.json', plansPayload);
   if (payload.summary.active === 0) {
@@ -10590,9 +11673,9 @@ function intentTemplates(capability) {
   }
   if (capability.name === 'contact support') {
     return {
-      canonicalUtterance: 'draft contact support message',
-      utteranceExamples: ['draft a support message', 'prepare a contact form', 'contact support about an order'],
-      negativeExamples: ['submit the form automatically', 'delete my profile'],
+      canonicalUtterance: 'contact support',
+      utteranceExamples: ['send a support message', 'submit a contact form', 'contact support about an order'],
+      negativeExamples: ['delete my profile', 'make a payment'],
       slots: [
         { name: 'name', type: 'string', required: false },
         { name: 'email', type: 'string', required: false },
@@ -10826,10 +11909,28 @@ async function generateIntentsStage(context, stageResults) {
   const { capabilities } = requireStage(stageResults, 'discoverCapabilities');
   const graph = requireStage(stageResults, 'classifyNodes').graph;
   const activeCapabilities = capabilities.filter((capability) => capability.status === 'active');
+  markStageSubstepProgress(context, 'mapIntents', {
+    message: '将能力和图谱元素映射为用户意图。',
+    processedCount: 0,
+    totalCount: capabilities.length + graph.nodes.length,
+    discoveredCount: activeCapabilities.length,
+  });
   const intents = arrayUniqueBy([
     ...generateAutoIntentRecords(context, capabilities, { includeCandidateDebug: true }),
     ...generateGraphElementIntentRecords(context, graph, capabilities, stageResults.discoverSeeds?.robotsPolicy ?? null),
   ], (intent) => `${intent.id}:${intent.capabilityId ?? intent.sourceNodeId ?? ''}`);
+  markStageSubstepProgress(context, 'mapIntents', {
+    message: '用户意图候选生成完成。',
+    processedCount: capabilities.length + graph.nodes.length,
+    totalCount: capabilities.length + graph.nodes.length,
+    discoveredCount: intents.length,
+  });
+  markStageSubstepProgress(context, 'buildPayloads', {
+    message: '构造意图运行时载荷。',
+    processedCount: 0,
+    totalCount: intents.length,
+    discoveredCount: 0,
+  });
   const capabilitiesById = new Map(capabilities.map((capability) => [capability.id, capability]));
   const runtimeDecoratedIntents = intents.map((intent) => {
     const capability = capabilitiesById.get(intent.capabilityId);
@@ -10842,6 +11943,20 @@ async function generateIntentsStage(context, stageResults) {
   for (const intent of runtimeDecoratedIntents) {
     assertUserIntent(intent, capabilityIds);
   }
+  const callableIntentCount = runtimeDecoratedIntents.filter((intent) => intent.callable !== false).length;
+  markStageSubstepProgress(context, 'buildPayloads', {
+    message: '意图运行时载荷构造完成。',
+    processedCount: runtimeDecoratedIntents.length,
+    totalCount: intents.length,
+    discoveredCount: callableIntentCount,
+    skippedCount: runtimeDecoratedIntents.filter((intent) => intent.callable === false).length,
+  });
+  markStageSubstepProgress(context, 'renderSummary', {
+    message: '渲染能力和意图摘要。',
+    processedCount: runtimeDecoratedIntents.length,
+    totalCount: runtimeDecoratedIntents.length,
+    discoveredCount: callableIntentCount,
+  });
   const payload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     buildId: context.buildId,
@@ -10851,15 +11966,260 @@ async function generateIntentsStage(context, stageResults) {
     summary: {
       intents: runtimeDecoratedIntents.length,
       activeCapabilities: activeCapabilities.length,
-      callableIntents: runtimeDecoratedIntents.filter((intent) => intent.callable !== false).length,
+      callableIntents: callableIntentCount,
       nonCallableIntents: runtimeDecoratedIntents.filter((intent) => intent.callable === false).length,
     },
   };
+  markStageSubstepProgress(context, 'writeIntentArtifacts', {
+    message: '写入意图产物。',
+    processedCount: runtimeDecoratedIntents.length,
+    totalCount: runtimeDecoratedIntents.length,
+    discoveredCount: callableIntentCount,
+    skippedCount: runtimeDecoratedIntents.filter((intent) => intent.callable === false).length,
+  });
   const intentsPath = await writeArtifactJson(context, 'intents.json', payload);
   return {
     intents: runtimeDecoratedIntents,
     artifactPaths: { intents: intentsPath },
     summary: payload.summary,
+  };
+}
+
+async function compileExecutionContractsStage(context, stageResults) {
+  const discoverResult = requireStage(stageResults, 'discoverCapabilities');
+  const intentResult = requireStage(stageResults, 'generateIntents');
+  const { capabilities, executionPlans } = discoverResult;
+  const { intents } = intentResult;
+  markStageSubstepProgress(context, 'collectPlans', {
+    message: 'Collecting capability execution plans for governed contract compilation.',
+    processedCount: 0,
+    totalCount: capabilities.length,
+    discoveredCount: executionPlans.length,
+  });
+  const { contracts, byCapabilityId } = buildExecutionContracts({
+    context,
+    capabilities,
+    intents,
+  });
+  markStageSubstepProgress(context, 'buildContracts', {
+    message: 'Compiled redacted execution contracts from capability plans.',
+    processedCount: contracts.length,
+    totalCount: executionPlans.length,
+    discoveredCount: contracts.length,
+  });
+  const attached = attachExecutionContractRefs({
+    capabilities,
+    intents,
+    contractsByCapabilityId: byCapabilityId,
+  });
+  discoverResult.capabilities = attached.capabilities;
+  intentResult.intents = attached.intents;
+  discoverResult.summary = {
+    ...(discoverResult.summary ?? {}),
+    executionContracts: contracts.length,
+    planCallable: attached.capabilities.filter((capability) => capability.planCallable === true).length,
+    runtimeCallable: attached.capabilities.filter((capability) => capability.runtimeCallable === true).length,
+  };
+  intentResult.summary = {
+    ...(intentResult.summary ?? {}),
+    planCallableIntents: attached.intents.filter((intent) => intent.planCallable === true).length,
+    runtimeCallableIntents: attached.intents.filter((intent) => intent.runtimeCallable === true).length,
+  };
+  markStageSubstepProgress(context, 'attachGraphRefs', {
+    message: 'Attached execution contract references to capabilities and intents.',
+    processedCount: attached.capabilities.length + attached.intents.length,
+    totalCount: attached.capabilities.length + attached.intents.length,
+    discoveredCount: contracts.length,
+  });
+  const capabilitiesPayload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    buildId: context.buildId,
+    siteId: context.site.id,
+    status: attached.capabilities.some((capability) => capability.status === 'active') ? 'success' : 'blocked',
+    capabilities: attached.capabilities,
+    errors: [],
+    summary: {
+      ...(discoverResult.summary ?? {}),
+      ...capabilityCounts(attached.capabilities),
+      executionContracts: contracts.length,
+    },
+  };
+  const intentsPayload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    buildId: context.buildId,
+    siteId: context.site.id,
+    skillId: context.skillId,
+    intents: attached.intents,
+    summary: intentResult.summary,
+  };
+  const contractsPayload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    buildId: context.buildId,
+    siteId: context.site.id,
+    executionContracts: contracts,
+    summary: {
+      total: contracts.length,
+      planCallable: contracts.filter((contract) => contract.planCallable === true).length,
+      runtimeCallable: contracts.filter((contract) => contract.runtimeCallable === true).length,
+      autoExecutable: contracts.filter((contract) => contract.autoExecutable === true).length,
+    },
+  };
+  markStageSubstepProgress(context, 'writeContractArtifacts', {
+    message: 'Writing execution contract artifacts.',
+    processedCount: 0,
+    totalCount: 3,
+    discoveredCount: contracts.length,
+  });
+  const capabilitiesPath = await writeArtifactJson(context, 'capabilities.json', capabilitiesPayload);
+  const intentsPath = await writeArtifactJson(context, 'intents.json', intentsPayload);
+  const executionContractsPath = await writeArtifactJson(context, EXECUTION_CONTRACTS_ARTIFACT, contractsPayload);
+  discoverResult.artifactPaths = {
+    ...(discoverResult.artifactPaths ?? {}),
+    capabilities: capabilitiesPath,
+  };
+  intentResult.artifactPaths = {
+    ...(intentResult.artifactPaths ?? {}),
+    intents: intentsPath,
+  };
+  markStageSubstepProgress(context, 'writeContractArtifacts', {
+    message: 'Execution contract artifacts written.',
+    processedCount: 3,
+    totalCount: 3,
+    discoveredCount: contracts.length,
+    currentItem: EXECUTION_CONTRACTS_ARTIFACT,
+  });
+  return {
+    executionContracts: contracts,
+    artifactPaths: {
+      executionContracts: executionContractsPath,
+      capabilities: capabilitiesPath,
+      intents: intentsPath,
+    },
+    summary: contractsPayload.summary,
+  };
+}
+
+async function evaluateExecutionGovernanceStage(context, stageResults) {
+  const { executionContracts } = requireStage(stageResults, 'compileExecutionContracts');
+  markStageSubstepProgress(context, 'evaluateRuntimePolicy', {
+    message: 'Evaluating runtime governance for execution contracts.',
+    processedCount: 0,
+    totalCount: executionContracts.length,
+    discoveredCount: 0,
+  });
+  const governance = evaluateExecutionGovernance({
+    context,
+    contracts: executionContracts,
+  });
+  markStageSubstepProgress(context, 'classifyDestructiveActions', {
+    message: 'Classified destructive and confirmation-gated execution contracts.',
+    processedCount: governance.decisions.length,
+    totalCount: executionContracts.length,
+    discoveredCount: governance.summary.runtimeCallable,
+    skippedCount: governance.summary.destructiveBlocked,
+  });
+  const governancePath = await writeArtifactJson(context, EXECUTION_GOVERNANCE_ARTIFACT, governance);
+  markStageSubstepProgress(context, 'writeGovernanceArtifact', {
+    message: 'Execution governance artifact written.',
+    processedCount: governance.decisions.length,
+    totalCount: governance.decisions.length,
+    discoveredCount: governance.summary.runtimeCallable,
+    skippedCount: governance.decisions.filter((decision) => decision.runtimeDispatchAllowed !== true).length,
+    currentItem: EXECUTION_GOVERNANCE_ARTIFACT,
+  });
+  return {
+    governance,
+    artifactPaths: {
+      executionGovernance: governancePath,
+    },
+    summary: governance.summary,
+  };
+}
+
+async function dispatchGovernedRuntimeStage(context, stageResults) {
+  const { executionContracts } = requireStage(stageResults, 'compileExecutionContracts');
+  const { governance } = requireStage(stageResults, 'evaluateExecutionGovernance');
+  markStageSubstepProgress(context, 'selectTaskContract', {
+    message: 'Selecting governed runtime task contract.',
+    processedCount: 0,
+    totalCount: executionContracts.length,
+    discoveredCount: 0,
+    currentItem: context.options?.executionTask ?? null,
+  });
+  const dispatchReport = buildRuntimeDispatchReport({
+    context,
+    contracts: executionContracts,
+    governance,
+  });
+  const selectedContract = dispatchReport.selectedContractRef
+    ? executionContracts.find((contract) => contract.id === dispatchReport.selectedContractRef) ?? null
+    : null;
+  const runtimeContractDescriptor = runtimeContractDescriptorForDispatch(selectedContract, dispatchReport, context);
+  markStageSubstepProgress(context, 'preflightRuntimeDispatch', {
+    message: 'Runtime dispatch preflight completed under governance policy.',
+    processedCount: dispatchReport.selectedContractRef ? 1 : 0,
+    totalCount: context.options?.executionTask ? 1 : 0,
+    discoveredCount: ['ready_for_direct_runtime', 'ready_for_controlled_runtime', 'planned_no_execute_flag'].includes(dispatchReport.status) ? 1 : 0,
+    skippedCount: ['ready_for_direct_runtime', 'ready_for_controlled_runtime', 'planned_no_execute_flag'].includes(dispatchReport.status) ? 0 : 1,
+    currentItem: dispatchReport.status,
+  });
+  const runtimeExecutionReport = context.options?.execute === true
+    && dispatchReport.runtimeInvocationRequest
+    && dispatchReport.runtimePolicyDecision
+    ? buildRuntimeExecutionReport({
+      context,
+      dispatchReport,
+      executionReport: await executeRuntimeInvocation({
+        invocationRequest: dispatchReport.runtimeInvocationRequest,
+        policyDecision: dispatchReport.runtimePolicyDecision,
+        gateStatus: dispatchReport.selectedGateStatus ?? null,
+        executionContract: runtimeContractDescriptor,
+        providerRegistry: context.runtimeProviderRegistry ?? null,
+        runtimeContext: {
+          capabilityKind: selectedContract?.capabilityKind ?? selectedContract?.operationKind ?? null,
+          operationKind: selectedContract?.operationKind ?? null,
+          runtimeBindingKind: selectedContract?.runtimeBinding?.kind ?? null,
+          ...(downloadRuntimeOutputContext(context, selectedContract) ?? {}),
+          ...(browserActionRuntimeContext(context, selectedContract) ?? {}),
+        },
+      }),
+    })
+    : buildRuntimeExecutionReport({
+      context,
+      dispatchReport,
+    });
+  const auditLog = buildExecutionAuditLog({
+    context,
+    governance,
+    dispatchReport,
+    runtimeExecutionReport,
+  });
+  const dispatchPath = await writeArtifactJson(context, RUNTIME_DISPATCH_REPORT_ARTIFACT, dispatchReport);
+  const executionPath = await writeArtifactJson(context, RUNTIME_EXECUTION_REPORT_ARTIFACT, runtimeExecutionReport);
+  const auditLogPath = await writeArtifactJson(context, AUDIT_LOG_ARTIFACT, auditLog);
+  markStageSubstepProgress(context, 'writeDispatchAudit', {
+    message: 'Runtime dispatch, execution report, and redacted audit log written.',
+    processedCount: 3,
+    totalCount: 3,
+    discoveredCount: auditLog.decisions.length,
+    currentItem: RUNTIME_DISPATCH_REPORT_ARTIFACT,
+  });
+  return {
+    dispatchReport,
+    runtimeExecutionReport,
+    auditLog,
+    artifactPaths: {
+      runtimeDispatchReport: dispatchPath,
+      runtimeExecutionReport: executionPath,
+      auditLog: auditLogPath,
+    },
+    summary: {
+      status: dispatchReport.status,
+      selectedContractRef: dispatchReport.selectedContractRef,
+      runtimeExecuted: runtimeExecutionReport.runtimeExecuted === true,
+      sideEffectAttempted: runtimeExecutionReport.sideEffectAttempted === true,
+      auditDecisions: auditLog.decisions.length,
+    },
   };
 }
 
@@ -10916,6 +12276,9 @@ function buildSkillManifest(context, stageResults) {
   const graph = requireStage(stageResults, 'classifyNodes').graph;
   const { capabilities, executionPlans } = requireStage(stageResults, 'discoverCapabilities');
   const { intents } = requireStage(stageResults, 'generateIntents');
+  const { executionContracts } = requireStage(stageResults, 'compileExecutionContracts');
+  const { governance } = requireStage(stageResults, 'evaluateExecutionGovernance');
+  const { runtimeExecutionReport } = requireStage(stageResults, 'dispatchGovernedRuntime');
   const activeCapabilities = capabilities.filter((capability) => capability.status === 'active');
   const activeSkillDir = context.activeSkillDir ?? context.workspace.paths.currentDir;
   return {
@@ -10928,6 +12291,9 @@ function buildSkillManifest(context, stageResults) {
     },
     domains: context.site.allowedDomains,
     capabilityIds: activeCapabilities.map((capability) => capability.id),
+    governedCapabilityIds: capabilities
+      .filter((capability) => capability.planCallable === true)
+      .map((capability) => capability.id),
     intentIndex: 'intents.json',
     router: {
       registry: path.relative(activeSkillDir, context.registryPath).replace(/\\/gu, '/'),
@@ -10935,9 +12301,13 @@ function buildSkillManifest(context, stageResults) {
       utteranceMatcher: 'deterministic-token-overlap-v1',
     },
     executionEngine: {
-      type: 'siteforge-static-plan',
+      type: 'siteforge-governed-runtime',
       dryRunDefault: true,
       autoExecuteHighRisk: false,
+      executionContracts: EXECUTION_CONTRACTS_ARTIFACT,
+      executionGovernance: EXECUTION_GOVERNANCE_ARTIFACT,
+      runtimeDispatchReport: RUNTIME_DISPATCH_REPORT_ARTIFACT,
+      runtimeExecutionReport: RUNTIME_EXECUTION_REPORT_ARTIFACT,
     },
     safetyPolicy: 'safety_policy.json',
     artifacts: {
@@ -10946,7 +12316,16 @@ function buildSkillManifest(context, stageResults) {
       capabilities: 'capabilities.json',
       intents: 'intents.json',
       executionPlans: 'execution_plans.json',
+      executionContracts: EXECUTION_CONTRACTS_ARTIFACT,
+      executionGovernance: EXECUTION_GOVERNANCE_ARTIFACT,
+      runtimeDispatchReport: RUNTIME_DISPATCH_REPORT_ARTIFACT,
+      auditLog: AUDIT_LOG_ARTIFACT,
       verificationReport: 'verification_report.json',
+    },
+    optionalArtifacts: {
+      runtimeExecutionReport: RUNTIME_EXECUTION_REPORT_ARTIFACT,
+      runtimeExecutionStatus: runtimeExecutionReport?.status ?? null,
+      runtimeExecutionAttempted: runtimeExecutionReport?.executionAttempted === true,
     },
     verification: {
       status: 'pending',
@@ -10957,6 +12336,9 @@ function buildSkillManifest(context, stageResults) {
       nodeCount: graph.nodes.length,
       activeCapabilityCount: activeCapabilities.length,
       executionPlanCount: executionPlans.length,
+      executionContractCount: executionContracts.length,
+      runtimeCallableCapabilityCount: capabilities.filter((capability) => capability.runtimeCallable === true).length,
+      governanceBlockedCount: governance.decisions.filter((decision) => decision.runtimeDispatchAllowed !== true).length,
       intentCount: intents.length,
     },
   };
@@ -10968,6 +12350,16 @@ async function generateSkillStage(context, stageResults) {
   const graph = requireStage(stageResults, 'classifyNodes').graph;
   const { capabilities, executionPlans } = requireStage(stageResults, 'discoverCapabilities');
   const { intents } = requireStage(stageResults, 'generateIntents');
+  const { executionContracts } = requireStage(stageResults, 'compileExecutionContracts');
+  const { governance } = requireStage(stageResults, 'evaluateExecutionGovernance');
+  const { dispatchReport, runtimeExecutionReport, auditLog } = requireStage(stageResults, 'dispatchGovernedRuntime');
+  markStageSubstepProgress(context, 'compileDescriptor', {
+    message: '编译 Skill 描述、能力、意图和执行计划。',
+    processedCount: 0,
+    totalCount: capabilities.length + intents.length + executionPlans.length + executionContracts.length,
+    discoveredCount: graph.nodes.length,
+    currentItem: context.skillId ?? null,
+  });
   const capabilitiesPayload = {
     schemaVersion: BUILD_SCHEMA_VERSION,
     capabilities,
@@ -10980,11 +12372,29 @@ async function generateSkillStage(context, stageResults) {
     schemaVersion: BUILD_SCHEMA_VERSION,
     executionPlans,
   };
+  const executionContractsPayload = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    executionContracts,
+  };
   const safetyPolicy = requireStage(stageResults, 'registerSite').safetyPolicy;
   const manifest = buildSkillManifest(context, stageResults);
   const skillYaml = `${toYaml(manifest)}\n`;
   const invocationProbe = selectInvocationProbe(context, capabilities, intents);
 
+  markStageSubstepProgress(context, 'compileDescriptor', {
+    message: 'Skill 描述编译完成。',
+    processedCount: capabilities.length + intents.length + executionPlans.length + executionContracts.length,
+    totalCount: capabilities.length + intents.length + executionPlans.length + executionContracts.length,
+    discoveredCount: Object.keys(manifest.artifacts ?? {}).length,
+    currentItem: context.skillId,
+  });
+  markStageSubstepProgress(context, 'writeRuntimeFiles', {
+    message: '写入 Skill 运行时文件。',
+    processedCount: 0,
+    totalCount: 13,
+    discoveredCount: 0,
+    currentItem: context.skillDir,
+  });
   const artifactSkillPath = await writeArtifactText(context, 'skill.yaml', skillYaml);
   const skillPaths = {
     skillYaml: await writeSkillText(context, 'skill.yaml', skillYaml),
@@ -10992,6 +12402,11 @@ async function generateSkillStage(context, stageResults) {
     capabilities: await writeSkillJson(context, 'capabilities.json', capabilitiesPayload),
     intents: await writeSkillJson(context, 'intents.json', intentsPayload),
     executionPlans: await writeSkillJson(context, 'execution_plans.json', executionPlansPayload),
+    executionContracts: await writeSkillJson(context, EXECUTION_CONTRACTS_ARTIFACT, executionContractsPayload),
+    executionGovernance: await writeSkillJson(context, EXECUTION_GOVERNANCE_ARTIFACT, governance),
+    runtimeDispatchReport: await writeSkillJson(context, RUNTIME_DISPATCH_REPORT_ARTIFACT, dispatchReport),
+    runtimeExecutionReport: await writeSkillJson(context, RUNTIME_EXECUTION_REPORT_ARTIFACT, runtimeExecutionReport),
+    auditLog: await writeSkillJson(context, AUDIT_LOG_ARTIFACT, auditLog),
     safetyPolicy: await writeSkillJson(context, 'safety_policy.json', safetyPolicy),
     invocationTest: await writeSkillJson(context, path.join('tests', 'invocation.test.json'), {
       schemaVersion: BUILD_SCHEMA_VERSION,
@@ -11004,6 +12419,26 @@ async function generateSkillStage(context, stageResults) {
       expectedHighRiskMode: 'dry_run',
     }),
   };
+  markStageSubstepProgress(context, 'writeRuntimeFiles', {
+    message: 'Skill 运行时文件写入完成。',
+    processedCount: Object.keys(skillPaths).length,
+    totalCount: Object.keys(skillPaths).length,
+    discoveredCount: Object.keys(skillPaths).length,
+    currentItem: context.skillDir,
+  });
+  markStageSubstepProgress(context, 'copyVerifiedEvidence', {
+    message: '引用已验证证据产物。',
+    processedCount: Object.keys(skillPaths).length,
+    totalCount: REQUIRED_ARTIFACTS.length,
+    discoveredCount: REQUIRED_ARTIFACTS.length,
+  });
+  markStageSubstepProgress(context, 'sealDraftSkill', {
+    message: '封存草稿 Skill 目录。',
+    processedCount: Object.keys(skillPaths).length,
+    totalCount: Object.keys(skillPaths).length,
+    discoveredCount: capabilities.filter((capability) => capability.status === 'active').length,
+    currentItem: context.skillDir,
+  });
   return {
     skillId: context.skillId,
     skillDir: context.skillDir,
@@ -11209,7 +12644,7 @@ function buildRegistryRecord(context, stageResults, options = /** @type {any} */
       ? new Set(options.capabilityIds)
       : null;
   const activeCapabilitiesById = new Map(capabilities
-    .filter((capability) => capability.status === 'active')
+    .filter((capability) => capability.status === 'active' || capability.planCallable === true)
     .filter((capability) => !allowedCapabilityIds || allowedCapabilityIds.has(capability.id))
     .map((capability) => [capability.id, capability]));
   const callableIntents = intents.filter((intent) => activeCapabilitiesById.has(intent.capabilityId) && intent.callable !== false);
@@ -11250,6 +12685,11 @@ function buildRegistryRecord(context, stageResults, options = /** @type {any} */
         capabilityName: capability?.name ?? intent.name,
         capabilityAction: capability?.action ?? null,
         executionPlanId: capability?.executionPlan?.id ?? null,
+        planCallable: capability?.planCallable === true || intent.planCallable === true,
+        runtimeCallable: capability?.runtimeCallable === true || intent.runtimeCallable === true,
+        autoExecutable: capability?.autoExecutable === true && intent.autoExecutable === true,
+        executionDisposition: capability?.executionDisposition ?? intent.executionDisposition ?? null,
+        executionContractRef: capability?.executionContractRef ?? intent.executionContractRef ?? null,
         runtimeBindingId: capability?.apiAdapter?.runtimeBindingId ?? capability?.executionPlan?.steps?.find((step) => step?.runtimeBindingId)?.runtimeBindingId ?? null,
         canonicalUtterance: intent.canonicalUtterance,
         utteranceExamples: intent.utteranceExamples,
@@ -11310,14 +12750,40 @@ function canUseBridgeRuntimePromotion(report = /** @type {any} */ ({}), stageRes
 async function verifySkillStage(context, stageResults) {
   const { capabilities, executionPlans } = requireStage(stageResults, 'discoverCapabilities');
   const { intents } = requireStage(stageResults, 'generateIntents');
+  markStageSubstepProgress(context, 'validateSchemas', {
+    message: '验证能力、意图、执行计划和必需产物 schema。',
+    processedCount: 0,
+    totalCount: capabilities.length + intents.length + executionPlans.length + REQUIRED_ARTIFACTS.length,
+    discoveredCount: REQUIRED_ARTIFACTS.length,
+  });
   const candidateRegistry = upsertSkillRegistryRecord(
     createEmptySkillRegistry(context.startedAt),
     buildRegistryRecord(context, stageResults),
     context.startedAt,
   );
+  markStageSubstepProgress(context, 'validateSchemas', {
+    message: 'schema 验证输入准备完成。',
+    processedCount: capabilities.length + intents.length + executionPlans.length,
+    totalCount: capabilities.length + intents.length + executionPlans.length + REQUIRED_ARTIFACTS.length,
+    discoveredCount: REQUIRED_ARTIFACTS.length,
+  });
+  markStageSubstepProgress(context, 'checkRedaction', {
+    message: '检查脱敏和产物保护。',
+    processedCount: 0,
+    totalCount: REQUIRED_ARTIFACTS.length,
+    discoveredCount: 0,
+  });
   const invocationProbe = selectInvocationProbe(context, capabilities, intents);
+  markStageSubstepProgress(context, 'runContractChecks', {
+    message: '运行注册表、调用探针和运行时契约检查。',
+    processedCount: 0,
+    totalCount: REQUIRED_ARTIFACTS.length,
+    discoveredCount: capabilities.filter((capability) => capability.status === 'active').length,
+    currentItem: invocationProbe.expectedIntent ?? invocationProbe.utterance,
+  });
   const report = await createSiteForgeOutputValidationReport(context, stageResults, {
     artifactExists: pathExists,
+    readArtifactText: async (filePath) => await readFile(filePath, 'utf8'),
     candidateRegistry,
     invocationProbe,
     successfulBuild: true,
@@ -11377,6 +12843,29 @@ async function verifySkillStage(context, stageResults) {
       'Report-only partial success: generated capabilities and intents are available, but promotion is blocked by external access policy.',
     ]);
   }
+  markStageSubstepProgress(context, 'runContractChecks', {
+    message: '运行时契约检查完成。',
+    processedCount: Object.keys(report.gates ?? {}).length,
+    totalCount: Math.max(Object.keys(report.gates ?? {}).length, REQUIRED_ARTIFACTS.length),
+    discoveredCount: report.status === 'passed' || report.status === 'bridge_runtime_passed' ? 1 : 0,
+    skippedCount: (report.errors?.length ?? 0) + (report.warnings?.length ?? 0),
+    currentItem: report.status,
+  });
+  markStageSubstepProgress(context, 'checkRedaction', {
+    message: '脱敏和产物保护检查完成。',
+    processedCount: REQUIRED_ARTIFACTS.length,
+    totalCount: REQUIRED_ARTIFACTS.length,
+    discoveredCount: Object.keys(report.artifacts ?? {}).length,
+    skippedCount: report.errors?.length ?? 0,
+  });
+  markStageSubstepProgress(context, 'writeVerificationReport', {
+    message: '写入验证报告。',
+    processedCount: Object.keys(report.gates ?? {}).length,
+    totalCount: Math.max(Object.keys(report.gates ?? {}).length, 1),
+    discoveredCount: report.status === 'passed' || report.status === 'bridge_runtime_passed' ? 1 : 0,
+    skippedCount: report.errors?.length ?? 0,
+    currentItem: report.status,
+  });
   const verificationPath = await writeArtifactJson(context, 'verification_report.json', report);
   if (report.status !== 'passed' && report.status !== 'report_only_blocked' && report.status !== 'bridge_runtime_passed') {
     const error = /** @type {Error & Record<string, any>} */ (new Error(`Skill verification failed [${report.reasonCode ?? 'validation-failed'}]: ${report.errors?.[0] ?? 'unknown error'}`));
@@ -11485,7 +12974,22 @@ async function removeRegistryReportArtifacts(context) {
 
 async function registerSkillStage(context, stageResults) {
   const verification = requireStage(stageResults, 'verifySkill').verificationReport;
+  markStageSubstepProgress(context, 'promoteCurrent', {
+    message: '检查验证状态并准备提升当前 Skill。',
+    processedCount: verification.status === 'passed' || verification.status === 'bridge_runtime_passed' ? 1 : 0,
+    totalCount: 1,
+    discoveredCount: 0,
+    currentItem: verification.status,
+  });
   if (verification.status === 'report_only_blocked') {
+    markStageSubstepProgress(context, 'summarizePromotion', {
+      message: '验证结果为仅报告，跳过注册。',
+      processedCount: 1,
+      totalCount: 1,
+      discoveredCount: 0,
+      skippedCount: 1,
+      currentItem: verification.reasonCode ?? verification.status,
+    });
     return await writeNonRegisteredRegistryReport(context, 'promotion-blocked', verification.reasonCode ?? 'verification-report-only-blocked', {
       reportOnly: true,
       verificationStatus: verification.status,
@@ -11500,6 +13004,14 @@ async function registerSkillStage(context, stageResults) {
   const registryOptions = bridgeRuntime ? bridgeRuntimeRegistryOptions(context, stageResults) : {};
   const writeMode = siteForgeWriteMode(context);
   if (writeMode === 'preview_only' || writeMode === 'draft_only') {
+    markStageSubstepProgress(context, 'summarizePromotion', {
+      message: '写入模式不更新注册表。',
+      processedCount: 1,
+      totalCount: 1,
+      discoveredCount: 0,
+      skippedCount: 1,
+      currentItem: writeMode,
+    });
     return await writeNonRegisteredRegistryReport(
       context,
       writeMode === 'draft_only' ? 'draft' : 'preview',
@@ -11522,6 +13034,13 @@ async function registerSkillStage(context, stageResults) {
         ...(bridgeRuntime ? bridgeRuntimeMetadata(context.authStateReport) : {}),
       });
       await finalizeRetainedCurrentPromotion(context.workspace, promotion);
+      markStageSubstepProgress(context, 'summarizePromotion', {
+        message: '当前 Skill 目录更新完成。',
+        processedCount: 1,
+        totalCount: 1,
+        discoveredCount: 1,
+        currentItem: promotion.currentDir ?? promotion.activeSkillDir ?? null,
+      });
       return result;
     } catch (error) {
       if (promotion) {
@@ -11535,6 +13054,13 @@ async function registerSkillStage(context, stageResults) {
       throw error;
     }
   }
+  markStageSubstepProgress(context, 'updateRegistry', {
+    message: '读取并更新运行时注册表。',
+    processedCount: 0,
+    totalCount: 1,
+    discoveredCount: 0,
+    currentItem: context.registryPath,
+  });
   const registry = await readSkillRegistry(context.registryPath);
   const record = buildRegistryRecord(context, stageResults, {
     ...registryOptions,
@@ -11543,8 +13069,25 @@ async function registerSkillStage(context, stageResults) {
   const nextRegistry = upsertSkillRegistryRecord(registry, record, new Date().toISOString());
   const capabilities = requireStage(stageResults, 'discoverCapabilities').capabilities;
   const intents = requireStage(stageResults, 'generateIntents').intents;
+  const registryRecordCount = Array.isArray(nextRegistry?.skills)
+    ? nextRegistry.skills.length
+    : Object.keys(nextRegistry?.skills ?? nextRegistry?.records ?? {}).length;
+  markStageSubstepProgress(context, 'updateRegistry', {
+    message: '注册表记录已生成。',
+    processedCount: 1,
+    totalCount: 1,
+    discoveredCount: registryRecordCount,
+    currentItem: context.skillId,
+  });
   const invocationProbe = selectInvocationProbe(context, capabilities, intents, {
     capabilityIds: registryOptions.capabilityIds,
+  });
+  markStageSubstepProgress(context, 'writeLookup', {
+    message: '验证 Skill lookup 元数据。',
+    processedCount: 0,
+    totalCount: intents.length,
+    discoveredCount: capabilities.filter((capability) => capability.status === 'active').length,
+    currentItem: invocationProbe.utterance,
   });
   const lookup = lookupSkillIntentFromRegistry(nextRegistry, {
     domain: invocationProbe.domain,
@@ -11553,6 +13096,13 @@ async function registerSkillStage(context, stageResults) {
   if (lookup.status !== 'found') {
     throw new Error('Registry lookup failed after registration.');
   }
+  markStageSubstepProgress(context, 'writeLookup', {
+    message: 'Skill lookup 验证通过。',
+    processedCount: intents.length,
+    totalCount: intents.length,
+    discoveredCount: 1,
+    currentItem: lookup.intentId ?? lookup.capabilityId ?? lookup.status,
+  });
   const lastSuccessfulBefore = await readLastSuccessfulBuild(context.workspace);
   const previousSkillDir = context.skillDir;
   let promotion = null;
@@ -11575,6 +13125,13 @@ async function registerSkillStage(context, stageResults) {
       promotion,
       ...(bridgeRuntime ? bridgeRuntimeMetadata(context.authStateReport) : {}),
     };
+    markStageSubstepProgress(context, 'summarizePromotion', {
+      message: '汇总注册和提升结果。',
+      processedCount: 1,
+      totalCount: 1,
+      discoveredCount: 1,
+      currentItem: promotion.currentDir ?? promotion.activeSkillDir ?? registryReport.status,
+    });
     const registryReportPath = await writeArtifactJson(context, 'registry_report.json', registryReport);
     await finalizeRetainedCurrentPromotion(context.workspace, promotion);
     return {
@@ -11757,15 +13314,16 @@ function buildUserReport(context, stageResults, report) {
     partial_success_reasons: partialSuccessReasons,
     riskLevelDefaults: {
       low: 'enabled',
-      medium: 'limited_enabled',
-      high: 'disabled',
-      critical: 'disabled',
+      medium: 'enabled',
+      high: 'enabled',
+      critical: 'enabled',
       read_public_low: 'enabled',
-      read_personal_medium: 'limited_enabled',
-      read_private_high: 'disabled',
-      write_low: 'draft_only',
-      write_high: 'disabled',
-      account_security_critical: 'disabled',
+      read_personal_medium: 'enabled',
+      read_private_high: 'enabled',
+      write_low: 'enabled',
+      write_high: 'enabled',
+      download_high: 'enabled',
+      account_security_critical: 'enabled',
     },
     auto_discovery_summary: context.setupProfile?.userAuthorizedEvidence?.autoDiscovery ? {
       mode: context.setupProfile.userAuthorizedEvidence.autoDiscovery.mode ?? 'default',
@@ -12031,6 +13589,8 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
       capabilityEvidence: capabilityState.evidence_status_summary,
       partialSuccessReasons,
       highRiskAutoExecuted: activeCapabilities.some((capability) => isHighRiskCapability(capability) && capability.executionPlan?.autoExecute === true),
+      executionGovernance: stageResults.evaluateExecutionGovernance?.summary ?? null,
+      runtimeDispatch: stageResults.dispatchGovernedRuntime?.summary ?? null,
       unsuccessfulCollections: collectionOutcomes.total,
       setupCollectionReviewMissing: setupCollectionReview?.missingRecordCount ?? 0,
       setupCollectionReviewCapabilitiesMissing: setupCollectionReview?.summary?.capabilities?.missing ?? 0,
@@ -12050,6 +13610,12 @@ function buildBuildReport(context, stageResults, stageRecords, status = 'success
 }
 
 async function writeBuildReportStage(context, stageResults, stageRecords) {
+  markStageSubstepProgress(context, 'buildUserReport', {
+    message: '生成用户报告和页面重建报告。',
+    processedCount: 0,
+    totalCount: Object.keys(stageRecords ?? {}).length,
+    discoveredCount: 0,
+  });
   const report = buildBuildReport(context, stageResults, stageRecords, 'success');
   report.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = capabilityIntentSummaryHtmlPath(context);
   if (stageResults.crawlStatic?.artifactPaths?.rawPageMaterialManifest) {
@@ -12100,15 +13666,44 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
     ...(report.artifacts?.[ROUTE_CAPTURE_PLAN_FILE] ? { route_capture_plan: ROUTE_CAPTURE_PLAN_FILE } : {}),
   };
   report.result_status = userReport.result_status;
+  markStageSubstepProgress(context, 'buildUserReport', {
+    message: '用户报告生成完成。',
+    processedCount: Object.keys(stageRecords ?? {}).length,
+    totalCount: Object.keys(stageRecords ?? {}).length,
+    discoveredCount: (userReport.capabilities?.enabled?.length ?? 0)
+      + (userReport.capabilities?.limited_enabled?.length ?? 0)
+      + (userReport.capabilities?.confirmation_required?.length ?? 0),
+    skippedCount: report.warnings?.length ?? 0,
+    currentItem: userReport.result_status ?? report.status ?? null,
+  });
   const userReportWrite = await writeRedactedArtifactJson(context, USER_REPORT_FILE, userReport);
   report.artifacts[USER_REPORT_FILE] = userReportWrite.artifactPath;
   const userReportAliasWrite = await writeRedactedArtifactJson(context, USER_REPORT_JSON_ALIAS, userReportWrite.value);
   report.artifacts[USER_REPORT_JSON_ALIAS] = userReportAliasWrite.artifactPath;
+  markStageSubstepProgress(context, 'writeMarkdown', {
+    message: '写入用户 Markdown 摘要。',
+    processedCount: 0,
+    totalCount: 2,
+    discoveredCount: 0,
+  });
   const userMarkdown = renderBuildUserMarkdown(userReportWrite.value, report, { cwd: context.cwd });
   const userMarkdownPath = await writeArtifactText(context, USER_REPORT_MARKDOWN_FILE, userMarkdown);
   report.artifacts[USER_REPORT_MARKDOWN_FILE] = userMarkdownPath;
   const userMarkdownAliasPath = await writeArtifactText(context, USER_REPORT_MARKDOWN_ALIAS, userMarkdown);
   report.artifacts[USER_REPORT_MARKDOWN_ALIAS] = userMarkdownAliasPath;
+  markStageSubstepProgress(context, 'writeMarkdown', {
+    message: '用户 Markdown 摘要写入完成。',
+    processedCount: 2,
+    totalCount: 2,
+    discoveredCount: 2,
+    currentItem: USER_REPORT_MARKDOWN_FILE,
+  });
+  markStageSubstepProgress(context, 'buildDebugReport', {
+    message: '生成调试报告和脱敏审计。',
+    processedCount: 0,
+    totalCount: Object.keys(report.artifacts ?? {}).length,
+    discoveredCount: 0,
+  });
   const debugBase = buildDebugReport(context, stageResults, stageRecords, report, userReportWrite.value, {
     siteAdapter: siteAdapterSummaryForReport(context, { includeSource: true }),
   });
@@ -12124,6 +13719,20 @@ async function writeBuildReportStage(context, stageResults, stageRecords) {
   const htmlReportPath = await writeCapabilityIntentHtmlReport(context, stageResults, report, userReportWrite.value);
   report.artifacts[CAPABILITY_INTENT_SUMMARY_HTML_FILE] = htmlReportPath;
   report.artifacts[INDEX_REPORT_FILE] = path.join(context.artifactDir, INDEX_REPORT_FILE);
+  markStageSubstepProgress(context, 'buildDebugReport', {
+    message: '调试报告和能力意图 HTML 生成完成。',
+    processedCount: 3,
+    totalCount: 3,
+    discoveredCount: Object.keys(debugReportWrite.value?.stages ?? stageRecords ?? {}).length,
+    currentItem: DEBUG_REPORT_FILE,
+  });
+  markStageSubstepProgress(context, 'writeIndexReport', {
+    message: '写入报告索引。',
+    processedCount: Object.keys(report.artifacts ?? {}).length,
+    totalCount: Object.keys(report.artifacts ?? {}).length,
+    discoveredCount: Object.keys(report.artifacts ?? {}).length,
+    currentItem: INDEX_REPORT_FILE,
+  });
   const indexReport = buildReportIndex(report, userReportWrite.value, debugReportWrite.value);
   const buildReportWrite = await writeRedactedArtifactJson(context, INDEX_REPORT_FILE, indexReport);
   report.artifacts[INDEX_REPORT_FILE] = buildReportWrite.artifactPath;
@@ -12268,6 +13877,9 @@ const STAGE_IMPLS = Object.freeze({
   extractAffordances: extractAffordancesStage,
   discoverCapabilities: discoverCapabilitiesStage,
   generateIntents: generateIntentsStage,
+  compileExecutionContracts: compileExecutionContractsStage,
+  evaluateExecutionGovernance: evaluateExecutionGovernanceStage,
+  dispatchGovernedRuntime: dispatchGovernedRuntimeStage,
   generateSkill: generateSkillStage,
   verifySkill: verifySkillStage,
   registerSkill: registerSkillStage,
@@ -12325,11 +13937,12 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
       }
     }
     const startedAt = new Date().toISOString();
+    const initialSubstepState = beginStageSubsteps(context, stageRecords, stageResults, stageName, startedAt);
     updateWebInteractionBuildState(
       context,
       {
         ...stageRecords,
-        [stageName]: buildStageRecord(stageName, 'running', {}, startedAt, null, STAGE_DEPENDENCIES),
+        [stageName]: buildStageRecord(stageName, 'running', initialSubstepState, startedAt, null, STAGE_DEPENDENCIES),
       },
       stageResults,
       { phase: 'build', status: `running:${stageName}` },
@@ -12338,7 +13951,10 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
       const result = await STAGE_IMPLS[stageName](context, stageResults, stageRecords);
       stageResults[stageName] = result;
       const status = result.status ?? 'success';
-      stageRecords[stageName] = buildStageRecord(stageName, status, result, startedAt, new Date().toISOString(), STAGE_DEPENDENCIES);
+      stageRecords[stageName] = buildStageRecord(stageName, status, {
+        ...result,
+        ...finishStageSubsteps(context, stageName, status),
+      }, startedAt, new Date().toISOString(), STAGE_DEPENDENCIES);
       updateWebInteractionBuildState(context, stageRecords, stageResults, {
         phase: 'build',
         status: status === 'success' ? `completed:${stageName}` : status,
@@ -12359,6 +13975,7 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
           ...(error?.verificationReportPath ? { verificationReport: error.verificationReportPath } : {}),
         },
         summary: error?.summary ?? {},
+        ...finishStageSubsteps(context, stageName, stageStatus),
       }, startedAt, new Date().toISOString(), STAGE_DEPENDENCIES);
       for (const skipped of SITEFORGE_BUILD_STAGE_NAMES.slice(SITEFORGE_BUILD_STAGE_NAMES.indexOf(stageName) + 1)) {
         stageRecords[skipped] = buildStageRecord(skipped, 'skipped', {
@@ -12391,6 +14008,8 @@ export async function runSiteForgeBuild(inputUrl, options = /** @type {any} */ (
       policy: context.policy,
     },
     stageResults,
+    stages: stageRecords,
+    stageRecords,
   };
   updateWebInteractionBuildState(context, stageRecords, stageResults, {
     phase: 'capabilities',

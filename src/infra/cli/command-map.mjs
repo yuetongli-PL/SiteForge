@@ -67,6 +67,12 @@ function validatePublicBuildCommandArgs(args = /** @type {any[]} */ ([])) {
       continue;
     }
     const flagName = token.split('=')[0];
+    if (flagName === '--confirm-destructive') {
+      if (!token.includes('=') && args[index + 1] && !String(args[index + 1]).startsWith('--')) {
+        index += 1;
+      }
+      continue;
+    }
     if (ACCEPTED_BOOLEAN_BUILD_FLAGS.has(flagName)) {
       if (token.includes('=')) {
         throw new Error(`Public build flag does not take a value: ${flagName}`);

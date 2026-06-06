@@ -5,6 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { normalizeDownloadAvailability } from '../src/sites/availability.mjs';
 
 const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(TOOL_DIR, '..');
@@ -20,10 +21,58 @@ function asPosixPath(...segments) {
   return normalizeSlashes(path.join(...segments));
 }
 
-function renderReadme() {
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.join(REPO_ROOT, relativePath), 'utf8'));
+}
+
+function renderAvailabilitySummary(availability) {
+  const parts = [];
+  if (availability.declaredTaskTypes.length) {
+    parts.push(`downloads declared: ${availability.declaredTaskTypes.join(', ')}`);
+    parts.push(`available: ${availability.availableTaskTypes.length ? availability.availableTaskTypes.join(', ') : 'none'}`);
+  }
+  if (availability.blockedTaskTypes.length) {
+    parts.push(`blocked: ${availability.blockedTaskTypes.join(', ')}`);
+  }
+  if (availability.reasonCode) {
+    parts.push(`reason: ${availability.reasonCode}`);
+  }
+  if (availability.runtimeDependencies.length) {
+    parts.push(`requires: ${availability.runtimeDependencies.join(', ')}`);
+  }
+  if (availability.dependencyReasonCodes.length) {
+    parts.push(`dependency reason: ${availability.dependencyReasonCodes.join(', ')}`);
+  }
+  return parts.length ? parts.join('; ') : 'no download availability declared';
+}
+
+function renderPublicSiteTable(registry, capabilities) {
+  const rows = Object.entries(registry.sites ?? {})
+    .sort(([left], [right]) => left.localeCompare(right, 'en'))
+    .map(([host, registrySite]) => {
+      const capabilitySite = capabilities.sites?.[host];
+      const availability = normalizeDownloadAvailability(registrySite, capabilitySite);
+      return `| \`${host}\` | ${renderAvailabilitySummary(availability)} |`;
+    });
+  return [
+    '## Public Site Availability',
+    '',
+    '| Site | Download availability |',
+    '| --- | --- |',
+    ...rows,
+    '',
+  ].join('\n');
+}
+
+async function renderReadme() {
+  const registry = await readJson('config/site-registry.json');
+  const capabilities = await readJson('config/site-capabilities.json');
+  const publicSiteTable = renderPublicSiteTable(registry, capabilities);
   return `${GENERATED_MARKER}
 
 # SiteForge
+
+${publicSiteTable}
 
 SiteForge 用于把公开网站 URL 转换成本地、受治理的站点能力工作区。公开 CLI 保持克制，目前只暴露一个主要入口：
 
@@ -101,7 +150,7 @@ git diff --check
 async function main(argv = process.argv.slice(2)) {
   const check = argv.includes('--check');
   const targetPath = path.join(REPO_ROOT, README_OUTPUT);
-  const nextText = renderReadme().replace(/\r\n/gu, '\n');
+  const nextText = (await renderReadme()).replace(/\r\n/gu, '\n');
   if (check) {
     const currentText = (await readFile(targetPath, 'utf8')).replace(/\r\n/gu, '\n');
     if (currentText !== nextText) {

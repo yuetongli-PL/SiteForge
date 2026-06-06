@@ -15,10 +15,29 @@ export const EXECUTION_STATUSES = Object.freeze([
   'skipped',
 ]);
 
+export const EXECUTION_VERDICTS = Object.freeze([
+  'allow',
+  'controlled',
+  'blocked',
+]);
+
+export const EXECUTION_DISPOSITIONS = EXECUTION_VERDICTS;
+
+export const EXECUTION_GATES = Object.freeze([
+  'confirm_required',
+  'audit_required',
+  'session_required',
+  'permission_required',
+  'output_path_required',
+  'dry_run_required',
+]);
+
 const EXECUTION_SCHEMA_NAMES = Object.freeze([
   'ExecutionManifest',
   'LayerExecutionHandoffDescriptor',
   'ExecutionPolicyDecision',
+  'GovernedExecutionPolicyDecision',
+  'RuntimeInvocationRequest',
   'ExecutionFeedback',
   'CoverageDelta',
   'CoverageDeltaArtifactQueue',

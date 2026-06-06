@@ -23,11 +23,77 @@ test('graph builder emits a valid descriptor-only graph from compile manifest', 
   assert.ok(graph.nodes.some((node) => node.type === 'SiteNode'));
   assert.ok(graph.nodes.some((node) => node.type === 'CapabilityNode'));
   assert.ok(graph.nodes.some((node) => node.type === 'RouteNode'));
+  assert.ok(graph.nodes.some((node) => node.type === 'ExecutionContractNode'));
+  assert.ok(graph.nodes.some((node) => node.type === 'RuntimeBindingNode'));
+  assert.ok(graph.nodes.some((node) => node.type === 'GovernancePolicyNode'));
   assert.ok(graph.edges.some((edge) => edge.type === 'site_declares_capability'));
   assert.ok(graph.edges.some((edge) => edge.type === 'capability_exposed_on_route'));
   assert.ok(graph.edges.some((edge) => edge.type === 'capability_guarded_by_risk_policy'));
+  assert.ok(graph.edges.some((edge) => edge.type === 'capability_has_execution_contract'));
+  assert.ok(graph.edges.some((edge) => edge.type === 'execution_contract_bound_to_runtime'));
+  assert.ok(graph.edges.some((edge) => edge.type === 'execution_contract_governed_by_policy'));
   assert.equal(report.result, 'passed');
   assert.deepEqual(report.findings, []);
+});
+
+test('graph builder models destructive execution contracts without making them auto-executable', () => {
+  const manifest = createSyntheticCompileManifest({
+    capabilityConfig: {
+      siteKey: 'synthetic.example',
+      capabilities: [
+        {
+          capabilityKey: 'delete-record',
+          normalizedIntent: 'delete-record',
+          capabilityFamily: 'record-management',
+          supportedTaskTypes: ['delete-record'],
+          routeKey: 'record-admin',
+          routeKind: 'page',
+          urlPattern: 'https://synthetic.example/records/:id',
+          pageType: 'admin-detail',
+          mode: 'write',
+          requiresApproval: true,
+          requiresAuth: true,
+          requiresSession: true,
+          riskState: 'blocked',
+          riskReasonCode: 'execution.destructive_default_blocked',
+        },
+      ],
+    },
+  });
+  const graph = createCapabilityGraphDraftFromCompileManifest(manifest);
+  const report = validateSiteCapabilityGraph(graph);
+  const contract = graph.nodes.find((node) => node.type === 'ExecutionContractNode');
+  const governance = graph.nodes.find((node) => node.type === 'GovernancePolicyNode');
+
+  assert.equal(report.result, 'passed');
+  assert.equal(contract.destructiveAction, true);
+  assert.equal(contract.highRiskAction, true);
+  assert.equal(contract.executionDisposition, 'blocked');
+  assert.equal(contract.executionVerdict, 'blocked');
+  assert.deepEqual(contract.executionGates, [
+    'confirm_required',
+    'audit_required',
+    'session_required',
+    'permission_required',
+  ]);
+  assert.equal(contract.runtimeCallable, false);
+  assert.equal(contract.autoExecutable, false);
+  assert.equal(contract.impactScope.level, 'destructive');
+  assert.equal(contract.executionPrerequisites.sitePolicyExplicitAllowRequired, true);
+  assert.equal(contract.executionPrerequisites.strongConfirmationRequired, true);
+  assert.equal(contract.executionPrerequisites.auditRequired, true);
+  assert.equal(contract.executionPrerequisites.naturalLanguageRequestGrantsExecution, false);
+  assert.equal(governance.runtimeDispatchAllowedByDefault, false);
+  assert.equal(governance.executionVerdict, 'blocked');
+  assert.deepEqual(governance.executionGates, [
+    'confirm_required',
+    'audit_required',
+    'session_required',
+    'permission_required',
+  ]);
+  assert.equal(governance.strongConfirmationRequired, true);
+  assert.equal(governance.sitePolicyExplicitAllowRequired, true);
+  assert.equal(governance.auditPolicy.required, true);
 });
 
 test('graph build manifest records validation result and compiler provenance', () => {

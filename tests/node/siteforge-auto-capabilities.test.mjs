@@ -293,13 +293,61 @@ test('x.com cookie-auth capability generation covers social intents, disabled wr
       assert.equal(categories.has(category), true, `${category} category should be generated`);
     }
 
-    const highRiskWrites = capabilities.filter((capability) => (
+    const writeAndAccountCapabilities = capabilities.filter((capability) => (
       ['write_high', 'account_security_critical'].includes(capability.risk_level)
     ));
-    assert.equal(highRiskWrites.length >= 16, true);
-    assert.equal(highRiskWrites.every((capability) => capability.enabled_status === 'disabled'), true);
-    assert.equal(highRiskWrites.every((capability) => capability.status !== 'active'), true);
-    assert.equal(highRiskWrites.every((capability) => !capability.executionPlan), true);
+    assert.equal(writeAndAccountCapabilities.length >= 16, true);
+    assert.deepEqual(writeAndAccountCapabilities
+      .filter((capability) => capability.status !== 'active')
+      .map((capability) => [capability.name, capability.status]), []);
+    assert.deepEqual(writeAndAccountCapabilities
+      .filter((capability) => capability.planCallable !== true)
+      .map((capability) => [capability.name, capability.planCallable]), []);
+    const blockedDefaultWrites = writeAndAccountCapabilities.filter((capability) => (
+      /delete|payment/u.test(`${capability.name} ${capability.object}`)
+    ));
+    assert.equal(blockedDefaultWrites.length >= 2, true);
+    assert.deepEqual(blockedDefaultWrites
+      .filter((capability) => capability.enabled_status !== 'disabled')
+      .map((capability) => [capability.name, capability.enabled_status]), []);
+    assert.deepEqual(blockedDefaultWrites
+      .filter((capability) => capability.autoExecutable !== false || capability.executionDisposition !== 'blocked')
+      .map((capability) => [capability.name, capability.autoExecutable, capability.executionDisposition]), []);
+    const executableWrites = writeAndAccountCapabilities.filter((capability) => !blockedDefaultWrites.includes(capability));
+    const accountSecurityWrites = executableWrites.filter((capability) => capability.risk_level === 'account_security_critical');
+    const ordinaryWrites = executableWrites.filter((capability) => capability.risk_level !== 'account_security_critical');
+    assert.deepEqual(ordinaryWrites
+      .filter((capability) => (
+        capability.enabled_status !== 'enabled'
+        || capability.runtimeCallable !== true
+        || capability.autoExecutable !== true
+        || capability.executionDisposition !== 'allow'
+        || capability.executionPlan?.governedExecution === true
+      ))
+      .map((capability) => [
+        capability.name,
+        capability.enabled_status,
+        capability.runtimeCallable,
+        capability.autoExecutable,
+        capability.executionDisposition,
+        capability.executionPlan?.governedExecution,
+      ]), []);
+    assert.deepEqual(accountSecurityWrites
+      .filter((capability) => (
+        capability.enabled_status !== 'enabled'
+        || capability.runtimeCallable !== true
+        || capability.autoExecutable !== false
+        || capability.executionDisposition !== 'controlled'
+        || capability.executionPlan?.governedExecution !== true
+      ))
+      .map((capability) => [
+        capability.name,
+        capability.enabled_status,
+        capability.runtimeCallable,
+        capability.autoExecutable,
+        capability.executionDisposition,
+        capability.executionPlan?.governedExecution,
+      ]), []);
 
     const byName = new Map(capabilities.map((capability) => [capability.name, capability]));
     for (const capability of capabilities) {
@@ -319,14 +367,14 @@ test('x.com cookie-auth capability generation covers social intents, disabled wr
       assert.equal(present.length <= 1, true, `duplicate semantic capabilities: ${present.join(', ')}`);
     }
     assert.equal(byName.get('read recommended timeline')?.risk_level, 'read_personal_medium');
-    assert.equal(byName.get('read recommended timeline')?.enabled_status, 'limited_enabled');
-    assert.equal(byName.get('read recommended timeline')?.default_policy, 'limited_enabled');
-    assert.equal(byName.get('read recommended timeline')?.executionPlan?.limitedOutputOnly, true);
+    assert.equal(byName.get('read recommended timeline')?.enabled_status, 'enabled');
+    assert.equal(byName.get('read recommended timeline')?.default_policy, 'enabled');
+    assert.notEqual(byName.get('read recommended timeline')?.executionPlan?.limitedOutputOnly, true);
     assert.equal(byName.get('read recommended timeline')?.routeTemplate, '/home');
     assert.equal(byName.get('read recommended timeline')?.tabState, 'for_you');
     assert.notEqual(byName.get('read recommended timeline')?.risk_level, 'read_public_low');
     assert.equal(byName.get('read following timeline')?.risk_level, 'read_personal_medium');
-    assert.equal(['limited_enabled', 'confirmation_required'].includes(byName.get('read following timeline')?.enabled_status), true);
+    assert.equal(byName.get('read following timeline')?.enabled_status, 'enabled');
     assert.equal(byName.get('read following timeline')?.routeTemplate, '/home');
     assert.equal(byName.get('read following timeline')?.tabState, 'following');
 
@@ -354,7 +402,7 @@ test('x.com cookie-auth capability generation covers social intents, disabled wr
       'read recent bookmarks by time',
     ]) {
       assert.equal(byName.get(name)?.risk_level, 'read_personal_medium', `${name} risk`);
-      assert.equal(byName.get(name)?.enabled_status, 'confirmation_required', `${name} default confirmation`);
+      assert.equal(byName.get(name)?.enabled_status, 'enabled', `${name} default enabled`);
     }
 
     for (const [name, riskLevel] of [
@@ -368,9 +416,11 @@ test('x.com cookie-auth capability generation covers social intents, disabled wr
       const capability = byName.get(name);
       assert.ok(capability, `${name} should be discovered`);
       assert.equal(capability.risk_level, riskLevel, `${name} risk`);
-      assert.equal(capability.enabled_status, 'disabled', `${name} disabled`);
-      assert.equal(capability.status, 'disabled', `${name} status`);
-      assert.equal(capability.executionPlan, undefined, `${name} no plan`);
+      assert.equal(capability.enabled_status, 'enabled', `${name} enabled status`);
+      assert.equal(capability.status, 'active', `${name} status`);
+      assert.equal(capability.planCallable, true, `${name} plan callable`);
+      assert.ok(capability.executionPlan, `${name} keeps execution plan`);
+      assert.equal(capability.executionPlan.autoExecute, false, `${name} not auto executable`);
     }
 
     for (const name of [
@@ -381,54 +431,107 @@ test('x.com cookie-auth capability generation covers social intents, disabled wr
       'repost post',
       'follow user',
       'unfollow user',
-      'delete post',
+    ]) {
+      assert.equal(byName.get(name)?.enabled_status, 'enabled', `${name} enabled`);
+      assert.equal(byName.get(name)?.executionDisposition, 'allow', `${name} allowed`);
+      assert.equal(byName.get(name)?.autoExecutable, true, `${name} auto executable`);
+    }
+    for (const name of [
       'edit profile',
       'change account security settings',
       'change account email',
       'change account password',
       'change account 2fa',
+    ]) {
+      assert.equal(byName.get(name)?.enabled_status, 'enabled', `${name} enabled`);
+      assert.equal(byName.get(name)?.executionDisposition, 'controlled', `${name} controlled`);
+      assert.equal(byName.get(name)?.autoExecutable, false, `${name} not auto executable`);
+    }
+    for (const name of [
+      'delete post',
       'change payment settings',
     ]) {
       assert.equal(byName.get(name)?.enabled_status, 'disabled', `${name} disabled`);
+      assert.equal(byName.get(name)?.executionDisposition, 'blocked', `${name} blocked`);
     }
 
     const drafts = capabilities.filter((capability) => (
-      capability.risk_level === 'write_low' && capability.default_policy === 'draft_only'
+      capability.risk_level === 'write_low' && capability.default_policy === 'enabled'
     ));
     assert.equal(drafts.length >= 3, true);
     for (const draft of drafts) {
-      assert.equal(draft.enabled_status, 'draft_only');
-      assert.equal(draft.executionPlan.dryRunOnly, true);
-      assert.equal(draft.executionPlan.requiresConfirmation, true);
+      assert.equal(draft.enabled_status, 'enabled');
+      assert.equal(draft.executionPlan.dryRunOnly, false);
+      assert.equal(draft.executionPlan.requiresConfirmation, false);
+      assert.equal(draft.executionDisposition, 'allow');
+      assert.notEqual(draft.executionPlan.governedExecution, true);
       assert.equal(draft.executionPlan.autoExecute, false);
       assert.equal(draft.executionPlan.steps.every((step) => (
-        step.submit === false
+        step.submit === true
         && step.finalSubmit === false
-        && step.upload === false
         && step.selectSensitiveRecipient === false
         && step.autoExecute === false
-        && step.draftOnly === true
       )), true);
     }
 
-    const disabledIntentIds = new Set(highRiskWrites.flatMap((capability) => (
+    const writeIntentIds = new Set(writeAndAccountCapabilities.flatMap((capability) => (
       capability.intents.map((intent) => intent.id)
     )));
-    const disabledGlobalIntents = intentsPayload.intents.filter((intent) => disabledIntentIds.has(intent.id));
-    assert.equal(disabledGlobalIntents.length >= highRiskWrites.length * 2, true);
-    assert.equal(disabledGlobalIntents.every((intent) => intent.callable === false), true);
-    for (const intent of disabledGlobalIntents) {
+    const writeGlobalIntents = intentsPayload.intents.filter((intent) => writeIntentIds.has(intent.id));
+    assert.equal(writeGlobalIntents.length >= writeAndAccountCapabilities.length * 2, true);
+    assert.equal(writeGlobalIntents.every((intent) => intent.callable === true), true);
+    assert.equal(writeGlobalIntents.every((intent) => intent.planCallable === true), true);
+    assert.equal(writeGlobalIntents.filter((intent) => intent.executionDisposition === 'allow').every((intent) => intent.autoExecutable === true), true);
+    assert.equal(writeGlobalIntents.filter((intent) => intent.executionDisposition === 'controlled').every((intent) => intent.autoExecutable === false), true);
+    assert.equal(writeGlobalIntents.filter((intent) => intent.executionDisposition === 'allow').length > 0, true);
+    assert.equal(writeGlobalIntents.filter((intent) => intent.executionDisposition === 'blocked').every((intent) => intent.autoExecutable === false), true);
+    for (const intent of writeGlobalIntents.filter((candidate) => candidate.executionDisposition === 'blocked')) {
       const capability = capabilities.find((candidate) => candidate.id === intent.capabilityId);
-      assert.ok(intent.safe_remediation_path, `${intent.id} missing safe_remediation_path`);
       assert.ok(capability?.safe_remediation?.path, `${capability?.name ?? intent.capabilityId} missing safe_remediation`);
     }
+
+    const executionContracts = await readJson(path.join(result.artifactDir, 'execution_contracts.json'));
+    const executionGovernance = await readJson(path.join(result.artifactDir, 'execution_governance.json'));
+    const runtimeDispatchReport = await readJson(path.join(result.artifactDir, 'runtime_dispatch_report.json'));
+    assert.equal(executionContracts.executionContracts.length >= writeAndAccountCapabilities.length, true);
+    assert.equal(executionGovernance.decisions.some((decision) => decision.disposition === 'blocked'), true);
+    assert.equal(executionGovernance.decisions.some((decision) => decision.disposition === 'allow' && decision.runtimeDispatchAllowed === true), true);
+    const destructiveContract = executionContracts.executionContracts.find((contract) => contract.destructiveAction === true);
+    assert.ok(destructiveContract, 'destructive execution contract should be retained');
+    assert.equal(destructiveContract.highRiskAction, true);
+    assert.equal(destructiveContract.executionDisposition, 'blocked');
+    assert.equal(destructiveContract.executionVerdict, 'blocked');
+    assert.equal(destructiveContract.executionGates.includes('confirm_required'), true);
+    assert.equal(destructiveContract.executionGates.includes('audit_required'), true);
+    assert.equal(destructiveContract.executionGates.includes('permission_required'), true);
+    assert.equal(destructiveContract.impactScope.level, 'destructive');
+    assert.equal(destructiveContract.requiresStrongConfirmation, true);
+    assert.equal(destructiveContract.confirmationPolicy.strongConfirmationRequired, true);
+    assert.equal(destructiveContract.confirmationPolicy.naturalLanguageRequestGrantsExecution, false);
+    assert.equal(destructiveContract.auditPolicy.required, true);
+    assert.equal(destructiveContract.executionPrerequisites.sitePolicyExplicitAllowRequired, true);
+    assert.equal(destructiveContract.executionPrerequisites.auditRequired, true);
+    const destructiveDecision = executionGovernance.decisions.find((decision) => (
+      decision.contractRef === destructiveContract.id
+    ));
+    assert.ok(destructiveDecision, 'destructive governance decision should be retained');
+    assert.equal(destructiveDecision.runtimeDispatchAllowed, false);
+    assert.equal(destructiveDecision.verdict, 'blocked');
+    assert.equal(destructiveDecision.gates.includes('confirm_required'), true);
+    assert.equal(destructiveDecision.naturalLanguageRequestGrantsExecution, false);
+    assert.equal(destructiveDecision.governanceGates.sitePolicyExplicitAllow.satisfied, false);
+    assert.equal(destructiveDecision.governanceGates.strongConfirmation.satisfied, false);
+    assert.equal(runtimeDispatchReport.status, 'compiled_no_task');
+    assert.equal(runtimeDispatchReport.runtimeInvocationRequest, null);
+    assert.equal(runtimeDispatchReport.runtimeDecision, null);
+    assert.equal(runtimeDispatchReport.runtimeExecuted, false);
 
     const registry = await readJson(result.workspace.registryPath);
     const registeredCapabilityNames = new Set(registry.skills.flatMap((skill) => (
       skill.intents ?? []
     ).map((intent) => intent.capabilityName)));
-    for (const capability of highRiskWrites) {
-      assert.equal(registeredCapabilityNames.has(capability.name), false, `${capability.name} must not be registered`);
+    for (const capability of writeAndAccountCapabilities) {
+      assert.equal(registeredCapabilityNames.has(capability.name), true, `${capability.name} must remain plannable`);
     }
 
     const userReport = await readJson(path.join(result.artifactDir, 'build_report.user.json'));

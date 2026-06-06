@@ -100,6 +100,12 @@ test('public build contract separates user-facing and compatibility flags', () =
   }
 });
 
+test('public SiteForge CLI accepts confirm-destructive as optional-value flag', () => {
+  assertBuildDispatch(['build', 'https://example.com/', '--task', 'delete-record', '--execute', '--confirm-destructive']);
+  assertBuildDispatch(['build', 'https://example.com/', '--task', 'delete-record', '--execute', '--confirm-destructive=execution-contract:delete-record']);
+  assertBuildDispatch(['build', 'https://example.com/', '--task', 'delete-record', '--execute', '--confirm-destructive', 'execution-contract:delete-record']);
+});
+
 test('public SiteForge CLI runs when invoked through an npm link path', async (t) => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-linked-cli-'));
   try {

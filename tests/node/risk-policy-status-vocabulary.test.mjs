@@ -52,16 +52,16 @@ test('pipeline risk-policy status wrappers keep app risk-policy defaults', () =>
   const capability = { riskLevel: 'write_low' };
   const policy = createCapabilityRiskPolicy(capability);
 
-  assert.equal(normalizeCapabilityEnablementStatus(capability), 'draft_only');
+  assert.equal(normalizeCapabilityEnablementStatus(capability), 'enabled');
   assert.equal(
     normalizeCapabilityEnablementStatus(capability, policy),
     normalizeCapabilityEnablementStatusFromPolicy(capability, policy),
   );
   assert.deepEqual(capabilityEnablementStatusCounts([capability]), {
-    enabled: 0,
+    enabled: 1,
     limited_enabled: 0,
     confirmation_required: 0,
-    draft_only: 1,
+    draft_only: 0,
     disabled: 0,
     debug_only: 0,
     candidate_debug_only: 0,

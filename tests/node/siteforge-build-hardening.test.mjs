@@ -476,7 +476,7 @@ test('validation gates fail closed for missing evidence, missing capability, and
     status: 'active',
     entryNodeIds: ['node:form'],
     confidence: 0.9,
-    safetyLevel: 'requires_confirmation',
+    safetyLevel: 'destructive',
     evidence: urlEvidence(),
     executionPlan: {
       id: 'plan:dangerous-submit',

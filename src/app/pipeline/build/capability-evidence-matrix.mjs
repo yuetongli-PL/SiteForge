@@ -9,11 +9,15 @@ import {
   canonicalCapabilitySemanticToken,
   normalizeSetupCapabilityId,
 } from './capability-id.mjs';
-import { isHighRiskCapability } from './output-validation.mjs';
 import {
   findForcedDisabledActions,
   isReadOnlyFollowSurface,
 } from './risk-policy.mjs';
+
+const DEFAULT_DESTRUCTIVE_ACTION_PATTERN = /\b(?:delete|remove|clear|empty|wipe|overwrite|reset|cancel[-_\s]?(?:order|subscription)|void|destroy|purge|erase|revoke|delete_account|delete_file|delete_data|delete_order|delete_record)\b|\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u8986\u76d6|\u91cd\u7f6e|\u6ce8\u9500|\u53d6\u6d88\u8ba2\u5355|\u9500\u6bc1|\u62b9\u9664|\u64a4\u9500|\u4f5c\u5e9f/u;
+const PAYMENT_ACTION_PATTERN = /\b(?:pay|payment|checkout|purchase|billing|invoice|charge|recharge|wallet|cart|change[-_\s]?payment|payment[-_\s]?method|funds?)\b|\u652f\u4ed8|\u4ed8\u6b3e|\u4ed8\u8d39|\u5145\u503c|\u7ed3\u8d26|\u4e0b\u5355|\u4ed8\u6b3e\u65b9\u5f0f|\u94f6\u884c\u5361/u;
+
+const DESTRUCTIVE_ACTION_PATTERN = /\b(?:delete|remove|clear|empty|wipe|overwrite|reset|cancel|void|destroy|purge|erase|delete_account|delete_file|delete_data|delete_order|delete_record)\b|删除|移除|清空|覆盖|重置|注销|取消订单|销毁|抹除/u;
 
 function nodeSourceLayer(node = /** @type {any} */ ({})) {
   const layer = String(node?.sourceLayer ?? '').trim();
@@ -225,10 +229,12 @@ export function buildCapabilityEvidenceMatrix(context, capability = /** @type {a
   if (authRequired && hasListContainer) observedEvidence.add('list_container_present');
   const hasVisibleItemsOrEmptyState = nodes.some((node) => Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true);
   if (authRequired && hasVisibleItemsOrEmptyState) observedEvidence.add('visible_item_count_or_empty_state');
+  const actionRequiresEntryEvidenceOnly = ['create', 'submit', 'upload', 'download', 'manage'].includes(String(capability.action ?? '').toLowerCase())
+    || ['state_changing', 'payment', 'destructive'].includes(String(capability.safetyLevel ?? '').toLowerCase());
   const requiredEvidence = authRequired
     ? apiAdapterReplayVerified
       ? ['source_node_present', 'not_login_wall', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
-      : authenticatedRouteOnly
+      : authenticatedRouteOnly || actionRequiresEntryEvidenceOnly
       ? ['source_node_present', 'route_accessible', 'not_login_wall', 'sanitized_evidence_present', 'risk_policy_passed']
       : ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
     : apiAdapterReplayVerified
@@ -258,7 +264,7 @@ export function buildCapabilityEvidenceMatrix(context, capability = /** @type {a
     requiredEvidence,
     observedEvidence: observed,
     missingEvidence,
-    activationDecision: missingEvidence.length === 0 ? (authRequired ? 'limited_enabled' : 'active') : 'candidate',
+    activationDecision: missingEvidence.length === 0 ? 'active' : 'candidate',
   };
 }
 
@@ -275,19 +281,43 @@ export function applyCapabilityEvidenceMatrix(context, capability = /** @type {a
     evidenceMatrix: matrix,
     activationEvidence: matrix,
   };
-  const forcedRiskDisabled = ['write_high', 'account_security_critical'].includes(next.risk_level)
-    || ['payment', 'destructive'].includes(next.safetyLevel)
+  const text = `${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''} ${next.blockedAction ?? ''}`;
+  const forcedRiskDisabled = ['payment', 'destructive'].includes(next.safetyLevel)
+    || DEFAULT_DESTRUCTIVE_ACTION_PATTERN.test(text)
+    || PAYMENT_ACTION_PATTERN.test(text)
     || (isReadOnlyFollowSurface(next)
       ? findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).filter((action) => action !== 'follow' && action !== 'unfollow').length > 0
       : findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).length > 0);
-  const confirmationRisk = isHighRiskCapability(next) || next.risk_level === 'write_low';
   if (forcedRiskDisabled) {
-    delete next.executionPlan;
-    next.status = 'disabled';
+    const disposition = 'blocked';
+    if (next.executionPlan) {
+      next.executionPlan = {
+        ...next.executionPlan,
+        governedExecution: true,
+        executionDisposition: disposition,
+        mode: next.executionPlan.mode === 'read_only' ? 'dry_run' : next.executionPlan.mode,
+        dryRunOnly: true,
+        requiresConfirmation: true,
+        autoExecute: false,
+        steps: (Array.isArray(next.executionPlan.steps) ? next.executionPlan.steps : []).map((step) => ({
+          ...step,
+          governedExecution: true,
+          executionDisposition: disposition,
+          submit: false,
+          finalSubmit: false,
+          autoExecute: false,
+        })),
+      };
+    }
+    next.status = 'active';
     next.enabled_status = 'disabled';
     next.default_policy = next.enabled_status;
     next.evidence_status = 'disabled';
     next.activationBlockedReason = next.activationBlockedReason ?? 'forced-action-disabled';
+    next.planCallable = Boolean(next.executionPlan);
+    next.runtimeCallable = disposition !== 'blocked';
+    next.autoExecutable = false;
+    next.executionDisposition = disposition;
     next.evidenceMatrix = {
       ...matrix,
       activationDecision: next.enabled_status,
@@ -295,31 +325,48 @@ export function applyCapabilityEvidenceMatrix(context, capability = /** @type {a
     next.activationEvidence = next.evidenceMatrix;
     return next;
   }
-  if (confirmationRisk && next.status === 'active') {
-    if (next.executionPlan) {
-      next.executionPlan = {
-        ...next.executionPlan,
-        mode: next.executionPlan.mode === 'read_only' ? 'dry_run' : next.executionPlan.mode,
-        dryRunOnly: true,
-        requiresConfirmation: true,
-        autoExecute: false,
-      };
-    }
-    next.enabled_status = next.enabled_status === 'draft_only' ? 'draft_only' : 'confirmation_required';
-    next.default_policy = next.enabled_status;
-    next.evidenceMatrix = {
-      ...matrix,
-      activationDecision: next.enabled_status,
-    };
-    next.activationEvidence = next.evidenceMatrix;
-  }
   if (matrix.authRequired && !canRunAuthenticatedLayer(context.authStateReport)) {
-    delete next.executionPlan;
-    next.status = 'candidate';
-    next.enabled_status = 'candidate_debug_only';
-    next.default_policy = 'candidate_debug_only';
-    next.evidence_status = 'candidate';
+    if (!next.executionPlan) {
+      next.status = 'candidate';
+      next.enabled_status = 'candidate_debug_only';
+      next.default_policy = 'candidate_debug_only';
+      next.evidence_status = 'candidate';
+      next.activationBlockedReason = 'missing_auth_evidence';
+      next.planCallable = false;
+      next.runtimeCallable = false;
+      next.autoExecutable = false;
+      next.executionDisposition = next.executionDisposition ?? 'controlled';
+      next.executionGates = [...new Set([...(Array.isArray(next.executionGates) ? next.executionGates : []), 'session_required'])];
+      next.evidenceMatrix = {
+        ...matrix,
+        activationDecision: 'requires_login',
+      };
+      next.activationEvidence = next.evidenceMatrix;
+      return next;
+    }
+    const disposition = next.executionDisposition === 'blocked' ? 'blocked' : 'controlled';
+    next.executionPlan = {
+      ...next.executionPlan,
+      governedExecution: true,
+      executionDisposition: disposition,
+      autoExecute: false,
+      steps: (Array.isArray(next.executionPlan.steps) ? next.executionPlan.steps : []).map((step) => ({
+        ...step,
+        governedExecution: true,
+        executionDisposition: disposition,
+        autoExecute: false,
+      })),
+    };
+    next.status = 'active';
+    next.enabled_status = next.enabled_status === 'disabled' ? 'disabled' : 'enabled';
+    next.default_policy = next.default_policy === 'disabled' ? 'disabled' : 'enabled';
+    next.evidence_status = next.evidence_status === 'verified' ? 'verified' : 'inferred';
     next.activationBlockedReason = 'missing_auth_evidence';
+    next.planCallable = Boolean(next.executionPlan);
+    next.runtimeCallable = Boolean(next.executionPlan) && disposition !== 'blocked';
+    next.autoExecutable = false;
+    next.executionDisposition = disposition;
+    next.executionGates = [...new Set([...(Array.isArray(next.executionGates) ? next.executionGates : []), 'session_required'])];
     next.evidenceMatrix = {
       ...matrix,
       activationDecision: 'requires_login',
@@ -337,8 +384,8 @@ export function applyCapabilityEvidenceMatrix(context, capability = /** @type {a
     return next;
   }
   if (matrix.authRequired && next.status === 'active') {
-    next.enabled_status = next.enabled_status === 'enabled' ? 'limited_enabled' : (next.enabled_status ?? 'limited_enabled');
-    next.default_policy = next.default_policy === 'read_only' ? 'limited_enabled' : (next.default_policy ?? 'limited_enabled');
+    next.enabled_status = next.enabled_status ?? 'enabled';
+    next.default_policy = next.default_policy === 'read_only' ? 'enabled' : (next.default_policy ?? 'enabled');
     next.evidence_status = 'verified';
   }
   return next;

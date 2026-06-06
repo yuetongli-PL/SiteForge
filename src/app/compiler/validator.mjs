@@ -5,6 +5,13 @@ import {
   isSensitiveFieldName,
 } from '../../domain/sessions/security-guard.mjs';
 import {
+  isSafeStructuredSensitiveDescriptorValue,
+  isStructuredExecutionDescriptorPath,
+  isStructuredExecutionRefFieldName,
+  scanUnsafeDescriptorRuntimeValues,
+  structuredExecutionRefFieldNames,
+} from '../../shared/descriptor-safety.mjs';
+import {
   SITE_CAPABILITY_COMPILER_COMPATIBLE_SCHEMA_VERSIONS,
   SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
   SITE_CAPABILITY_COMPILER_VERSION,
@@ -18,6 +25,7 @@ import {
 
 const FORBIDDEN_COMPILER_FIELD_PATTERNS = Object.freeze([
   /(?:^|[_-])raw[_-]?(?:credential|secret|token|cookie|header|session|profile)(?:$|[_-])/iu,
+  /(?:^|[_-])raw[_-]?(?:body|request|response|payload)(?:$|[_-])/iu,
   /^headers$/iu,
   /^requestHeaders$/iu,
   /^responseHeaders$/iu,
@@ -34,8 +42,22 @@ const FORBIDDEN_COMPILER_FIELD_PATTERNS = Object.freeze([
   /^profilePath$/iu,
   /^browserProfilePath$/iu,
   /^userDataDir$/iu,
+  /^localFilePath$/iu,
+  /^privateFilePath$/iu,
+  /^persistentSessionPath$/iu,
+  /^sessionPath$/iu,
+  /^dynamicImport$/iu,
   /(?:^|[_-])account[_-]?(?:id|identifier)(?:$|[_-])/iu,
   /(?:^|[_-])user[_-]?(?:id|identifier|account)(?:$|[_-])/iu,
+  /(?:^|[_-])profile[_-]?data(?:$|[_-])/iu,
+  /(?:^|[_-])submitted[_-]?(?:content|body|form)(?:$|[_-])/iu,
+  /(?:^|[_-])user[_-]?submitted[_-]?(?:content|body|form)(?:$|[_-])/iu,
+  /(?:^|[_-])order[_-]?(?:data|details?|record|id)(?:$|[_-])/iu,
+  /(?:^|[_-])shipping[_-]?address(?:$|[_-])/iu,
+  /(?:^|[_-])billing[_-]?address(?:$|[_-])/iu,
+  /(?:^|[_-])address(?:$|[_-])/iu,
+  /(?:^|[_-])payment[_-]?(?:field|fields|data|method|instrument|token)?(?:$|[_-])/iu,
+  /(?:^|[_-])card[_-]?(?:number|holder|expiry|cvv|cvc)?(?:$|[_-])/iu,
   /(?:^|[_-])ip[_-]?(?:address)?(?:$|[_-])/iu,
   /(?:^|[_-])network[_-]?identifier(?:$|[_-])/iu,
   /(?:^|[_-])device[_-]?fingerprint(?:$|[_-])/iu,
@@ -56,22 +78,60 @@ const FORBIDDEN_COMPILER_FIELD_PATTERNS = Object.freeze([
 ]);
 
 const FORBIDDEN_RUNTIME_FIELD_PATTERNS = Object.freeze([
-  /^downloadPolicy$/iu,
-  /^standardTaskList$/iu,
   /^sessionView$/iu,
-  /^siteAdapterDecision$/iu,
   /^siteAdapterRuntime$/iu,
-  /^resolvedResources$/iu,
   /^downloaderPayload$/iu,
   /^downloaderTask$/iu,
   /^downloaderCommand$/iu,
   /^taskRunner$/iu,
+  /^standardTaskList$/iu,
   /^browserContext$/iu,
+  /^siteAdapterDecision$/iu,
+  /^siteAdapterInstance$/iu,
+  /^adapterInstance$/iu,
   /^runtimeHandler$/iu,
   /^handler$/iu,
   /^execute$/iu,
   /^executor$/iu,
   /^page$/iu,
+]);
+
+const ALWAYS_FORBIDDEN_COMPILER_DESCRIPTOR_FIELD_PATTERNS = Object.freeze([
+  /(?:^|[_-])raw[_-]?(?:credential|secret|token|cookie|header|session|profile|body|request|response|payload)(?:$|[_-])/iu,
+  /^headers$/iu,
+  /^requestHeaders$/iu,
+  /^responseHeaders$/iu,
+  /^requestPayload$/iu,
+  /^responsePayload$/iu,
+  /^requestBody$/iu,
+  /^responseBody$/iu,
+  /^cookieJar$/iu,
+  /^storageState$/iu,
+  /^credentialRef$/iu,
+  /^authStoreRef$/iu,
+  /^sid$/iu,
+  /^profileRef$/iu,
+  /^profilePath$/iu,
+  /^browserProfilePath$/iu,
+  /^userDataDir$/iu,
+  /^localFilePath$/iu,
+  /^privateFilePath$/iu,
+  /^persistentSessionPath$/iu,
+  /^sessionPath$/iu,
+  /^dynamicImport$/iu,
+  /captcha[_-]?bypass/iu,
+  /captcha[_-]?(?:solve|solver|unlock)/iu,
+  /(?:solve|solver|unlock)[_-]?captcha/iu,
+  /anti[_-]?bot[_-]?bypass/iu,
+  /access[_-]?control[_-]?bypass/iu,
+  /bypass[_-]?access[_-]?control/iu,
+  /mfa[_-]?bypass|multi[_-]?factor[_-]?bypass|2fa[_-]?bypass/iu,
+  /platform[_-]?risk[_-]?(?:bypass|evasion|evade)/iu,
+  /risk[_-]?control[_-]?(?:bypass|evasion|evade)/iu,
+  /permission[_-]?bypass|paywall[_-]?bypass|vip[_-]?bypass/iu,
+  /credential[_-]?extraction/iu,
+  /privilege[_-]?expansion/iu,
+  /privilege[_-]?(?:escalation|escalate)/iu,
 ]);
 
 const COMPILER_REF_FIELD_NAMES = Object.freeze(new Set([
@@ -84,11 +144,12 @@ const COMPILER_REF_FIELD_NAMES = Object.freeze(new Set([
   'testEvidenceRefs',
   'changedSourceRefs',
   'sourceInventories',
+  ...structuredExecutionRefFieldNames(),
 ]));
 
 const ALLOWED_CONFIG_REF_PATTERN = /^config\/(?:site-registry|site-capabilities)\.json(?:#[a-z0-9._:-]+)?$/iu;
 const ALLOWED_COMPILER_REF_PATTERN =
-  /^(?:artifact|adapter-metadata|api-discovery|capabilities|capture|compile|compiler|coverage|dom-facts|dry-run-trace|execution|execution-path-dry-run|fixture|graph|inventory|layer|manifest|node|planner|redacted-artifact|registry|requirement|risk-policy|route|schema|site-capabilities|site-registry|synthetic-fixture|test):[a-z0-9._:/-]+$/iu;
+  /^(?:artifact|adapter-metadata|api-discovery|auth-requirement|capabilities|capture|compile|compiler|coverage|dom-facts|downloader-task|dry-run-trace|execution|execution-contract|execution-path-dry-run|fixture|governance-policy|graph|inventory|layer|manifest|node|planner|policy|policy-decision|redacted-artifact|registry|requirement|risk-policy|route|runtime-binding|runtime-invocation|schema|session-requirement|site-capabilities|site-registry|synthetic-fixture|test):[a-z0-9._:/-]+$/iu;
 
 function isPlainObject(value) {
   return value !== null
@@ -97,10 +158,13 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function fail(message, code) {
+function fail(message, code, details = undefined) {
   /** @type {Error & Record<string, any>} */
   const error = new Error(message);
   error.code = code;
+  if (details !== undefined) {
+    error.details = details;
+  }
   throw error;
 }
 
@@ -138,7 +202,7 @@ function isUnsafeRefSyntax(value) {
     || /\b\d{1,3}(?:\.\d{1,3}){3}\b/u.test(text)
     || /@/u.test(text)
     || /\.(?:cmd|bat|ps1|sh|exe|dll|mjs|cjs|js)(?:$|[#:/])/iu.test(text)
-    || /\b(?:cookie|authorization|sessdata|csrf|access[_-]?token|refresh[_-]?token|session[_-]?id|browser[_-]?profile|user[_-]?data[_-]?dir)\b/iu.test(text);
+    || /\b(?:cookie|authorization|credential|sessdata|csrf|access[_-]?token|refresh[_-]?token|session[_-]?id|browser[_-]?profile|user[_-]?data[_-]?dir)\b/iu.test(text);
 }
 
 function assertCompilerEvidenceRefAllowed(value, name) {
@@ -269,13 +333,31 @@ function assertCapabilityCoverageSummary(summary) {
   }
 }
 
-function isForbiddenCompilerFieldName(name) {
+function isStructuredDescriptorAllowedField(name, value, path = []) {
+  if (ALWAYS_FORBIDDEN_COMPILER_DESCRIPTOR_FIELD_PATTERNS.some((pattern) => pattern.test(String(name ?? '')))) {
+    return false;
+  }
+  const childPath = [...path, String(name ?? '')];
+  if (!isStructuredExecutionDescriptorPath(path) && !isStructuredExecutionDescriptorPath(childPath)) {
+    return false;
+  }
+  return isSafeStructuredSensitiveDescriptorValue(value, childPath, {
+    isSensitiveFieldName,
+  });
+}
+
+function isForbiddenCompilerFieldName(name, value, path = []) {
   const normalized = String(name ?? '').trim();
-  return Boolean(normalized) && (
-    isSensitiveFieldName(normalized)
-    || FORBIDDEN_COMPILER_FIELD_PATTERNS.some((pattern) => pattern.test(normalized))
-    || FORBIDDEN_RUNTIME_FIELD_PATTERNS.some((pattern) => pattern.test(normalized))
-  );
+  if (!normalized) {
+    return false;
+  }
+  const sensitive = isSensitiveFieldName(normalized);
+  const forbiddenCompilerField = FORBIDDEN_COMPILER_FIELD_PATTERNS.some((pattern) => pattern.test(normalized));
+  const forbiddenRuntimeField = FORBIDDEN_RUNTIME_FIELD_PATTERNS.some((pattern) => pattern.test(normalized));
+  if ((sensitive || forbiddenCompilerField) && isStructuredDescriptorAllowedField(normalized, value, path)) {
+    return false;
+  }
+  return sensitive || forbiddenCompilerField || forbiddenRuntimeField;
 }
 
 function scanForbiddenCompilerFields(value, findings, path = []) {
@@ -289,7 +371,7 @@ function scanForbiddenCompilerFields(value, findings, path = []) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
-    if (isForbiddenCompilerFieldName(key)) {
+    if (isForbiddenCompilerFieldName(key, child, path)) {
       findings.push({ path: [...path, key].join('.') });
       continue;
     }
@@ -309,7 +391,10 @@ function scanCompilerEvidenceRefs(value, findings, path = []) {
   }
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...path, key];
-    if (COMPILER_REF_FIELD_NAMES.has(key)) {
+    if (COMPILER_REF_FIELD_NAMES.has(key) || isStructuredExecutionRefFieldName(key)) {
+      if (child === undefined || child === null) {
+        continue;
+      }
       const values = Array.isArray(child) ? child : [child];
       for (const [index, refValue] of values.entries()) {
         if (isPlainObject(refValue)) {
@@ -339,11 +424,15 @@ export function assertNoCompilerSensitiveMaterial(value) {
   const findings = [];
   scanForbiddenCompilerFields(value, findings);
   if (findings.length > 0) {
-    fail('Compiler data contains forbidden sensitive or runtime fields', 'compiler.raw_sensitive_material_rejected');
+    fail('Compiler data contains forbidden sensitive or runtime fields', 'compiler.raw_sensitive_material_rejected', { findings });
+  }
+  scanUnsafeDescriptorRuntimeValues(value, findings);
+  if (findings.length > 0) {
+    fail('Compiler data contains forbidden runtime values', 'compiler.raw_sensitive_material_rejected', { findings });
   }
   scanCompilerEvidenceRefs(value, findings);
   if (findings.length > 0) {
-    fail('Compiler data contains unsafe evidence refs', 'compiler.raw_sensitive_material_rejected');
+    fail('Compiler data contains unsafe evidence refs', 'compiler.raw_sensitive_material_rejected', { findings });
   }
   try {
     assertNoForbiddenPatterns(value);

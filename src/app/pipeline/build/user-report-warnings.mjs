@@ -18,7 +18,7 @@ export function buildUserFacingWarnings(report, resultStatus, context = null, pa
     warnings.push('Auto-discovery used sanitized SPA route/state summaries; browser-rendered crawl and raw network tracing are not enabled in this public build path.');
   }
   if (context?.options?.internalRawNetwork === true) {
-    warnings.push('Raw network capture was enabled; raw artifacts are kept out of generated Skill, current outputs, and registry.');
+    warnings.push('Raw network capture was enabled for controlled in-memory replay only; raw headers, bodies, cookies, tokens, and session material were not persisted.');
   }
   if (resultStatus === 'failed' && report?.reason) {
     warnings.push(report.reason);

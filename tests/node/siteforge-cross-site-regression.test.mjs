@@ -270,24 +270,35 @@ test('non-x known-site capability generation filters duplicates and keeps callab
 
   const following = capabilities.find((capability) => capability.name === 'read following timeline');
   const draft = capabilities.find((capability) => capability.name === 'create post draft');
-  const disabledWrite = capabilities.find((capability) => capability.name === 'publish post');
+  const executableWrite = capabilities.find((capability) => capability.name === 'publish post');
   assert.ok(following);
   assert.ok(draft);
-  assert.ok(disabledWrite);
-  assert.equal(following.enabled_status, 'limited_enabled');
+  assert.ok(executableWrite);
+  assert.equal(following.enabled_status, 'enabled');
   assert.equal(following.status, 'active');
   assert.match(following.user_facing_name, /\p{Script=Han}/u);
-  assert.equal(draft.enabled_status, 'draft_only');
-  assert.equal(draft.executionPlan.dryRunOnly, true);
-  assert.equal(disabledWrite.enabled_status, 'disabled');
-  assert.equal(disabledWrite.executionPlan, undefined);
+  assert.equal(draft.enabled_status, 'enabled');
+  assert.equal(draft.executionPlan.dryRunOnly, false);
+  assert.equal(executableWrite.enabled_status, 'enabled');
+  assert.equal(executableWrite.status, 'active');
+  assert.equal(executableWrite.planCallable, true);
+  assert.equal(executableWrite.runtimeCallable, true);
+  assert.equal(executableWrite.autoExecutable, true);
+  assert.equal(executableWrite.executionDisposition, 'allow');
+  assert.notEqual(executableWrite.executionPlan.governedExecution, true);
+  assert.equal(executableWrite.executionPlan.autoExecute, false);
 
-  const intents = generateAutoIntentRecords(context, [following, draft, disabledWrite]);
+  const intents = generateAutoIntentRecords(context, [following, draft, executableWrite]);
   // @ts-ignore
   const intentsByCapability = Map.groupBy(intents, (intent) => intent.capabilityId);
   assert.equal(intentsByCapability.get(following.id).every((intent) => intent.callable === true), true);
   assert.equal(intentsByCapability.get(draft.id).every((intent) => intent.callable === true), true);
-  assert.equal(intentsByCapability.get(disabledWrite.id).every((intent) => intent.callable === false), true);
+  assert.equal(intentsByCapability.get(executableWrite.id).every((intent) => (
+    intent.callable === true
+    && intent.runtimeCallable === true
+    && intent.autoExecutable === true
+    && intent.executionDisposition === 'allow'
+  )), true);
   assert.equal(intents.some((intent) => /\p{Script=Han}/u.test(intent.canonicalUtterance)), true);
 });
 

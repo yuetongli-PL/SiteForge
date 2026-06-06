@@ -20,6 +20,8 @@ export const PUBLIC_BOOLEAN_BUILD_FLAGS = Object.freeze([
   '--compact',
   '--no-tty',
   '--force-tty',
+  '--execute',
+  '--allow-destructive-execution',
 ]);
 
 export const COMPAT_BOOLEAN_BUILD_FLAGS = Object.freeze([
@@ -56,6 +58,9 @@ export const PUBLIC_STRING_VALUE_BUILD_FLAGS = Object.freeze([
   '--max-pages',
   '--max-seeds',
   '--max-sitemaps',
+  '--task',
+  '--confirm-risk',
+  '--confirm-destructive',
 ]);
 
 export const COMPAT_STRING_VALUE_BUILD_FLAGS = Object.freeze([
@@ -80,6 +85,9 @@ export const PUBLIC_BUILD_HELP_FLAGS = Object.freeze([
   '--max-pages <n>',
   '--max-seeds <n>',
   '--max-sitemaps <n>',
+  '--task <intent-or-capability>',
+  '--confirm-risk <id>',
+  '--confirm-destructive',
 ]);
 
 export const PUBLIC_BUILD_HELP = `Usage:
@@ -105,6 +113,11 @@ Flags:
   --max-pages <n>
   --max-seeds <n>
   --max-sitemaps <n>
+  --task <intent-or-capability>  Generate a task plan and RuntimeInvocationRequest for a compiled capability.
+  --execute             Request app/runtime governance decision for --task.
+  --confirm-risk <id>   Confirm a high-risk governed execution contract or capability id.
+  --allow-destructive-execution
+  --confirm-destructive [id]
   --explain
   --report user|debug|both
   --json

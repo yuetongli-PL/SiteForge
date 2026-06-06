@@ -40,10 +40,9 @@ export function isSensitiveReadCapability(capability = /** @type {any} */ ({})) 
 }
 
 export function isDraftWriteCapability(capability = /** @type {any} */ ({})) {
-  const riskLevel = asLowerText(capability.risk_level ?? capability.riskPolicy?.riskLevel);
   const defaultPolicy = asLowerText(capability.default_policy);
   const safetyLevel = asLowerText(capability.safety_level ?? capability.safetyLevel);
-  return riskLevel === 'write_low' || defaultPolicy === 'draft_only' || safetyLevel === 'requires_confirmation';
+  return capability.executionDisposition === 'confirm_required' || defaultPolicy === 'draft_only' || safetyLevel === 'requires_confirmation';
 }
 
 export function isForcedPrivateMessageCapability(capability = /** @type {any} */ ({})) {
@@ -60,16 +59,19 @@ export function isForcedPrivateMessageCapability(capability = /** @type {any} */
 }
 
 export function isOrdinaryConfirmationBlocked(capability = /** @type {any} */ ({})) {
-  if (isForcedPrivateMessageCapability(capability)) {
-    return true;
-  }
   const status = asLowerText(capability.status);
   const enabledStatus = asLowerText(capability.enabled_status);
-  if (status === 'disabled' || enabledStatus === 'disabled') {
+  if (status === 'disabled' || enabledStatus === 'disabled' || capability.executionDisposition === 'blocked') {
     return true;
   }
-  const riskLevel = asLowerText(capability.risk_level ?? capability.riskPolicy?.riskLevel);
-  return riskLevel === 'write_high' || riskLevel === 'account_security_critical';
+  const text = [
+    capability.id,
+    capability.name,
+    capability.action,
+    capability.object,
+    capability.safetyLevel,
+  ].map(asLowerText).join(' ');
+  return /payment|purchase|checkout|billing|invoice|charge|wallet|cart|pay|delete|remove|clear|empty|wipe|overwrite|reset|destroy|purge|erase|revoke|cancel[-_\s]?(?:order|subscription)/iu.test(text);
 }
 
 export function capabilityConfirmationGroup(capability = /** @type {any} */ ({})) {

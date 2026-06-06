@@ -5,18 +5,24 @@ import {
   isSensitiveFieldName,
 } from '../../sessions/security-guard.mjs';
 import {
+  isSafeStructuredSensitiveDescriptorValue,
+  isStructuredExecutionDescriptorPath,
+  isStructuredExecutionRefFieldName,
+  scanUnsafeDescriptorRuntimeValues,
+  structuredExecutionRefFieldNames,
+} from '../../../shared/descriptor-safety.mjs';
+import {
+  EXECUTION_GATES,
   EXECUTION_STATUSES,
+  EXECUTION_VERDICTS,
   SITE_CAPABILITY_EXECUTION_COMPATIBLE_SCHEMA_VERSIONS,
+  SITE_CAPABILITY_EXECUTION_SCHEMA_VERSION,
 } from './schema.mjs';
 
 const FORBIDDEN_EXECUTION_FIELDS = Object.freeze([
-  /^downloadPolicy$/iu,
-  /^standardTaskList$/iu,
   /^sessionView$/iu,
   /^sessionLease$/iu,
-  /^siteAdapterDecision$/iu,
   /^siteAdapterRuntime$/iu,
-  /^resolvedResources$/iu,
   /^downloaderPayload$/iu,
   /^downloaderTask$/iu,
   /^downloaderCommand$/iu,
@@ -28,13 +34,42 @@ const FORBIDDEN_EXECUTION_FIELDS = Object.freeze([
   /^executor$/iu,
   /^headers$/iu,
   /^requestHeaders$/iu,
+  /^responseHeaders$/iu,
+  /^requestPayload$/iu,
+  /^responsePayload$/iu,
+  /^requestBody$/iu,
+  /^responseBody$/iu,
+  /(?:^|[_-])raw[_-]?(?:credential|secret|token|cookie|header|session|profile|body|request|response|payload)(?:$|[_-])/iu,
   /^storageState$/iu,
+  /^cookieJar$/iu,
+  /^credentialRef$/iu,
+  /^authStoreRef$/iu,
+  /^profileRef$/iu,
   /^profilePath$/iu,
   /^browserProfilePath$/iu,
   /^userDataDir$/iu,
+  /^localFilePath$/iu,
+  /^privateFilePath$/iu,
+  /^persistentSessionPath$/iu,
+  /^sessionPath$/iu,
+  /^dynamicImport$/iu,
   /(?:^|[_-])account[_-]?(?:id|identifier)(?:$|[_-])/iu,
+  /(?:^|[_-])user[_-]?(?:id|identifier|account)(?:$|[_-])/iu,
+  /(?:^|[_-])profile[_-]?data(?:$|[_-])/iu,
+  /(?:^|[_-])submitted[_-]?(?:content|body|form)(?:$|[_-])/iu,
+  /(?:^|[_-])user[_-]?submitted[_-]?(?:content|body|form)(?:$|[_-])/iu,
+  /(?:^|[_-])order[_-]?(?:data|details?|record|id)(?:$|[_-])/iu,
+  /(?:^|[_-])shipping[_-]?address(?:$|[_-])/iu,
+  /(?:^|[_-])billing[_-]?address(?:$|[_-])/iu,
+  /(?:^|[_-])address(?:$|[_-])/iu,
+  /(?:^|[_-])payment[_-]?(?:field|fields|data|method|instrument|token)?(?:$|[_-])/iu,
+  /(?:^|[_-])card[_-]?(?:number|holder|expiry|cvv|cvc)?(?:$|[_-])/iu,
   /(?:^|[_-])ip[_-]?(?:address)?(?:$|[_-])/iu,
   /(?:^|[_-])device[_-]?fingerprint(?:$|[_-])/iu,
+  /^standardTaskList$/iu,
+  /^siteAdapterDecision$/iu,
+  /^siteAdapterInstance$/iu,
+  /^adapterInstance$/iu,
 ]);
 
 const EXECUTION_REF_FIELD_NAMES = Object.freeze(new Set([
@@ -42,15 +77,57 @@ const EXECUTION_REF_FIELD_NAMES = Object.freeze(new Set([
   'artifactRefs',
   'capabilityPlanRef',
   'plannerHandoffRef',
+  'planRef',
+  'intentRef',
+  'executionContractRef',
+  'policyDecisionRef',
+  'runtimeInvocationRequestRef',
   'affectedNodeRefs',
   'affectedCapabilityRefs',
   'affectedRouteRefs',
   'evidenceRef',
   'evidenceRefs',
+  ...structuredExecutionRefFieldNames(),
 ]));
 
+const ALWAYS_FORBIDDEN_EXECUTION_DESCRIPTOR_FIELD_PATTERNS = Object.freeze([
+  /^sessionView$/iu,
+  /^sessionLease$/iu,
+  /^siteAdapterRuntime$/iu,
+  /^downloaderPayload$/iu,
+  /^downloaderTask$/iu,
+  /^downloaderCommand$/iu,
+  /^runDownloadTask$/iu,
+  /^executeMediaDownloads$/iu,
+  /^browserContext$/iu,
+  /^handler$/iu,
+  /^execute$/iu,
+  /^executor$/iu,
+  /^headers$/iu,
+  /^requestHeaders$/iu,
+  /^responseHeaders$/iu,
+  /^requestPayload$/iu,
+  /^responsePayload$/iu,
+  /^requestBody$/iu,
+  /^responseBody$/iu,
+  /(?:^|[_-])raw[_-]?(?:credential|secret|token|cookie|header|session|profile|body|request|response|payload)(?:$|[_-])/iu,
+  /^storageState$/iu,
+  /^cookieJar$/iu,
+  /^credentialRef$/iu,
+  /^authStoreRef$/iu,
+  /^profileRef$/iu,
+  /^profilePath$/iu,
+  /^browserProfilePath$/iu,
+  /^userDataDir$/iu,
+  /^localFilePath$/iu,
+  /^privateFilePath$/iu,
+  /^persistentSessionPath$/iu,
+  /^sessionPath$/iu,
+  /^dynamicImport$/iu,
+]);
+
 const ALLOWED_EXECUTION_REF_PATTERN =
-  /^(?:artifact|capability|compiler|coverage|execution|graph|layer|manifest|node|plan|planner|planner-handoff|route|test):[a-z0-9._:/-]+$/iu;
+  /^(?:artifact|auth-requirement|capability|compiler|coverage|downloader-task|execution|execution-contract|governance-policy|graph|intent|layer|manifest|node|plan|planner|planner-handoff|policy|policy-decision|route|runtime-binding|runtime-invocation|schema|session-requirement|test):[a-z0-9._:/-]+$/iu;
 
 function isPlainObject(value) {
   return value !== null
@@ -93,7 +170,7 @@ function isUnsafeRefSyntax(value) {
     || /\b\d{1,3}(?:\.\d{1,3}){3}\b/u.test(text)
     || /@/u.test(text)
     || /\.(?:cmd|bat|ps1|sh|exe|dll|mjs|cjs|js)(?:$|[#:/])/iu.test(text)
-    || /\b(?:cookie|authorization|sessdata|csrf|access[_-]?token|refresh[_-]?token|session[_-]?id|browser[_-]?profile|user[_-]?data[_-]?dir)\b/iu.test(text);
+    || /\b(?:cookie|authorization|credential|sessdata|csrf|access[_-]?token|refresh[_-]?token|session[_-]?id|browser[_-]?profile|user[_-]?data[_-]?dir)\b/iu.test(text);
 }
 
 function assertExecutionEvidenceRefAllowed(value, name) {
@@ -110,6 +187,19 @@ function assertSchemaVersion(value, name) {
   }
 }
 
+function isStructuredDescriptorAllowedField(name, value, path = []) {
+  if (ALWAYS_FORBIDDEN_EXECUTION_DESCRIPTOR_FIELD_PATTERNS.some((pattern) => pattern.test(String(name ?? '')))) {
+    return false;
+  }
+  const childPath = [...path, String(name ?? '')];
+  if (!isStructuredExecutionDescriptorPath(path) && !isStructuredExecutionDescriptorPath(childPath)) {
+    return false;
+  }
+  return isSafeStructuredSensitiveDescriptorValue(value, childPath, {
+    isSensitiveFieldName,
+  });
+}
+
 function scan(value, findings, path = []) {
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) {
@@ -121,7 +211,12 @@ function scan(value, findings, path = []) {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
-    if (isSensitiveFieldName(key) || FORBIDDEN_EXECUTION_FIELDS.some((pattern) => pattern.test(key))) {
+    const sensitive = isSensitiveFieldName(key);
+    const forbidden = FORBIDDEN_EXECUTION_FIELDS.some((pattern) => pattern.test(key));
+    if (
+      (sensitive || forbidden)
+      && !isStructuredDescriptorAllowedField(key, child, path)
+    ) {
       findings.push([...path, key].join('.'));
       continue;
     }
@@ -141,7 +236,10 @@ function scanExecutionEvidenceRefs(value, findings, path = []) {
   }
   for (const [key, child] of Object.entries(value)) {
     const childPath = [...path, key];
-    if (EXECUTION_REF_FIELD_NAMES.has(key)) {
+    if (EXECUTION_REF_FIELD_NAMES.has(key) || isStructuredExecutionRefFieldName(key)) {
+      if (child === undefined || child === null) {
+        continue;
+      }
       const values = Array.isArray(child) ? child : [child];
       for (const [index, refValue] of values.entries()) {
         try {
@@ -161,6 +259,10 @@ export function assertNoExecutionSensitiveMaterial(value) {
   scan(value, findings);
   if (findings.length) {
     fail('Execution descriptor contains forbidden sensitive or runtime fields', 'execution.raw_sensitive_material_rejected');
+  }
+  scanUnsafeDescriptorRuntimeValues(value, findings);
+  if (findings.length) {
+    fail('Execution descriptor contains forbidden runtime values', 'execution.raw_sensitive_material_rejected');
   }
   scanExecutionEvidenceRefs(value, findings);
   if (findings.length) {
@@ -273,5 +375,53 @@ export function assertCoverageDeltaCompatible(delta) {
     fail('CoverageDelta complete coverage requires evidence', 'execution.coverage_delta_invalid');
   }
   assertLayerDryRunFeedbackFlags(delta, 'CoverageDelta');
+  return true;
+}
+
+export function assertRuntimeInvocationRequestCompatible(request) {
+  assertPlainObject(request, 'RuntimeInvocationRequest');
+  assertSchemaVersion(request.schemaVersion, 'RuntimeInvocationRequest');
+  assertNoExecutionSensitiveMaterial(request);
+  if (request.requestType !== 'RuntimeInvocationRequest') {
+    fail('RuntimeInvocationRequest requestType is required', 'execution.runtime_invocation_invalid');
+  }
+  if (request.runtimeBoundary !== 'app/runtime') {
+    fail('RuntimeInvocationRequest runtimeBoundary must be app/runtime', 'execution.runtime_invocation_invalid');
+  }
+  if (request.descriptorOnly !== true || request.redactionRequired !== true) {
+    fail('RuntimeInvocationRequest must be descriptor-only and redaction-required', 'execution.redaction_required');
+  }
+  if (request.executionAttempted !== false || request.sideEffectAttempted !== false) {
+    fail('RuntimeInvocationRequest cannot claim runtime execution', 'execution.layer_handoff_unavailable');
+  }
+  if (request.schemaVersion !== SITE_CAPABILITY_EXECUTION_SCHEMA_VERSION) {
+    fail('RuntimeInvocationRequest schemaVersion is not compatible', 'execution.version_incompatible');
+  }
+  assertNonEmptyString(request.requestId, 'RuntimeInvocationRequest requestId');
+  assertNonEmptyString(request.capabilityId, 'RuntimeInvocationRequest capabilityId');
+  assertNonEmptyString(request.executionContractRef, 'RuntimeInvocationRequest executionContractRef');
+  assertExecutionEvidenceRefAllowed(request.executionContractRef, 'RuntimeInvocationRequest executionContractRef');
+  if (request.planRef !== undefined) {
+    assertExecutionEvidenceRefAllowed(request.planRef, 'RuntimeInvocationRequest planRef');
+  }
+  if (request.intentRef !== undefined) {
+    assertExecutionEvidenceRefAllowed(request.intentRef, 'RuntimeInvocationRequest intentRef');
+  }
+  if (request.policyDecisionRef !== undefined) {
+    assertExecutionEvidenceRefAllowed(request.policyDecisionRef, 'RuntimeInvocationRequest policyDecisionRef');
+  }
+  if (request.verdictHint !== undefined && !EXECUTION_VERDICTS.includes(request.verdictHint)) {
+    fail('RuntimeInvocationRequest verdictHint is unsupported', 'execution.runtime_invocation_invalid');
+  }
+  if (request.requiredGates !== undefined) {
+    if (!Array.isArray(request.requiredGates)) {
+      fail('RuntimeInvocationRequest requiredGates must be an array', 'execution.runtime_invocation_invalid');
+    }
+    for (const gate of request.requiredGates) {
+      if (!EXECUTION_GATES.includes(gate)) {
+        fail('RuntimeInvocationRequest requiredGates contains an unsupported gate', 'execution.runtime_invocation_invalid');
+      }
+    }
+  }
   return true;
 }

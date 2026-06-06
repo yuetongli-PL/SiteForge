@@ -11,3 +11,4 @@ export * from './plan-artifact.mjs';
 export * from './observability.mjs';
 export * from './dry-run.mjs';
 export * from './layer-handoff.mjs';
+export * from './runtime-invocation-request.mjs';

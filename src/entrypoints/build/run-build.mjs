@@ -11,6 +11,9 @@ import {
 } from '../../app/pipeline/build/index.mjs';
 import { prepareSiteForgeBuildSetup } from '../../app/pipeline/build/setup-assistant.mjs';
 import {
+  createProductionRuntimeProviderRegistry,
+} from '../../app/runtime/index.mjs';
+import {
   parseIntegerOption,
   readCliValue,
 } from '../../infra/cli/parse-values.mjs';
@@ -621,6 +624,22 @@ function applySiteForgeCliDefaults(options) {
   return next;
 }
 
+export function applyDefaultProductionRuntimeProviderRegistry(options = /** @type {any} */ ({})) {
+  if (options.execute !== true || !options.executionTask) {
+    return options;
+  }
+  if (
+    options.runtimeProviderRegistry
+    || typeof options.runtimeProviderRegistryFactory === 'function'
+  ) {
+    return options;
+  }
+  return {
+    ...options,
+    runtimeProviderRegistryFactory: createProductionRuntimeProviderRegistry,
+  };
+}
+
 async function closeSiteForgeWebInteraction(options = /** @type {any} */ ({})) {
   const session = options.webInteractionSession;
   delete options.webInteractionSession;
@@ -631,6 +650,26 @@ async function closeSiteForgeWebInteraction(options = /** @type {any} */ ({})) {
 
 function readValue(args, current, index, options = /** @type {any} */ ({})) {
   return readCliValue(args, current, index, options);
+}
+
+function readOptionalValue(args, current, index) {
+  if (String(current).includes('=')) {
+    return {
+      value: String(current).slice(String(current).split('=')[0].length + 1) || true,
+      nextIndex: index,
+    };
+  }
+  const next = args[index + 1];
+  if (!next || String(next).startsWith('--')) {
+    return {
+      value: true,
+      nextIndex: index,
+    };
+  }
+  return {
+    value: next,
+    nextIndex: index + 1,
+  };
 }
 
 export function parseCliArgs(argv) {
@@ -686,6 +725,24 @@ export function parseCliArgs(argv) {
         const { value, nextIndex } = readValue(args, current, index);
         options.maxSitemaps = normalizePositiveInteger(value, '--max-sitemaps');
         options.maxSitemapsExplicit = true;
+        index = nextIndex;
+        break;
+      }
+      case '--task': {
+        const { value, nextIndex } = readValue(args, current, index);
+        options.executionTask = value;
+        index = nextIndex;
+        break;
+      }
+      case '--confirm-risk': {
+        const { value, nextIndex } = readValue(args, current, index);
+        options.confirmRisk = value;
+        index = nextIndex;
+        break;
+      }
+      case '--confirm-destructive': {
+        const { value, nextIndex } = readOptionalValue(args, current, index);
+        options.confirmDestructive = value;
         index = nextIndex;
         break;
       }
@@ -822,6 +879,12 @@ export function parseCliArgs(argv) {
         break;
       case '--force-tty':
         options.forceTty = true;
+        break;
+      case '--execute':
+        options.execute = true;
+        break;
+      case '--allow-destructive-execution':
+        options.allowDestructiveExecution = true;
         break;
       default:
         throw new Error(`未知参数: ${current}`);
@@ -1192,6 +1255,7 @@ async function runCli() {
   try {
     buildOptions = await applyLocalBuildConfig(url, options);
     setup = await prepareSiteForgeBuildSetup(url, buildOptions);
+    setup.buildOptions = applyDefaultProductionRuntimeProviderRegistry(setup.buildOptions);
     result = await runSiteForgeBuild(url, setup.buildOptions);
     result.setupAssistant = {
       status: setup.status,

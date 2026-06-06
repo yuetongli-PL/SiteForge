@@ -31,6 +31,8 @@ const FORBIDDEN_SENTINELS = Object.freeze([
   'SENTINEL_SESSION_MATERIAL_SHOULD_NOT_APPEAR',
   'SENTINEL_BROWSER_PROFILE_SHOULD_NOT_APPEAR',
   'SENTINEL_PRIVATE_PAYLOAD_SHOULD_NOT_APPEAR',
+  'SENTINEL_CDP_GUARD_SETUP_ERROR_SHOULD_NOT_APPEAR',
+  'SENTINEL_RAW_CDP_PAYLOAD_SHOULD_NOT_APPEAR',
 ]);
 
 function createRequest({
@@ -187,11 +189,16 @@ function createFakeBrowserRuntimeDeps(scenario = {}) {
   const state = {
     launchCount: 0,
     closeCount: 0,
+    navigateCount: 0,
     fillCount: 0,
     clickCount: 0,
+    guardSetupAttempts: [],
+    guardSetupFailures: [],
     continuedRequests: [],
     failedRequests: [],
     closedTargets: [],
+    popupsCreated: [],
+    downloadsCreated: [],
     cdpMethods: [],
   };
   const listeners = new Map();
@@ -205,6 +212,18 @@ function createFakeBrowserRuntimeDeps(scenario = {}) {
     },
     async send(method, params = {}) {
       state.cdpMethods.push(method);
+      if (['Fetch.enable', 'Target.setDiscoverTargets', 'Browser.setDownloadBehavior'].includes(method)) {
+        state.guardSetupAttempts.push(method);
+      }
+      if (scenario.guardSetupFailureMethod === method) {
+        state.guardSetupFailures.push(method);
+        const error = new Error(`SENTINEL_CDP_GUARD_SETUP_ERROR_SHOULD_NOT_APPEAR ${method}`);
+        error.details = {
+          method,
+          payload: 'SENTINEL_RAW_CDP_PAYLOAD_SHOULD_NOT_APPEAR',
+        };
+        throw error;
+      }
       if (method === 'Fetch.continueRequest') {
         state.continuedRequests.push(params.requestId);
       }
@@ -238,7 +257,9 @@ function createFakeBrowserRuntimeDeps(scenario = {}) {
     client,
     sessionId: 'session-1',
     targetId: 'target-main',
-    async navigateAndWait() {},
+    async navigateAndWait() {
+      state.navigateCount += 1;
+    },
     async callPageFunction(fn, ...args) {
       switch (fn.name) {
         case 'selectorInspection':
@@ -257,6 +278,7 @@ function createFakeBrowserRuntimeDeps(scenario = {}) {
             });
           }
           if (scenario.popupAfterClick) {
+            state.popupsCreated.push('popup-target-1');
             client.emit('Target.targetCreated', {
               targetInfo: {
                 targetId: 'popup-target-1',
@@ -266,6 +288,7 @@ function createFakeBrowserRuntimeDeps(scenario = {}) {
             }, null);
           }
           if (scenario.downloadAfterClick) {
+            state.downloadsCreated.push('download-1');
             client.emit('Page.downloadWillBegin', {
               guid: 'download-1',
               url: 'https://external.invalid/download?token=SENTINEL_TOKEN_SHOULD_NOT_APPEAR',
@@ -357,6 +380,36 @@ function assertSafeBrowserTrace(report) {
   assert.equal(Object.hasOwn(trace, 'screenshot'), false);
 }
 
+function assertPreLaunchBlocked(report, auditEvents, fakeState) {
+  assert.equal(report.status, 'provider_not_executable');
+  assert.equal(report.blockedReason, 'runtime.browser_runtime_descriptor_missing');
+  assert.equal(report.sideEffectAttempted, false);
+  assert.equal(fakeState.launchCount, 0);
+  assert.equal(fakeState.navigateCount, 0);
+  assert.equal(fakeState.fillCount, 0);
+  assert.equal(fakeState.clickCount, 0);
+  assert.deepEqual(report.artifactRefs, []);
+  assertForbiddenSentinelsAbsent({ report, auditEvents });
+}
+
+function assertGuardSetupFailedClosed(report, auditEvents, fakeState, method) {
+  assert.equal(report.status, 'failed');
+  assert.equal(report.reasonCode, 'runtime.browser_runtime_unavailable');
+  assert.equal(report.sideEffectAttempted, false);
+  assert.deepEqual(fakeState.guardSetupFailures, [method]);
+  assert.equal(fakeState.launchCount, 1);
+  assert.equal(fakeState.navigateCount, 0);
+  assert.equal(fakeState.fillCount, 0);
+  assert.equal(fakeState.clickCount, 0);
+  assert.deepEqual(fakeState.continuedRequests, []);
+  assert.deepEqual(fakeState.failedRequests, []);
+  assert.deepEqual(fakeState.popupsCreated, []);
+  assert.deepEqual(fakeState.downloadsCreated, []);
+  assert.equal(fakeState.closeCount, 1);
+  assert.deepEqual(report.artifactRefs, []);
+  assertForbiddenSentinelsAbsent({ report, auditEvents });
+}
+
 test('controlled browser write succeeds with explicit descriptor and sanitized trace', async () => {
   await withFixtureServer(async (startUrl) => {
     const { report, auditEvents, fakeState } = await executeBrowserFixture({ startUrl });
@@ -387,36 +440,104 @@ test('controlledBrowserRuntime requires descriptor before browser launch', async
       },
     });
 
-    assert.equal(report.status, 'provider_not_executable');
-    assert.equal(report.blockedReason, 'runtime.browser_runtime_descriptor_missing');
     assert.equal(report.providerInvoked, false);
-    assert.equal(report.sideEffectAttempted, false);
-    assert.equal(fakeState.launchCount, 0);
+    assertPreLaunchBlocked(report, auditEvents, fakeState);
+  });
+});
+
+test('browserRuntime descriptor edge cases are rejected before launch', async () => {
+  await withFixtureServer(async (startUrl) => {
+    const origin = new URL(startUrl).origin;
+    const cases = [
+      {
+        name: 'missing startUrl',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { startUrl: undefined }),
+      },
+      {
+        name: 'empty allowedOrigins',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { allowedOrigins: [] }),
+      },
+      {
+        name: 'startUrl origin mismatch',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { allowedOrigins: ['https://other-origin.invalid'] }),
+      },
+      {
+        name: 'allowExternalNetwork true',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { allowExternalNetwork: true }),
+      },
+      {
+        name: 'allowDownloads true',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { allowDownloads: true }),
+      },
+      {
+        name: 'allowPopups true',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { allowPopups: true }),
+      },
+      {
+        name: 'invalid startUrl',
+        browserRuntime: browserRuntimeDescriptor(startUrl, { startUrl: 'not-a-url', allowedOrigins: [origin] }),
+      },
+    ];
+    for (const scenario of cases) {
+      const { report, auditEvents, fakeState } = await executeBrowserFixture({
+        startUrl,
+        runtimeContext: createRuntimeContext(startUrl, {
+          browserRuntime: scenario.browserRuntime,
+        }),
+      });
+      assertPreLaunchBlocked(report, auditEvents, fakeState);
+    }
+  });
+});
+
+test('missing allow guard flags normalize to false and remain executable', async () => {
+  await withFixtureServer(async (startUrl) => {
+    const { report, auditEvents, fakeState } = await executeBrowserFixture({
+      startUrl,
+      runtimeContext: createRuntimeContext(startUrl, {
+        browserRuntime: browserRuntimeDescriptor(startUrl, {
+          allowExternalNetwork: undefined,
+          allowDownloads: undefined,
+          allowPopups: undefined,
+        }),
+      }),
+    });
+    assert.equal(report.status, 'completed');
+    assert.equal(report.sideEffectAttempted, true);
+    assert.equal(fakeState.launchCount, 1);
+    assert.equal(fakeState.navigateCount, 1);
+    assert.equal(fakeState.fillCount, 1);
+    assert.equal(fakeState.clickCount, 1);
     assertForbiddenSentinelsAbsent({ report, auditEvents });
   });
 });
 
-test('unsafe browserRuntime descriptor flags are rejected before launch', async () => {
+test('required false browserRuntime flags reject missing true and non-false values before launch', async () => {
   await withFixtureServer(async (startUrl) => {
-    for (const override of [
-      { allowExternalNetwork: true },
-      { allowDownloads: true },
-      { allowPopups: true },
-      { persistProfile: undefined },
-      { recordDom: undefined },
-      { recordScreenshots: undefined },
-      { recordVideo: undefined },
-      { recordFullTrace: undefined },
-    ]) {
-      const { report, fakeState } = await executeBrowserFixture({
+    for (const flag of ['persistProfile', 'recordDom', 'recordScreenshots', 'recordVideo', 'recordFullTrace']) {
+      for (const value of [undefined, true, 'false', 0, null, {}]) {
+        const { report, auditEvents, fakeState } = await executeBrowserFixture({
+          startUrl,
+          runtimeContext: createRuntimeContext(startUrl, {
+            browserRuntime: browserRuntimeDescriptor(startUrl, {
+              [flag]: value,
+            }),
+          }),
+        });
+        assertPreLaunchBlocked(report, auditEvents, fakeState);
+      }
+    }
+  });
+});
+
+test('critical CDP guard setup failures fail closed before navigation or action', async () => {
+  await withFixtureServer(async (startUrl) => {
+    for (const method of ['Fetch.enable', 'Target.setDiscoverTargets', 'Browser.setDownloadBehavior']) {
+      const { report, auditEvents, fakeState } = await executeBrowserFixture({
         startUrl,
-        runtimeContext: createRuntimeContext(startUrl, {
-          browserRuntime: browserRuntimeDescriptor(startUrl, override),
-        }),
+        fakeScenario: { guardSetupFailureMethod: method },
       });
-      assert.equal(report.blockedReason, 'runtime.browser_runtime_descriptor_missing');
-      assert.equal(report.sideEffectAttempted, false);
-      assert.equal(fakeState.launchCount, 0);
+      assertGuardSetupFailedClosed(report, auditEvents, fakeState, method);
     }
   });
 });

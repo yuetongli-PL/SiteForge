@@ -101,6 +101,17 @@ async function safeSend(session, method, params = {}) {
   return await session?.client?.send?.(method, params, session?.sessionId);
 }
 
+async function runCriticalGuardSetup(guard, operation) {
+  try {
+    return await operation();
+  } catch {
+    throw createBrowserRuntimeError(BROWSER_RUNTIME_REASONS.runtimeUnavailable, {
+      phase: 'guard_setup',
+      guard,
+    });
+  }
+}
+
 async function installRequestGuard(session, descriptor, trace, progress) {
   const allowedOrigins = new Set(descriptor.allowedOrigins);
   const offCallbacks = [];
@@ -108,9 +119,38 @@ async function installRequestGuard(session, descriptor, trace, progress) {
     blockedReason: null,
   };
 
+  function disposeCallbacks() {
+    for (const off of offCallbacks) {
+      try {
+        off?.();
+      } catch {
+        // Listener cleanup is best-effort after the fail-closed decision.
+      }
+    }
+  }
+
   const client = session?.client;
-  if (client && typeof client.on === 'function') {
-    offCallbacks.push(client.on('Fetch.requestPaused', (event = {}) => {
+  if (!client || typeof client.on !== 'function' || typeof client.send !== 'function') {
+    throw createBrowserRuntimeError(BROWSER_RUNTIME_REASONS.runtimeUnavailable, {
+      phase: 'guard_setup',
+      guard: 'cdp_client',
+    });
+  }
+
+  function addCriticalListener(guard, method, handler, options) {
+    try {
+      const off = client.on(method, handler, options);
+      offCallbacks.push(off);
+    } catch {
+      throw createBrowserRuntimeError(BROWSER_RUNTIME_REASONS.runtimeUnavailable, {
+        phase: 'guard_setup',
+        guard,
+      });
+    }
+  }
+
+  try {
+    addCriticalListener('request', 'Fetch.requestPaused', (event = {}) => {
       const params = event.params ?? {};
       const requestUrl = params.request?.url ?? params.url ?? '';
       if (!originAllowed(requestUrl, allowedOrigins)) {
@@ -126,58 +166,46 @@ async function installRequestGuard(session, descriptor, trace, progress) {
       void client.send?.('Fetch.continueRequest', {
         requestId: params.requestId,
       }, event.sessionId ?? session.sessionId);
-    }, { sessionId: session.sessionId }));
+    }, { sessionId: session.sessionId });
 
-    offCallbacks.push(client.on('Target.targetCreated', (event = {}) => {
+    addCriticalListener('popup', 'Target.targetCreated', (event = {}) => {
       const target = event.params?.targetInfo ?? {};
       if (target.type === 'page' && target.targetId && target.targetId !== session.targetId) {
         state.blockedReason = BROWSER_RUNTIME_REASONS.popupNotAllowed;
         progress.popupBlockedCount += 1;
         void client.send?.('Target.closeTarget', { targetId: target.targetId });
       }
-    }));
+    });
 
-    offCallbacks.push(client.on('Page.windowOpen', () => {
+    addCriticalListener('popup', 'Page.windowOpen', () => {
       state.blockedReason = BROWSER_RUNTIME_REASONS.popupNotAllowed;
       progress.popupBlockedCount += 1;
-    }, { sessionId: session.sessionId }));
+    }, { sessionId: session.sessionId });
 
-    offCallbacks.push(client.on('Page.downloadWillBegin', () => {
+    addCriticalListener('download', 'Page.downloadWillBegin', () => {
       state.blockedReason = BROWSER_RUNTIME_REASONS.downloadNotAllowed;
       progress.downloadBlockedCount += 1;
-    }, { sessionId: session.sessionId }));
-  }
+    }, { sessionId: session.sessionId });
 
-  try {
-    await safeSend(session, 'Fetch.enable', { patterns: [{ urlPattern: '*' }] });
-  } catch {
-    // Older Chromium variants may not enable Fetch here; request policy still
-    // runs in tests and supported runtimes.
-  }
+    await runCriticalGuardSetup('request', async () => {
+      await safeSend(session, 'Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+    });
 
-  try {
-    await session?.client?.send?.('Target.setDiscoverTargets', { discover: true });
-  } catch {
-    // Best-effort popup observation.
-  }
+    await runCriticalGuardSetup('popup', async () => {
+      await session?.client?.send?.('Target.setDiscoverTargets', { discover: true });
+    });
 
-  try {
-    await session?.client?.send?.('Browser.setDownloadBehavior', { behavior: 'deny' });
-  } catch {
-    // Best-effort download denial; Page.downloadWillBegin still marks failures.
+    await runCriticalGuardSetup('download', async () => {
+      await session?.client?.send?.('Browser.setDownloadBehavior', { behavior: 'deny' });
+    });
+  } catch (error) {
+    disposeCallbacks();
+    throw error;
   }
 
   return {
     state,
-    dispose() {
-      for (const off of offCallbacks) {
-        try {
-          off?.();
-        } catch {
-          // Listener cleanup is best-effort.
-        }
-      }
-    },
+    dispose: disposeCallbacks,
   };
 }
 

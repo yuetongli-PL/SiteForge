@@ -26,14 +26,16 @@ export {
   createBrowserActionProvider,
 } from './browser-action-provider.mjs';
 
-export function createProductionRuntimeProviders() {
+export function createProductionRuntimeProviders(options = {}) {
   return [
     createApiReadProvider(),
     createDownloadProvider(),
-    createBrowserActionProvider(),
+    createBrowserActionProvider({
+      browserRuntimeDeps: options.browserRuntimeDeps,
+    }),
   ];
 }
 
-export function createProductionRuntimeProviderRegistry() {
-  return createRuntimeProviderRegistryWith(createProductionRuntimeProviders());
+export function createProductionRuntimeProviderRegistry(options = {}) {
+  return createRuntimeProviderRegistryWith(createProductionRuntimeProviders(options));
 }

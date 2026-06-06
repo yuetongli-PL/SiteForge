@@ -63,6 +63,7 @@ function baseExecutionReport({
     sideEffectAttempted: false,
     sideEffectSucceeded: false,
     sideEffectFailed: false,
+    reasonCode: null,
     blockedReason: null,
     resultSummary: null,
     sanitizedError: null,
@@ -155,6 +156,8 @@ function descriptorSafetyBlockedReason({
 
 function normalizeProviderResult(provider, providerResult) {
   const result = isPlainObject(providerResult) ? providerResult : {};
+  const status = normalizeText(result.status, 'completed');
+  const reasonCode = normalizeText(result.reasonCode);
   const resultSummary = isPlainObject(result.resultSummary)
     ? result.resultSummary
     : {
@@ -165,13 +168,22 @@ function normalizeProviderResult(provider, providerResult) {
   const normalized = {
     providerId: normalizeText(result.providerId, provider.id),
     providerKind: normalizeText(result.providerKind, provider.providerKind ?? 'runtime_provider'),
-    status: normalizeText(result.status, 'completed'),
+    status,
+    reasonCode: reasonCode || null,
     runtimeExecuted: result.runtimeExecuted !== false,
-    sideEffectAttempted: true,
+    sideEffectAttempted: result.sideEffectAttempted === false ? false : true,
     sideEffectSucceeded: result.sideEffectSucceeded === true
-      || (result.sideEffectFailed !== true && normalizeText(result.status, 'completed') === 'completed'),
+      || (result.sideEffectFailed !== true && status === 'completed'),
     sideEffectFailed: result.sideEffectFailed === true,
     artifactRefs: artifactRefsFromResult(result),
+    sanitizedError: isPlainObject(result.sanitizedError)
+      ? result.sanitizedError
+      : status === 'completed'
+        ? null
+        : sanitizeRuntimeError(null, {
+          code: reasonCode || 'runtime.provider_failed',
+          message: 'Runtime provider failed',
+        }),
     resultSummary: {
       ...resultSummary,
       redactionRequired: true,
@@ -339,7 +351,7 @@ export async function executeRuntimeInvocation({
       runtimeExecuted: true,
       sideEffectAttempted: true,
       sideEffectFailed: true,
-      sanitizedError: sanitizeRuntimeError(error),
+      sanitizedError: sanitizeRuntimeError(null),
     }, auditRecorder);
   }
 
@@ -383,12 +395,14 @@ export async function executeRuntimeInvocation({
     providerKind: normalizedProviderResult.providerKind,
     providerInvoked: true,
     status: normalizedProviderResult.status,
+    reasonCode: normalizedProviderResult.reasonCode,
     executionAttempted: true,
     runtimeExecuted: normalizedProviderResult.runtimeExecuted,
     sideEffectAttempted: normalizedProviderResult.sideEffectAttempted,
     sideEffectSucceeded: normalizedProviderResult.sideEffectSucceeded,
     sideEffectFailed: normalizedProviderResult.sideEffectFailed,
     artifactRefs: normalizedProviderResult.artifactRefs,
+    sanitizedError: normalizedProviderResult.sanitizedError,
     resultSummary: normalizedProviderResult.resultSummary,
   }, auditRecorder);
 }

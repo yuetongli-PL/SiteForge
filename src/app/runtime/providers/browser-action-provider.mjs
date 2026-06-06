@@ -4,6 +4,11 @@ import {
   assertNoExecutionSensitiveMaterial,
 } from '../../../domain/policies/execution/index.mjs';
 import {
+  executeControlledBrowserRuntime,
+  normalizeBrowserActionContract,
+  validateControlledBrowserRuntimeDescriptor,
+} from '../browser-runtime/controlled-browser-runtime.mjs';
+import {
   inferRuntimeCapabilityKind,
 } from '../provider-registry.mjs';
 
@@ -247,6 +252,15 @@ function buildBrowserActionSummary(options = {}) {
 }
 
 async function runControlledBrowserAction(options = {}) {
+  if (options.runtimeContext?.controlledBrowserRuntime === true) {
+    return await executeControlledBrowserRuntime({
+      invocationRequest: options.invocationRequest,
+      executionContract: options.executionContract,
+      runtimeContext: options.runtimeContext,
+      deps: options.browserRuntimeDeps,
+    });
+  }
+
   return {
     providerId: BROWSER_ACTION_PROVIDER_ID,
     providerKind: 'browser_action_provider',
@@ -260,7 +274,8 @@ async function runControlledBrowserAction(options = {}) {
   };
 }
 
-export function createBrowserActionProvider() {
+export function createBrowserActionProvider(factoryOptions = {}) {
+  const browserRuntimeDeps = factoryOptions.browserRuntimeDeps ?? {};
   return {
     id: BROWSER_ACTION_PROVIDER_ID,
     providerKind: 'browser_action_provider',
@@ -287,10 +302,32 @@ export function createBrowserActionProvider() {
           reasonCode: 'runtime.contract_not_concrete_enough',
         };
       }
+      if (options.runtimeContext?.controlledBrowserRuntime === true) {
+        const contract = normalizeBrowserActionContract({
+          executionContract: options.executionContract,
+          runtimeContext: options.runtimeContext,
+        });
+        if (contract.concrete !== true) {
+          return {
+            allowed: false,
+            reasonCode: 'runtime.contract_not_concrete_enough',
+          };
+        }
+        const descriptor = validateControlledBrowserRuntimeDescriptor(options.runtimeContext);
+        if (descriptor.valid !== true) {
+          return {
+            allowed: false,
+            reasonCode: descriptor.reasonCode,
+          };
+        }
+      }
       return { allowed: true };
     },
     async run(options = {}) {
-      return runControlledBrowserAction(options);
+      return runControlledBrowserAction({
+        ...options,
+        browserRuntimeDeps,
+      });
     },
   };
 }

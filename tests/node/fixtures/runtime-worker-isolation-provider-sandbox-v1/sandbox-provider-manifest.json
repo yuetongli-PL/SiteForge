@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "provider.manifest.v1",
+  "providerId": "sandbox_fixture_provider",
+  "capabilityKinds": ["form_or_action"],
+  "supportedOperations": ["form_or_action"],
+  "runtimeServices": {
+    "requiresBrowserRuntime": false,
+    "requiresNetwork": false,
+    "requiresOutputWriter": true,
+    "requiresSessionMaterial": false
+  },
+  "riskProfile": {
+    "sideEffects": "bounded",
+    "requiresControlledRuntime": true,
+    "requiresAuthAdapter": false,
+    "allowedMaterialTypes": [],
+    "allowedInjectionTargets": []
+  },
+  "resultPolicy": {
+    "allowRawBody": false,
+    "allowRawHeaders": false,
+    "allowRawCookies": false,
+    "allowRawTokens": false
+  }
+}

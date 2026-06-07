@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "provider.manifest.v1",
+  "providerId": "safe_fixture_provider",
+  "capabilityKinds": [
+    "read"
+  ],
+  "supportedOperations": [
+    "read",
+    "query"
+  ],
+  "riskProfile": {
+    "sideEffects": "none",
+    "requiresControlledRuntime": false,
+    "requiresAuthAdapter": false,
+    "allowedAuthMaterialTypes": [],
+    "allowedInjectionTargets": []
+  },
+  "runtimeServices": {
+    "requiresOutputWriter": false,
+    "requiresBrowserRuntime": false,
+    "requiresNetwork": false,
+    "requiresSessionMaterial": false
+  },
+  "resultPolicy": {
+    "allowRawHeaders": false,
+    "allowRawBody": false,
+    "allowRawCookies": false,
+    "allowRawTokens": false
+  }
+}

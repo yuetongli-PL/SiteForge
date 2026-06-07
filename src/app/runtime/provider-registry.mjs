@@ -1,5 +1,9 @@
 // @ts-check
 
+import {
+  assertProviderRegistrationValid,
+} from './provider-sdk/index.mjs';
+
 function normalizeText(value) {
   return String(value ?? '').trim();
 }
@@ -87,7 +91,7 @@ function requestedProviderId({
   return '';
 }
 
-function validateProvider(provider) {
+function validateProvider(provider, options = {}) {
   if (!isPlainObject(provider)) {
     throw new TypeError('Runtime provider must be a plain object');
   }
@@ -96,6 +100,12 @@ function validateProvider(provider) {
   }
   if (typeof provider.run !== 'function') {
     throw new TypeError(`Runtime provider ${provider.id} must expose run()`);
+  }
+  if (options.production === true || provider.manifest !== undefined) {
+    assertProviderRegistrationValid(provider, {
+      production: options.production === true,
+      requireManifest: options.production === true,
+    });
   }
   return true;
 }
@@ -109,11 +119,11 @@ function providerSupports(provider, descriptor) {
   return supportedKinds.has(kind);
 }
 
-export function createRuntimeProviderRegistry(providers = []) {
+export function createRuntimeProviderRegistry(providers = [], options = {}) {
   const entries = new Map();
   return {
     register(provider) {
-      validateProvider(provider);
+      validateProvider(provider, options);
       entries.set(normalizeText(provider.id), provider);
       return provider;
     },
@@ -137,8 +147,8 @@ export function createRuntimeProviderRegistry(providers = []) {
   };
 }
 
-export function createRuntimeProviderRegistryWith(providers = []) {
-  const registry = createRuntimeProviderRegistry();
+export function createRuntimeProviderRegistryWith(providers = [], options = {}) {
+  const registry = createRuntimeProviderRegistry([], options);
   for (const provider of providers) {
     registry.register(provider);
   }

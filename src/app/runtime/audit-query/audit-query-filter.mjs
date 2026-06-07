@@ -14,6 +14,7 @@ function matches(summary, filter) {
   if (filter.capabilityKind && summary.capabilityKind !== filter.capabilityKind) return false;
   if (filter.reason && summary.reason !== filter.reason) return false;
   if (filter.status && summary.status !== filter.status) return false;
+  if (filter.providerInvoked !== null && summary.providerInvoked !== filter.providerInvoked) return false;
   if (filter.sideEffectAttempted !== null && summary.sideEffectAttempted !== filter.sideEffectAttempted) return false;
   if (filter.authUsed !== null && summary.auth?.used !== filter.authUsed) return false;
   if (filter.authRequired !== null && summary.auth?.required !== filter.authRequired) return false;

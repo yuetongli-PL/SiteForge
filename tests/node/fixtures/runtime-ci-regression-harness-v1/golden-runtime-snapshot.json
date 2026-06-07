@@ -1,0 +1,34 @@
+{
+  "snapshotId": "runtime-ci-regression:fixture:golden",
+  "runtime": {
+    "status": "blocked",
+    "reasonCode": "runtime.policy_blocked",
+    "providerId": "api_read_provider",
+    "capabilityKind": "read",
+    "providerInvoked": false,
+    "executionAttempted": false,
+    "sideEffectAttempted": false,
+    "paymentBlocked": false,
+    "destructiveBlocked": false,
+    "executionContractConcrete": true
+  },
+  "auth": {
+    "required": true,
+    "used": false,
+    "scopes": ["orders.read"],
+    "materialTypes": ["bearer_token"]
+  },
+  "browserGuard": {
+    "present": true,
+    "allowedOrigins": ["https://example.com"]
+  },
+  "policy": {
+    "policyId": "policy:safe-defaults",
+    "verdict": "blocked",
+    "reason": "runtime.policy_blocked",
+    "allowed": false
+  },
+  "metadata": {
+    "label": "golden"
+  }
+}

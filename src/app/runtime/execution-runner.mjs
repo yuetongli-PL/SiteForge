@@ -271,9 +271,27 @@ function descriptorSafetyBlockedReason({
   return fallback;
 }
 
+function destructiveLabExecutionAllowed({
+  executionContract = null,
+  capability = null,
+  runtimeContext = null,
+  provider = null,
+} = {}) {
+  const destructive = executionContract?.destructiveAction === true
+    || capability?.destructiveAction === true;
+  if (!destructive) return false;
+  return runtimeContext?.controlledDestructiveLab === true
+    && runtimeContext?.destructiveLab?.enabled === true
+    && provider?.testingOnly === true
+    && provider?.destructiveLabOnly === true
+    && provider?.providerKind === 'destructive_lab_provider';
+}
+
 function explicitProtectedExecutionReason({
   executionContract = null,
   capability = null,
+  runtimeContext = null,
+  provider = null,
 } = {}) {
   if (
     executionContract?.paymentOrFundsAction === true
@@ -285,7 +303,28 @@ function explicitProtectedExecutionReason({
     executionContract?.destructiveAction === true
     || capability?.destructiveAction === true
   ) {
+    if (destructiveLabExecutionAllowed({
+      executionContract,
+      capability,
+      runtimeContext,
+      provider,
+    })) {
+      return null;
+    }
     return 'runtime.destructive_execution_blocked';
+  }
+  return null;
+}
+
+function preProviderProtectedExecutionReason({
+  executionContract = null,
+  capability = null,
+} = {}) {
+  if (
+    executionContract?.paymentOrFundsAction === true
+    || capability?.paymentOrFundsAction === true
+  ) {
+    return 'runtime.payment_execution_blocked';
   }
   return null;
 }
@@ -321,6 +360,11 @@ function normalizeProviderResult(provider, providerResult) {
       ? sanitizeRuntimeSessionPolicySummary(result.policySummary)
       : resultSummary.policySummary
         ? sanitizeRuntimeSessionPolicySummary(resultSummary.policySummary)
+        : null,
+    destructiveSummary: isPlainObject(result.destructiveSummary)
+      ? result.destructiveSummary
+      : isPlainObject(resultSummary.destructiveSummary)
+        ? resultSummary.destructiveSummary
         : null,
     sanitizedError: isPlainObject(result.sanitizedError)
       ? result.sanitizedError
@@ -430,6 +474,22 @@ export async function executeRuntimeInvocation({
       reasonCode: 'runtime.provider_registry_unavailable',
     });
   }
+  const preProviderProtectedReason = preProviderProtectedExecutionReason({
+    executionContract,
+    capability,
+  });
+  if (preProviderProtectedReason) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      status: 'blocked',
+      reasonCode: preProviderProtectedReason,
+    });
+  }
   const provider = registry.resolve({
     invocationRequest,
     executionContract,
@@ -459,6 +519,8 @@ export async function executeRuntimeInvocation({
   const protectedExecutionReason = explicitProtectedExecutionReason({
     executionContract,
     capability,
+    runtimeContext,
+    provider,
   });
   if (protectedExecutionReason) {
     return reportWithoutProvider({
@@ -724,6 +786,7 @@ export async function executeRuntimeInvocation({
     artifactRefs: normalizedProviderResult.artifactRefs,
     authSummary: normalizedProviderResult.authSummary ?? authGate.authSummary ?? null,
     policySummary: normalizedProviderResult.policySummary ?? authGate.policySummary ?? null,
+    destructiveSummary: normalizedProviderResult.destructiveSummary ?? null,
     sanitizedError: normalizedProviderResult.sanitizedError,
     resultSummary: normalizedProviderResult.resultSummary,
   }, auditRecorder);

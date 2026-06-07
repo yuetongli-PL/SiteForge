@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "payment.authorization_plan.v1",
+  "paymentRequired": true,
+  "capabilityClass": "purchase",
+  "amount": {
+    "valueRef": "amount:checkout-total-safe-ref",
+    "currency": "USD"
+  },
+  "payeeRef": "payee:merchant-safe-ref",
+  "requiresOutOfBandApproval": true,
+  "requiresStrongAuthorization": true,
+  "requiresPayeeVerification": true,
+  "requiresAmountVerification": true,
+  "requiresPolicyGate": true,
+  "allowNaturalLanguageAuthorization": false,
+  "productionExecutionDefault": "blocked",
+  "approvalRef": "approval:out-of-band-safe-ref",
+  "authorizationPolicyRef": "policy:payment-authorization-safe-ref",
+  "capabilityRef": "capability:checkout-payment-safe-ref",
+  "redactionRequired": true
+}

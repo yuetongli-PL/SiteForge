@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "payment.authorization_plan.v1",
+  "paymentRequired": true,
+  "capabilityClass": "purchase",
+  "amount": {
+    "valueRef": "amount:payment-lab-checkout-total-safe-ref",
+    "currency": "USD"
+  },
+  "payeeRef": "payee:payment-lab-merchant-safe-ref",
+  "requiresOutOfBandApproval": true,
+  "requiresStrongAuthorization": true,
+  "requiresPayeeVerification": true,
+  "requiresAmountVerification": true,
+  "requiresPolicyGate": true,
+  "allowNaturalLanguageAuthorization": false,
+  "productionExecutionDefault": "blocked",
+  "approvalRef": "approval:payment-lab-out-of-band-safe-ref",
+  "authorizationPolicyRef": "policy:payment-lab-authorization-safe-ref",
+  "capabilityRef": "capability:payment-lab-checkout-safe-ref",
+  "redactionRequired": true
+}

@@ -8,6 +8,9 @@ import {
   assertNoExecutionSensitiveMaterial,
 } from '../../../domain/policies/execution/index.mjs';
 import {
+  resolveAuthHttpRequestDescriptor,
+} from '../auth-runtime.mjs';
+import {
   inferRuntimeCapabilityKind,
 } from '../provider-registry.mjs';
 
@@ -171,6 +174,160 @@ function buildDownloadSummary({ filename, checksum, byteSize, mimeType, artifact
   return summary;
 }
 
+function responseContentType(response = null, fallback = DEFAULT_DOWNLOAD_MIME) {
+  try {
+    return normalizeText(response?.headers?.get?.('content-type'), fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function redirectSummary(response, requestUrl) {
+  const status = Number(response?.status ?? 0);
+  if (status < 300 || status > 399) {
+    return null;
+  }
+  let locationOrigin = null;
+  let crossOrigin = false;
+  try {
+    const location = String(response.headers?.get?.('location') ?? '').trim();
+    if (location) {
+      const nextUrl = new URL(location, requestUrl);
+      locationOrigin = nextUrl.origin;
+      crossOrigin = nextUrl.origin !== new URL(requestUrl).origin;
+    }
+  } catch {
+    locationOrigin = null;
+  }
+  return {
+    status,
+    locationOrigin,
+    crossOrigin,
+  };
+}
+
+function failedAuthDownload(reasonCode, authSummary, {
+  sideEffectAttempted = false,
+  redirect = null,
+} = {}) {
+  const resultSummary = {
+    outcome: 'download_failed',
+    providerId: DOWNLOAD_PROVIDER_ID,
+    reasonCode,
+    responseMaterial: 'sanitized_summary_only',
+    redirect,
+    authSummary,
+    artifactRefs: [],
+    redactionRequired: true,
+  };
+  assertNoExecutionSensitiveMaterial(resultSummary);
+  return {
+    providerId: DOWNLOAD_PROVIDER_ID,
+    providerKind: 'download_provider',
+    status: 'failed',
+    reasonCode,
+    runtimeExecuted: true,
+    sideEffectAttempted,
+    sideEffectSucceeded: false,
+    sideEffectFailed: true,
+    artifactRefs: [],
+    authSummary,
+    resultSummary,
+  };
+}
+
+async function runAuthDownload(options = {}) {
+  const outputDir = configuredOutputDir(options);
+  const filename = safeFilename(requestedFilename(options));
+  const target = filename ? resolveOutputTarget(outputDir, filename) : null;
+  if (!target) {
+    return failedAuthDownload('runtime.contract_not_concrete_enough', null);
+  }
+  const descriptor = resolveAuthHttpRequestDescriptor({
+    providerId: DOWNLOAD_PROVIDER_ID,
+    executionContract: options.executionContract,
+    runtimeContext: options.runtimeContext,
+  });
+  if (descriptor.ok !== true) {
+    return failedAuthDownload(descriptor.reasonCode, null);
+  }
+  const applied = await options.authAdapter.applyHttpAuth({
+    url: descriptor.descriptor.url,
+    method: descriptor.descriptor.method,
+  });
+  if (applied.ok !== true) {
+    return failedAuthDownload(applied.reasonCode, applied.authSummary, {
+      sideEffectAttempted: false,
+    });
+  }
+  const fetchImpl = options.runtimeContext?.fetchImpl ?? globalThis.fetch;
+  if (typeof fetchImpl !== 'function') {
+    return failedAuthDownload('runtime.provider_failed', applied.authSummary, {
+      sideEffectAttempted: false,
+    });
+  }
+  let response;
+  try {
+    response = await fetchImpl(applied.request.url, {
+      method: applied.request.method,
+      headers: applied.request.headers,
+      redirect: 'manual',
+    });
+  } catch {
+    return failedAuthDownload('runtime.provider_failed', applied.authSummary, {
+      sideEffectAttempted: true,
+    });
+  }
+  const redirect = redirectSummary(response, applied.request.url);
+  if (redirect?.crossOrigin === true) {
+    return failedAuthDownload('runtime.auth_session_scope_not_allowed', {
+      ...applied.authSummary,
+      outcome: 'blocked',
+      reason: 'runtime.auth_session_scope_not_allowed',
+    }, {
+      sideEffectAttempted: true,
+      redirect,
+    });
+  }
+  const arrayBuffer = applied.request.method === 'HEAD'
+    ? new ArrayBuffer(0)
+    : await response.arrayBuffer();
+  const content = Buffer.from(arrayBuffer);
+  await mkdir(target.root, { recursive: true });
+  await writeFile(target.target, content);
+  const checksum = createHash('sha256').update(content).digest('hex');
+  const artifactRef = artifactRefForFilename(filename);
+  const mimeType = responseContentType(response, normalizeText(options.runtimeContext?.mimeType, DEFAULT_DOWNLOAD_MIME));
+  const resultSummary = buildDownloadSummary({
+    filename,
+    checksum,
+    byteSize: content.byteLength,
+    mimeType,
+    artifactRef,
+  });
+  resultSummary.runtimeMode = 'auth_http_download_v1';
+  resultSummary.response = {
+    status: Number(response?.status ?? 0) || null,
+    ok: response?.ok === true,
+    redirect,
+    responseMaterial: 'download_artifact_only',
+  };
+  resultSummary.authSummary = applied.authSummary;
+  assertNoExecutionSensitiveMaterial(resultSummary);
+  return {
+    providerId: DOWNLOAD_PROVIDER_ID,
+    providerKind: 'download_provider',
+    status: 'completed',
+    runtimeExecuted: true,
+    sideEffectAttempted: true,
+    sideEffectSucceeded: true,
+    sideEffectFailed: false,
+    artifactRefs: [artifactRef],
+    authSummary: applied.authSummary,
+    resultSummary,
+  };
+}
+
 export function createDownloadProvider() {
   return {
     id: DOWNLOAD_PROVIDER_ID,
@@ -215,6 +372,9 @@ export function createDownloadProvider() {
       return { allowed: true };
     },
     async run(options = {}) {
+      if (options.authAdapter?.isRequired?.() === true) {
+        return await runAuthDownload(options);
+      }
       const outputDir = configuredOutputDir(options);
       const filename = safeFilename(requestedFilename(options));
       const target = filename ? resolveOutputTarget(outputDir, filename) : null;

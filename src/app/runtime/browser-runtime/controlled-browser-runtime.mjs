@@ -288,6 +288,7 @@ function browserActionResultSummary({
   trace,
   status,
   reasonCode = null,
+  authSummary = null,
 } = {}) {
   const summary = {
     outcome: status === 'completed' ? 'browser_action_completed' : 'browser_action_failed',
@@ -312,6 +313,7 @@ function browserActionResultSummary({
         reasonCode: reasonCode ?? undefined,
       },
     }),
+    authSummary,
     artifactRefs: [],
     savedMaterial: SANITIZED_SUMMARY_ONLY,
     redactionRequired: true,
@@ -323,6 +325,7 @@ export async function executeControlledBrowserRuntime({
   invocationRequest = null,
   executionContract = null,
   runtimeContext = null,
+  authAdapter = null,
   deps = {},
 } = {}) {
   const descriptorResult = validateControlledBrowserRuntimeDescriptor(runtimeContext);
@@ -373,6 +376,7 @@ export async function executeControlledBrowserRuntime({
       contract,
       slotValues: runtimeSlotValues(runtimeContext),
       trace,
+      authAdapter,
       deps,
     });
   } catch {
@@ -402,7 +406,9 @@ export async function executeControlledBrowserRuntime({
       trace,
       status,
       reasonCode,
+      authSummary: driverResult.authSummary ?? null,
     }),
+    authSummary: driverResult.authSummary ?? null,
   };
   assertNoExecutionSensitiveMaterial(result);
   return result;

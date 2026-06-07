@@ -35,6 +35,49 @@ function normalizeGates(values = []) {
   return EXECUTION_GATES.filter((gate) => set.has(gate));
 }
 
+function safePlannerDigest(text) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  const digest = hash.toString(16).padStart(8, '0');
+  const size = text.length.toString(36).padStart(4, '0');
+  return `${digest}${size}`;
+}
+
+function safeRequestRef(value, fallback = null, forcePlaceholder = false) {
+  const text = normalizeText(value);
+  if (!text) return fallback;
+  if (forcePlaceholder || /[\s"'`<>?&=%#]/u.test(text) || /(?:secret|token|password|credential|authorization|cookie)/iu.test(text)) {
+    const digest = safePlannerDigest(text);
+    return `runtime:credential:destructive-${digest}`;
+  }
+  return text
+    .replace(/[^a-z0-9._:/-]+/giu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 180) || fallback;
+}
+
+function normalizeDestructiveAuthorizationForRequest(authorization = null) {
+  if (!authorization || typeof authorization !== 'object' || Array.isArray(authorization)) {
+    return null;
+  }
+  const policyGate = authorization.policyGate && typeof authorization.policyGate === 'object'
+    ? authorization.policyGate
+    : {};
+  return {
+    authzRef: safeRequestRef(authorization.authzRef ?? authorization.authorizationRef, null, true),
+    challengeRef: safeRequestRef(authorization.challengeId ?? authorization.challengeRef, null, true),
+    confirmationRef: safeRequestRef(authorization.confirmationRef ?? authorization.confirmationTokenRef, null, true),
+    policyGate: {
+      satisfied: policyGate.satisfied === true,
+      policyId: safeRequestRef(policyGate.policyId, null, true),
+    },
+    redactionRequired: true,
+  };
+}
+
 function planReference(capabilityPlan = /** @type {any} */ ({})) {
   if (capabilityPlan.planId) return String(capabilityPlan.planId);
   const siteId = safeIdPart(capabilityPlan.siteId, 'site');
@@ -61,6 +104,9 @@ export function createRuntimeInvocationRequest({
   taskId = undefined,
   traceId = undefined,
   correlationId = undefined,
+  authRequirement = undefined,
+  auth = undefined,
+  destructiveAuthorization = undefined,
 } = {}) {
   const capabilityId = normalizeText(capabilityPlan?.capabilityId ?? executionIntent?.capabilityId);
   const contractRef = normalizeText(executionContractRef ?? executionIntent?.executionContractRef ?? capabilityPlan?.executionContractRef);
@@ -68,6 +114,10 @@ export function createRuntimeInvocationRequest({
   const intentRef = executionIntent ? intentReference(executionIntent, capabilityId) : undefined;
   const normalizedRequestId = normalizeText(requestId)
     || `runtime-invocation:${safeIdPart(capabilityId, 'capability')}:${safeIdPart(contractRef, 'contract')}`;
+
+  const normalizedDestructiveAuthorization = destructiveAuthorization === undefined
+    ? undefined
+    : normalizeDestructiveAuthorizationForRequest(destructiveAuthorization);
 
   assertNoExecutionSensitiveMaterial({
     requestId: normalizedRequestId,
@@ -81,6 +131,9 @@ export function createRuntimeInvocationRequest({
     taskId,
     traceId,
     correlationId,
+    authRequirement,
+    auth,
+    destructiveAuthorization: normalizedDestructiveAuthorization,
   });
 
   const request = {
@@ -93,6 +146,9 @@ export function createRuntimeInvocationRequest({
     taskId,
     traceId,
     correlationId,
+    authRequirement,
+    auth,
+    destructiveAuthorization: normalizedDestructiveAuthorization,
     capabilityId,
     planRef,
     intentRef,

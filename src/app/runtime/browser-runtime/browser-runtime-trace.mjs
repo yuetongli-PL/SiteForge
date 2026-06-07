@@ -24,6 +24,7 @@ export function createBrowserRuntimeTrace({
 } = {}) {
   const steps = [];
   const networkEvents = [];
+  const authEvents = [];
   const startedAt = nowIso();
   let cleanup = {
     sessionClosed: false,
@@ -48,6 +49,21 @@ export function createBrowserRuntimeTrace({
         reasonCode,
       });
     },
+    authApplied({ origin = null, authSummary = null } = {}) {
+      authEvents.push({
+        event: 'browser.auth.applied',
+        originHash: origin ? safeOriginHash(origin) : null,
+        sessionRef: normalizeText(authSummary?.sessionRef) || undefined,
+        materialSummary: {
+          types: Array.isArray(authSummary?.materialSummary?.types)
+            ? authSummary.materialSummary.types.filter((type) => type === 'cookie')
+            : [],
+          count: Number.isFinite(Number(authSummary?.materialSummary?.count))
+            ? Math.max(0, Number(authSummary.materialSummary.count))
+            : 0,
+        },
+      });
+    },
     markCleanup(nextCleanup = {}) {
       cleanup = {
         sessionClosed: nextCleanup.sessionClosed === true,
@@ -66,6 +82,7 @@ export function createBrowserRuntimeTrace({
           Object.entries(step).filter(([, value]) => value !== undefined),
         )),
         networkEvents,
+        authEvents,
         completion,
         cleanup,
         startedAt,

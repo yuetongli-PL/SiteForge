@@ -187,6 +187,123 @@ function assertSchemaVersion(value, name) {
   }
 }
 
+function normalizeAuthOperation(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (text === 'api') return 'read';
+  if (text === 'export') return 'download';
+  if (text === 'ordinary_write') return 'write';
+  return text;
+}
+
+function assertRuntimeAuthScopeCompatible(scope, name) {
+  assertPlainObject(scope, name);
+  assertNonEmptyString(scope.origin, `${name}.origin`, 'execution.runtime_invocation_invalid');
+  if (scope.audience !== undefined && typeof scope.audience !== 'string') {
+    fail(`${name}.audience must be a string`, 'execution.runtime_invocation_invalid');
+  }
+  if (!Array.isArray(scope.operations) || scope.operations.length === 0) {
+    fail(`${name}.operations must be a non-empty array`, 'execution.runtime_invocation_invalid');
+  }
+  const allowedOperations = new Set(['read', 'query', 'download', 'write', 'submit', 'form_or_action']);
+  for (const operation of scope.operations) {
+    if (!allowedOperations.has(normalizeAuthOperation(operation))) {
+      fail(`${name}.operations contains an unsupported operation`, 'execution.runtime_invocation_invalid');
+    }
+  }
+  if (scope.resources !== undefined) {
+    if (!Array.isArray(scope.resources) || scope.resources.some((resource) => typeof resource !== 'string')) {
+      fail(`${name}.resources must be an array of strings`, 'execution.runtime_invocation_invalid');
+    }
+  }
+}
+
+function assertRuntimeAuthRequirementCompatible(authRequirement, name) {
+  assertPlainObject(authRequirement, name);
+  if (typeof authRequirement.required !== 'boolean') {
+    fail(`${name}.required must be boolean`, 'execution.runtime_invocation_invalid');
+  }
+  if (authRequirement.required !== true) {
+    return true;
+  }
+  if (typeof authRequirement.mode !== 'string' || authRequirement.mode.trim() === '') {
+    fail(`${name}.mode must be a non-empty string`, 'execution.runtime_invocation_invalid');
+  }
+  if (!Array.isArray(authRequirement.scopes) || authRequirement.scopes.length === 0) {
+    fail(`${name}.scopes must be a non-empty array`, 'execution.runtime_invocation_invalid');
+  }
+  authRequirement.scopes.forEach((scope, index) => assertRuntimeAuthScopeCompatible(scope, `${name}.scopes.${index}`));
+  assertPlainObject(authRequirement.material, `${name}.material`);
+  if (typeof authRequirement.material.injectionTarget !== 'string' || authRequirement.material.injectionTarget.trim() === '') {
+    fail(`${name}.material.injectionTarget must be a non-empty string`, 'execution.runtime_invocation_invalid');
+  }
+  if (!Array.isArray(authRequirement.material.allowedTypes) || authRequirement.material.allowedTypes.length === 0) {
+    fail(`${name}.material.allowedTypes must be a non-empty array`, 'execution.runtime_invocation_invalid');
+  }
+  const allowedTypes = new Set(['bearer_token', 'cookie', 'api_key', 'custom_header']);
+  for (const type of authRequirement.material.allowedTypes) {
+    if (!allowedTypes.has(String(type ?? '').trim())) {
+      fail(`${name}.material.allowedTypes contains an unsupported type`, 'execution.runtime_invocation_invalid');
+    }
+  }
+  if (authRequirement.policy !== undefined) {
+    assertPlainObject(authRequirement.policy, `${name}.policy`);
+    if (authRequirement.policy.allowCredentialForwarding === true
+      || authRequirement.policy.allowRawHeaderAudit === true
+      || authRequirement.policy.allowRawCookieAudit === true
+      || authRequirement.policy.allowRawBodyAudit === true
+      || authRequirement.policy.allowStorageStatePersistence === true
+      || authRequirement.policy.allowProfilePersistence === true
+      || authRequirement.policy.allowAutomaticLogin === true) {
+      fail(`${name}.policy cannot allow raw auth audit, credential forwarding, browser persistence, or automatic login`, 'execution.runtime_invocation_invalid');
+    }
+  }
+  return true;
+}
+
+function assertRuntimeInvocationAuthCompatible(auth, name) {
+  assertPlainObject(auth, name);
+  if (auth.sessionHandle !== undefined && typeof auth.sessionHandle !== 'string') {
+    fail(`${name}.sessionHandle must be an opaque string reference`, 'execution.runtime_invocation_invalid');
+  }
+  if (auth.requestedScopes !== undefined) {
+    if (!Array.isArray(auth.requestedScopes)) {
+      fail(`${name}.requestedScopes must be an array`, 'execution.runtime_invocation_invalid');
+    }
+    auth.requestedScopes.forEach((scope, index) => assertRuntimeAuthScopeCompatible(scope, `${name}.requestedScopes.${index}`));
+  }
+  if (auth.authGate !== undefined) {
+    assertPlainObject(auth.authGate, `${name}.authGate`);
+    if (typeof auth.authGate.satisfied !== 'boolean') {
+      fail(`${name}.authGate.satisfied must be boolean`, 'execution.runtime_invocation_invalid');
+    }
+    for (const refField of ['gateId', 'policyId']) {
+      if (auth.authGate[refField] !== undefined && typeof auth.authGate[refField] !== 'string') {
+        fail(`${name}.authGate.${refField} must be a string`, 'execution.runtime_invocation_invalid');
+      }
+    }
+  }
+  return true;
+}
+
+function assertRuntimeInvocationDestructiveAuthorizationCompatible(authorization, name) {
+  assertPlainObject(authorization, name);
+  for (const refField of ['authzRef', 'challengeRef', 'confirmationRef']) {
+    if (authorization[refField] !== undefined && typeof authorization[refField] !== 'string') {
+      fail(`${name}.${refField} must be a safe reference string`, 'execution.runtime_invocation_invalid');
+    }
+  }
+  if (authorization.policyGate !== undefined) {
+    assertPlainObject(authorization.policyGate, `${name}.policyGate`);
+    if (typeof authorization.policyGate.satisfied !== 'boolean') {
+      fail(`${name}.policyGate.satisfied must be boolean`, 'execution.runtime_invocation_invalid');
+    }
+    if (authorization.policyGate.policyId !== undefined && typeof authorization.policyGate.policyId !== 'string') {
+      fail(`${name}.policyGate.policyId must be a string`, 'execution.runtime_invocation_invalid');
+    }
+  }
+  return true;
+}
+
 function isStructuredDescriptorAllowedField(name, value, path = []) {
   if (ALWAYS_FORBIDDEN_EXECUTION_DESCRIPTOR_FIELD_PATTERNS.some((pattern) => pattern.test(String(name ?? '')))) {
     return false;
@@ -422,6 +539,18 @@ export function assertRuntimeInvocationRequestCompatible(request) {
         fail('RuntimeInvocationRequest requiredGates contains an unsupported gate', 'execution.runtime_invocation_invalid');
       }
     }
+  }
+  if (request.authRequirement !== undefined) {
+    assertRuntimeAuthRequirementCompatible(request.authRequirement, 'RuntimeInvocationRequest.authRequirement');
+  }
+  if (request.auth !== undefined) {
+    assertRuntimeInvocationAuthCompatible(request.auth, 'RuntimeInvocationRequest.auth');
+  }
+  if (request.destructiveAuthorization !== undefined) {
+    assertRuntimeInvocationDestructiveAuthorizationCompatible(
+      request.destructiveAuthorization,
+      'RuntimeInvocationRequest.destructiveAuthorization',
+    );
   }
   return true;
 }

@@ -251,6 +251,26 @@ async function waitForCompletion(session, signal, timeoutMs, guardState) {
   throw createBrowserRuntimeError(BROWSER_RUNTIME_REASONS.completionNotObserved);
 }
 
+async function applyEphemeralAuthCookies(session, request = {}) {
+  const cookies = asArray(request.cookies);
+  if (cookies.length === 0) {
+    throw createBrowserRuntimeError('runtime.auth_provider_injection_failed');
+  }
+  for (const cookie of cookies) {
+    if (!cookie?.url && !cookie?.domain) {
+      throw createBrowserRuntimeError('runtime.auth_provider_injection_failed');
+    }
+  }
+  if (typeof session?.applyEphemeralAuthCookies === 'function') {
+    return await session.applyEphemeralAuthCookies({
+      origin: request.origin,
+      cookies,
+    });
+  }
+  await safeSend(session, 'Network.setCookies', { cookies });
+  return { applied: true };
+}
+
 export async function openControlledBrowserSession(descriptor, deps = {}) {
   const openBrowserSessionImpl = deps.openBrowserSession ?? openBrowserSession;
   const timeoutMs = descriptor.timeoutMs;
@@ -282,6 +302,7 @@ export async function runControlledBrowserDriver({
   contract,
   slotValues,
   trace,
+  authAdapter = null,
   deps = {},
 } = {}) {
   const progress = {
@@ -292,9 +313,32 @@ export async function runControlledBrowserDriver({
   };
   let session = null;
   let guard = null;
+  let authSummary = null;
   try {
     session = await openControlledBrowserSession(descriptor, deps);
     guard = await installRequestGuard(session, descriptor, trace, progress);
+
+    if (authAdapter?.isRequired?.() === true) {
+      const appliedAuth = await authAdapter.applyBrowserAuth({
+        driver: {
+          applyEphemeralAuthCookies: async (request) => applyEphemeralAuthCookies(session, request),
+        },
+        targetUrl: descriptor.startUrl,
+        targetOrigin: new URL(descriptor.startUrl).origin,
+        allowedOrigins: descriptor.allowedOrigins,
+      });
+      if (appliedAuth?.ok !== true) {
+        throw createBrowserRuntimeError(
+          normalizeText(appliedAuth?.reasonCode, 'runtime.auth_provider_injection_failed'),
+          { authSummary: appliedAuth?.authSummary ?? null },
+        );
+      }
+      authSummary = appliedAuth.authSummary ?? null;
+      trace.authApplied({
+        origin: appliedAuth.origin,
+        authSummary: appliedAuth.authSummary,
+      });
+    }
 
     await session.navigateAndWait(descriptor.startUrl, {
       useLoadEvent: false,
@@ -350,6 +394,7 @@ export async function runControlledBrowserDriver({
       reasonCode: null,
       sideEffectAttempted: progress.sideEffectAttempted,
       progress,
+      authSummary,
     };
   } catch (error) {
     return {
@@ -357,6 +402,7 @@ export async function runControlledBrowserDriver({
       reasonCode: normalizeText(error?.reasonCode ?? error?.code, BROWSER_RUNTIME_REASONS.runtimeUnavailable),
       sideEffectAttempted: progress.sideEffectAttempted,
       progress,
+      authSummary: error?.details?.authSummary ?? authSummary,
     };
   } finally {
     guard?.dispose?.();

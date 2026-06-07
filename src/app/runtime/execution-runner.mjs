@@ -8,6 +8,19 @@ import {
   sanitizeRuntimeError,
 } from './audit-recorder.mjs';
 import {
+  sanitizeDestructiveAuthorizationSummary,
+} from './destructive-authorization.mjs';
+import {
+  createProviderAuthAdapter,
+  evaluateRuntimeAuthGate,
+  isAuthRequirementSupportedForProvider,
+  isAuthSupportedProviderId,
+  operationForProvider,
+  resolveRuntimeAuthRequirement,
+  sanitizeAuthAuditSummary,
+  sanitizeRuntimeSessionPolicySummary,
+} from './auth-runtime.mjs';
+import {
   evaluateRuntimeInvocationDispatch,
 } from './execution-dispatcher.mjs';
 import {
@@ -24,6 +37,84 @@ function isPlainObject(value) {
 function normalizeText(value, fallback = '') {
   const text = String(value ?? '').trim();
   return text || fallback;
+}
+
+function normalizedOrigin(value) {
+  try {
+    return new URL(String(value ?? '')).origin;
+  } catch {
+    return '';
+  }
+}
+
+function authBrowserAllowedOriginReason({
+  provider = null,
+  executionContract = null,
+  runtimeContext = null,
+} = {}) {
+  if (
+    provider?.id !== 'browser_action_provider'
+    || executionContract?.authRequirement?.required !== true
+    || runtimeContext?.controlledBrowserRuntime !== true
+  ) {
+    return null;
+  }
+  const descriptor = runtimeContext?.browserRuntime;
+  if (!descriptor || typeof descriptor !== 'object') {
+    return null;
+  }
+  const startOrigin = normalizedOrigin(descriptor.startUrl);
+  const allowedOrigins = Array.isArray(descriptor.allowedOrigins)
+    ? descriptor.allowedOrigins.map((origin) => normalizedOrigin(origin) || normalizeText(origin)).filter(Boolean)
+    : [];
+  if (startOrigin && allowedOrigins.length > 0 && !allowedOrigins.includes(startOrigin)) {
+    return 'runtime.browser_navigation_not_allowed';
+  }
+  return null;
+}
+
+function inputRequiresAuth({
+  invocationRequest = null,
+  executionContract = null,
+} = {}) {
+  return executionContract?.authRequirement?.required === true
+    || invocationRequest?.authRequirement?.required === true;
+}
+
+function safeAuthHttpDescriptorForInputScan(descriptor = null) {
+  if (!isPlainObject(descriptor)) {
+    return descriptor;
+  }
+  return {
+    descriptorType: 'auth_http_request_descriptor',
+    urlRef: 'runtime:slot:auth-http-url',
+    method: ['GET', 'HEAD'].includes(normalizeText(descriptor.method, 'GET').toUpperCase())
+      ? normalizeText(descriptor.method, 'GET').toUpperCase()
+      : 'UNSUPPORTED',
+    redactionRequired: true,
+  };
+}
+
+function executionContractForInputScan({
+  invocationRequest = null,
+  executionContract = null,
+} = {}) {
+  if (!inputRequiresAuth({ invocationRequest, executionContract }) || !isPlainObject(executionContract)) {
+    return executionContract;
+  }
+  const runtimeBinding = isPlainObject(executionContract.runtimeBinding)
+    ? {
+      ...executionContract.runtimeBinding,
+      httpRequest: safeAuthHttpDescriptorForInputScan(executionContract.runtimeBinding.httpRequest),
+      downloadDescriptor: safeAuthHttpDescriptorForInputScan(executionContract.runtimeBinding.downloadDescriptor),
+    }
+    : executionContract.runtimeBinding;
+  return {
+    ...executionContract,
+    runtimeBinding,
+    httpRequestDescriptor: safeAuthHttpDescriptorForInputScan(executionContract.httpRequestDescriptor),
+    downloadDescriptor: safeAuthHttpDescriptorForInputScan(executionContract.downloadDescriptor),
+  };
 }
 
 /** @param {Record<string, any>} options */
@@ -66,6 +157,9 @@ function baseExecutionReport({
     reasonCode: null,
     blockedReason: null,
     resultSummary: null,
+    authSummary: null,
+    policySummary: null,
+    destructiveSummary: null,
     sanitizedError: null,
     artifactRefs: [],
     auditRef: null,
@@ -101,7 +195,27 @@ function reportWithoutProvider({
   provider = null,
   status,
   reasonCode,
+  authSummary = null,
+  policySummary = null,
+  destructiveSummary = null,
 } = {}) {
+  const effectiveDestructiveSummary = destructiveSummary
+    ? sanitizeDestructiveAuthorizationSummary({
+      destructiveRequirement: destructiveSummary,
+      destructiveAuthorization: destructiveSummary,
+      reason: destructiveSummary.reason ?? reasonCode,
+    })
+    : reasonCode === 'runtime.destructive_execution_blocked'
+      ? sanitizeDestructiveAuthorizationSummary({
+        destructiveRequirement: executionContract?.destructiveRequirement ?? {
+          required: true,
+          actionClass: 'other',
+          targetRef: executionContract?.targetRef ?? capability?.id ?? invocationRequest?.capabilityId,
+        },
+        destructiveAuthorization: invocationRequest?.destructiveAuthorization,
+        reason: reasonCode,
+      })
+      : null;
   return finalizeReportWithAudit({
     ...baseExecutionReport({
       invocationRequest,
@@ -115,6 +229,9 @@ function reportWithoutProvider({
     status,
     reasonCode,
     blockedReason: reasonCode,
+    authSummary: authSummary ? sanitizeAuthAuditSummary(authSummary) : null,
+    policySummary: policySummary ? sanitizeRuntimeSessionPolicySummary(policySummary) : null,
+    destructiveSummary: effectiveDestructiveSummary,
   }, auditRecorder);
 }
 
@@ -154,6 +271,25 @@ function descriptorSafetyBlockedReason({
   return fallback;
 }
 
+function explicitProtectedExecutionReason({
+  executionContract = null,
+  capability = null,
+} = {}) {
+  if (
+    executionContract?.paymentOrFundsAction === true
+    || capability?.paymentOrFundsAction === true
+  ) {
+    return 'runtime.payment_execution_blocked';
+  }
+  if (
+    executionContract?.destructiveAction === true
+    || capability?.destructiveAction === true
+  ) {
+    return 'runtime.destructive_execution_blocked';
+  }
+  return null;
+}
+
 function normalizeProviderResult(provider, providerResult) {
   const result = isPlainObject(providerResult) ? providerResult : {};
   const status = normalizeText(result.status, 'completed');
@@ -176,6 +312,16 @@ function normalizeProviderResult(provider, providerResult) {
       || (result.sideEffectFailed !== true && status === 'completed'),
     sideEffectFailed: result.sideEffectFailed === true,
     artifactRefs: artifactRefsFromResult(result),
+    authSummary: result.authSummary
+      ? sanitizeAuthAuditSummary(result.authSummary)
+      : resultSummary.authSummary
+        ? sanitizeAuthAuditSummary(resultSummary.authSummary)
+        : null,
+    policySummary: result.policySummary
+      ? sanitizeRuntimeSessionPolicySummary(result.policySummary)
+      : resultSummary.policySummary
+        ? sanitizeRuntimeSessionPolicySummary(resultSummary.policySummary)
+        : null,
     sanitizedError: isPlainObject(result.sanitizedError)
       ? result.sanitizedError
       : status === 'completed'
@@ -234,7 +380,10 @@ export async function executeRuntimeInvocation({
     invocationRequest,
     policyDecision,
     gateStatus,
-    executionContract,
+    executionContract: executionContractForInputScan({
+      invocationRequest,
+      executionContract,
+    }),
     capability,
   });
 
@@ -307,6 +456,120 @@ export async function executeRuntimeInvocation({
     });
   }
 
+  const protectedExecutionReason = explicitProtectedExecutionReason({
+    executionContract,
+    capability,
+  });
+  if (protectedExecutionReason) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      provider,
+      status: 'blocked',
+      reasonCode: protectedExecutionReason,
+    });
+  }
+
+  // Pure contract/request narrowing only; vault inspection, material access,
+  // network requests, and provider.run stay behind the later auth gate/adapter.
+  const authRequirementPreflight = resolveRuntimeAuthRequirement({
+    invocationRequest,
+    executionContract,
+  });
+  if (authRequirementPreflight.required === true && !isAuthSupportedProviderId(provider.id)) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      provider,
+      status: 'blocked',
+      reasonCode: 'runtime.auth_required',
+      authSummary: {
+        required: true,
+        used: false,
+        outcome: 'blocked',
+        reason: 'runtime.auth_required',
+      },
+    });
+  }
+  if (
+    authRequirementPreflight.required === true
+    && !isAuthRequirementSupportedForProvider(provider.id, authRequirementPreflight.requirement, operationForProvider(provider.id, {
+      invocationRequest,
+      executionContract,
+      capability,
+      runtimeContext,
+    }))
+  ) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      provider,
+      status: 'blocked',
+      reasonCode: 'runtime.auth_required',
+      authSummary: {
+        required: true,
+        used: false,
+        outcome: 'blocked',
+        reason: 'runtime.auth_required',
+      },
+    });
+  }
+  if (authRequirementPreflight.required === true && authRequirementPreflight.allowed !== true) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      provider,
+      status: 'blocked',
+      reasonCode: authRequirementPreflight.reasonCode,
+      authSummary: {
+        required: true,
+        used: false,
+        outcome: 'blocked',
+        reason: authRequirementPreflight.reasonCode,
+      },
+    });
+  }
+  const authBrowserOriginReason = authBrowserAllowedOriginReason({
+    provider,
+    executionContract,
+    runtimeContext,
+  });
+  if (authBrowserOriginReason) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      provider,
+      status: 'blocked',
+      reasonCode: authBrowserOriginReason,
+      authSummary: {
+        required: true,
+        used: false,
+        outcome: 'blocked',
+        reason: authBrowserOriginReason,
+      },
+    });
+  }
+
   const providerOptions = {
     invocationRequest,
     policyDecision,
@@ -330,9 +593,58 @@ export async function executeRuntimeInvocation({
     });
   }
 
+  const authGate = await evaluateRuntimeAuthGate({
+    invocationRequest,
+    executionContract,
+    runtimeContext,
+    provider,
+  });
+  if (authGate.allowed !== true) {
+    return reportWithoutProvider({
+      invocationRequest,
+      policyDecision,
+      dispatchReport,
+      executionContract,
+      capability,
+      auditRecorder,
+      provider,
+      status: 'blocked',
+      reasonCode: authGate.reasonCode,
+      authSummary: authGate.authSummary,
+      policySummary: authGate.policySummary,
+    });
+  }
+
+  const authAdapter = authGate.required === true
+    ? createProviderAuthAdapter({
+      sessionVault: authGate.sessionVault,
+      sessionHandle: authGate.sessionHandle,
+      providerId: provider.id,
+      capabilityId: invocationRequest.capabilityId,
+      requirement: authGate.requirement,
+      requestedScopes: authGate.requestedScopes,
+      sessionScopes: authGate.sessionScopes,
+      sessionRef: authGate.sessionRef,
+      sessionExpiresAt: authGate.sessionExpiresAt,
+      policyConstraints: authGate.policySummary?.constraints ?? null,
+      operation: operationForProvider(provider.id, {
+        invocationRequest,
+        executionContract,
+        capability,
+        runtimeContext,
+      }),
+    })
+    : null;
+  const providerRunOptions = authAdapter
+    ? {
+      ...providerOptions,
+      authAdapter,
+    }
+    : providerOptions;
+
   let providerResult;
   try {
-    providerResult = await provider.run(providerOptions);
+    providerResult = await provider.run(providerRunOptions);
   } catch (error) {
     return finalizeReportWithAudit({
       ...baseExecutionReport({
@@ -351,8 +663,14 @@ export async function executeRuntimeInvocation({
       runtimeExecuted: true,
       sideEffectAttempted: true,
       sideEffectFailed: true,
+      authSummary: authGate.authSummary ?? null,
+      policySummary: authGate.policySummary ?? null,
       sanitizedError: sanitizeRuntimeError(null),
     }, auditRecorder);
+  } finally {
+    if (authAdapter) {
+      await authAdapter.releaseAll();
+    }
   }
 
   let normalizedProviderResult;
@@ -376,6 +694,8 @@ export async function executeRuntimeInvocation({
       runtimeExecuted: true,
       sideEffectAttempted: true,
       sideEffectFailed: true,
+      authSummary: authGate.authSummary ?? null,
+      policySummary: authGate.policySummary ?? null,
       sanitizedError: sanitizeRuntimeError(null, {
         code: 'runtime.provider_output_rejected',
         message: 'Runtime provider output was rejected by redaction guard',
@@ -402,6 +722,8 @@ export async function executeRuntimeInvocation({
     sideEffectSucceeded: normalizedProviderResult.sideEffectSucceeded,
     sideEffectFailed: normalizedProviderResult.sideEffectFailed,
     artifactRefs: normalizedProviderResult.artifactRefs,
+    authSummary: normalizedProviderResult.authSummary ?? authGate.authSummary ?? null,
+    policySummary: normalizedProviderResult.policySummary ?? authGate.policySummary ?? null,
     sanitizedError: normalizedProviderResult.sanitizedError,
     resultSummary: normalizedProviderResult.resultSummary,
   }, auditRecorder);

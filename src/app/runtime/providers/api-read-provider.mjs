@@ -4,6 +4,9 @@ import {
   assertNoExecutionSensitiveMaterial,
 } from '../../../domain/policies/execution/index.mjs';
 import {
+  resolveAuthHttpRequestDescriptor,
+} from '../auth-runtime.mjs';
+import {
   inferRuntimeCapabilityKind,
 } from '../provider-registry.mjs';
 
@@ -103,6 +106,171 @@ function buildApiReadSummary(options = {}) {
   return summary;
 }
 
+function responseContentType(response = null) {
+  try {
+    return String(response?.headers?.get?.('content-type') ?? '').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function redirectSummary(response, requestUrl) {
+  const status = Number(response?.status ?? 0);
+  if (status < 300 || status > 399) {
+    return null;
+  }
+  let locationOrigin = null;
+  let crossOrigin = false;
+  try {
+    const location = String(response.headers?.get?.('location') ?? '').trim();
+    if (location) {
+      const nextUrl = new URL(location, requestUrl);
+      locationOrigin = nextUrl.origin;
+      crossOrigin = nextUrl.origin !== new URL(requestUrl).origin;
+    }
+  } catch {
+    locationOrigin = null;
+  }
+  return {
+    status,
+    locationOrigin,
+    crossOrigin,
+  };
+}
+
+function bodySummaryFromText(text, contentType = null) {
+  const bodyText = String(text ?? '');
+  const summary = {
+    kind: 'text',
+    byteLength: Buffer.byteLength(bodyText),
+  };
+  if (contentType?.includes('json')) {
+    try {
+      const parsed = JSON.parse(bodyText);
+      summary.kind = Array.isArray(parsed) ? 'json_array' : parsed && typeof parsed === 'object' ? 'json_object' : 'json_scalar';
+      if (Array.isArray(parsed)) {
+        summary.itemCount = parsed.length;
+      }
+    } catch {
+      summary.kind = 'text';
+    }
+  }
+  return summary;
+}
+
+function failedAuthApiRead(reasonCode, authSummary, {
+  sideEffectAttempted = false,
+  redirect = null,
+} = {}) {
+  const resultSummary = {
+    outcome: 'api_read_failed',
+    providerId: API_READ_PROVIDER_ID,
+    reasonCode,
+    responseMaterial: 'sanitized_summary_only',
+    redirect,
+    authSummary,
+    artifactRefs: [],
+    redactionRequired: true,
+  };
+  assertNoExecutionSensitiveMaterial(resultSummary);
+  return {
+    providerId: API_READ_PROVIDER_ID,
+    providerKind: 'api_read_provider',
+    status: 'failed',
+    reasonCode,
+    runtimeExecuted: true,
+    sideEffectAttempted,
+    sideEffectSucceeded: false,
+    sideEffectFailed: true,
+    authSummary,
+    resultSummary,
+  };
+}
+
+async function runAuthApiRead(options = {}) {
+  const descriptor = resolveAuthHttpRequestDescriptor({
+    providerId: API_READ_PROVIDER_ID,
+    executionContract: options.executionContract,
+    runtimeContext: options.runtimeContext,
+  });
+  if (descriptor.ok !== true) {
+    return failedAuthApiRead(descriptor.reasonCode, options.authAdapter?.isRequired?.() ? null : null);
+  }
+  const applied = await options.authAdapter.applyHttpAuth({
+    url: descriptor.descriptor.url,
+    method: descriptor.descriptor.method,
+  });
+  if (applied.ok !== true) {
+    return failedAuthApiRead(applied.reasonCode, applied.authSummary, {
+      sideEffectAttempted: false,
+    });
+  }
+  const fetchImpl = options.runtimeContext?.fetchImpl ?? globalThis.fetch;
+  if (typeof fetchImpl !== 'function') {
+    return failedAuthApiRead('runtime.provider_failed', applied.authSummary, {
+      sideEffectAttempted: false,
+    });
+  }
+  let response;
+  try {
+    response = await fetchImpl(applied.request.url, {
+      method: applied.request.method,
+      headers: applied.request.headers,
+      redirect: 'manual',
+    });
+  } catch {
+    return failedAuthApiRead('runtime.provider_failed', applied.authSummary, {
+      sideEffectAttempted: true,
+    });
+  }
+  const redirect = redirectSummary(response, applied.request.url);
+  if (redirect?.crossOrigin === true) {
+    return failedAuthApiRead('runtime.auth_session_scope_not_allowed', {
+      ...applied.authSummary,
+      outcome: 'blocked',
+      reason: 'runtime.auth_session_scope_not_allowed',
+    }, {
+      sideEffectAttempted: true,
+      redirect,
+    });
+  }
+  const contentType = responseContentType(response);
+  const bodyText = applied.request.method === 'HEAD'
+    ? ''
+    : typeof response?.text === 'function'
+      ? await response.text()
+      : '';
+  const resultSummary = {
+    outcome: 'api_read_completed',
+    providerId: API_READ_PROVIDER_ID,
+    runtimeMode: 'auth_http_read_v1',
+    responseMaterial: 'sanitized_summary_only',
+    response: {
+      status: Number(response?.status ?? 0) || null,
+      ok: response?.ok === true,
+      contentType,
+      bodySummary: bodySummaryFromText(bodyText, contentType),
+      redirect,
+    },
+    authSummary: applied.authSummary,
+    artifactRefs: [],
+    savedMaterial: 'sanitized_summary_only',
+    redactionRequired: true,
+  };
+  assertNoExecutionSensitiveMaterial(resultSummary);
+  return {
+    providerId: API_READ_PROVIDER_ID,
+    providerKind: 'api_read_provider',
+    status: 'completed',
+    runtimeExecuted: true,
+    sideEffectAttempted: true,
+    sideEffectSucceeded: true,
+    sideEffectFailed: false,
+    authSummary: applied.authSummary,
+    resultSummary,
+  };
+}
+
 export function createApiReadProvider() {
   return {
     id: API_READ_PROVIDER_ID,
@@ -128,6 +296,9 @@ export function createApiReadProvider() {
         capability = null,
         runtimeContext = null,
       } = options;
+      if (options.authAdapter?.isRequired?.() === true) {
+        return await runAuthApiRead(options);
+      }
       return {
         providerId: API_READ_PROVIDER_ID,
         providerKind: 'api_read_provider',

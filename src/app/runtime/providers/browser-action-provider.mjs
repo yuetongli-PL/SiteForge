@@ -252,11 +252,33 @@ function buildBrowserActionSummary(options = {}) {
 }
 
 async function runControlledBrowserAction(options = {}) {
+  if (options.executionContract?.authRequirement?.required === true && options.authAdapter?.isRequired?.() !== true) {
+    return {
+      providerId: BROWSER_ACTION_PROVIDER_ID,
+      providerKind: 'browser_action_provider',
+      status: 'failed',
+      reasonCode: 'runtime.auth_required',
+      runtimeExecuted: true,
+      sideEffectAttempted: false,
+      sideEffectSucceeded: false,
+      sideEffectFailed: true,
+      artifactRefs: [],
+      resultSummary: {
+        outcome: 'browser_action_failed',
+        providerId: BROWSER_ACTION_PROVIDER_ID,
+        reasonCode: 'runtime.auth_required',
+        artifactRefs: [],
+        savedMaterial: SANITIZED_SUMMARY_ONLY,
+        redactionRequired: true,
+      },
+    };
+  }
   if (options.runtimeContext?.controlledBrowserRuntime === true) {
     return await executeControlledBrowserRuntime({
       invocationRequest: options.invocationRequest,
       executionContract: options.executionContract,
       runtimeContext: options.runtimeContext,
+      authAdapter: options.authAdapter,
       deps: options.browserRuntimeDeps,
     });
   }

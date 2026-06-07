@@ -3,6 +3,13 @@
 import {
   assertNoExecutionSensitiveMaterial,
 } from '../../domain/policies/execution/index.mjs';
+import {
+  sanitizeAuthAuditSummary,
+  sanitizeRuntimeSessionPolicySummary,
+} from './auth-runtime.mjs';
+import {
+  sanitizeDestructiveAuthorizationSummary,
+} from './destructive-authorization.mjs';
 
 function normalizeText(value, fallback = '') {
   const text = String(value ?? '').trim();
@@ -39,6 +46,40 @@ function sanitizeAuditError(value) {
   return sanitizeRuntimeError(value, {
     code: value?.code ?? 'runtime.error',
     message: 'Runtime error redacted',
+  });
+}
+
+function sanitizeAuditAuthSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return sanitizeAuthAuditSummary(value);
+}
+
+function sanitizeAuditPolicySummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return sanitizeRuntimeSessionPolicySummary(value);
+}
+
+function sanitizeAuditDestructiveSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return sanitizeDestructiveAuthorizationSummary({
+    destructiveRequirement: {
+      required: value.required === true,
+      actionClass: value.actionClass,
+      targetSafeRef: value.targetSafeRef,
+    },
+    destructiveAuthorization: {
+      authorizationRef: value.strongAuth?.authzRef,
+      challengeRef: value.strongAuth?.challengeRef,
+      confirmationRef: value.strongAuth?.confirmationRef,
+      policyGate: value.policyGate,
+    },
+    reason: value.reason,
   });
 }
 
@@ -84,6 +125,9 @@ export function sanitizeRuntimeAuditEvent(event = {}) {
     sideEffectFailed: event.sideEffectFailed === true,
     blockedReason: normalizeText(event.blockedReason),
     artifactRefs: asArray(event.artifactRefs).map((ref) => normalizeText(ref)).filter(Boolean),
+    authSummary: sanitizeAuditAuthSummary(event.authSummary),
+    policySummary: sanitizeAuditPolicySummary(event.policySummary),
+    destructiveSummary: sanitizeAuditDestructiveSummary(event.destructiveSummary),
     sanitizedError: sanitizeAuditError(event.sanitizedError),
     redactionRequired: true,
   };

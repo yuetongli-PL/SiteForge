@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>SiteForge E2E Fixture</title>
+  </head>
+  <body>
+    <main>
+      <a id="public-orders" href="/api/orders/search" data-api-endpoint="/api/orders/search">Public orders</a>
+
+      <form id="support-form" action="/support" data-success-selector="[data-sf-completion='support-sent']">
+        <label>
+          Message
+          <textarea name="message" required></textarea>
+        </label>
+        <button type="submit" data-sf-action="submit-support">Send</button>
+        <p data-sf-completion="support-sent">success</p>
+      </form>
+
+      <form id="account-delete" action="/account/delete">
+        <p>Delete account permanently. This action cannot be undone.</p>
+        <button type="submit">Delete</button>
+      </form>
+
+      <form id="checkout-payment" action="/checkout/pay">
+        <p>Checkout payment amount currency card billing purchase.</p>
+        <input name="amount" type="number" required>
+        <button type="submit">Pay</button>
+      </form>
+    </main>
+  </body>
+</html>

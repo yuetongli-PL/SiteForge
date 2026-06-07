@@ -1,0 +1,46 @@
+{
+  "providerId": "browser_action_provider",
+  "capabilityKind": "submit",
+  "operationKind": "form_or_action",
+  "runtimeContext": {
+    "controlledBrowserRuntime": true,
+    "browserRuntime": {
+      "mode": "controlled",
+      "engine": "chromium",
+      "startUrl": "http://auth-browser.example.test/contact",
+      "allowedOrigins": ["http://auth-browser.example.test"],
+      "allowExternalNetwork": false,
+      "allowDownloads": false,
+      "allowPopups": false,
+      "persistProfile": false,
+      "recordDom": false,
+      "recordScreenshots": false,
+      "recordVideo": false,
+      "recordFullTrace": false
+    }
+  },
+  "authRequirement": {
+    "required": true,
+    "mode": "session_handle",
+    "scopes": [
+      {
+        "origin": "http://auth-browser.example.test",
+        "operations": ["form_or_action"]
+      }
+    ],
+    "material": {
+      "allowedTypes": ["cookie"],
+      "injectionTarget": "browser_context"
+    },
+    "policy": {
+      "requireGovernanceGate": true,
+      "allowCredentialForwarding": false,
+      "allowRawHeaderAudit": false,
+      "allowRawCookieAudit": false,
+      "allowRawBodyAudit": false,
+      "allowStorageStatePersistence": false,
+      "allowProfilePersistence": false,
+      "allowAutomaticLogin": false
+    }
+  }
+}

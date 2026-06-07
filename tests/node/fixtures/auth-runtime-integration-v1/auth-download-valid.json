@@ -1,0 +1,11 @@
+{
+  "name": "auth-download-valid",
+  "providerId": "download_provider",
+  "capabilityId": "capability:auth-v1:download",
+  "executionContractRef": "execution-contract:auth-v1:download",
+  "url": "https://auth.example.test/api/export",
+  "operation": "download",
+  "materialTypes": ["api_key"],
+  "filename": "auth-export.txt",
+  "expectedStatus": "completed"
+}

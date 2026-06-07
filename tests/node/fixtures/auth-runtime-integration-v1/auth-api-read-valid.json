@@ -1,0 +1,10 @@
+{
+  "name": "auth-api-read-valid",
+  "providerId": "api_read_provider",
+  "capabilityId": "capability:auth-v1:api-read",
+  "executionContractRef": "execution-contract:auth-v1:api-read",
+  "url": "https://auth.example.test/api/items",
+  "operation": "read",
+  "materialTypes": ["bearer_token"],
+  "expectedStatus": "completed"
+}

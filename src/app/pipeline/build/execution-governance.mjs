@@ -100,6 +100,75 @@ function planSteps(plan = /** @type {any} */ ({})) {
   return Array.isArray(plan?.steps) ? plan.steps : [];
 }
 
+function isPlainObject(value) {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function safeDescriptorText(value) {
+  const text = String(value ?? '').trim();
+  if (!text || /(?:cookie|token|authorization|credential|password|secret|session[_-]?id|csrf)/iu.test(text)) {
+    return null;
+  }
+  return text.replace(/[?&](?:token|auth|sid|session|cookie|csrf|access_token|refresh_token)=[^&\s"']+/giu, '');
+}
+
+function safeDescriptorStringList(value) {
+  return Array.isArray(value)
+    ? value.map(safeDescriptorText).filter(Boolean)
+    : [];
+}
+
+function sanitizedDownloaderTaskDescriptor(capability = /** @type {any} */ ({}), plan = /** @type {any} */ ({}), disposition = 'blocked') {
+  const stepDescriptor = planSteps(plan)
+    .map((step) => step?.downloaderTaskDescriptor)
+    .find(isPlainObject);
+  const source = isPlainObject(capability.downloaderTaskDescriptor)
+    ? capability.downloaderTaskDescriptor
+    : stepDescriptor;
+  const descriptor = {
+    material: 'descriptor_only',
+    networkResolveAllowedAtRuntime: disposition !== 'blocked',
+    savedMaterial: SANITIZED_SUMMARY_ONLY,
+  };
+  if (!source) {
+    return descriptor;
+  }
+  for (const key of ['siteKey', 'adapterId', 'taskType', 'entrypoint', 'scriptLanguage', 'interpreter', 'sessionRequirement', 'artifactMaterial', 'reportMaterial', 'bodyTextPersistence']) {
+    const value = safeDescriptorText(source[key]);
+    if (value) {
+      descriptor[key] = value;
+    }
+  }
+  for (const key of ['acceptsBookTitle', 'acceptsBookUrl', 'acceptsSearchResult', 'redactionRequired']) {
+    if (source[key] === true || source[key] === false) {
+      descriptor[key] = source[key] === true;
+    }
+  }
+  const inputSlots = safeDescriptorStringList(source.inputSlots);
+  if (inputSlots.length) {
+    descriptor.inputSlots = inputSlots;
+  }
+  const outputFields = safeDescriptorStringList(source.outputFields);
+  if (outputFields.length) {
+    descriptor.outputFields = outputFields;
+  }
+  descriptor.networkResolveAllowedAtRuntime = disposition !== 'blocked' && source.networkResolveAllowedAtRuntime !== false;
+  descriptor.savedMaterial = SANITIZED_SUMMARY_ONLY;
+  descriptor.reportMaterial = SANITIZED_SUMMARY_ONLY;
+  descriptor.redactionRequired = true;
+  return descriptor;
+}
+
+function runtimeProviderIdForCapability(capability = /** @type {any} */ ({}), operationKind = 'navigate') {
+  if (operationKind === 'download') {
+    return safeDescriptorText(capability.downloaderTaskDescriptor?.providerId) ?? 'known_site_downloader';
+  }
+  return capability?.providerId ?? null;
+}
+
 function joinedCapabilityText(capability = /** @type {any} */ ({})) {
   return [
     capability.name,
@@ -291,6 +360,7 @@ function sanitizeStepTemplate(step = /** @type {any} */ ({})) {
     routeTemplate: step.routeTemplate ?? step.routePath ?? null,
     endpointTemplate: step.endpoint ? String(step.endpoint).replace(/[?&](?:token|auth|sid|session|cookie|csrf|access_token|refresh_token)=[^&]+/giu, '') : null,
     slotNames: [
+      ...(Array.isArray(step.slotNames) ? step.slotNames : []),
       step.querySlot,
       step.inputSlot,
       step.payloadSlot,
@@ -585,13 +655,11 @@ export function buildExecutionContract({
     runtimeBinding: {
       id: runtimeBindingId,
       kind: runtimeKindForCapability(capability, plan ?? {}),
-      providerId: capability?.providerId ?? null,
+      providerId: runtimeProviderIdForCapability(capability, operationKind),
       adapterRef: capability?.apiAdapter?.adapterDecisionRef ?? capability?.siteAdapterRef ?? null,
-      downloaderTaskDescriptor: operationKind === 'download' ? {
-        material: 'descriptor_only',
-        networkResolveAllowedAtRuntime: disposition !== 'blocked',
-        savedMaterial: SANITIZED_SUMMARY_ONLY,
-      } : null,
+      downloaderTaskDescriptor: operationKind === 'download'
+        ? sanitizedDownloaderTaskDescriptor(capability, plan ?? {}, disposition)
+        : null,
       credentialMaterialPolicy: 'no_raw_material',
       cookieMaterialPersisted: false,
       sessionViewPersisted: false,

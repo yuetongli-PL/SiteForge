@@ -29,6 +29,15 @@ async function pathExists(filePath) {
   }
 }
 
+function fineGrainedNavigationCapabilityNames(capabilities = /** @type {any[]} */ ([])) {
+  return capabilities
+    .filter((capability) => (
+      capability.status === 'active'
+      && /^(?:open .* element |open public route )/u.test(String(capability.name ?? ''))
+    ))
+    .map((capability) => capability.name);
+}
+
 function qidianLikeKnownPolicy() {
   return {
     siteKey: 'qidian',
@@ -45,6 +54,39 @@ function qidianLikeKnownPolicy() {
       { id: 'book-detail-template', pathTemplate: '/book/{bookId}/', pageType: 'book-detail-page', capabilityFamilies: ['navigate-to-content'], seedable: false },
       { id: 'chapter-template', pathTemplate: '/chapter/{bookId}/{chapterId}/', pageType: 'chapter-page', capabilityFamilies: ['navigate-to-chapter'], seedable: false },
     ],
+  };
+}
+
+function qidianLikeDownloadKnownPolicy() {
+  return {
+    ...qidianLikeKnownPolicy(),
+    siteKey: '22biqu',
+    capabilityFamilies: [
+      'download-content',
+      'navigate-to-category',
+      'navigate-to-chapter',
+      'navigate-to-content',
+      'search-content',
+    ],
+    supportedIntents: [
+      'download-book',
+      'open-book',
+      'open-category',
+      'open-chapter',
+      'search-book',
+    ],
+    downloadEntrypoint: 'src/sites/known-sites/chapter-content/download/python/book.py',
+    downloadSessionRequirement: 'none',
+    downloadTaskTypes: ['book'],
+    scriptLanguage: 'python',
+    interpreterRequired: 'pypy3',
+    downloadSupport: {
+      status: 'implemented',
+      supported: true,
+      taskTypes: ['book'],
+      availableTaskTypes: ['book'],
+      blockedTaskTypes: [],
+    },
   };
 }
 
@@ -378,6 +420,11 @@ test('qidian-like dynamic public site maps rendered book structures to chapter-c
       for (const unexpected of ['search posts', 'read timeline post summaries', 'read recommended timeline', 'list direct messages']) {
         assert.equal(activeNames.has(unexpected), false, `${unexpected} must not be active on chapter-content sites`);
       }
+      assert.deepEqual(
+        fineGrainedNavigationCapabilityNames(capabilities.capabilities),
+        [],
+        'chapter-content sites should use aggregate navigation capabilities instead of per-element or per-route capabilities',
+      );
       const searchBooks = capabilities.capabilities.find((capability) => capability.name === 'search books');
       assert.equal(searchBooks?.evidenceMatrix?.observedEvidence.includes('public_rendered_structure_present'), true);
       assert.deepEqual(searchBooks?.evidenceMatrix?.missingEvidence, []);
@@ -420,6 +467,109 @@ test('qidian-like dynamic public site maps rendered book structures to chapter-c
       for (const forbidden of [sensitiveValue, `sid=${sensitiveValue}`, `token=${sensitiveValue}`, 'Authorization: Bearer']) {
         assert.equal(htmlReportText.includes(forbidden), false, `${forbidden} must not be persisted in qidian-like HTML report`);
       }
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('chapter-content download policy generates parameterized book text downloader capability', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-chapter-download-rendered-'));
+  try {
+    await withTestSite(qidianLikeDynamicRoutes, async (rootUrl) => {
+      const url = (route) => new URL(route, rootUrl).toString();
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'chapter-download-rendered',
+        now: new Date('2026-05-16T04:06:00.000Z'),
+        fetchDelayMs: 0,
+        setupProfile: {
+          knownSitePolicy: qidianLikeDownloadKnownPolicy(),
+        },
+        publicRenderedStructureProvider: async () => ({
+          publicRenderedPages: [
+            {
+              url: rootUrl,
+              pageType: 'home',
+              title: 'Public novel home',
+              listPresent: true,
+              visibleItemCount: 6,
+              routeTemplates: ['/soushu/', '/book/:id/'],
+              structureItems: [
+                { structureType: 'book_collection_list', visibleItemCount: 6, listPresent: true, routeTemplates: ['/book/:id/'] },
+                { structureType: 'book_category_list', visibleItemCount: 2, listPresent: true, routeTemplates: ['/all/'] },
+              ],
+            },
+            {
+              url: url('/soushu/'),
+              pageType: 'search-results-page',
+              routeTemplate: '/soushu/',
+              listPresent: true,
+              visibleItemCount: 4,
+              forms: [{
+                label: 'public-rendered-search-form',
+                method: 'GET',
+                action: url('/soushu/'),
+                inputs: [{ name: 'q', type: 'search', label: 'keyword' }],
+              }],
+              structureItems: [{ nodeType: 'operation', structureType: 'book_search_form', visibleItemCount: 0, listPresent: false, formCount: 1 }],
+            },
+            {
+              url: url('/book/123/'),
+              pageType: 'book-detail-page',
+              routeTemplate: '/book/:id/',
+              listPresent: true,
+              visibleItemCount: 5,
+              routeTemplates: ['/chapter/:id/:id/'],
+              structureItems: [{ structureType: 'chapter_link', visibleItemCount: 5, listPresent: true, routeTemplates: ['/chapter/:id/:id/'] }],
+            },
+          ],
+        }),
+      });
+
+      assert.equal(result.status, 'success');
+      const capabilities = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const names = new Set(capabilities.capabilities.map((capability) => capability.name));
+      assert.equal(names.has('download catalog content'), false);
+      const downloadBook = capabilities.capabilities.find((capability) => capability.name === 'download book');
+      assert.ok(downloadBook);
+      assert.equal(downloadBook.status, 'active');
+      assert.equal(downloadBook.action, 'download');
+      assert.equal(downloadBook.object, 'public book text');
+      assert.equal(downloadBook.risk_level, 'download_high');
+      assert.equal(downloadBook.mode, 'download');
+      assert.deepEqual(downloadBook.inputs.map((input) => input.name), ['book_title', 'book_url', 'output_dir']);
+      assert.equal(downloadBook.executionPlan.mode, 'download');
+      assert.equal(downloadBook.executionPlan.steps[0].kind, 'downloader_task_descriptor');
+      assert.deepEqual(downloadBook.executionPlan.steps[0].slotNames, ['book_title', 'book_url', 'output_dir']);
+      assert.equal(downloadBook.executionPlan.steps[0].artifactMaterial, 'public_chapter_text_txt');
+      assert.equal(downloadBook.executionPlan.runtimeMode, undefined);
+
+      const contracts = await readJson(path.join(result.artifactDir, 'execution_contracts.json'));
+      const contract = contracts.executionContracts.find((candidate) => candidate.capabilityId === downloadBook.id);
+      assert.ok(contract);
+      assert.equal(contract.operationKind, 'download');
+      assert.equal(contract.runtimeBinding.kind, 'downloader');
+      assert.equal(contract.runtimeBinding.providerId, 'known_site_downloader');
+      assert.equal(contract.runtimeBinding.downloaderTaskDescriptor.taskType, 'book');
+      assert.equal(contract.runtimeBinding.downloaderTaskDescriptor.entrypoint, 'src/sites/known-sites/chapter-content/download/python/book.py');
+      assert.equal(contract.runtimeBinding.downloaderTaskDescriptor.interpreter, 'pypy3');
+      assert.deepEqual(contract.runtimeBinding.downloaderTaskDescriptor.inputSlots, ['book_title', 'book_url', 'output_dir']);
+      assert.equal(contract.runtimeBinding.downloaderTaskDescriptor.bodyTextPersistence, 'download_artifact_only');
+      assert.equal(contract.runtimeBinding.downloaderTaskDescriptor.savedMaterial, 'sanitized_summary_only');
+      assert.equal(contract.runtimeBinding.downloaderTaskDescriptor.reportMaterial, 'sanitized_summary_only');
+      assert.deepEqual(contract.payloadTemplate.slotBindings.map((slot) => slot.name), ['book_title', 'book_url', 'output_dir']);
+      assert.deepEqual(contract.payloadTemplate.steps[0].slotNames, ['book_title', 'book_url', 'output_dir']);
+
+      const governance = await readJson(path.join(result.artifactDir, 'execution_governance.json'));
+      const decision = governance.decisions.find((candidate) => candidate.capabilityId === downloadBook.id);
+      assert.equal(decision?.runtimeDispatchAllowed, true);
+      assert.equal(decision?.downloaderInvocationAllowed, true);
+
+      const intents = await readJson(path.join(result.artifactDir, 'intents.json'));
+      const downloadIntents = intents.intents.filter((intent) => intent.capabilityId === downloadBook.id);
+      assert.equal(downloadIntents.some((intent) => intent.canonicalUtterance === '\u4e0b\u8f7d\u641c\u7d22\u5230\u7684\u4f5c\u54c1'), true);
+      assert.equal(downloadIntents.some((intent) => intent.canonicalUtterance === 'download video'), false);
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -475,6 +625,11 @@ test('unconfigured dynamic public book site uses rendered structure signals for 
       for (const unexpected of ['browse products', 'search products', 'search posts']) {
         assert.equal(activeNames.has(unexpected), false, `${unexpected} must not be active for inferred chapter-content structure`);
       }
+      assert.deepEqual(
+        fineGrainedNavigationCapabilityNames(capabilities.capabilities),
+        [],
+        'inferred chapter-content sites should not expose per-element or per-route capabilities',
+      );
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });

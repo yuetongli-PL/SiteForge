@@ -10,6 +10,7 @@ import {
   generateAutoCapabilities,
   generateAutoIntentRecords,
   lookupSkillIntentFromRegistry,
+  runSiteForgeBuild,
   stableCapabilityId,
   upsertSkillRegistryRecord,
   writeCapabilityInteractionDecisions,
@@ -18,6 +19,16 @@ import {
 import {
   genericNavigationAdapter,
 } from '../../src/sites/adapters/generic-navigation.mjs';
+import {
+  testHtmlPage,
+  testRobotsTxt,
+  testSitemapXml,
+  withTestSite,
+} from './helpers/test-site-server.mjs';
+
+async function readJson(filePath) {
+  return JSON.parse(await readFile(filePath, 'utf8'));
+}
 
 function safeLimitedReadPlan(capabilityId) {
   return {
@@ -48,6 +59,91 @@ function evidence(source = 'http://127.0.0.1/simple-shop') {
   }];
 }
 
+const PROSE_LABEL_SENTINEL = 'SITEFORGE_PROSE_SENTINEL';
+const LONG_CHINESE_PROSE_LABEL = [
+  '\u8fd9\u662f\u4e00\u6bb5\u7528\u4e8e\u80fd\u529b\u8fc7\u6ee4\u7684\u5408\u6210\u6b63\u6587\u5185\u5bb9',
+  PROSE_LABEL_SENTINEL,
+  '\u5b83\u6a21\u62df\u7ad9\u70b9\u5217\u8868\u91cc\u7684\u957f\u7bc7\u7ae0\u6458\u5f55',
+  '\u4e0d\u5e94\u8be5\u88ab\u63d0\u5347\u6210\u7528\u6237\u53ef\u8c03\u7528\u80fd\u529b',
+].join('');
+
+function proseLabelRoutes(rootUrl) {
+  const indexHtml = testHtmlPage('Prose Label Fixture', `
+    <main>
+      <nav>
+        <a href="/category.html">\u5206\u7c7b</a>
+        <a href="/ranking.html">\u6392\u884c\u699c</a>
+      </nav>
+      <section>
+        <a href="/book.html">${LONG_CHINESE_PROSE_LABEL}</a>
+      </section>
+      <form method="GET" action="/search.html" role="search" aria-label="\u641c\u7d22\u5c0f\u8bf4">
+        <input name="q" type="search">
+        <button type="submit">\u641c\u7d22</button>
+      </form>
+    </main>
+  `);
+  return {
+    '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl) },
+    '/sitemap.xml': {
+      contentType: 'application/xml; charset=utf-8',
+      body: testSitemapXml(rootUrl, ['/', '/category.html', '/ranking.html', '/book.html', '/search.html']),
+    },
+    '/': indexHtml,
+    '/category.html': testHtmlPage('Category', '<main><h1>\u5206\u7c7b</h1></main>'),
+    '/ranking.html': testHtmlPage('Ranking', '<main><h1>\u6392\u884c\u699c</h1></main>'),
+    '/book.html': testHtmlPage('Book', '<main><h1>Fixture Book</h1></main>'),
+    '/search.html': testHtmlPage('Search', '<main><h1>Search</h1></main>'),
+  };
+}
+
+function readOnlyActionFalsePositiveRoutes(rootUrl) {
+  const indexHtml = testHtmlPage('Read Only Action False Positives', `
+    <main>
+      <nav>
+        <a href="/book.html">\u7b2c11\u7ae0 \u53d1\u5e03\u4f1a</a>
+        <a href="/category.html">\u5206\u7c7b</a>
+      </nav>
+      <form id="t_frmsearch" name="t_frmsearch" method="POST" action="/soushu/" role="search">
+        <input name="searchkey" type="text" placeholder="\u53ef\u641c\u4e66\u540d\u548c\u4f5c\u8005">
+        <button type="submit">\u641c\u7d22</button>
+      </form>
+    </main>
+  `);
+  return {
+    '/robots.txt': { contentType: 'text/plain; charset=utf-8', body: testRobotsTxt(rootUrl) },
+    '/sitemap.xml': {
+      contentType: 'application/xml; charset=utf-8',
+      body: testSitemapXml(rootUrl, ['/', '/category.html', '/book.html', '/soushu/']),
+    },
+    '/': indexHtml,
+    '/category.html': testHtmlPage('Category', '<main><h1>\u5206\u7c7b</h1></main>'),
+    '/book.html': testHtmlPage('Book', '<main><h1>\u7b2c11\u7ae0 \u53d1\u5e03\u4f1a</h1></main>'),
+    '/soushu/': testHtmlPage('Search', '<main><h1>\u641c\u7d22</h1></main>'),
+  };
+}
+
+function visibleCapabilityText(capability) {
+  return JSON.stringify({
+    name: capability.name,
+    userValue: capability.userValue,
+    user_facing_name: capability.user_facing_name,
+    object: capability.object,
+    description: capability.description,
+    elementLabel: capability.elementLabel,
+    intents: capability.intents,
+  });
+}
+
+function visibleIntentText(intent) {
+  return JSON.stringify({
+    name: intent.name,
+    description: intent.description,
+    canonicalUtterance: intent.canonicalUtterance,
+    utteranceExamples: intent.utteranceExamples,
+  });
+}
+
 function fixtureSensitiveRead(id, overrides = /** @type {any} */ ({})) {
   return {
     id,
@@ -68,6 +164,72 @@ function fixtureSensitiveRead(id, overrides = /** @type {any} */ ({})) {
     ...overrides,
   };
 }
+
+test('public element capability generation keeps prose labels as evidence only', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-prose-label-filter-'));
+  try {
+    await withTestSite(proseLabelRoutes, async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'prose-label-filter',
+        now: new Date('2026-06-07T09:00:00.000Z'),
+        fetchDelayMs: 0,
+        maxPages: 6,
+      });
+
+      assert.equal(result.status, 'success');
+
+      const capabilitiesPayload = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const intentsPayload = await readJson(path.join(result.artifactDir, 'intents.json'));
+      const capabilities = capabilitiesPayload.capabilities ?? [];
+      const intents = intentsPayload.intents ?? [];
+      const visibleCapabilities = capabilities.map(visibleCapabilityText).join('\n');
+      const visibleIntents = intents.map(visibleIntentText).join('\n');
+
+      assert.doesNotMatch(visibleCapabilities, new RegExp(PROSE_LABEL_SENTINEL, 'u'));
+      assert.doesNotMatch(visibleIntents, new RegExp(PROSE_LABEL_SENTINEL, 'u'));
+      assert.equal(capabilities.some((capability) => (
+        capability.evidenceModel === 'public_element_summary'
+        && String(capability.object ?? '').includes('\u5206\u7c7b')
+      )), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('auto action generation ignores read-only chapter titles and search forms', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-readonly-action-filter-'));
+  try {
+    await withTestSite(readOnlyActionFalsePositiveRoutes, async (rootUrl) => {
+      const result = await runSiteForgeBuild(rootUrl, {
+        cwd: workspace,
+        buildId: 'readonly-action-filter',
+        now: new Date('2026-06-07T09:15:00.000Z'),
+        fetchDelayMs: 0,
+        maxPages: 5,
+      });
+
+      assert.equal(result.status, 'success');
+
+      const capabilitiesPayload = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      const capabilities = capabilitiesPayload.capabilities ?? [];
+      assert.equal(capabilities.some((capability) => (
+        capability.name === 'publish action'
+        || (
+          capability.action === 'submit'
+          && String(capability.object ?? '').includes('\u53d1\u5e03\u4f1a')
+        )
+      )), false);
+      assert.equal(capabilities.some((capability) => (
+        capability.name === 'submit action'
+        && /t_frmsearch|searchkey|\u641c\u7d22/u.test(`${capability.object ?? ''} ${capability.userValue ?? ''}`)
+      )), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test('generic adapter redacts sensitive semantic fields for fixture sites', () => {
   const semanticEntry = genericNavigationAdapter.describeApiCandidateSemantics({

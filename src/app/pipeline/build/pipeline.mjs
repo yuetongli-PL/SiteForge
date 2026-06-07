@@ -671,6 +671,10 @@ function isChapterContentContext(context = /** @type {any} */ ({})) {
   return /chapter-content|open-book|open-chapter|search-book|navigate-to-chapter/u.test(policyTextForContext(context));
 }
 
+function shouldUseAggregateNavigationCapabilities(context = /** @type {any} */ ({}), graph = /** @type {any} */ ({})) {
+  return isChapterContentContext(context) || hasChapterContentCoverageSignals(graph.nodes ?? []);
+}
+
 function isSocialSiteContext(context = /** @type {any} */ ({})) {
   return /social|timeline|post|direct-message|notification|bookmark|following|followers|twitter|instagram|x\.com/u.test(policyTextForContext(context));
 }
@@ -8907,16 +8911,61 @@ function disabledActionForAffordance(affordance) {
   return uniqueSortedStrings(forced);
 }
 
-function writeActionForAffordance(affordance) {
-  const text = [
+function affordanceInputSummary(affordance = /** @type {any} */ ({})) {
+  return (Array.isArray(affordance.inputs) ? affordance.inputs : [])
+    .flatMap((input) => [
+      input?.name,
+      input?.type,
+      input?.label,
+      input?.placeholder,
+      input?.selector,
+    ])
+    .filter(Boolean)
+    .join(' ');
+}
+
+function affordanceActionText(affordance = /** @type {any} */ ({})) {
+  return [
     affordance?.kind,
     affordance?.label,
+    affordance?.text,
+    affordance?.ariaLabel,
+    affordance?.name,
     affordance?.method,
     affordance?.endpoint,
     affordance?.href,
+    affordance?.selector,
+    affordance?.semanticKind,
+    affordance?.structureType,
     affordance?.safety,
-  ].filter(Boolean).join(' ').toLowerCase();
+    affordanceInputSummary(affordance),
+  ].filter(Boolean).join(' ');
+}
+
+function isReadOnlyNavigationAffordance(affordance = /** @type {any} */ ({})) {
+  const kind = String(affordance?.kind ?? '').toLowerCase();
+  const semanticKind = String(affordance?.semanticKind ?? '').toLowerCase();
+  const structureType = String(affordance?.structureType ?? '').toLowerCase();
+  return affordance?.safety === 'read_only'
+    || kind === 'link'
+    || semanticKind === 'navigation'
+    || structureType.includes('navigation');
+}
+
+function isSearchLikeWriteAffordance(affordance = /** @type {any} */ ({})) {
+  const text = affordanceActionText(affordance).toLowerCase();
+  return /\b(?:search|query|keyword|keywords|find|lookup|soushu|so|q)\b|searchkey|\u641c\u7d22|\u641c\u4e66|\u53ef\u641c|\u4e66\u540d|\u4f5c\u8005|\u5173\u952e\u8bcd/u.test(text);
+}
+
+function writeActionForAffordance(affordance) {
+  const text = affordanceActionText(affordance).toLowerCase();
   if (!text || isReadOnlyFollowSurface(affordance) || ['payment', 'destructive'].includes(String(affordance?.safety ?? ''))) {
+    return null;
+  }
+  if (isReadOnlyNavigationAffordance(affordance)) {
+    return null;
+  }
+  if (affordance?.kind === 'form' && isSearchLikeWriteAffordance(affordance)) {
     return null;
   }
   if (affordance?.kind === 'upload' || /\bupload\b|\u4e0a\u4f20/u.test(text)) return 'upload';
@@ -9155,6 +9204,51 @@ function knownPolicyDownloadReasonCode(context) {
     ?? 'site-adapter-required';
 }
 
+function knownPolicyChapterDownloaderDescriptor(context) {
+  const policy = context.setupProfile?.knownSitePolicy ?? {};
+  return {
+    material: 'descriptor_only',
+    siteKey: policy.siteKey ?? context.skillId ?? context.site?.id ?? null,
+    adapterId: policy.adapterId ?? 'chapter-content',
+    taskType: 'book',
+    entrypoint: policy.downloadEntrypoint ?? 'src/sites/known-sites/chapter-content/download/python/book.py',
+    scriptLanguage: policy.scriptLanguage ?? 'python',
+    interpreter: policy.interpreterRequired ?? 'pypy3',
+    sessionRequirement: policy.downloadSessionRequirement ?? 'none',
+    acceptsBookTitle: true,
+    acceptsBookUrl: true,
+    acceptsSearchResult: true,
+    inputSlots: ['book_title', 'book_url', 'output_dir'],
+    outputFields: ['downloadFile', 'manifestPath', 'chapterCount', 'finalUrl'],
+    networkResolveAllowedAtRuntime: true,
+    reportMaterial: SANITIZED_SUMMARY_ONLY,
+    savedMaterial: SANITIZED_SUMMARY_ONLY,
+    artifactMaterial: 'public_chapter_text_txt',
+    bodyTextPersistence: 'download_artifact_only',
+    redactionRequired: true,
+  };
+}
+
+function knownPolicySupportsBookDownload(context) {
+  const policy = context.setupProfile?.knownSitePolicy ?? {};
+  if (!knownPolicyCapabilityFamilies(context).has('download-content')) {
+    return false;
+  }
+  if (policy.downloadSupport?.supported === false) {
+    return false;
+  }
+  const blockedTaskTypes = new Set(policy.downloadSupport?.blockedTaskTypes ?? []);
+  if (blockedTaskTypes.has('book')) {
+    return false;
+  }
+  const declaredTaskTypes = [
+    ...(policy.downloadTaskTypes ?? []),
+    ...(policy.downloadSupport?.taskTypes ?? []),
+    ...(policy.downloadSupport?.availableTaskTypes ?? []),
+  ];
+  return declaredTaskTypes.length === 0 || declaredTaskTypes.includes('book');
+}
+
 function siteContextText(context = /** @type {any} */ ({}), nodes = /** @type {any[]} */ ([])) {
   const site = context.site ?? {};
   const policy = context.setupProfile?.knownSitePolicy ?? {};
@@ -9288,6 +9382,9 @@ function hasChapterContentCoverageSignals(nodes = /** @type {any[]} */ ([])) {
   const classifications = nodes.map((node) => String(node.classification ?? ''));
   if (classifications.includes('chapter_detail')) {
     return true;
+  }
+  if (!classifications.includes('chapter_content_home')) {
+    return false;
   }
   const bookSignals = classifications.filter((classification) => [
     'chapter_content_home',
@@ -9463,7 +9560,28 @@ function addCatalogCoverageCapability(context, capabilities, {
     intents,
     ...(activationBlockedReason ? { activationBlockedReason } : {}),
   });
-  if (status === 'active' && !informational) {
+  if (status === 'active' && !informational && riskLevel === 'download_high') {
+    capability.executionPlan = buildExecutionPlan(capability.id, {
+      mode: 'download',
+      dryRunOnly: false,
+      requiresConfirmation: false,
+      autoExecute: false,
+      governedExecution: false,
+      executionDisposition: 'allow',
+      steps: [{
+        kind: 'downloader_task_descriptor',
+        nodeIds: nodes.slice(0, 20).map((node) => node.id),
+        routeTemplate: routeState?.routeTemplate ?? null,
+        routePath: routeState?.routePath ?? null,
+        submit: true,
+        finalSubmit: false,
+        autoExecute: false,
+        governedExecution: false,
+        executionDisposition: 'allow',
+        savedMaterial: SANITIZED_SUMMARY_ONLY,
+      }],
+    });
+  } else if (status === 'active' && !informational) {
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
       steps: canUseRouteOnlyEvidence ? catalogRouteOnlySteps(nodes) : catalogCoverageSteps(nodes),
@@ -9753,8 +9871,50 @@ function isStructureElementInstanceNode(node = /** @type {any} */ ({})) {
 }
 
 function hasMeaningfulElementLabel(node = /** @type {any} */ ({})) {
-  const label = String(node.elementLabel ?? node.linkLabel ?? node.title ?? '').trim();
-  return label.length >= 2 && !/^(?:link|control|element)-\d+$/iu.test(label);
+  const label = sanitizedPromotableCapabilityLabel(node.elementLabel ?? node.linkLabel ?? node.title, 80, null);
+  return Boolean(label) && !/^(?:link|control|element)-\d+$/iu.test(label);
+}
+
+function capabilityLabelStats(value) {
+  const text = String(value ?? '').replace(/\s+/gu, ' ').trim();
+  const compact = text.replace(/\s+/gu, '');
+  return {
+    text,
+    charCount: Array.from(compact).length,
+    cjkCount: (compact.match(/[\u3400-\u9fff]/gu) ?? []).length,
+    asciiWordCount: (text.match(/[a-z0-9][a-z0-9'-]*/giu) ?? []).length,
+    sentencePunctuationCount: (text.match(/[。！？!?；;，、]/gu) ?? []).length,
+    hasLineBreak: /[\r\n]/u.test(String(value ?? '')),
+  };
+}
+
+function isProseLikeCapabilityLabel(value) {
+  const stats = capabilityLabelStats(value);
+  if (!stats.text || stats.text === '[REDACTED]') {
+    return true;
+  }
+  return stats.cjkCount >= 36
+    || stats.charCount >= 96
+    || (stats.charCount >= 72 && stats.sentencePunctuationCount >= 1)
+    || (stats.charCount >= 42 && stats.sentencePunctuationCount >= 2)
+    || (stats.asciiWordCount >= 18 && stats.charCount >= 90)
+    || (stats.hasLineBreak && stats.charCount >= 32);
+}
+
+function sanitizedPromotableCapabilityLabel(value, maxLength = 80, fallback = null) {
+  const label = sanitizedStructureText(value, maxLength, null);
+  if (!label || isProseLikeCapabilityLabel(label)) {
+    return fallback;
+  }
+  return label;
+}
+
+function elementCapabilityLabel(node = /** @type {any} */ ({}), fallback = 'page element') {
+  return sanitizedPromotableCapabilityLabel(
+    node.elementLabel ?? node.linkLabel ?? node.title,
+    80,
+    fallback,
+  );
 }
 
 function categoryInstanceForNode(node = /** @type {any} */ ({})) {
@@ -9762,7 +9922,10 @@ function categoryInstanceForNode(node = /** @type {any} */ ({})) {
   if (!['search', 'category', 'tag', 'ranking', 'work', 'article', 'media', 'detail', 'profile', 'following_list', 'followed_channel'].includes(role)) {
     return null;
   }
-  const label = sanitizedStructureText(node.elementLabel ?? node.linkLabel ?? node.title, 120, role);
+  const label = sanitizedPromotableCapabilityLabel(node.elementLabel ?? node.linkLabel ?? node.title, 80, null);
+  if (!label) {
+    return null;
+  }
   return {
     kind: role,
     label,
@@ -9833,7 +9996,7 @@ function chineseElementIntentExamples(role, objectLabel) {
 
 function elementCapabilityName(node = /** @type {any} */ ({}), index = 0) {
   const role = String(node.elementRole ?? node.linkSemanticKind ?? 'navigation').toLowerCase();
-  const label = String(node.elementLabel ?? node.title ?? role).trim();
+  const label = elementCapabilityLabel(node, role);
   const labelSlug = slugifyAscii(label, '');
   const routeSlug = slugifyAscii(node.routeTemplate ?? node.routePattern ?? node.normalizedUrl ?? '', '');
   const stableSuffix = node.id?.slice(-8) || `element-${index + 1}`;
@@ -9843,9 +10006,10 @@ function elementCapabilityName(node = /** @type {any} */ ({}), index = 0) {
     : `open ${role} element ${suffix}`;
 }
 
-function elementCapabilityIntentSeeds(node = /** @type {any} */ ({})) {
+function elementCapabilityIntentSeeds(node = /** @type {any} */ ({}), labelOverride = null) {
   const role = String(node.elementRole ?? node.linkSemanticKind ?? 'navigation').toLowerCase();
-  const label = String(node.elementLabel ?? node.title ?? '').trim()
+  const label = String(labelOverride ?? '').trim()
+    || elementCapabilityLabel(node, null)
     || String(node.routeTemplate ?? node.routePattern ?? '\u9875\u9762\u5165\u53e3');
   const canonicalUtterance = chineseElementCanonicalUtterance(role, label);
   return [
@@ -9887,7 +10051,10 @@ function addPublicElementInstanceCapabilities(context, capabilities, graph, robo
     }
     existingNames.add(name.toLowerCase());
     const role = String(node.elementRole ?? node.linkSemanticKind ?? 'navigation').toLowerCase();
-    const label = String(node.elementLabel ?? node.title ?? name).trim();
+    const label = elementCapabilityLabel(node, null);
+    if (!label) {
+      continue;
+    }
     const action = role === 'search' ? 'search' : 'view';
     const layer = nodeSourceLayer(node);
     const authRequired = node.authRequired === true || isAuthenticatedSourceLayer(layer);
@@ -9920,7 +10087,7 @@ function addPublicElementInstanceCapabilities(context, capabilities, graph, robo
       raw_dom_saved: false,
       raw_html_saved: false,
       private_content_saved: false,
-      intents: elementCapabilityIntentSeeds(node),
+      intents: elementCapabilityIntentSeeds(node, label),
     });
     capability.executionPlan = buildExecutionPlan(capability.id, {
       mode: 'read_only',
@@ -9940,12 +10107,18 @@ function addPublicElementInstanceCapabilities(context, capabilities, graph, robo
 
 function routeInstanceCapabilityName(node = /** @type {any} */ ({}), index = 0) {
   const route = node.routeTemplate ?? node.routePattern ?? node.normalizedUrl ?? `route-${index + 1}`;
-  const suffix = slugifyAscii(`${node.linkLabel ?? node.title ?? ''} ${route}`, `route-${index + 1}`);
+  const safeLabel = sanitizedPromotableCapabilityLabel(node.linkLabel ?? node.title, 48, '');
+  const suffix = slugifyAscii(`${safeLabel} ${route}`, `route-${index + 1}`);
   return `open public route ${suffix}`;
 }
 
+function publicRouteCapabilityLabel(node = /** @type {any} */ ({}), fallback = 'public route') {
+  return sanitizedPromotableCapabilityLabel(node.linkLabel ?? node.title, 80, null)
+    ?? sanitizedStructureText(node.routeTemplate ?? node.routePattern ?? node.normalizedUrl, 80, fallback);
+}
+
 function routeInstanceIntents(node = /** @type {any} */ ({})) {
-  const label = String(node.linkLabel ?? node.title ?? node.routeTemplate ?? node.routePattern ?? '\u516c\u5f00\u5165\u53e3').trim();
+  const label = publicRouteCapabilityLabel(node, '\u516c\u5f00\u5165\u53e3');
   return uniqueSortedStrings([
     `\u6253\u5f00${label}`,
     `\u67e5\u770b${label}`,
@@ -9954,7 +10127,13 @@ function routeInstanceIntents(node = /** @type {any} */ ({})) {
   ]);
 }
 
-function addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy = null) {
+function addPublicRouteTemplateInstanceCapabilities(
+  context,
+  capabilities,
+  graph,
+  robotsPolicy = null,
+  { allowRouteSeedOnly = false } = /** @type {any} */ ({}),
+) {
   const existingNames = new Set(capabilities.map((capability) => String(capability.name ?? '').toLowerCase()));
   const seenRoutes = new Set();
   const nodes = (graph?.nodes ?? [])
@@ -9965,7 +10144,7 @@ function addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph
       && (node.routeTemplate || node.routePattern || node.normalizedUrl)
       && (node.routeTemplate ?? node.routePattern) !== '/'
       && !isPublicUtilityRouteNode(node)
-      && hasPublicRouteNavigationCapabilityEvidence(context, node, robotsPolicy)
+      && hasPublicRouteNavigationCapabilityEvidence(context, node, robotsPolicy, { allowRouteSeedOnly })
       && nodeTargetAllowedByRobots(context, node, robotsPolicy)
     ))
     .sort((left, right) => String(left.routeTemplate ?? left.routePattern ?? '').localeCompare(
@@ -9986,13 +10165,13 @@ function addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph
       continue;
     }
     existingNames.add(name.toLowerCase());
-    const routeLabel = String(node.linkLabel ?? node.title ?? node.routeTemplate ?? node.routePattern ?? '公开入口').trim();
+    const routeLabel = publicRouteCapabilityLabel(node, 'public route');
     const capability = makeCapability(context, {
       name,
       description: `Open public route "${routeLabel}" using route-template evidence only.`,
       action: 'view',
       object: routeLabel,
-      userValue: `打开公开入口：${routeLabel}`,
+      userValue: `Open public route ${routeLabel}`,
       entryNodeIds: [node.id],
       requiredNodeIds: [node.id],
       outputs: [{ name: 'route', type: 'route_summary' }],
@@ -10024,11 +10203,19 @@ function addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph
   }
 }
 
-function hasPublicRouteNavigationCapabilityEvidence(context = /** @type {any} */ ({}), node = /** @type {any} */ ({}), robotsPolicy = null) {
+function hasPublicRouteNavigationCapabilityEvidence(
+  context = /** @type {any} */ ({}),
+  node = /** @type {any} */ ({}),
+  robotsPolicy = null,
+  { allowRouteSeedOnly = false } = /** @type {any} */ ({}),
+) {
   const evidenceStatus = String(node.evidenceStatus ?? '');
   const publicEvidenceStatus = String(node.publicEvidenceStatus ?? '');
   if (publicEvidenceStatus === 'public_rendered_route_seed_only') {
-    return false;
+    return allowRouteSeedOnly === true && nodeTargetAllowedByRobots(context, node, robotsPolicy);
+  }
+  if (evidenceStatus === 'route_seed_only') {
+    return allowRouteSeedOnly === true && nodeTargetAllowedByRobots(context, node, robotsPolicy);
   }
   if (['link_route_template', 'link_semantic_route_template', 'policy_route_template'].includes(evidenceStatus)) {
     return true;
@@ -10692,7 +10879,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     capabilities.push(capability);
   }
 
-  if (knownPolicyCapabilityFamilies(context).has('download-content')) {
+  if (knownPolicyCapabilityFamilies(context).has('download-content') && !isChapterContentContext(context)) {
     addCatalogCoverageCapability(context, capabilities, {
       name: 'download catalog content',
       description: 'Compile discovered download-capable content as a direct downloader task descriptor.',
@@ -10842,6 +11029,87 @@ function addChapterContentCoverageCapabilities(context, capabilities, graph, sea
       });
     }
     capabilities.push(capability);
+  }
+
+  if (knownPolicySupportsBookDownload(context) && !capabilities.some((capability) => capability.name === 'download book')) {
+    const nodes = arrayUniqueBy([
+      ...bookDetails,
+      ...chapterDetails,
+      ...searchNodes,
+      ...metadataNodes,
+    ], (node) => node.id).slice(0, 80);
+    if (nodes.length) {
+      const descriptor = knownPolicyChapterDownloaderDescriptor(context);
+      const capability = makeCapability(context, {
+        name: 'download book',
+        description: 'Resolve a public book from a search result, book URL, or title and write extracted chapter body text to local TXT artifacts.',
+        action: 'download',
+        object: 'public book text',
+        userValue: '\u4e0b\u8f7d\u641c\u7d22\u5230\u7684\u516c\u5f00\u5c0f\u8bf4\u6b63\u6587\u4e3a\u672c\u5730 TXT\u3002',
+        entryNodeIds: nodes.slice(0, 20).map((node) => node.id),
+        requiredNodeIds: nodes.slice(0, 20).map((node) => node.id),
+        inputs: [
+          { name: 'book_title', type: 'text', required: false },
+          { name: 'book_url', type: 'url', required: false },
+          { name: 'output_dir', type: 'path', required: false },
+        ],
+        outputs: [
+          { name: 'download_file', type: 'file_path' },
+          { name: 'manifest_path', type: 'file_path' },
+          { name: 'chapter_count', type: 'number' },
+          { name: 'final_url', type: 'url' },
+        ],
+        safetyLevel: 'read_only',
+        evidence: catalogCoverageEvidence(context, nodes, 'download book'),
+        confidence: 0.84,
+        autoGenerated: true,
+        category: 'chapter-content',
+        mode: 'download',
+        providerId: 'known_site_downloader',
+        risk_level: 'download_high',
+        enabled_status: 'enabled',
+        evidence_status: 'verified',
+        default_policy: 'read_only',
+        evidenceModel: 'public_chapter_content_downloader',
+        publicRouteOnly: false,
+        downloaderTaskDescriptor: descriptor,
+        intents: [
+          '\u4e0b\u8f7d\u5c0f\u8bf4',
+          '\u4e0b\u8f7d\u641c\u7d22\u5230\u7684\u4f5c\u54c1',
+          '\u63d0\u53d6\u5c0f\u8bf4\u6b63\u6587',
+          '\u5bfc\u51fa\u5168\u4e66 TXT',
+          'download book',
+          'download searched novel',
+          'extract book text',
+        ],
+      });
+      capability.executionPlan = buildExecutionPlan(capability.id, {
+        mode: 'download',
+        dryRunOnly: false,
+        requiresConfirmation: false,
+        autoExecute: false,
+        governedExecution: false,
+        executionDisposition: 'allow',
+        savedMaterial: SANITIZED_SUMMARY_ONLY,
+        steps: [{
+          kind: 'downloader_task_descriptor',
+          siteKey: descriptor.siteKey,
+          adapterId: descriptor.adapterId,
+          taskType: descriptor.taskType,
+          nodeIds: nodes.slice(0, 20).map((node) => node.id),
+          slotNames: ['book_title', 'book_url', 'output_dir'],
+          submit: true,
+          finalSubmit: false,
+          autoExecute: false,
+          governedExecution: false,
+          executionDisposition: 'allow',
+          savedMaterial: SANITIZED_SUMMARY_ONLY,
+          artifactMaterial: descriptor.artifactMaterial,
+          downloaderTaskDescriptor: descriptor,
+        }],
+      });
+      capabilities.push(capability);
+    }
   }
 }
 
@@ -11468,11 +11736,16 @@ async function discoverCapabilitiesStage(context, stageResults) {
     discoveredCount: capabilities.length,
   });
   addGenericPublicCoverageCapabilities(context, capabilities, graph, searchForm);
-  addPublicElementInstanceCapabilities(context, capabilities, graph, robotsPolicy);
-  addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy);
   addAuthenticatedReadCoverageCapabilities(context, capabilities, graph);
   addGenericCatalogCoverageCapabilities(context, capabilities, graph, searchForm);
   addChapterContentCoverageCapabilities(context, capabilities, graph, searchForm);
+  const useAggregateNavigationCapabilities = shouldUseAggregateNavigationCapabilities(context, graph);
+  if (!useAggregateNavigationCapabilities) {
+    addPublicElementInstanceCapabilities(context, capabilities, graph, robotsPolicy);
+    addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy);
+  } else if (!hasAnyPublicStructureEvidence) {
+    addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy, { allowRouteSeedOnly: true });
+  }
   addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage);
   addDisabledRiskCapabilities(context, capabilities, affordances);
   capabilities.push(...generateAutoCapabilities(context, {
@@ -11801,16 +12074,23 @@ function capabilityBySourceNodeId(capabilities = /** @type {any[]} */ ([])) {
 }
 
 function graphIntentLabelForNode(node = /** @type {any} */ ({})) {
-  return String(
+  return graphIntentPromotableLabelForNode(node) ?? '页面入口';
+}
+
+function graphIntentPromotableLabelForNode(node = /** @type {any} */ ({})) {
+  const label = sanitizedPromotableCapabilityLabel(
     node.categoryInstance?.label
-    ?? node.instanceLabel
-    ?? node.elementLabel
-    ?? node.linkLabel
-    ?? node.title
-    ?? node.routeTemplate
-    ?? node.routePattern
-    ?? '页面入口',
-  ).trim();
+      ?? node.instanceLabel
+      ?? node.elementLabel
+      ?? node.linkLabel
+      ?? node.title,
+    80,
+    null,
+  );
+  if (label) {
+    return label;
+  }
+  return sanitizedStructureText(node.routeTemplate ?? node.routePattern, 80, null);
 }
 
 function graphIntentRoleForNode(node = /** @type {any} */ ({})) {
@@ -11834,6 +12114,9 @@ function graphIntentExamples(node = /** @type {any} */ ({})) {
 }
 
 function graphIntentCandidateNodes(context, graph, robotsPolicy = null) {
+  if (shouldUseAggregateNavigationCapabilities(context, graph)) {
+    return [];
+  }
   return (graph?.nodes ?? [])
     .filter((node) => {
       const layer = nodeSourceLayer(node);
@@ -11854,7 +12137,7 @@ function graphIntentCandidateNodes(context, graph, robotsPolicy = null) {
             && !isPublicUtilityRouteNode(node)
           )
         )
-        && (hasMeaningfulElementLabel(node) || node.categoryInstance || node.routeTemplate || node.routePattern)
+        && Boolean(graphIntentPromotableLabelForNode(node))
         && nodeTargetAllowedByRobots(context, node, robotsPolicy)
       );
     })
@@ -12536,6 +12819,9 @@ function isGenericHttpReadSafeCapability(context, capability = /** @type {any} *
   if (capability.status !== 'active' || capability.authRequired === true || isHighRiskCapability(capability)) {
     return false;
   }
+  if (normalizeStatusToken(capability.action) === 'download' || normalizeStatusToken(capability.mode) === 'download') {
+    return false;
+  }
   const layers = capabilitySourceLayers(capability, graph);
   if (!layers.length || !layers.every((layer) => layer === 'public')) {
     return false;
@@ -12545,7 +12831,7 @@ function isGenericHttpReadSafeCapability(context, capability = /** @type {any} *
     return false;
   }
   const riskLevel = normalizeStatusToken(capability.risk_level ?? capability.riskLevel ?? capability.riskPolicy?.riskLevel);
-  if (['write_low', 'write_high', 'account_security_critical', 'read_private_high'].includes(riskLevel)) {
+  if (['write_low', 'write_high', 'download_high', 'account_security_critical', 'read_private_high'].includes(riskLevel)) {
     return false;
   }
   const plan = capability.executionPlan;

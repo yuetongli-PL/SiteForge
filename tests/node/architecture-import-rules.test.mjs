@@ -260,6 +260,7 @@ const CONTROLLED_NON_ARTIFACT_OR_GENERATED_WRITERS = new Map([
   ['src/app/pipeline/build/setup-assistant.mjs', 'first-run setup plan, choices, capability hints, and build profile artifacts'],
   ['src/app/pipeline/build/workspace.mjs', 'SiteForge workspace directories, setup defaults, current skill promotion, and last-success pointers'],
   ['src/app/runtime/providers/download-provider.mjs', 'controlled runtime download output after output policy gate and path confinement'],
+  ['src/app/runtime/run-store/run-store-writer.mjs', 'runtime run-store sanitized report, audit, and index metadata persistence'],
   ['src/sites/known-sites/douyin/actions/router.mjs', 'temporary downloader input file for subprocess handoff'],
   ['src/sites/known-sites/douyin/queries/follow-query.mjs', 'follow-query cache persistence'],
   ['src/sites/known-sites/social/actions/download-boundary.mjs', 'explicit user-requested media binary download persistence'],

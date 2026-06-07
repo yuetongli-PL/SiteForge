@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <body data-api-endpoint="/api/orders/search">
+    <p>Login required before managing private orders.</p>
+    <form id="contact-form" action="/api/contact" method="post" data-success-selector="#contact-saved">
+      <input name="email" type="email" required value="sf_compiler_private_form_secret_123">
+      <textarea name="message" required>sf_compiler_login_secret_789</textarea>
+      <button type="submit">Submit request</button>
+    </form>
+    <form action="/account/delete" method="post">
+      <input name="account_id" type="text" required value="sf_compiler_cookie_secret_456">
+      <button type="submit">Delete account</button>
+    </form>
+    <form id="checkout-form" action="/checkout/pay" method="post">
+      <input name="amount" type="number" required value="199">
+      <input name="currency" type="text" value="USD">
+      <button type="submit">Pay now</button>
+    </form>
+    <a href="/exports/orders.csv">Export orders CSV</a>
+    <a href="/files/manual.pdf">Download manual</a>
+  </body>
+</html>

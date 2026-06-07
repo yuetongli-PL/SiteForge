@@ -1,0 +1,55 @@
+{
+  "graphVersion": "graph-public-read-v1",
+  "schemaVersion": 1,
+  "manifest": {
+    "sourceInventories": [
+      "config/site-registry.json",
+      "config/site-capabilities.json"
+    ],
+    "layerCompatibility": {
+      "kernelCompatibilityVersion": "synthetic-kernel-v1",
+      "siteAdapterVersion": "synthetic-adapter-v1"
+    },
+    "graphDataVersion": "graph-public-read-v1",
+    "graphSchemaVersion": 1,
+    "schemaVersion": 1
+  },
+  "capabilities": [
+    {
+      "completionSignals": [
+        "http-200"
+      ],
+      "sideEffecting": false,
+      "paymentOrFundsAction": false,
+      "destructiveAction": false,
+      "executionContractConcrete": true,
+      "selectorConfidence": 0.92,
+      "providerCompatibility": [
+        "api-read"
+      ],
+      "injectionTargets": [
+        "none"
+      ],
+      "materialTypes": [
+        "descriptor"
+      ],
+      "allowedOrigins": [
+        "https://synthetic.example"
+      ],
+      "authScopes": [],
+      "authRequired": false,
+      "operationKind": "read",
+      "capabilityFamily": "navigate-to-author",
+      "capabilityKey": "open-public-page",
+      "siteKey": "synthetic.example",
+      "schemaVersion": 1,
+      "sourceRefs": [
+        "config/site-registry.json",
+        "config/site-capabilities.json"
+      ]
+    }
+  ],
+  "provenance": {
+    "source": "synthetic-fixture"
+  }
+}

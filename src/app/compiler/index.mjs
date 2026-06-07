@@ -8,6 +8,7 @@ export * from './config-loader.mjs';
 export * from './coverage-report.mjs';
 export * from './inventory.mjs';
 export * from './static-compiler.mjs';
+export * from './contract-extraction-v2.mjs';
 export * from './graph-builder.mjs';
 export * from './redaction-guard.mjs';
 export * from './reason-codes.mjs';

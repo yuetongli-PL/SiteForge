@@ -1,0 +1,408 @@
+# SiteForge Release Candidate & Product Integration V1 Ledger
+
+## Goal
+
+Advance the accepted Runtime Extensibility & Productization V1 baseline through release-candidate verification and product integration phases 22-31 without expanding runtime execution capability or weakening safety boundaries.
+
+## Global Status
+
+- current phase: 31
+- completed phases: 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+- blocked phases: none
+- final acceptance: pass
+
+## Phase 22: Independent Verification / Release Candidate Hardening
+
+- status: pass_with_notes
+- mode: verification plus boundary blocker repair after independent auditor stop condition
+- modified files:
+  - `src/app/runtime/index.mjs`
+  - `src/app/runtime/regression-harness/index.mjs`
+  - `src/app/runtime/testing.mjs`
+  - `tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`
+  - `tests/node/runtime-ci-regression-harness-v1.test.mjs`
+  - `tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-22-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+  - `docs/releases/runtime-extensibility-productization-v1-verification.md`
+- targeted tests:
+  - `node --test tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`: PASS, 5 tests passed.
+  - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+  - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+  - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+  - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs`: PASS, 13 tests passed.
+  - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`: PASS, 16 tests passed.
+  - `node --test tests/node/runtime-worker-isolation-provider-sandbox-v1.test.mjs tests/node/runtime-operations-run-store-v1.test.mjs tests/node/skill-runtime-invocation-api-v1.test.mjs tests/node/runtime-ci-regression-harness-v1.test.mjs tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`: PASS, 60 tests passed.
+  - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 27 tests passed.
+  - `npm run typecheck`: PASS.
+  - `npm run test:core`: PASS, 217 tests passed.
+  - `npm run test:capability`: PASS, 93 tests passed.
+  - `npm run check:syntax`: PASS, 689 files checked.
+  - `npm run scan:secrets`: PASS, 757 candidate files scanned.
+  - `git diff --check`: PASS.
+  - `npm run test:pipeline`: PASS WITH OPTIONAL SKIP, 329 tests, 328 passed, 0 failed, 1 skipped optional live Tencent News smoke, duration 650176.9537ms.
+- boundary checks:
+  - runtime public export boundary: PASS, no `mock`, `fake`, `test`, `testing`, `fixture`, or `raw` symbols are exported from `src/app/runtime/index.mjs`.
+  - provider implementation import boundary: PASS, no direct `providers/` imports from compiler/planner/domain/pipeline static check.
+  - production payment/destructive provider absence: PASS, production registry resolves only API read, download, and controlled browser action providers by default; payment/destructive resolve to `null`.
+  - run-store/audit-query/audit-viewer/regression no-side-effect grep: PASS, no provider/browser/vault/network execution matches.
+  - payment/destructive provider grep: PASS WITH NOTES, matches are regression-harness drift detector reason codes only.
+  - default injection grep: PASS WITH NOTES, matches are safety validators, redaction/report fields, session/domain profile modeling, and build profile safety checks; no default raw material injection was observed.
+- notes:
+  - Current worktree is not clean because the accepted Runtime Extensibility & Productization V1 baseline remains uncommitted in this checkout; Phase 23 owns decomposition and commit planning.
+  - Existing accepted baseline manifests in `docs/codex-goals/runtime-extensibility-productization-v1/` include `phase-0`, `phase-11` through `phase-21`, and `e2e`; independent `phase-1` through `phase-10` manifests were not present in that directory.
+  - `src/app/run-build.mjs` from the plan does not exist in this repo; equivalent checks used `src/entrypoints/build/run-build.mjs`.
+- final acceptance result: PASS WITH NOTES.
+
+## Phase 24: Developer Documentation / SDK Guide V1
+
+- status: pass
+- mode: documentation plus documentation regression test
+- modified files:
+  - `docs/runtime/provider-sdk.md`
+  - `docs/runtime/skill-invocation-api.md`
+  - `docs/runtime/capability-package.md`
+  - `docs/runtime/policy-pack.md`
+  - `docs/runtime/run-store.md`
+  - `docs/runtime/regression-harness.md`
+  - `docs/security/runtime-boundaries.md`
+  - `docs/security/provider-sandbox-limitations.md`
+  - `docs/security/payment-destructive-boundaries.md`
+  - `tests/node/documentation-runtime-productization-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-24-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- acceptance commands:
+  - `node --test tests/node/documentation-runtime-productization-v1.test.mjs`: PASS, 4 tests passed.
+  - `npm run check:syntax`: PASS, 690 files checked.
+  - `npm run scan:secrets`: PASS, 768 candidate files scanned.
+  - `git diff --check`: PASS.
+- boundary coverage:
+  - Docs state providers cannot directly access vault, launch browser, or write audit/report/result/run-store artifacts.
+  - Docs state Skill task text is not authorization, `dryRun` does not execute providers, and `execute` still goes through runtime gates.
+  - Docs state payment execution is not implemented and default destructive execution is blocked.
+  - Docs state sandbox V1 is a provider service boundary, not a full OS sandbox.
+  - Docs state run store, audit query, and replay do not execute provider/browser/vault/network paths.
+  - Docs state capability packages do not carry private session material.
+- final acceptance result: PASS.
+
+## Phase 25: External Skill API / Local Service Wrapper V1
+
+- status: pass
+- mode: local SDK wrapper only
+- modified files:
+  - `src/app/runtime/skill-service/local-skill-runtime-service-schema.mjs`
+  - `src/app/runtime/skill-service/local-skill-runtime-service-sanitizer.mjs`
+  - `src/app/runtime/skill-service/local-skill-runtime-service.mjs`
+  - `src/app/runtime/skill-service/index.mjs`
+  - `src/app/runtime/index.mjs`
+  - `tests/node/external-skill-api-local-service-v1.test.mjs`
+  - `tests/node/fixtures/external-skill-api-local-service-v1/local-service-request.json`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-25-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added `createLocalSkillRuntimeService()` and `invokeLocalSkillRuntime()`.
+  - Chose local SDK wrapper only; no HTTP server and no public interface binding.
+  - External service requests cannot pass direct provider/vault/runtime access fields.
+  - The wrapper delegates to existing `invokeSkillRuntime()` for execute and dryRun behavior.
+- acceptance commands:
+  - `node --test tests/node/external-skill-api-local-service-v1.test.mjs`: PASS, 11 tests passed.
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+  - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+  - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+  - runtime index forbidden export probe: PASS.
+  - `npm run check:syntax`: PASS, 695 files checked.
+  - `npm run scan:secrets`: PASS, 775 candidate files scanned.
+  - `git diff --check`: PASS.
+- final acceptance result: PASS.
+
+## Phase 26: First-party Site Package Pilot V1
+
+- status: pass
+- mode: first-party fixture packages plus runtime integration tests
+- modified files:
+  - `packages/siteforge-sites/public-read-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/public-read-fixture/README.md`
+  - `packages/siteforge-sites/public-download-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/public-download-fixture/README.md`
+  - `packages/siteforge-sites/contact-form-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/contact-form-fixture/README.md`
+  - `packages/siteforge-sites/auth-read-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/auth-read-fixture/README.md`
+  - `packages/siteforge-sites/auth-browser-write-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/auth-browser-write-fixture/README.md`
+  - `packages/siteforge-sites/destructive-blocked-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/destructive-blocked-fixture/README.md`
+  - `packages/siteforge-sites/payment-blocked-fixture/site.capability_package.json`
+  - `packages/siteforge-sites/payment-blocked-fixture/README.md`
+  - `src/app/runtime/skill-invocation/skill-runtime-invocation-package-resolver.mjs`
+  - `src/app/runtime/skill-invocation/skill-runtime-invocation-runner.mjs`
+  - `tests/node/first-party-site-package-pilot-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-26-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added seven safe first-party pilot package fixtures under `packages/siteforge-sites/`.
+  - Added package-origin propagation through skill invocation package resolution.
+  - Added internal package-auth descriptor to runtime-auth mapping for auth read and controlled browser write package execution.
+  - Kept safe `sessionRef` conversion inside the runtime boundary and did not add automatic login or raw material persistence.
+- acceptance commands:
+  - `node --test tests/node/first-party-site-package-pilot-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`: PASS, 5 tests passed.
+  - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+  - `npm run check:syntax`: PASS, 696 files checked.
+  - `npm run scan:secrets`: PASS, 791 candidate files scanned.
+  - `git diff --check`: PASS.
+- boundary coverage:
+  - all pilot packages validate, package digests remain stable, and package refs resolve.
+  - public read and download pilots dryRun without provider execution and execute with sanitized metadata only.
+  - controlled form pilot uses the controlled runtime provider path.
+  - auth read pilot uses safe mock session metadata.
+  - auth controlled browser write installs guard evidence before material use.
+  - destructive and payment pilots are blocked before provider execution.
+  - audit views and regression snapshots are generated without pilot canary leakage.
+- final acceptance result: PASS.
+
+## Phase 27: CI / Release Gate Integration
+
+- status: pass
+- mode: npm scripts plus release gate runner, regression runner, CI-facing docs, and integration tests
+- modified files:
+  - `package.json`
+  - `scripts/runtime-productization-regression.mjs`
+  - `scripts/verify-release.mjs`
+  - `docs/release/release-gates.md`
+  - `tests/node/ci-release-gate-integration-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-27-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added `test:runtime-trust`, `test:runtime-productization`, `test:regression`, and `verify:release` npm scripts.
+  - Added deterministic trust/productization/regression grouping in `scripts/runtime-productization-regression.mjs`.
+  - Added `scripts/verify-release.mjs` for runtime trust, productization, regression, secret scan, and diff release gates.
+  - Integrated `verify:release` into existing `release:local` while preserving the existing release checks.
+  - Documented release gates and optional live smoke opt-in behavior in `docs/release/release-gates.md`.
+- acceptance commands:
+  - `node --test tests/node/ci-release-gate-integration-v1.test.mjs`: PASS, 11 tests passed.
+  - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+  - `npm run test:runtime-productization`: PASS, 75 tests passed.
+  - `npm run test:regression`: PASS, 25 tests passed.
+  - `npm run verify:release`: PASS, trust 63 tests passed, productization 75 tests passed, regression 25 tests passed, secret scan 796 files, `git diff --check` passed.
+  - `npm run scan:secrets`: PASS, 796 candidate files scanned.
+  - `git diff --check`: PASS.
+- boundary coverage:
+  - high-risk regression drift fails release gate.
+  - raw canary leakage fails release gate.
+  - production payment/destructive provider absence is checked.
+  - runtime index mock/fake/testing/fixture/raw export boundary is checked.
+  - optional live smoke remains opt-in and is not required by default.
+  - existing release script chain was not weakened.
+- final acceptance result: PASS.
+
+## Phase 28: Runtime Operations UI / CLI V1
+
+- status: pass
+- mode: internal safe read-only CLI
+- modified files:
+  - `src/app/cli/runtime-ops.mjs`
+  - `src/infra/cli/command-map.mjs`
+  - `tests/node/runtime-operations-cli-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-28-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added internal runtime operations CLI for run inspect, audit view/query, package inspect/diff, policy simulate, and regression compare.
+  - Added CLI path/filter/output redaction boundaries.
+  - Added `runtimeOpsCliCommand()` helper while keeping public `siteforge build` facade unchanged.
+- acceptance commands:
+  - `node --test tests/node/runtime-operations-cli-v1.test.mjs`: PASS, 11 tests passed.
+  - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+  - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+  - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+  - `npm run check:syntax`: PASS, 701 files checked.
+  - `npm run scan:secrets`: PASS, 799 candidate files scanned.
+  - `git diff --check`: PASS.
+- boundary coverage:
+  - audit view and audit query stay read-only.
+  - run inspect does not read raw artifact content.
+  - package inspect/diff does not invoke network/runtime.
+  - policy simulate does not execute providers.
+  - regression compare does not execute provider/browser/vault/network.
+  - payment/destructive CLI actions are not available.
+  - CLI canaries are not leaked.
+- final acceptance result: PASS.
+
+## Phase 29: Production Session Vault Adapter Planning / Prototype
+
+- status: pass
+- mode: backend-agnostic adapter boundary plus fileless safe prototype
+- modified files:
+  - `src/app/runtime/session-vault-adapters/session-vault-adapter-interface.mjs`
+  - `src/app/runtime/session-vault-adapters/session-vault-adapter-audit-sink.mjs`
+  - `src/app/runtime/session-vault-adapters/session-vault-adapter-health.mjs`
+  - `src/app/runtime/session-vault-adapters/session-vault-adapter-conformance.mjs`
+  - `src/app/runtime/session-vault-adapters/in-memory-production-vault-adapter.mjs`
+  - `src/app/runtime/session-vault-adapters/index.mjs`
+  - `src/app/runtime/session-vault/session-vault-sanitizer.mjs`
+  - `src/app/runtime/index.mjs`
+  - `scripts/verify-release.mjs`
+  - `docs/security/session-vault-adapter-boundary.md`
+  - `tests/node/production-session-vault-adapter-planning-v1.test.mjs`
+  - `tests/node/session-vault-productionization-v2.test.mjs`
+  - `tests/node/ci-release-gate-integration-v1.test.mjs`
+  - `tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-29-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added production session vault adapter interface, capability matrix, sanitized audit sink, sanitized health view, and conformance runner.
+  - Added internal fileless in-memory prototype for adapter conformance and runtime compatibility tests.
+  - Added TTL enforcement, revocation propagation, active grant invalidation, fail-closed unknown release behavior, and sanitized adapter IDs.
+  - Removed raw-returning vault provider/prototype factories and material grant helpers from the public runtime facade.
+  - Tightened release gate runtime index boundary and `prod_vault` canary coverage.
+- acceptance commands:
+  - `node --test tests/node/production-session-vault-adapter-planning-v1.test.mjs`: PASS, 16 tests passed.
+  - `node --test tests/node/session-vault-productionization-v2.test.mjs`: PASS, 7 tests passed.
+  - `node --test tests/node/auth-runtime-integration-v1.test.mjs`: PASS, 13 tests passed.
+  - `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`: PASS, 9 tests passed.
+  - `node --test tests/node/ci-release-gate-integration-v1.test.mjs tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`: PASS, 27 tests passed.
+  - `npm run check:syntax`: PASS, 708 files checked.
+  - `npm run scan:secrets`: PASS, 808 candidate files scanned.
+  - `git diff --check`: PASS.
+- independent audit:
+  - subagent `019ea139-9e68-7ef2-9d7b-0e8b405a4798`: PASS WITH RISKS initially; all listed Phase 29 risks repaired before acceptance.
+- boundary coverage:
+  - no automatic login, credential onboarding, browser profile persistence, storageState persistence, durable raw material persistence, or raw material public facade export was added.
+  - Auth Runtime V1 and Auth-aware Controlled Browser V1 receive material only through the existing ephemeral provider auth adapter path.
+- final acceptance result: PASS.
+
+## Phase 30: Controlled Destructive Execution Lab V1
+
+- status: pass
+- mode: lab-only / testing-only controlled destructive provider loop
+- modified files:
+  - `src/app/runtime/testing-destructive-provider.mjs`
+  - `src/app/runtime/testing.mjs`
+  - `src/app/runtime/execution-runner.mjs`
+  - `src/app/runtime/audit-viewer/audit-view-builder.mjs`
+  - `src/app/runtime/regression-harness/runtime-regression-compare.mjs`
+  - `tests/node/controlled-destructive-execution-lab-v1.test.mjs`
+  - `tests/node/destructive-strong-authorization-flow-v1.test.mjs`
+  - `tests/node/fixtures/controlled-destructive-execution-lab-v1/structured-authorization.json`
+  - `tests/node/fixtures/controlled-destructive-execution-lab-v1/dry-run-proof.json`
+  - `tests/node/fixtures/controlled-destructive-execution-lab-v1/target-verification.json`
+  - `tests/node/fixtures/controlled-destructive-execution-lab-v1/compensation-plan.json`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-30-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added a testing-only destructive lab provider exposed only from `runtime/testing.mjs`.
+  - Added an explicit `controlledDestructiveLab` runtime context gate for lab-only destructive execution.
+  - Kept production destructive execution blocked and payment blocking higher priority.
+  - Required structured destructive authorization, dry-run proof, target verification, and compensation plan.
+  - Rejected natural language authorization.
+  - Added audit/query/regression integration for lab-only destructive execution.
+- acceptance commands:
+  - `node --test tests/node/controlled-destructive-execution-lab-v1.test.mjs`: PASS, 11 tests passed.
+  - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 6 tests passed.
+  - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+  - `npm run check:syntax`: PASS, 710 files checked.
+  - `npm run scan:secrets`: PASS, 815 candidate files scanned.
+  - `git diff --check`: PASS.
+- boundary coverage:
+  - no production destructive provider registration.
+  - no production destructive execution.
+  - no natural-language-only authorization.
+  - no real delete/cancel/revoke execution.
+  - no payment execution.
+  - no raw confirmation or target canary leakage.
+- final acceptance result: PASS.
+
+## Phase 31: Payment Authorization Lab / Threat Model
+
+- status: pass
+- mode: payment threat model and lab simulation only
+- modified files:
+  - `docs/security/payment-threat-model.md`
+  - `src/domain/payment-authorization/payment-audit-summary.mjs`
+  - `src/domain/payment-authorization/payment-requirement-validator.mjs`
+  - `src/app/runtime/execution-runner.mjs`
+  - `src/app/runtime/skill-invocation/skill-runtime-invocation-sanitizer.mjs`
+  - `src/app/runtime/audit-query/audit-query-sanitizer.mjs`
+  - `src/app/runtime/audit-query/audit-query-filter.mjs`
+  - `src/domain/capability-packages/capability-package-validator.mjs`
+  - `scripts/runtime-productization-regression.mjs`
+  - `tests/node/payment-authorization-lab-threat-model-v1.test.mjs`
+  - `tests/node/fixtures/payment-authorization-lab-threat-model-v1/payment-lab-plan.json`
+  - `tests/node/fixtures/payment-authorization-lab-threat-model-v1/out-of-band-approval.json`
+  - `tests/node/fixtures/payment-authorization-lab-threat-model-v1/policy-pack-payment-input.json`
+  - `tests/node/ci-release-gate-integration-v1.test.mjs`
+  - `tests/node/skill-runtime-invocation-api-v1.test.mjs`
+  - `tests/node/external-skill-api-local-service-v1.test.mjs`
+  - `tests/node/capability-package-site-adapter-registry-v1.test.mjs`
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-31-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- implementation:
+  - Added the payment threat model and lab-only fixtures for safe amount/currency/payee refs, out-of-band approval simulation, and policy simulation input.
+  - Added Phase 31 tests covering threat model, payment plan validation, provider absence, runtime blocking, audit summary, query/regression integration, package classification, policy-pack simulation, Skill task text redaction, and raw payment material rejection.
+  - Kept payment execution planning-only: no real payment provider, token, card/bank material, network request, or payment execution was added.
+  - Moved payment runtime blocking before provider selection.
+  - Tightened Skill invocation, audit query, package validation, and runtime productization release-gate coverage based on independent review.
+- acceptance commands:
+  - `node --test tests/node/payment-authorization-lab-threat-model-v1.test.mjs`: PASS, 13 tests passed.
+  - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs`: PASS, 13 tests passed.
+  - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+  - `npm run check:syntax`: PASS, 711 files checked.
+  - `npm run scan:secrets`: PASS, 821 candidate files scanned.
+  - `git diff --check`: PASS.
+- additional verification:
+  - `node --test tests/node/app-runtime-execution-runner.test.mjs`: PASS, 12 tests passed.
+  - `node --test tests/node/controlled-destructive-execution-lab-v1.test.mjs tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 17 tests passed.
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs tests/node/external-skill-api-local-service-v1.test.mjs`: PASS, 26 tests passed.
+  - `node --test tests/node/ci-release-gate-integration-v1.test.mjs tests/node/runtime-audit-query-api-v1.test.mjs tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 36 tests passed.
+  - `npm run test:runtime-productization`: PASS, 88 tests passed.
+- independent review:
+  - subagent `019ea158-8b46-7df1-b7a5-a809e8793508`: PASS WITH ACTIONABLE FINDINGS; all listed findings were repaired before acceptance.
+- boundary coverage:
+  - no production payment provider registration.
+  - no payment execution, settlement, capture, refund, subscription update, billing update, funds transfer, or payment network request.
+  - no natural-language-only authorization.
+  - no raw payment credential, card, bank, or token persistence.
+  - payment blocked cases do not invoke providers and now do not run provider selection.
+- final acceptance result: PASS.
+
+## Phase 23: Commit / PR Decomposition
+
+- status: pass_with_notes
+- mode: commit plan only
+- modified files:
+  - `docs/codex-goals/release-candidate-product-integration-v1/phase-23-manifest.md`
+  - `docs/codex-goals/release-candidate-product-integration-v1/GOAL_LEDGER.md`
+- required commands:
+  - `git status --short`: PASS WITH NOTES, current checkout includes accepted baseline artifacts, Phase 22 boundary repair, and release-candidate docs.
+  - `git diff --stat`: PASS WITH NOTES, tracked diff reviewed.
+  - `git diff --name-only`: PASS WITH NOTES, tracked file list reviewed.
+  - `git ls-files --others --exclude-standard`: PASS WITH NOTES, untracked baseline and docs file list reviewed for grouping.
+- commit execution:
+  - Not performed. The plan permits commit-plan-only mode, and the user has not explicitly authorized commits.
+  - Recommended grouping is recorded in `phase-23-manifest.md`.
+- recommended grouping:
+  - `feat(capability): add graph versioning and registry`
+  - `feat(runtime): add provider plugin SDK`
+  - `feat(compiler): harden capability contract extraction`
+  - `feat(capability): add site capability package registry`
+  - `feat(policy): add policy pack simulation`
+  - `feat(runtime): add provider sandbox boundary`
+  - `feat(runtime): add run store operations`
+  - `feat(runtime): add skill invocation API`
+  - `feat(runtime): add CI regression harness`
+  - `feat(domain): add destructive execution planning`
+  - `feat(domain): add payment authorization planning`
+  - `test(e2e): add compile-package-skill-runtime-audit flow`
+  - `docs(runtime): add productization goal ledger`
+  - `docs(release): add runtime productization verification report`
+- notes:
+  - `src/app/runtime/index.mjs` is a shared facade and needs hunk staging across runtime groups or one dedicated facade commit.
+  - Phase 23 changed documentation only and did not modify runtime behavior.
+- final acceptance result: PASS WITH NOTES.

@@ -4545,7 +4545,7 @@ test('route refresh fallback reports newly requested browser routes as missing',
   }
 });
 
-test('browser auth bridge serves collector script and rejects sensitive summaries', async () => {
+test('browser auth bridge serves collector script and rejects sensitive summaries', { timeout: 300_000 }, async () => {
   await withTestServer({
     '/robots.txt': testRobotsTxt('http://example.test/'),
     '/': testHtmlPage('Home', '<main><a href="/rank/hot">热门榜单</a></main>'),

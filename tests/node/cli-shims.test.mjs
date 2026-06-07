@@ -71,7 +71,13 @@ test('canonical site CLI entrypoints expose the expected Xiaohongshu handlers', 
   assert.equal(typeof xiaohongshuFollowEntrypoint.runXiaohongshuFollowQueryCli, 'function');
 });
 
-test('build CLI entrypoint exposes only the supported parser export', () => {
-  assert.deepEqual(Object.keys(buildEntrypoint).sort(), ['parseCliArgs']);
+test('build CLI entrypoint exposes supported parser and build helper exports', () => {
+  assert.deepEqual(Object.keys(buildEntrypoint).sort(), [
+    'applyDefaultProductionRuntimeProviderRegistry',
+    'applyLocalBuildConfig',
+    'parseCliArgs',
+  ]);
+  assert.equal(typeof buildEntrypoint.applyDefaultProductionRuntimeProviderRegistry, 'function');
+  assert.equal(typeof buildEntrypoint.applyLocalBuildConfig, 'function');
   assert.equal(typeof buildEntrypoint.parseCliArgs, 'function');
 });

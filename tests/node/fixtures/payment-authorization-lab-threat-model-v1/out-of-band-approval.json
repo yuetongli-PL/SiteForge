@@ -1,0 +1,9 @@
+{
+  "approvalSimulationType": "payment_out_of_band_approval_simulation",
+  "approvalRef": "approval:payment-lab-out-of-band-safe-ref",
+  "channelRef": "approval-channel:payment-lab-safe-ref",
+  "observed": true,
+  "grantsExecution": false,
+  "materialPolicy": "safe_ref_only",
+  "redactionRequired": true
+}

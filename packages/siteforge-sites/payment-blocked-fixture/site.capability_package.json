@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "site.capability_package.v1",
+  "packageId": "sitepkg:phase26-payment-blocked",
+  "version": "1.0.0",
+  "siteOrigin": "https://phase26-payment-blocked.example",
+  "graphDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "packageDigest": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "capabilities": [
+    {
+      "capabilityRef": "sitepkg:phase26-payment-blocked/checkout-pay@1.0.0",
+      "capabilityId": "checkout-pay",
+      "sourceCapabilityId": "capability:phase26-payment-blocked:checkout-pay",
+      "kind": "form_or_action",
+      "risk": "payment",
+      "executionContractRef": "sitepkg:phase26-payment-blocked/contract/checkout-pay@1.0.0",
+      "providerCompatibility": ["browser_action_provider"],
+      "authRequirement": { "required": true, "scopes": ["checkout.write"], "material": "descriptor_only", "grantsAuthorization": false },
+      "riskClassification": { "level": "payment", "destructive": false, "payment": true, "sideEffecting": true, "material": "descriptor_only" },
+      "policyRequirements": { "executionGates": ["audit_required", "payment_authorization_required"], "auditRequired": true, "confirmationRequired": true, "strongConfirmationRequired": true, "sitePolicyExplicitAllowRequired": true, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeCallable": false,
+      "executableByDefault": false,
+      "skillCallable": true,
+      "material": "descriptor_only"
+    }
+  ],
+  "executionContracts": [
+    {
+      "executionContractRef": "sitepkg:phase26-payment-blocked/contract/checkout-pay@1.0.0",
+      "sourceExecutionContractId": "execution-contract:phase26-payment-blocked:checkout-pay",
+      "capabilityRef": "sitepkg:phase26-payment-blocked/checkout-pay@1.0.0",
+      "kind": "form_or_action",
+      "concreteEnough": true,
+      "selectorConfidence": 0.9,
+      "completionSignals": ["payment_blocked_by_default"],
+      "providerCompatibility": ["browser_action_provider"],
+      "payloadTemplate": { "material": "template_only", "requiredSlotNames": [], "savedMaterial": "sanitized_summary_only" },
+      "policyRequirements": { "executionGates": ["audit_required", "payment_authorization_required"], "auditRequired": true, "confirmationRequired": true, "strongConfirmationRequired": true, "sitePolicyExplicitAllowRequired": true, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeBindingRef": "runtime-binding:phase26-payment-blocked:blocked",
+      "material": "descriptor_only"
+    }
+  ],
+  "provenance": { "schemaVersion": 1, "compiledAt": "2026-06-07T00:00:00.000Z", "compilerVersion": "phase26-fixture", "sourceDigest": "", "graphDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777", "graphVersion": "graph:phase26-payment-blocked", "material": "descriptor_only" },
+  "auditMetadata": { "packageId": "sitepkg:phase26-payment-blocked", "version": "1.0.0", "packageDigest": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", "graphDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777", "redactionRequired": true },
+  "redactionRequired": true
+}

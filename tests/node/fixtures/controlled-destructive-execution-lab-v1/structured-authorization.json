@@ -1,0 +1,9 @@
+{
+  "authorizationRef": "authorization:destructive-lab-safe",
+  "challengeId": "challenge:destructive-lab-two-step",
+  "confirmationRef": "confirmation:destructive-lab-safe",
+  "policyGate": {
+    "satisfied": true,
+    "policyId": "governance-policy:destructive-lab"
+  }
+}

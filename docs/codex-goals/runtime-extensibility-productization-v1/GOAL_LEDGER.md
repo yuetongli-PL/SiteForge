@@ -1,0 +1,1179 @@
+# SiteForge Runtime Extensibility & Productization V1 Goal Ledger
+
+## Goal
+
+在已 accepted 的 SiteForge Runtime Trust Infrastructure 基线上，按阶段推进 SiteForge 从受控 Runtime 执行内核走向可由 Skill 安全调用的任意网站能力平台。
+
+核心路径：
+
+1. 编译网站能力为 capability graph。
+2. 将 capability graph 版本化、治理化、审计化并打包为 capability package。
+3. 通过 policy / auth / session / provider / sandbox / audit 边界判断是否可执行。
+4. 由 Skill 通过结构化 invocation 调用。
+5. 通过受控 Runtime 执行。
+6. 输出 sanitized result / audit / run store / replay view / regression evidence。
+
+## Baseline
+
+- baseline commit: `2f2da3e26d81612fbf36e44a64a494c46041a907`
+- branch: `main`
+- worktree summary: `git status --short --branch` 输出 `## main`
+- `git diff --stat`: 无输出
+- `git diff --name-only`: 无输出
+- Phase 0 创建本 ledger 和 `phase-0-manifest.md` 后，工作树只应包含目标文档变更，后续阶段不得混入无关文件。
+
+## Accepted Baseline Phases 1-10
+
+1. Controlled Runtime Execution V1
+2. Capability Contract Conformance Tests
+3. Controlled Browser Runtime V2
+4. Auth Runtime Integration V1
+5. Auth-aware Controlled Browser Runtime V1
+6. Runtime Execution Replay / Audit Viewer V1
+7. Session Vault Productionization V2
+8. Session Policy / Governance Integration V2
+9. Runtime Audit Query API / Replay Hardening
+10. Destructive Strong Authorization Flow
+
+## Phase Status
+
+| Phase | Name | Status |
+| --- | --- | --- |
+| 0 | Implementation Recon / Plan Freeze | accepted |
+| 11 | Capability Graph Versioning / Registry V1 | accepted |
+| 12 | Provider Plugin API / Adapter SDK V1 | accepted |
+| 13 | Site Capability Compiler Hardening / Contract Extraction V2 | accepted |
+| 14 | Capability Package / Site Adapter Registry V1 | accepted |
+| 15 | Policy Pack Authoring / Simulation V1 | accepted |
+| 16 | Runtime Worker Isolation / Provider Sandbox V1 | accepted |
+| 17 | Runtime Operations / Run Store V1 | accepted |
+| 18 | Skill Runtime Invocation API V1 | accepted |
+| 19 | Runtime CI Regression Harness V1 | accepted |
+| 20 | Destructive Controlled Execution V2 Planning | accepted |
+| 21 | Payment Authorization Architecture Plan | accepted |
+| E2E | Compile -> Package -> Skill -> Runtime -> Audit | accepted |
+
+## Global Denylist
+
+除非阶段 manifest 明确要求且说明理由，否则不得修改：
+
+- `src/app/run-build.mjs`
+- production provider registry 默认 destructive/payment 语义
+- `src/app/runtime/index.mjs` testing/mock/fake export 边界
+- existing runtime reason strings
+- existing accepted tests 的断言语义
+- Controlled Browser Runtime V2 guard semantics
+- Auth Runtime V1 read/download semantics
+- Auth-aware Browser Runtime V1 guard-before-material semantics
+- payment/destructive blocked semantics
+
+## Phase Controls
+
+### Phase 0: Implementation Recon / Plan Freeze
+
+- status: accepted
+- allowed file areas: `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas: `src/`, `tests/`, `config/`, `schema/`, `tools/`, `scripts/`, root config files except this goal's docs
+- targeted tests:
+  - `node --test tests/node/capability-contract-conformance.test.mjs`
+  - `node --test tests/node/auth-runtime-integration-v1.test.mjs`
+  - `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`
+  - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`
+  - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`
+  - `npm run scan:secrets`
+- stop conditions:
+  - accepted 关键测试失败
+  - `runtime/index.mjs` 暴露 testing/mock/fake/raw helper
+  - production registry 默认包含 payment/destructive executable provider
+  - 工作树状态无法判断且可能混入无关大改
+  - `scan:secrets` 失败且与现有基线无关
+- checkpoint:
+  - Phase 0 PASS
+  - baseline commit recorded
+  - key accepted files exist
+  - key accepted tests pass
+  - production provider registry only includes API read, download, and controlled browser action providers
+  - no direct provider implementation import found in compiler/planner/domain/pipeline grep check
+
+### Phase 11: Capability Graph Versioning / Registry V1
+
+- status: accepted
+- allowed file areas:
+  - `src/domain/capabilities/graph-registry/`
+  - `tests/node/capability-graph-versioning-registry-v1.test.mjs`
+  - `tests/node/fixtures/capability-graph-versioning-registry-v1/`
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - runtime provider execution paths
+  - session vault material paths
+  - browser runtime implementation
+  - accepted phase 1-10 tests except additive coverage that does not weaken assertions
+- targeted tests:
+  - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`
+  - `node --test tests/node/capability-contract-conformance.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - provider/vault/browser/network execution introduced
+  - raw session/private material can enter graph registry output
+  - high-risk diff categories are not detected
+- checkpoint:
+  - Phase 11 PASS WITH NOTES.
+  - 修改文件：
+    - `src/domain/capabilities/graph-registry/capability-graph-schema.mjs`
+    - `src/domain/capabilities/graph-registry/capability-graph-id.mjs`
+    - `src/domain/capabilities/graph-registry/capability-graph-canonicalize.mjs`
+    - `src/domain/capabilities/graph-registry/capability-graph-digest.mjs`
+    - `src/domain/capabilities/graph-registry/capability-graph-diff.mjs`
+    - `src/domain/capabilities/graph-registry/capability-contract-compatibility.mjs`
+    - `src/domain/capabilities/graph-registry/capability-risk-diff.mjs`
+    - `src/domain/capabilities/graph-registry/capability-auth-diff.mjs`
+    - `src/domain/capabilities/graph-registry/capability-provider-compatibility.mjs`
+    - `src/domain/capabilities/graph-registry/capability-graph-migration.mjs`
+    - `src/domain/capabilities/graph-registry/capability-graph-registry.mjs`
+    - `src/domain/capabilities/graph-registry/index.mjs`
+    - `tests/node/capability-graph-versioning-registry-v1.test.mjs`
+    - `tests/node/fixtures/capability-graph-versioning-registry-v1/public-read-v1.json`
+    - `tests/node/fixtures/capability-graph-versioning-registry-v1/public-read-reordered.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-11-manifest.md`
+  - 新增 public APIs：
+    - `CAPABILITY_GRAPH_SCHEMA_VERSION`
+    - `CAPABILITY_GRAPH_REGISTRY_ENTRY_SCHEMA_VERSION`
+    - `CAPABILITY_GRAPH_DIFF_SCHEMA_VERSION`
+    - `CAPABILITY_GRAPH_COMPATIBILITY_SCHEMA_VERSION`
+    - `sanitizeCapabilityGraphForRegistry`
+    - `canonicalizeCapabilityGraph`
+    - `stringifyCanonicalCapabilityGraph`
+    - `createCapabilityGraphDigest`
+    - `createStableCapabilityId`
+    - `extractCapabilityGraphDescriptors`
+    - `diffCapabilityGraphs`
+    - `assessCapabilityContractCompatibility`
+    - `assessCapabilityRiskDiff`
+    - `assessCapabilityAuthDiff`
+    - `assessCapabilityProviderCompatibility`
+    - `migrateCapabilityGraph`
+    - `createCapabilityGraphRegistry`
+    - `listCapabilityGraphRegistrySchemaDefinitions`
+  - targeted tests:
+    - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, 20 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 592 files checked.
+    - `npm run scan:secrets`: PASS, 636 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - `rg -n "providers/" src/domain/capabilities/graph-registry tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, no matches.
+    - `rg -n "executeRuntimeInvocation|provider\\.run|fetch\\(|browserRuntime|sessionVault|getScopedSessionMaterial|inspectSession|applyEphemeralAuthCookies" src/domain/capabilities/graph-registry tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, no matches.
+    - `rg -n "createMock|fake|fixture|testing|raw.*material" src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "create.*Payment|PaymentProvider|payment_provider|create.*Destructive|DestructiveProvider|destructive_provider|PAYMENT_PROVIDER|DESTRUCTIVE_PROVIDER|capabilityKinds.*payment|capabilityKinds.*destructive" src/app/runtime/providers src/app/runtime/provider-registry.mjs src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "src/app/runtime|runtime/index\\.mjs|providers/|provider-registry|browser-runtime|session-vault|execution-runner|execution-dispatcher|audit-recorder" src/domain/capabilities/graph-registry`: PASS, no matches.
+    - `rg -n "providers/|provider-registry|api-read-provider|download-provider|browser-action-provider|runtime/testing|mock-providers|mock-session-vault" src/app/compiler src/app/planner src/domain src/app/pipeline`: PASS, no matches.
+    - `rg -n "writeFile|appendFile|createWriteStream|JSON\\.stringify\\([^)]*(graph|input|raw|previousGraph|nextGraph)" src/domain/capabilities/graph-registry`: NOTE, one match in `capability-graph-canonicalize.mjs` for canonical digest serialization; reviewed as safe because input is sanitized/canonicalized before digesting and is not a durable raw output.
+    - `rg -n "sf_graph_cookie_secret_123|sf_graph_private_form_secret_456|sf_graph_session_secret_789" ...`: PASS, canaries appear only in Phase 11 test/fixture inputs and are asserted absent from outputs.
+  - canary non-leakage: PASS, registry entry, sanitizer, canonicalization, diff, compatibility assessment, migration output do not contain graph canaries.
+  - architecture boundary: PASS, no runtime/provider/browser/vault import or execution introduced.
+  - runtime semantics: PASS, no provider invocation, browser launch, vault access, network call, payment execution, or destructive execution introduced.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - 非阻断 note：只读侦察子代理建议后续可考虑 schema inventory / compatibility registry 注册。Phase 11 manifest 未授权修改 `src/domain/schemas/`，且本阶段已在 `graph-registry/index.mjs` 暴露独立 schema definitions，因此未扩大 scope。
+  - continue: 可以进入 Phase 12。
+
+### Phase 12: Provider Plugin API / Adapter SDK V1
+
+- status: accepted
+- allowed file areas:
+  - `src/app/runtime/provider-sdk/`
+  - runtime production-facing provider SDK exports
+  - `tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`
+  - `tests/node/fixtures/provider-plugin-api-adapter-sdk-v1/`
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - direct provider bypass of runtime gates
+  - direct SessionVault access from provider plugin API
+  - raw session/browser handles in SDK output
+  - production registration of payment/destructive executable providers
+- targeted tests:
+  - `node --test tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`
+  - `node --test tests/node/capability-contract-conformance.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - provider plugin can bypass runtime gates, auth adapter, sanitizer, sandbox, or audit
+  - provider SDK stores raw auth/session/private/payment material
+- checkpoint:
+  - Phase 12 PASS WITH NOTES.
+  - 修改文件：
+    - `src/app/runtime/provider-sdk/provider-sdk-errors.mjs`
+    - `src/app/runtime/provider-sdk/provider-manifest.mjs`
+    - `src/app/runtime/provider-sdk/provider-interface.mjs`
+    - `src/app/runtime/provider-sdk/provider-adapter.mjs`
+    - `src/app/runtime/provider-sdk/provider-compatibility.mjs`
+    - `src/app/runtime/provider-sdk/provider-risk-profile.mjs`
+    - `src/app/runtime/provider-sdk/provider-side-effect-profile.mjs`
+    - `src/app/runtime/provider-sdk/provider-auth-declaration.mjs`
+    - `src/app/runtime/provider-sdk/provider-result-sanitizer.mjs`
+    - `src/app/runtime/provider-sdk/provider-registration-validator.mjs`
+    - `src/app/runtime/provider-sdk/provider-conformance-harness.mjs`
+    - `src/app/runtime/provider-sdk/index.mjs`
+    - `src/app/runtime/provider-registry.mjs`
+    - `src/app/runtime/providers/index.mjs`
+    - `src/app/runtime/index.mjs`
+    - `tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`
+    - `tests/node/fixtures/provider-plugin-api-adapter-sdk-v1/valid-provider-manifest.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-12-manifest.md`
+  - 新增 public APIs：
+    - `PROVIDER_MANIFEST_SCHEMA_VERSION`
+    - `PROVIDER_CONFORMANCE_REPORT_SCHEMA_VERSION`
+    - `validateProviderManifest`
+    - `assertProviderManifestValid`
+    - `validateRuntimeProviderInterface`
+    - `createProviderAdapter`
+    - `validateProviderRuntimeCompatibility`
+    - `validateProviderRiskProfile`
+    - `validateProviderSideEffectProfile`
+    - `validateProviderAuthDeclaration`
+    - `sanitizeProviderResult`
+    - `sanitizeProviderError`
+    - `validateProviderRegistration`
+    - `assertProviderRegistrationValid`
+    - `createProviderConformanceHarness`
+    - `runProviderConformance`
+    - `createSafeFixtureProvider` from `provider-sdk/index.mjs` only; not exposed through `runtime/index.mjs`
+    - `ProviderSdkValidationError`
+  - targeted tests:
+    - `node --test tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`: PASS, 16 tests passed.
+    - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, 20 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `node --test tests/node/auth-runtime-integration-v1.test.mjs`: PASS, 13 tests passed.
+    - `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`: PASS, 9 tests passed.
+    - `npm run check:syntax`: PASS, 605 files checked.
+    - `npm run scan:secrets`: PASS, 651 candidate files scanned.
+    - `git diff --check`: PASS.
+  - two-phase regression subset after Phase 11-12:
+    - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+    - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/controlled-browser-runtime-v2.test.mjs`: PASS, 14 tests passed.
+    - Earlier Phase 12 regression run also passed `session-vault-productionization-v2` and `session-policy-governance-integration-v2`.
+  - static checks:
+    - `rg -n "mock-providers|mock-session-vault|runtime/testing|testing\\.mjs|createMock|fake" src/app/runtime/provider-sdk src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "create.*Payment|PaymentProvider|payment_provider|create.*Destructive|DestructiveProvider|destructive_provider|PAYMENT_PROVIDER|DESTRUCTIVE_PROVIDER|capabilityKinds.*payment|capabilityKinds.*destructive" src/app/runtime/providers src/app/runtime/provider-registry.mjs src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "createMock|fake|fixture|testing|raw.*material" src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "SessionVault|getScopedSessionMaterial|inspectSession|applyEphemeralAuthCookies|storageState|localStorage|sessionStorage|cookie jar|browser profile" src/app/runtime/provider-sdk tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`: NOTE, expected safety-pattern/test-title matches only; no SDK access to SessionVault or raw browser/session material.
+    - `rg -n "writeFile|appendFile|createWriteStream|audit|report" src/app/runtime/provider-sdk`: NOTE, no file-write APIs matched; broad `audit|report` matches are conformance report naming and validation variables, not audit/report writes.
+  - canary non-leakage: PASS, `sf_provider_cookie_secret_123`, `sf_provider_token_secret_456`, `sf_provider_env_secret_789`, and `sf_provider_raw_body_secret_000` are absent from sanitized result, error, adapter output, and conformance reports.
+  - architecture boundary: PASS, SDK does not import testing/mock providers, concrete provider implementations, session vault, browser runtime, audit viewer, or audit query.
+  - runtime semantics: PASS, production registry still contains only API read, download, and browser action providers; payment/destructive providers are rejected by production registration and remain unresolved by production provider resolution.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - 非阻断 note：`createProviderAdapter` now provides the safe adapter wrapper requested by Phase 12; existing built-in production providers remain direct internal providers but now carry validated manifests at the production registry boundary.
+    - 非阻断 note：broad static grep has expected matches in sanitizer regex/conformance report naming; reviewed as non-executable safety code.
+  - continue: 可以进入 Phase 13。
+
+### Phase 13: Site Capability Compiler Hardening / Contract Extraction V2
+
+- status: accepted
+- allowed file areas:
+  - `src/app/compiler/`
+  - compiler fixtures and tests for contract extraction
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - provider implementation imports
+  - runtime execution paths
+  - live browser action paths
+  - accepted test assertion weakening
+- targeted tests:
+  - `node --test tests/node/site-capability-compiler-hardening-v2.test.mjs`
+  - `node --test tests/node/site-capability-compiler-executor/*.test.mjs`
+  - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`
+  - `node --test tests/node/capability-contract-conformance.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - compiler executes provider/browser action
+  - compiler writes raw private/session material into graph/package artifacts
+- checkpoint:
+  - Phase 13 PASS WITH NOTES.
+  - 修改文件：
+    - `src/app/compiler/contract-extraction-v2.mjs`
+    - `src/app/compiler/index.mjs`
+    - `tests/node/site-capability-compiler-hardening-v2.test.mjs`
+    - `tests/node/fixtures/site-capability-compiler-hardening-v2/static-capability-page.html`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-13-manifest.md`
+  - 新增 public APIs：
+    - `COMPILER_CONTRACT_EXTRACTION_V2_SCHEMA_VERSION`
+    - `extractStaticCapabilityContractsV2`
+    - `extractFormActionContractsV2`
+    - `extractDownloadExportHintsV2`
+    - `extractApiEndpointHintsV2`
+    - `extractAuthRequirementHintsV2`
+    - `extractRiskHintsV2`
+    - `scoreSelectorStability`
+    - `scoreContractConcreteness`
+    - `sanitizeCompilerExtractionOutput`
+  - targeted tests:
+    - `node --test tests/node/site-capability-compiler-hardening-v2.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/site-capability-compiler-executor/*.test.mjs`: PASS, 59 tests passed.
+    - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, 20 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 607 files checked.
+    - `npm run scan:secrets`: PASS, 655 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - `rg -n "providers/|provider-registry|provider-sdk|browser-runtime|session-vault|runtime/index\\.mjs|executeRuntimeInvocation|provider\\.run|fetch\\(|openBrowserSession" src/app/compiler/contract-extraction-v2.mjs tests/node/site-capability-compiler-hardening-v2.test.mjs`: NOTE, matches only test guard assertions; implementation has no provider/runtime/browser/vault imports or execution calls.
+    - `rg -n "sf_compiler_private_form_secret_123|sf_compiler_cookie_secret_456|sf_compiler_login_secret_789" src/app/compiler tests/node/site-capability-compiler-hardening-v2.test.mjs tests/node/fixtures/site-capability-compiler-hardening-v2`: PASS, canaries appear only in test regex and fixture inputs and are asserted absent from outputs.
+    - `rg -n "raw.*value|raw.*dom|cookie|authorization|password|credential|storageState|localStorage|sessionStorage|IndexedDB" src/app/compiler/contract-extraction-v2.mjs`: NOTE, expected sanitizer patterns and auth/risk classification terms only; no durable raw material construction.
+    - `rg -n "createMock|fake|fixture|testing|raw.*material" src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "create.*Payment|PaymentProvider|payment_provider|create.*Destructive|DestructiveProvider|destructive_provider|PAYMENT_PROVIDER|DESTRUCTIVE_PROVIDER|capabilityKinds.*payment|capabilityKinds.*destructive" src/app/runtime/providers src/app/runtime/provider-registry.mjs src/app/runtime/index.mjs`: PASS, no matches.
+    - `rg -n "providers/|provider-registry|api-read-provider|download-provider|browser-action-provider|runtime/testing|mock-providers|mock-session-vault" src/app/compiler src/app/planner src/domain src/app/pipeline`: PASS, no matches.
+  - canary non-leakage: PASS, extraction result, form contracts, download/API hints, auth/risk hints, warnings, summary, errors, and test JSON do not contain compiler canaries or raw private fixture values.
+  - architecture boundary: PASS, compiler V2 helper remains static descriptor extraction and does not import provider implementation, runtime provider registry, provider SDK, browser runtime, session vault, audit viewer/query, or runtime execution APIs.
+  - runtime semantics: PASS, no provider invocation, browser action, vault access, live network call, form submit, click, automatic login, payment execution, or destructive execution introduced.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - 非阻断 note：子代理指出 V2 extraction helper 目前作为 compiler public API 暴露，未强制接入既有 config-backed static compiler inventory。该 inventory 当前以配置清单为输入，Phase 13 未扩大输入契约；后续 Phase 14/E2E 将直接消费 V2 extraction 输出构建 package/graph，不影响安全边界。
+    - 非阻断 note：宽 grep 命中 sanitizer 正则、auth/risk 分类词表和测试 guard 文本；已人工复核为安全控制代码而非 raw durable output。
+  - continue: 可以进入 Phase 14。
+
+### Phase 14: Capability Package / Site Adapter Registry V1
+
+- status: accepted
+- allowed file areas:
+  - capability package domain modules
+  - site adapter registry modules
+  - package registry fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - raw auth/session/private data persistence
+  - provider execution paths
+  - browser/vault material access paths
+- targeted tests:
+  - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`
+  - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - package manifest includes raw material
+  - package compatibility can refer to undefined provider compatibility schema
+- checkpoint:
+  - Phase 14 PASS WITH NOTES.
+  - 修改文件：
+    - `src/domain/capability-packages/capability-package-schema.mjs`
+    - `src/domain/capability-packages/capability-package-validator.mjs`
+    - `src/domain/capability-packages/capability-package-digest.mjs`
+    - `src/domain/capability-packages/capability-package-provenance.mjs`
+    - `src/domain/capability-packages/capability-package-builder.mjs`
+    - `src/domain/capability-packages/capability-package-registry.mjs`
+    - `src/domain/capability-packages/capability-ref-resolver.mjs`
+    - `src/domain/capability-packages/execution-contract-ref-resolver.mjs`
+    - `src/domain/capability-packages/capability-package-diff.mjs`
+    - `src/domain/capability-packages/site-adapter-registry.mjs`
+    - `src/domain/capability-packages/index.mjs`
+    - `tests/node/capability-package-site-adapter-registry-v1.test.mjs`
+    - `tests/node/fixtures/capability-package-site-adapter-registry-v1/compiled-graph.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-14-manifest.md`
+  - 新增 public APIs：
+    - `CAPABILITY_PACKAGE_SCHEMA_VERSION`
+    - `CAPABILITY_PACKAGE_REGISTRY_ENTRY_SCHEMA_VERSION`
+    - `CAPABILITY_PACKAGE_DIFF_SCHEMA_VERSION`
+    - `CAPABILITY_PACKAGE_COMPATIBILITY_SCHEMA_VERSION`
+    - `SITE_ADAPTER_REGISTRY_SCHEMA_VERSION`
+    - `sanitizeCapabilityPackageManifest`
+    - `buildCapabilityPackageFromGraph`
+    - `validateCapabilityPackageManifest`
+    - `assertCapabilityPackageManifestValid`
+    - `createCapabilityPackageDigest`
+    - `createCapabilityPackageRegistry`
+    - `resolvePackageCapabilityRef`
+    - `resolvePackageExecutionContractRef`
+    - `diffCapabilityPackages`
+    - `assessCapabilityPackageCompatibility`
+    - `createCapabilityPackageProvenance`
+    - `exportCapabilityPackageSafeJson`
+    - `importCapabilityPackageSafeJson`
+    - `sanitizeSiteAdapterDescriptor`
+    - `createSiteAdapterRegistry`
+    - `resolveSiteAdapterDescriptor`
+  - targeted tests:
+    - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+    - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, 20 tests passed.
+    - `node --test tests/node/site-capability-compiler-hardening-v2.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 619 files checked.
+    - `npm run scan:secrets`: PASS, 669 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - package runtime/provider/browser/vault import and execution grep: PASS, no matches.
+    - package sensitive-term grep: NOTE, expected sanitizer reject pattern and raw-material error-code matches only.
+    - concrete site adapter / fs writer grep: NOTE, broad `resolveSiteAdapter` pattern matched this phase's descriptor resolver name only; no concrete adapter import or filesystem write API.
+    - package canary grep: PASS, canaries appear only in tests and are asserted absent from outputs.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, manifests, registry entries, safe JSON, resolver outputs, adapter descriptors, package diff, and compatibility reports do not contain package canaries.
+  - architecture boundary: PASS, no runtime/provider/browser/vault/audit/concrete adapter/filesystem writer dependency introduced.
+  - runtime semantics: PASS, no provider invocation, browser action, vault access, live network call, payment execution, or destructive execution introduced.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - 非阻断 note：site adapter registry 是 descriptor-only registry，未 import concrete adapter resolver。
+    - 非阻断 note：audit/runtime/skill integration 只以 package metadata 和 structured refs 表达；实际可执行集成保留到后续阶段。
+  - continue: 可以进入 Phase 15。
+
+### Phase 15: Policy Pack Authoring / Simulation V1
+
+- status: accepted
+- allowed file areas:
+  - policy pack domain/governance modules
+  - policy simulation fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - provider implementation imports
+  - vault material access
+  - live runtime/provider execution
+- targeted tests:
+  - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`
+  - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - policy evaluator executes provider/browser/vault/network
+  - policy output leaks raw material or natural language text becomes authorization
+- checkpoint:
+  - Phase 15 PASS WITH NOTES.
+  - 修改文件：
+    - `src/domain/policies/policy-pack/policy-pack-schema.mjs`
+    - `src/domain/policies/policy-pack/policy-pack-validator.mjs`
+    - `src/domain/policies/policy-pack/policy-pack-simulator.mjs`
+    - `src/domain/policies/policy-pack/policy-pack-decision-explainer.mjs`
+    - `src/domain/policies/policy-pack/policy-pack-diff.mjs`
+    - `src/domain/policies/policy-pack/policy-pack-regression.mjs`
+    - `src/domain/policies/policy-pack/policy-pack-migration.mjs`
+    - `src/domain/policies/policy-pack/index.mjs`
+    - `tests/node/policy-pack-authoring-simulation-v1.test.mjs`
+    - `tests/node/fixtures/policy-pack-authoring-simulation-v1/safe-policy-pack.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-15-manifest.md`
+  - 新增 public APIs：
+    - `POLICY_PACK_SCHEMA_VERSION`
+    - `POLICY_PACK_SIMULATION_SCHEMA_VERSION`
+    - `POLICY_PACK_DECISION_SCHEMA_VERSION`
+    - `POLICY_PACK_DIFF_SCHEMA_VERSION`
+    - `POLICY_PACK_REGRESSION_SCHEMA_VERSION`
+    - `validatePolicyPack`
+    - `assertPolicyPackValid`
+    - `sanitizePolicyPack`
+    - `sanitizePolicySimulationInput`
+    - `assertNoPolicyPackRawMaterial`
+    - `simulatePolicyPack`
+    - `explainPolicyDecision`
+    - `diffPolicyPacks`
+    - `createPolicyRegressionSnapshot`
+    - `migratePolicyPack`
+    - `listPolicyPackSchemaDefinitions`
+  - targeted tests:
+    - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/session-policy-governance-integration-v2.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 628 files checked.
+    - `npm run scan:secrets`: PASS, 680 candidate files scanned.
+    - `git diff --check`: PASS.
+  - two-phase regression subset after Phase 14-15:
+    - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+    - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/controlled-browser-runtime-v2.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/auth-runtime-integration-v1.test.mjs`: PASS, 13 tests passed.
+    - `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`: PASS, 9 tests passed.
+    - `node --test tests/node/session-vault-productionization-v2.test.mjs`: PASS, 7 tests passed.
+  - static checks:
+    - policy pack runtime/provider/browser/vault import and execution grep: NOTE, matches only test guard assertions.
+    - policy canary grep: PASS, canaries appear only in tests and are asserted absent from outputs.
+    - policy sensitive-term grep: NOTE, expected sanitizer reject patterns and raw-material error-code matches only.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, policy pack validation reports, simulation outputs, decision explanations, audit/query summaries, and regression snapshots do not contain policy canaries.
+  - architecture boundary: PASS, no runtime/provider/browser/vault/audit-query dependency introduced.
+  - runtime semantics: PASS, no provider invocation, browser action, vault access, live network call, payment execution, or destructive execution introduced.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - 非阻断 note：policy pack audit/query integration 以 sanitized decision summary 形式模拟，未修改 audit/query runtime 模块。
+  - continue: 可以进入 Phase 16。
+
+### Phase 16: Runtime Worker Isolation / Provider Sandbox V1
+
+- status: accepted
+- allowed file areas:
+  - runtime sandbox service modules
+  - provider sandbox fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - automatic login
+  - profile/storageState/cookie jar persistence
+  - arbitrary authenticated browsing
+  - raw runtimeContext/sessionVault/browser handles in sandbox channel
+- targeted tests:
+  - `node --test tests/node/runtime-worker-isolation-provider-sandbox-v1.test.mjs`
+  - `node --test tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - sandbox bypasses gates/sanitizer/audit
+  - sandbox exposes raw handles or requires automatic login/profile persistence
+- checkpoint:
+  - Phase 16 PASS WITH NOTES.
+  - 修改文件：
+    - `src/app/runtime/provider-sandbox/provider-sandbox-errors.mjs`
+    - `src/app/runtime/provider-sandbox/provider-worker-protocol.mjs`
+    - `src/app/runtime/provider-sandbox/provider-sandbox-policy.mjs`
+    - `src/app/runtime/provider-sandbox/provider-sandbox-services.mjs`
+    - `src/app/runtime/provider-sandbox/provider-sandbox-sanitizer.mjs`
+    - `src/app/runtime/provider-sandbox/provider-sandbox-timeout.mjs`
+    - `src/app/runtime/provider-sandbox/provider-worker-host.mjs`
+    - `src/app/runtime/provider-sandbox/provider-worker-client.mjs`
+    - `src/app/runtime/provider-sandbox/index.mjs`
+    - `src/app/runtime/index.mjs`
+    - `tests/node/runtime-worker-isolation-provider-sandbox-v1.test.mjs`
+    - `tests/node/fixtures/runtime-worker-isolation-provider-sandbox-v1/sandbox-provider-manifest.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-16-manifest.md`
+  - 新增 public APIs：
+    - `PROVIDER_SANDBOX_PROTOCOL_SCHEMA_VERSION`
+    - `PROVIDER_SANDBOX_RESULT_SCHEMA_VERSION`
+    - `PROVIDER_SANDBOX_LIMITATION_STATEMENT`
+    - `ProviderSandboxError`
+    - `createProviderSandboxEnvelope`
+    - `sanitizeProviderSandboxMessage`
+    - `assertNoProviderSandboxRawMaterial`
+    - `createRestrictedProviderSandboxServices`
+    - `validateProviderSandboxPolicy`
+    - `assertProviderSandboxPolicyValid`
+    - `sanitizeProviderSandboxResult`
+    - `sanitizeProviderSandboxError`
+    - `withProviderSandboxTimeout`
+    - `runProviderInRestrictedSandbox`
+    - `createProviderSandboxClient`
+  - targeted tests:
+    - `node --test tests/node/runtime-worker-isolation-provider-sandbox-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`: PASS, 16 tests passed.
+    - `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`: PASS, 9 tests passed.
+    - `node --test tests/node/auth-runtime-integration-v1.test.mjs`: PASS, 13 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 638 files checked.
+    - `npm run scan:secrets`: PASS, 692 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - concrete production provider import grep: PASS, no matches.
+    - process/env/vault/browser/fs broad grep: NOTE, sanitizer reject pattern matches only.
+    - sandbox canary grep: PASS, canaries appear only in tests and are asserted absent from outputs.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, sandbox envelope, service summary, result/error channel, audit events, timeout output, and conformance report do not contain sandbox canaries.
+  - architecture boundary: PASS, no concrete provider/session-vault/browser/audit-query/filesystem writer dependency introduced.
+  - runtime semantics: PASS, no provider sandbox gate bypass, no raw env forwarding, no raw vault/browser handle exposure, no payment/destructive execution.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - 非阻断 note：V1 是 in-process restricted provider boundary，不是 full OS-level sandbox，也未声称 Worker Thread isolation。
+  - continue: 可以进入 Phase 17。
+
+### Phase 17: Runtime Operations / Run Store V1
+
+- status: accepted
+- allowed file areas:
+  - runtime run store modules
+  - run store fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - raw artifact content reads
+  - raw request/response reconstruction
+  - replay/query execution paths
+- targeted tests:
+  - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`
+  - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`
+  - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - run store persists raw auth/session/browser/private/payment material
+  - replay/query/regression can execute provider/browser/vault/network
+- checkpoint:
+  - Phase 17 PASS WITH NOTES.
+  - modified files:
+    - `src/app/runtime/run-store/run-store-schema.mjs`
+    - `src/app/runtime/run-store/run-store-sanitizer.mjs`
+    - `src/app/runtime/run-store/run-store-retention.mjs`
+    - `src/app/runtime/run-store/run-store-integrity.mjs`
+    - `src/app/runtime/run-store/run-store-paths.mjs`
+    - `src/app/runtime/run-store/run-store-manifest.mjs`
+    - `src/app/runtime/run-store/run-store-query-index.mjs`
+    - `src/app/runtime/run-store/run-store-writer.mjs`
+    - `src/app/runtime/run-store/run-store-loader.mjs`
+    - `src/app/runtime/run-store/index.mjs`
+    - `src/app/runtime/index.mjs`
+    - `tests/node/runtime-operations-run-store-v1.test.mjs`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-17-manifest.md`
+  - public APIs:
+    - `RUNTIME_RUN_STORE_SCHEMA_VERSION`
+    - `RUNTIME_RUN_STORE_MANIFEST_SCHEMA_VERSION`
+    - `RUNTIME_RUN_STORE_QUERY_INDEX_SCHEMA_VERSION`
+    - `RUNTIME_RUN_STORE_RETENTION_SCHEMA_VERSION`
+    - `RUNTIME_RUN_STORE_MAX_JSON_BYTES`
+    - `createRuntimeRunId`
+    - `resolveRunStorePath`
+    - `sanitizeRunStoreManifest`
+    - `assertNoRunStoreRawMaterial`
+    - `createRunStoreManifest`
+    - `createRunStoreIntegrityDigest`
+    - `createContentDigest`
+    - `createRunStoreRetentionMetadata`
+    - `writeRuntimeRunStore`
+    - `loadRuntimeRunStore`
+    - `createRunStoreQueryIndex`
+    - `queryRunStoreIndex`
+  - targeted tests:
+    - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+    - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+    - `node --test tests/node/runtime-worker-isolation-provider-sandbox-v1.test.mjs`: PASS, 14 tests passed.
+    - `npm run check:syntax`: PASS, 649 files checked.
+    - `npm run scan:secrets`: PASS, 704 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - provider/browser/vault/network execution grep: PASS, no matches.
+    - run store canary grep: PASS, canaries appear only in Phase 17 test injection/assertion paths.
+    - sensitive/raw material grep: NOTE, expected sanitizer reject-pattern matches plus bounded JSON `readFile` in run store loader; reviewed as safe because loader reads only confined run store JSON files and does not read raw artifact content.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, durable run store JSON and load/query outputs do not contain run store canaries.
+  - architecture boundary: PASS, no concrete provider/provider-registry/browser-runtime/session-vault import or execution dependency introduced.
+  - runtime semantics: PASS, run store write/load/query does not execute provider, browser, vault, network, payment, or destructive actions.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - Non-blocking note: the run store loader uses bounded path-confined JSON reads for run store-owned artifacts only; raw artifact files are intentionally not read.
+  - continue: Phase 18 may begin.
+
+### Phase 18: Skill Runtime Invocation API V1
+
+- status: accepted
+- allowed file areas:
+  - runtime skill invocation modules
+  - structured invocation schema and fixtures
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - natural-language-only authorization
+  - raw session material input/output
+  - direct provider execution bypassing runtime gates
+- targeted tests:
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`
+  - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - task text satisfies auth/destructive/payment authorization
+  - skill result leaks raw material
+  - dry run invokes provider
+
+- checkpoint:
+  - Phase 18 PASS WITH NOTES.
+  - modified files:
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-schema.mjs`
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-sanitizer.mjs`
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-validator.mjs`
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-idempotency.mjs`
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-package-resolver.mjs`
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-result.mjs`
+    - `src/app/runtime/skill-invocation/skill-runtime-invocation-runner.mjs`
+    - `src/app/runtime/skill-invocation/index.mjs`
+    - `src/app/runtime/index.mjs`
+    - `tests/node/skill-runtime-invocation-api-v1.test.mjs`
+    - `tests/node/fixtures/skill-runtime-invocation-api-v1/skill-package.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-18-manifest.md`
+  - public APIs:
+    - `SKILL_RUNTIME_INVOCATION_SCHEMA_VERSION`
+    - `SKILL_RUNTIME_INVOCATION_RESULT_SCHEMA_VERSION`
+    - `SKILL_RUNTIME_INVOCATION_PREVIEW_SCHEMA_VERSION`
+    - `SKILL_RUNTIME_INVOCATION_IDEMPOTENCY_SCHEMA_VERSION`
+    - `listSkillRuntimeInvocationSchemaDefinitions`
+    - `assertNoSkillInvocationRawMaterial`
+    - `safeSkillInvocationRef`
+    - `sanitizeSkillRuntimeInvocationRequest`
+    - `sanitizeSkillRuntimeInvocationSummary`
+    - `validateSkillRuntimeInvocationRequest`
+    - `assertSkillRuntimeInvocationRequestValid`
+    - `createSkillRuntimeInvocationRequest`
+    - `createSkillInvocationIdempotencyLedger`
+    - `resolveSkillInvocationPackageRefs`
+    - `createSkillRuntimeInvocationResult`
+    - `convertSkillInvocationToRuntimeInvocationRequest`
+    - `createSkillRuntimeDryRunPreview`
+    - `invokeSkillRuntime`
+  - targeted tests:
+    - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+    - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+    - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+    - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 658 files checked.
+    - `npm run scan:secrets`: PASS, 715 candidate files scanned.
+    - `git diff --check`: PASS.
+  - two-phase regression subset after Phase 17-18:
+    - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+    - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+    - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+    - `npm run test:capability`: PASS, 93 tests passed.
+  - static checks:
+    - provider/browser/vault/testing helper import grep: NOTE, only the Phase 18 test's own assertion guard matched; production skill invocation modules had no matches.
+    - skill canary grep: PASS, canaries appear only in Phase 18 test injection/assertion paths.
+    - raw/sensitive grep: NOTE, expected sanitizer reject-pattern matches plus authRequirement allowed-type descriptors; reviewed as safe descriptor metadata, not material.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, dryRun preview, execute result, idempotency result, package resolution, and blocked destructive/payment outputs do not contain skill canaries.
+  - architecture boundary: PASS, skill invocation modules do not import concrete providers, provider registry, browser runtime, session vault material APIs, mock providers, or testing helpers; execute mode calls existing runtime runner.
+  - runtime semantics: PASS, dryRun does not execute provider/browser/vault/network; execute mode routes through `executeRuntimeInvocation`; payment remains blocked; destructive execution remains blocked by default.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - Non-blocking note: package `executionContractRef` values may include package-version syntax such as `@`; conversion maps them into runtime-safe `execution-contract:` refs before calling the existing runtime runner.
+  - continue: Phase 19 may begin.
+
+### Phase 19: Runtime CI Regression Harness V1
+
+- status: accepted
+- allowed file areas:
+  - runtime regression harness modules
+  - regression snapshots and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - provider/browser/vault/network execution during regression replay
+  - raw material in snapshots
+- targeted tests:
+  - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - regression harness executes live providers or stores raw material
+
+- checkpoint:
+  - Phase 19 PASS WITH NOTES.
+  - modified files:
+    - `src/app/runtime/regression-harness/runtime-regression-schema.mjs`
+    - `src/app/runtime/regression-harness/runtime-regression-sanitizer.mjs`
+    - `src/app/runtime/regression-harness/runtime-regression-severity.mjs`
+    - `src/app/runtime/regression-harness/runtime-regression-compare.mjs`
+    - `src/app/runtime/regression-harness/runtime-regression-report.mjs`
+    - `src/app/runtime/regression-harness/runtime-regression-runner.mjs`
+    - `src/app/runtime/regression-harness/runtime-regression-fixtures.mjs`
+    - `src/app/runtime/regression-harness/index.mjs`
+    - `src/app/runtime/index.mjs`
+    - `tests/node/runtime-ci-regression-harness-v1.test.mjs`
+    - `tests/node/fixtures/runtime-ci-regression-harness-v1/golden-runtime-snapshot.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-19-manifest.md`
+  - public APIs:
+    - `RUNTIME_CI_REGRESSION_HARNESS_SCHEMA_VERSION`
+    - `RUNTIME_CI_REGRESSION_SNAPSHOT_SCHEMA_VERSION`
+    - `RUNTIME_CI_REGRESSION_REPORT_SCHEMA_VERSION`
+    - `RUNTIME_CI_REGRESSION_SEVERITIES`
+    - `listRuntimeCiRegressionSchemaDefinitions`
+    - `assertNoRuntimeRegressionRawMaterial`
+    - `sanitizeRuntimeRegressionSnapshot`
+    - `assertRuntimeRegressionSnapshotValid`
+    - `classifyRuntimeRegressionSeverity`
+    - `severityRank`
+    - `maxRuntimeRegressionSeverity`
+    - `compareRuntimeRegressionSnapshots`
+    - `runtimeRegressionSnapshotsEqual`
+    - `createRuntimeRegressionReport`
+    - `runRuntimeRegressionHarness`
+    - `createRuntimeRegressionSnapshotFixture`
+  - targeted tests:
+    - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+    - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, 20 tests passed.
+    - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+    - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+    - `npm run check:syntax`: PASS, 667 files checked.
+    - `npm run scan:secrets`: PASS, 726 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - provider/browser/vault/network/fs/testing helper grep over regression harness and test: PASS, no matches.
+    - regression canary grep: PASS, canaries appear only in Phase 19 test injection/assertion paths.
+    - raw/sensitive grep: NOTE, expected sanitizer reject-pattern matches plus `bearer_token` descriptor fixture metadata; reviewed as safe descriptor metadata, not material.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, comparisons, failed-closed reports, and regression reports do not contain regression canaries.
+  - architecture boundary: PASS, regression harness does not import concrete providers, provider registry, browser runtime, session vault material APIs, mock providers, testing helpers, fs readers/writers, or network APIs.
+  - runtime semantics: PASS, harness compares caller-provided sanitized snapshots only; no provider, browser, vault, network, payment, or destructive execution occurs.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - Non-blocking note: the V1 harness accepts in-memory sanitized snapshots; it intentionally does not read snapshot files or raw artifact content.
+  - continue: Phase 20 may begin.
+
+### Phase 20: Destructive Controlled Execution V2 Planning
+
+- status: accepted
+- allowed file areas:
+  - destructive planning domain modules
+  - planning audit fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - production destructive execution
+  - default destructive provider registration
+  - destructive confirmation token/phrase persistence
+- targeted tests:
+  - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`
+  - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - destructive planning becomes destructive execution
+  - production registry includes destructive executable provider by default
+
+- checkpoint:
+  - Phase 20 PASS WITH NOTES.
+  - modified files:
+    - `src/domain/destructive-planning/destructive-execution-plan-schema.mjs`
+    - `src/domain/destructive-planning/destructive-execution-plan-validator.mjs`
+    - `src/domain/destructive-planning/destructive-provider-requirements.mjs`
+    - `src/domain/destructive-planning/destructive-authorization-lifecycle.mjs`
+    - `src/domain/destructive-planning/destructive-target-verification.mjs`
+    - `src/domain/destructive-planning/destructive-dry-run-proof.mjs`
+    - `src/domain/destructive-planning/destructive-compensation-plan.mjs`
+    - `src/domain/destructive-planning/destructive-planning-simulator.mjs`
+    - `src/domain/destructive-planning/destructive-planning-audit-summary.mjs`
+    - `src/domain/destructive-planning/index.mjs`
+    - `tests/node/destructive-controlled-execution-v2-planning.test.mjs`
+    - `tests/node/fixtures/destructive-controlled-execution-v2-planning/safe-destructive-plan.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-20-manifest.md`
+  - public APIs:
+    - `DESTRUCTIVE_EXECUTION_PLAN_SCHEMA_VERSION`
+    - `DESTRUCTIVE_PLANNING_SIMULATION_SCHEMA_VERSION`
+    - `DESTRUCTIVE_ACTION_CLASSES`
+    - `sanitizeDestructiveExecutionPlan`
+    - `validateDestructiveExecutionPlan`
+    - `assertDestructiveExecutionPlanValid`
+    - `assertNoDestructivePlanningRawMaterial`
+    - `createDestructiveProviderRequirements`
+    - `createDestructiveAuthorizationLifecycle`
+    - `verifyDestructiveTargetRef`
+    - `createDestructiveDryRunProof`
+    - `createDestructiveCompensationPlan`
+    - `simulateDestructiveExecutionPlan`
+    - `createDestructivePlanningAuditSummary`
+  - targeted tests:
+    - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 6 tests passed.
+    - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 678 files checked.
+    - `npm run scan:secrets`: PASS, 739 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static checks:
+    - runtime/provider/browser/vault/network grep: NOTE, matches are test-only assertions that production runtime still blocks destructive execution and production registry has no destructive provider.
+    - destructive canary grep: PASS, canaries appear only in Phase 20 test injection/assertion paths.
+    - raw/sensitive grep: NOTE, expected validator reject-pattern matches and structured authorization lifecycle names only; no raw confirmation, target, token, phrase, or payment material is persisted.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment/destructive provider grep: PASS, no matches.
+  - canary non-leakage: PASS, plan validation, simulation, audit view, query results, and runtime blocked reports do not contain destructive canaries.
+  - architecture boundary: PASS, destructive planning modules do not import runtime provider implementations, provider registry, browser runtime, session vault, network APIs, or execution paths.
+  - runtime semantics: PASS, planning artifacts explain requirements only; runtime destructive execution remains blocked by default; `--confirm-destructive` and task text do not grant authorization.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - Non-blocking note: Phase 20 is planning-only. It intentionally does not add production destructive execution, provider registration, or live side effects.
+    - continue: Phase 21 may begin.
+
+### Phase 21: Payment Authorization Architecture Plan
+
+- status: accepted
+- allowed file areas:
+  - payment authorization architecture planning modules/docs
+  - payment plan fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - payment execution
+  - production payment provider registration
+  - payment credential/card/bank material persistence
+- targeted tests:
+  - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs`
+  - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`
+  - `npm run check:syntax`
+  - `npm run scan:secrets`
+- stop conditions:
+  - payment plan becomes payment execution
+  - production registry includes payment executable provider by default
+
+- checkpoint:
+  - Phase 21 PASS WITH NOTES.
+  - modified files:
+    - `src/domain/payment-authorization/payment-authorization-schema.mjs`
+    - `src/domain/payment-authorization/payment-requirement-validator.mjs`
+    - `src/domain/payment-authorization/payment-capability-classifier.mjs`
+    - `src/domain/payment-authorization/payment-authorization-requirements.mjs`
+    - `src/domain/payment-authorization/payment-party-verification-plan.mjs`
+    - `src/domain/payment-authorization/payment-policy-simulator.mjs`
+    - `src/domain/payment-authorization/payment-audit-summary.mjs`
+    - `src/domain/payment-authorization/payment-provider-prohibition.mjs`
+    - `src/domain/payment-authorization/index.mjs`
+    - `tests/node/payment-authorization-architecture-plan-v1.test.mjs`
+    - `tests/node/fixtures/payment-authorization-architecture-plan-v1/safe-payment-plan.json`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/phase-21-manifest.md`
+  - public APIs:
+    - `PAYMENT_AUTHORIZATION_PLAN_SCHEMA_VERSION`
+    - `PAYMENT_POLICY_SIMULATION_SCHEMA_VERSION`
+    - `PAYMENT_AUDIT_PLANNING_SUMMARY_SCHEMA_VERSION`
+    - `PAYMENT_CAPABILITY_CLASSES`
+    - `PAYMENT_PRODUCTION_EXECUTION_DEFAULT`
+    - `listPaymentAuthorizationSchemaDefinitions`
+    - `assertNoPaymentAuthorizationRawMaterial`
+    - `sanitizePaymentAuthorizationPlan`
+    - `validatePaymentAuthorizationPlan`
+    - `assertPaymentAuthorizationPlanValid`
+    - `classifyPaymentCapability`
+    - `createPaymentAuthorizationRequirements`
+    - `createPaymentPartyVerificationPlan`
+    - `simulatePaymentPolicy`
+    - `createPaymentAuditPlanningSummary`
+    - `assertProductionPaymentProviderProhibited`
+  - targeted tests:
+    - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs`: PASS, 13 tests passed.
+    - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+    - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run check:syntax`: PASS, 688 files checked.
+    - `npm run scan:secrets`: PASS, 751 candidate files scanned.
+    - `git diff --check`: PASS.
+  - Phase 19-21 regression subset:
+    - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 14 tests passed.
+    - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs`: PASS, 13 tests passed.
+    - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+    - `npm run test:capability`: PASS, 93 tests passed.
+  - static checks:
+    - runtime/provider/browser/vault/network grep: NOTE, matches are test-only assertions that runtime payment remains blocked and production registry has no payment provider.
+    - payment canary grep: PASS, canaries appear only in Phase 21 test injection/assertion paths.
+    - raw/sensitive grep: NOTE, expected schema path names, safe authorization ref descriptors, and validator reject-pattern matches only; no raw payment credential, card, bank, account, token, or phrase material is persisted.
+    - runtime/index mock/fake/testing/raw helper grep: PASS, no matches.
+    - production payment provider grep: PASS, no matches.
+  - canary non-leakage: PASS, plan validation, classification, simulation, audit planning summary, audit view, query results, package classification, and skill invocation outputs do not contain payment canaries.
+  - architecture boundary: PASS, payment authorization modules do not import runtime provider implementations, provider registry, browser runtime, session vault, network APIs, or execution paths.
+  - runtime semantics: PASS, payment planning artifacts explain requirements only; runtime payment remains blocked by default; skill task text and out-of-band approval observation do not grant execution.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - Non-blocking note: Phase 21 is architecture planning only. It intentionally does not add production payment execution, provider registration, credential handling, or payment network calls.
+    - continue: E2E may begin.
+
+### E2E: Compile -> Package -> Skill -> Runtime -> Audit
+
+- status: accepted
+- allowed file areas:
+  - E2E fixtures and tests
+  - `docs/codex-goals/runtime-extensibility-productization-v1/`
+- forbidden file areas:
+  - weakening any phase 11-21 boundary
+  - live payment/destructive execution
+  - automatic login or arbitrary authenticated browsing
+- targeted tests:
+  - `node --test tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`
+  - all phase 11-21 targeted tests
+  - accepted baseline tests
+  - final global acceptance commands
+- stop conditions:
+  - any phase boundary fails
+  - durable outputs leak raw material
+  - E2E bypasses runtime gates
+
+- checkpoint:
+  - E2E PASS WITH NOTES.
+  - modified files:
+    - `tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`
+    - `tests/node/fixtures/siteforge-runtime-productization-e2e-v1/fixture-site.html`
+    - `docs/codex-goals/runtime-extensibility-productization-v1/e2e-manifest.md`
+  - E2E coverage:
+    - public read: compiler extraction -> graph -> package -> policy simulation -> skill dryRun/execute -> production `api_read_provider` -> run store -> audit view/query -> regression snapshot.
+    - auth controlled browser write: fixture contract -> production `browser_action_provider` with test-only controlled browser deps -> guarded auth material -> run store -> audit view/query.
+    - destructive blocked: package destructive risk -> skill natural-language attempt -> runtime blocked with `runtime.destructive_execution_blocked` -> audit/query.
+    - payment blocked/planned: package payment risk -> payment plan simulation -> skill/runtime blocked with `runtime.payment_execution_blocked` -> audit/query.
+    - package/risk drift: package diff plus runtime regression harness reports high/critical sanitized drift.
+  - targeted tests:
+    - `node --test tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`: PASS, 5 tests passed.
+    - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+    - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+    - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+    - `npm run check:syntax`: PASS, 689 files checked.
+    - `npm run scan:secrets`: PASS, 754 candidate files scanned.
+    - `git diff --check`: PASS.
+  - static / boundary notes:
+    - E2E added test/fixture/docs only; no production runtime/provider/browser/session-vault code was changed during E2E.
+    - controlled browser write uses test-only fake browser deps and mock session vault; production runtime still gates auth material behind browser guard setup.
+    - run store persists sanitized report/audit summaries only; full browser trace is inspected in test but not stored as run-store payload.
+    - payment/destructive remain blocked by accepted runtime reason codes and do not invoke providers.
+  - canary non-leakage: PASS, E2E outputs do not contain E2E/browser/destructive/payment canaries.
+  - subagent/auditor conclusions:
+    - Coordinator Agent: PASS.
+    - Dependency / Ordering Auditor: PASS.
+    - Architecture Boundary Auditor: PASS.
+    - Security / Sanitization Auditor: PASS.
+    - Runtime Semantics Auditor: PASS.
+    - Compiler / Capability Integrity Auditor: PASS.
+    - Skill Invocation Auditor: PASS.
+    - Test / CI Auditor: PASS.
+    - Documentation / Report Auditor: PASS.
+  - notes:
+    - Non-blocking note: E2E constructs graph/package fixtures inside the test to prove cross-phase compatibility without expanding production compiler APIs.
+    - continue: final global acceptance may begin.
+
+## Phase 0 Test Results
+
+- `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+- `node --test tests/node/auth-runtime-integration-v1.test.mjs`: PASS, 13 tests passed.
+- `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`: PASS, 9 tests passed.
+- `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+- `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 6 tests passed.
+- `npm run scan:secrets`: PASS, scanned 618 candidate files.
+
+## Phase 0 Static / Boundary Results
+
+- `runtime/index.mjs` mock/fake/testing/raw helper grep: PASS, no matches.
+- production provider registry review: PASS, production registry creates API read, download, and controlled browser action providers only.
+- compiler/planner/domain/pipeline provider implementation import grep: PASS, no `providers/` import matches.
+- audit viewer/query side-effect grep: PASS, no provider/browser/vault/network execution matches.
+- broad CLI/profile grep: NOTE, broad search found expected profile/auth terminology in existing planner, compiler, domain, and pipeline safety code. No Phase 0 evidence of new default raw material injection because Phase 0 did not modify those paths.
+
+## Global Acceptance Results
+
+- status: accepted
+- targeted phase and E2E regression commands:
+  - `node --test tests/node/capability-graph-versioning-registry-v1.test.mjs`: PASS, 20 tests passed.
+  - `node --test tests/node/provider-plugin-api-adapter-sdk-v1.test.mjs`: PASS, 16 tests passed.
+  - `node --test tests/node/site-capability-compiler-hardening-v2.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/capability-package-site-adapter-registry-v1.test.mjs`: PASS, 18 tests passed.
+  - `node --test tests/node/policy-pack-authoring-simulation-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/runtime-worker-isolation-provider-sandbox-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/runtime-operations-run-store-v1.test.mjs`: PASS, 12 tests passed.
+  - `node --test tests/node/skill-runtime-invocation-api-v1.test.mjs`: PASS, 15 tests passed.
+  - `node --test tests/node/runtime-ci-regression-harness-v1.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/destructive-controlled-execution-v2-planning.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/payment-authorization-architecture-plan-v1.test.mjs`: PASS, 13 tests passed.
+  - `node --test tests/node/siteforge-runtime-productization-e2e-v1.test.mjs`: PASS, 5 tests passed.
+  - `node --test tests/node/runtime-execution-replay-audit-viewer-v1.test.mjs`: PASS, 6 tests passed.
+  - `node --test tests/node/session-vault-productionization-v2.test.mjs`: PASS, 7 tests passed.
+  - `node --test tests/node/session-policy-governance-integration-v2.test.mjs`: PASS, 6 tests passed.
+  - `node --test tests/node/runtime-audit-query-api-v1.test.mjs`: PASS, 7 tests passed.
+  - `node --test tests/node/destructive-strong-authorization-flow-v1.test.mjs`: PASS, 6 tests passed.
+  - `node --test tests/node/auth-aware-controlled-browser-runtime-v1.test.mjs`: PASS, 9 tests passed.
+  - `node --test tests/node/auth-runtime-integration-v1.test.mjs`: PASS, 13 tests passed.
+  - `node --test tests/node/controlled-browser-runtime-v2.test.mjs`: PASS, 14 tests passed.
+  - `node --test tests/node/capability-contract-conformance.test.mjs`: PASS, 8 tests passed.
+- package suites:
+  - `npm run test:core`: PASS, 217 tests passed.
+  - `npm run test:capability`: PASS, 93 tests passed.
+  - `npm run test:pipeline`: PASS, 329 tests total, 328 passed, 1 optional live smoke skipped.
+- final static checks:
+  - `npm run typecheck`: PASS.
+  - `npm run check:syntax`: PASS, 689 files checked.
+  - `npm run scan:secrets`: PASS, 754 candidate files scanned.
+  - `git diff --check`: PASS.
+- boundary notes:
+  - production payment and destructive execution remain blocked/planning-only; no provider registration or live execution path was added for either class.
+  - controlled browser execution remains routed through guarded runtime/provider boundaries with test-only fake browser dependencies used only in tests.
+  - runtime run-store, audit view/query, regression harness, and E2E outputs persist sanitized report/audit/package metadata only.
+  - final pipeline acceptance includes a skipped optional live Tencent News smoke because `SITEFORGE_LIVE_TESTS` / `SITEFORGE_LIVE_NEWS_QQ` were not enabled.

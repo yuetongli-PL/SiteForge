@@ -22,8 +22,13 @@ test('user report value sanitizer redacts sensitive public report strings recurs
 
 test('user report path helper keeps workspace paths relative and external paths normalized', () => {
   const cwd = 'C:\\Users\\lyt-p\\Desktop\\SiteForge';
+  const posixCwd = '/home/runner/work/SiteForge/SiteForge';
   assert.equal(
     relativeReportPath(cwd, 'C:\\Users\\lyt-p\\Desktop\\SiteForge\\siteforge-sites\\example.com\\build_report.json'),
+    'siteforge-sites/example.com/build_report.json',
+  );
+  assert.equal(
+    relativeReportPath(posixCwd, '/home/runner/work/SiteForge/SiteForge/siteforge-sites/example.com/build_report.json'),
     'siteforge-sites/example.com/build_report.json',
   );
   assert.equal(relativeReportPath(cwd, ''), null);

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "graphVersion": "compiler-generated:example.com:phase14",
+  "manifest": {
+    "schemaVersion": 1,
+    "graphSchemaVersion": 1,
+    "graphDataVersion": "compiler-generated:example.com:phase14",
+    "sourceInventories": ["config/site-capabilities.json"],
+    "layerCompatibility": {
+      "kernelCompatibilityVersion": "compiler-kernel-v1"
+    },
+    "provenance": {
+      "compilerVersion": "siteforge-compiler-test"
+    }
+  },
+  "nodes": [
+    {
+      "schemaVersion": 1,
+      "id": "site:example.com",
+      "type": "SiteNode",
+      "siteKey": "example.com",
+      "hostFamily": ["example.com"],
+      "redactionRequired": true
+    },
+    {
+      "schemaVersion": 1,
+      "id": "capability:example.com:contact-submit",
+      "type": "CapabilityNode",
+      "siteKey": "example.com",
+      "capabilityKey": "contact-submit",
+      "capabilityFamily": "contact",
+      "mode": "write",
+      "requiresApproval": true,
+      "supportedTaskTypes": ["contact.submit"],
+      "routeRefs": ["route:example.com:contact"],
+      "authRequirementRefs": [],
+      "sessionRequirementRefs": [],
+      "riskPolicyRef": "risk-policy:example.com:ordinary-write",
+      "sourceRefs": ["config/site-capabilities.json"],
+      "testEvidenceRefs": ["test:capability-package-site-adapter-registry-v1"],
+      "runtimeCallable": true,
+      "autoExecutable": false,
+      "redactionRequired": true
+    },
+    {
+      "schemaVersion": 1,
+      "id": "execution-contract:example.com:contact-submit",
+      "type": "ExecutionContractNode",
+      "siteKey": "example.com",
+      "capabilityRef": "capability:example.com:contact-submit",
+      "operationKind": "form_or_action",
+      "runtimeBindingRef": "runtime-binding:example.com:browser-action",
+      "governancePolicyRef": "governance-policy:example.com:ordinary-write",
+      "executionGates": ["audit_required"],
+      "runtimeCallable": true,
+      "autoExecutable": false,
+      "destructiveAction": false,
+      "paymentOrFundsAction": false,
+      "highRiskAction": false,
+      "providerCompatibility": ["browser_action_provider"],
+      "selectorConfidence": 0.91,
+      "executionContractConcrete": true,
+      "completionSignals": ["selector_visible"],
+      "redactionRequired": true
+    },
+    {
+      "schemaVersion": 1,
+      "id": "governance-policy:example.com:ordinary-write",
+      "type": "GovernancePolicyNode",
+      "executionDisposition": "controlled",
+      "executionVerdict": "controlled",
+      "executionGates": ["audit_required"],
+      "auditRequired": true,
+      "confirmationRequired": false,
+      "destructiveConfirmationRequired": false,
+      "paymentConfirmationRequired": false,
+      "strongConfirmationRequired": false,
+      "sitePolicyExplicitAllowRequired": false,
+      "runtimeConstraintRequired": false,
+      "naturalLanguageRequestGrantsExecution": false,
+      "runtimeDispatchAllowedByDefault": false,
+      "redactionRequired": true
+    }
+  ],
+  "edges": [
+    {
+      "schemaVersion": 1,
+      "id": "edge:capability:example.com:contact-submit:site",
+      "type": "site_declares_capability",
+      "from": "site:example.com",
+      "to": "capability:example.com:contact-submit"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "edge:capability:example.com:contact-submit:contract",
+      "type": "capability_has_execution_contract",
+      "from": "capability:example.com:contact-submit",
+      "to": "execution-contract:example.com:contact-submit"
+    }
+  ],
+  "redactionRequired": true
+}

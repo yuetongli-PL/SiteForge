@@ -89,6 +89,7 @@ export function normalizeQueryFilter(filter = {}) {
     capabilityKind: normalizeText(filter.capabilityKind),
     reason: normalizeText(filter.reason),
     status: normalizeText(filter.status ?? filter.outcome),
+    providerInvoked: typeof filter.providerInvoked === 'boolean' ? filter.providerInvoked : null,
     sideEffectAttempted: typeof filter.sideEffectAttempted === 'boolean' ? filter.sideEffectAttempted : null,
     authUsed: typeof filter.authUsed === 'boolean' ? filter.authUsed : null,
     authRequired: typeof filter.authRequired === 'boolean' ? filter.authRequired : null,

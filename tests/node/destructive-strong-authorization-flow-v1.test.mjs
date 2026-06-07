@@ -204,7 +204,7 @@ test('destructive testing helpers are not exposed from runtime index', async () 
   const runtimeTesting = await import('../../src/app/runtime/testing.mjs');
   assert.equal(Object.hasOwn(runtimeIndex, 'createTestingDestructiveProvider'), false);
   assert.equal(Object.hasOwn(runtimeIndex, 'createMockDestructiveProvider'), false);
-  assert.equal(Object.hasOwn(runtimeTesting, 'createTestingDestructiveProvider'), false);
+  assert.equal(typeof runtimeTesting.createTestingDestructiveProvider, 'function');
 });
 
 test('destructive flow does not weaken architecture boundaries', async () => {

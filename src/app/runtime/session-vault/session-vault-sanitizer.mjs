@@ -10,7 +10,7 @@ import {
 } from '../auth-runtime.mjs';
 
 const SECRET_TEXT_PATTERN =
-  /(?:sf_(?:vault|global|test|browser|replay)_[a-z0-9_]*secret[a-z0-9_]*|Bearer\s+|Authorization|Set-Cookie|Cookie\s*[:=]|token|credential|password|api[_-]?key|grant_secret|session_handle_secret)/iu;
+  /(?:sf_(?:prod_)?(?:vault|global|test|browser|replay)_[a-z0-9_]*secret[a-z0-9_]*|Bearer\s+|Authorization|Set-Cookie|Cookie\s*[:=]|token|credential|password|api[_-]?key|grant_secret|session_handle_secret)/iu;
 
 function normalizeText(value, fallback = '') {
   const text = String(value ?? '').trim();

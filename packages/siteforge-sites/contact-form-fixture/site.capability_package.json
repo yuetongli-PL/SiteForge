@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "site.capability_package.v1",
+  "packageId": "sitepkg:phase26-contact-form",
+  "version": "1.0.0",
+  "siteOrigin": "https://phase26-contact-form.example",
+  "graphDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "packageDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "capabilities": [
+    {
+      "capabilityRef": "sitepkg:phase26-contact-form/contact-submit@1.0.0",
+      "capabilityId": "contact-submit",
+      "sourceCapabilityId": "capability:phase26-contact-form:contact-submit",
+      "kind": "form_or_action",
+      "risk": "ordinary_write",
+      "executionContractRef": "sitepkg:phase26-contact-form/contract/contact-submit@1.0.0",
+      "providerCompatibility": ["browser_action_provider"],
+      "authRequirement": { "required": false, "scopes": [], "material": "descriptor_only", "grantsAuthorization": false },
+      "riskClassification": { "level": "ordinary_write", "destructive": false, "payment": false, "sideEffecting": true, "material": "descriptor_only" },
+      "policyRequirements": { "executionGates": ["audit_required"], "auditRequired": true, "confirmationRequired": false, "strongConfirmationRequired": false, "sitePolicyExplicitAllowRequired": false, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeCallable": true,
+      "executableByDefault": false,
+      "skillCallable": true,
+      "material": "descriptor_only"
+    }
+  ],
+  "executionContracts": [
+    {
+      "executionContractRef": "sitepkg:phase26-contact-form/contract/contact-submit@1.0.0",
+      "sourceExecutionContractId": "execution-contract:phase26-contact-form:contact-submit",
+      "capabilityRef": "sitepkg:phase26-contact-form/contact-submit@1.0.0",
+      "kind": "form_or_action",
+      "concreteEnough": true,
+      "selectorConfidence": 0.93,
+      "completionSignals": ["selector_visible"],
+      "providerCompatibility": ["browser_action_provider"],
+      "payloadTemplate": { "material": "template_only", "requiredSlotNames": ["email", "message"], "savedMaterial": "sanitized_summary_only" },
+      "policyRequirements": { "executionGates": ["audit_required"], "auditRequired": true, "confirmationRequired": false, "strongConfirmationRequired": false, "sitePolicyExplicitAllowRequired": false, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeBindingRef": "runtime-binding:phase26-contact-form:browser-action",
+      "material": "descriptor_only"
+    }
+  ],
+  "provenance": { "schemaVersion": 1, "compiledAt": "2026-06-07T00:00:00.000Z", "compilerVersion": "phase26-fixture", "sourceDigest": "", "graphDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333", "graphVersion": "graph:phase26-contact-form", "material": "descriptor_only" },
+  "auditMetadata": { "packageId": "sitepkg:phase26-contact-form", "version": "1.0.0", "packageDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "graphDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333", "redactionRequired": true },
+  "redactionRequired": true
+}

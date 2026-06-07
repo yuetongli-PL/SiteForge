@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "skill.local_runtime_service.v1",
+  "requestType": "LocalSkillRuntimeServiceRequest",
+  "operation": "dryRun",
+  "skillRequest": {
+    "schemaVersion": "skill.runtime_invocation.v1",
+    "requestId": "skill-invocation:phase25-contact-submit",
+    "skillId": "skill:phase25-safe-skill",
+    "packageId": "sitepkg:example.com",
+    "packageVersion": "1.2.0",
+    "capabilityRef": "sitepkg:example.com/contact-submit@1.2.0",
+    "executionContractRef": "sitepkg:example.com/contract/contact-submit@1.2.0",
+    "policyDecisionRef": "policy-decision:phase25-safe-ref",
+    "mode": "dryRun",
+    "idempotencyKey": "idem:phase25-contact-submit",
+    "slots": {
+      "email": {
+        "slotRef": "slot:email"
+      },
+      "message": {
+        "slotRef": "slot:message"
+      }
+    },
+    "auth": {
+      "sessionRef": "session:phase25-safe-ref"
+    }
+  }
+}

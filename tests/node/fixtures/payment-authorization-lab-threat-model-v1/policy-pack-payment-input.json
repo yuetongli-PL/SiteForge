@@ -1,0 +1,17 @@
+{
+  "packageId": "sitepkg:payment-lab.example",
+  "capabilityRef": "sitepkg:payment-lab.example/checkout-payment@1.0.0",
+  "providerId": "payment_lab_provider_absent",
+  "capabilityKind": "payment",
+  "operation": "write",
+  "authRequirement": {
+    "required": false,
+    "scopes": []
+  },
+  "paymentRequirement": {
+    "required": true,
+    "amountRef": "amount:payment-lab-checkout-total-safe-ref",
+    "currency": "USD",
+    "payeeRef": "payee:payment-lab-merchant-safe-ref"
+  }
+}

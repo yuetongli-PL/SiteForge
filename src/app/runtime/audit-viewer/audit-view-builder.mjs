@@ -104,8 +104,11 @@ function derivedTimeline({
     });
   }
   if (report?.destructiveSummary) {
-    push('runtime.gate.blocked', {
-      status: 'blocked',
+    const destructiveAllowed = report.status === 'completed'
+      || report.destructiveSummary.outcome === 'lab_authorized'
+      || report.destructiveSummary.reason === 'runtime.destructive_lab_authorized';
+    push(destructiveAllowed ? 'runtime.gate.allowed' : 'runtime.gate.blocked', {
+      status: destructiveAllowed ? 'allowed' : 'blocked',
       reason: report.destructiveSummary.reason,
       summary: 'destructive_strong_authorization',
     });
@@ -188,9 +191,12 @@ function buildDecisions(report = null) {
     });
   }
   if (report?.destructiveSummary) {
+    const destructiveAllowed = report.status === 'completed'
+      || report.destructiveSummary.outcome === 'lab_authorized'
+      || report.destructiveSummary.reason === 'runtime.destructive_lab_authorized';
     decisions.push({
       decision: 'destructive_authorization',
-      allowed: false,
+      allowed: destructiveAllowed,
       reason: safeAuditViewRef(report.destructiveSummary.reason, null),
       required: report.destructiveSummary.required === true,
       strongAuthPresent: report.destructiveSummary.strongAuth?.present === true,

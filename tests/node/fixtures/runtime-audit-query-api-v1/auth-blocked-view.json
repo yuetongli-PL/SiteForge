@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "runtime-audit-view/v1",
+  "sourceDigest": "runtime-audit-source:fixture-auth-blocked",
+  "integrity": {
+    "status": "ok",
+    "warnings": [],
+    "sourceSummaries": []
+  },
+  "invocation": {
+    "requestId": "runtime-invocation:query-fixture-auth-blocked",
+    "executionId": "execution:query-fixture-auth-blocked",
+    "capabilityId": "capability:query-fixture-auth-blocked",
+    "executionContractRef": "execution-contract:query-fixture-auth-blocked",
+    "capabilityKind": "read",
+    "providerId": "api_read_provider"
+  },
+  "outcome": {
+    "status": "blocked",
+    "reasonCode": "runtime.auth_session_scope_not_allowed",
+    "blockedReason": "runtime.auth_session_scope_not_allowed",
+    "providerInvoked": false,
+    "executionAttempted": false,
+    "sideEffectAttempted": false,
+    "sideEffectSucceeded": false,
+    "sideEffectFailed": false
+  },
+  "decisions": [
+    {
+      "decision": "auth",
+      "allowed": false,
+      "reason": "runtime.auth_session_scope_not_allowed",
+      "required": true,
+      "used": false
+    }
+  ],
+  "authSummary": {
+    "required": true,
+    "used": false,
+    "sessionRef": "auth-session:query-fixture-safe",
+    "scopesRequested": [
+      {
+        "origin": "https://query.example.test",
+        "operations": ["read"]
+      }
+    ],
+    "scopesGranted": [],
+    "materialSummary": {
+      "types": [],
+      "count": 0
+    },
+    "outcome": "blocked",
+    "reason": "runtime.auth_session_scope_not_allowed"
+  },
+  "artifactMetadata": [],
+  "auditEvents": [],
+  "timeline": [
+    {
+      "sequence": 1,
+      "eventType": "runtime.auth.gate.blocked",
+      "derived": true,
+      "reason": "runtime.auth_session_scope_not_allowed"
+    }
+  ],
+  "redactionSummary": {
+    "unsafeInputDetected": false,
+    "redactedFieldCount": 0,
+    "redactedValueCount": 0
+  },
+  "redactionRequired": true
+}

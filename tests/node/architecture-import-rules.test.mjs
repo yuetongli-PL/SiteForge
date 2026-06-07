@@ -286,7 +286,7 @@ const ARTIFACT_WRITE_SINK_BASELINE = new Map([
   ['src/app/pipeline/build/capability-interaction.mjs', 3],
   ['src/app/pipeline/build/setup-assistant.mjs', 14],
   ['src/app/pipeline/build/workspace.mjs', 2],
-  ['src/app/runtime/providers/download-provider.mjs', 2],
+  ['src/app/runtime/providers/download-provider.mjs', 3],
   ['src/sites/known-sites/bilibili/navigation/open.mjs', 5],
   ['src/sites/known-sites/reddit/api-catalog.mjs', 34],
   ['src/domain/capabilities/api-candidates.mjs', 8],

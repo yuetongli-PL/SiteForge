@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "site-capability-execution/v1",
+  "executionVersion": "runtime-test-v1",
+  "reportType": "RuntimeExecutionReport",
+  "requestId": "runtime-invocation:replay-fixture-public-read",
+  "executionId": "execution:replay-fixture-public-read",
+  "capabilityId": "capability:replay-fixture-public-read",
+  "executionContractRef": "execution-contract:replay-fixture-public-read",
+  "policyDecisionRef": "policy:replay-fixture-public-read",
+  "verdict": "allow",
+  "status": "completed",
+  "capabilityKind": "read",
+  "providerId": "api_read_provider",
+  "providerKind": "api_read_provider",
+  "runtimeDispatchAllowed": true,
+  "providerInvoked": true,
+  "executionAttempted": true,
+  "runtimeExecuted": true,
+  "sideEffectAttempted": true,
+  "sideEffectSucceeded": true,
+  "sideEffectFailed": false,
+  "artifactRefs": [],
+  "resultSummary": {
+    "outcome": "api_read_completed",
+    "providerId": "api_read_provider",
+    "runtimeMode": "descriptor_only_read",
+    "artifactRefs": [],
+    "redactionRequired": true
+  },
+  "redactionRequired": true
+}

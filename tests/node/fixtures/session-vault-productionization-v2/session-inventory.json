@@ -1,0 +1,22 @@
+{
+  "sessions": [
+    {
+      "sessionRef": "auth-session:vault-fixture-safe",
+      "status": "active",
+      "origin": "https://vault.example.test",
+      "scopes": [
+        {
+          "origin": "https://vault.example.test",
+          "operations": ["read"]
+        }
+      ],
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "policyVersion": "policy:vault-v2",
+      "materialSummary": {
+        "types": ["bearer_token"],
+        "count": 1
+      },
+      "redactionRequired": true
+    }
+  ]
+}

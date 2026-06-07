@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "session-policy-decision/v2",
+  "allowed": true,
+  "reason": null,
+  "decisionId": "policy-decision:fixture-session-policy",
+  "policyId": "governance-policy:session-policy-fixture",
+  "scopesGranted": [
+    {
+      "origin": "https://policy.example.test",
+      "operations": ["read"]
+    }
+  ],
+  "materialTypesAllowed": ["bearer_token"],
+  "constraints": {
+    "maxGrantTtlMs": 300000,
+    "requireRelease": true,
+    "allowProfilePersistence": false,
+    "allowStorageStatePersistence": false,
+    "allowCredentialForwarding": false
+  },
+  "provenance": {
+    "evaluator": "default_session_policy_evaluator",
+    "decisionSource": "structured_session_policy"
+  },
+  "redactionRequired": true
+}

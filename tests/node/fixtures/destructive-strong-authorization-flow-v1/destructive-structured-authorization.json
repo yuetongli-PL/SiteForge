@@ -1,0 +1,21 @@
+{
+  "destructiveRequirement": {
+    "required": true,
+    "actionClass": "delete",
+    "targetRef": "target:destructive-fixture-safe",
+    "requiresStrongAuthorization": true,
+    "requireTwoStepConfirmation": true,
+    "requirePolicyGate": true,
+    "allowNaturalLanguageAuthorization": false
+  },
+  "destructiveAuthorization": {
+    "authorizationRef": "authorization:destructive-fixture-safe",
+    "challengeRef": "challenge:destructive-fixture-safe",
+    "confirmationRef": "confirmation:destructive-fixture-safe",
+    "policyGate": {
+      "satisfied": true,
+      "policyId": "governance-policy:destructive-strong-auth"
+    }
+  },
+  "reason": "runtime.destructive_execution_blocked"
+}

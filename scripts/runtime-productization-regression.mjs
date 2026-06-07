@@ -72,7 +72,7 @@ export function runRuntimeProductizationRegression({
   const command = createNodeTestCommand(testFiles);
   return spawnSync(command.command, command.args, {
     cwd,
-    stdio,
+    stdio: /** @type {import('node:child_process').StdioOptions} */ (stdio),
     shell: false,
   });
 }

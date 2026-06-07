@@ -67,6 +67,10 @@ function finitePositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+/**
+ * @param {Record<string, any>} [session]
+ * @param {{ nowMs?: number, defaultLeaseTtlMs?: number | null }} [options]
+ */
 function createStoredRecord(session = {}, {
   nowMs,
   defaultLeaseTtlMs,

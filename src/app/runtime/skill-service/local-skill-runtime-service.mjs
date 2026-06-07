@@ -22,8 +22,11 @@ function contextValue(serviceRequest, serviceContext, key) {
   return serviceContext[key] ?? null;
 }
 
+/**
+ * @param {{ serviceRequest?: Record<string, any>, serviceContext?: Record<string, any> }} [options]
+ */
 async function invokeSanitizedLocalSkillRuntime({
-  serviceRequest,
+  serviceRequest = {},
   serviceContext = {},
 } = {}) {
   const result = await invokeSkillRuntime({
@@ -54,6 +57,9 @@ async function invokeSanitizedLocalSkillRuntime({
   });
 }
 
+/**
+ * @param {{ serviceRequest?: Record<string, any>, serviceContext?: Record<string, any>, operation?: string | null }} [options]
+ */
 export async function invokeLocalSkillRuntime({
   serviceRequest,
   serviceContext = {},
@@ -70,6 +76,9 @@ export async function invokeLocalSkillRuntime({
   }
 }
 
+/**
+ * @param {Record<string, any>} [options]
+ */
 export function createLocalSkillRuntimeService(options = {}) {
   const serviceContext = {
     packageManifest: options.packageManifest ?? null,
@@ -85,6 +94,10 @@ export function createLocalSkillRuntimeService(options = {}) {
     serviceType: 'LocalSkillRuntimeService',
     serviceMode: 'local-sdk',
     networkBinding: clone(LOCAL_SKILL_RUNTIME_SERVICE_NETWORK_BOUNDARY),
+    /**
+     * @param {Record<string, any>} serviceRequest
+     * @param {Record<string, any>} [invocationOptions]
+     */
     async dryRun(serviceRequest, invocationOptions = {}) {
       return invokeLocalSkillRuntime({
         serviceRequest,
@@ -95,6 +108,10 @@ export function createLocalSkillRuntimeService(options = {}) {
         },
       });
     },
+    /**
+     * @param {Record<string, any>} serviceRequest
+     * @param {Record<string, any>} [invocationOptions]
+     */
     async invoke(serviceRequest, invocationOptions = {}) {
       return invokeLocalSkillRuntime({
         serviceRequest,
@@ -105,6 +122,10 @@ export function createLocalSkillRuntimeService(options = {}) {
         },
       });
     },
+    /**
+     * @param {Record<string, any>} serviceRequest
+     * @param {Record<string, any>} [invocationOptions]
+     */
     async handle(serviceRequest, invocationOptions = {}) {
       return invokeLocalSkillRuntime({
         serviceRequest,

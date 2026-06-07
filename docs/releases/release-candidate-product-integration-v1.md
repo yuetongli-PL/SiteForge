@@ -32,11 +32,15 @@ The branch is split into focused commits for capability registries, policy packs
 
 Local branch verification:
 
+- `npm run release:local`: PASS.
+  - `readme:check`, `typecheck`, `check:syntax`, `verify:release`, focused Node tests, full Node tests, Python tests, secret scan, and diff whitespace check passed.
+  - full Node suite: 2239 tests passed, 1 skipped.
+  - Python suite: 61 tests passed.
 - `npm run verify:release`: PASS.
   - runtime trust: 63 tests passed.
   - runtime productization: 88 tests passed.
   - runtime regression: 25 tests passed.
-  - secret scan: 823 candidate files scanned.
+  - secret scan: 825 candidate files scanned.
   - diff whitespace check: PASS.
 
 Clean checkout verification from remote PR branch:

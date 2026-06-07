@@ -47,4 +47,9 @@ export const SOCIAL_OPERATOR_SCRIPT_STATUS = Object.freeze({
     scope: 'bounded live smoke matrix',
     downloadBoundary: 'local-media-download',
   }),
+  'scripts/social-trend-sampler.mjs': Object.freeze({
+    status: 'active-tested',
+    visibility: 'internal-operator-only',
+    scope: 'bounded trend sampling report generation',
+  }),
 });

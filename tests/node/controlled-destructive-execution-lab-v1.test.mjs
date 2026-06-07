@@ -218,6 +218,7 @@ test('lab execution rejects natural language authorization', async () => {
 
 test('lab execution requires dry-run proof target verification and compensation plan', async () => {
   const authorization = await fixture('structured-authorization.json');
+  /** @type {Array<[string, Record<string, any>, string]>} */
   const cases = [
     ['missing dry-run proof', { dryRunProof: null }, 'runtime.destructive_lab_dry_run_proof_required'],
     ['missing target verification', { targetVerification: { targetSafeRef: 'target:destructive-lab-safe', verified: false } }, 'runtime.destructive_lab_target_verification_required'],

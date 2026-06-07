@@ -214,7 +214,11 @@ const DISABLED_GRAPH_DOCS_LIFECYCLE_OBSERVABILITY_ADAPTER_RUNTIME_PRODUCT_KEYS =
   'runtimeLog',
   'logPath',
   'sessionView',
+  'siteAdapter',
   'siteAdapterPayload',
+  'downloader',
+  'taskList',
+  'standardTaskList',
   'handler',
   'publisher',
 ]);

@@ -56,6 +56,7 @@ function importSpecifiers(source) {
 function isAllowedPlannerImportSpecifier(specifier) {
   return specifier.startsWith('./')
     || specifier.startsWith('../../domain/')
+    || specifier.startsWith('../../shared/')
     || specifier === '../security-guard.mjs'
     || specifier.startsWith('node:');
 }

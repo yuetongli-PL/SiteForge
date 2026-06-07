@@ -4,6 +4,10 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+export {
+  assertProductionProtectedProvidersAbsent,
+} from '../tools/verify-release-runtime-boundary.mjs';
+
 export const OPTIONAL_LIVE_SMOKE_ENV = 'SITEFORGE_OPTIONAL_LIVE_SMOKE';
 
 export const VERIFY_RELEASE_COMMANDS = Object.freeze([
@@ -127,45 +131,6 @@ export function assertRegressionGatePasses(report = {}) {
   return true;
 }
 
-export async function assertProductionProtectedProvidersAbsent() {
-  const {
-    createProductionRuntimeProviderRegistry,
-  } = await import('../src/app/runtime/index.mjs');
-  const registry = createProductionRuntimeProviderRegistry();
-  const paymentProvider = registry.resolve({
-    invocationRequest: { capabilityId: 'capability:release-gate:payment' },
-    capability: {
-      kind: 'payment',
-      paymentOrFundsAction: true,
-    },
-    executionContract: {
-      paymentOrFundsAction: true,
-    },
-  });
-  const destructiveProvider = registry.resolve({
-    invocationRequest: { capabilityId: 'capability:release-gate:destructive' },
-    capability: {
-      kind: 'destructive',
-      destructiveAction: true,
-    },
-    executionContract: {
-      destructiveAction: true,
-    },
-  });
-  if (paymentProvider || destructiveProvider) {
-    const error = new Error('Production provider registry exposes protected executable provider');
-    // @ts-ignore
-    error.code = 'release_gate.protected_provider_registered';
-    // @ts-ignore
-    error.details = {
-      paymentProviderId: paymentProvider?.id ?? null,
-      destructiveProviderId: destructiveProvider?.id ?? null,
-    };
-    throw error;
-  }
-  return true;
-}
-
 export function verifyReleaseCommandLabels() {
   return VERIFY_RELEASE_COMMANDS.map((entry) => entry.label);
 }
@@ -185,7 +150,7 @@ export function runReleaseGateCommand(entry, {
   const command = spawnCommandFor(entry);
   const result = spawnSync(command.command, command.args, {
     cwd,
-    stdio,
+    stdio: /** @type {import('node:child_process').StdioOptions} */ (stdio),
     shell: false,
     env,
   });

@@ -60,6 +60,17 @@ function scope({
   };
 }
 
+/**
+ * @param {{
+ *   sessionHandle?: string,
+ *   sessionRef?: string,
+ *   origin?: string,
+ *   operations?: string[],
+ *   materials?: Array<Record<string, any>>,
+ *   leaseTtlMs?: number,
+ *   status?: string,
+ * }} [options]
+ */
 function sessionRecord({
   sessionHandle = 'prod-vault-session-handle-safe',
   sessionRef = 'auth-session:prod-vault-safe-ref',

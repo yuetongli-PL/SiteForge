@@ -11,6 +11,7 @@ const REPORT_SECRET_ASSIGNMENT_PATTERN = /\b(?:access_token|refresh_token|token|
 const REPORT_COOKIE_PATTERN = /\bcookie\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^;\s&'",]+/giu;
 const REPORT_AUTH_HEADER_PATTERN = /\bauthorization\s*[:=]\s*(?!\[REDACTED\]|%5BREDACTED%5D)[^\r\n]+/giu;
 const REPORT_RAW_MARKUP_PATTERN = /<html[\s>]|<\/html>|<!doctype\s+html|raw[-_\s]*(?:dom|html|body)/iu;
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
 
 export function sanitizeReportString(value) {
   let text = String(value ?? '');
@@ -42,8 +43,17 @@ export function relativeReportPath(cwd, value) {
   if (!value) {
     return null;
   }
-  const relative = path.relative(cwd, value);
-  return relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+  const cwdText = String(cwd ?? '');
+  const valueText = String(value);
+  const cwdIsWindowsPath = WINDOWS_ABSOLUTE_PATH_PATTERN.test(cwdText);
+  const valueIsWindowsPath = WINDOWS_ABSOLUTE_PATH_PATTERN.test(valueText);
+  if (cwdIsWindowsPath !== valueIsWindowsPath && (cwdIsWindowsPath || valueIsWindowsPath)) {
+    return valueText.replace(/\\/gu, '/');
+  }
+
+  const pathApi = cwdIsWindowsPath && valueIsWindowsPath ? path.win32 : path;
+  const relative = pathApi.relative(cwdText, valueText);
+  return relative && !relative.startsWith('..') && !pathApi.isAbsolute(relative)
     ? relative.replace(/\\/gu, '/')
-    : String(value).replace(/\\/gu, '/');
+    : valueText.replace(/\\/gu, '/');
 }

@@ -152,6 +152,10 @@ export function siteCapabilityCompileCommand(args = /** @type {any[]} */ ([])) {
   return formatCommand(['node', 'src/entrypoints/sites/site-capability-compile.mjs', ...args]);
 }
 
+export function runtimeOpsCliCommand(args = /** @type {any[]} */ ([])) {
+  return formatCommand(['node', 'src/app/cli/runtime-ops.mjs', ...args.map((arg) => String(arg))]);
+}
+
 export function downloadCliCommand({
   mode = 'plan',
   input = null,

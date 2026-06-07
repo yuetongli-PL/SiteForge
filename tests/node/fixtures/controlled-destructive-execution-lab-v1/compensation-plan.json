@@ -1,0 +1,5 @@
+{
+  "planRef": "artifact:destructive-lab-compensation-plan",
+  "summary": "restore_snapshot_or_recreate_target_fixture",
+  "rollbackStepCount": 1
+}

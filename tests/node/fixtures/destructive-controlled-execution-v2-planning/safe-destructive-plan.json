@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "destructive.execution_plan.v2",
+  "actionClass": "delete",
+  "targetRef": "target:destructive-safe-ref",
+  "targetSafeRef": "target:destructive-safe-ref",
+  "requiresStrongAuthorization": true,
+  "requiresTwoStepConfirmation": true,
+  "requiresTwoPersonAuthorization": true,
+  "requiresPolicyGate": true,
+  "requiresDryRunProof": true,
+  "requiresCompensationPlan": true,
+  "allowNaturalLanguageAuthorization": false,
+  "productionExecutionDefault": "blocked",
+  "dryRunProofRef": "dry-run-proof:destructive-safe-ref",
+  "compensationPlanRef": "compensation-plan:destructive-safe-ref",
+  "redactionRequired": true
+}

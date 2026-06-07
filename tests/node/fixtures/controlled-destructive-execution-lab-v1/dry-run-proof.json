@@ -1,0 +1,5 @@
+{
+  "proofRef": "artifact:destructive-lab-dry-run-proof",
+  "status": "present",
+  "summary": "dry_run_completed_without_real_delete"
+}

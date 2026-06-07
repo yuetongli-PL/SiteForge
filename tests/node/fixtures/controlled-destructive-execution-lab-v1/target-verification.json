@@ -1,0 +1,5 @@
+{
+  "targetSafeRef": "target:destructive-lab-safe",
+  "verified": true,
+  "verificationRef": "artifact:destructive-lab-target-verification"
+}

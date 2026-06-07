@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "graphVersion": "graph-public-read-v1",
+  "manifest": {
+    "schemaVersion": 1,
+    "graphSchemaVersion": 1,
+    "graphDataVersion": "graph-public-read-v1",
+    "layerCompatibility": {
+      "siteAdapterVersion": "synthetic-adapter-v1",
+      "kernelCompatibilityVersion": "synthetic-kernel-v1"
+    },
+    "sourceInventories": [
+      "config/site-capabilities.json",
+      "config/site-registry.json"
+    ]
+  },
+  "capabilities": [
+    {
+      "schemaVersion": 1,
+      "siteKey": "synthetic.example",
+      "capabilityKey": "open-public-page",
+      "capabilityFamily": "navigate-to-author",
+      "operationKind": "read",
+      "authRequired": false,
+      "authScopes": [],
+      "allowedOrigins": [
+        "https://synthetic.example"
+      ],
+      "materialTypes": [
+        "descriptor"
+      ],
+      "injectionTargets": [
+        "none"
+      ],
+      "providerCompatibility": [
+        "api-read"
+      ],
+      "selectorConfidence": 0.92,
+      "executionContractConcrete": true,
+      "destructiveAction": false,
+      "paymentOrFundsAction": false,
+      "sideEffecting": false,
+      "completionSignals": [
+        "http-200"
+      ],
+      "sourceRefs": [
+        "config/site-registry.json",
+        "config/site-capabilities.json"
+      ],
+      "cookie": "sf_graph_cookie_secret_123",
+      "privateFormValue": "sf_graph_private_form_secret_456",
+      "sessionHandle": "sf_graph_session_secret_789"
+    }
+  ],
+  "provenance": {
+    "source": "synthetic-fixture",
+    "rawCookie": "sf_graph_cookie_secret_123"
+  }
+}

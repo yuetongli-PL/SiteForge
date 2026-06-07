@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "policy.pack.v1",
+  "policyPackId": "policy-pack:siteforge-safe-defaults",
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "allow-auth-read-api",
+      "match": {
+        "providerId": "api_read_provider",
+        "capabilityKind": "read",
+        "operations": ["read"],
+        "authRequired": true,
+        "requestedScopes": ["orders.read"]
+      },
+      "effect": "allow",
+      "reason": "policy.auth_read_allowed",
+      "constraints": {
+        "maxGrantTtlMs": 300000,
+        "requireRelease": true
+      }
+    },
+    {
+      "id": "allow-controlled-browser-write",
+      "match": {
+        "providerId": "browser_action_provider",
+        "capabilityKind": "form_or_action",
+        "operations": ["form_or_action"],
+        "authRequired": false
+      },
+      "effect": "allow",
+      "reason": "policy.controlled_browser_write_allowed",
+      "constraints": {
+        "maxGrantTtlMs": 0,
+        "requireRelease": true
+      }
+    },
+    {
+      "id": "block-destructive-default",
+      "match": {
+        "capabilityKind": "destructive",
+        "destructive": true
+      },
+      "effect": "deny",
+      "reason": "runtime.destructive_execution_blocked"
+    },
+    {
+      "id": "block-payment-default",
+      "match": {
+        "capabilityKind": "payment",
+        "payment": true
+      },
+      "effect": "deny",
+      "reason": "runtime.payment_execution_blocked"
+    }
+  ],
+  "provenance": {
+    "authoringMode": "structured_policy_pack"
+  },
+  "redactionRequired": true
+}

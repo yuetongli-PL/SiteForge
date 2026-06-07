@@ -9,18 +9,28 @@ import {
 } from '../../src/app/planner/index.mjs';
 import {
   RUNTIME_AUTH_REASONS,
-  createInMemorySessionVaultProvider,
   createProductionRuntimeProviderRegistry,
   createRuntimeAuditRecorder,
-  createSessionInventoryView,
-  createSessionVaultAuditLedger,
-  createSessionVaultHealthView,
   executeRuntimeInvocation,
-  normalizeSessionInspection,
-  normalizeSessionMaterialGrant,
-  normalizeSessionRecord,
   sessionStatusToRuntimeReason,
 } from '../../src/app/runtime/index.mjs';
+import {
+  createSessionVaultAuditLedger,
+} from '../../src/app/runtime/session-vault/session-vault-audit-ledger.mjs';
+import {
+  normalizeSessionMaterialGrant,
+} from '../../src/app/runtime/session-vault/session-vault-grants.mjs';
+import {
+  createSessionInventoryView,
+  createSessionVaultHealthView,
+} from '../../src/app/runtime/session-vault/session-vault-health.mjs';
+import {
+  normalizeSessionInspection,
+  normalizeSessionRecord,
+} from '../../src/app/runtime/session-vault/session-vault-lifecycle.mjs';
+import {
+  createInMemorySessionVaultProvider,
+} from '../../src/app/runtime/session-vault/session-vault-provider.mjs';
 import {
   createGovernedExecutionPolicyDecision,
 } from '../../src/domain/policies/execution/index.mjs';

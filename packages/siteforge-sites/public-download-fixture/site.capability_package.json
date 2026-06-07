@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "site.capability_package.v1",
+  "packageId": "sitepkg:phase26-public-download",
+  "version": "1.0.0",
+  "siteOrigin": "https://phase26-public-download.example",
+  "graphDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "packageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "capabilities": [
+    {
+      "capabilityRef": "sitepkg:phase26-public-download/catalog-download@1.0.0",
+      "capabilityId": "catalog-download",
+      "sourceCapabilityId": "capability:phase26-public-download:catalog-download",
+      "kind": "download",
+      "risk": "public_read",
+      "executionContractRef": "sitepkg:phase26-public-download/contract/catalog-download@1.0.0",
+      "providerCompatibility": ["download_provider"],
+      "authRequirement": { "required": false, "scopes": [], "material": "descriptor_only", "grantsAuthorization": false },
+      "riskClassification": { "level": "public_read", "destructive": false, "payment": false, "sideEffecting": false, "material": "descriptor_only" },
+      "policyRequirements": { "executionGates": ["audit_required"], "auditRequired": true, "confirmationRequired": false, "strongConfirmationRequired": false, "sitePolicyExplicitAllowRequired": false, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeCallable": true,
+      "executableByDefault": false,
+      "skillCallable": true,
+      "material": "descriptor_only"
+    }
+  ],
+  "executionContracts": [
+    {
+      "executionContractRef": "sitepkg:phase26-public-download/contract/catalog-download@1.0.0",
+      "sourceExecutionContractId": "execution-contract:phase26-public-download:catalog-download",
+      "capabilityRef": "sitepkg:phase26-public-download/catalog-download@1.0.0",
+      "kind": "download",
+      "concreteEnough": true,
+      "selectorConfidence": 1,
+      "completionSignals": ["artifact_metadata_recorded"],
+      "providerCompatibility": ["download_provider"],
+      "payloadTemplate": { "material": "template_only", "requiredSlotNames": [], "savedMaterial": "sanitized_summary_only" },
+      "policyRequirements": { "executionGates": ["audit_required"], "auditRequired": true, "confirmationRequired": false, "strongConfirmationRequired": false, "sitePolicyExplicitAllowRequired": false, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeBindingRef": "runtime-binding:phase26-public-download:download",
+      "material": "descriptor_only"
+    }
+  ],
+  "provenance": { "schemaVersion": 1, "compiledAt": "2026-06-07T00:00:00.000Z", "compilerVersion": "phase26-fixture", "sourceDigest": "", "graphDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222", "graphVersion": "graph:phase26-public-download", "material": "descriptor_only" },
+  "auditMetadata": { "packageId": "sitepkg:phase26-public-download", "version": "1.0.0", "packageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "graphDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222", "redactionRequired": true },
+  "redactionRequired": true
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "site.capability_package.v1",
+  "packageId": "sitepkg:phase26-public-read",
+  "version": "1.0.0",
+  "siteOrigin": "https://phase26-public-read.example",
+  "graphDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "packageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "capabilities": [
+    {
+      "capabilityRef": "sitepkg:phase26-public-read/home-read@1.0.0",
+      "capabilityId": "home-read",
+      "sourceCapabilityId": "capability:phase26-public-read:home-read",
+      "kind": "api_read",
+      "risk": "public_read",
+      "executionContractRef": "sitepkg:phase26-public-read/contract/home-read@1.0.0",
+      "providerCompatibility": ["api_read_provider"],
+      "authRequirement": { "required": false, "scopes": [], "material": "descriptor_only", "grantsAuthorization": false },
+      "riskClassification": { "level": "public_read", "destructive": false, "payment": false, "sideEffecting": false, "material": "descriptor_only" },
+      "policyRequirements": { "executionGates": [], "auditRequired": true, "confirmationRequired": false, "strongConfirmationRequired": false, "sitePolicyExplicitAllowRequired": false, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeCallable": true,
+      "executableByDefault": false,
+      "skillCallable": true,
+      "material": "descriptor_only"
+    }
+  ],
+  "executionContracts": [
+    {
+      "executionContractRef": "sitepkg:phase26-public-read/contract/home-read@1.0.0",
+      "sourceExecutionContractId": "execution-contract:phase26-public-read:home-read",
+      "capabilityRef": "sitepkg:phase26-public-read/home-read@1.0.0",
+      "kind": "api_read",
+      "concreteEnough": true,
+      "selectorConfidence": 1,
+      "completionSignals": ["read_summary_available"],
+      "providerCompatibility": ["api_read_provider"],
+      "payloadTemplate": { "material": "template_only", "requiredSlotNames": [], "savedMaterial": "sanitized_summary_only" },
+      "policyRequirements": { "executionGates": [], "auditRequired": true, "confirmationRequired": false, "strongConfirmationRequired": false, "sitePolicyExplicitAllowRequired": false, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeBindingRef": "runtime-binding:phase26-public-read:api-read",
+      "material": "descriptor_only"
+    }
+  ],
+  "provenance": { "schemaVersion": 1, "compiledAt": "2026-06-07T00:00:00.000Z", "compilerVersion": "phase26-fixture", "sourceDigest": "", "graphDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "graphVersion": "graph:phase26-public-read", "material": "descriptor_only" },
+  "auditMetadata": { "packageId": "sitepkg:phase26-public-read", "version": "1.0.0", "packageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "graphDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "redactionRequired": true },
+  "redactionRequired": true
+}

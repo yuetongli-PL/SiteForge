@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "site.capability_package.v1",
+  "packageId": "sitepkg:phase26-destructive-blocked",
+  "version": "1.0.0",
+  "siteOrigin": "https://phase26-destructive-blocked.example",
+  "graphDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "packageDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "capabilities": [
+    {
+      "capabilityRef": "sitepkg:phase26-destructive-blocked/account-delete@1.0.0",
+      "capabilityId": "account-delete",
+      "sourceCapabilityId": "capability:phase26-destructive-blocked:account-delete",
+      "kind": "form_or_action",
+      "risk": "destructive",
+      "executionContractRef": "sitepkg:phase26-destructive-blocked/contract/account-delete@1.0.0",
+      "providerCompatibility": ["browser_action_provider"],
+      "authRequirement": { "required": true, "scopes": ["account.write"], "material": "descriptor_only", "grantsAuthorization": false },
+      "riskClassification": { "level": "destructive", "destructive": true, "payment": false, "sideEffecting": true, "material": "descriptor_only" },
+      "policyRequirements": { "executionGates": ["audit_required", "strong_destructive_authorization"], "auditRequired": true, "confirmationRequired": true, "strongConfirmationRequired": true, "sitePolicyExplicitAllowRequired": true, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeCallable": false,
+      "executableByDefault": false,
+      "skillCallable": true,
+      "material": "descriptor_only"
+    }
+  ],
+  "executionContracts": [
+    {
+      "executionContractRef": "sitepkg:phase26-destructive-blocked/contract/account-delete@1.0.0",
+      "sourceExecutionContractId": "execution-contract:phase26-destructive-blocked:account-delete",
+      "capabilityRef": "sitepkg:phase26-destructive-blocked/account-delete@1.0.0",
+      "kind": "form_or_action",
+      "concreteEnough": true,
+      "selectorConfidence": 0.9,
+      "completionSignals": ["blocked_by_default"],
+      "providerCompatibility": ["browser_action_provider"],
+      "payloadTemplate": { "material": "template_only", "requiredSlotNames": [], "savedMaterial": "sanitized_summary_only" },
+      "policyRequirements": { "executionGates": ["audit_required", "strong_destructive_authorization"], "auditRequired": true, "confirmationRequired": true, "strongConfirmationRequired": true, "sitePolicyExplicitAllowRequired": true, "naturalLanguageRequestGrantsExecution": false, "material": "descriptor_only" },
+      "runtimeBindingRef": "runtime-binding:phase26-destructive-blocked:blocked",
+      "material": "descriptor_only"
+    }
+  ],
+  "provenance": { "schemaVersion": 1, "compiledAt": "2026-06-07T00:00:00.000Z", "compilerVersion": "phase26-fixture", "sourceDigest": "", "graphDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666", "graphVersion": "graph:phase26-destructive-blocked", "material": "descriptor_only" },
+  "auditMetadata": { "packageId": "sitepkg:phase26-destructive-blocked", "version": "1.0.0", "packageDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "graphDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666", "redactionRequired": true },
+  "redactionRequired": true
+}

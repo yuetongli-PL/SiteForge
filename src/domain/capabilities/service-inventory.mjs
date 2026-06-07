@@ -48,7 +48,7 @@ export const CAPABILITY_SERVICE_MODULE_PREFIX = 'src/domain/';
 const SAFE_BOUNDARY_ROLE_SET = new Set(CAPABILITY_SERVICE_SAFE_BOUNDARY_ROLES);
 const REPO_ROOT_URL = new URL('../../../', import.meta.url);
 const CONCRETE_SITE_SEMANTIC_PATTERN =
-  /\b(?:22biqu|bilibili|douyin|instagram|jable|moodyz|xiaohongshu)\b/iu;
+  /\b(?:bilibili|douyin|instagram|jable|moodyz|xiaohongshu)\b/iu;
 
 /** @param {Record<string, any>} options */
 function schemaEvidence({

@@ -663,7 +663,7 @@ test('generated Layer-source AuthRequirementNode and SessionRequirementNode inve
   assert.ok(expectedHosts.length > 1);
   assert.ok(expectedHosts.includes('www.instagram.com'));
   assert.ok(expectedHosts.includes('www.bilibili.com'));
-  assert.ok(expectedHosts.includes('www.22biqu.com'));
+  assert.ok(expectedHosts.includes('www.bz888888888.com'));
 
   const summary = createInventorySummary({
     siteCapabilities,
@@ -718,7 +718,7 @@ test('Layer-source AuthRequirementNode and SessionRequirementNode inventory deri
   for (const { host, requirement } of [
     { host: 'www.instagram.com', requirement: 'required' },
     { host: 'www.bilibili.com', requirement: 'optional' },
-    { host: 'www.22biqu.com', requirement: 'none' },
+    { host: 'www.bz888888888.com', requirement: 'none' },
   ]) {
     assert.deepEqual(
       items
@@ -777,7 +777,7 @@ test('generated Layer-source SignerNode dependency inventory covers all config h
 
   assert.ok(expectedHosts.length > 1);
   assert.ok(expectedHosts.includes('www.bilibili.com'));
-  assert.ok(expectedHosts.includes('www.22biqu.com'));
+  assert.ok(expectedHosts.includes('www.bz888888888.com'));
 
   const summary = createInventorySummary({
     siteCapabilities,
@@ -801,7 +801,7 @@ test('generated Layer-source SignerNode dependency inventory covers all config h
   }
 
   const bilibiliItem = findInventoryItem(items, 'www.bilibili.com', 'SignerNode');
-  const noSignerItem = findInventoryItem(items, 'www.22biqu.com', 'SignerNode');
+  const noSignerItem = findInventoryItem(items, 'www.bz888888888.com', 'SignerNode');
   assert.match(
     JSON.stringify(bilibiliItem),
     /wbi|signing|required|signer/iu,

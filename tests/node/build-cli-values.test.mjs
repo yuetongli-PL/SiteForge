@@ -166,6 +166,14 @@ test('internal build entrypoint parses hidden raw network flag', () => {
   assert.equal(parsed.options.renderJsExplicit, true);
 });
 
+test('build CLI parses rendered browser headless flags', () => {
+  const visible = parseCliArgs(['https://example.com/', '--no-headless']);
+  assert.equal(visible.options.headless, false);
+
+  const headless = parseCliArgs(['https://example.com/', '--headless']);
+  assert.equal(headless.options.headless, true);
+});
+
 test('build CLI defaults to automatic non-interactive build', () => {
   const parsed = parseCliArgs(['https://example.com/']);
   assert.equal(parsed.options.auto, true);

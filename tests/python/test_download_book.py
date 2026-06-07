@@ -42,17 +42,17 @@ class DownloadBookTests(unittest.TestCase):
     def test_host_book_content_root_scopes_by_host(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "book-content"
-            scoped = download_book.host_book_content_root(root, "www.22biqu.com")
-            self.assertEqual(scoped, root.resolve() / "www.22biqu.com")
+            scoped = download_book.host_book_content_root(root, "books.example.com")
+            self.assertEqual(scoped, root.resolve() / "books.example.com")
 
     def test_load_json_accepts_utf8_bom(self):
         with tempfile.TemporaryDirectory() as tmp:
             payload_path = Path(tmp) / "context.json"
-            payload_path.write_text('{"host":"www.22biqu.com"}', encoding="utf-8-sig")
+            payload_path.write_text('{"host":"books.example.com"}', encoding="utf-8-sig")
 
             loaded = download_book.load_json(payload_path)
 
-            self.assertEqual(loaded["host"], "www.22biqu.com")
+            self.assertEqual(loaded["host"], "books.example.com")
 
     def test_resolve_profile_path_ignores_redacted_registry_value(self):
         resolved = download_book.resolve_profile_path("[REDACTED]", "www.bz888888888.com")
@@ -74,7 +74,7 @@ class DownloadBookTests(unittest.TestCase):
             download_file.parent.mkdir(parents=True, exist_ok=True)
 
             manifest_path.write_text(json.dumps({
-                "host": "www.22biqu.com",
+                "host": "books.example.com",
                 "completeness": "full-book",
                 "downloadOrdering": "ascending",
                 "formatting": "pretty-txt",
@@ -96,7 +96,7 @@ class DownloadBookTests(unittest.TestCase):
                 "downloadFile": "downloads/玄鉴仙族.txt",
                 "bookFile": "books/book-1/book.json",
                 "chaptersFile": "books/book-1/chapters.json",
-                "finalUrl": "https://www.22biqu.com/biqu5735/",
+                "finalUrl": "https://books.example.com/biqu5735/",
             }, manifest_path, run_dir)
 
             self.assertIsNotNone(validated)
@@ -106,7 +106,7 @@ class DownloadBookTests(unittest.TestCase):
         rendered = download_book.render_pretty_txt(
             book_title="玄鉴仙族",
             author_name="季越人",
-            detail_url="https://www.22biqu.com/biqu5735/",
+            detail_url="https://books.example.com/biqu5735/",
             chapters=[
                 {
                     "title": "第1章 初入",
@@ -204,6 +204,105 @@ class DownloadBookTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, r"blocked-by-cloudflare-challenge: HTTP 403"):
             asyncio.run(run_case())
+
+    def test_crawl_book_prefers_inline_directory_before_latest_backtrack(self):
+        class InlineDirectoryClient:
+            def __init__(self, *args, **kwargs):
+                self.requests = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, method, url, data=None):
+                self.requests.append(url)
+                request = httpx.Request(method, url)
+                if url == "https://example.test/book/1/":
+                    return httpx.Response(
+                        200,
+                        request=request,
+                        text=(
+                            "<html><head>"
+                            '<meta property="og:novel:book_name" content="Fixture Book">'
+                            '<meta property="og:novel:latest_chapter_name" content="Chapter 2">'
+                            '<meta property="og:novel:latest_chapter_url" content="https://example.test/book/1/2.html">'
+                            "</head><body><h1>Fixture Book</h1><div id=\"list\">"
+                            '<a href="/book/1/1.html">Chapter 1</a>'
+                            '<a href="/book/1/2.html">Chapter 2</a>'
+                            "</div></body></html>"
+                        ),
+                    )
+                if url == "https://example.test/book/1/1.html":
+                    return httpx.Response(
+                        200,
+                        request=request,
+                        text='<html><body><h1>Chapter 1</h1><div id="content"><p>first chapter line</p></div></body></html>',
+                    )
+                if url == "https://example.test/book/1/2.html":
+                    return httpx.Response(
+                        200,
+                        request=request,
+                        text='<html><body><h1>Chapter 2</h1><div id="content"><p>second chapter line</p></div></body></html>',
+                    )
+                return httpx.Response(404, request=request, text="missing")
+
+        original_async_client = download_book.httpx.AsyncClient
+        client_holder = {}
+
+        def fake_async_client(*args, **kwargs):
+            client = InlineDirectoryClient(*args, **kwargs)
+            client_holder["client"] = client
+            return client
+
+        context = {
+            "host": "example.test",
+            "baseUrl": "https://example.test/",
+            "profile": {
+                "bookDetail": {
+                    "latestChapterNameMetaNames": ["og:novel:latest_chapter_name"],
+                    "latestChapterMetaNames": ["og:novel:latest_chapter_url"],
+                    "bookUrlPatterns": [r"/book/\d+/?$"],
+                    "chapterUrlPatterns": [r"/book/\d+/\d+\.html$"],
+                    "chapterLinkSelectors": ["#list a[href]"],
+                    "directoryLinkSelectors": [],
+                    "directoryPageUrlTemplate": "",
+                },
+                "chapter": {
+                    "titleSelectors": ["h1"],
+                    "contentSelectors": ["#content"],
+                    "cleanupPatterns": [],
+                },
+                "ocr": {"enabled": False, "required": False},
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            download_book.httpx.AsyncClient = fake_async_client
+            try:
+                result = asyncio.run(download_book.crawl_book_with_context(
+                    context,
+                    book_title=None,
+                    book_url="https://example.test/book/1/",
+                    out_dir=str(Path(tmp) / "artifacts"),
+                ))
+            finally:
+                download_book.httpx.AsyncClient = original_async_client
+
+            self.assertEqual(result["chapterCount"], 2)
+            self.assertEqual(
+                client_holder["client"].requests,
+                [
+                    "https://example.test/book/1/",
+                    "https://example.test/book/1/1.html",
+                    "https://example.test/book/1/2.html",
+                ],
+            )
+            manifest = json.loads(Path(result["manifestPath"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["summary"]["chapters"], 2)
+            written = Path(result["downloadFile"]).read_text(encoding="utf-8")
+            self.assertIn("first chapter line", written)
+            self.assertIn("second chapter line", written)
 
     def test_resolve_book_target_uses_profile_search_candidates(self):
         class SearchClient:

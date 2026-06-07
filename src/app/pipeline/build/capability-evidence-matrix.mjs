@@ -86,6 +86,10 @@ export function sourceLayerForCapability(capability = /** @type {any} */ ({}), n
 }
 
 export function providerIdForCapability(capability = /** @type {any} */ ({}), nodesById = new Map()) {
+  const explicitProviderId = String(capability.providerId ?? '').trim();
+  if (explicitProviderId === 'known_site_downloader' && capability.downloaderTaskDescriptor?.taskType === 'book') {
+    return explicitProviderId;
+  }
   const nodes = [
     ...(capability.entryNodeIds ?? []),
     ...(capability.requiredNodeIds ?? []),

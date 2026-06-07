@@ -77,6 +77,60 @@ function normalizeToken(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
+function normalizeDispatchText(value) {
+  return normalizeToken(value)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function dispatchTextTokens(value) {
+  const text = normalizeDispatchText(value);
+  if (!text) {
+    return [];
+  }
+  const tokens = new Set(text.split(/\s+/u).filter((token) => token.length >= 2));
+  for (const [chunk] of text.matchAll(/[\p{Script=Han}]+/gu)) {
+    if (chunk.length >= 2) {
+      tokens.add(chunk);
+    }
+    for (let index = 0; index < chunk.length - 1; index += 1) {
+      tokens.add(chunk.slice(index, index + 2));
+    }
+  }
+  return [...tokens];
+}
+
+function dispatchTextScore(task, candidate) {
+  const normalizedTask = normalizeDispatchText(task);
+  const normalizedCandidate = normalizeDispatchText(candidate);
+  if (!normalizedTask || !normalizedCandidate) {
+    return 0;
+  }
+  if (normalizedTask === normalizedCandidate) {
+    return 1000;
+  }
+  if (normalizedCandidate.length >= 3 && normalizedTask.includes(normalizedCandidate)) {
+    return 850 - Math.min(100, normalizedTask.length - normalizedCandidate.length);
+  }
+  if (normalizedTask.length >= 3 && normalizedCandidate.includes(normalizedTask)) {
+    return 825 - Math.min(100, normalizedCandidate.length - normalizedTask.length);
+  }
+  const taskTokens = dispatchTextTokens(normalizedTask);
+  const candidateTokens = dispatchTextTokens(normalizedCandidate);
+  if (taskTokens.length === 0 || candidateTokens.length === 0) {
+    return 0;
+  }
+  const candidateSet = new Set(candidateTokens);
+  const overlap = taskTokens.filter((token) => candidateSet.has(token)).length;
+  if (overlap === 0) {
+    return 0;
+  }
+  const precision = overlap / candidateTokens.length;
+  const recall = overlap / taskTokens.length;
+  return Math.round((precision * 0.4 + recall * 0.6) * 600);
+}
+
 function safeIdPart(value, fallback = 'item') {
   const text = String(value ?? '').trim();
   const normalized = text
@@ -1128,19 +1182,104 @@ export function evaluateExecutionGovernance({
   };
 }
 
-function selectContractForTask(task, contracts = /** @type {any[]} */ ([])) {
+function intentTexts(intent = /** @type {any} */ ({})) {
+  return [
+    intent.id,
+    intent.name,
+    intent.description,
+    intent.canonicalUtterance,
+    ...(Array.isArray(intent.utteranceExamples) ? intent.utteranceExamples : []),
+  ].map((value) => String(value ?? '').trim()).filter(Boolean);
+}
+
+function contractIntentTexts(contract = /** @type {any} */ ({}), intentIndex = /** @type {any} */ ({})) {
+  const byId = intentIndex.byId ?? new Map();
+  const byCapabilityId = intentIndex.byCapabilityId ?? new Map();
+  const texts = [
+    contract.id,
+    contract.capabilityId,
+    contract.executionPlanId,
+    contract.operationKind,
+    contract.contractKind,
+  ].map((value) => String(value ?? '').trim()).filter(Boolean);
+  for (const intentId of Array.isArray(contract.intentIds) ? contract.intentIds : []) {
+    const intent = byId.get(intentId);
+    if (intent) {
+      texts.push(...intentTexts(intent));
+    }
+  }
+  for (const intent of byCapabilityId.get(contract.capabilityId) ?? []) {
+    texts.push(...intentTexts(intent));
+  }
+  return [...new Set(texts)];
+}
+
+function buildIntentIndex(intents = /** @type {any[]} */ ([])) {
+  const byId = new Map();
+  const byCapabilityId = new Map();
+  for (const intent of Array.isArray(intents) ? intents : []) {
+    if (!intent || typeof intent !== 'object') {
+      continue;
+    }
+    if (intent.id) {
+      byId.set(intent.id, intent);
+    }
+    if (intent.capabilityId) {
+      const group = byCapabilityId.get(intent.capabilityId) ?? [];
+      group.push(intent);
+      byCapabilityId.set(intent.capabilityId, group);
+    }
+  }
+  return { byId, byCapabilityId };
+}
+
+function selectContractForTask(task, contracts = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
   const normalizedTask = normalizeToken(task);
   if (!normalizedTask) {
     return null;
   }
-  return contracts.find((contract) => (
+  const exactMatch = contracts.find((contract) => (
     normalizeToken(contract.capabilityId) === normalizedTask
     || normalizeToken(contract.id) === normalizedTask
     || contract.intentIds?.some((intentId) => normalizeToken(intentId) === normalizedTask)
-  )) ?? contracts.find((contract) => (
+  ));
+  if (exactMatch) {
+    return exactMatch;
+  }
+  const idMatch = contracts.find((contract) => (
     normalizeToken(contract.capabilityId).includes(normalizedTask)
     || normalizeToken(contract.id).includes(normalizedTask)
-  )) ?? null;
+  ));
+  if (idMatch) {
+    return idMatch;
+  }
+  const intentIndex = buildIntentIndex(intents);
+  const scored = contracts
+    .map((contract) => {
+      const score = contractIntentTexts(contract, intentIndex)
+        .reduce((best, text) => Math.max(best, dispatchTextScore(task, text)), 0);
+      return { contract, score };
+    })
+    .filter((entry) => entry.score >= 250)
+    .sort((left, right) => right.score - left.score);
+  if (scored.length > 0) {
+    return scored[0].contract;
+  }
+  return contracts.find((contract) => downloadBookTaskMatchesContract(task, contract)) ?? null;
+}
+
+function downloadBookTaskMatchesContract(task, contract = /** @type {any} */ ({})) {
+  const taskText = String(task ?? '');
+  if (!taskText) return false;
+  const descriptor = contract.runtimeBinding?.downloaderTaskDescriptor ?? {};
+  if (
+    contract.operationKind !== 'download'
+    || contract.runtimeBinding?.kind !== 'downloader'
+    || descriptor.taskType !== 'book'
+  ) {
+    return false;
+  }
+  return /下载|导出|提取|保存|正文|小说|作品|全书|txt|download|export|extract|book|novel|text/iu.test(taskText);
 }
 
 function allGateStatusSatisfied(gates = /** @type {string[]} */ ([]), gateStatus = /** @type {any} */ ({})) {
@@ -1333,11 +1472,12 @@ function createRuntimePolicyDecision({
 export function buildRuntimeDispatchReport({
   context,
   contracts = /** @type {any[]} */ ([]),
+  intents = /** @type {any[]} */ ([]),
   governance,
 } = /** @type {any} */ ({})) {
   const executeRequested = context?.options?.execute === true;
   const task = context?.options?.executionTask ?? null;
-  const selected = selectContractForTask(task, contracts);
+  const selected = selectContractForTask(task, contracts, intents);
   const decision = selected
     ? governance?.decisions?.find((candidate) => candidate.contractRef === selected.id) ?? null
     : null;

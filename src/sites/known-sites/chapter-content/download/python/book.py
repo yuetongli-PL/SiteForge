@@ -1598,19 +1598,7 @@ async def crawl_book_with_context(
                 ocr_config=ocr_config,
                 on_chapter=on_partial_chapter,
             )
-        elif book_detail.get("latestChapterUrl"):
-            progress_log("[download] paginated directory unavailable, fallback to latest-chapter backtrack")
-            chapters = await fetch_full_book_from_latest(
-                client,
-                book_detail,
-                profile.get("chapter", {}),
-                cleanup_patterns,
-                ocr_config=ocr_config,
-                on_chapter=on_partial_chapter,
-            )
-        else:
-            if not book_detail["chapters"]:
-                raise RuntimeError(f"chapter-not-found: {book_detail['finalUrl']}")
+        elif book_detail["chapters"]:
             progress_log(f"[download] using inline directory: chapters={len(book_detail['chapters'])}")
             chapters = await fetch_all_chapters(
                 client,
@@ -1621,6 +1609,18 @@ async def crawl_book_with_context(
                 ocr_config=ocr_config,
                 on_chapter=on_partial_chapter,
             )
+        elif book_detail.get("latestChapterUrl"):
+            progress_log("[download] paginated and inline directories unavailable, fallback to latest-chapter backtrack")
+            chapters = await fetch_full_book_from_latest(
+                client,
+                book_detail,
+                profile.get("chapter", {}),
+                cleanup_patterns,
+                ocr_config=ocr_config,
+                on_chapter=on_partial_chapter,
+            )
+        else:
+            raise RuntimeError(f"chapter-not-found: {book_detail['finalUrl']}")
 
     pretty_txt = render_pretty_txt(
         book_title=book_detail["bookTitle"],

@@ -468,6 +468,10 @@ function canAttemptPublicRenderedLayer(context, { renderedRequired = false } = /
     || (renderedRequired && canAutoAttemptPublicRenderedLayer(context));
 }
 
+function setupAllowsPublicRenderedRecovery(context) {
+  return context?.setupProfile?.buildReadiness?.reasonCode === 'setup-public-rendered-recovery-pending';
+}
+
 function requireStage(stageResults, name) {
   const result = stageResults[name];
   if (!result) {
@@ -671,8 +675,31 @@ function isChapterContentContext(context = /** @type {any} */ ({})) {
   return /chapter-content|open-book|open-chapter|search-book|navigate-to-chapter/u.test(policyTextForContext(context));
 }
 
+function hasKnownPolicyAggregateNavigation(context = /** @type {any} */ ({})) {
+  const policy = context.setupProfile?.knownSitePolicy ?? null;
+  if (!policy || typeof policy !== 'object') {
+    return false;
+  }
+  const hasKnownPolicyIdentity = Boolean(policy.siteKey || policy.adapterId || (policy.publicRouteTemplates ?? []).length);
+  if (!hasKnownPolicyIdentity) {
+    return false;
+  }
+  const families = knownPolicyCapabilityFamilies(context);
+  return [
+    'browse-site-navigation',
+    'navigate-to-author',
+    'navigate-to-category',
+    'navigate-to-content',
+    'query-ranked-content',
+    'search-content',
+    'switch-in-page-state',
+  ].some((family) => families.has(family));
+}
+
 function shouldUseAggregateNavigationCapabilities(context = /** @type {any} */ ({}), graph = /** @type {any} */ ({})) {
-  return isChapterContentContext(context) || hasChapterContentCoverageSignals(graph.nodes ?? []);
+  return isChapterContentContext(context)
+    || hasChapterContentCoverageSignals(graph.nodes ?? [])
+    || hasKnownPolicyAggregateNavigation(context);
 }
 
 function isSocialSiteContext(context = /** @type {any} */ ({})) {
@@ -1345,6 +1372,43 @@ function browserActionRuntimeContext(context, selectedContract = null) {
   };
 }
 
+function runtimeDownloaderTaskDescriptorForDispatch(descriptor = null) {
+  if (!descriptor) {
+    return null;
+  }
+  const result = {
+    material: descriptor.material ?? 'descriptor_only',
+    networkResolveAllowedAtRuntime: descriptor.networkResolveAllowedAtRuntime === true,
+    savedMaterial: descriptor.savedMaterial ?? SANITIZED_SUMMARY_ONLY,
+    reportMaterial: descriptor.reportMaterial ?? SANITIZED_SUMMARY_ONLY,
+    redactionRequired: true,
+  };
+  for (const key of ['siteKey', 'adapterId', 'taskType', 'entrypoint', 'scriptLanguage', 'interpreter', 'sessionRequirement', 'artifactMaterial', 'bodyTextPersistence']) {
+    if (descriptor[key]) {
+      result[key] = String(descriptor[key]);
+    }
+  }
+  for (const key of ['acceptsBookTitle', 'acceptsBookUrl', 'acceptsSearchResult']) {
+    if (descriptor[key] === true || descriptor[key] === false) {
+      result[key] = descriptor[key] === true;
+    }
+  }
+  for (const key of ['inputSlots', 'outputFields']) {
+    if (Array.isArray(descriptor[key])) {
+      result[key] = descriptor[key].map((value) => String(value ?? '').trim()).filter(Boolean);
+    }
+  }
+  return result;
+}
+
+function runtimeProviderIdForDispatch(runtimeBinding = null) {
+  const providerId = String(runtimeBinding?.providerId ?? '').trim();
+  if (runtimeBinding?.kind === 'downloader' && providerId === 'known_site_downloader') {
+    return providerId;
+  }
+  return null;
+}
+
 function runtimeContractDescriptorForDispatch(selectedContract, dispatchReport, context = null) {
   if (!selectedContract || !dispatchReport.runtimeInvocationRequest) {
     return null;
@@ -1363,14 +1427,8 @@ function runtimeContractDescriptorForDispatch(selectedContract, dispatchReport, 
     runtimeBinding: selectedContract.runtimeBinding
       ? {
         kind: selectedContract.runtimeBinding.kind ?? null,
-        providerId: null,
-        downloaderTaskDescriptor: selectedContract.runtimeBinding.downloaderTaskDescriptor
-          ? {
-            material: selectedContract.runtimeBinding.downloaderTaskDescriptor.material ?? 'descriptor_only',
-            networkResolveAllowedAtRuntime: selectedContract.runtimeBinding.downloaderTaskDescriptor.networkResolveAllowedAtRuntime === true,
-            savedMaterial: selectedContract.runtimeBinding.downloaderTaskDescriptor.savedMaterial ?? SANITIZED_SUMMARY_ONLY,
-          }
-          : null,
+        providerId: runtimeProviderIdForDispatch(selectedContract.runtimeBinding),
+        downloaderTaskDescriptor: runtimeDownloaderTaskDescriptorForDispatch(selectedContract.runtimeBinding.downloaderTaskDescriptor),
       }
       : null,
     requestSchemaRef: sanitizedExecutionRef(selectedContract.requestSchemaRef),
@@ -1395,6 +1453,88 @@ function downloadRuntimeOutputContext(context, selectedContract = null) {
     },
     outputDir: context.artifactDir,
     downloadFilename: 'siteforge-controlled-download.txt',
+  };
+}
+
+function quotedTaskValue(taskText) {
+  const text = String(taskText ?? '');
+  for (const pattern of [
+    /[《「『“"]([^》」』”"]{1,120})[》」』”"]/u,
+    /book_title\s*[:=]\s*([^\s，。；;]{1,120})/iu,
+  ]) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+  return '';
+}
+
+function taskBookUrl(taskText, siteRootUrl) {
+  const text = String(taskText ?? '');
+  const match = text.match(/https?:\/\/[^\s"'<>，。；]+/iu);
+  if (!match) {
+    return '';
+  }
+  try {
+    const root = new URL(siteRootUrl);
+    const url = new URL(match[0]);
+    return url.protocol === root.protocol && url.host === root.host ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function taskBookTitle(taskText) {
+  const quoted = quotedTaskValue(taskText);
+  if (quoted) {
+    return quoted;
+  }
+  const cleaned = String(taskText ?? '')
+    .replace(/https?:\/\/[^\s"'<>，。；]+/giu, ' ')
+    .replace(/\b(?:download|export|extract|book|novel|text|txt|please|save)\b/giu, ' ')
+    .replace(/(?:请|帮我|把|将|需要|搜索到的作品|搜索到的|进行|下载|提取|导出|保存|小说正文|正文|全书|本地|为|成|和|以及)/gu, ' ')
+    .replace(/[，。；;:：、]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return cleaned.length >= 2 && cleaned.length <= 80 ? cleaned : '';
+}
+
+function downloadRuntimeSlotValues(context, selectedContract = null) {
+  const descriptor = selectedContract?.runtimeBinding?.downloaderTaskDescriptor ?? {};
+  if (
+    selectedContract?.operationKind !== 'download'
+    || selectedContract?.runtimeBinding?.kind !== 'downloader'
+    || descriptor.taskType !== 'book'
+  ) {
+    return null;
+  }
+  const taskText = String(context.options?.executionTask ?? '');
+  const siteRootUrl = context.site?.rootUrl ?? context.site?.normalizedUrl ?? context.inputUrl ?? '';
+  const bookUrl = taskBookUrl(taskText, siteRootUrl);
+  const bookTitle = taskBookTitle(taskText);
+  const values = {};
+  if (bookTitle) values.book_title = bookTitle;
+  if (bookUrl) values.book_url = bookUrl;
+  if (!Object.keys(values).length) {
+    return null;
+  }
+  return values;
+}
+
+function downloadRuntimeTaskContext(context, selectedContract = null) {
+  const descriptor = selectedContract?.runtimeBinding?.downloaderTaskDescriptor ?? {};
+  if (
+    selectedContract?.operationKind !== 'download'
+    || selectedContract?.runtimeBinding?.kind !== 'downloader'
+    || descriptor.taskType !== 'book'
+  ) {
+    return null;
+  }
+  return {
+    cwd: context.cwd,
+    siteRootUrl: context.site?.rootUrl ?? context.site?.normalizedUrl ?? context.inputUrl ?? null,
+    slotValues: downloadRuntimeSlotValues(context, selectedContract) ?? {},
   };
 }
 
@@ -3588,7 +3728,7 @@ function normalizeAuthorizedSourceStructurePage(context, source, page, index = 0
     pageType: page?.pageType ?? page?.page_type ?? 'authorized_source_summary',
     structureItems: Array.isArray(page?.structureItems) ? page.structureItems : page?.structureItem ? [page.structureItem] : [],
     routeTemplates: page?.routeTemplates ?? page?.route_templates ?? [],
-  }, { fallbackUrl });
+  }, { fallbackUrl, respectRobots: false });
   if (!normalized || normalized.blocked === true) {
     return null;
   }
@@ -4174,9 +4314,15 @@ async function crawlStaticStage(context, stageResults) {
     : dedupedPages.every((page) => !hasUsableStaticPageEvidence(page))
       ? 'siteforge-static-evidence-unavailable'
       : null;
-  const renderedEvidenceRequired = blockedReason === 'siteforge-static-evidence-unavailable'
-    && staticDiagnosticSummary.dynamicShell > 0
-    && canAttemptPublicRenderedLayer(context, { renderedRequired: true });
+  const renderedEvidenceRequired = (
+    blockedReason === 'siteforge-static-evidence-unavailable'
+      && staticDiagnosticSummary.dynamicShell > 0
+  ) || (
+    blockedReason === 'siteforge-static-crawl-empty'
+      && setupAllowsPublicRenderedRecovery(context)
+  )
+    ? canAttemptPublicRenderedLayer(context, { renderedRequired: true })
+    : false;
   const continueWithAuthenticatedRoutes = discoverSeedResult.authenticatedRouteOnly === true;
   const continueWithBrowserBridgeStructureEvidence = hasAuthenticatedBrowserStructureEvidence(context);
   const shouldBlockStatic = Boolean(blockedReason
@@ -5503,10 +5649,20 @@ function publicRenderedStructureSummaryFromPage(maxItems = 40) {
 
 function normalizePublicRenderedStructurePage(context, page = /** @type {any} */ ({}), {
   fallbackUrl = context.site.rootUrl,
+  respectRobots = true,
 } = /** @type {any} */ ({})) {
   const normalizedUrl = sanitizeRenderedInternalUrl(context, page.normalizedUrl ?? page.finalUrl ?? page.url ?? fallbackUrl, context.site.rootUrl);
   if (!normalizedUrl) {
     return null;
+  }
+  const robotsPolicy = respectRobots === false ? null : setupProfileRobotsPolicy(context);
+  if (robotsPolicy && !isUrlAllowedByRobots(normalizedUrl, robotsPolicy)) {
+    return {
+      blocked: true,
+      url: normalizedUrl,
+      normalizedUrl,
+      reasonCode: 'robots-disallowed',
+    };
   }
   const routeTemplate = page.routeTemplate ?? routePatternForUrl(normalizedUrl);
   if (matchesMissingAuthenticatedBrowserBridgeRoute(context, [routeTemplate, normalizedUrl], { nonRoot: true })) {
@@ -5543,6 +5699,9 @@ function normalizePublicRenderedStructurePage(context, page = /** @type {any} */
         try {
           const normalizedHref = sanitizeRenderedInternalUrl(context, link?.normalizedHref ?? link?.href, normalizedUrl);
           if (!normalizedHref) {
+            return null;
+          }
+          if (robotsPolicy && !isUrlAllowedByRobots(normalizedHref, robotsPolicy)) {
             return null;
           }
           if (matchesMissingAuthenticatedBrowserBridgeRoute(context, [link?.routeTemplate, link?.routePattern, normalizedHref], { nonRoot: true })) {
@@ -5682,7 +5841,7 @@ function renderedTargetsFromStageResults(context, stageResults) {
     .filter(Boolean);
   const targets = dynamicPages.length
     ? dynamicPages.map((page) => page.normalizedUrl)
-    : seedUrls.slice(0, Math.max(1, Math.min(Number(context.policy.maxPages ?? 5) || 5, 5)));
+    : seedUrls.slice(0, Math.max(1, Math.min(Number(context.policy.maxPages ?? 10) || 10, 10)));
   return uniqueSortedStrings(targets)
     .filter((urlValue) => isInternalUrl(urlValue, context.site.allowedDomains));
 }
@@ -5701,7 +5860,7 @@ async function collectPublicRenderedStructurePagesWithBrowser(context, targets, 
       userDataDir: null,
       cleanupUserDataDirOnShutdown: true,
       userDataDirPrefix: 'siteforge-public-render-',
-      userAgent: 'SiteForgeBuildPublicRenderedCrawler/1.0',
+      userAgent: context.options.publicRenderedUserAgent,
       viewport: { width: 1280, height: 900, deviceScaleFactor: 1 },
       fullPage: false,
       sessionOpenRetries: 1,
@@ -9249,6 +9408,38 @@ function knownPolicySupportsBookDownload(context) {
   return declaredTaskTypes.length === 0 || declaredTaskTypes.includes('book');
 }
 
+function knownPolicySupportsCatalogDownload(context) {
+  const policy = context.setupProfile?.knownSitePolicy ?? {};
+  if (!knownPolicyCapabilityFamilies(context).has('download-content')) {
+    return false;
+  }
+  const downloadPolicy = policy.downloadSupport ?? policy.downloader ?? {};
+  if (downloadPolicy?.supported === false) {
+    return false;
+  }
+  const declaredTaskTypes = [
+    ...(policy.downloadTaskTypes ?? []),
+    ...(policy.declaredDownloadTaskTypes ?? []),
+    ...(downloadPolicy?.taskTypes ?? []),
+    ...(downloadPolicy?.declaredTaskTypes ?? []),
+  ].filter(Boolean);
+  const availableTaskTypes = [
+    ...(policy.availableDownloadTaskTypes ?? []),
+    ...(downloadPolicy?.availableTaskTypes ?? []),
+  ].filter(Boolean);
+  const blockedTaskTypes = new Set([
+    ...(policy.blockedDownloadTaskTypes ?? []),
+    ...(downloadPolicy?.blockedTaskTypes ?? []),
+  ].filter(Boolean));
+  if (declaredTaskTypes.length && declaredTaskTypes.every((taskType) => blockedTaskTypes.has(taskType))) {
+    return false;
+  }
+  if (declaredTaskTypes.length && availableTaskTypes.length === 0 && blockedTaskTypes.size > 0) {
+    return false;
+  }
+  return true;
+}
+
 function siteContextText(context = /** @type {any} */ ({}), nodes = /** @type {any[]} */ ([])) {
   const site = context.site ?? {};
   const policy = context.setupProfile?.knownSitePolicy ?? {};
@@ -9625,7 +9816,17 @@ function publicReadableNodes(graph, classifications = /** @type {any[]} */ ([]))
 }
 
 function nodeHasRouteOnlyPublicEvidence(node = /** @type {any} */ ({})) {
-  return ['link_route_template', 'link_semantic_route_template'].includes(node.evidenceStatus);
+  return ['link_route_template', 'link_semantic_route_template', 'route_seed_only', 'policy_route_template'].includes(node.evidenceStatus)
+    || ['public_rendered_route_seed_only', 'policy_route_template'].includes(node.publicEvidenceStatus);
+}
+
+function hasActiveAggregateRouteOnlyCapability(capabilities = /** @type {any[]} */ ([])) {
+  return capabilities.some((capability) => (
+    capability?.status === 'active'
+    && capability.publicRouteOnly === true
+    && !/^open public route\b/u.test(String(capability.name ?? '').toLowerCase())
+    && !String(capability.id ?? '').includes(':open-public-route-')
+  ));
 }
 
 function authenticatedReadRouteTargetSet(context = /** @type {any} */ ({})) {
@@ -10284,9 +10485,9 @@ function publicSearchObject(context, graph) {
     ]),
   ].join(' ').toLowerCase();
   if (/repositories|repository|\brepos?\b|github|code search|project/u.test(text)) return 'repositories';
+  if (/video|media|watch/u.test(text)) return 'media items';
   if (/book|novel|fiction|chapter|works?|serialized/u.test(text)) return 'books and works';
   if (/article|story|news|channel/u.test(text)) return 'articles and news';
-  if (/video|media|watch/u.test(text)) return 'media items';
   if (/product|shop|catalog/u.test(text)) return 'catalog content';
   return 'public content';
 }
@@ -10350,6 +10551,9 @@ function addGenericPublicSearchCapability(context, capabilities, graph, searchFo
     evidenceModel: hasSearchRouteFallbackEvidence ? 'public_route_navigation' : 'public_structure',
     publicRouteOnly: hasSearchRouteFallbackEvidence,
     intents: [
+      '\u641c\u7d22\u516c\u5f00\u5185\u5bb9',
+      '\u641c\u7d22\u7ad9\u5185\u5185\u5bb9',
+      '\u6309\u5173\u952e\u8bcd\u67e5\u627e\u516c\u5f00\u5185\u5bb9',
       'search public content',
       `search ${object}`,
       'find public site content by keyword',
@@ -10879,7 +11083,7 @@ function addGenericCatalogCoverageCapabilities(context, capabilities, graph, sea
     capabilities.push(capability);
   }
 
-  if (knownPolicyCapabilityFamilies(context).has('download-content') && !isChapterContentContext(context)) {
+  if (knownPolicySupportsCatalogDownload(context) && !isChapterContentContext(context)) {
     addCatalogCoverageCapability(context, capabilities, {
       name: 'download catalog content',
       description: 'Compile discovered download-capable content as a direct downloader task descriptor.',
@@ -11743,7 +11947,7 @@ async function discoverCapabilitiesStage(context, stageResults) {
   if (!useAggregateNavigationCapabilities) {
     addPublicElementInstanceCapabilities(context, capabilities, graph, robotsPolicy);
     addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy);
-  } else if (!hasAnyPublicStructureEvidence) {
+  } else if (!hasAnyPublicStructureEvidence && !hasActiveAggregateRouteOnlyCapability(capabilities)) {
     addPublicRouteTemplateInstanceCapabilities(context, capabilities, graph, robotsPolicy, { allowRouteSeedOnly: true });
   }
   addUserAuthorizedKnownSiteCapabilities(context, capabilities, homepage);
@@ -12421,6 +12625,7 @@ async function evaluateExecutionGovernanceStage(context, stageResults) {
 
 async function dispatchGovernedRuntimeStage(context, stageResults) {
   const { executionContracts } = requireStage(stageResults, 'compileExecutionContracts');
+  const { intents } = requireStage(stageResults, 'generateIntents');
   const { governance } = requireStage(stageResults, 'evaluateExecutionGovernance');
   markStageSubstepProgress(context, 'selectTaskContract', {
     message: 'Selecting governed runtime task contract.',
@@ -12432,6 +12637,7 @@ async function dispatchGovernedRuntimeStage(context, stageResults) {
   const dispatchReport = buildRuntimeDispatchReport({
     context,
     contracts: executionContracts,
+    intents,
     governance,
   });
   const selectedContract = dispatchReport.selectedContractRef
@@ -12463,6 +12669,7 @@ async function dispatchGovernedRuntimeStage(context, stageResults) {
           operationKind: selectedContract?.operationKind ?? null,
           runtimeBindingKind: selectedContract?.runtimeBinding?.kind ?? null,
           ...(downloadRuntimeOutputContext(context, selectedContract) ?? {}),
+          ...(downloadRuntimeTaskContext(context, selectedContract) ?? {}),
           ...(browserActionRuntimeContext(context, selectedContract) ?? {}),
         },
       }),

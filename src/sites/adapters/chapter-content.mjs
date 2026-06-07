@@ -128,71 +128,12 @@ const BZ888_IGNORED_API_PATTERNS = [
 ];
 
 const CHAPTER_CONTENT_SITES = new Set([
-  '22biqu',
-  'www.22biqu.com',
   'qidian',
   'www.qidian.com',
   'bz888',
   'www.bz888888888.com',
   'chapter-content',
 ]);
-
-const TWENTY_TWO_BIQU_RECOGNIZED_PAGE_TYPES = new Set([
-  'home',
-  'search-results-page',
-  'book-detail-page',
-  'chapter-page',
-  'author-page',
-  'category-page',
-  'auth-page',
-]);
-
-const TWENTY_TWO_BIQU_RECOGNIZED_NODE_KINDS = new Set([
-  'navigation-state',
-  'page-type',
-  'search-form',
-  'content-link',
-  'book-link',
-  'chapter-link',
-  'author-link',
-  'safe-nav-link',
-  'auth-link',
-  'login-state',
-  'permission',
-  'permission-signal',
-  'permission-denied',
-  'risk',
-  'risk-control',
-  'risk-signal',
-  'limited-page',
-  'restriction-page',
-  'rate-limit',
-  'recovery-entry',
-  'manual-risk',
-  'manual-risk-state',
-]);
-
-const TWENTY_TWO_BIQU_SENSITIVE_NODE_KINDS = new Set([
-  'login-state',
-  'permission',
-  'permission-signal',
-  'permission-denied',
-  'risk',
-  'risk-control',
-  'risk-signal',
-  'limited-page',
-  'restriction-page',
-  'rate-limit',
-  'recovery-entry',
-  'manual-risk',
-  'manual-risk-state',
-]);
-
-const TWENTY_TWO_BIQU_IGNORED_API_PATTERNS = [
-  /\/(?:favicon|robots\.txt)(?:$|[?#])/iu,
-  /\/(?:static|assets|js|css|images?|font)s?\//iu,
-  /\.(?:css|js|png|jpe?g|webp|gif|svg|ico|woff2?|ttf)(?:$|[?#])/iu,
-];
 
 const {
   validateApiCandidate: _genericValidateApiCandidate,
@@ -212,11 +153,6 @@ function qidianDiscoveryContext(context = /** @type {any} */ ({})) {
 function bz888DiscoveryContext(context = /** @type {any} */ ({})) {
   return String(context.siteKey ?? '').toLowerCase() === 'bz888'
     || String(context.host ?? '').toLowerCase() === 'www.bz888888888.com';
-}
-
-function twentyTwoBiquDiscoveryContext(context = /** @type {any} */ ({})) {
-  return String(context.siteKey ?? '').toLowerCase() === '22biqu'
-    || String(context.host ?? '').toLowerCase() === 'www.22biqu.com';
 }
 
 function qidianUrlPath(value) {
@@ -292,32 +228,6 @@ function bz888PageTypeFromLocator(item = /** @type {any} */ ({})) {
   return undefined;
 }
 
-function twentyTwoBiquPageTypeFromLocator(item = /** @type {any} */ ({})) {
-  const path = qidianUrlPath(item.locator ?? item.url ?? item.path);
-  if (path === '/' || path === '') {
-    return 'home';
-  }
-  if (/^\/ss(?:\/|$)/iu.test(path)) {
-    return 'search-results-page';
-  }
-  if (/^\/biqu\d+\/?$/iu.test(path)) {
-    return 'book-detail-page';
-  }
-  if (/^\/biqu\d+\/\d+(?:_\d+)?\.html$/iu.test(path)) {
-    return 'chapter-page';
-  }
-  if (/^\/author\/[^/]+\.html$/iu.test(path)) {
-    return 'author-page';
-  }
-  if (/^\/(?:xuanhuan|xiuzhen|dushi|lishi|wangyou|kehuan|kongbu|qita|quanben)(?:\/|$)/iu.test(path)) {
-    return 'category-page';
-  }
-  if (/\/(?:login|register|user|member)(?:\/|$)/iu.test(path)) {
-    return 'auth-page';
-  }
-  return undefined;
-}
-
 function qidianNodeKind(item = /** @type {any} */ ({})) {
   return normalizeText(item.nodeKind ?? item.kind ?? item.type);
 }
@@ -382,9 +292,6 @@ function chapterContentApiClassification(candidate = /** @type {any} */ ({})) {
     siteKey: CHAPTER_CONTENT_SITES.has(siteKey) ? siteKey : host,
     host,
   };
-  if (twentyTwoBiquDiscoveryContext(context)) {
-    return chapterContentAdapter.classifyApi(candidate, context);
-  }
   if (bz888DiscoveryContext(context)) {
     return chapterContentAdapter.classifyApi(candidate, context);
   }
@@ -400,9 +307,6 @@ export const chapterContentAdapter = Object.freeze({
   version: CHAPTER_CONTENT_ADAPTER_VERSION,
   siteKey({ host, profile } = /** @type {any} */ ({})) {
     const resolvedHost = String(host ?? profile?.host ?? '').toLowerCase();
-    if (resolvedHost === 'www.22biqu.com') {
-      return '22biqu';
-    }
     if (resolvedHost === 'www.qidian.com') {
       return 'qidian';
     }
@@ -414,16 +318,12 @@ export const chapterContentAdapter = Object.freeze({
   matches({ host, profile } = /** @type {any} */ ({})) {
     const resolvedHost = String(host ?? profile?.host ?? '').toLowerCase();
     return resolveProfileArchetype(profile, { host }) === 'chapter-content'
-      || resolvedHost === 'www.22biqu.com'
       || resolvedHost === 'www.qidian.com'
       || resolvedHost === 'www.bz888888888.com'
       || Boolean(profile?.bookDetail && profile?.chapter);
   },
   inferPageType({ pathname = '/', hostname = '' } = /** @type {any} */ ({})) {
     const resolvedHost = String(hostname ?? '').toLowerCase();
-    if (resolvedHost === 'www.22biqu.com') {
-      return twentyTwoBiquPageTypeFromLocator({ path: pathname }) ?? null;
-    }
     if (resolvedHost === 'www.bz888888888.com') {
       return bz888PageTypeFromLocator({ path: pathname }) ?? null;
     }
@@ -452,24 +352,6 @@ export const chapterContentAdapter = Object.freeze({
     return null;
   },
   classifyNode(item = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
-    if (twentyTwoBiquDiscoveryContext(context)) {
-      const nodeKind = qidianNodeKind(item);
-      if (nodeKind && TWENTY_TWO_BIQU_SENSITIVE_NODE_KINDS.has(nodeKind)) {
-        return recognizedNodeDecision(item, `22biqu:${nodeKind}`);
-      }
-      const pageType = qidianRecognizedPageType(item) ?? twentyTwoBiquPageTypeFromLocator(item);
-      if (pageType && TWENTY_TWO_BIQU_RECOGNIZED_PAGE_TYPES.has(pageType)) {
-        return recognizedNodeDecision(item, `22biqu:${pageType}`);
-      }
-      if (nodeKind && TWENTY_TWO_BIQU_RECOGNIZED_NODE_KINDS.has(nodeKind)) {
-        return recognizedNodeDecision(item, `22biqu:${nodeKind}`);
-      }
-      return {
-        classification: 'unknown',
-        required: Boolean(item.required),
-      };
-    }
-
     if (bz888DiscoveryContext(context)) {
       const nodeKind = qidianNodeKind(item);
       if (nodeKind && BZ888_SENSITIVE_NODE_KINDS.has(nodeKind)) {
@@ -515,36 +397,6 @@ export const chapterContentAdapter = Object.freeze({
     };
   },
   classifyApi(item = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
-    if (twentyTwoBiquDiscoveryContext(context)) {
-      const endpoint = qidianApiEndpoint(item);
-      const path = qidianApiPath(item);
-      if (!endpoint) {
-        return {
-          classification: 'unknown',
-          required: Boolean(item.required),
-        };
-      }
-      if (TWENTY_TWO_BIQU_IGNORED_API_PATTERNS.some((pattern) => pattern.test(endpoint))) {
-        return ignoredDecision(
-          item,
-          'Static or browser-support request is outside 22biqu chapter-content capability coverage.',
-        );
-      }
-      if (
-        path === '/'
-        || /^\/(?:ss|biqu\d+|author|xuanhuan|xiuzhen|dushi|lishi|wangyou|kehuan|kongbu|qita|quanben)(?:\/|\.html|$)/iu.test(path)
-      ) {
-        return recognizedNodeDecision(item, `22biqu:page-request:${path || '/'}`);
-      }
-      if (/\/(?:api|ajax|chapter|book|search)(?:\/|$)/iu.test(path)) {
-        return recognizedNodeDecision(item, `22biqu:observed-api:${path || '/'}`);
-      }
-      return ignoredDecision(
-        item,
-        'Observed 22biqu request is non-required until a SiteAdapter API contract promotes it.',
-      );
-    }
-
     if (bz888DiscoveryContext(context)) {
       const endpoint = qidianApiEndpoint(item);
       const path = qidianApiPath(item);

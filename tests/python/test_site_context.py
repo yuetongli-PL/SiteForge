@@ -109,38 +109,38 @@ class SiteContextTests(unittest.TestCase):
     def test_upsert_site_documents_keep_host_isolation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            upsert_site_registry_record("www.22biqu.com", {
-                "canonicalBaseUrl": "https://www.22biqu.com/",
+            upsert_site_registry_record("books.example.com", {
+                "canonicalBaseUrl": "https://books.example.com/",
                 "capabilityFamilies": ["download-content"],
             }, root)
-            upsert_site_capabilities_record("www.22biqu.com", {
-                "baseUrl": "https://www.22biqu.com/",
+            upsert_site_capabilities_record("books.example.com", {
+                "baseUrl": "https://books.example.com/",
                 "capabilityFamilies": ["download-content"],
                 "supportedIntents": ["download-book"],
             }, root)
 
             registry = json.loads(build_site_registry_path(root).read_text(encoding="utf-8"))
             capabilities = json.loads(build_site_capabilities_path(root).read_text(encoding="utf-8"))
-            self.assertIn("www.22biqu.com", registry["sites"])
-            self.assertIn("www.22biqu.com", capabilities["sites"])
-            self.assertEqual(["download-content"], registry["sites"]["www.22biqu.com"]["capabilityFamilies"])
-            self.assertEqual(["download-book"], capabilities["sites"]["www.22biqu.com"]["supportedIntents"])
+            self.assertIn("books.example.com", registry["sites"])
+            self.assertIn("books.example.com", capabilities["sites"])
+            self.assertEqual(["download-content"], registry["sites"]["books.example.com"]["capabilityFamilies"])
+            self.assertEqual(["download-book"], capabilities["sites"]["books.example.com"]["supportedIntents"])
             self.assertFalse((root / "site-registry.json").exists())
             self.assertFalse((root / "site-capabilities.json").exists())
 
     def test_runtime_snapshot_fields_are_split_from_stable_config_documents(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            upsert_site_registry_record("www.22biqu.com", {
-                "canonicalBaseUrl": "https://www.22biqu.com/",
-                "siteKey": "22biqu",
+            upsert_site_registry_record("books.example.com", {
+                "canonicalBaseUrl": "https://books.example.com/",
+                "siteKey": "books",
                 "adapterId": "chapter-content",
-                "knowledgeBaseDir": str(root / "knowledge-base" / "www.22biqu.com"),
+                "knowledgeBaseDir": str(root / "knowledge-base" / "books.example.com"),
                 "latestDownloadMode": "artifact-hit",
             }, root)
-            upsert_site_capabilities_record("www.22biqu.com", {
-                "baseUrl": "https://www.22biqu.com/",
-                "siteKey": "22biqu",
+            upsert_site_capabilities_record("books.example.com", {
+                "baseUrl": "https://books.example.com/",
+                "siteKey": "books",
                 "adapterId": "chapter-content",
                 "capabilityFamilies": ["download-content"],
             }, root)
@@ -149,18 +149,18 @@ class SiteContextTests(unittest.TestCase):
             runtime_registry = json.loads(build_site_runtime_registry_path(root).read_text(encoding="utf-8"))
             stable_capabilities = json.loads(build_site_capabilities_path(root).read_text(encoding="utf-8"))
             runtime_capabilities = json.loads(build_site_runtime_capabilities_path(root).read_text(encoding="utf-8"))
-            context = read_site_context("www.22biqu.com", root)
+            context = read_site_context("books.example.com", root)
 
-            self.assertNotIn("knowledgeBaseDir", stable_registry["sites"]["www.22biqu.com"])
-            self.assertEqual("artifact-hit", runtime_registry["sites"]["www.22biqu.com"]["latestDownloadMode"])
+            self.assertNotIn("knowledgeBaseDir", stable_registry["sites"]["books.example.com"])
+            self.assertEqual("artifact-hit", runtime_registry["sites"]["books.example.com"]["latestDownloadMode"])
             self.assertEqual(
-                str(root / "knowledge-base" / "www.22biqu.com"),
+                str(root / "knowledge-base" / "books.example.com"),
                 context["registryRecord"]["knowledgeBaseDir"],
             )
 
-            self.assertNotIn("updatedAt", stable_capabilities["sites"]["www.22biqu.com"])
-            self.assertIn("updatedAt", runtime_capabilities["sites"]["www.22biqu.com"])
-            self.assertEqual("22biqu", context["capabilitiesRecord"]["siteKey"])
+            self.assertNotIn("updatedAt", stable_capabilities["sites"]["books.example.com"])
+            self.assertIn("updatedAt", runtime_capabilities["sites"]["books.example.com"])
+            self.assertEqual("books", context["capabilitiesRecord"]["siteKey"])
 
     def test_registry_stores_relative_stable_paths_but_context_resolves_workspace_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

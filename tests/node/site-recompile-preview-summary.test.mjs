@@ -35,9 +35,9 @@ test('site recompile preview summary writes guarded descriptor-only matrix', asy
       version: 1,
       generatedAt: null,
       sites: {
-        'www.22biqu.com': {
-          siteKey: '22biqu',
-          repoSkillDir: 'skills/22biqu',
+        'books.example.com': {
+          siteKey: 'books',
+          repoSkillDir: 'skills/books',
         },
         'blocked.example': {
           siteKey: 'blocked-site',
@@ -45,7 +45,7 @@ test('site recompile preview summary writes guarded descriptor-only matrix', asy
         },
       },
     });
-    await writeSkill(workspace, '22biqu');
+    await writeSkill(workspace, 'books');
     await writeSkill(workspace, 'blocked-site');
 
     const result = await runSiteRecompilePreviewSummary({
@@ -108,9 +108,9 @@ test('site recompile preview summary writes guarded descriptor-only matrix', asy
 
     const persisted = JSON.parse(await readFile(result.artifactWrite.artifactPath, 'utf8'));
     assert.equal(persisted.artifactFamily, 'site-recompile-preview-summary');
-    assert.equal(persisted.sites.find((site) => site.siteKey === '22biqu').status, 'ready');
-    assert.equal(persisted.sites.find((site) => site.siteKey === '22biqu').repoSkillDir, 'skills/22biqu');
-    assert.equal(persisted.sites.find((site) => site.siteKey === '22biqu').reasonCode, 'site-recompile-ready');
+    assert.equal(persisted.sites.find((site) => site.siteKey === 'books').status, 'ready');
+    assert.equal(persisted.sites.find((site) => site.siteKey === 'books').repoSkillDir, 'skills/books');
+    assert.equal(persisted.sites.find((site) => site.siteKey === 'books').reasonCode, 'site-recompile-ready');
     assert.equal(persisted.sites.find((site) => site.siteKey === 'blocked-site').reasonCode, 'compiler.capability_inventory_invalid');
     const audit = JSON.parse(await readFile(result.artifactWrite.auditPath, 'utf8'));
     assert.deepEqual(audit.findings, []);

@@ -41,7 +41,7 @@ const RAW_SENSITIVE_TEXT_PATTERNS = Object.freeze([
 ]);
 
 const CONCRETE_SITE_NAME_PATTERN =
-  /\b(?:22biqu|bilibili|douyin|instagram|jable|moodyz|xiaohongshu|x\.com|api\.bilibili\.com|www\.douyin\.com)\b/iu;
+  /\b(?:bilibili|douyin|instagram|jable|moodyz|xiaohongshu|x\.com|api\.bilibili\.com|www\.douyin\.com)\b/iu;
 
 const SITE_SEMANTIC_TEXT_PATTERN =
   /\b(?:page\s*type|endpoint|selector|parser|interpret(?:ation|er)?|classif(?:y|ication)|business\s+logic|risk\s+signal|site\s+signature|api\s+shape|field\s+mapping|pagination\s+model|semantic|semantics|meaning|validation)\b/iu;
@@ -50,7 +50,7 @@ const GENERIC_SITE_SEMANTIC_TEXT_PATTERN =
   /\b(?:concrete|specific|per-site|site-specific)\s+site\s+(?:semantic|semantics|meaning|business\s+logic|interpretation|validation)\b/iu;
 
 const CONCRETE_SITE_IMPORT_PATTERN =
-  /(?:^|[\\/])src[\\/]sites[\\/]core[\\/]adapters[\\/](?:22biqu|bilibili|douyin|instagram|jable|moodyz|x|xiaohongshu)\.mjs$/iu;
+  /(?:^|[\\/])src[\\/]sites[\\/]core[\\/]adapters[\\/](?:bilibili|douyin|instagram|jable|moodyz|x|xiaohongshu)\.mjs$/iu;
 
 const API_AUTO_PROMOTION_TEXT_PATTERN =
   /\b(?:api|candidate|catalog|endpoint)\b.*\bauto[-_\s]?promot(?:e|ion|ed|ing)\b|\bauto[-_\s]?promot(?:e|ion|ed|ing)\b.*\b(?:api|candidate|catalog|endpoint)\b/iu;

@@ -73,7 +73,7 @@ const FORBIDDEN_KERNEL_RESPONSIBILITY_CHECKS = Object.freeze([
     category: 'concrete site semantics',
     owner: 'SiteAdapter',
     patterns: [
-      /\b(?:22biqu|bilibili|douyin|instagram|jable|moodyz|xiaohongshu)\b/iu,
+      /\b(?:bilibili|douyin|instagram|jable|moodyz|xiaohongshu)\b/iu,
       /\b(?:concrete|specific|per-site|site-specific)\s+site\s+(?:semantic|semantics|meaning|business\s+logic)\b/iu,
       /\b(?:page\s*type|auth\s*state|risk\s*signal|site\s*signature|business\s*interface)\s+(?:interpretation|classification|meaning|judgment|handling)\b/iu,
     ],

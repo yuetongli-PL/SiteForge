@@ -23,7 +23,7 @@ test('normalizeUrlNoFragment strips URL hash safely', () => {
 });
 
 test('sanitizeHost keeps stable host-safe slugs', () => {
-  assert.equal(sanitizeHost('www.22biqu.com'), 'www.22biqu.com');
+  assert.equal(sanitizeHost('example.com'), 'example.com');
   assert.equal(sanitizeHost('bad host!!'), 'bad-host');
 });
 

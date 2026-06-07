@@ -97,21 +97,21 @@ test('build parser keeps human-output flags', () => {
 
 test('site-doctor parser accepts progress flags while keeping JSON-compatible default output', () => {
   const parsed = parseDoctorArgs([
-    'https://www.22biqu.com/',
+    'https://example.com/',
     '--progress=plain',
     '--quiet',
     '--json',
     '--no-tty',
     '--capability-compile-dry-run',
   ]);
-  assert.equal(parsed.inputUrl, 'https://www.22biqu.com/');
+  assert.equal(parsed.inputUrl, 'https://example.com/');
   assert.equal(parsed.options.progressMode, 'plain');
   assert.equal(parsed.options.quiet, true);
   assert.equal(parsed.options.json, true);
   assert.equal(parsed.options.noTty, true);
   assert.equal(parsed.options.capabilityDryRun, true);
   assert.throws(
-    () => parseDoctorArgs(['https://www.22biqu.com/', '--progress', '--json']),
+    () => parseDoctorArgs(['https://example.com/', '--progress', '--json']),
     /Missing value for --progress/u,
   );
 });

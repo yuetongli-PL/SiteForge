@@ -267,6 +267,82 @@ test('runtime dispatch report separates default build, task planning, and govern
       ],
     },
   };
+  const downloadBookCapability = {
+    id: 'capability:books:download-book',
+    name: 'download book',
+    action: 'download',
+    object: 'public book text',
+    status: 'active',
+    risk_level: 'read_public_low',
+    providerId: 'known_site_downloader',
+    downloaderTaskDescriptor: {
+      material: 'descriptor_only',
+      siteKey: 'books',
+      adapterId: 'chapter-content',
+      taskType: 'book',
+      entrypoint: 'src/sites/known-sites/chapter-content/download/python/book.py',
+      interpreter: 'pypy3',
+      inputSlots: ['book_title', 'book_url', 'output_dir'],
+      networkResolveAllowedAtRuntime: true,
+      savedMaterial: 'sanitized_summary_only',
+      reportMaterial: 'sanitized_summary_only',
+      bodyTextPersistence: 'download_artifact_only',
+      redactionRequired: true,
+    },
+    executionPlan: {
+      id: 'plan-download-book',
+      steps: [
+        {
+          kind: 'downloader_task_descriptor',
+          taskType: 'book',
+          slotNames: ['book_title', 'book_url', 'output_dir'],
+          downloaderTaskDescriptor: {
+            taskType: 'book',
+            adapterId: 'chapter-content',
+            entrypoint: 'src/sites/known-sites/chapter-content/download/python/book.py',
+          },
+        },
+      ],
+    },
+  };
+  const homepageCapability = {
+    id: 'capability:synthetic-site:view-homepage',
+    name: 'View homepage',
+    action: 'view',
+    object: 'homepage',
+    status: 'active',
+    risk_level: 'read_public_low',
+    executionPlan: {
+      id: 'plan-view-homepage',
+      steps: [
+        {
+          kind: 'navigate',
+          action: 'view_homepage',
+          nodeId: 'node:homepage',
+        },
+      ],
+    },
+  };
+  const searchCapability = {
+    id: 'capability:synthetic-site:search-public-content',
+    name: 'search public content',
+    action: 'search',
+    object: 'public content',
+    status: 'active',
+    risk_level: 'read_public_low',
+    executionPlan: {
+      id: 'plan-search-public-content',
+      steps: [
+        {
+          kind: 'form_get',
+          action: 'search_public_content',
+          nodeId: 'node:search',
+          querySlot: 'query',
+        },
+      ],
+    },
+    inputs: [{ name: 'query', type: 'string', required: true }],
+  };
   const context = {
     buildId: 'runtime-dispatch-test',
     buildDir: 'artifact:runtime-dispatch-test',
@@ -275,10 +351,29 @@ test('runtime dispatch report separates default build, task planning, and govern
     options: {},
     policy: {},
   };
-  const contracts = [writeCapability, downloadCapability].map((capability) => buildExecutionContract({
+  const intents = [
+    { id: `intent-${writeCapability.id}`, capabilityId: writeCapability.id },
+    { id: `intent-${downloadCapability.id}`, capabilityId: downloadCapability.id },
+    { id: `intent-${downloadBookCapability.id}`, capabilityId: downloadBookCapability.id },
+    {
+      id: 'intent-view-homepage-cn',
+      capabilityId: homepageCapability.id,
+      name: 'view homepage',
+      canonicalUtterance: '\u67e5\u770b\u7ad9\u70b9\u9996\u9875',
+      utteranceExamples: ['\u67e5\u770b\u7ad9\u70b9\u9996\u9875', '\u6253\u5f00\u7ad9\u70b9\u9996\u9875'],
+    },
+    {
+      id: 'intent-search-public-content-cn',
+      capabilityId: searchCapability.id,
+      name: 'search public content',
+      canonicalUtterance: '\u641c\u7d22\u516c\u5f00\u5185\u5bb9',
+      utteranceExamples: ['\u641c\u7d22\u516c\u5f00\u5185\u5bb9', '\u6309\u5173\u952e\u8bcd\u67e5\u627e\u516c\u5f00\u5185\u5bb9'],
+    },
+  ];
+  const contracts = [writeCapability, downloadCapability, downloadBookCapability, homepageCapability, searchCapability].map((capability) => buildExecutionContract({
     context,
     capability,
-    intents: [{ id: `intent-${capability.id}`, capabilityId: capability.id }],
+    intents: intents.filter((intent) => intent.capabilityId === capability.id),
   }));
   const governance = evaluateExecutionGovernance({ context, contracts });
 
@@ -336,6 +431,53 @@ test('runtime dispatch report separates default build, task planning, and govern
   assert.deepEqual(downloadExecuteReport.runtimeDecision.gates, []);
   assert.equal(downloadExecuteReport.runtimeDispatchAllowed, true);
   assert.equal(downloadExecuteReport.runtimeExecuted, false);
+
+  const chineseIntentExecuteReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: '\u67e5\u770b\u7ad9\u70b9\u9996\u9875',
+        execute: true,
+      },
+    },
+    contracts,
+    intents,
+    governance,
+  });
+  assert.equal(chineseIntentExecuteReport.status, 'ready_for_direct_runtime');
+  assert.equal(chineseIntentExecuteReport.selectedCapabilityId, homepageCapability.id);
+  assert.equal(chineseIntentExecuteReport.runtimeDispatchAllowed, true);
+
+  const chineseSearchExecuteReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: '\u641c\u7d22\u516c\u5f00\u89c6\u9891 sample',
+        execute: true,
+      },
+    },
+    contracts,
+    intents,
+    governance,
+  });
+  assert.equal(chineseSearchExecuteReport.status, 'ready_for_direct_runtime');
+  assert.equal(chineseSearchExecuteReport.selectedCapabilityId, searchCapability.id);
+  assert.equal(chineseSearchExecuteReport.runtimeDispatchAllowed, true);
+
+  const naturalBookDownloadReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: '下载搜索到的作品《玄鉴仙族》并提取正文',
+        execute: true,
+      },
+    },
+    contracts,
+    governance,
+  });
+  assert.equal(naturalBookDownloadReport.status, 'ready_for_direct_runtime');
+  assert.equal(naturalBookDownloadReport.selectedCapabilityId, downloadBookCapability.id);
+  assert.equal(naturalBookDownloadReport.runtimeDispatchAllowed, true);
 });
 
 test('payment task execution remains blocked without a dedicated payment authorization policy', () => {

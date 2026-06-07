@@ -179,6 +179,8 @@ test('public SiteForge CLI accepts documented and compatibility build flags', ()
     ['build', 'https://example.com/', '--auth=browser'],
     ['build', 'https://example.com/', '--render-js'],
     ['build', 'https://example.com/', '--no-render-js'],
+    ['build', 'https://example.com/', '--headless'],
+    ['build', 'https://example.com/', '--no-headless'],
     ['build', 'https://example.com/', '--browser-path', 'C:/Chrome/chrome.exe'],
     ['build', 'https://example.com/', '--timeout', '30000'],
     ['build', 'https://example.com/', '--max-depth', '4'],

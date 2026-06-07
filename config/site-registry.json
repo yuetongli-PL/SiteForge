@@ -2,40 +2,6 @@
   "version": 1,
   "generatedAt": null,
   "sites": {
-    "www.22biqu.com": {
-      "canonicalBaseUrl": "https://www.22biqu.com/",
-      "host": "www.22biqu.com",
-      "siteKey": "22biqu",
-      "adapterId": "chapter-content",
-      "repoSkillDir": "skills/22biqu",
-      "downloadEntrypoint": "src/sites/known-sites/chapter-content/download/python/book.py",
-      "downloadSessionRequirement": "none",
-      "downloadTaskTypes": [
-        "book"
-      ],
-      "crawlerScriptsDir": "crawler-scripts",
-      "siteArchetype": "chapter-content",
-      "scriptLanguage": "python",
-      "interpreterRequired": "pypy3",
-      "templateVersion": 3,
-      "capabilityFamilies": [
-        "download-content"
-      ],
-      "downloadSupport": {
-        "status": "implemented",
-        "supported": true,
-        "taskTypes": [
-          "book"
-        ],
-        "declaredTaskTypes": [
-          "book"
-        ],
-        "availableTaskTypes": [
-          "book"
-        ],
-        "blockedTaskTypes": []
-      }
-    },
     "www.qidian.com": {
       "canonicalBaseUrl": "https://www.qidian.com/",
       "host": "www.qidian.com",

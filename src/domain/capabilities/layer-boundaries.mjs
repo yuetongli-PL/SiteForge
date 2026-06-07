@@ -27,7 +27,7 @@ const LAYER_ID_SET = new Set(LAYER_IDS);
 const LAYER_CROSSING_CONTROL_SET = new Set(LAYER_CROSSING_CONTROLS);
 
 const CONCRETE_SITE_SEMANTIC_PATTERN =
-  /\b(?:22biqu|bilibili|douyin|instagram|jable|moodyz|xiaohongshu|x\.com|api\.bilibili\.com|www\.douyin\.com)\b/iu;
+  /\b(?:bilibili|douyin|instagram|jable|moodyz|xiaohongshu|x\.com|api\.bilibili\.com|www\.douyin\.com)\b/iu;
 
 const RAW_SENSITIVE_MATERIAL_PATTERN =
   /\b(?:authorization|browser profile|browserProfile|cookie|csrf|raw credential|raw session|SESSDATA|session id|token|userDataDir)\b/iu;

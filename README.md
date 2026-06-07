@@ -13,7 +13,6 @@
 | `moodyz.com` | no download availability declared |
 | `rookie-av.jp` | no download availability declared |
 | `s1s1s1.com` | no download availability declared |
-| `www.22biqu.com` | downloads declared: book; available: book; requires: pypy3; dependency reason: runtime-dependency-missing |
 | `www.8man.jp` | no download availability declared |
 | `www.bilibili.com` | downloads declared: video, media-bundle; available: video, media-bundle |
 | `www.bz888888888.com` | downloads declared: book; available: none; blocked: book; reason: blocked-by-cloudflare-challenge; requires: pypy3, tesseract; dependency reason: runtime-dependency-missing, ocr-dependency-missing |

@@ -1779,6 +1779,10 @@ function uniquePageUrls(pages, predicate) {
   );
 }
 
+function knownPolicyHasSeedablePublicRoutes(knownSitePolicy = null) {
+  return (knownSitePolicy?.publicRouteTemplates ?? []).some((route) => route?.seedable === true && route.path);
+}
+
 function buildSetupEvidenceQuality({
   robotsAvailable,
   homepageAvailable,
@@ -1791,6 +1795,7 @@ function buildSetupEvidenceQuality({
   pages,
   userAuthorizedEvidence = null,
   authorizedSources = /** @type {any[]} */ ([]),
+  publicRenderedRecoveryAvailable = false,
 }) {
   const actualPageUrls = uniquePageUrls(pages, (page) => page.source !== 'synthetic_fallback');
   const syntheticPageUrls = uniquePageUrls(pages, (page) => page.source === 'synthetic_fallback');
@@ -1806,6 +1811,9 @@ function buildSetupEvidenceQuality({
     && actualPageUrls.length === 0
     && robotsExcludedPageEvidenceUrls.length > 0;
   const policyPressure = knownPolicyCapabilityPressure(knownSitePolicy);
+  const publicRenderedRecoveryCandidate = publicRenderedRecoveryAvailable === true
+    && syntheticFallbackOnly
+    && knownPolicyHasSeedablePublicRoutes(knownSitePolicy);
   return {
     schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
     sourceAvailability: {
@@ -1814,6 +1822,7 @@ function buildSetupEvidenceQuality({
       sitemap: sitemapAvailable,
       userAuthorizedBrowser: userAuthorizedPageUrls.length > 0,
       authorizedSources: authorizedSourceStructureEvidenceCount > 0,
+      publicRenderedRecovery: publicRenderedRecoveryCandidate,
     },
     sourceStatus: {
       robots: robotsAvailable ? 'parsed' : 'unavailable',
@@ -1821,6 +1830,7 @@ function buildSetupEvidenceQuality({
       sitemap: sitemapAvailable ? 'parsed' : 'unavailable',
       userAuthorizedBrowser: userAuthorizedPageUrls.length ? 'captured' : 'not_used',
       authorizedSources: authorizedSourceStructureEvidenceCount ? 'configured' : 'not_used',
+      publicRenderedRecovery: publicRenderedRecoveryCandidate ? 'pending' : 'not_used',
     },
     actualPageEvidenceCount: actualPageUrls.length,
     userAuthorizedBrowserEvidenceCount: userAuthorizedPageUrls.length,
@@ -1836,6 +1846,7 @@ function buildSetupEvidenceQuality({
     allPrimarySourcesUnavailable,
     syntheticFallbackOnly,
     robotsExcludedAllCandidateEvidence,
+    publicRenderedRecoveryCandidate,
     knownPolicyCapabilityPressure: policyPressure,
   };
 }
@@ -1874,6 +1885,19 @@ function buildSetupReadiness(evidenceQuality) {
       reasonCode: null,
       reason: 'Public homepage or sitemap page evidence was available during setup.',
       requiredEvidence: 'At least one non-synthetic public page source from homepage or sitemap.',
+    };
+  }
+  if (evidenceQuality.publicRenderedRecoveryCandidate === true) {
+    return {
+      schemaVersion: SETUP_ASSISTANT_SCHEMA_VERSION,
+      status: 'ready',
+      buildable: true,
+      reasonCode: 'setup-public-rendered-recovery-pending',
+      reason: 'Setup found only a synthetic fallback URL, but a known-site public route policy and rendered-page discovery can collect sanitized public structure evidence.',
+      guidance: [
+        'Continue only to sanitized public rendered discovery; do not activate capabilities unless rendered structure evidence is collected.',
+      ],
+      requiredEvidence: 'At least one sanitized public rendered structure summary before capability activation.',
     };
   }
   const knownPolicyRobotsDisallowed = evidenceQuality.robotsExcludedAllCandidateEvidence
@@ -2187,6 +2211,7 @@ export async function generateSetupPlan(inputUrl, options = /** @type {any} */ (
     knownSitePolicy,
     pages,
     authorizedSources: options.localBuildConfig?.authorizedSources ?? [],
+    publicRenderedRecoveryAvailable: options.renderJs !== false,
   });
   const buildReadiness = buildSetupReadiness(evidenceQuality);
   const recommendedCapabilities = applyBuildReadinessToCapabilities(

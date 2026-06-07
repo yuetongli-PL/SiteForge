@@ -10,6 +10,8 @@ export const PUBLIC_BOOLEAN_BUILD_FLAGS = Object.freeze([
   '--robots-plan',
   '--render-js',
   '--no-render-js',
+  '--headless',
+  '--no-headless',
   '--explain',
   '--json',
   '--quiet',
@@ -105,6 +107,8 @@ Flags:
   --network              Keep network/API capture requested; raw traces are enabled by default.
   --render-js            Enable rendered-page discovery.
   --no-render-js         Disable rendered-page discovery.
+  --headless             Run rendered-page browser discovery headlessly.
+  --no-headless          Run rendered-page browser discovery in a visible browser.
   --robots-plan          On robots/setup block, print a machine-readable compliant remediation plan.
   --privacy limited|strict
   --browser-path <path>

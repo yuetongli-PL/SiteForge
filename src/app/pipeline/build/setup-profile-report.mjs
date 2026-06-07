@@ -39,6 +39,7 @@ export function setupProfileSummary(profile = null) {
     allPrimarySourcesUnavailable: profile.evidenceQuality.allPrimarySourcesUnavailable === true,
     syntheticFallbackOnly: profile.evidenceQuality.syntheticFallbackOnly === true,
     robotsExcludedAllCandidateEvidence: profile.evidenceQuality.robotsExcludedAllCandidateEvidence === true,
+    publicRenderedRecoveryCandidate: profile.evidenceQuality.publicRenderedRecoveryCandidate === true,
     knownPolicyCapabilityPressure: profile.evidenceQuality.knownPolicyCapabilityPressure ? cloneReportValue(profile.evidenceQuality.knownPolicyCapabilityPressure) : null,
   } : null;
   return {

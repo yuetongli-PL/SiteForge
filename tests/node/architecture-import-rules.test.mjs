@@ -1732,7 +1732,7 @@ test('domain services do not depend on concrete sites or runtime orchestration l
 
 test('domain services keep health and recovery semantics site-neutral', async () => {
   const concreteSiteHealthRecoveryPattern =
-    /\b(?:(?:22biqu|bilibili|douyin|instagram|jable|moodyz|qidian|twitter|xiaohongshu|x)(?:[-_.]?(?:doctor|health|recover(?:y)?|repair|service))|(?:doctor|health|recover(?:y)?|repair|service)[-_.]?(?:22biqu|bilibili|douyin|instagram|jable|moodyz|qidian|twitter|xiaohongshu|x))\b/giu;
+    /\b(?:(?:bilibili|douyin|instagram|jable|moodyz|qidian|twitter|xiaohongshu|x)(?:[-_.]?(?:doctor|health|recover(?:y)?|repair|service))|(?:doctor|health|recover(?:y)?|repair|service)[-_.]?(?:bilibili|douyin|instagram|jable|moodyz|qidian|twitter|xiaohongshu|x))\b/giu;
   const matches = await collectSourcePatternMatches(
     'src/domain',
     concreteSiteHealthRecoveryPattern,

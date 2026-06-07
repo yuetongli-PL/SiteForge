@@ -829,6 +829,12 @@ export function parseCliArgs(argv) {
         options.renderJsExplicit = true;
         options.renderJsDisabledExplicit = true;
         break;
+      case '--headless':
+        options.headless = true;
+        break;
+      case '--no-headless':
+        options.headless = false;
+        break;
       case '--privacy': {
         const { value, nextIndex } = readValue(args, current, index);
         options.privacyMode = normalizeChoice(value, SITEFORGE_PRIVACY_MODES, '--privacy');

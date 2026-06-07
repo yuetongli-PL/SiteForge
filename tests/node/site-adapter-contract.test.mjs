@@ -81,8 +81,8 @@ function assertNoForbiddenSemanticKeys(value, pathLabel = 'semantics') {
 function resolveAdapterSiteKey(adapter) {
   return typeof adapter.siteKey === 'function'
     ? adapter.siteKey({
-      host: 'www.22biqu.com',
-      profile: { host: 'www.22biqu.com' },
+      host: 'www.qidian.com',
+      profile: { host: 'www.qidian.com' },
     })
     : adapter.siteKey;
 }
@@ -705,7 +705,7 @@ test('generic-navigation adapter rejects candidates outside its site key with an
   assert.equal(Object.hasOwn(decision, 'catalogPath'), false);
 });
 
-test('chapter-content adapter validates observed public page requests without catalog auto-promotion', () => {
+test('chapter-content adapter validates qidian observed public page requests without catalog auto-promotion', () => {
   const adapter = listSiteAdapters().find((candidate) => candidate.id === 'chapter-content');
   assert.notEqual(adapter, undefined);
   // @ts-ignore
@@ -714,12 +714,12 @@ test('chapter-content adapter validates observed public page requests without ca
   assert.equal(typeof adapter.getApiCatalogUpgradePolicy, 'function');
 
   const observedCandidate = createSyntheticCandidate({
-    id: '22biqu-home-candidate',
-    siteKey: 'www.22biqu.com',
+    id: 'qidian-home-candidate',
+    siteKey: 'qidian',
     status: 'observed',
     endpoint: {
       method: 'GET',
-      url: 'https://www.22biqu.com/',
+      url: 'https://www.qidian.com/book/123/',
     },
   });
   // @ts-ignore
@@ -730,8 +730,8 @@ test('chapter-content adapter validates observed public page requests without ca
 
   assert.equal(decision.contractVersion, SITE_ADAPTER_CANDIDATE_DECISION_VERSION);
   assert.equal(decision.adapterId, 'chapter-content');
-  assert.equal(decision.candidateId, '22biqu-home-candidate');
-  assert.equal(decision.siteKey, 'www.22biqu.com');
+  assert.equal(decision.candidateId, 'qidian-home-candidate');
+  assert.equal(decision.siteKey, 'qidian');
   assert.equal(decision.decision, 'accepted');
   assert.equal(Object.hasOwn(decision, 'artifactPath'), false);
   assert.equal(Object.hasOwn(decision, 'catalogPath'), false);
@@ -744,18 +744,18 @@ test('chapter-content adapter validates observed public page requests without ca
   });
   assert.equal(policy.contractVersion, SITE_ADAPTER_CATALOG_UPGRADE_POLICY_VERSION);
   assert.equal(policy.adapterId, 'chapter-content');
-  assert.equal(policy.siteKey, 'www.22biqu.com');
+  assert.equal(policy.siteKey, 'qidian');
   assert.equal(policy.allowCatalogUpgrade, false);
   assert.equal(policy.reasonCode, 'api-catalog-entry-blocked');
 
   // @ts-ignore
   const staticDecision = adapter.validateApiCandidate({
     candidate: createSyntheticCandidate({
-      id: '22biqu-static-candidate',
-      siteKey: 'www.22biqu.com',
+      id: 'qidian-static-candidate',
+      siteKey: 'qidian',
       endpoint: {
         method: 'GET',
-        url: 'https://www.22biqu.com/static/app.js',
+        url: 'https://www.qidian.com/static/app.js',
       },
     }),
   });

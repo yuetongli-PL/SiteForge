@@ -46,26 +46,26 @@ test('site registry and capabilities return default empty documents before first
 test('site registry upserts host operational metadata', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-registry-'));
   try {
-    await upsertSiteRegistryRecord(workspace, 'www.22biqu.com', {
-      canonicalBaseUrl: 'https://www.22biqu.com/',
-      siteKey: '22biqu',
+    await upsertSiteRegistryRecord(workspace, 'books.example.com', {
+      canonicalBaseUrl: 'https://books.example.com/',
+      siteKey: 'books',
       adapterId: 'chapter-content',
-      crawlerScriptPath: 'crawler-scripts/www.22biqu.com/crawler.py',
-      knowledgeBaseDir: 'knowledge-base/www.22biqu.com',
+      crawlerScriptPath: 'crawler-scripts/books.example.com/crawler.py',
+      knowledgeBaseDir: 'knowledge-base/books.example.com',
     });
-    await upsertSiteRegistryRecord(workspace, 'www.22biqu.com', {
+    await upsertSiteRegistryRecord(workspace, 'books.example.com', {
       latestDownloadMode: 'artifact-hit',
     });
 
     const stableRegistry = JSON.parse(await readFile(buildSiteRegistryPath(workspace), 'utf8'));
     const runtimeRegistry = JSON.parse(await readFile(buildSiteRuntimeRegistryPath(workspace), 'utf8'));
     const mergedRegistry = await readSiteRegistry(workspace);
-    assert.equal(stableRegistry.sites['www.22biqu.com'].canonicalBaseUrl, 'https://www.22biqu.com/');
-    assert.equal(stableRegistry.sites['www.22biqu.com'].siteKey, '22biqu');
-    assert.equal(stableRegistry.sites['www.22biqu.com'].adapterId, 'chapter-content');
-    assert.equal(stableRegistry.sites['www.22biqu.com'].latestDownloadMode, undefined);
-    assert.equal(runtimeRegistry.sites['www.22biqu.com'].latestDownloadMode, 'artifact-hit');
-    assert.equal(mergedRegistry.sites['www.22biqu.com'].latestDownloadMode, 'artifact-hit');
+    assert.equal(stableRegistry.sites['books.example.com'].canonicalBaseUrl, 'https://books.example.com/');
+    assert.equal(stableRegistry.sites['books.example.com'].siteKey, 'books');
+    assert.equal(stableRegistry.sites['books.example.com'].adapterId, 'chapter-content');
+    assert.equal(stableRegistry.sites['books.example.com'].latestDownloadMode, undefined);
+    assert.equal(runtimeRegistry.sites['books.example.com'].latestDownloadMode, 'artifact-hit');
+    assert.equal(mergedRegistry.sites['books.example.com'].latestDownloadMode, 'artifact-hit');
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -207,15 +207,15 @@ test('site capabilities replace array facts with the latest host truth', async (
 test('site registry and capabilities keep hosts isolated', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-isolation-'));
   try {
-    await upsertSiteRegistryRecord(workspace, 'www.22biqu.com', {
-      canonicalBaseUrl: 'https://www.22biqu.com/',
-      crawlerScriptPath: 'crawler-scripts/www.22biqu.com/crawler.py',
+    await upsertSiteRegistryRecord(workspace, 'books.example.com', {
+      canonicalBaseUrl: 'https://books.example.com/',
+      crawlerScriptPath: 'crawler-scripts/books.example.com/crawler.py',
     });
     await upsertSiteRegistryRecord(workspace, 'moodyz.com', {
       canonicalBaseUrl: 'https://moodyz.com/',
       repoSkillDir: 'skills/moodyz-works',
     });
-    await upsertSiteCapabilities(workspace, 'www.22biqu.com', {
+    await upsertSiteCapabilities(workspace, 'books.example.com', {
       capabilityFamilies: ['search-content', 'navigate-to-chapter'],
       supportedIntents: ['download-book'],
     });
@@ -227,12 +227,12 @@ test('site registry and capabilities keep hosts isolated', async () => {
     const registry = JSON.parse(await readFile(buildSiteRegistryPath(workspace), 'utf8'));
     const capabilities = JSON.parse(await readFile(buildSiteCapabilitiesPath(workspace), 'utf8'));
 
-    assert.equal(registry.sites['www.22biqu.com'].canonicalBaseUrl, 'https://www.22biqu.com/');
+    assert.equal(registry.sites['books.example.com'].canonicalBaseUrl, 'https://books.example.com/');
     assert.equal(registry.sites['moodyz.com'].canonicalBaseUrl, 'https://moodyz.com/');
-    assert.equal(registry.sites['www.22biqu.com'].repoSkillDir, undefined);
+    assert.equal(registry.sites['books.example.com'].repoSkillDir, undefined);
     assert.equal(registry.sites['moodyz.com'].crawlerScriptPath, undefined);
 
-    assert.deepEqual(capabilities.sites['www.22biqu.com'].supportedIntents, ['download-book']);
+    assert.deepEqual(capabilities.sites['books.example.com'].supportedIntents, ['download-book']);
     assert.deepEqual(capabilities.sites['moodyz.com'].supportedIntents, ['open-actress', 'open-work']);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -328,11 +328,11 @@ test('site index path overrides can isolate metadata writes from the workspace r
 test('site registry stores volatile runtime fields outside stable config while merged reads stay compatible', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'bwk-site-registry-runtime-split-'));
   try {
-    await upsertSiteRegistryRecord(workspace, 'www.22biqu.com', {
-      canonicalBaseUrl: 'https://www.22biqu.com/',
-      siteKey: '22biqu',
+    await upsertSiteRegistryRecord(workspace, 'books.example.com', {
+      canonicalBaseUrl: 'https://books.example.com/',
+      siteKey: 'books',
       adapterId: 'chapter-content',
-      knowledgeBaseDir: path.join(workspace, 'knowledge-base', 'www.22biqu.com'),
+      knowledgeBaseDir: path.join(workspace, 'knowledge-base', 'books.example.com'),
       latestDownloadMode: 'crawler-generated',
     });
 
@@ -340,17 +340,17 @@ test('site registry stores volatile runtime fields outside stable config while m
     const runtimeRegistry = JSON.parse(await readFile(buildSiteRuntimeRegistryPath(workspace), 'utf8'));
     const mergedRegistry = await readSiteRegistry(workspace);
 
-    assert.equal(stableRegistry.sites['www.22biqu.com'].canonicalBaseUrl, 'https://www.22biqu.com/');
-    assert.equal(stableRegistry.sites['www.22biqu.com'].knowledgeBaseDir, undefined);
-    assert.equal(stableRegistry.sites['www.22biqu.com'].latestDownloadMode, undefined);
+    assert.equal(stableRegistry.sites['books.example.com'].canonicalBaseUrl, 'https://books.example.com/');
+    assert.equal(stableRegistry.sites['books.example.com'].knowledgeBaseDir, undefined);
+    assert.equal(stableRegistry.sites['books.example.com'].latestDownloadMode, undefined);
 
-    assert.equal(runtimeRegistry.sites['www.22biqu.com'].knowledgeBaseDir, path.join(workspace, 'knowledge-base', 'www.22biqu.com'));
-    assert.equal(runtimeRegistry.sites['www.22biqu.com'].latestDownloadMode, 'crawler-generated');
-    assert.equal(typeof runtimeRegistry.sites['www.22biqu.com'].updatedAt, 'string');
+    assert.equal(runtimeRegistry.sites['books.example.com'].knowledgeBaseDir, path.join(workspace, 'knowledge-base', 'books.example.com'));
+    assert.equal(runtimeRegistry.sites['books.example.com'].latestDownloadMode, 'crawler-generated');
+    assert.equal(typeof runtimeRegistry.sites['books.example.com'].updatedAt, 'string');
 
-    assert.equal(mergedRegistry.sites['www.22biqu.com'].siteKey, '22biqu');
-    assert.equal(mergedRegistry.sites['www.22biqu.com'].knowledgeBaseDir, path.join(workspace, 'knowledge-base', 'www.22biqu.com'));
-    assert.equal(mergedRegistry.sites['www.22biqu.com'].latestDownloadMode, 'crawler-generated');
+    assert.equal(mergedRegistry.sites['books.example.com'].siteKey, 'books');
+    assert.equal(mergedRegistry.sites['books.example.com'].knowledgeBaseDir, path.join(workspace, 'knowledge-base', 'books.example.com'));
+    assert.equal(mergedRegistry.sites['books.example.com'].latestDownloadMode, 'crawler-generated');
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

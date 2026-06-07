@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import {
   runSiteForgeBuild,
@@ -60,7 +60,7 @@ function qidianLikeKnownPolicy() {
 function qidianLikeDownloadKnownPolicy() {
   return {
     ...qidianLikeKnownPolicy(),
-    siteKey: '22biqu',
+    siteKey: 'books',
     capabilityFamilies: [
       'download-content',
       'navigate-to-category',
@@ -295,6 +295,143 @@ test('dynamic shell pages can be completed by sanitized public rendered structur
       const report = await readJson(path.join(result.artifactDir, 'build_report.json'));
       assert.equal(report.summary.coverage.publicRendered.pages, 1);
       assert.equal(report.summary.coverage.publicRendered.nodes > 0, true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('known public route policies can recover setup synthetic fallback with rendered evidence', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-public-rendered-setup-recovery-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { sitemap: false }),
+      },
+    }), async (rootUrl) => {
+      await mkdir(path.join(workspace, 'config'), { recursive: true });
+      const registry = {
+        sites: {
+          '127.0.0.1': {
+            canonicalBaseUrl: rootUrl,
+            host: '127.0.0.1',
+            siteKey: 'rendered-recovery',
+            adapterId: 'rendered-recovery',
+            siteArchetype: 'catalog-detail',
+            downloadTaskTypes: ['video', 'media-bundle'],
+            blockedDownloadTaskTypes: ['video', 'media-bundle'],
+            downloadSupport: {
+              status: 'blocked',
+              supported: false,
+              taskTypes: ['video', 'media-bundle'],
+              availableTaskTypes: [],
+              blockedTaskTypes: ['video', 'media-bundle'],
+              reasonCode: 'native-resolver-required',
+            },
+          },
+        },
+      };
+      const capabilities = {
+        sites: {
+          '127.0.0.1': {
+            baseUrl: rootUrl,
+            host: '127.0.0.1',
+            siteKey: 'rendered-recovery',
+            adapterId: 'rendered-recovery',
+            primaryArchetype: 'catalog-detail',
+            capabilityFamilies: ['download-content', 'navigate-to-category', 'navigate-to-content', 'search-content'],
+            supportedIntents: ['download-video', 'open-category', 'open-video', 'search-video'],
+            safeActionKinds: ['navigate'],
+            downloader: {
+              status: 'blocked',
+              supported: false,
+              taskTypes: ['video', 'media-bundle'],
+              availableTaskTypes: [],
+              blockedTaskTypes: ['video', 'media-bundle'],
+              reasonCode: 'native-resolver-required',
+            },
+            publicRouteTemplates: [
+              { id: 'home', path: '/', pageType: 'home', capabilityFamilies: ['navigate-to-category'], seedable: true },
+              { id: 'latest', path: '/latest/', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: true },
+              { id: 'detail-template', pathTemplate: '/videos/{videoId}/', pageType: 'book-detail-page', capabilityFamilies: ['navigate-to-content'], seedable: false },
+            ],
+          },
+        },
+      };
+      await writeFile(path.join(workspace, 'config', 'site-registry.json'), `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
+      await writeFile(path.join(workspace, 'config', 'site-capabilities.json'), `${JSON.stringify(capabilities, null, 2)}\n`, 'utf8');
+
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'public-rendered-setup-recovery',
+        now: new Date('2026-05-16T04:04:00.000Z'),
+        fetchDelayMs: 0,
+        renderJs: true,
+      });
+      assert.equal(setup.setupPlan.buildReadiness.reasonCode, 'setup-public-rendered-recovery-pending');
+      assert.equal(setup.setupPlan.evidenceQuality.publicRenderedRecoveryCandidate, true);
+
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...setup.buildOptions,
+        cwd: workspace,
+        buildId: 'public-rendered-setup-recovery',
+        now: new Date('2026-05-16T04:04:00.000Z'),
+        fetchDelayMs: 0,
+        renderJs: true,
+        publicRenderedStructureProvider: async () => ({
+          publicRenderedPages: [{
+            url: rootUrl,
+            pageType: 'home',
+            title: 'Rendered recovery home',
+            listPresent: true,
+            visibleItemCount: 12,
+            emptyStatePresent: false,
+            links: [
+              { href: new URL('/latest/', rootUrl).toString(), label: 'Latest', semanticKind: 'ranking', routeTemplate: '/latest' },
+              { href: new URL('/videos/sample/', rootUrl).toString(), label: 'Sample public item', semanticKind: 'media', routeTemplate: '/videos/:id' },
+            ],
+            forms: [{
+              label: 'Search',
+              method: 'GET',
+              action: new URL('/search', rootUrl).toString(),
+              inputs: [{ name: 'q', type: 'search', label: 'keyword' }],
+            }],
+            structureItems: [
+              { nodeType: 'content', structureType: 'ranking_link_group', visibleItemCount: 1, listPresent: true, routeTemplates: ['/latest'] },
+              { nodeType: 'content', structureType: 'media_link_group', visibleItemCount: 1, listPresent: true, routeTemplates: ['/videos/:id'] },
+              { nodeType: 'operation', structureType: 'search_route_group', visibleItemCount: 1, listPresent: true, routeTemplates: ['/search'] },
+            ],
+          }],
+        }),
+      });
+
+      assert.equal(result.status, 'success');
+      const buildReport = await readJson(path.join(result.artifactDir, 'build_report.json'));
+      assert.equal(buildReport.setupProfile.buildReadiness.reasonCode, 'setup-public-rendered-recovery-pending');
+      assert.equal(buildReport.setupProfile.evidenceQuality.publicRenderedRecoveryCandidate, true);
+
+      const crawlStatic = await readJson(path.join(result.artifactDir, 'crawl_static.json'));
+      assert.equal(crawlStatic.summary.staticBlockedReason, 'siteforge-static-crawl-empty');
+      assert.equal(crawlStatic.summary.renderedEvidenceRequired, true);
+      assert.equal(crawlStatic.status, 'skipped');
+
+      const crawlRendered = await readJson(path.join(result.artifactDir, 'crawl_rendered.json'));
+      assert.equal(crawlRendered.status, 'success');
+      assert.equal(crawlRendered.publicRenderedPages.length, 1);
+
+      const capabilitiesResult = await readJson(path.join(result.artifactDir, 'capabilities.json'));
+      assert.equal(capabilitiesResult.capabilities.some((capability) => capability.status === 'active'), true);
+      assert.deepEqual(
+        fineGrainedNavigationCapabilityNames(capabilitiesResult.capabilities),
+        [],
+        'known catalog policies with rendered structure should use aggregate capabilities instead of per-route capabilities',
+      );
+      assert.equal(
+        capabilitiesResult.capabilities.some((capability) => capability.name === 'download catalog content' && capability.status === 'active'),
+        false,
+        'blocked known-site download policy must not activate catalog download capability',
+      );
     });
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -538,6 +675,8 @@ test('chapter-content download policy generates parameterized book text download
       assert.equal(downloadBook.object, 'public book text');
       assert.equal(downloadBook.risk_level, 'download_high');
       assert.equal(downloadBook.mode, 'download');
+      assert.equal(downloadBook.providerId, 'known_site_downloader');
+      assert.equal(downloadBook.evidenceMatrix.providerId, 'known_site_downloader');
       assert.deepEqual(downloadBook.inputs.map((input) => input.name), ['book_title', 'book_url', 'output_dir']);
       assert.equal(downloadBook.executionPlan.mode, 'download');
       assert.equal(downloadBook.executionPlan.steps[0].kind, 'downloader_task_descriptor');

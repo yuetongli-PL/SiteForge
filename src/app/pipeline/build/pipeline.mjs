@@ -9050,14 +9050,26 @@ function buildExecutionPlan(capabilityId, {
 }
 
 function disabledActionForAffordance(affordance) {
-  const text = [
-    affordance?.kind,
-    affordance?.label,
-    affordance?.method,
-    affordance?.endpoint,
-    affordance?.href,
-    affordance?.safety,
-  ].filter(Boolean).join(' ');
+  const isReadOnlyLink = ['link', 'download'].includes(String(affordance?.kind ?? '').toLowerCase())
+    && ['read_only', 'safe'].includes(String(affordance?.safety ?? '').toLowerCase());
+  const text = isReadOnlyLink
+    ? [
+      affordance?.kind,
+      affordance?.method,
+      affordance?.endpoint,
+      affordance?.href,
+      affordance?.semanticKind,
+      affordance?.structureType,
+      affordance?.safety,
+    ].filter(Boolean).join(' ')
+    : [
+      affordance?.kind,
+      affordance?.label,
+      affordance?.method,
+      affordance?.endpoint,
+      affordance?.href,
+      affordance?.safety,
+    ].filter(Boolean).join(' ');
   const forced = isReadOnlyFollowSurface(affordance)
     ? findForcedDisabledActions(text).filter((action) => action !== 'follow' && action !== 'unfollow')
     : findForcedDisabledActions(text);

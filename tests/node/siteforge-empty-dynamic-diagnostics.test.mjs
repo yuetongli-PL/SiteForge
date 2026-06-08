@@ -444,6 +444,7 @@ test('qidian-like dynamic public site maps rendered book structures to chapter-c
     await withTestSite(qidianLikeDynamicRoutes, async (rootUrl) => {
       const url = (route) => new URL(route, rootUrl).toString();
       const sensitiveValue = 'synthetic-sensitive-qidian-value';
+      const forcedActionLikeChapterTitle = '\u7b2c169\u7ae0 \u88ab\u6c61\u6ce5\u8986\u76d6\u7684\u57ce\u5e02';
       const result = await runSiteForgeBuild(rootUrl, {
         cwd: workspace,
         buildId: 'qidian-like-rendered',
@@ -462,10 +463,18 @@ test('qidian-like dynamic public site maps rendered book structures to chapter-c
               listPresent: true,
               visibleItemCount: 6,
               routeTemplates: ['/all/', '/rank/', '/book/:id/'],
-              links: [{
-                href: `${url('/book/123/')}?token=${sensitiveValue}`,
-                label: `sid=${sensitiveValue}`,
-              }],
+              links: [
+                {
+                  href: `${url('/book/123/')}?token=${sensitiveValue}`,
+                  label: `sid=${sensitiveValue}`,
+                },
+                {
+                  href: url('/chapter/123/1/'),
+                  label: forcedActionLikeChapterTitle,
+                  semanticKind: 'navigation',
+                  structureType: 'chapter_link',
+                },
+              ],
               controls: [{
                 kind: 'button',
                 label: `localStorage ${sensitiveValue}`,
@@ -570,6 +579,17 @@ test('qidian-like dynamic public site maps rendered book structures to chapter-c
       const bookRankings = capabilities.capabilities.find((capability) => capability.name === 'browse book rankings');
       assert.equal(bookRankings?.userValue, '查看公开图书榜单和排行路由。');
       assert.equal(bookRankings?.intents?.some((intent) => intent.canonicalUtterance === '打开小说排行'), true);
+
+      assert.equal(
+        capabilities.capabilities.some((capability) => JSON.stringify(capability).includes(forcedActionLikeChapterTitle)),
+        false,
+        'chapter titles that contain forced-action words must not become disabled risk capabilities or intents',
+      );
+      assert.equal(
+        capabilities.capabilities.some((capability) => capability.name === 'disabled overwrite action'),
+        false,
+        'read-only chapter links must not be promoted to disabled overwrite capabilities',
+      );
 
       const artifactFiles = [
         'crawl_rendered.json',

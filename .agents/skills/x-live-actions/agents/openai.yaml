@@ -1,0 +1,4 @@
+interface:
+  display_name: "X Live Actions"
+  short_description: "Use verified X evidence and page-based UX/love trend sampling"
+  default_prompt: "Use $X只读动作 to answer my X request with verified read-only execution, immediate API-local cursor fallback to Browser Bridge/page collection, cooldown-respecting same-surface resume, or controlled product/model UX and user-love trend sampling."

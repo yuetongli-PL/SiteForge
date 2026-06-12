@@ -24,6 +24,9 @@ siteforge.local.json
 .playwright-mcp/
 profiles/
 skills/
+!.agents/
+!.agents/skills/
+!.agents/skills/**
 crawler-scripts/
 _tmp_*.html
 tmp-*.html

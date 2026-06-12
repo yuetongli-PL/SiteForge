@@ -924,7 +924,7 @@ async function executeCommand(command, args, options = {}) {
   });
 }
 
-function classifyFailure({ exitCode, stdout, stderr, parsed }) {
+function classifyFailure({ exitCode = null, stdout = '', stderr = '', parsed = null } = {}) {
   const text = `${stdout ?? ''}\n${stderr ?? ''}\n${JSON.stringify(parsed ?? {})}`.toLowerCase();
   if (/no_replay_verified_instagram_api|no verified api/u.test(text)) return {
     layer: 'api',

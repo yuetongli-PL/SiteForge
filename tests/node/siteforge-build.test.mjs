@@ -6369,8 +6369,10 @@ test('browser bridge API replay bounds managed session close', async () => {
   assert.equal(replay.status, 'skipped');
   assert.equal(replay.reasonCode, 'browser_bridge_replay_unavailable');
   assert.equal(closeCalled, true);
-  assert.equal(providerRequest.options.browserBridgeUserAgent, 'SiteForgeManagedReplayTest/1.0');
-  assert.equal(providerRequest.launchArgs.includes('--user-agent=SiteForgeManagedReplayTest/1.0'), true);
+  const capturedProviderRequest = /** @type {any} */ (providerRequest);
+  assert.ok(capturedProviderRequest);
+  assert.equal(capturedProviderRequest.options.browserBridgeUserAgent, 'SiteForgeManagedReplayTest/1.0');
+  assert.equal(capturedProviderRequest.launchArgs.includes('--user-agent=SiteForgeManagedReplayTest/1.0'), true);
   assert.equal(Date.now() - started < 3000, true);
 });
 

@@ -306,10 +306,10 @@ function buildLayerScores() {
     },
   ].map((layer) => {
     const metrics = layer.metrics.map(([name, weight, score, rationale]) => ({ name, weight, score, rationale }));
-    const score = Number((metrics.reduce((sum, metric) => sum + metric.score * metric.weight, 0) / 100).toFixed(2));
+    const score = Number((metrics.reduce((sum, metric) => sum + Number(metric.score) * Number(metric.weight), 0) / 100).toFixed(2));
     return { ...layer, metrics, score };
   });
-  const totalScore = Number((layers.reduce((sum, layer) => sum + layer.score * layer.weight, 0) / 100).toFixed(2));
+  const totalScore = Number((layers.reduce((sum, layer) => sum + Number(layer.score) * Number(layer.weight), 0) / 100).toFixed(2));
   return { layers, totalScore };
 }
 

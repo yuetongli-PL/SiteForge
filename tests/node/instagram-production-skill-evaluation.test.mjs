@@ -164,6 +164,18 @@ function baseArtifacts(overrides = {}) {
         contentCollectionComplete: false,
       },
     },
+    relationAttemptSummary: {
+      status: 'blocked',
+      productionEvidence: {
+        contentCollectionComplete: false,
+      },
+    },
+    degradedSummary: {
+      status: 'completed',
+      productionEvidence: {
+        contentCollectionComplete: false,
+      },
+    },
     plannerCheck: {
       ok: true,
       safety: {
@@ -171,6 +183,8 @@ function baseArtifacts(overrides = {}) {
         sensitiveMaterialRead: false,
       },
     },
+    apiCaptureProbe: null,
+    apiReplayAudit: null,
     profileExists: false,
   };
   return {

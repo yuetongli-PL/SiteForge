@@ -28,6 +28,10 @@ import {
   applyDefaultProductionRuntimeProviderRegistry,
 } from '../../src/entrypoints/build/run-build.mjs';
 
+function resultSummaryOf(report) {
+  return /** @type {any} */ (report.resultSummary);
+}
+
 function createRequest({
   capabilityId = 'capability:synthetic:read-catalog',
   executionContractRef = 'execution-contract:synthetic-read-catalog',
@@ -1187,10 +1191,11 @@ test('zhihu_readonly_provider executes search posts with sanitized HTTP summary 
   assert.deepEqual(provider.canExecute(descriptor), { allowed: true });
 
   const report = await provider.run(descriptor);
+  const summary = resultSummaryOf(report);
   assert.equal(report.status, 'completed');
   assert.equal(report.providerId, ZHIHU_READONLY_PROVIDER_ID);
-  assert.equal(report.resultSummary.outcome, 'zhihu_search_read_completed');
-  assert.equal(report.resultSummary.response.bodySummary.resultContainerSignals, 2);
+  assert.equal(summary.outcome, 'zhihu_search_read_completed');
+  assert.equal(summary.response.bodySummary.resultContainerSignals, 2);
   assert.doesNotMatch(JSON.stringify(report), /SearchResult|ContentItem|set-cookie|Authorization|rawResponseBody|browserProfilePath/iu);
 
   const missingSlot = provider.canExecute({
@@ -1238,9 +1243,10 @@ test('zhihu_readonly_provider executes hot and detail reads with sanitized summa
       capabilityId: 'capability:www.zhihu.com:list-hot-posts',
     },
   });
+  const hotSummary = resultSummaryOf(hotReport);
   assert.equal(hotReport.status, 'completed');
-  assert.equal(hotReport.resultSummary.outcome, 'zhihu_hot_posts_read_completed');
-  assert.equal(hotReport.resultSummary.request.pathTemplate, '/hot');
+  assert.equal(hotSummary.outcome, 'zhihu_hot_posts_read_completed');
+  assert.equal(hotSummary.request.pathTemplate, '/hot');
 
   const hotBroadcastReport = await provider.run({
     ...baseDescriptor,
@@ -1250,9 +1256,10 @@ test('zhihu_readonly_provider executes hot and detail reads with sanitized summa
       capabilityId: 'capability:www.zhihu.com:list-hot-broadcasts',
     },
   });
+  const hotBroadcastSummary = resultSummaryOf(hotBroadcastReport);
   assert.equal(hotBroadcastReport.status, 'completed');
-  assert.equal(hotBroadcastReport.resultSummary.outcome, 'zhihu_hot_broadcasts_read_completed');
-  assert.equal(hotBroadcastReport.resultSummary.request.pathTemplate, '/drama/feed');
+  assert.equal(hotBroadcastSummary.outcome, 'zhihu_hot_broadcasts_read_completed');
+  assert.equal(hotBroadcastSummary.request.pathTemplate, '/drama/feed');
 
   const topicReport = await provider.run({
     ...baseDescriptor,
@@ -1266,10 +1273,11 @@ test('zhihu_readonly_provider executes hot and detail reads with sanitized summa
       slotValues: { topic_id: '19607535' },
     },
   });
+  const topicSummary = resultSummaryOf(topicReport);
   assert.equal(topicReport.status, 'completed');
-  assert.equal(topicReport.resultSummary.outcome, 'zhihu_topic_discussions_read_completed');
-  assert.equal(topicReport.resultSummary.request.pathTemplate, '/topic/{topic_id}/hot');
-  assert.equal(topicReport.resultSummary.request.topicSlotUsed, true);
+  assert.equal(topicSummary.outcome, 'zhihu_topic_discussions_read_completed');
+  assert.equal(topicSummary.request.pathTemplate, '/topic/{topic_id}/hot');
+  assert.equal(topicSummary.request.topicSlotUsed, true);
 
   const userAnswersReport = await provider.run({
     ...baseDescriptor,
@@ -1283,10 +1291,11 @@ test('zhihu_readonly_provider executes hot and detail reads with sanitized summa
       slotValues: { account: 'zhihuadmin' },
     },
   });
+  const userAnswersSummary = resultSummaryOf(userAnswersReport);
   assert.equal(userAnswersReport.status, 'completed');
-  assert.equal(userAnswersReport.resultSummary.outcome, 'zhihu_user_answers_read_completed');
-  assert.equal(userAnswersReport.resultSummary.request.pathTemplate, '/people/{account}/answers');
-  assert.equal(userAnswersReport.resultSummary.request.accountSlotUsed, true);
+  assert.equal(userAnswersSummary.outcome, 'zhihu_user_answers_read_completed');
+  assert.equal(userAnswersSummary.request.pathTemplate, '/people/{account}/answers');
+  assert.equal(userAnswersSummary.request.accountSlotUsed, true);
 
   const questionReport = await provider.run({
     ...baseDescriptor,
@@ -1300,9 +1309,10 @@ test('zhihu_readonly_provider executes hot and detail reads with sanitized summa
       slotValues: { question_id: '19550228' },
     },
   });
+  const questionSummary = resultSummaryOf(questionReport);
   assert.equal(questionReport.status, 'completed');
-  assert.equal(questionReport.resultSummary.outcome, 'zhihu_question_detail_read_completed');
-  assert.equal(questionReport.resultSummary.request.pathTemplate, '/question/{question_id}');
+  assert.equal(questionSummary.outcome, 'zhihu_question_detail_read_completed');
+  assert.equal(questionSummary.request.pathTemplate, '/question/{question_id}');
 
   const answerReport = await provider.run({
     ...baseDescriptor,
@@ -1316,9 +1326,10 @@ test('zhihu_readonly_provider executes hot and detail reads with sanitized summa
       slotValues: { question_id: '19550228', answer_id: '25354498' },
     },
   });
+  const answerSummary = resultSummaryOf(answerReport);
   assert.equal(answerReport.status, 'completed');
-  assert.equal(answerReport.resultSummary.outcome, 'zhihu_answer_detail_read_completed');
-  assert.equal(answerReport.resultSummary.request.pathTemplate, '/question/{question_id}/answer/{answer_id}');
+  assert.equal(answerSummary.outcome, 'zhihu_answer_detail_read_completed');
+  assert.equal(answerSummary.request.pathTemplate, '/question/{question_id}/answer/{answer_id}');
 
   const missingQuestion = provider.canExecute({
     ...baseDescriptor,
@@ -1409,18 +1420,19 @@ test('zhihu_readonly_provider rejects bulk answer export without local artifacts
   });
 
   const report = await provider.run(descriptor);
+  const summary = resultSummaryOf(report);
   assert.equal(fetchCalled, false);
   assert.equal(report.status, 'failed');
   assert.equal(report.providerId, ZHIHU_READONLY_PROVIDER_ID);
   assert.equal(report.reasonCode, 'runtime.zhihu_answer_export_disallowed');
   assert.equal(report.runtimeExecuted, true);
   assert.equal(report.sideEffectAttempted, false);
-  assert.equal(report.resultSummary.runtimeMode, 'zhihu_answer_export_guard_v1');
-  assert.equal(report.resultSummary.responseMaterial, 'sanitized_summary_only');
-  assert.equal(report.resultSummary.requestedSurface, 'zhihu_question_answers');
-  assert.equal(report.resultSummary.contentPersistence, 'disallowed');
-  assert.equal(report.resultSummary.localArtifactCreation, 'not_attempted');
-  assert.deepEqual(report.resultSummary.artifactRefs, []);
+  assert.equal(summary.runtimeMode, 'zhihu_answer_export_guard_v1');
+  assert.equal(summary.responseMaterial, 'sanitized_summary_only');
+  assert.equal(summary.requestedSurface, 'zhihu_question_answers');
+  assert.equal(summary.contentPersistence, 'disallowed');
+  assert.equal(summary.localArtifactCreation, 'not_attempted');
+  assert.deepEqual(summary.artifactRefs, []);
   assertSafeReport(report);
   assert.doesNotMatch(JSON.stringify(report), /LONG_ANSWER_BODY_SHOULD_NOT_LEAK|AnswerItem|rawResponseBody|localIndex|cache-index|items\.jsonl/iu);
 

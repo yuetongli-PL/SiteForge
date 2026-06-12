@@ -147,10 +147,11 @@ test('build CLI materializes cookie env only into the runtime cookie header fiel
       persistedEnvReader: async () => '',
     }),
     (error) => {
-      assert.match(error.message, /Environment variable MISSING_COOKIE is empty or not set/u);
-      assert.equal(error.reasonCode, 'runtime.cookie_env_missing');
-      assert.equal(error.code, 'runtime.cookie_env_missing');
-      assert.match(error.reasonAction, /Set MISSING_COOKIE as a process or Windows User\/Machine environment variable/u);
+      const runtimeError = /** @type {any} */ (error);
+      assert.match(runtimeError.message, /Environment variable MISSING_COOKIE is empty or not set/u);
+      assert.equal(runtimeError.reasonCode, 'runtime.cookie_env_missing');
+      assert.equal(runtimeError.code, 'runtime.cookie_env_missing');
+      assert.match(runtimeError.reasonAction, /Set MISSING_COOKIE as a process or Windows User\/Machine environment variable/u);
       return true;
     },
   );

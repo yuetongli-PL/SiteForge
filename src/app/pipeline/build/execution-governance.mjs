@@ -392,6 +392,9 @@ function operationKindForPlan(capability = /** @type {any} */ ({}), plan = /** @
 function runtimeKindForCapability(capability = /** @type {any} */ ({}), plan = /** @type {any} */ ({})) {
   const providerId = normalizeToken(capability.providerId ?? capability.runtimeProviderId ?? capability.runtimeMode);
   const operationKind = operationKindForPlan(capability, plan);
+  if (providerId === 'authorized_summary') {
+    return 'authorized_summary';
+  }
   if (providerId.includes('browser') || planSteps(plan).some((step) => step?.runtimeBindingId)) {
     return 'browser_bridge';
   }

@@ -297,6 +297,10 @@ import {
   isReadOnlyApiMethod,
   normalizeApiMethod,
 } from './api-readonly-policy.mjs';
+import {
+  SITE_CAPABILITY_EXECUTION_SCHEMA_VERSION,
+  SITE_CAPABILITY_EXECUTION_VERSION,
+} from '../../../domain/policies/execution/index.mjs';
 
 export { SITEFORGE_BUILD_STAGE_NAMES } from './stage-plan.mjs';
 export { renderCapabilityIntentSummaryHtml } from './capability-intent-html-render.mjs';

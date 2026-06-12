@@ -92,7 +92,7 @@ function supportsApiRead(descriptor = {}) {
 function slotBindingsFromDescriptor({
   executionContract,
   capability,
-} = {}) {
+} = /** @type {any} */ ({})) {
   const bindings = [
     ...(executionContract?.payloadTemplate?.slotBindings ?? []),
     ...(capability?.inputs ?? []),
@@ -113,7 +113,7 @@ function slotBindingsFromDescriptor({
 function routeTemplateFromDescriptor({
   executionContract,
   capability,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return normalizeText(
     executionContract?.payloadTemplate?.steps?.find?.((step) => normalizeText(step?.routeTemplate))?.routeTemplate
       ?? capability?.routeTemplate
@@ -125,7 +125,7 @@ function routeTemplateFromDescriptor({
 function pageKindFromDescriptor({
   executionContract,
   capability,
-} = {}) {
+} = /** @type {any} */ ({})) {
   return normalizeText(
     executionContract?.payloadTemplate?.steps?.find?.((step) => normalizeText(step?.pageKind))?.pageKind
       ?? capability?.pageKind

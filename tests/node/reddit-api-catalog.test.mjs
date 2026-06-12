@@ -943,7 +943,14 @@ test('Reddit repo policy uses social discussion semantics instead of book catalo
   assert.equal(registryPolicy.siteKey, 'reddit');
   assert.equal(registryPolicy.adapterId, 'reddit');
   assert.equal(registryPolicy.siteArchetype, 'social-content');
+  assert.equal(registryPolicy.repoSkillDir, 'skills/reddit');
+  assert.equal(registryPolicy.auth?.required, true);
+  assert.equal(registryPolicy.auth?.mode, 'browser');
+  assert.equal(registryPolicy.auth?.evidencePersistence, 'sanitized-structure-only');
+  assert.equal(registryPolicy.auth?.sessionMaterialPersistence, 'forbidden');
   assert.equal(capabilityPolicy.primaryArchetype, 'social-content');
+  assert.equal(capabilityPolicy.auth?.required, true);
+  assert.equal(capabilityPolicy.auth?.mode, 'browser');
   assert.equal(capabilityPolicy.capabilityFamilies.includes('query-social-content'), true);
   assert.equal(capabilityPolicy.capabilityFamilies.includes('query-social-relations'), true);
   assert.equal(capabilityPolicy.capabilityFamilies.includes('query-comment-thread'), true);
@@ -961,6 +968,9 @@ test('Reddit repo policy uses social discussion semantics instead of book catalo
   assert.equal(capabilityPolicy.supportedIntents.includes('list-moderation-queue'), true);
   assert.equal(capabilityPolicy.supportedIntents.includes('record-disabled-submit'), true);
   assert.equal(capabilityPolicy.supportedIntents.includes('record-disabled-vote'), true);
+  assert.equal(capabilityPolicy.disabledActionKinds.includes('publish'), true);
+  assert.equal(capabilityPolicy.disabledActionKinds.includes('delete'), true);
+  assert.equal(capabilityPolicy.disabledActionKinds.includes('payment'), true);
   assert.equal(capabilityPolicy.supportedIntents.includes('open-book'), false);
   assert.equal(capabilityPolicy.supportedIntents.includes('search-book'), false);
 });

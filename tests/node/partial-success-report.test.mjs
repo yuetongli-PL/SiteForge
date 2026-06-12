@@ -67,6 +67,36 @@ test('partial success report reasons combine verification, setup, and capability
   assert.equal(reasons.some((reason) => /verification_report/u.test(reason)), false);
 });
 
+test('partial success report ignores non-recommended setup review gaps', () => {
+  const reasons = buildPartialSuccessReasons({
+    context: {
+      options: { deep: true, privacyMode: 'standard' },
+      policy: { captureNetwork: true },
+    },
+    report: {
+      summary: { verificationStatus: 'passed' },
+      warnings: [],
+    },
+    setupCollectionReview: {
+      summary: {
+        capabilities: { missing: 3 },
+        intents: { missing: 2 },
+      },
+      missingRecordCount: 5,
+      missingRecords: [
+        { kind: 'capabilities', id: 'download-media', recommended: false },
+        { kind: 'intents', id: 'open-settings-page', recommended: false },
+      ],
+    },
+    capabilityState: {
+      evidence_status_summary: {},
+      groups: {},
+    },
+  });
+
+  assert.equal(reasons.some((reason) => /lack confirmation/u.test(reason)), false);
+});
+
 test('partial success report derives user-facing result status from reasons', () => {
   assert.equal(resultStatusFromBuild({
     legacyStatus: 'failed',

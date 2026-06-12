@@ -42,3 +42,15 @@ test('user report warnings include failure reason only for failed results', () =
   assert.equal(buildUserFacingWarnings({ reason: 'Fix robots and rerun.' }, 'success').includes('Fix robots and rerun.'), false);
   assert.equal(buildUserFacingWarnings({ reason: 'Fix robots and rerun.' }, 'failed').includes('Fix robots and rerun.'), true);
 });
+
+test('user report warnings omit stale validation warning after verification passes', () => {
+  const warnings = buildUserFacingWarnings({
+    warnings: ['validation-failed', 'robots-disallowed'],
+    summary: {
+      verificationStatus: 'passed',
+    },
+  }, 'partial_success');
+
+  assert.equal(warnings.includes('Verification did not pass; see verification_report.json.'), false);
+  assert.equal(warnings.includes('robots.txt blocked the candidate crawl scope.'), true);
+});

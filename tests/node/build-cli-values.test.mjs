@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { applyLocalBuildConfig, parseCliArgs } from '../../src/entrypoints/build/run-build.mjs';
+import { applyLocalBuildConfig, materializeCookieSourceOptions, parseCliArgs } from '../../src/entrypoints/build/run-build.mjs';
 import {
   ACCEPTED_ENUM_VALUE_BUILD_FLAGS,
   PUBLIC_BUILD_HELP,
@@ -110,6 +110,87 @@ test('build CLI parses cookie auth flags without exposing raw cookie argv suppor
   assert.throws(() => parseCliArgs(['https://example.com/', '--max-sitemaps']), /Missing value for --max-sitemaps/u);
 });
 
+test('build CLI materializes cookie env only into the runtime cookie header field', async () => {
+  const parsed = parseCliArgs([
+    'https://weibo.com/',
+    '--task',
+    'search posts',
+    '--slot',
+    'query=openai',
+    '--execute',
+    '--cookie-env',
+    'SITEFORGE_TEST_RUNTIME_COOKIE',
+  ]);
+  const materialized = await materializeCookieSourceOptions(parsed.options, {
+    env: {
+      SITEFORGE_TEST_RUNTIME_COOKIE: 'sf_fixture_cookie=synthetic_weibo_cookie',
+    },
+  });
+
+  assert.equal(materialized.executionTask, 'search posts');
+  assert.equal(materialized.runtimeExecutionContext.slotValues.query, 'openai');
+  assert.equal(materialized.apiReplayCookieHeader, 'sf_fixture_cookie=synthetic_weibo_cookie');
+  assert.equal(materialized.cookieEnv, 'SITEFORGE_TEST_RUNTIME_COOKIE');
+  const persistedMaterialized = await materializeCookieSourceOptions(parsed.options, {
+    env: {},
+    persistedEnvReader: async (name) => (
+      name === 'SITEFORGE_TEST_RUNTIME_COOKIE'
+        ? 'sf_persisted_fixture_cookie=synthetic_weibo_cookie'
+        : ''
+    ),
+  });
+  assert.equal(persistedMaterialized.apiReplayCookieHeader, 'sf_persisted_fixture_cookie=synthetic_weibo_cookie');
+
+  await assert.rejects(
+    () => materializeCookieSourceOptions({ cookieEnv: 'MISSING_COOKIE' }, {
+      env: {},
+      persistedEnvReader: async () => '',
+    }),
+    (error) => {
+      assert.match(error.message, /Environment variable MISSING_COOKIE is empty or not set/u);
+      assert.equal(error.reasonCode, 'runtime.cookie_env_missing');
+      assert.equal(error.code, 'runtime.cookie_env_missing');
+      assert.match(error.reasonAction, /Set MISSING_COOKIE as a process or Windows User\/Machine environment variable/u);
+      return true;
+    },
+  );
+});
+
+test('build CLI reports missing cookie env as a structured runtime failure', () => {
+  const result = runBuildCli([
+    'https://weibo.com/',
+    '--task',
+    'search posts',
+    '--execute',
+    '--slot',
+    'query=gaokao',
+    '--auth',
+    'cookie',
+    '--cookie-env',
+    'SITEFORGE_TEST_MISSING_RUNTIME_COOKIE',
+    '--json',
+  ]);
+
+  assert.notEqual(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.reasonCode, 'runtime.cookie_env_missing');
+  assert.equal(
+    payload.reason,
+    'Environment variable SITEFORGE_TEST_MISSING_RUNTIME_COOKIE is empty or not set',
+  );
+  assert.match(
+    payload.reasonAction,
+    /Set SITEFORGE_TEST_MISSING_RUNTIME_COOKIE as a process or Windows User\/Machine environment variable/u,
+  );
+  const sensitiveCookiePattern = new RegExp([
+    'synthetic_weibo_cookie',
+    'S' + 'CF=',
+    'S' + 'UB=',
+    'WBP' + 'SESS=',
+  ].join('|'), 'u');
+  assert.doesNotMatch(result.stdout, sensitiveCookiePattern);
+});
+
 test('explicit browser auth keeps local cookie config on the Browser Bridge path', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-build-cli-browser-cookie-config-'));
   try {
@@ -128,6 +209,7 @@ test('explicit browser auth keeps local cookie config on the Browser Bridge path
             },
             build: {
               browserBridgeManaged: true,
+              browserBridgeApiReplayManaged: true,
             },
           },
         ],
@@ -144,6 +226,8 @@ test('explicit browser auth keeps local cookie config on the Browser Bridge path
     assert.equal(options.cookieHeader, undefined);
     assert.equal(options.apiReplayCookieHeader, 'sid=SYNTHETIC_BROWSER_BRIDGE_COOKIE; uid=123');
     assert.equal(options.browserBridgeManaged, true);
+    assert.equal(options.browserBridgeApiReplayManaged, true);
+    assert.equal(options.localBuildConfig.build.browserBridgeApiReplayManaged, true);
     assert.deepEqual(options.localBuildConfig.authRoutes, ['/subreddits/mine/']);
     assert.deepEqual(options.localBuildConfig.publicRevisitRoutes, ['/']);
   } finally {
@@ -157,6 +241,28 @@ test('build CLI parses robots remediation plan flag', () => {
   assert.equal(parsed.options.json, true);
 });
 
+test('build CLI parses repeated runtime task slots without mixing them into task text', () => {
+  const parsed = parseCliArgs([
+    'https://example.com/',
+    '--task',
+    'search posts',
+    '--slot',
+    'query=openai',
+    '--slot',
+    'section=top',
+    '--execute',
+  ]);
+
+  assert.equal(parsed.options.executionTask, 'search posts');
+  assert.equal(parsed.options.execute, true);
+  assert.deepEqual(parsed.options.runtimeExecutionContext.slotValues, {
+    query: 'openai',
+    section: 'top',
+  });
+  assert.throws(() => parseCliArgs(['https://example.com/', '--slot', 'query']), /--slot must use name=value/u);
+  assert.throws(() => parseCliArgs(['https://example.com/', '--slot', '1query=value']), /--slot name must start with a letter/u);
+});
+
 test('internal build entrypoint parses hidden raw network flag', () => {
   const parsed = parseCliArgs(['https://example.com/', '--internal-raw-network']);
   assert.equal(parsed.options.internalRawNetwork, true);
@@ -164,6 +270,17 @@ test('internal build entrypoint parses hidden raw network flag', () => {
   assert.equal(parsed.options.captureNetwork, true);
   assert.equal(parsed.options.renderJs, true);
   assert.equal(parsed.options.renderJsExplicit, true);
+});
+
+test('internal build entrypoint parses hidden Browser Bridge managed flags', () => {
+  const parsed = parseCliArgs([
+    'https://x.com/',
+    '--browser-bridge-managed',
+    '--browser-bridge-api-replay-managed',
+  ]);
+
+  assert.equal(parsed.options.browserBridgeManaged, true);
+  assert.equal(parsed.options.browserBridgeApiReplayManaged, true);
 });
 
 test('build CLI parses rendered browser headless flags', () => {

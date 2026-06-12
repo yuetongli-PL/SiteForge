@@ -28,6 +28,11 @@ async function writeJsonl(filePath, rows) {
   await fs.writeFile(filePath, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 }
 
+async function writeJson(filePath, value) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 function parseJsonLine(line) {
   return JSON.parse(line);
 }
@@ -1632,4 +1637,188 @@ test('x research task runner rejects resume when target fingerprint changes', as
     }),
     /resume target mismatch/u,
   );
+});
+
+async function createVerifiedBrowserBridgeBuild(root) {
+  const buildDir = path.join(root, 'build');
+  const basePage = {
+    sourceLayer: 'authenticated',
+    authRequired: true,
+    authVerificationStatus: 'browser_verified_partial',
+    evidenceStatus: 'structure_summary_present',
+    riskLevel: 'read_personal_medium',
+    links: [],
+    controls: [],
+    forms: [],
+    structureItems: [{ kind: 'summary' }],
+  };
+  await writeJson(path.join(buildDir, 'crawl_authenticated.json'), {
+    schemaVersion: 1,
+    buildId: 'test-x-browser-bridge-build',
+    siteId: 'x.com-test',
+    authenticatedPages: [
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/OpenAI',
+        routeTemplate: '/:account',
+        routePath: '/:account',
+        pageType: 'authenticated_browser_summary',
+        evidenceLevel: 'browser_structure_verified',
+        visibleItemCount: 1,
+        listPresent: true,
+        structureHash: 'browser-structure:profile',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/OpenAI/status/1',
+        routeTemplate: '/:account/status/:id',
+        routePath: '/:account/status/:id',
+        pageType: 'authenticated_browser_summary',
+        evidenceLevel: 'browser_structure_verified',
+        visibleItemCount: 1,
+        listPresent: true,
+        structureHash: 'browser-structure:status',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/OpenAI/with_replies',
+        routeTemplate: '/:account/:slug',
+        routePath: '/:account/with_replies',
+        pageType: 'authenticated_browser_summary',
+        evidenceLevel: 'browser_structure_verified',
+        visibleItemCount: 1,
+        listPresent: true,
+        structureHash: 'browser-structure:replies',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/OpenAI/media',
+        routeTemplate: '/:account/media',
+        routePath: '/:account/media',
+        pageType: 'authenticated_route_proof',
+        evidenceLevel: 'browser_route_verified',
+        visibleItemCount: 0,
+        listPresent: false,
+        structureHash: 'browser-route-proof:media',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/following',
+        routeTemplate: '/following',
+        routePath: '/following',
+        pageType: 'authenticated_route_proof',
+        evidenceLevel: 'browser_route_verified',
+        visibleItemCount: 0,
+        listPresent: false,
+        structureHash: 'browser-route-proof:following',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/search',
+        routeTemplate: '/search',
+        routePath: '/search',
+        pageType: 'authenticated_route_proof',
+        evidenceLevel: 'browser_route_verified',
+        visibleItemCount: 0,
+        listPresent: false,
+        structureHash: 'browser-route-proof:search',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/explore',
+        routeTemplate: '/explore',
+        routePath: '/explore',
+        pageType: 'authenticated_route_proof',
+        evidenceLevel: 'browser_route_verified',
+        visibleItemCount: 0,
+        listPresent: false,
+        structureHash: 'browser-route-proof:explore',
+      },
+      {
+        ...basePage,
+        normalizedUrl: 'https://x.com/i/lists',
+        routeTemplate: '/i/lists',
+        routePath: '/i/lists',
+        pageType: 'authenticated_route_proof',
+        evidenceLevel: 'browser_route_verified',
+        visibleItemCount: 0,
+        listPresent: false,
+        structureHash: 'browser-route-proof:lists',
+      },
+    ],
+    authenticatedOverlayPages: [],
+    privacy: {
+      rawDomSaved: false,
+      rawHtmlSaved: false,
+      rawContentSaved: false,
+      privateContentSaved: false,
+      cookiesSaved: false,
+      tokensSaved: false,
+      browserProfileSaved: false,
+    },
+  });
+  await writeJson(path.join(buildDir, 'auth_state_report.json'), {
+    verified: true,
+    authVerificationStatus: 'browser_verified_partial',
+    browserBridge: {
+      used: true,
+      capturedRouteCount: 8,
+      missingRouteCount: 0,
+      routeCoverageStatus: 'complete',
+    },
+  });
+  await writeJson(path.join(buildDir, 'verification_report.json'), {
+    status: 'passed',
+  });
+  return buildDir;
+}
+
+test('x research task runner falls back to verified Browser Bridge structure when login profile is missing', async (t) => {
+  const root = await tempDir(t);
+  const buildDir = await createVerifiedBrowserBridgeBuild(root);
+  const result = await runXResearchTask(baseOptions(root, [
+    '--task',
+    'account-full-archive',
+    '--account',
+    'OpenAI',
+    '--build-dir',
+    buildDir,
+    '--execute',
+    '--max-buckets-per-run',
+    '0',
+    '--no-wait-profile-accounts',
+    '0',
+  ]), {
+    executeCommand: async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'ENOENT: no such file or directory, open profiles\\x.com.json',
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'complete');
+  assert.equal(result.complete, true);
+  const summary = JSON.parse(await fs.readFile(path.join(root, 'out', 'task-summary.json'), 'utf8'));
+  assert.equal(summary.completionScope, 'controlled_structure_scope');
+  assert.equal(summary.contentCompletenessClaim, 'not_claimed');
+  assert.equal(summary.verification.status, 'verified-controlled-structure');
+  assert.equal(summary.controlledEvidence.source, 'browser-bridge-sanitized-structure');
+  assert.equal(summary.controlledEvidence.rawContentPersisted, false);
+  assert.equal(summary.controlledEvidence.privateContentPersisted, false);
+  assert.equal(summary.controlledEvidence.cookieMaterialPersisted, false);
+  assert.equal(summary.controlledEvidence.browserProfilePersisted, false);
+  assert.equal(summary.evidenceCounts.rawItems > 0, true);
+  assert.equal(summary.evidenceCounts.dedupedItems > 0, true);
+  assert.equal(summary.evidenceCounts.accounts, 1);
+  assert.equal(summary.evidenceCounts.contentRows, 0);
+  assert.equal(summary.bucketCounts.pending, 0);
+  assert.equal(summary.bucketCounts.failed, 0);
+  const rawRows = (await fs.readFile(path.join(root, 'out', 'raw-items.jsonl'), 'utf8'))
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => JSON.parse(line));
+  assert.equal(rawRows.every((row) => row.itemType === 'browser_bridge_sanitized_route_summary'), true);
+  assert.equal(rawRows.every((row) => row.contentCompletenessClaim === 'not_claimed'), true);
+  assert.doesNotMatch(JSON.stringify(summary), /Bearer|set-cookie|auth_token|ct0|x-csrf-token|browserProfilePath|userDataDir/iu);
 });

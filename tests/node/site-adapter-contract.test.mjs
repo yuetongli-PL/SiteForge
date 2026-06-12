@@ -201,8 +201,10 @@ test('risk-aware SiteAdapters map csrf signals to the generic health taxonomy', 
     'bilibili',
     'douyin',
     'instagram',
+    'weibo',
     'x',
     'xiaohongshu',
+    'zhihu',
   ]);
   const adapters = listSiteAdapters().filter((adapter) => csrfAwareAdapterIds.has(adapter.id));
   assert.deepEqual(adapters.map((adapter) => adapter.id).sort(), [...csrfAwareAdapterIds].sort());
@@ -225,8 +227,10 @@ test('risk-aware SiteAdapters keep login-required as manual recovery only', () =
     'bilibili',
     'douyin',
     'instagram',
+    'weibo',
     'x',
     'xiaohongshu',
+    'zhihu',
   ]);
   const adapters = listSiteAdapters().filter((adapter) => loginAwareAdapterIds.has(adapter.id));
   assert.deepEqual(adapters.map((adapter) => adapter.id).sort(), [...loginAwareAdapterIds].sort());
@@ -1522,6 +1526,23 @@ test('x adapter validates synthetic site API candidates without catalog promotio
   assert.notEqual(adapter, undefined);
   // @ts-ignore
   assert.equal(typeof adapter.validateApiCandidate, 'function');
+  // @ts-ignore
+  assert.equal(typeof adapter.getBuildApiDiscoverySeeds, 'function');
+
+  // @ts-ignore
+  const seeds = adapter.getBuildApiDiscoverySeeds({ site: { id: 'x.com-326a6450' } });
+  assert.equal(seeds.length, 2);
+  assert.deepEqual(seeds.map((seed) => seed.id), [
+    'x-known-api-hashflags',
+    'x-known-api-badge-count',
+  ]);
+  assert.deepEqual(seeds.map((seed) => seed.siteKey), ['x', 'x']);
+  assert.equal(seeds[0].runtime?.parameterSource?.kind, 'x_web_auth_headers');
+  assert.equal(seeds[0].runtime?.runtimeParameterResolution, 'browser_bridge_page_context_x_web_auth_headers');
+  assert.equal(seeds[1].runtime?.parameterSource?.kind, 'x_web_auth_headers');
+  assert.equal(seeds[1].runtime?.runtimeParameterResolution, 'browser_bridge_page_context_x_web_auth_headers');
+  assert.equal(JSON.stringify(seeds).includes('ct0='), false);
+  assert.equal(JSON.stringify(seeds).includes('auth_token='), false);
 
   const candidate = createSyntheticCandidate({
     id: 'x-api-candidate-1',

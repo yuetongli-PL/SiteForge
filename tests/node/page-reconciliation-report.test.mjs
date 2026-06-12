@@ -91,6 +91,107 @@ test('page reconciliation report passes when category routes, capabilities, and 
   assert.equal(JSON.stringify(report).includes('synthetic-secret'), false);
 });
 
+test('page reconciliation report does not fail on redacted placeholder category misses', () => {
+  const report = buildPageReconciliationReport(context, {
+    crawlStatic: {
+      pages: [{
+        normalizedUrl: 'https://example.test/',
+        title: 'Home',
+        links: [
+          { href: 'https://example.test/categories', label: 'Categories' },
+          { href: 'https://example.test/foo/bar/123', label: '', kind: 'category_navigation' },
+        ],
+      }],
+    },
+    classifyNodes: {
+      graph: {
+        nodes: [
+          { id: 'node-category', normalizedUrl: 'https://example.test/categories' },
+        ],
+      },
+    },
+    discoverCapabilities: {
+      capabilities: [{
+        id: 'cap-category',
+        name: '浏览公开分类',
+        status: 'active',
+        enabled_status: 'enabled',
+      }],
+    },
+    generateIntents: {
+      intents: [{
+        id: 'intent-category',
+        capabilityId: 'cap-category',
+        canonicalUtterance: '查看公开分类',
+        callable: true,
+      }],
+    },
+  }, { status: 'success' });
+
+  assert.equal(report.status, 'passed');
+  assert.equal(report.summary.missingCategoryLinks, 1);
+  assert.equal(report.summary.blockingMissingCategoryLinks, 0);
+  assert.equal(report.missingCategoryLinks[0].url, 'https://example.test/:segment/:segment/:id');
+  assert.deepEqual(report.summary.reasonCodes, []);
+});
+
+test('page reconciliation report covers diagnostic challenge signals with rendered public structure', () => {
+  const report = buildPageReconciliationReport(context, {
+    crawlStatic: {
+      pages: [{
+        normalizedUrl: 'https://example.test/',
+        title: '',
+        diagnostics: {
+          publicEvidenceStatus: 'public_probe_or_challenge',
+          blockerCategory: 'challenge_or_probe',
+          warnings: [
+            'Static parser found weak shell evidence. signals=external-scripts-present,probe-or-challenge-signal,scripts-present',
+          ],
+        },
+      }],
+    },
+    crawlRendered: {
+      publicRenderedPages: [{
+        normalizedUrl: 'https://example.test/',
+        title: 'Rendered public home',
+        links: [
+          { href: 'https://example.test/categories', label: 'Categories' },
+        ],
+      }],
+    },
+    classifyNodes: {
+      graph: {
+        nodes: [
+          { id: 'node-category', normalizedUrl: 'https://example.test/categories' },
+        ],
+      },
+    },
+    discoverCapabilities: {
+      capabilities: [{
+        id: 'cap-category',
+        name: '浏览公开分类',
+        status: 'active',
+        enabled_status: 'enabled',
+      }],
+    },
+    generateIntents: {
+      intents: [{
+        id: 'intent-category',
+        capabilityId: 'cap-category',
+        canonicalUtterance: '查看分类',
+        callable: true,
+      }],
+    },
+  }, { status: 'success' });
+
+  assert.equal(report.status, 'passed');
+  assert.equal(report.summary.challengeLikePages, 1);
+  assert.equal(report.summary.coveredDiagnosticChallengeSignals, 1);
+  assert.equal(report.summary.missingCategoryLinks, 0);
+  assert.deepEqual(report.summary.reasonCodes, []);
+  assert.equal(report.challengePages[0].diagnosticOnly, true);
+});
+
 test('page reconciliation report blocks external challenge pages without raw material', () => {
   const report = buildPageReconciliationReport(context, {
     crawlStatic: {

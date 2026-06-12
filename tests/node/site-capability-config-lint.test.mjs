@@ -30,8 +30,31 @@ const ALLOWED_ACTION_KINDS = new Set([
   'search-submit',
 ]);
 
-const SOCIAL_SITE_KEYS = new Set(['x', 'instagram', 'reddit']);
-const VIDEO_SITE_KEYS = new Set(['bilibili', 'douyin', 'jable']);
+const ALLOWED_DISABLED_ACTION_KINDS = new Set([
+  'change_2fa',
+  'change_email',
+  'change_password',
+  'change_payment',
+  'change_security_settings',
+  'create_dm_draft',
+  'create_post_draft',
+  'create_reply_draft',
+  'delete',
+  'edit_profile',
+  'follow',
+  'like',
+  'payment',
+  'publish',
+  'publish_reply',
+  'read_dm',
+  'repost',
+  'send_dm',
+  'unfollow',
+  'upload',
+]);
+
+const SOCIAL_SITE_KEYS = new Set(['x', 'instagram', 'reddit', 'weibo', 'zhihu']);
+const VIDEO_SITE_KEYS = new Set(['123av', 'bilibili', 'douyin', 'jable']);
 const CHAPTER_ADAPTERS = new Set(['chapter-content']);
 
 function collectConfigReasonCodes(value, path = /** @type {any[]} */ ([])) {
@@ -76,6 +99,9 @@ test('site capability config uses typed intents, families, action kinds, and can
     for (const actionKind of [...(site.safeActionKinds ?? []), ...(site.approvalActionKinds ?? [])]) {
       assert.equal(ALLOWED_ACTION_KINDS.has(actionKind), true, `${host} has unknown action kind ${actionKind}`);
     }
+    for (const actionKind of site.disabledActionKinds ?? []) {
+      assert.equal(ALLOWED_DISABLED_ACTION_KINDS.has(actionKind), true, `${host} has unknown disabled action kind ${actionKind}`);
+    }
   }
 
   for (const { path, code } of [
@@ -97,11 +123,11 @@ test('site archetypes reject drifted book, chapter, social, and media intents', 
     const adapterId = site.adapterId ?? registrySite.adapterId;
 
     if (SOCIAL_SITE_KEYS.has(siteKey)) {
-      assert.deepEqual(intents.filter((intent) => /book|chapter/iu.test(intent)), [], `${host} social intents must not include book/chapter`);
+      assert.deepEqual(intents.filter((intent) => /(?:^|-)book(?:-|$)|(?:^|-)chapter(?:-|$)/iu.test(intent)), [], `${host} social intents must not include book/chapter`);
       assert.equal(intents.includes('download-book'), false, `${host} social site must not declare download-book`);
     }
     if (VIDEO_SITE_KEYS.has(siteKey)) {
-      assert.deepEqual(intents.filter((intent) => /book|chapter/iu.test(intent)), [], `${host} video/media intents must not include book/chapter`);
+      assert.deepEqual(intents.filter((intent) => /(?:^|-)book(?:-|$)|(?:^|-)chapter(?:-|$)/iu.test(intent)), [], `${host} video/media intents must not include book/chapter`);
     }
     if (CHAPTER_ADAPTERS.has(adapterId)) {
       assert.deepEqual(intents.filter((intent) => /social|archive|media|video|post|note/iu.test(intent)), [], `${host} chapter-content intents must stay chapter/book scoped`);
@@ -113,8 +139,53 @@ test('site archetypes reject drifted book, chapter, social, and media intents', 
   }
 });
 
+test('instagram config is modeled as authenticated social coverage with governed media downloads', async () => {
+  const capabilities = await readJson('config/site-capabilities.json');
+  const registry = await readJson('config/site-registry.json');
+  const capability = capabilities.sites['www.instagram.com'];
+  const registrySite = registry.sites['www.instagram.com'];
+
+  assert.equal(capability.primaryArchetype, 'social-content');
+  assert.equal(registrySite.siteArchetype, 'social-content');
+  assert.equal(registrySite.auth.required, true);
+  assert.equal(registrySite.auth.mode, 'browser');
+  assert.equal(registrySite.auth.sessionMaterialPersistence, 'forbidden');
+  assert.equal(registrySite.auth.evidencePersistence, 'sanitized-structure-only');
+  assert.equal(registrySite.downloadSessionRequirement, 'required');
+  assert.equal(capability.downloader.requiresLogin, true);
+  assert.equal(capability.downloader.status, 'supported');
+  assert.equal(capability.downloader.availableTaskTypes.includes('media-bundle'), true);
+  assert.deepEqual(capability.downloader.blockedTaskTypes, []);
+  assert.deepEqual(registrySite.blockedDownloadTaskTypes, []);
+
+  for (const intent of ['list-profile-content', 'search-posts', 'list-notifications', 'open-auth-page']) {
+    assert.equal(capability.supportedIntents.includes(intent), true, `instagram should declare ${intent}`);
+  }
+  for (const family of ['query-social-content', 'query-social-relations', 'query-notifications', 'open-auth-page']) {
+    assert.equal(capability.capabilityFamilies.includes(family), true, `instagram should declare ${family}`);
+  }
+  for (const actionKind of ['publish', 'follow', 'like', 'send_dm', 'read_dm', 'upload', 'payment', 'delete']) {
+    assert.equal(capability.disabledActionKinds.includes(actionKind), true, `instagram should disable ${actionKind}`);
+    assert.equal(registrySite.disabledActionKinds.includes(actionKind), true, `instagram registry should disable ${actionKind}`);
+  }
+
+  const routeIds = new Set(capability.publicRouteTemplates.map((route) => route.id));
+  for (const routeId of [
+    'instagram-auth-home',
+    'instagram-auth-search',
+    'instagram-auth-notifications',
+    'instagram-direct-boundary',
+    'instagram-profile',
+    'instagram-post-detail',
+    'instagram-reel-detail',
+    'instagram-story-detail',
+  ]) {
+    assert.equal(routeIds.has(routeId), true, `instagram route template ${routeId} should be declared`);
+  }
+});
+
 test('blocked download declarations stay compiled and agent-visible with blocked runtime disposition', async () => {
-  for (const siteKey of ['jable', 'x', 'instagram']) {
+  for (const siteKey of ['jable', 'x']) {
     const manifest = await createStaticSiteCompileManifestFromConfig({
       request: {
         schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
@@ -139,6 +210,32 @@ test('blocked download declarations stay compiled and agent-visible with blocked
     assert.deepEqual(downloadCapabilities.map((capability) => capability.executionDisposition), downloadCapabilities.map(() => 'blocked'));
     assert.deepEqual(downloadCapabilities.map((capability) => capability.runtimeCallable), downloadCapabilities.map(() => false));
   }
+});
+
+test('instagram media downloads compile as governed executable capabilities', async () => {
+  const manifest = await createStaticSiteCompileManifestFromConfig({
+    request: {
+      schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+      siteKey: 'instagram',
+      compileScope: {
+        schemaVersion: SITE_CAPABILITY_COMPILER_SCHEMA_VERSION,
+        coverageMode: 'declared_only',
+        coverageCompleteness: 'partial',
+        allowedCaptureModes: ['static'],
+        sourceTypes: ['site-registry', 'site-capabilities'],
+        redactionRequired: true,
+      },
+      sourceTypes: ['site-registry', 'site-capabilities'],
+      redactionRequired: true,
+    },
+  });
+  const downloadCapabilities = manifest.inventories.capabilities.filter((capability) => isDownloadIntent(capability.normalizedIntent));
+  assert.equal(downloadCapabilities.length > 0, true);
+  assert.deepEqual(downloadCapabilities.map((capability) => capability.agentExposed), downloadCapabilities.map(() => true));
+  assert.deepEqual(downloadCapabilities.map((capability) => capability.executable), downloadCapabilities.map(() => true));
+  assert.deepEqual(downloadCapabilities.map((capability) => capability.enablementStatus), downloadCapabilities.map(() => 'enabled'));
+  assert.deepEqual(downloadCapabilities.map((capability) => capability.executionDisposition), downloadCapabilities.map(() => 'allow'));
+  assert.deepEqual(downloadCapabilities.map((capability) => capability.runtimeCallable), downloadCapabilities.map(() => true));
 });
 
 test('availability model gates executable download capabilities', async () => {

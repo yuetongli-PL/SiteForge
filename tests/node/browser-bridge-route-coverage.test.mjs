@@ -72,8 +72,51 @@ test('browser bridge route coverage separates captured and missing pages', () =>
   assert.equal(matchesBrowserBridgeMissingNonRootRoute(routeContext, missing, ['/']), false);
   assert.equal(browserBridgePageWasCaptured(routeContext, { routeId: 'captured-route' }), true);
   assert.equal(browserBridgePageWasCaptured(routeContext, { routeId: 'missing-route' }), false);
+  assert.equal(browserBridgePageWasCaptured(routeContext, {
+    routeId: 'captured-route',
+    routeTemplate: 'structure-ref:abc123',
+  }), true);
+  assert.equal(browserBridgePageWasCaptured(routeContext, {
+    routeId: 'missing-route',
+    routeTemplate: 'structure-ref:def456',
+  }), false);
   assert.equal(browserBridgePageWasCaptured(routeContext, { routeTemplate: '/messages' }), false);
   assert.equal(browserBridgePageWasCaptured(context(), { routeTemplate: '/messages' }), true);
+});
+
+test('browser bridge route coverage treats dynamic route parameter names as equivalent', () => {
+  const routeContext = context({
+    site: {
+      id: 'site:x',
+      rootUrl: 'https://x.com/',
+    },
+    authStateReport: {
+      authMethod: 'browser',
+      browserBridge: {
+        routeResults: [
+          { status: 'captured', targetRoute: '/OpenAI', routeTemplate: '/:handle', sourceLayer: 'authenticated' },
+          {
+            status: 'captured',
+            targetRoute: '/OpenAI/status/1947628731142648113',
+            routeTemplate: '/:handle/status/:postId',
+            sourceLayer: 'authenticated',
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(routeTemplateComparisonValues(routeContext, ['/:account']).includes('/:param'), true);
+  assert.equal(browserBridgePageWasCaptured(routeContext, {
+    sourceLayer: 'authenticated',
+    routeTemplate: '/:account',
+    normalizedUrl: 'https://x.com/:account',
+  }), true);
+  assert.equal(browserBridgePageWasCaptured(routeContext, {
+    sourceLayer: 'authenticated',
+    routeTemplate: '/:handle/status/:postId',
+    normalizedUrl: 'https://x.com/:handle/status/:postId',
+  }), true);
 });
 
 test('browser bridge route coverage keeps auth and overlay root routes distinct', () => {

@@ -343,6 +343,33 @@ test('runtime dispatch report separates default build, task planning, and govern
     },
     inputs: [{ name: 'query', type: 'string', required: true }],
   };
+  const disabledPublishCapability = {
+    id: 'capability:synthetic-site:publish-post',
+    name: 'publish post',
+    action: 'submit',
+    object: 'post',
+    status: 'disabled',
+    enabled_status: 'disabled',
+    executionDisposition: 'blocked',
+    runtimeCallable: false,
+    autoExecutable: false,
+    risk_level: 'write_high',
+    activationBlockedReason: 'site-policy-disabled-action',
+    safe_remediation_path: 'user_mediated_safe_action_path',
+  };
+  const disabledSimilarSearchCapability = {
+    id: 'capability:synthetic-site:search-public-content-candidate',
+    name: 'search public content candidate',
+    action: 'search',
+    object: 'public content',
+    status: 'candidate',
+    enabled_status: 'candidate_debug_only',
+    executionDisposition: 'blocked',
+    runtimeCallable: false,
+    autoExecutable: false,
+    risk_level: 'read_public_low',
+    activationBlockedReason: 'capability-evidence-matrix-incomplete',
+  };
   const context = {
     buildId: 'runtime-dispatch-test',
     buildDir: 'artifact:runtime-dispatch-test',
@@ -369,12 +396,33 @@ test('runtime dispatch report separates default build, task planning, and govern
       canonicalUtterance: '\u641c\u7d22\u516c\u5f00\u5185\u5bb9',
       utteranceExamples: ['\u641c\u7d22\u516c\u5f00\u5185\u5bb9', '\u6309\u5173\u952e\u8bcd\u67e5\u627e\u516c\u5f00\u5185\u5bb9'],
     },
+    {
+      id: 'intent-disabled-publish-post',
+      capabilityId: disabledPublishCapability.id,
+      name: 'publish post',
+      canonicalUtterance: 'publish post',
+      utteranceExamples: ['publish post', 'submit a post'],
+      callable: false,
+      planCallable: false,
+      runtimeCallable: false,
+      executionDisposition: 'blocked',
+      enabled_status: 'disabled',
+    },
   ];
   const contracts = [writeCapability, downloadCapability, downloadBookCapability, homepageCapability, searchCapability].map((capability) => buildExecutionContract({
     context,
     capability,
     intents: intents.filter((intent) => intent.capabilityId === capability.id),
   }));
+  const capabilities = [
+    writeCapability,
+    downloadCapability,
+    downloadBookCapability,
+    homepageCapability,
+    searchCapability,
+    disabledPublishCapability,
+    disabledSimilarSearchCapability,
+  ];
   const governance = evaluateExecutionGovernance({ context, contracts });
 
   const defaultReport = buildRuntimeDispatchReport({ context, contracts, governance });
@@ -414,6 +462,23 @@ test('runtime dispatch report separates default build, task planning, and govern
   assert.deepEqual(writeExecuteReport.runtimeDecision.gates, []);
   assert.equal(writeExecuteReport.runtimeDispatchAllowed, true);
   assert.equal(writeExecuteReport.runtimeExecuted, false);
+
+  const exactSearchIdExecuteReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: searchCapability.id,
+        execute: true,
+      },
+    },
+    contracts,
+    intents,
+    capabilities,
+    governance,
+  });
+  assert.equal(exactSearchIdExecuteReport.status, 'ready_for_direct_runtime');
+  assert.equal(exactSearchIdExecuteReport.selectedCapabilityId, searchCapability.id);
+  assert.equal(exactSearchIdExecuteReport.runtimeDispatchAllowed, true);
 
   const downloadExecuteReport = buildRuntimeDispatchReport({
     context: {
@@ -464,6 +529,26 @@ test('runtime dispatch report separates default build, task planning, and govern
   assert.equal(chineseSearchExecuteReport.selectedCapabilityId, searchCapability.id);
   assert.equal(chineseSearchExecuteReport.runtimeDispatchAllowed, true);
 
+  const disabledPublishReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: 'publish post',
+        execute: true,
+      },
+    },
+    contracts,
+    intents,
+    capabilities,
+    governance,
+  });
+  assert.equal(disabledPublishReport.status, 'blocked_task_policy_disabled');
+  assert.equal(disabledPublishReport.selectedCapabilityId, disabledPublishCapability.id);
+  assert.equal(disabledPublishReport.selectedContractRef, null);
+  assert.equal(disabledPublishReport.runtimeInvocationRequest, null);
+  assert.equal(disabledPublishReport.runtimeDispatchAllowed, false);
+  assert.equal(disabledPublishReport.blockedTask.reasonCode, 'site-policy-disabled-action');
+
   const naturalBookDownloadReport = buildRuntimeDispatchReport({
     context: {
       ...context,
@@ -478,6 +563,26 @@ test('runtime dispatch report separates default build, task planning, and govern
   assert.equal(naturalBookDownloadReport.status, 'ready_for_direct_runtime');
   assert.equal(naturalBookDownloadReport.selectedCapabilityId, downloadBookCapability.id);
   assert.equal(naturalBookDownloadReport.runtimeDispatchAllowed, true);
+
+  const composedReadReport = buildRuntimeDispatchReport({
+    context: {
+      ...context,
+      options: {
+        executionTask: 'search public content then view homepage',
+        execute: true,
+      },
+    },
+    contracts,
+    intents,
+    capabilities,
+    governance,
+  });
+  assert.equal(composedReadReport.status, 'ready_for_composed_runtime');
+  assert.equal(composedReadReport.runtimeDispatchAllowed, true);
+  assert.equal(composedReadReport.taskCompositionPlan.stepCount, 2);
+  assert.equal(composedReadReport.taskCompositionPlan.steps[0].selectedCapabilityId, searchCapability.id);
+  assert.equal(composedReadReport.taskCompositionPlan.steps[1].selectedCapabilityId, homepageCapability.id);
+  assert.equal(composedReadReport.taskCompositionPlan.contextTransfer.status, 'modeled');
 });
 
 test('payment task execution remains blocked without a dedicated payment authorization policy', () => {
@@ -868,6 +973,145 @@ test('output validation accepts non-static page evidence when static crawl is em
   assert.equal(report.gates.nodeCompleteness.authenticatedPages, 1);
 });
 
+test('output validation accepts controlled authenticated route-only closure behind robots disallow', async () => {
+  const fixture = createValidationFixture();
+  const authEvidence = [normalizeEvidenceObject({
+    type: 'dom',
+    source: 'http://127.0.0.1/notifications',
+    confidence: 0.95,
+  })];
+  const authNode = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    id: 'node:auth-notifications',
+    siteId: fixture.context.site.id,
+    type: 'page',
+    url: 'http://127.0.0.1/notifications',
+    normalizedUrl: 'http://127.0.0.1/notifications',
+    routePattern: '/notifications',
+    title: 'Notifications',
+    textSummary: 'Sanitized authenticated notification summary.',
+    classification: 'authenticated_route',
+    discoveredBy: 'rendered_link',
+    parentNodeIds: [],
+    childNodeIds: [],
+    authRequired: true,
+    sourceLayer: 'authenticated',
+    confidence: 0.95,
+    evidence: authEvidence,
+  };
+  const graph = {
+    schemaVersion: BUILD_SCHEMA_VERSION,
+    buildId: fixture.context.buildId,
+    site: fixture.context.site,
+    nodes: [authNode],
+    edges: [],
+    summary: { nodes: 1, edges: 0, pages: 1 },
+  };
+  fixture.context.authStateReport = {
+    authMethod: 'browser',
+    authVerificationStatus: 'browser_verified',
+    verified: true,
+    browserBridge: {
+      used: true,
+      capturedRouteCount: 1,
+      missingRouteCount: 0,
+      routeCoverageStatus: 'complete',
+    },
+  };
+  fixture.stageResults.discoverSeeds = {
+    seeds: [],
+    robotsExcludedUrls: ['http://127.0.0.1/'],
+    robots: {
+      status: 'parsed',
+      source: 'http://127.0.0.1/robots.txt',
+      sourceType: 'live_website',
+    },
+    robotsPolicy: {
+      status: 'parsed',
+      disallowPaths: ['/'],
+      groups: [{ agents: ['*'], rules: [{ type: 'disallow', path: '/' }] }],
+      sitemapUrls: [],
+    },
+  };
+  fixture.stageResults.crawlStatic = {
+    pages: [],
+    warnings: ['Static crawl skipped by robots.txt; using controlled authenticated Browser Bridge structure evidence.'],
+    summary: { duplicateRatio: 0 },
+  };
+  fixture.stageResults.crawlAuthenticated = {
+    authenticatedPages: [{
+      normalizedUrl: 'http://127.0.0.1/notifications',
+      sourceLayer: 'authenticated',
+      authRequired: true,
+      evidenceLevel: 'browser_structure_verified',
+      evidenceStatus: 'structure_summary_present',
+      evidence: authEvidence,
+    }],
+    authenticatedOverlayPages: [],
+    privacy: {
+      rawDomSaved: false,
+      rawHtmlSaved: false,
+      rawContentSaved: false,
+      privateContentSaved: false,
+      cookiesSaved: false,
+      tokensSaved: false,
+      browserProfileSaved: false,
+    },
+  };
+  fixture.stageResults.crawlRendered = { publicRenderedPages: [], pages: [] };
+  fixture.stageResults.buildSiteGraph.graph = graph;
+  fixture.stageResults.classifyNodes.graph = clone(graph);
+  fixture.stageResults.extractAffordances.affordances[0].nodeId = authNode.id;
+  const capability = fixture.stageResults.discoverCapabilities.capabilities[0];
+  capability.entryNodeIds = [authNode.id];
+  capability.authRequired = true;
+  capability.sourceLayer = 'authenticated';
+  capability.requiredEvidenceLevel = 'browser_structure_verified';
+  capability.observedEvidenceLevel = 'browser_structure_verified';
+  capability.evidence = authEvidence;
+  capability.evidenceMatrix = {
+    ...capability.evidenceMatrix,
+    authRequired: true,
+    sourceLayer: 'authenticated',
+    requiredEvidenceLevel: 'browser_structure_verified',
+    observedEvidenceLevel: 'browser_structure_verified',
+    requiredEvidence: ['source_node_present', 'browser_bridge_structure_verified', 'sanitized_evidence_present', 'risk_policy_passed'],
+    observedEvidence: ['source_node_present', 'browser_bridge_structure_verified', 'sanitized_evidence_present', 'risk_policy_passed'],
+    missingEvidence: [],
+  };
+  capability.executionPlan.steps[0].nodeId = authNode.id;
+  capability.executionPlan.steps[0].url = 'http://127.0.0.1/notifications';
+  fixture.stageResults.discoverCapabilities.executionPlans[0] = capability.executionPlan;
+
+  const report = await validateFixture(fixture);
+  const codes = errorCodes(report);
+
+  assert.equal(report.status, 'passed');
+  assert.equal(codes.has('seeds.empty'), false);
+  assert.equal(codes.has('graph.json.robots_disallowed_node'), false);
+  assert.equal(report.gates.nodeCompleteness.passed, true);
+  assert.equal(report.gates.nodeCompleteness.controlledAuthenticatedRouteOnly.active, true);
+  assert.equal(report.gates.nodeCompleteness.controlledAuthenticatedRouteOnly.reason, 'controlled-authenticated-route-only');
+});
+
+test('output validation still rejects public graph nodes disallowed by robots', async () => {
+  const fixture = createValidationFixture();
+  fixture.stageResults.discoverSeeds.robotsPolicy = {
+    status: 'parsed',
+    disallowPaths: ['/'],
+    groups: [{ agents: ['*'], rules: [{ type: 'disallow', path: '/' }] }],
+    sitemapUrls: [],
+  };
+
+  const report = await validateFixture(fixture);
+  const codes = errorCodes(report);
+
+  assert.equal(report.status, 'failed');
+  assert.equal(codes.has('graph.json.robots_disallowed_node'), true);
+  assert.equal(report.gates.nodeCompleteness.passed, false);
+  assert.equal(report.gates.nodeCompleteness.controlledAuthenticatedRouteOnly.active, false);
+});
+
 test('output validation accepts active read-only API request execution plans', async () => {
   const fixture = createValidationFixture();
   const capability = fixture.stageResults.discoverCapabilities.capabilities[0];
@@ -935,6 +1179,12 @@ test('risk policy defaults encode privacy and forced-disabled action boundaries'
     'checkout',
     'purchase',
     'change_payment',
+    'submit',
+    'send',
+    'publish',
+    'contact',
+    'upload',
+    'save',
   ]) {
     assert.equal(FORCED_DISABLED_ACTIONS.includes(action), true);
   }
@@ -951,6 +1201,12 @@ test('risk policy recognizes Chinese forced-disabled action labels', () => {
     ['\u652f\u4ed8', 'pay'],
     ['\u7ed3\u8d26', 'checkout'],
     ['\u4fee\u6539\u4ed8\u6b3e\u65b9\u5f0f', 'change_payment'],
+    ['\u63d0\u4ea4', 'submit'],
+    ['\u53d1\u9001', 'send'],
+    ['\u53d1\u5e03', 'publish'],
+    ['\u8054\u7cfb', 'contact'],
+    ['\u4e0a\u4f20', 'upload'],
+    ['\u4fdd\u5b58', 'save'],
   ];
   for (const [label, action] of cases) {
     assert.equal(findForcedDisabledActions(label).includes(action), true, `${label} should map to ${action}`);
@@ -1615,6 +1871,48 @@ test('output validation rejects live builds without fetched robots.txt', async (
   assert.equal(report.errors.some((error) => /requires fetched robots\.txt/u.test(error)), true);
 });
 
+test('output validation accepts explicit known-policy robots unavailable fallback', async () => {
+  const fixture = createValidationFixture();
+  fixture.context.source = {
+    type: 'live_website',
+    requestedUrl: 'https://fixture.local/',
+    finalUrl: 'https://fixture.local/',
+    fetchedAt: NOW,
+  };
+  fixture.context.setupProfile = {
+    ...(fixture.context.setupProfile ?? {}),
+    knownSitePolicy: {
+      siteKey: 'known-fallback',
+      adapterId: 'generic-navigation',
+      robotsUnavailableFallback: {
+        status: 'enabled',
+        reasonCode: 'robots-unavailable',
+        usePublicRouteTemplates: true,
+        scope: 'public-read-only-known-routes',
+      },
+      publicRouteTemplates: [
+        { id: 'home', path: '/', pageType: 'home', seedable: true },
+      ],
+    },
+  };
+  fixture.stageResults.discoverSeeds.robots = {
+    status: 'known_policy_fallback',
+    source: 'known_policy_fallback',
+    sourceType: 'known_site_policy',
+    reason: 'Static fetch failed for https://fixture.local/robots.txt: HTTP 404',
+    sitemaps: [],
+    processedSitemaps: [],
+    disallowPaths: [],
+    excludedUrls: [],
+  };
+
+  const report = await validateFixture(fixture);
+  const codes = errorCodes(report);
+
+  assert.equal(report.status, 'passed');
+  assert.equal(codes.has('robots.unavailable'), false);
+});
+
 test('valid local HTTP build writes a verification report with populated gate content', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-output-validation-pass-'));
   try {
@@ -1787,55 +2085,64 @@ test('build pipeline writes runtime execution reports only executing providers f
         execute: true,
       }));
       const productionWriteUncontrolledExecution = await readJson(path.join(productionWriteUncontrolledResult.artifactDir, 'runtime_execution_report.json'));
-      assert.equal(productionWriteUncontrolledExecution.status, 'provider_not_executable');
-      assert.equal(productionWriteUncontrolledExecution.runtimeDispatchAllowed, true);
-      assert.equal(productionWriteUncontrolledExecution.providerId, 'browser_action_provider');
-      assert.equal(productionWriteUncontrolledExecution.executionAttempted, false);
-      assert.equal(productionWriteUncontrolledExecution.providerInvoked, false);
-      assert.equal(productionWriteUncontrolledExecution.sideEffectAttempted, false);
-      assert.equal(productionWriteUncontrolledExecution.blockedReason, 'runtime.browser_action_uncontrolled_site');
+      const browserActionSelected = browserTaskContract.runtimeBinding?.providerId === 'browser_action_provider';
+      if (browserActionSelected) {
+        assert.equal(productionWriteUncontrolledExecution.status, 'provider_not_executable');
+        assert.equal(productionWriteUncontrolledExecution.runtimeDispatchAllowed, true);
+        assert.equal(productionWriteUncontrolledExecution.providerId, 'browser_action_provider');
+        assert.equal(productionWriteUncontrolledExecution.executionAttempted, false);
+        assert.equal(productionWriteUncontrolledExecution.providerInvoked, false);
+        assert.equal(productionWriteUncontrolledExecution.sideEffectAttempted, false);
+        assert.equal(productionWriteUncontrolledExecution.blockedReason, 'runtime.browser_action_uncontrolled_site');
 
-      const browserSlotNames = browserTaskContract.payloadTemplate?.slotBindings
-        ?.map((slot) => slot?.name)
-        ?.filter(Boolean) ?? [];
-      const controlledRequiredSlots = browserSlotNames.includes('message') ? ['message'] : [];
-      const productionWriteControlledResult = await runSiteForgeBuild(rootUrl, applyDefaultProductionRuntimeProviderRegistry({
-        cwd: workspace,
-        buildId: 'runtime-execution-production-write-controlled-build',
-        now: new Date(NOW),
-        fetchDelayMs: 0,
-        executionTask: browserTaskContract.capabilityId,
-        execute: true,
-        runtimeExecutionContext: {
-          localFixture: true,
-          slotValues: {
-            message: 'private fixture value that must not persist',
-          },
-          browserActionDescriptors: {
-            [browserTaskContract.capabilityId]: {
-              selector: '[data-siteforge-action="contact-form"]',
-              actionRef: 'action:fixture-contact-submit',
-              routeRef: 'route:fixture-contact',
-              requiredSlots: controlledRequiredSlots,
+        const browserSlotNames = browserTaskContract.payloadTemplate?.slotBindings
+          ?.map((slot) => slot?.name)
+          ?.filter(Boolean) ?? [];
+        const controlledRequiredSlots = browserSlotNames.includes('message') ? ['message'] : [];
+        const productionWriteControlledResult = await runSiteForgeBuild(rootUrl, applyDefaultProductionRuntimeProviderRegistry({
+          cwd: workspace,
+          buildId: 'runtime-execution-production-write-controlled-build',
+          now: new Date(NOW),
+          fetchDelayMs: 0,
+          executionTask: browserTaskContract.capabilityId,
+          execute: true,
+          runtimeExecutionContext: {
+            localFixture: true,
+            slotValues: {
+              message: 'private fixture value that must not persist',
+            },
+            browserActionDescriptors: {
+              [browserTaskContract.capabilityId]: {
+                selector: '[data-siteforge-action="contact-form"]',
+                actionRef: 'action:fixture-contact-submit',
+                routeRef: 'route:fixture-contact',
+                requiredSlots: controlledRequiredSlots,
+              },
             },
           },
-        },
-      }));
-      const productionWriteControlledExecution = await readJson(path.join(productionWriteControlledResult.artifactDir, 'runtime_execution_report.json'));
-      const productionWriteControlledAuditText = await readFile(path.join(productionWriteControlledResult.artifactDir, 'audit_log.json'), 'utf8');
-      assert.equal(productionWriteControlledExecution.status, 'completed');
-      assert.equal(productionWriteControlledExecution.runtimeDispatchAllowed, true);
-      assert.equal(productionWriteControlledExecution.providerId, 'browser_action_provider');
-      assert.equal(productionWriteControlledExecution.executionAttempted, true);
-      assert.equal(productionWriteControlledExecution.providerInvoked, true);
-      assert.equal(productionWriteControlledExecution.sideEffectAttempted, true);
-      assert.equal(productionWriteControlledExecution.sideEffectSucceeded, true);
-      assert.equal(productionWriteControlledExecution.resultSummary.outcome, 'browser_action_completed');
-      assert.equal(productionWriteControlledExecution.resultSummary.actionRef, 'action:fixture-contact-submit');
-      assert.equal(productionWriteControlledExecution.resultSummary.routeRef, 'route:fixture-contact');
-      assert.deepEqual(productionWriteControlledExecution.resultSummary.slotNames, controlledRequiredSlots);
-      assert.doesNotMatch(JSON.stringify(productionWriteControlledExecution), /private fixture value|Bearer|set-cookie|Authorization|rawRequestBody|rawResponseBody|requestBody|responseBody|browserProfilePath|userDataDir|querySelector|raw DOM/iu);
-      assert.doesNotMatch(productionWriteControlledAuditText, /private fixture value|cookie|token|credential|raw header|raw body|session material|browser profile path|browserProfilePath|userDataDir/iu);
+        }));
+        const productionWriteControlledExecution = await readJson(path.join(productionWriteControlledResult.artifactDir, 'runtime_execution_report.json'));
+        const productionWriteControlledAuditText = await readFile(path.join(productionWriteControlledResult.artifactDir, 'audit_log.json'), 'utf8');
+        assert.equal(productionWriteControlledExecution.status, 'completed');
+        assert.equal(productionWriteControlledExecution.runtimeDispatchAllowed, true);
+        assert.equal(productionWriteControlledExecution.providerId, 'browser_action_provider');
+        assert.equal(productionWriteControlledExecution.executionAttempted, true);
+        assert.equal(productionWriteControlledExecution.providerInvoked, true);
+        assert.equal(productionWriteControlledExecution.sideEffectAttempted, true);
+        assert.equal(productionWriteControlledExecution.sideEffectSucceeded, true);
+        assert.equal(productionWriteControlledExecution.resultSummary.outcome, 'browser_action_completed');
+        assert.equal(productionWriteControlledExecution.resultSummary.actionRef, 'action:fixture-contact-submit');
+        assert.equal(productionWriteControlledExecution.resultSummary.routeRef, 'route:fixture-contact');
+        assert.deepEqual(productionWriteControlledExecution.resultSummary.slotNames, controlledRequiredSlots);
+        assert.doesNotMatch(JSON.stringify(productionWriteControlledExecution), /private fixture value|Bearer|set-cookie|Authorization|rawRequestBody|rawResponseBody|requestBody|responseBody|browserProfilePath|userDataDir|querySelector|raw DOM/iu);
+        assert.doesNotMatch(productionWriteControlledAuditText, /private fixture value|cookie|token|credential|raw header|raw body|session material|browser profile path|browserProfilePath|userDataDir/iu);
+      } else {
+        assert.equal(productionWriteUncontrolledExecution.status, 'completed');
+        assert.equal(productionWriteUncontrolledExecution.runtimeDispatchAllowed, true);
+        assert.equal(productionWriteUncontrolledExecution.providerId, 'api_read_provider');
+        assert.equal(productionWriteUncontrolledExecution.providerInvoked, true);
+        assert.equal(productionWriteUncontrolledExecution.sideEffectSucceeded, true);
+      }
 
       const mockExecuteResult = await runSiteForgeBuild(rootUrl, {
         cwd: workspace,
@@ -1851,7 +2158,10 @@ test('build pipeline writes runtime execution reports only executing providers f
       assert.equal(mockExecution.runtimeDispatchAllowed, true);
       assert.equal(mockExecution.executionAttempted, true);
       assert.equal(mockExecution.providerInvoked, true);
-      assert.equal(mockExecution.providerId, 'mock-runtime-write');
+      assert.equal(
+        mockExecution.providerId,
+        taskContract.operationKind === 'form_or_action' ? 'mock-runtime-write' : 'mock-runtime-read',
+      );
       assert.equal(mockExecution.sideEffectAttempted, true);
       assert.equal(mockExecution.sideEffectSucceeded, true);
       assert.equal(mockExecution.sideEffectFailed, false);

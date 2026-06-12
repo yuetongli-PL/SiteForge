@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 
 import { displayIntentName, normalizeDisplayLabel, resolveSiteTerminology } from '../../src/sites/registry/core/terminology.mjs';
 
+test('resolveSiteTerminology returns Zhihu social labels', () => {
+  const terms = resolveSiteTerminology({ host: 'www.zhihu.com' }, 'https://www.zhihu.com/');
+  assert.equal(terms.entityLabel, 'post');
+  assert.equal(terms.personLabel, 'account');
+});
+
+test('displayIntentName labels Zhihu read-only social intents', () => {
+  assert.equal(displayIntentName('search-posts', { host: 'www.zhihu.com' }, 'https://www.zhihu.com/'), 'search Zhihu content');
+  assert.equal(displayIntentName('open-post', { host: 'www.zhihu.com' }, 'https://www.zhihu.com/'), 'open Zhihu question or answer');
+  assert.equal(displayIntentName('list-followed-users', { host: 'www.zhihu.com' }, 'https://www.zhihu.com/'), 'list followed Zhihu accounts');
+});
+
 test('resolveSiteTerminology returns bilibili video and up labels', () => {
   const terms = resolveSiteTerminology({ host: 'www.bilibili.com' }, 'https://www.bilibili.com/');
   assert.equal(terms.entityLabel, '视频');
@@ -17,6 +29,12 @@ test('displayIntentName localizes bilibili intents', () => {
 
 test('resolveSiteTerminology returns jable Chinese labels', () => {
   const terms = resolveSiteTerminology({ host: 'jable.tv' }, 'https://jable.tv/');
+  assert.equal(terms.entityLabel, '影片');
+  assert.equal(terms.personLabel, '演员');
+});
+
+test('resolveSiteTerminology returns 123av Chinese labels', () => {
+  const terms = resolveSiteTerminology({ host: '123av.com' }, 'https://123av.com/zh/dm9');
   assert.equal(terms.entityLabel, '影片');
   assert.equal(terms.personLabel, '演员');
 });
@@ -106,6 +124,13 @@ test('displayIntentName localizes jable intents', () => {
   assert.equal(displayIntentName('open-video', { host: 'jable.tv' }, 'https://jable.tv/'), '打开影片');
   assert.equal(displayIntentName('open-model', { host: 'jable.tv' }, 'https://jable.tv/'), '打开演员页');
   assert.equal(displayIntentName('open-category', { host: 'jable.tv' }, 'https://jable.tv/'), '打开分类页');
+});
+
+test('displayIntentName localizes 123av intents', () => {
+  assert.equal(displayIntentName('search-video', { host: '123av.com' }, 'https://123av.com/zh/dm9'), '搜索影片');
+  assert.equal(displayIntentName('open-video', { host: '123av.com' }, 'https://123av.com/zh/dm9'), '打开影片');
+  assert.equal(displayIntentName('open-actress', { host: '123av.com' }, 'https://123av.com/zh/dm9'), '打开演员页');
+  assert.equal(displayIntentName('open-category', { host: '123av.com' }, 'https://123av.com/zh/dm9'), '打开目录页');
 });
 
 test('displayIntentName localizes Xiaohongshu intents', () => {

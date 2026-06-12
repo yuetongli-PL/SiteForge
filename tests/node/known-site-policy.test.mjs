@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   knownGenericLiveBuildSummary,
+  knownPolicyBusinessCoverageModel,
+  knownPolicyBusinessCoverageSeedRoutes,
   knownPolicyAllowsUserAuthorizedSetup,
   knownPolicyCapabilityPressure,
   knownPolicyPublicRouteTemplatePattern,
@@ -112,6 +114,36 @@ test('known site policy public route templates infer chapter-content routes', ()
       'chapter-content-search-template',
     ],
   );
+});
+
+test('known site policy business coverage model groups seedable public routes by business area', () => {
+  const model = knownPolicyBusinessCoverageModel({
+    siteKey: 'catalog',
+    adapterId: 'catalog-adapter',
+    publicRouteTemplates: [
+      { id: 'home', path: '/', pageType: 'home', capabilityFamilies: ['navigate-to-category'], seedable: true },
+      { id: 'release', path: '/works/list/release', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: true },
+      { id: 'genre', path: '/works/genre', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: true },
+      { id: 'series', path: '/works/series', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: true },
+      { id: 'label', path: '/works/label', pageType: 'category-page', capabilityFamilies: ['navigate-to-category'], seedable: true },
+      { id: 'actress', path: '/actress', pageType: 'author-list-page', capabilityFamilies: ['navigate-to-author'], seedable: true },
+      { id: 'detail-template', pathTemplate: '/works/detail/{workId}', pageType: 'book-detail-page', capabilityFamilies: ['navigate-to-content'], seedable: false },
+      { id: 'privacy', path: '/privacy', pageType: 'utility-page', capabilityFamilies: ['navigate-to-utility-page'], seedable: true },
+    ],
+  });
+
+  assert.equal(model.status, 'configured');
+  assert.deepEqual(model.requiredGroupIds.sort(), [
+    'genre-directory',
+    'home',
+    'label-directory',
+    'person-directory',
+    'policy-pages',
+    'release-listings',
+    'series-directory',
+  ]);
+  assert.deepEqual(model.templateOnlyGroupIds, ['detail-pages']);
+  assert.equal(model.groups.some((group) => group.id === 'release-listings' && group.seedableRouteCount === 1), true);
 });
 
 test('known site policy public route projection keeps only sanitized same-site seeds', () => {
@@ -240,6 +272,7 @@ test('known site policy recommended capabilities derive social candidates from p
       ['list-followed-users', 'read_only', 'capability-specific-evidence'],
       ['list-followed-updates', 'read_only', 'capability-specific-evidence'],
       ['recommended-timeline-posts', 'read_only', 'capability-specific-evidence'],
+      ['list-hot-posts', 'read_only', 'capability-specific-evidence'],
       ['list-profile-content', 'read_only', 'capability-specific-evidence'],
       ['search-posts', 'read_only', 'capability-specific-evidence'],
       ['list-notifications', 'read_only', 'capability-specific-evidence'],
@@ -247,4 +280,87 @@ test('known site policy recommended capabilities derive social candidates from p
       ['download-content-candidate', 'requires_confirmation', 'capability-specific-evidence'],
     ],
   );
+});
+
+test('known site business coverage model emits sample seed routes for dynamic templates', () => {
+  const summary = knownPolicySummary(
+    {
+      siteKey: 'zhihu',
+      adapterId: 'zhihu',
+      publicRouteTemplates: [
+        {
+          id: 'zhihu-hot',
+          path: '/hot',
+          pageType: 'category-page',
+          businessArea: 'hot-ranking',
+          capabilityIds: ['list-hot-posts'],
+          tabStates: ['hot'],
+          seedable: false,
+        },
+        {
+          id: 'zhihu-question-template',
+          samplePath: '/question/19550228',
+          pathTemplate: '/question/{questionId}',
+          pageType: 'content-detail-page',
+          businessArea: 'question-detail',
+          capabilityIds: ['view-question-detail'],
+          tabStates: ['detail'],
+          seedable: false,
+        },
+      ],
+    },
+    {
+      supportedIntents: ['list-hot-posts', 'view-question-detail'],
+      capabilityFamilies: ['query-social-content', 'navigate-to-category', 'navigate-to-content', 'query-comment-thread'],
+    },
+  );
+
+  assert.equal(summary.businessCoverageModel.groupCount, 2);
+  assert.deepEqual(knownPolicyBusinessCoverageSeedRoutes(summary).map((route) => [
+    route.path,
+    route.businessArea,
+    route.capabilityIds,
+    route.tabStates,
+  ]), [
+    ['/hot', 'hot-ranking', ['list-hot-posts'], ['hot']],
+    ['/question/19550228', 'question-detail', ['view-question-detail'], ['detail']],
+  ]);
+});
+
+test('known site policy recommends Zhihu-specific topic and profile tab candidates only for Zhihu', () => {
+  const recommended = knownPolicyRecommendedCapabilities({
+    siteKey: 'zhihu',
+    capabilityFamilies: ['query-social-content', 'query-account-profile', 'query-social-relations', 'query-media-content'],
+    supportedIntents: [
+      'list-hot-broadcasts',
+      'list-topic-discussions',
+      'list-topic-featured',
+      'list-user-activities',
+      'list-user-answers',
+      'list-user-questions',
+      'list-user-articles',
+      'list-user-columns',
+      'list-user-pins',
+      'list-user-collections',
+      'list-user-videos',
+      'list-user-following',
+    ],
+  }, { userAuthorized: true }).map((capability) => capability.id);
+
+  for (const id of [
+    'list-hot-broadcasts',
+    'list-topic-discussions',
+    'list-topic-featured',
+    'list-user-activities',
+    'list-user-answers',
+    'list-user-questions',
+    'list-user-articles',
+    'list-user-columns',
+    'list-user-pins',
+    'list-user-collections',
+    'list-user-videos',
+    'list-user-following',
+  ]) {
+    assert.equal(recommended.includes(id), true, `${id} should be recommended for Zhihu`);
+  }
 });

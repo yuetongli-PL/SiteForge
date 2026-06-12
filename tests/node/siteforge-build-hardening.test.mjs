@@ -852,6 +852,75 @@ test('Setup Assistant uses Douyin /follow for known social relation auth routes'
   }
 });
 
+test('Setup Assistant includes explore route for known social explore intent', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-social-explore-route-'));
+  try {
+    await withTestSite(simpleShopRoutes, async (rootUrl) => {
+      const host = new URL(rootUrl).hostname;
+      const configDir = path.join(workspace, 'config');
+      await mkdir(configDir, { recursive: true });
+      await writeFile(path.join(configDir, 'site-registry.json'), `${JSON.stringify({
+        version: 1,
+        sites: {
+          [host]: {
+            canonicalBaseUrl: rootUrl,
+            host,
+            siteKey: 'x',
+            adapterId: 'x',
+            siteArchetype: 'social-content',
+            auth: {
+              required: true,
+              mode: 'browser',
+              authCheckUrl: '/home?source=setup',
+              authRoutes: ['/custom-profile?view=posts', '/search?q=siteforge&src=typed_query'],
+              publicRevisitRoutes: ['/?view=home'],
+              evidencePersistence: 'sanitized-structure-only',
+              sessionMaterialPersistence: 'forbidden',
+            },
+          },
+        },
+      }, null, 2)}\n`);
+      await writeFile(path.join(configDir, 'site-capabilities.json'), `${JSON.stringify({
+        version: 1,
+        sites: {
+          [host]: {
+            baseUrl: rootUrl,
+            host,
+            siteKey: 'x',
+            adapterId: 'x',
+            primaryArchetype: 'social-content',
+            capabilityFamilies: ['query-social-content', 'query-social-relations', 'search-content'],
+            supportedIntents: ['list-explore-topics', 'search-posts'],
+          },
+        },
+      }, null, 2)}\n`);
+
+      const setup = await prepareSiteForgeBuildSetup(rootUrl, {
+        cwd: workspace,
+        buildId: 'setup-social-explore-route',
+        now: new Date('2026-05-25T17:20:00.000Z'),
+        setupInteractive: true,
+        setupPrompt: async () => '',
+        setupOutput: createWritableBuffer(),
+        fetchDelayMs: 0,
+      });
+
+      const authRoutes = setup.profile.crawlContract.coverageTargets.authRoutes;
+      const requiresLoginCapabilities = setup.profile.crawlContract.coverageTargets.requiresLoginCapabilities;
+      assert.equal(setup.setupPlan.knownSitePolicy.siteKey, 'x');
+      assert.equal(setup.setupPlan.knownSitePolicy.auth.authCheckUrl, '/home');
+      assert.equal(authRoutes.includes('/custom-profile'), true);
+      assert.equal(authRoutes.includes('/explore'), true);
+      assert.equal(authRoutes.includes('/search'), true);
+      assert.equal(authRoutes.some((route) => /[?#]/u.test(route)), false);
+      assert.equal(requiresLoginCapabilities.includes('list-explore-topics'), true);
+      assert.equal(setup.profile.crawlContract.coverageTargets.publicRevisitRoutes.includes('/'), true);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('Setup Assistant robots-disallowed known-policy guidance is explicit in non-interactive and interactive modes', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-setup-robots-guidance-'));
   try {

@@ -196,6 +196,102 @@ function observedSignedRuntimeApiRequest(rootUrl, siteKey) {
   };
 }
 
+function observedQidianPublicSignedRuntimeApiRequest(rootUrl, {
+  semanticKind = 'read-site-system-time',
+  id = 'synthetic-signed-runtime-api-request',
+} = {}) {
+  const endpointTemplate = new URL('/api/signed/user', rootUrl).toString();
+  return {
+    id,
+    siteKey: 'qidian',
+    status: 'observed',
+    method: 'GET',
+    url: endpointTemplate,
+    resourceType: 'fetch',
+    source: 'site-adapter.build-api-seed',
+    evidence: {
+      semanticKind,
+      rawMaterialPersisted: false,
+    },
+    request: {
+      headers: {
+        accept: 'application/json',
+      },
+      body: null,
+    },
+    runtime: {
+      semanticKind,
+      endpointTemplate,
+      parameterSource: {
+        kind: 'qidian_yuew_sign',
+      },
+      responseEvidence: {
+        statusCode: 0,
+        objectField: 'data',
+      },
+      rawParameterMaterialPersisted: false,
+    },
+  };
+}
+
+function observedXWebAuthRuntimeApiRequest(rootUrl, endpointPath = '/i/api/1.1/hashflags.json') {
+  const endpointTemplate = new URL(endpointPath, rootUrl).toString();
+  return {
+    id: 'synthetic-x-web-auth-api-request',
+    siteKey: 'x',
+    status: 'observed',
+    method: 'GET',
+    url: endpointTemplate,
+    resourceType: 'fetch',
+    source: 'site-adapter.build-api-seed',
+    request: {
+      headers: {
+        accept: 'application/json',
+      },
+      body: null,
+    },
+    runtime: {
+      endpointTemplate,
+      parameterSource: {
+        kind: 'x_web_auth_headers',
+        rawMaterialPersisted: false,
+      },
+      responseEvidence: null,
+      rawParameterMaterialPersisted: false,
+    },
+  };
+}
+
+function observedXBrowserContextRuntimeApiRequest(rootUrl) {
+  const endpointTemplate = new URL('/i/api/1.1/hashflags.json', rootUrl).toString();
+  return {
+    id: 'synthetic-x-browser-context-api-request',
+    siteKey: 'x',
+    status: 'observed',
+    method: 'GET',
+    url: endpointTemplate,
+    resourceType: 'fetch',
+    source: 'site-adapter.build-api-seed',
+    request: {
+      headers: {
+        accept: 'application/json',
+      },
+      body: null,
+    },
+    evidence: {
+      semanticKind: 'read-hashflags',
+      rawMaterialPersisted: false,
+    },
+    runtime: {
+      semanticKind: 'read-hashflags',
+      endpointTemplate,
+      parameterSource: null,
+      responseEvidence: null,
+      rawParameterMaterialPersisted: false,
+    },
+  };
+}
+
 function rawDynamicReadApiTrace(rootUrl) {
   const endpointTemplate = new URL('/api/profile?user_id={self.uid}&sec_user_id={self.secUid}', rootUrl).toString();
   return {
@@ -216,6 +312,37 @@ function rawDynamicReadApiTrace(rootUrl) {
       truncated: false,
       hasPostData: false,
     },
+  };
+}
+
+function rawXWebAuthRuntimeApiTrace(rootUrl, endpointPath = '/i/api/1.1/hashflags.json') {
+  const endpointTemplate = new URL(endpointPath, rootUrl).toString();
+  return {
+    requestId: 'synthetic-x-web-auth-api-request',
+    resourceType: 'Fetch',
+    wallTime: '2026-05-26T01:04:25.000Z',
+    timestamp: 1,
+    documentURL: rootUrl,
+    initiator: { type: 'script' },
+    request: {
+      method: 'GET',
+      url: endpointTemplate,
+      headers: {
+        accept: 'application/json',
+      },
+      body: null,
+      bodySizeBytes: 0,
+      truncated: false,
+      hasPostData: false,
+    },
+  };
+}
+
+function rawXBrowserContextRuntimeApiTrace(rootUrl) {
+  return {
+    ...rawXWebAuthRuntimeApiTrace(rootUrl),
+    requestId: 'synthetic-x-browser-context-api-request',
+    wallTime: '2026-05-26T01:04:30.000Z',
   };
 }
 
@@ -931,6 +1058,136 @@ test('signed API replay keeps browser bridge instead of unsupported cookie fallb
   }
 });
 
+test('public Qidian signed API replay can use page-context bridge without auth state', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-qidian-public-page-context-'));
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-qidian-public-page-context-build',
+        now: new Date('2026-05-26T01:04:17.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 200,
+            contentType: 'application/json',
+            responseKind: 'json',
+            responseEvidenceStatus: 'matched',
+            observedStatusCode: 0,
+            observedObjectFieldPresent: true,
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawSignedRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedQidianPublicSignedRuntimeApiRequest(rootUrl)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(bridgeReplayRequest.authBoundary, 'public_browser_bridge');
+      assert.equal(bridgeReplayRequest.fetchOptions.credentials, 'same-origin');
+      assert.equal(bridgeReplayRequest.runtimeParameterSource.kind, 'qidian_yuew_sign');
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.authBoundary, 'public_browser_bridge');
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'public_browser_bridge');
+      assert.equal(replayArtifact.replayPolicy.credentials, 'same-origin');
+      assert.equal(replayArtifact.replayPolicy.publicPageContextOnly, true);
+      assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.kind, 'qidian_yuew_sign');
+
+      const bindingArtifact = await readJson(path.join(result.artifactDir, 'runtime', 'api-adapter-bindings.internal.json'));
+      assert.equal(bindingArtifact.bindings[0].authBoundary, 'public_browser_bridge');
+      assert.equal(bindingArtifact.bindings[0].requestPolicy.credentials, 'same-origin');
+
+      const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
+      assert.equal(summaryArtifact.sanitizedSummary.replayVerifiedCount, 1);
+      assert.equal(summaryArtifact.sanitizedSummary.activatedApiAdapterCount, 1);
+      assert.doesNotMatch(JSON.stringify({ bridgeReplayRequest, replayArtifact, bindingArtifact }), /sid=|authorization|bearer/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('public Qidian signed API replay blocks account scoped semantics without auth state', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-qidian-public-account-blocked-'));
+  let replayCalled = false;
+  try {
+    await withTestSite(siteRoutes, async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-qidian-public-account-blocked-build',
+        now: new Date('2026-05-26T01:04:17.500Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async () => {
+          replayCalled = true;
+          return { status: 'verified', httpStatus: 200 };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawSignedRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedQidianPublicSignedRuntimeApiRequest(rootUrl, {
+              semanticKind: 'read-authenticated-user',
+            })],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(replayCalled, false);
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'skipped');
+      assert.equal(replayArtifact.activated, false);
+      assert.equal(replayArtifact.reasonCode, 'qidian_api_semantic_requires_account_or_review');
+      assert.equal(replayArtifact.authBoundary, 'none');
+      const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
+      assert.equal(summaryArtifact.sanitizedSummary.activatedApiAdapterCount, 0);
+      assert.equal(summaryArtifact.sanitizedSummary.adapterSkippedReasonCounts.qidian_api_semantic_requires_account_or_review, 1);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('signed Qidian API replay prefers captured overlay page for runtime signing', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-qidian-overlay-page-'));
   const cookieSecret = 'synthetic-qidian-overlay-cookie';
@@ -1021,6 +1278,439 @@ test('signed Qidian API replay prefers captured overlay page for runtime signing
       const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
       assert.equal(replayArtifact.status, 'verified');
       assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.pageUrl, new URL('/soushu/', rootUrl).toString());
+      assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('X web-auth API replay can use user-authorized browser bridge behind robots block', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-x-web-auth-robots-'));
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/i/api', sitemap: false }),
+      },
+      '/i/api/1.1/hashflags.json': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ ok: true }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-x-web-auth-robots-build',
+        now: new Date('2026-05-26T01:04:25.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 200,
+            contentType: 'application/json',
+            responseKind: 'json',
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawXWebAuthRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedXWebAuthRuntimeApiRequest(rootUrl)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      assert.equal(bridgeReplayRequest.runtimeParameterSource.kind, 'x_web_auth_headers');
+      assert.equal(Object.hasOwn(bridgeReplayRequest.runtimeParameterSource, 'csrfCookieName'), false);
+      assert.equal(bridgeReplayRequest.endpoint, new URL('/i/api/1.1/hashflags.json', rootUrl).toString());
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.endpointPattern, replayArtifact.endpoint);
+      assert.equal(replayArtifact.redactedEndpoint, replayArtifact.endpointPattern);
+      assert.equal(replayArtifact.endpointExecutable, false);
+      assert.match(replayArtifact.endpointOperationRef, /^api-operation:read-hashflags/iu);
+      assert.doesNotMatch(replayArtifact.endpointOperationRef, /https?:|ct0|auth_token|authorization|bearer/iu);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'browser_bridge');
+      assert.equal(replayArtifact.replayPolicy.robotsUserAuthorizedBypass, true);
+      assert.equal(replayArtifact.replayPolicy.runtimeParameterSource.kind, 'x_web_auth_headers');
+      assert.equal(Object.hasOwn(replayArtifact.replayPolicy.runtimeParameterSource, 'csrfCookieName'), false);
+      assert.doesNotMatch(JSON.stringify(replayArtifact), /ct0=|auth_token=|authorization|bearer/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('X web-auth API replay preserves query keys in redacted endpoint pattern', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-x-web-auth-query-'));
+  const endpointPath = '/i/api/2/badge_count/badge_count.json?supports_ntab_urt=1';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/i/api', sitemap: false }),
+      },
+      '/i/api/2/badge_count/badge_count.json': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ ntab: 0 }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-x-web-auth-query-build',
+        now: new Date('2026-05-26T01:04:28.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async () => ({
+          status: 'verified',
+          httpStatus: 200,
+          contentType: 'application/json',
+          responseKind: 'json',
+        }),
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawXWebAuthRuntimeApiTrace(rootUrl, endpointPath)],
+            observedRequests: [observedXWebAuthRuntimeApiRequest(rootUrl, endpointPath)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.endpointPattern.endsWith('?keys=supports_ntab_urt'), true);
+      assert.equal(replayArtifact.endpointPattern.includes('?keys=keys'), false);
+      assert.match(replayArtifact.endpointOperationRef, /^api-operation:read-badge-count-summary/iu);
+      assert.doesNotMatch(JSON.stringify(replayArtifact), /supports_ntab_urt=1|ct0=|auth_token=|authorization|bearer/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('X browser-context API replay can verify hashflags behind robots block', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-x-browser-context-robots-'));
+  let bridgeReplayRequest = null;
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/i/api', sitemap: false }),
+      },
+      '/i/api/1.1/hashflags.json': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ ok: true }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-x-browser-context-robots-build',
+        now: new Date('2026-05-26T01:04:30.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async (request) => {
+          bridgeReplayRequest = request;
+          return {
+            status: 'verified',
+            httpStatus: 200,
+            contentType: 'application/json',
+            responseKind: 'json',
+          };
+        },
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawXBrowserContextRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedXBrowserContextRuntimeApiRequest(rootUrl)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(result.status, 'success');
+      if (bridgeReplayRequest) {
+        assert.equal(bridgeReplayRequest.runtimeParameterSource, null);
+        assert.equal(bridgeReplayRequest.endpoint, new URL('/i/api/1.1/hashflags.json', rootUrl).toString());
+      }
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'browser_bridge');
+      assert.equal(replayArtifact.replayPolicy.robotsUserAuthorizedBypass, true);
+      assert.equal(replayArtifact.replayPolicy.runtimeParameterSource, null);
+      assert.doesNotMatch(JSON.stringify(replayArtifact), /ct0=|auth_token=|authorization|bearer/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('X web-auth API replay records bridge remediation when runtime source is unsupported', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-x-runtime-remediation-'));
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/i/api', sitemap: false }),
+      },
+      '/i/api/1.1/hashflags.json': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ ok: true }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const authState = browserVerifiedAuthState(rootUrl);
+      authState.browserBridge.extensionStages = [
+        'bridge-content-version:route-queue-chinese-semantic-v7',
+        'bridge-version:route-queue-chinese-semantic-v7',
+        'collector-version:fixture-home:route-queue-chinese-semantic-v7',
+      ];
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-x-runtime-remediation-build',
+        now: new Date('2026-05-26T01:04:33.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: authState,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async () => ({
+          status: 'skipped',
+          reasonCode: 'runtime_parameter_source_unsupported',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        }),
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawXWebAuthRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedXWebAuthRuntimeApiRequest(rootUrl)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'skipped');
+      assert.equal(replayArtifact.reasonCode, 'runtime_parameter_source_unsupported');
+      assert.equal(replayArtifact.runtimeRemediation.status, 'blocked');
+      assert.equal(replayArtifact.runtimeRemediation.reasonCode, 'runtime_parameter_source_unsupported');
+      assert.equal(replayArtifact.runtimeRemediation.runtimeParameterSourceKind, 'x_web_auth_headers');
+      assert.equal(replayArtifact.runtimeRemediation.expectedBrowserBridgeExtensionVersion, 'route-queue-x-api-runtime-v8');
+      assert.deepEqual(replayArtifact.runtimeRemediation.observedBridgeVersions, ['route-queue-chinese-semantic-v7']);
+      assert.deepEqual(replayArtifact.runtimeRemediation.observedContentVersions, ['route-queue-chinese-semantic-v7']);
+      assert.deepEqual(replayArtifact.runtimeRemediation.observedCollectorVersions, ['route-queue-chinese-semantic-v7']);
+      assert.equal(replayArtifact.runtimeRemediation.versionStatus, 'stale_or_incompatible_observed');
+      assert.equal(replayArtifact.runtimeRemediation.fallback.authMaterialFallbackSupported, true);
+      assert.equal(replayArtifact.runtimeRemediation.fallback.authMaterialFallbackConfigured, false);
+      assert.equal(replayArtifact.runtimeRemediation.fallback.authMaterialFallbackAvailable, false);
+      assert.equal(replayArtifact.runtimeRemediation.fallback.rawMaterialPersisted, false);
+      assert.equal(replayArtifact.runtimeRemediation.requiredAction, 'reload_browser_bridge_extension_or_configure_governed_auth_material_fallback');
+      assert.doesNotMatch(JSON.stringify(replayArtifact), /ct0=|auth_token=|authorization|bearer/iu);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('X web-auth API replay falls back to in-memory cookie CSRF when bridge lacks runtime support', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-x-cookie-fallback-'));
+  const cookieSecret = 'synthetic-x-auth-secret';
+  const csrfSecret = 'synthetic-x-csrf-secret';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/i/api', sitemap: false }),
+      },
+      '/i/api/1.1/hashflags.json': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ ok: true }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-x-cookie-fallback-build',
+        now: new Date('2026-05-26T01:04:35.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiReplayCookieHeader: `ct0=${csrfSecret}; auth_token=${cookieSecret}`,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async () => ({
+          status: 'failed',
+          reasonCode: 'runtime_parameter_source_unsupported',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        }),
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawXWebAuthRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedXWebAuthRuntimeApiRequest(rootUrl)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'verified');
+      assert.equal(replayArtifact.activated, true);
+      assert.equal(replayArtifact.replayPolicy.buildTimeAuthBoundary, 'cookie_replay_only');
+      assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
+      assert.equal(JSON.stringify(replayArtifact).includes(csrfSecret), false);
+
+      const summaryArtifact = await readJson(path.join(result.artifactDir, 'network_traces.json'));
+      assert.equal(summaryArtifact.sanitizedSummary.replayVerifiedCount, 1);
+      assert.equal(summaryArtifact.sanitizedSummary.activatedApiAdapterCount, 1);
+      assert.equal(JSON.stringify(summaryArtifact).includes(cookieSecret), false);
+      assert.equal(JSON.stringify(summaryArtifact).includes(csrfSecret), false);
+    });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('X web-auth API replay explains missing cookie CSRF during fallback', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'siteforge-api-adapter-x-cookie-missing-csrf-'));
+  const cookieSecret = 'synthetic-x-auth-secret';
+  try {
+    await withTestSite((rootUrl) => ({
+      ...siteRoutes(rootUrl),
+      '/robots.txt': {
+        contentType: 'text/plain; charset=utf-8',
+        body: testRobotsTxt(rootUrl, { disallow: '/i/api', sitemap: false }),
+      },
+      '/i/api/1.1/hashflags.json': {
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ ok: true }),
+      },
+    }), async (rootUrl) => {
+      const parsed = parseCliArgs([rootUrl]);
+      const result = await runSiteForgeBuild(rootUrl, {
+        ...parsed.options,
+        cwd: workspace,
+        buildId: 'api-adapter-x-cookie-missing-csrf-build',
+        now: new Date('2026-05-26T01:04:40.000Z'),
+        maxDepth: 1,
+        maxPages: 4,
+        maxSeeds: 4,
+        fetchDelayMs: 0,
+        authStateReport: browserVerifiedAuthState(rootUrl),
+        apiReplayCookieHeader: `auth_token=${cookieSecret}`,
+        apiAdapterResolver: acceptingFixtureApiAdapter,
+        browserBridgeApiReplayProvider: async () => ({
+          status: 'failed',
+          reasonCode: 'runtime_parameter_source_unsupported',
+          httpStatus: null,
+          contentType: null,
+          responseKind: null,
+        }),
+        publicRenderedStructureProvider: async ({ context }) => {
+          context.internalRawNetworkCapture = {
+            status: 'captured',
+            rawTraces: [rawXWebAuthRuntimeApiTrace(rootUrl)],
+            observedRequests: [observedXWebAuthRuntimeApiRequest(rootUrl)],
+            observedResponseSummaries: [],
+          };
+          return {
+            publicRenderedPages: [{
+              url: rootUrl,
+              title: 'Internal Raw Network',
+              visibleItemCount: 1,
+              links: [{ href: new URL('/article/1', rootUrl).toString(), label: 'Article' }],
+            }],
+          };
+        },
+      });
+
+      assert.equal(result.status, 'success');
+      const replayArtifact = await readJson(path.join(result.artifactDir, 'discovery', 'api-replay-verifications', 'replay-0001.json'));
+      assert.equal(replayArtifact.status, 'skipped');
+      assert.equal(replayArtifact.reasonCode, 'x_csrf_unavailable');
+      assert.equal(replayArtifact.activated, false);
       assert.equal(JSON.stringify(replayArtifact).includes(cookieSecret), false);
     });
   } finally {

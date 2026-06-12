@@ -91,7 +91,7 @@ async function writeKnownXPolicyConfig(workspace, baseUrl = X_URL) {
             'deterministic local HTTP validation',
           ],
         },
-        downloadSessionRequirement: 'optional',
+        downloadSessionRequirement: 'required',
         capabilityFamilies: [
           'download-content',
           'query-account-profile',

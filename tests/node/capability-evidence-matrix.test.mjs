@@ -130,6 +130,44 @@ test('capability evidence matrix limits authenticated capabilities after browser
   assert.deepEqual(applied.evidenceMatrix.missingEvidence, []);
 });
 
+test('authenticated search results pages satisfy read-only social search evidence', () => {
+  const context = publicContext({
+    authStateReport: {
+      authMethod: 'browser',
+      authVerificationStatus: 'browser_verified',
+      verified: true,
+    },
+  });
+  const capability = {
+    id: 'capability:fixture:search-posts',
+    name: 'search posts',
+    setupCapabilityId: 'search-posts',
+    action: 'search',
+    status: 'active',
+    enabled_status: 'enabled',
+    evidence: [{ type: 'browser-route', source: 'auth' }],
+    entryNodeIds: ['node:search'],
+    executionPlan: { mode: 'read_only', autoExecute: false },
+  };
+  const nodes = [{
+    id: 'node:search',
+    type: 'page',
+    sourceLayer: 'authenticated',
+    authRequired: true,
+    pageType: 'search-results',
+    evidenceStatus: 'structure_summary_present',
+    visibleItemCount: 4,
+  }];
+
+  const applied = applyCapabilityEvidenceMatrix(context, capability, graph(nodes));
+  assert.equal(applied.status, 'active');
+  assert.equal(applied.enabled_status, 'enabled');
+  assert.equal(applied.evidence_status, 'verified');
+  assert.deepEqual(applied.evidenceMatrix.missingEvidence, []);
+  assert.equal(applied.runtimeCallable, undefined);
+  assert.equal(applied.executionPlan.mode, 'read_only');
+});
+
 test('browser bridge structure evidence satisfies authenticated route-level capabilities', () => {
   const context = publicContext({
     authStateReport: {
@@ -197,4 +235,42 @@ test('capability evidence matrix keeps forced-risk capabilities governed', () =>
   assert.equal(applied.executionDisposition, 'blocked');
   assert.equal(applied.executionPlan.governedExecution, true);
   assert.equal(applied.executionPlan.autoExecute, false);
+});
+
+test('capability evidence matrix keeps site-policy disabled forced-risk capabilities disabled', () => {
+  const capability = {
+    id: 'capability:fixture:change-payment',
+    name: 'change payment settings',
+    object: 'payment settings',
+    action: 'manage',
+    risk_level: 'account_security_critical',
+    status: 'disabled',
+    enabled_status: 'disabled',
+    default_policy: 'disabled',
+    evidence_status: 'disabled',
+    activationBlockedReason: 'site-policy-disabled-action',
+    disabledReason: 'site-policy-disabled-action',
+    sitePolicyDisabled: true,
+    sitePolicyDisabledActions: ['change_payment'],
+    evidence: [{ type: 'page', source: 'public' }],
+    entryNodeIds: ['node:settings'],
+  };
+  const nodes = [{
+    id: 'node:settings',
+    type: 'page',
+    sourceLayer: 'public',
+    normalizedUrl: 'https://example.test/settings',
+    evidenceStatus: 'structure_summary_present',
+    listPresent: true,
+  }];
+
+  const applied = applyCapabilityEvidenceMatrix(publicContext(), capability, graph(nodes));
+  assert.equal(applied.status, 'disabled');
+  assert.equal(applied.enabled_status, 'disabled');
+  assert.equal(applied.default_policy, 'disabled');
+  assert.equal(applied.activationBlockedReason, 'site-policy-disabled-action');
+  assert.equal(applied.planCallable, false);
+  assert.equal(applied.runtimeCallable, false);
+  assert.equal(applied.autoExecutable, false);
+  assert.equal(applied.executionPlan, undefined);
 });

@@ -464,6 +464,39 @@ test('non-x known-site capability generation filters duplicates and keeps callab
   assert.equal(intents.some((intent) => /\p{Script=Han}/u.test(intent.canonicalUtterance)), true);
 });
 
+test('auto intent records inherit capability inputs as slots', () => {
+  const context = {
+    skillId: 'catalog-site',
+    site: { id: 'catalog-site' },
+  };
+  const capability = {
+    id: 'capability:catalog-site:search-public-content',
+    name: 'search public content',
+    description: 'Search public content by keyword.',
+    action: 'search',
+    object: 'public content',
+    status: 'active',
+    enabled_status: 'enabled',
+    runtimeCallable: true,
+    autoExecutable: true,
+    executionDisposition: 'allow',
+    risk_level: 'read_public_low',
+    inputs: [
+      { name: 'keyword', type: 'text', required: true },
+    ],
+    executionPlan: {
+      id: 'plan:catalog-site:search-public-content',
+      steps: [{ kind: 'read', method: 'GET', querySlot: 'keyword' }],
+    },
+  };
+
+  const intents = generateAutoIntentRecords(context, [capability]);
+
+  assert.equal(intents.length > 0, true);
+  assert.equal(intents.every((intent) => intent.slots?.[0]?.name === 'keyword'), true);
+  assert.equal(intents.every((intent) => intent.runtimeCallable === true), true);
+});
+
 test('news fixture registry resolves Chinese utterances without x.com assumptions', () => {
   let registry = createEmptySkillRegistry('2026-05-17T00:00:00.000Z');
   registry = upsertSkillRegistryRecord(registry, {

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "redactedPaths": [
+    "summary.browserProfilePersisted"
+  ],
+  "redactions": [
+    {
+      "path": "summary.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    }
+  ],
+  "findings": []
+}

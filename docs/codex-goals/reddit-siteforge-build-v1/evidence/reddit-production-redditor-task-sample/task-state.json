@@ -1,0 +1,2915 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-production-research-task-state",
+  "taskId": "redditor-profile",
+  "status": "completed",
+  "generatedAt": "2026-06-09T09:18:51.009Z",
+  "updatedAt": "2026-06-09T09:18:56.122Z",
+  "completedBucketIds": [
+    "user-public-feed",
+    "user-about",
+    "user-submitted",
+    "user-comments"
+  ],
+  "failedBucketIds": [],
+  "bucketResults": [
+    {
+      "bucketId": "user-public-feed",
+      "status": "completed",
+      "provider": "api",
+      "api": {
+        "status": "success",
+        "provider": "reddit_public_atom_feed",
+        "reasonCode": null,
+        "httpStatus": 200,
+        "itemCount": 25,
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/.rss"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText"
+      },
+      "items": [
+        {
+          "id": "feed:44cd483416af66e1",
+          "externalId": "t3_1sbpwv9",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Keeping your account safe on reddit",
+          "author": "/u/reddit",
+          "community": "help",
+          "communityUrl": "https://www.reddit.com/r/help/",
+          "categories": [
+            {
+              "term": "help",
+              "label": "r/help"
+            }
+          ],
+          "publishedAt": "2026-04-03T21:09:08+00:00",
+          "updatedAt": "2026-04-03T21:09:08+00:00",
+          "permalink": "https://www.reddit.com/r/help/comments/1sbpwv9/keeping_your_account_safe_on_reddit/",
+          "url": "https://www.reddit.com/r/help/comments/1sbpwv9/keeping_your_account_safe_on_reddit/",
+          "contentText": "Hey Folks! We&#39;re here to remind everyone how to keep your accounts safe on reddit. Reddit will never ask you for your password or 2FA codes, nor will we ask you via private messages to change your email address. We will only reach out to you via reddit.com email or reddit platform messaging from this account, u/reddit, if there are issues with your account. We will never do so on any other platform. If you are receiving messages elsewhere about your account status please ignore those messages and report them to the platform where you received them. If you suspect any issues with your account you can always reset your password . Please make sure to pick a strong, unique password that isn&#39;t shared on other sites and check your computer for any malware or other points of weakness. You may also review your recent account activity here . Please also consider adding two-factor authentication to your account to increase security. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/help [link] &#32; [comments]",
+          "contentTextLength": 1025,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hey Folks! We&#39;re here to remind everyone how to keep your accounts safe on reddit. Reddit will never ask you for your password or 2FA codes, nor will we ask you via private messages to change your email address. We will only reach out to you via reddit.com email or reddit pla",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:6e092dc188cbab18",
+          "externalId": "t1_mx9407o",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on ACTION NEEDED: PLEASE READ",
+          "author": "/u/reddit",
+          "community": "modlimit",
+          "communityUrl": "https://www.reddit.com/r/modlimit/",
+          "categories": [
+            {
+              "term": "modlimit",
+              "label": "r/modlimit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2025-06-11T19:19:35+00:00",
+          "permalink": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/mx9407o/",
+          "url": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/mx9407o/",
+          "contentText": "Thanks! I&#39;ve sent you the first message here: https://www.reddit.com/message/messages/2y4wpa2 In order for me to send you the rest of the message I&#39;ll need you to reply there when you have a chance. To your questions: unfortunately, a lot our tooling doesn&#39;t work with modteams of this size, but - no promises here as I don&#39;t know what this would take - I will see if there&#39;s anything we can do for you in general while we&#39;re in here already.",
+          "contentTextLength": 466,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Thanks! I&#39;ve sent you the first message here: https://www.reddit.com/message/messages/2y4wpa2 In order for me to send you the rest of the message I&#39;ll need you to reply there when you have a chance. To your questions: unfortunately, a lot our tooling doesn&#39;t work with",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:498a50f771e8af18",
+          "externalId": "t3_1l8ejw1",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "ACTION NEEDED: PLEASE READ",
+          "author": "/u/reddit",
+          "community": "modlimit",
+          "communityUrl": "https://www.reddit.com/r/modlimit/",
+          "categories": [
+            {
+              "term": "modlimit",
+              "label": "r/modlimit"
+            }
+          ],
+          "publishedAt": "2025-06-11T00:04:51+00:00",
+          "updatedAt": "2025-06-11T00:04:51+00:00",
+          "permalink": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/",
+          "url": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/",
+          "contentText": "Hello mods of modlimit, hopefully by now you&#39;ve seen this post . In short, we are removing dormant user accounts from mod lists in an effort for us to increase transparency and security on Reddit. This is only users and bots that have not logged into Reddit in over 1 year. You&#39;re receiving this message because we&#39;ve identified these dormant accounts which will be removed by June 18, 2025: this is where your list of usernames would usually go, but y&#39;all finally did it you broke reddit - the list is too long to fit in a single post Because your modmail is bork please nominate one mod to be the recipient of the instructions and the list of user names via PM As a reminder, if you have accounts on your modlist that don&#39;t fall under this, but are listed as inactive, you can make use of the mod reorder tooling to make some changes. You can check out our FAQ here . Thanks ps: I am not a cat &#32; submitted by &#32; /u/reddit &#32; to &#32; r/modlimit [link] &#32; [comments]",
+          "contentTextLength": 1000,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hello mods of modlimit, hopefully by now you&#39;ve seen this post . In short, we are removing dormant user accounts from mod lists in an effort for us to increase transparency and security on Reddit. This is only users and bots that have not logged into Reddit in over 1 year. Yo",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:abcd8b5711be2f2f",
+          "externalId": "t3_1k65533",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/Holocaust is reopening",
+          "author": "/u/reddit",
+          "community": "holocaust",
+          "communityUrl": "https://www.reddit.com/r/holocaust/",
+          "categories": [
+            {
+              "term": "holocaust",
+              "label": "r/holocaust"
+            }
+          ],
+          "publishedAt": "2025-04-23T17:33:19+00:00",
+          "updatedAt": "2025-04-23T17:33:19+00:00",
+          "permalink": "https://www.reddit.com/r/holocaust/comments/1k65533/rholocaust_is_reopening/",
+          "url": "https://www.reddit.com/r/holocaust/comments/1k65533/rholocaust_is_reopening/",
+          "contentText": "Hi everybody. Given that this subreddit name once belonged to a long-banned subreddit, we wanted to confirm that we made the decision to reclaim the name, clear old content and subscribers, and allow the community name to be adopted for use as a new subreddit. The new mod team plans to use the space in a way that respects, educates about, and honors Holocaust remembrance. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/holocaust [link] &#32; [comments]",
+          "contentTextLength": 460,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hi everybody. Given that this subreddit name once belonged to a long-banned subreddit, we wanted to confirm that we made the decision to reclaim the name, clear old content and subscribers, and allow the community name to be adopted for use as a new subreddit. The new mod team pl",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:42297b912abbd26e",
+          "externalId": "t3_1ih9i5h",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Taking action on rule-violating content",
+          "author": "/u/reddit",
+          "community": "RedditSafety",
+          "communityUrl": "https://www.reddit.com/r/RedditSafety/",
+          "categories": [
+            {
+              "term": "RedditSafety",
+              "label": "r/RedditSafety"
+            }
+          ],
+          "publishedAt": "2025-02-04T04:26:47+00:00",
+          "updatedAt": "2025-02-04T04:26:47+00:00",
+          "permalink": "https://www.reddit.com/r/RedditSafety/comments/1ih9i5h/taking_action_on_ruleviolating_content/",
+          "url": "https://www.reddit.com/r/RedditSafety/comments/1ih9i5h/taking_action_on_ruleviolating_content/",
+          "contentText": "Over the last few days, we’ve seen an increase in content in several communities that violate Reddit Rules. Reddit communities are places for civil discussion and are one of the few places online where people can exchange ideas and perspectives. We want to ensure that they continue to be a place for healthy debate no matter the topic. Debate and dissent are welcome on Reddit—threats and doxing are not. When we identify communities experiencing an increase in rule-violating content, we are taking the following steps as needed: Reaching out to moderators to ensure they have the support they need, including turning on safety tools, reminding mods of our rules, or offering additional moderation support Adding a popup to remind users before visiting that subreddit of Reddit’s Rules In some cases, placing a temporary ban on the community for 72 hours to enable us to engage with moderation teams and review and remove violating content Currently r/WhitePeopleTwitter is under a temporary ban. This means that you will not be able to access this community during this cooling-off period while we work with the mods to ensure it is a safe place for discussion. We will continue to monitor and reach out to communities experiencing a surge in violative content and will take the necessary actions noted above to ensure all communities can provide a safe environment for healthy conversation. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/RedditSafety [link] &#32; [comments]",
+          "contentTextLength": 1483,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Over the last few days, we’ve seen an increase in content in several communities that violate Reddit Rules. Reddit communities are places for civil discussion and are one of the few places online where people can exchange ideas and perspectives. We want to ensure that they contin",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:4eefd710e93aee1a",
+          "externalId": "t1_lg2az5a",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this a legitimate DM from Reddit, or is this a phishing scam against Reddit mods?",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-08-02T00:15:33+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2az5a/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2az5a/",
+          "contentText": "It&#39;s real, I&#39;m real! Totally appreciate you checking though, thanks in advance if you participate in the study!",
+          "contentTextLength": 119,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "It&#39;s real, I&#39;m real! Totally appreciate you checking though, thanks in advance if you participate in the study!",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:17d5ea1438ec345b",
+          "externalId": "t1_lg2ai5m",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this a legitimate DM from Reddit, or is this a phishing scam against Reddit mods?",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-08-02T00:12:37+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2ai5m/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2ai5m/",
+          "contentText": "legit",
+          "contentTextLength": 5,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "legit",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:b5b10b87419a54f4",
+          "externalId": "t1_krnkgh9",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "RedditSafety",
+          "communityUrl": "https://www.reddit.com/r/RedditSafety/",
+          "categories": [
+            {
+              "term": "RedditSafety",
+              "label": "r/RedditSafety"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-02-22T19:54:19+00:00",
+          "permalink": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/krnkgh9/",
+          "url": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/krnkgh9/",
+          "contentText": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentTextLength": 145,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:bc6a439ad40f92cf",
+          "externalId": "t1_krnk8l7",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-02-22T19:53:11+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/krnk8l7/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/krnk8l7/",
+          "contentText": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentTextLength": 145,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:00cae582f694a530",
+          "externalId": "t1_krnk4z9",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "help",
+          "communityUrl": "https://www.reddit.com/r/help/",
+          "categories": [
+            {
+              "term": "help",
+              "label": "r/help"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-02-22T19:52:40+00:00",
+          "permalink": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/krnk4z9/",
+          "url": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/krnk4z9/",
+          "contentText": "Thanks for the note - and understood. Given that, We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentTextLength": 195,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Thanks for the note - and understood. Given that, We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:65c3ffd0ea536d21",
+          "externalId": "t3_1axbf2i",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": "2024-02-22T16:59:37+00:00",
+          "updatedAt": "2024-02-22T16:59:37+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/",
+          "contentText": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/ModSupport [link] &#32; [comments]",
+          "contentTextLength": 86,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/ModSupport [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:7328fde7885a9983",
+          "externalId": "t3_1ax9r39",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "RedditSafety",
+          "communityUrl": "https://www.reddit.com/r/RedditSafety/",
+          "categories": [
+            {
+              "term": "RedditSafety",
+              "label": "r/RedditSafety"
+            }
+          ],
+          "publishedAt": "2024-02-22T15:54:53+00:00",
+          "updatedAt": "2024-02-22T15:54:53+00:00",
+          "permalink": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/",
+          "url": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/",
+          "contentText": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/RedditSafety [link] &#32; [comments]",
+          "contentTextLength": 88,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/RedditSafety [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:95b670b39b3426cb",
+          "externalId": "t3_1awsj1k",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "help",
+          "communityUrl": "https://www.reddit.com/r/help/",
+          "categories": [
+            {
+              "term": "help",
+              "label": "r/help"
+            }
+          ],
+          "publishedAt": "2024-02-22T00:33:52+00:00",
+          "updatedAt": "2024-02-22T00:33:52+00:00",
+          "permalink": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/",
+          "url": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/",
+          "contentText": "Hey all! Today we wanted to take a moment to remind everyone how you can verify if a message, comment, or post is truly from a Reddit employee or Reddit Inc. As you can see by clicking on my profile all official Reddit accounts will have a orangered snoo or [A] denoting admin accounts. You&#39;ll also see those on official messages, comments, or posts from us. (like on this post) If there is an email address attached to your username, you may also receive notices at that address from @reddit.com or @redditmail.com addresses. Account security related notifications/messages are sent officially from our u/reddit account only. We&#39;ll also never send you a chat message notifying you of a security related issue. Finally, in the words of every gaming company anywhere, Reddit will never ask you for your password or 2FA codes. Please report any suspicious messages by clicking the &quot;report&quot; option below each suspicious message, post or comment, or by filling out a report using reddit.com/report directly. Note: we&#39;re aware that this isn&#39;t currently visible if you&#39;re using the iOS app, we&#39;re working on a fix - in the meantime, if you&#39;re ever unsure please view the profile from the desktop version of the site. edit: removed outdated information &#32; submitted by &#32; /u/reddit &#32; to &#32; r/help [link] &#32; [comments]",
+          "contentTextLength": 1364,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hey all! Today we wanted to take a moment to remind everyone how you can verify if a message, comment, or post is truly from a Reddit employee or Reddit Inc. As you can see by clicking on my profile all official Reddit accounts will have a orangered snoo or [A] denoting admin acc",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:7bd03e57670e3443",
+          "externalId": "t3_175kqzs",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/bigbrotheruk Lounge",
+          "author": "/u/reddit",
+          "community": "bigbrotherukk_",
+          "communityUrl": "https://www.reddit.com/r/bigbrotherukk_/",
+          "categories": [
+            {
+              "term": "bigbrotherukk_",
+              "label": "r/bigbrotherukk_"
+            }
+          ],
+          "publishedAt": "2023-10-11T18:10:17+00:00",
+          "updatedAt": "2023-10-11T18:10:17+00:00",
+          "permalink": "https://www.reddit.com/r/bigbrotherukk_/comments/175kqzs/rbigbrotheruk_lounge/",
+          "url": "https://www.reddit.com/r/bigbrotherukk_/comments/175kqzs/rbigbrotheruk_lounge/",
+          "contentText": "A place for members of r/bigbrotheruk to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/bigbrotherukk_ [link] &#32; [comments]",
+          "contentTextLength": 152,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/bigbrotheruk to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/bigbrotherukk_ [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:c929cf2908b0d636",
+          "externalId": "t3_16iwfu1",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/EarningsWhispers Lounge",
+          "author": "/u/reddit",
+          "community": "EarningsWhispers",
+          "communityUrl": "https://www.reddit.com/r/EarningsWhispers/",
+          "categories": [
+            {
+              "term": "EarningsWhispers",
+              "label": "r/EarningsWhispers"
+            }
+          ],
+          "publishedAt": "2023-09-14T22:45:27+00:00",
+          "updatedAt": "2023-09-14T22:45:27+00:00",
+          "permalink": "https://www.reddit.com/r/EarningsWhispers/comments/16iwfu1/rearningswhispers_lounge/",
+          "url": "https://www.reddit.com/r/EarningsWhispers/comments/16iwfu1/rearningswhispers_lounge/",
+          "contentText": "A place for members of r/EarningsWhispers to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/EarningsWhispers [link] &#32; [comments]",
+          "contentTextLength": 158,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/EarningsWhispers to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/EarningsWhispers [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:aefbed5cee5f0fd4",
+          "externalId": "t3_160fnkz",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/CoinLedger Lounge",
+          "author": "/u/reddit",
+          "community": "CoinLedger",
+          "communityUrl": "https://www.reddit.com/r/CoinLedger/",
+          "categories": [
+            {
+              "term": "CoinLedger",
+              "label": "r/CoinLedger"
+            }
+          ],
+          "publishedAt": "2023-08-24T22:00:34+00:00",
+          "updatedAt": "2023-08-24T22:00:34+00:00",
+          "permalink": "https://www.reddit.com/r/CoinLedger/comments/160fnkz/rcoinledger_lounge/",
+          "url": "https://www.reddit.com/r/CoinLedger/comments/160fnkz/rcoinledger_lounge/",
+          "contentText": "A place for members of r/CoinLedger to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/CoinLedger [link] &#32; [comments]",
+          "contentTextLength": 146,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/CoinLedger to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/CoinLedger [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:4f15b7790b0b0d81",
+          "externalId": "t1_jnkd4t3",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Addressing the community about changes to our API",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-06-09T18:57:36+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/145bram/addressing_the_community_about_changes_to_our_api/jnkd4t3/",
+          "url": "https://www.reddit.com/r/reddit/comments/145bram/addressing_the_community_about_changes_to_our_api/jnkd4t3/",
+          "contentText": "We know answers are tough to find, we&#39;ve switched the default sort to Q&amp;A mode; you can view responses from the following accounts as well: u/spez 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8 , 9 , 10 , 11 , 12 , 13 , 14 u/KeyserSosa 1 , 2 , 3 u/Go_JasonWaterfalls 1 , 2 u/FlyingLaserTurtle 1 , 2 edit: grammar edit 2: added links to responses",
+          "contentTextLength": 336,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "We know answers are tough to find, we&#39;ve switched the default sort to Q&amp;A mode; you can view responses from the following accounts as well: u/spez 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8 , 9 , 10 , 11 , 12 , 13 , 14 u/KeyserSosa 1 , 2 , 3 u/Go_JasonWaterfalls 1 , 2 u/FlyingLaserTur",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:e76c49e1bfce4294",
+          "externalId": "t3_144ho2x",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Join our CEO tomorrow to discuss the API",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": "2023-06-08T18:54:58+00:00",
+          "updatedAt": "2023-06-08T18:54:58+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/144ho2x/join_our_ceo_tomorrow_to_discuss_the_api/",
+          "url": "https://www.reddit.com/r/reddit/comments/144ho2x/join_our_ceo_tomorrow_to_discuss_the_api/",
+          "contentText": "Reddit CEO, u/spez , will be here tomorrow to host an AMA about the latest API updates, including accessibility, mod bots, and third-party mod tools. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/reddit [link] &#32; [comments]",
+          "contentTextLength": 232,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Reddit CEO, u/spez , will be here tomorrow to host an AMA about the latest API updates, including accessibility, mod bots, and third-party mod tools. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/reddit [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:10fa4c20acbe6411",
+          "externalId": "t3_12iws1a",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/FIPwarriors Lounge",
+          "author": "/u/reddit",
+          "community": "FIPwarriors",
+          "communityUrl": "https://www.reddit.com/r/FIPwarriors/",
+          "categories": [
+            {
+              "term": "FIPwarriors",
+              "label": "r/FIPwarriors"
+            }
+          ],
+          "publishedAt": "2023-04-11T20:37:16+00:00",
+          "updatedAt": "2023-04-11T20:37:16+00:00",
+          "permalink": "https://www.reddit.com/r/FIPwarriors/comments/12iws1a/rfipwarriors_lounge/",
+          "url": "https://www.reddit.com/r/FIPwarriors/comments/12iws1a/rfipwarriors_lounge/",
+          "contentText": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/FIPwarriors [link] &#32; [comments]",
+          "contentTextLength": 97,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/FIPwarriors [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:d73f1216b79ff5f0",
+          "externalId": "t1_j56077l",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:17:06+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j56077l/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j56077l/",
+          "contentText": "full comment from u/AkaashMaharaj My colleague u/desileslointaines and I moderate the Equestrian subreddit at Reddit. We do so as unpaid volunteers: we receive no consideration from the corporation, and we are prohibited from accepting any remuneration, gifts, or incentives from third parties for our activities as Moderators. We are also entitled to neither recourse nor remedy from Reddit, if we suffer any loss or endure any abuse, as a result of fulfilling our responsibilities as Moderators. On the contrary, we are required to indemnify the corporation and to hold it harmless if any third party should bring an action against it – howsoever frivolous or unfounded that action might be – in connection with our volunteer moderation activities. We serve as Moderators purely as a form of public service, in the hopes that our sound stewardship of the subreddit will contribute to the wellbeing of the global equestrian community. Our subreddit often discusses difficult issues, such as animal welfare and athlete abuse. These subjects invariably excite high passions, and often foment onslaughts of posts and comments that can include personal attacks, character assassination, thoughtless misinformation, wilful disinformation, and behaviour meant to artificially manipulate the course of discussions. Our ability to moderate these posts and comments – to separate the wheat from the chaff – is vital to enabling the subreddit to function as a community, without becoming a scorched plain of irrelevant and predatory material. Moreover, the existence of a well-managed virtual equestrian space is critical to enabling the global equestrian community to discuss difficult issues, to engage with alternative viewpoints, to consider international factors, to discover unfamiliar facts, and to make better‐informed decisions as citizens in the real world. The Reddit Equestrian community itself has, over time, developed its own standards and rules for what constitutes germane and constructive posts and comments. People choose to become active members of our subreddit because they share the values and ideals embedded in those choices. Our responsibilities as volunteer Moderators call on us to exercise our best judgement on what posts and comments fall within the parameters laid down by the community. Especially when an emotive issue provokes a sudden influx of content, we rely on automated tools to support our manual efforts. In our experience, this combination is the best of possible worlds: the efficiency of automated systems supporting, and not replacing, human judgement. The fact that Reddit has delegated moderation to volunteer human beings, supported by automated tools, is the platform’s single greatest strength. It is a model that should be fostered and encouraged at other social media platforms; too many platforms have instead turned to statistical routines, heuristic algorithms, and self-styled “artificial intelligence” to carry out cheap and rapid moderation, with predictable results. Online societies will not reflect the standards of public accountability and transparency we expect in the real world, if those societies are commanded and controlled by impersonal systems shielded inside black boxes. Online communities will only advance the human condition, if they are led first and last by humans. To make it possible for platforms such as Reddit to sustain content moderation models where technology serves people, instead of mastering us or replacing us, Section 230 must not be attenuated by the Court in a way that exposes the people in that model to unsustainable personal risk, especially if those people are volunteers seeking to advance the public interest or others with no protection against vexatious but determined litigants.",
+          "contentTextLength": 3776,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "full comment from u/AkaashMaharaj My colleague u/desileslointaines and I moderate the Equestrian subreddit at Reddit. We do so as unpaid volunteers: we receive no consideration from the corporation, and we are prohibited from accepting any remuneration, gifts, or incentives from ",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:f39d82d64573be9e",
+          "externalId": "t1_j5605c9",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:16:47+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5605c9/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5605c9/",
+          "contentText": "cont. He did, however, find an attorney willing to file a defamation SLAPP (Strategic lawsuit against public participation) against Reddit, and erroneously referred to me as an ”employee” of Reddit in order to facilitate my inclusion in the suit, and target me for reasons of personal contempt. I am not and never have been an employee of Reddit, as I think is pretty clear in this statement. Reddit, considering that I had in no way defamed this person, generously provided me with legal counsel. In the course of this, the plaintiff not only harassed me personally, but also provided a frivolous motion to attempt to unmask approximately forty users in the community in an attempt to subject them to further harassment for having seen or commented on the original post. Reddit accommodated our community with active diligence, filing legal briefs to defend those users against unmasking, and to push back against many of the plaintiff’s empty threats, and his lawyer’s failure to supply the most basic legal action to back his claims. The suit, unsurprisingly, was ultimately dropped -- but that doesn’t reflect any kind of guarantee. The state of California, where Reddit is based, has very strong anti-SLAPP legislation in place, and because this person framed his place of business as being located there, it’s unlikely he would have made much progress. He still harasses me personally by putting my email on websites and impersonating me as soliciting sexual services, funeral services, other little contextualized hints of his malice, but he is not in a very strong position to weaponize further litigation against me. Now, in my opinion, these acts are only restrained from escalation due to his lack of opportunity. In spite of a paucity of organization and tendency to self-sabotage, his level of hate is so vitriolic that he demonstrates a personality that does not so much resemble plaintiff Gonzales…but ISIS. So in addition to compartmentalizing the chain of responsibility in order to protect human volunteers such as myself, we have to ask how far the distance really is between a hateful individual with enough money to hire an attorney (all while intimating wishes to do harm to the defendant with no care to their own legal case’s integrity) to bring a SLAPP -- and an individual who will visit actual physical harm on another in order to silence them in contempt of their freedoms. It isn’t a one-to-one comparison and I am not suggesting someone who harasses me online is equivalent to ISIS, but there is another consideration: if Section 230 is weakened because of a failure by Google to address its own weaknesses (something I think we can agree it has the resources and expertise to do) what ultimately happens to the human moderator who is considered responsible for the content that appears on their platform, and is expected to counteract it, and is expected to protect their community from it? We are already, by tacit agreement, placed in that chain. We’re not algorithms, we are the agents of programming those algorithms to aid our service to our communities. Reddit isn’t perfect, it has struggled with balancing free speech and hate speech in the past. No company or individual can monitor all corners of the internet at all time, but the same goes for a school yard, or a mall, or any other place where human communities assemble. Further, Reddit has tightened its regulations precisely because it does not want to inadvertently host those potential threats. Without a moderationship and administration free to act without fear of being litigated against or even charged with abetting these threats, organizations like ISIS, or the Proud Boys, or various international bad actors, would in fact find comfort in the weakening of Section 230. Such interests often attempt to use human-run forums to propagate their message and recruitment. Twitter recently saw the departure of its entire paid moderator team, and the increase of hate speech, racism, abuse, misinformation and other threats to our freedoms has skyrocketed. A weakening of Section 230 would codify such an invitation to chaos, endangering the individuals whose role it is to ensure speech while using their best judgement to mitigate threats by exposing them to prosecutions. Indicating my actions as a single individual performing this role in my spare time are the same as Google’s automated challenges suggest that any individual who litigates for any reason against platforms like Reddit should enjoy the same protections as a victim of terrorism. This is not consistent with what I consider a standard of freedom or free speech. Conclusion It’s realistic to say that large, heavily resourced, well-financed corporations like Google should be required to implement better protections where their automated regulation of content is concerned. It’s fair, I think, to say that Section 230 may need to be reconsidered in light of this, and that its text should be updated to make these distinctions, as well as expanding protection to paid or volunteer moderator teams whose primary purpose is to ensure the protection of their communities. That includes terror threats -- and the importance of human intervention. Whether the YouTube’s content regulation instruments can recognize the difference between an ISIS recruitment video or a television clip is a question of technological limitations. If, however, if 230 is weakened in order to punish those technological limitations, as written it will ultimately punish the individuals like myself whose far more sophisticated perception is vital to determining the difference between speech, and potential harm. I am not capable of predicting what any bad actor might choose to propagate within my community before it comes to my inbox. Reddit, by extension (relying on thousands of human volunteers) cannot predict this either. It’s possible Google has a greater share of responsibility to do so, but if Section 230 suffers as a result of this lawsuit, it would preemptively chill human participation in moderating harmful content, and as a result, that harmful content very potentially would enjoy more and not less distribution. If the object of this case is to prevent recruitment and indoctrination by terrorists, weakening my immunity as a volunteer moderator means not only that the person who attempted to sue me for defamation would likely have far greater success in falsely crediting responsibility to me for his indignity, but that I would not choose to make myself available to police any controversial content in service to my community, whether that be cottage industry grift, or terrorist recruitment, or simple bickering. I am not an algorithm. I am not a Reddit employee, or a Reddit department. In the course of being sued, I have taken the personal, voluntary initiative to prevent the names and addresses of community members from becoming public and making those members vulnerable. I was a liaison between Reddit and those community members. I don’t receive compensation for this, and I was happy to do it -- but I don’t think I would feel that way if I was blamed for anything posted in my community. That simply does not make sense. And if there is further examination of Section 230, it should consider my level of responsibility does not match Google’s. Finally, the victims and the targets of terror need moderators who can act without fear of being accused of participating in terror for simply being in a chain of administrators. Section 230 must remain in place to ensure that threat management is protected and improved, or else it credits responsibility to every paid or unpaid participant responsible for regulating potentially harmful content.",
+          "contentTextLength": 7724,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "cont. He did, however, find an attorney willing to file a defamation SLAPP (Strategic lawsuit against public participation) against Reddit, and erroneously referred to me as an ”employee” of Reddit in order to facilitate my inclusion in the suit, and target me for reasons of pers",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:60b106ec23727d76",
+          "externalId": "t1_j5603my",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:16:29+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5603my/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5603my/",
+          "contentText": "full comment from u/wemustburncarthage I first want to acknowledge that what happened on November 13th, 2014 was a heinous crime and tragedy that never should have occurred. I think what is decided in the court and its impact on Section 230 is manifestly a result of terrorism’s ultimate goal to disrupt society and lessen freedom -- freedom of speech being one of terror’s paramount targets. While I do believe that Google and other internet companies must evolve to more actively deal with these threats, the potential impact to the wider shared society now platformed by these companies could ultimately reflect a success of such acts of terror in dividing us, and reducing our capacity to regulate both automated, and manually administered technologies. On consideration of volunteer forums like Reddit Unlike Google and Facebook, Reddit is and always has been a platform founded on a principle of self governance by the users who choose to host their communities there. It has algorithmic functions, but unlike the defendant, those algorithmic functions are actively programmed by volunteers like myself, and other volunteer members, in order to tailor our regulation structures to the needs of our communities. Reddit provides an administrative framework to oversee moderators like myself, but I want to be careful in making the distinction that it is not a democratic platform; it is a platform that functions on the principles of initiative, engagement and regulation. All of these principles are a matter of self-motivated accountability. In other words, volunteer moderator teams, to a greater or lesser degree depending on individual choices, use freely accessible and available program languages to code automated responses that help us manage our communities. My subreddit has somewhere in the realm of 1.5 million subscribers, and my active moderator team is less than ten individuals. Having automoderator allows us to do things like pick out commonly asked questions, or immediately spot hateful or threatening speech that goes against our community mandate. We are the first line of defence in safeguarding both free speech, and the right not be subjected to hate speech or discrimination. We users of Reddit are not a homogenized monolith, but rather an incredibly diverse array of communities that are administrated by a large international pool of moderators. My subreddit itself has moderators located in the US, Canada, and the UK. Many other subreddits have more diverse teams of different origins, all of which help us to understand the varying needs of our communities, and provide support availability across different time zones. Section 230, the potential for bad-faith litigation, and how it affects human operators We are a volunteer team, and we both design our governance framework and uphold a mandate provided by consultation with the community. I’m speaking for my individual situation, which is neither unique, nor is it universal. My subreddit is a creative writing community that is targeted, wherever else it gathers or is exposed to advertising by non-human algorithms, to predatory interests that prey on ambition, and the desire for work to be seen by our industry. This includes but is not limited to -- private consulting, paid access to professional representation, content feedback services, and increasingly, low-return, high volume contest platforms. On occasion, these services come blended together. Very often, they are vastly more profitable than what our users might expect for their product, and are structured in such a way that any individual may pay to platform their contest, hire a pool of readers, and determine prizes and entry fees. Some of these companies are multi-billion dollar conglomerates that enjoy near-immunity from backlash, and some of them are just smaller interests that use such companies as a cover for their valueless offerings. My community, the largest online community of its kind, has a mandate that no such business will ever be allowed to advertise to our users. A few years ago, one of the users in my community sounded a warning about just such an outfit, asserting that a 14+ contest string did not have any kind of genuine industry backing or material benefit to those paying the fees to enter. This contest string included plenty of official looking names that variously claimed to be contests or festivals from different parts of the world -- Seattle WA, Sydney, Australia, Toronto, Canada -- in an attempt to disguise their single origin, and their illegitimacy. Considering this poster’s remarks to be in good faith and a benefit to the community, we allowed them to remain anonymous and ensured their remarks were not falsely reported and taken down. We had some back and forth with the contest owner, who promptly demanded things of the moderator team such as unmasking the individual, personal phone calls with us, and various other unacceptable, abusive behaviours. After a considerable stretch of harassment, I advised this individual that if they wanted to continue threatening us with litigation, they were entitled to file a lawsuit against Reddit to attempt to force them to make us take down the critical remarks, and/or unmask our identities so that person could further litigate against us. These were my words, outlining the legal procedure by which this person could achieve satisfaction if he felt the legal grounds were strong enough. I did not anticipate he would attempt to actually do so, as Reddit’s commitment to free speech (and especially speech of this nature, which is cherished by the American Constitution) is considerably stronger than any claim this person had on our community. edited for attribution",
+          "contentTextLength": 5723,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "full comment from u/wemustburncarthage I first want to acknowledge that what happened on November 13th, 2014 was a heinous crime and tragedy that never should have occurred. I think what is decided in the court and its impact on Section 230 is manifestly a result of terrorism’s u",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:8747a4a0858d660a",
+          "externalId": "t1_j5601h2",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:16:07+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5601h2/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5601h2/",
+          "contentText": "Full comment from u/halaku : My name is [redacted] I have been using Reddit for over eleven years. I have created subreddit communities to moderate, and taken over moderation duties when previous volunteers have wished to stop. I currently moderate multiple communities that are focused on everything from specific fields in computer science, to specific musical bands, to specific television shows. Part of my volunteer duties involves the creation and enforcement of rules relevant to the individual subreddit community in question. If posts are made that violate those rules, or if comments are made to posts which violate those removes, either I or other volunteers I have selected to help me remove them, for the good of the community. Repeated violations can result in posting or commenting capability being removed on a temporary or permanent basis, as required. This does not prevent the violator from seeing posts or comments made to the community by others, simply from joining in on that discussion, or starting a new one. One of the strengths of Reddit is that if a violator feels that they have been unfairly treated, they can move to another subreddit community that covers similar material, or start a brand new subreddit community to cover similar material if they wish to use that option, in much the same way that someone who has been repeatedly escorted out of a drinking establishment for improper behavior can in turn create their own establishment, and build a customer base of like-minded peers. Part of those tasks are accomplished by automation, such as the &quot;Automoderator&quot; feature, which streamlines moderator response via advanced scripting. If I create a rule saying &quot;No illegal postings of episodes of this show&quot; in a subreddit dedicated to that show, I can manually remove any post that includes illegal postings or links to pirated copies, or I can employ the Automoderator function to automatically remove any posts that are made to specific websites which are devoted towards piracy. This stops my community from getting into trouble by gaining a reputation in which illegal content can be obtained. Likewise, if someone has posted content the community has found repugnant and rejected, I can manually add them to a &quot;Manually screen all future activity from this individual before it goes live on the community&quot; filter, or have the Automoderator do it for me. Subreddit communities can have up to tens of millions of active subscribers, as well as anyone on the Internet who creates an account and visits the community without subscribing. Moderation teams simply can&#39;t handle tens of millions of independent actions without assistance. Losing this automation would be exactly the same as losing the ability to spamfilter email, leaving users to hunt and peck for actual communications amidst all the falsified posts from malicious actors engaging in hate mail, advertising spam, or phishing attempts to gain financial credentials. In the same vein, moderation teams often have to resolve situations caused by individuals acting with malice aforethought to cause problems and provoke hostile reactions, commonly known as &#39;trolling&#39;. There have been more instances than I can count wherein myself or one of my team members have had to deal with individuals who show up and comment that only people who (insert extremely negative commentary based on racial, gender, sexual orientation, political orientation, religious views, age, physical / mental / emotional / spiritual health, etc) could be fans of the (musical band, television show, amateur cover of professional recording, etc) in question, and otherwise attempt to disrupt the community, typically with popular political slogans attached. Again, Automoderator is a valuable, if not vital, tool in preventing these disruptions from occurring, by flagging said content for manual review before it can be seen by the community as a whole. Ladies and gentlemen of the court, if these malicious actors are allowed to say that no one is permitted to take any sort of action regarding their engagement, because their discrimination, slurs, and rabid hostility is their &quot;freely chosen venue of political expression&quot; or &quot;preferred method of free speech, and I as a volunteer who created the community am prevented from doing anything about the individuals or their behaviors? If volunteer moderators, or the owners of the website that hosts these communities, are prevented from using automation to stop the community from drowning in a flood of this activity, while the malicious actors claim that they have a constitutional right to overwhelm the community with said behavior, and automation can not be used to stop them? If communities degenerate into a baseline of &quot;Malicious actors can completely disrupt all communication as they choose, with the community unable to respond adequately to the flood, and moderators barred from using automation to help stem the tide.&quot;? Then Internet communication forums will suffer, and perhaps die, as any attempt at discourse can be destroyed by this behavior. My communities would be unable to discuss the topics at hand due to the interference of malicious actors, essentially squatting in the community yelling profanities, and claiming that if the community can&#39;t out-yell them by sinking to their level, the community deserves to die. There are millions of Americans who use the Internet to talk to one another every day. There are tens of thousands of them who use Reddit to do so in the subreddit communities I manage, freely and of my own will, in an attempt to give them a space to do so. There are tens of thousands more who want nothing more than to disrupt those talks, because they don&#39;t care for the subject matter in question, because they are fans of competing bands or shows and feel that they can elevate their own interests by tearing down the interests of others, or they simply enjoy ruining someone else&#39;s good time. And there&#39;s only me to try and keep the off-topic spam, discrimination, and hate out of the community, so people can go back to talking about the band, or television show, or computer science field in question. Without the ability to rely on technology such as automation in order to keep off-topic spam, discrimination, and hate out of the community, the community will grind to a stop, and the malicious actors win.",
+          "contentTextLength": 6462,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Full comment from u/halaku : My name is [redacted] I have been using Reddit for over eleven years. I have created subreddit communities to moderate, and taken over moderation duties when previous volunteers have wished to stop. I currently moderate multiple communities that are f",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:601009cd0c556181",
+          "externalId": "t1_j55zy1r",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:15:31+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j55zy1r/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j55zy1r/",
+          "contentText": "Please see thread for the full comments submitted by the moderators who signed onto the Brief with us.",
+          "contentTextLength": 102,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Please see thread for the full comments submitted by the moderators who signed onto the Brief with us.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:e40584cad141ffe5",
+          "externalId": "t1_iz560si",
+          "itemType": "post",
+          "bucketId": "user-public-feed",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit Recap 2022: Thanks for being here. Even if things were a mess out there.",
+          "author": "/u/reddit",
+          "community": "recap",
+          "communityUrl": "https://www.reddit.com/r/recap/",
+          "categories": [
+            {
+              "term": "recap",
+              "label": "r/recap"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2022-12-06T15:47:33+00:00",
+          "permalink": "https://www.reddit.com/r/recap/comments/ze94hc/reddit_recap_2022_thanks_for_being_here_even_if/iz560si/",
+          "url": "https://www.reddit.com/r/recap/comments/ze94hc/reddit_recap_2022_thanks_for_being_here_even_if/iz560si/",
+          "contentText": "Ahem.",
+          "contentTextLength": 5,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Ahem.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        }
+      ]
+    },
+    {
+      "bucketId": "user-about",
+      "status": "completed",
+      "provider": "api",
+      "api": {
+        "status": "success",
+        "provider": "reddit_public_atom_feed",
+        "reasonCode": null,
+        "httpStatus": 200,
+        "itemCount": 1,
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/.rss"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText"
+      },
+      "items": [
+        {
+          "id": "feed-profile:5b5922650d34cedf",
+          "externalId": "https://www.reddit.com/user/reddit/.rss",
+          "itemType": "account",
+          "bucketId": "user-about",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "overview for reddit",
+          "name": "u/reddit",
+          "username": "reddit",
+          "community": null,
+          "communityUrl": null,
+          "profileKind": "redditor",
+          "profileUrl": "https://www.reddit.com/user/reddit/",
+          "url": "https://www.reddit.com/user/reddit/",
+          "contentText": null,
+          "contentTextLength": 0,
+          "contentTextTruncated": false,
+          "contentSourceElement": null,
+          "contentPreview": null,
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "updatedAt": "2026-06-09T09:18:53+00:00",
+          "pathParams": {
+            "username": "reddit"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        }
+      ]
+    },
+    {
+      "bucketId": "user-submitted",
+      "status": "completed",
+      "provider": "api",
+      "api": {
+        "status": "success",
+        "provider": "reddit_public_atom_feed",
+        "reasonCode": null,
+        "httpStatus": 200,
+        "itemCount": 25,
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/submitted/.rss"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText"
+      },
+      "items": [
+        {
+          "id": "feed:5f6244f8d9407601",
+          "externalId": "t3_1sbpwv9",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Keeping your account safe on reddit",
+          "author": "/u/reddit",
+          "community": "help",
+          "communityUrl": "https://www.reddit.com/r/help/",
+          "categories": [
+            {
+              "term": "help",
+              "label": "r/help"
+            }
+          ],
+          "publishedAt": "2026-04-03T21:09:08+00:00",
+          "updatedAt": "2026-04-03T21:09:08+00:00",
+          "permalink": "https://www.reddit.com/r/help/comments/1sbpwv9/keeping_your_account_safe_on_reddit/",
+          "url": "https://www.reddit.com/r/help/comments/1sbpwv9/keeping_your_account_safe_on_reddit/",
+          "contentText": "Hey Folks! We&#39;re here to remind everyone how to keep your accounts safe on reddit. Reddit will never ask you for your password or 2FA codes, nor will we ask you via private messages to change your email address. We will only reach out to you via reddit.com email or reddit platform messaging from this account, u/reddit, if there are issues with your account. We will never do so on any other platform. If you are receiving messages elsewhere about your account status please ignore those messages and report them to the platform where you received them. If you suspect any issues with your account you can always reset your password . Please make sure to pick a strong, unique password that isn&#39;t shared on other sites and check your computer for any malware or other points of weakness. You may also review your recent account activity here . Please also consider adding two-factor authentication to your account to increase security. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/help [link] &#32; [comments]",
+          "contentTextLength": 1025,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hey Folks! We&#39;re here to remind everyone how to keep your accounts safe on reddit. Reddit will never ask you for your password or 2FA codes, nor will we ask you via private messages to change your email address. We will only reach out to you via reddit.com email or reddit pla",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:ab278cb37402ea0c",
+          "externalId": "t3_1l8ejw1",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "ACTION NEEDED: PLEASE READ",
+          "author": "/u/reddit",
+          "community": "modlimit",
+          "communityUrl": "https://www.reddit.com/r/modlimit/",
+          "categories": [
+            {
+              "term": "modlimit",
+              "label": "r/modlimit"
+            }
+          ],
+          "publishedAt": "2025-06-11T00:04:51+00:00",
+          "updatedAt": "2025-06-11T00:04:51+00:00",
+          "permalink": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/",
+          "url": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/",
+          "contentText": "Hello mods of modlimit, hopefully by now you&#39;ve seen this post . In short, we are removing dormant user accounts from mod lists in an effort for us to increase transparency and security on Reddit. This is only users and bots that have not logged into Reddit in over 1 year. You&#39;re receiving this message because we&#39;ve identified these dormant accounts which will be removed by June 18, 2025: this is where your list of usernames would usually go, but y&#39;all finally did it you broke reddit - the list is too long to fit in a single post Because your modmail is bork please nominate one mod to be the recipient of the instructions and the list of user names via PM As a reminder, if you have accounts on your modlist that don&#39;t fall under this, but are listed as inactive, you can make use of the mod reorder tooling to make some changes. You can check out our FAQ here . Thanks ps: I am not a cat &#32; submitted by &#32; /u/reddit &#32; to &#32; r/modlimit [link] &#32; [comments]",
+          "contentTextLength": 1000,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hello mods of modlimit, hopefully by now you&#39;ve seen this post . In short, we are removing dormant user accounts from mod lists in an effort for us to increase transparency and security on Reddit. This is only users and bots that have not logged into Reddit in over 1 year. Yo",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:e3c362c60e30b996",
+          "externalId": "t3_1k65533",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/Holocaust is reopening",
+          "author": "/u/reddit",
+          "community": "holocaust",
+          "communityUrl": "https://www.reddit.com/r/holocaust/",
+          "categories": [
+            {
+              "term": "holocaust",
+              "label": "r/holocaust"
+            }
+          ],
+          "publishedAt": "2025-04-23T17:33:19+00:00",
+          "updatedAt": "2025-04-23T17:33:19+00:00",
+          "permalink": "https://www.reddit.com/r/holocaust/comments/1k65533/rholocaust_is_reopening/",
+          "url": "https://www.reddit.com/r/holocaust/comments/1k65533/rholocaust_is_reopening/",
+          "contentText": "Hi everybody. Given that this subreddit name once belonged to a long-banned subreddit, we wanted to confirm that we made the decision to reclaim the name, clear old content and subscribers, and allow the community name to be adopted for use as a new subreddit. The new mod team plans to use the space in a way that respects, educates about, and honors Holocaust remembrance. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/holocaust [link] &#32; [comments]",
+          "contentTextLength": 460,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hi everybody. Given that this subreddit name once belonged to a long-banned subreddit, we wanted to confirm that we made the decision to reclaim the name, clear old content and subscribers, and allow the community name to be adopted for use as a new subreddit. The new mod team pl",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:0e0fc1c557b57070",
+          "externalId": "t3_1ih9i5h",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Taking action on rule-violating content",
+          "author": "/u/reddit",
+          "community": "RedditSafety",
+          "communityUrl": "https://www.reddit.com/r/RedditSafety/",
+          "categories": [
+            {
+              "term": "RedditSafety",
+              "label": "r/RedditSafety"
+            }
+          ],
+          "publishedAt": "2025-02-04T04:26:47+00:00",
+          "updatedAt": "2025-02-04T04:26:47+00:00",
+          "permalink": "https://www.reddit.com/r/RedditSafety/comments/1ih9i5h/taking_action_on_ruleviolating_content/",
+          "url": "https://www.reddit.com/r/RedditSafety/comments/1ih9i5h/taking_action_on_ruleviolating_content/",
+          "contentText": "Over the last few days, we’ve seen an increase in content in several communities that violate Reddit Rules. Reddit communities are places for civil discussion and are one of the few places online where people can exchange ideas and perspectives. We want to ensure that they continue to be a place for healthy debate no matter the topic. Debate and dissent are welcome on Reddit—threats and doxing are not. When we identify communities experiencing an increase in rule-violating content, we are taking the following steps as needed: Reaching out to moderators to ensure they have the support they need, including turning on safety tools, reminding mods of our rules, or offering additional moderation support Adding a popup to remind users before visiting that subreddit of Reddit’s Rules In some cases, placing a temporary ban on the community for 72 hours to enable us to engage with moderation teams and review and remove violating content Currently r/WhitePeopleTwitter is under a temporary ban. This means that you will not be able to access this community during this cooling-off period while we work with the mods to ensure it is a safe place for discussion. We will continue to monitor and reach out to communities experiencing a surge in violative content and will take the necessary actions noted above to ensure all communities can provide a safe environment for healthy conversation. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/RedditSafety [link] &#32; [comments]",
+          "contentTextLength": 1483,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Over the last few days, we’ve seen an increase in content in several communities that violate Reddit Rules. Reddit communities are places for civil discussion and are one of the few places online where people can exchange ideas and perspectives. We want to ensure that they contin",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:a26fb8966f806973",
+          "externalId": "t3_1axbf2i",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": "2024-02-22T16:59:37+00:00",
+          "updatedAt": "2024-02-22T16:59:37+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/",
+          "contentText": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/ModSupport [link] &#32; [comments]",
+          "contentTextLength": 86,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/ModSupport [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:a5dc38f1fe8abfc6",
+          "externalId": "t3_1ax9r39",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "RedditSafety",
+          "communityUrl": "https://www.reddit.com/r/RedditSafety/",
+          "categories": [
+            {
+              "term": "RedditSafety",
+              "label": "r/RedditSafety"
+            }
+          ],
+          "publishedAt": "2024-02-22T15:54:53+00:00",
+          "updatedAt": "2024-02-22T15:54:53+00:00",
+          "permalink": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/",
+          "url": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/",
+          "contentText": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/RedditSafety [link] &#32; [comments]",
+          "contentTextLength": 88,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "&#32; submitted by &#32; /u/reddit &#32; to &#32; r/RedditSafety [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:fca9cd597e786d71",
+          "externalId": "t3_1awsj1k",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "help",
+          "communityUrl": "https://www.reddit.com/r/help/",
+          "categories": [
+            {
+              "term": "help",
+              "label": "r/help"
+            }
+          ],
+          "publishedAt": "2024-02-22T00:33:52+00:00",
+          "updatedAt": "2024-02-22T00:33:52+00:00",
+          "permalink": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/",
+          "url": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/",
+          "contentText": "Hey all! Today we wanted to take a moment to remind everyone how you can verify if a message, comment, or post is truly from a Reddit employee or Reddit Inc. As you can see by clicking on my profile all official Reddit accounts will have a orangered snoo or [A] denoting admin accounts. You&#39;ll also see those on official messages, comments, or posts from us. (like on this post) If there is an email address attached to your username, you may also receive notices at that address from @reddit.com or @redditmail.com addresses. Account security related notifications/messages are sent officially from our u/reddit account only. We&#39;ll also never send you a chat message notifying you of a security related issue. Finally, in the words of every gaming company anywhere, Reddit will never ask you for your password or 2FA codes. Please report any suspicious messages by clicking the &quot;report&quot; option below each suspicious message, post or comment, or by filling out a report using reddit.com/report directly. Note: we&#39;re aware that this isn&#39;t currently visible if you&#39;re using the iOS app, we&#39;re working on a fix - in the meantime, if you&#39;re ever unsure please view the profile from the desktop version of the site. edit: removed outdated information &#32; submitted by &#32; /u/reddit &#32; to &#32; r/help [link] &#32; [comments]",
+          "contentTextLength": 1364,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Hey all! Today we wanted to take a moment to remind everyone how you can verify if a message, comment, or post is truly from a Reddit employee or Reddit Inc. As you can see by clicking on my profile all official Reddit accounts will have a orangered snoo or [A] denoting admin acc",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:0c707ab2b88940c2",
+          "externalId": "t3_175kqzs",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/bigbrotheruk Lounge",
+          "author": "/u/reddit",
+          "community": "bigbrotherukk_",
+          "communityUrl": "https://www.reddit.com/r/bigbrotherukk_/",
+          "categories": [
+            {
+              "term": "bigbrotherukk_",
+              "label": "r/bigbrotherukk_"
+            }
+          ],
+          "publishedAt": "2023-10-11T18:10:17+00:00",
+          "updatedAt": "2023-10-11T18:10:17+00:00",
+          "permalink": "https://www.reddit.com/r/bigbrotherukk_/comments/175kqzs/rbigbrotheruk_lounge/",
+          "url": "https://www.reddit.com/r/bigbrotherukk_/comments/175kqzs/rbigbrotheruk_lounge/",
+          "contentText": "A place for members of r/bigbrotheruk to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/bigbrotherukk_ [link] &#32; [comments]",
+          "contentTextLength": 152,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/bigbrotheruk to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/bigbrotherukk_ [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:a75406289e630372",
+          "externalId": "t3_16iwfu1",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/EarningsWhispers Lounge",
+          "author": "/u/reddit",
+          "community": "EarningsWhispers",
+          "communityUrl": "https://www.reddit.com/r/EarningsWhispers/",
+          "categories": [
+            {
+              "term": "EarningsWhispers",
+              "label": "r/EarningsWhispers"
+            }
+          ],
+          "publishedAt": "2023-09-14T22:45:27+00:00",
+          "updatedAt": "2023-09-14T22:45:27+00:00",
+          "permalink": "https://www.reddit.com/r/EarningsWhispers/comments/16iwfu1/rearningswhispers_lounge/",
+          "url": "https://www.reddit.com/r/EarningsWhispers/comments/16iwfu1/rearningswhispers_lounge/",
+          "contentText": "A place for members of r/EarningsWhispers to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/EarningsWhispers [link] &#32; [comments]",
+          "contentTextLength": 158,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/EarningsWhispers to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/EarningsWhispers [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:72999f25b7fcbc77",
+          "externalId": "t3_160fnkz",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/CoinLedger Lounge",
+          "author": "/u/reddit",
+          "community": "CoinLedger",
+          "communityUrl": "https://www.reddit.com/r/CoinLedger/",
+          "categories": [
+            {
+              "term": "CoinLedger",
+              "label": "r/CoinLedger"
+            }
+          ],
+          "publishedAt": "2023-08-24T22:00:34+00:00",
+          "updatedAt": "2023-08-24T22:00:34+00:00",
+          "permalink": "https://www.reddit.com/r/CoinLedger/comments/160fnkz/rcoinledger_lounge/",
+          "url": "https://www.reddit.com/r/CoinLedger/comments/160fnkz/rcoinledger_lounge/",
+          "contentText": "A place for members of r/CoinLedger to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/CoinLedger [link] &#32; [comments]",
+          "contentTextLength": 146,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/CoinLedger to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/CoinLedger [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:dfa6ead4f5b600f5",
+          "externalId": "t3_144ho2x",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Join our CEO tomorrow to discuss the API",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": "2023-06-08T18:54:58+00:00",
+          "updatedAt": "2023-06-08T18:54:58+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/144ho2x/join_our_ceo_tomorrow_to_discuss_the_api/",
+          "url": "https://www.reddit.com/r/reddit/comments/144ho2x/join_our_ceo_tomorrow_to_discuss_the_api/",
+          "contentText": "Reddit CEO, u/spez , will be here tomorrow to host an AMA about the latest API updates, including accessibility, mod bots, and third-party mod tools. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/reddit [link] &#32; [comments]",
+          "contentTextLength": 232,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Reddit CEO, u/spez , will be here tomorrow to host an AMA about the latest API updates, including accessibility, mod bots, and third-party mod tools. &#32; submitted by &#32; /u/reddit &#32; to &#32; r/reddit [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:7fac4527ca6685f6",
+          "externalId": "t3_12iws1a",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/FIPwarriors Lounge",
+          "author": "/u/reddit",
+          "community": "FIPwarriors",
+          "communityUrl": "https://www.reddit.com/r/FIPwarriors/",
+          "categories": [
+            {
+              "term": "FIPwarriors",
+              "label": "r/FIPwarriors"
+            }
+          ],
+          "publishedAt": "2023-04-11T20:37:16+00:00",
+          "updatedAt": "2023-04-11T20:37:16+00:00",
+          "permalink": "https://www.reddit.com/r/FIPwarriors/comments/12iws1a/rfipwarriors_lounge/",
+          "url": "https://www.reddit.com/r/FIPwarriors/comments/12iws1a/rfipwarriors_lounge/",
+          "contentText": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/FIPwarriors [link] &#32; [comments]",
+          "contentTextLength": 97,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/FIPwarriors [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:2cade6b67abdffa2",
+          "externalId": "t3_xvsknu",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/t5_3o8xz Lounge",
+          "author": "/u/reddit",
+          "community": "t5_3o8xz",
+          "communityUrl": "https://www.reddit.com/r/t5_3o8xz/",
+          "categories": [
+            {
+              "term": "t5_3o8xz",
+              "label": "r/t5_3o8xz"
+            }
+          ],
+          "publishedAt": "2022-10-04T22:21:28+00:00",
+          "updatedAt": "2022-10-04T22:21:28+00:00",
+          "permalink": "https://www.reddit.com/r/t5_3o8xz/comments/xvsknu/rt5_3o8xz_lounge/",
+          "url": "https://www.reddit.com/r/t5_3o8xz/comments/xvsknu/rt5_3o8xz_lounge/",
+          "contentText": "A place for members of r/t5_3o8xz to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/t5_3o8xz [link] &#32; [comments]",
+          "contentTextLength": 142,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/t5_3o8xz to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/t5_3o8xz [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:47f1523af9ba4f8d",
+          "externalId": "t3_xrjtpv",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/Expressvpn Lounge",
+          "author": "/u/reddit",
+          "community": "Expressvpn",
+          "communityUrl": "https://www.reddit.com/r/Expressvpn/",
+          "categories": [
+            {
+              "term": "Expressvpn",
+              "label": "r/Expressvpn"
+            }
+          ],
+          "publishedAt": "2022-09-29T21:40:45+00:00",
+          "updatedAt": "2022-09-29T21:40:45+00:00",
+          "permalink": "https://www.reddit.com/r/Expressvpn/comments/xrjtpv/rexpressvpn_lounge/",
+          "url": "https://www.reddit.com/r/Expressvpn/comments/xrjtpv/rexpressvpn_lounge/",
+          "contentText": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/Expressvpn [link] &#32; [comments]",
+          "contentTextLength": 96,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/Expressvpn [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:f7635369829934f7",
+          "externalId": "t3_x2pblv",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/milfestates Lounge",
+          "author": "/u/reddit",
+          "community": "milfestates",
+          "communityUrl": "https://www.reddit.com/r/milfestates/",
+          "categories": [
+            {
+              "term": "milfestates",
+              "label": "r/milfestates"
+            }
+          ],
+          "publishedAt": "2022-08-31T21:33:06+00:00",
+          "updatedAt": "2022-08-31T21:33:06+00:00",
+          "permalink": "https://www.reddit.com/r/milfestates/comments/x2pblv/rmilfestates_lounge/",
+          "url": "https://www.reddit.com/r/milfestates/comments/x2pblv/rmilfestates_lounge/",
+          "contentText": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/milfestates [link] &#32; [comments]",
+          "contentTextLength": 97,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/milfestates [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:7dff2ac72d31b8af",
+          "externalId": "t3_x10t62",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/hdhomerun Lounge",
+          "author": "/u/reddit",
+          "community": "hdhomerun",
+          "communityUrl": "https://www.reddit.com/r/hdhomerun/",
+          "categories": [
+            {
+              "term": "hdhomerun",
+              "label": "r/hdhomerun"
+            }
+          ],
+          "publishedAt": "2022-08-29T21:43:30+00:00",
+          "updatedAt": "2022-08-29T21:43:30+00:00",
+          "permalink": "https://www.reddit.com/r/hdhomerun/comments/x10t62/rhdhomerun_lounge/",
+          "url": "https://www.reddit.com/r/hdhomerun/comments/x10t62/rhdhomerun_lounge/",
+          "contentText": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/hdhomerun [link] &#32; [comments]",
+          "contentTextLength": 95,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/hdhomerun [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:136ec70f3eeaf056",
+          "externalId": "t3_sn2jwy",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/washingtonNFL Lounge",
+          "author": "/u/reddit",
+          "community": "washingtonNFL",
+          "communityUrl": "https://www.reddit.com/r/washingtonNFL/",
+          "categories": [
+            {
+              "term": "washingtonNFL",
+              "label": "r/washingtonNFL"
+            }
+          ],
+          "publishedAt": "2022-02-07T22:10:22+00:00",
+          "updatedAt": "2022-02-07T22:10:22+00:00",
+          "permalink": "https://www.reddit.com/r/washingtonNFL/comments/sn2jwy/rwashingtonnfl_lounge/",
+          "url": "https://www.reddit.com/r/washingtonNFL/comments/sn2jwy/rwashingtonnfl_lounge/",
+          "contentText": "A place for members of r/washingtonNFL to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/washingtonNFL [link] &#32; [comments]",
+          "contentTextLength": 152,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/washingtonNFL to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/washingtonNFL [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:63e33624a3194c1e",
+          "externalId": "t3_si6dih",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/reddit Lounge",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": "2022-02-01T21:37:21+00:00",
+          "updatedAt": "2022-02-01T21:37:21+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/si6dih/rreddit_lounge/",
+          "url": "https://www.reddit.com/r/reddit/comments/si6dih/rreddit_lounge/",
+          "contentText": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/reddit [link] &#32; [comments]",
+          "contentTextLength": 92,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "[removed] &#32; submitted by &#32; /u/reddit &#32; to &#32; r/reddit [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:20e28b4e318f9ccf",
+          "externalId": "t3_rf1y5i",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Sat 2021-12-11",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": "2021-12-13T00:02:38+00:00",
+          "updatedAt": "2021-12-13T00:02:38+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/rf1y5i/sat_20211211/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/rf1y5i/sat_20211211/",
+          "contentText": "accessing vault............unlocked calculating name matrix.........locked in polishing monocle.....spiffing finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait for response.........success. one of our servers renamed to McServerface &#32; submitted by &#32; /u/reddit &#32; to &#32; r/nameaserver [link] &#32; [comments]",
+          "contentTextLength": 442,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "accessing vault............unlocked calculating name matrix.........locked in polishing monocle.....spiffing finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wai",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:08dfa8eacc7e1640",
+          "externalId": "t3_rec8j2",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Fri 2021-12-10",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": "2021-12-12T00:02:30+00:00",
+          "updatedAt": "2021-12-12T00:02:30+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/rec8j2/fri_20211210/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/rec8j2/fri_20211210/",
+          "contentText": "accessing vault............unlocked calculating name matrix.........locked in investing in reddit gold.....gleaming finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait for response.........success. one of our servers renamed to ButterMyBuns &#32; submitted by &#32; /u/reddit &#32; to &#32; r/nameaserver [link] &#32; [comments]",
+          "contentTextLength": 449,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "accessing vault............unlocked calculating name matrix.........locked in investing in reddit gold.....gleaming finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......d",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:f462030b01631be8",
+          "externalId": "t3_r6tahf",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Tue 2021-11-30",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": "2021-12-02T00:02:38+00:00",
+          "updatedAt": "2021-12-02T00:02:38+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/r6tahf/tue_20211130/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/r6tahf/tue_20211130/",
+          "contentText": "accessing vault............unlocked calculating name matrix.........locked in polishing monocle.....spiffing finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait for response.........success. one of our servers renamed to SoftServe &#32; submitted by &#32; /u/reddit &#32; to &#32; r/nameaserver [link] &#32; [comments]",
+          "contentTextLength": 439,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "accessing vault............unlocked calculating name matrix.........locked in polishing monocle.....spiffing finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wai",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:7f711acd9e22318e",
+          "externalId": "t3_r59fqq",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Sun 2021-11-28",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": "2021-11-30T00:02:34+00:00",
+          "updatedAt": "2021-11-30T00:02:34+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/r59fqq/sun_20211128/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/r59fqq/sun_20211128/",
+          "contentText": "accessing vault............unlocked calculating name matrix.........locked in attending gala.....galavanted finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait for response.........success. one of our servers renamed to downtherabbithole &#32; submitted by &#32; /u/reddit &#32; to &#32; r/nameaserver [link] &#32; [comments]",
+          "contentTextLength": 446,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "accessing vault............unlocked calculating name matrix.........locked in attending gala.....galavanted finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:d3f56d58af2a20d7",
+          "externalId": "t3_r4i6l0",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Sat 2021-11-27",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": "2021-11-29T00:02:44+00:00",
+          "updatedAt": "2021-11-29T00:02:44+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/r4i6l0/sat_20211127/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/r4i6l0/sat_20211127/",
+          "contentText": "accessing vault............unlocked calculating name matrix.........locked in establishing scholarship.....schooled finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait for response.........success. one of our servers renamed to TransRights &#32; submitted by &#32; /u/reddit &#32; to &#32; r/nameaserver [link] &#32; [comments]",
+          "contentTextLength": 448,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "accessing vault............unlocked calculating name matrix.........locked in establishing scholarship.....schooled finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......d",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:fef68892c3f5d297",
+          "externalId": "t3_r3qmb3",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "Fri 2021-11-26",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": "2021-11-28T00:02:26+00:00",
+          "updatedAt": "2021-11-28T00:02:26+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/r3qmb3/fri_20211126/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/r3qmb3/fri_20211126/",
+          "contentText": "accessing vault............unlocked calculating name matrix.........locked in purchasing yacht.....nautical! finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wait for response.........success. one of our servers renamed to Taiwan &#32; submitted by &#32; /u/reddit &#32; to &#32; r/nameaserver [link] &#32; [comments]",
+          "contentTextLength": 436,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "accessing vault............unlocked calculating name matrix.........locked in purchasing yacht.....nautical! finding server to name........done initializing TCPoB (TCP over Butler).....initialized establishing secure connection.......secured sending name assignment.......done wai",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:5d0a21a84b61acd3",
+          "externalId": "t3_qzw5a6",
+          "itemType": "post",
+          "bucketId": "user-submitted",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "r/dubsmash Lounge",
+          "author": "/u/reddit",
+          "community": "dubsmash",
+          "communityUrl": "https://www.reddit.com/r/dubsmash/",
+          "categories": [
+            {
+              "term": "dubsmash",
+              "label": "r/dubsmash"
+            }
+          ],
+          "publishedAt": "2021-11-22T21:19:09+00:00",
+          "updatedAt": "2021-11-22T21:19:09+00:00",
+          "permalink": "https://www.reddit.com/r/dubsmash/comments/qzw5a6/rdubsmash_lounge/",
+          "url": "https://www.reddit.com/r/dubsmash/comments/qzw5a6/rdubsmash_lounge/",
+          "contentText": "A place for members of r/dubsmash to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/dubsmash [link] &#32; [comments]",
+          "contentTextLength": 142,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A place for members of r/dubsmash to chat with each other &#32; submitted by &#32; /u/reddit &#32; to &#32; r/dubsmash [link] &#32; [comments]",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        }
+      ]
+    },
+    {
+      "bucketId": "user-comments",
+      "status": "completed",
+      "provider": "api",
+      "api": {
+        "status": "success",
+        "provider": "reddit_public_atom_feed",
+        "reasonCode": null,
+        "httpStatus": 200,
+        "itemCount": 25,
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/comments/.rss"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText"
+      },
+      "items": [
+        {
+          "id": "feed:751d01abe632c495",
+          "externalId": "t1_mx9407o",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on ACTION NEEDED: PLEASE READ",
+          "author": "/u/reddit",
+          "community": "modlimit",
+          "communityUrl": "https://www.reddit.com/r/modlimit/",
+          "categories": [
+            {
+              "term": "modlimit",
+              "label": "r/modlimit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2025-06-11T19:19:35+00:00",
+          "permalink": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/mx9407o/",
+          "url": "https://www.reddit.com/r/modlimit/comments/1l8ejw1/action_needed_please_read/mx9407o/",
+          "contentText": "Thanks! I&#39;ve sent you the first message here: https://www.reddit.com/message/messages/2y4wpa2 In order for me to send you the rest of the message I&#39;ll need you to reply there when you have a chance. To your questions: unfortunately, a lot our tooling doesn&#39;t work with modteams of this size, but - no promises here as I don&#39;t know what this would take - I will see if there&#39;s anything we can do for you in general while we&#39;re in here already.",
+          "contentTextLength": 466,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Thanks! I&#39;ve sent you the first message here: https://www.reddit.com/message/messages/2y4wpa2 In order for me to send you the rest of the message I&#39;ll need you to reply there when you have a chance. To your questions: unfortunately, a lot our tooling doesn&#39;t work with",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:d008fbe2edb10853",
+          "externalId": "t1_lg2az5a",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this a legitimate DM from Reddit, or is this a phishing scam against Reddit mods?",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-08-02T00:15:33+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2az5a/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2az5a/",
+          "contentText": "It&#39;s real, I&#39;m real! Totally appreciate you checking though, thanks in advance if you participate in the study!",
+          "contentTextLength": 119,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "It&#39;s real, I&#39;m real! Totally appreciate you checking though, thanks in advance if you participate in the study!",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:b3da6bfe0fd1c91a",
+          "externalId": "t1_lg2ai5m",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this a legitimate DM from Reddit, or is this a phishing scam against Reddit mods?",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-08-02T00:12:37+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2ai5m/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1ehvn4d/is_this_a_legitimate_dm_from_reddit_or_is_this_a/lg2ai5m/",
+          "contentText": "legit",
+          "contentTextLength": 5,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "legit",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:8387ebe66659eb5c",
+          "externalId": "t1_krnkgh9",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "RedditSafety",
+          "communityUrl": "https://www.reddit.com/r/RedditSafety/",
+          "categories": [
+            {
+              "term": "RedditSafety",
+              "label": "r/RedditSafety"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-02-22T19:54:19+00:00",
+          "permalink": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/krnkgh9/",
+          "url": "https://www.reddit.com/r/RedditSafety/comments/1ax9r39/is_this_really_from_reddit_how_to_tell/krnkgh9/",
+          "contentText": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentTextLength": 145,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:b2a0a8da8596a4fc",
+          "externalId": "t1_krnk8l7",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "ModSupport",
+          "communityUrl": "https://www.reddit.com/r/ModSupport/",
+          "categories": [
+            {
+              "term": "ModSupport",
+              "label": "r/ModSupport"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-02-22T19:53:11+00:00",
+          "permalink": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/krnk8l7/",
+          "url": "https://www.reddit.com/r/ModSupport/comments/1axbf2i/is_this_really_from_reddit_how_to_tell/krnk8l7/",
+          "contentText": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentTextLength": 145,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:543485d9c195f288",
+          "externalId": "t1_krnk4z9",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Is this really from Reddit? How to tell:",
+          "author": "/u/reddit",
+          "community": "help",
+          "communityUrl": "https://www.reddit.com/r/help/",
+          "categories": [
+            {
+              "term": "help",
+              "label": "r/help"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2024-02-22T19:52:40+00:00",
+          "permalink": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/krnk4z9/",
+          "url": "https://www.reddit.com/r/help/comments/1awsj1k/is_this_really_from_reddit_how_to_tell/krnk4z9/",
+          "contentText": "Thanks for the note - and understood. Given that, We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentTextLength": 195,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Thanks for the note - and understood. Given that, We also wanted to let you know of a couple other domains that are also owned by Reddit Inc: redditinc.com, redditforcommunity.com, reddithelp.com",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:c2a6f7f3b6a3bad4",
+          "externalId": "t1_jnkd4t3",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Addressing the community about changes to our API",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-06-09T18:57:36+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/145bram/addressing_the_community_about_changes_to_our_api/jnkd4t3/",
+          "url": "https://www.reddit.com/r/reddit/comments/145bram/addressing_the_community_about_changes_to_our_api/jnkd4t3/",
+          "contentText": "We know answers are tough to find, we&#39;ve switched the default sort to Q&amp;A mode; you can view responses from the following accounts as well: u/spez 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8 , 9 , 10 , 11 , 12 , 13 , 14 u/KeyserSosa 1 , 2 , 3 u/Go_JasonWaterfalls 1 , 2 u/FlyingLaserTurtle 1 , 2 edit: grammar edit 2: added links to responses",
+          "contentTextLength": 336,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "We know answers are tough to find, we&#39;ve switched the default sort to Q&amp;A mode; you can view responses from the following accounts as well: u/spez 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8 , 9 , 10 , 11 , 12 , 13 , 14 u/KeyserSosa 1 , 2 , 3 u/Go_JasonWaterfalls 1 , 2 u/FlyingLaserTur",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:d2cf7962cd6225f3",
+          "externalId": "t1_j56077l",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:17:06+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j56077l/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j56077l/",
+          "contentText": "full comment from u/AkaashMaharaj My colleague u/desileslointaines and I moderate the Equestrian subreddit at Reddit. We do so as unpaid volunteers: we receive no consideration from the corporation, and we are prohibited from accepting any remuneration, gifts, or incentives from third parties for our activities as Moderators. We are also entitled to neither recourse nor remedy from Reddit, if we suffer any loss or endure any abuse, as a result of fulfilling our responsibilities as Moderators. On the contrary, we are required to indemnify the corporation and to hold it harmless if any third party should bring an action against it – howsoever frivolous or unfounded that action might be – in connection with our volunteer moderation activities. We serve as Moderators purely as a form of public service, in the hopes that our sound stewardship of the subreddit will contribute to the wellbeing of the global equestrian community. Our subreddit often discusses difficult issues, such as animal welfare and athlete abuse. These subjects invariably excite high passions, and often foment onslaughts of posts and comments that can include personal attacks, character assassination, thoughtless misinformation, wilful disinformation, and behaviour meant to artificially manipulate the course of discussions. Our ability to moderate these posts and comments – to separate the wheat from the chaff – is vital to enabling the subreddit to function as a community, without becoming a scorched plain of irrelevant and predatory material. Moreover, the existence of a well-managed virtual equestrian space is critical to enabling the global equestrian community to discuss difficult issues, to engage with alternative viewpoints, to consider international factors, to discover unfamiliar facts, and to make better‐informed decisions as citizens in the real world. The Reddit Equestrian community itself has, over time, developed its own standards and rules for what constitutes germane and constructive posts and comments. People choose to become active members of our subreddit because they share the values and ideals embedded in those choices. Our responsibilities as volunteer Moderators call on us to exercise our best judgement on what posts and comments fall within the parameters laid down by the community. Especially when an emotive issue provokes a sudden influx of content, we rely on automated tools to support our manual efforts. In our experience, this combination is the best of possible worlds: the efficiency of automated systems supporting, and not replacing, human judgement. The fact that Reddit has delegated moderation to volunteer human beings, supported by automated tools, is the platform’s single greatest strength. It is a model that should be fostered and encouraged at other social media platforms; too many platforms have instead turned to statistical routines, heuristic algorithms, and self-styled “artificial intelligence” to carry out cheap and rapid moderation, with predictable results. Online societies will not reflect the standards of public accountability and transparency we expect in the real world, if those societies are commanded and controlled by impersonal systems shielded inside black boxes. Online communities will only advance the human condition, if they are led first and last by humans. To make it possible for platforms such as Reddit to sustain content moderation models where technology serves people, instead of mastering us or replacing us, Section 230 must not be attenuated by the Court in a way that exposes the people in that model to unsustainable personal risk, especially if those people are volunteers seeking to advance the public interest or others with no protection against vexatious but determined litigants.",
+          "contentTextLength": 3776,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "full comment from u/AkaashMaharaj My colleague u/desileslointaines and I moderate the Equestrian subreddit at Reddit. We do so as unpaid volunteers: we receive no consideration from the corporation, and we are prohibited from accepting any remuneration, gifts, or incentives from ",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:56c0c48c40b6cc5f",
+          "externalId": "t1_j5605c9",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:16:47+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5605c9/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5605c9/",
+          "contentText": "cont. He did, however, find an attorney willing to file a defamation SLAPP (Strategic lawsuit against public participation) against Reddit, and erroneously referred to me as an ”employee” of Reddit in order to facilitate my inclusion in the suit, and target me for reasons of personal contempt. I am not and never have been an employee of Reddit, as I think is pretty clear in this statement. Reddit, considering that I had in no way defamed this person, generously provided me with legal counsel. In the course of this, the plaintiff not only harassed me personally, but also provided a frivolous motion to attempt to unmask approximately forty users in the community in an attempt to subject them to further harassment for having seen or commented on the original post. Reddit accommodated our community with active diligence, filing legal briefs to defend those users against unmasking, and to push back against many of the plaintiff’s empty threats, and his lawyer’s failure to supply the most basic legal action to back his claims. The suit, unsurprisingly, was ultimately dropped -- but that doesn’t reflect any kind of guarantee. The state of California, where Reddit is based, has very strong anti-SLAPP legislation in place, and because this person framed his place of business as being located there, it’s unlikely he would have made much progress. He still harasses me personally by putting my email on websites and impersonating me as soliciting sexual services, funeral services, other little contextualized hints of his malice, but he is not in a very strong position to weaponize further litigation against me. Now, in my opinion, these acts are only restrained from escalation due to his lack of opportunity. In spite of a paucity of organization and tendency to self-sabotage, his level of hate is so vitriolic that he demonstrates a personality that does not so much resemble plaintiff Gonzales…but ISIS. So in addition to compartmentalizing the chain of responsibility in order to protect human volunteers such as myself, we have to ask how far the distance really is between a hateful individual with enough money to hire an attorney (all while intimating wishes to do harm to the defendant with no care to their own legal case’s integrity) to bring a SLAPP -- and an individual who will visit actual physical harm on another in order to silence them in contempt of their freedoms. It isn’t a one-to-one comparison and I am not suggesting someone who harasses me online is equivalent to ISIS, but there is another consideration: if Section 230 is weakened because of a failure by Google to address its own weaknesses (something I think we can agree it has the resources and expertise to do) what ultimately happens to the human moderator who is considered responsible for the content that appears on their platform, and is expected to counteract it, and is expected to protect their community from it? We are already, by tacit agreement, placed in that chain. We’re not algorithms, we are the agents of programming those algorithms to aid our service to our communities. Reddit isn’t perfect, it has struggled with balancing free speech and hate speech in the past. No company or individual can monitor all corners of the internet at all time, but the same goes for a school yard, or a mall, or any other place where human communities assemble. Further, Reddit has tightened its regulations precisely because it does not want to inadvertently host those potential threats. Without a moderationship and administration free to act without fear of being litigated against or even charged with abetting these threats, organizations like ISIS, or the Proud Boys, or various international bad actors, would in fact find comfort in the weakening of Section 230. Such interests often attempt to use human-run forums to propagate their message and recruitment. Twitter recently saw the departure of its entire paid moderator team, and the increase of hate speech, racism, abuse, misinformation and other threats to our freedoms has skyrocketed. A weakening of Section 230 would codify such an invitation to chaos, endangering the individuals whose role it is to ensure speech while using their best judgement to mitigate threats by exposing them to prosecutions. Indicating my actions as a single individual performing this role in my spare time are the same as Google’s automated challenges suggest that any individual who litigates for any reason against platforms like Reddit should enjoy the same protections as a victim of terrorism. This is not consistent with what I consider a standard of freedom or free speech. Conclusion It’s realistic to say that large, heavily resourced, well-financed corporations like Google should be required to implement better protections where their automated regulation of content is concerned. It’s fair, I think, to say that Section 230 may need to be reconsidered in light of this, and that its text should be updated to make these distinctions, as well as expanding protection to paid or volunteer moderator teams whose primary purpose is to ensure the protection of their communities. That includes terror threats -- and the importance of human intervention. Whether the YouTube’s content regulation instruments can recognize the difference between an ISIS recruitment video or a television clip is a question of technological limitations. If, however, if 230 is weakened in order to punish those technological limitations, as written it will ultimately punish the individuals like myself whose far more sophisticated perception is vital to determining the difference between speech, and potential harm. I am not capable of predicting what any bad actor might choose to propagate within my community before it comes to my inbox. Reddit, by extension (relying on thousands of human volunteers) cannot predict this either. It’s possible Google has a greater share of responsibility to do so, but if Section 230 suffers as a result of this lawsuit, it would preemptively chill human participation in moderating harmful content, and as a result, that harmful content very potentially would enjoy more and not less distribution. If the object of this case is to prevent recruitment and indoctrination by terrorists, weakening my immunity as a volunteer moderator means not only that the person who attempted to sue me for defamation would likely have far greater success in falsely crediting responsibility to me for his indignity, but that I would not choose to make myself available to police any controversial content in service to my community, whether that be cottage industry grift, or terrorist recruitment, or simple bickering. I am not an algorithm. I am not a Reddit employee, or a Reddit department. In the course of being sued, I have taken the personal, voluntary initiative to prevent the names and addresses of community members from becoming public and making those members vulnerable. I was a liaison between Reddit and those community members. I don’t receive compensation for this, and I was happy to do it -- but I don’t think I would feel that way if I was blamed for anything posted in my community. That simply does not make sense. And if there is further examination of Section 230, it should consider my level of responsibility does not match Google’s. Finally, the victims and the targets of terror need moderators who can act without fear of being accused of participating in terror for simply being in a chain of administrators. Section 230 must remain in place to ensure that threat management is protected and improved, or else it credits responsibility to every paid or unpaid participant responsible for regulating potentially harmful content.",
+          "contentTextLength": 7724,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "cont. He did, however, find an attorney willing to file a defamation SLAPP (Strategic lawsuit against public participation) against Reddit, and erroneously referred to me as an ”employee” of Reddit in order to facilitate my inclusion in the suit, and target me for reasons of pers",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:96695cda0b1da585",
+          "externalId": "t1_j5603my",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:16:29+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5603my/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5603my/",
+          "contentText": "full comment from u/wemustburncarthage I first want to acknowledge that what happened on November 13th, 2014 was a heinous crime and tragedy that never should have occurred. I think what is decided in the court and its impact on Section 230 is manifestly a result of terrorism’s ultimate goal to disrupt society and lessen freedom -- freedom of speech being one of terror’s paramount targets. While I do believe that Google and other internet companies must evolve to more actively deal with these threats, the potential impact to the wider shared society now platformed by these companies could ultimately reflect a success of such acts of terror in dividing us, and reducing our capacity to regulate both automated, and manually administered technologies. On consideration of volunteer forums like Reddit Unlike Google and Facebook, Reddit is and always has been a platform founded on a principle of self governance by the users who choose to host their communities there. It has algorithmic functions, but unlike the defendant, those algorithmic functions are actively programmed by volunteers like myself, and other volunteer members, in order to tailor our regulation structures to the needs of our communities. Reddit provides an administrative framework to oversee moderators like myself, but I want to be careful in making the distinction that it is not a democratic platform; it is a platform that functions on the principles of initiative, engagement and regulation. All of these principles are a matter of self-motivated accountability. In other words, volunteer moderator teams, to a greater or lesser degree depending on individual choices, use freely accessible and available program languages to code automated responses that help us manage our communities. My subreddit has somewhere in the realm of 1.5 million subscribers, and my active moderator team is less than ten individuals. Having automoderator allows us to do things like pick out commonly asked questions, or immediately spot hateful or threatening speech that goes against our community mandate. We are the first line of defence in safeguarding both free speech, and the right not be subjected to hate speech or discrimination. We users of Reddit are not a homogenized monolith, but rather an incredibly diverse array of communities that are administrated by a large international pool of moderators. My subreddit itself has moderators located in the US, Canada, and the UK. Many other subreddits have more diverse teams of different origins, all of which help us to understand the varying needs of our communities, and provide support availability across different time zones. Section 230, the potential for bad-faith litigation, and how it affects human operators We are a volunteer team, and we both design our governance framework and uphold a mandate provided by consultation with the community. I’m speaking for my individual situation, which is neither unique, nor is it universal. My subreddit is a creative writing community that is targeted, wherever else it gathers or is exposed to advertising by non-human algorithms, to predatory interests that prey on ambition, and the desire for work to be seen by our industry. This includes but is not limited to -- private consulting, paid access to professional representation, content feedback services, and increasingly, low-return, high volume contest platforms. On occasion, these services come blended together. Very often, they are vastly more profitable than what our users might expect for their product, and are structured in such a way that any individual may pay to platform their contest, hire a pool of readers, and determine prizes and entry fees. Some of these companies are multi-billion dollar conglomerates that enjoy near-immunity from backlash, and some of them are just smaller interests that use such companies as a cover for their valueless offerings. My community, the largest online community of its kind, has a mandate that no such business will ever be allowed to advertise to our users. A few years ago, one of the users in my community sounded a warning about just such an outfit, asserting that a 14+ contest string did not have any kind of genuine industry backing or material benefit to those paying the fees to enter. This contest string included plenty of official looking names that variously claimed to be contests or festivals from different parts of the world -- Seattle WA, Sydney, Australia, Toronto, Canada -- in an attempt to disguise their single origin, and their illegitimacy. Considering this poster’s remarks to be in good faith and a benefit to the community, we allowed them to remain anonymous and ensured their remarks were not falsely reported and taken down. We had some back and forth with the contest owner, who promptly demanded things of the moderator team such as unmasking the individual, personal phone calls with us, and various other unacceptable, abusive behaviours. After a considerable stretch of harassment, I advised this individual that if they wanted to continue threatening us with litigation, they were entitled to file a lawsuit against Reddit to attempt to force them to make us take down the critical remarks, and/or unmask our identities so that person could further litigate against us. These were my words, outlining the legal procedure by which this person could achieve satisfaction if he felt the legal grounds were strong enough. I did not anticipate he would attempt to actually do so, as Reddit’s commitment to free speech (and especially speech of this nature, which is cherished by the American Constitution) is considerably stronger than any claim this person had on our community. edited for attribution",
+          "contentTextLength": 5723,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "full comment from u/wemustburncarthage I first want to acknowledge that what happened on November 13th, 2014 was a heinous crime and tragedy that never should have occurred. I think what is decided in the court and its impact on Section 230 is manifestly a result of terrorism’s u",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:844531f4e0dc1009",
+          "externalId": "t1_j5601h2",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:16:07+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5601h2/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j5601h2/",
+          "contentText": "Full comment from u/halaku : My name is [redacted] I have been using Reddit for over eleven years. I have created subreddit communities to moderate, and taken over moderation duties when previous volunteers have wished to stop. I currently moderate multiple communities that are focused on everything from specific fields in computer science, to specific musical bands, to specific television shows. Part of my volunteer duties involves the creation and enforcement of rules relevant to the individual subreddit community in question. If posts are made that violate those rules, or if comments are made to posts which violate those removes, either I or other volunteers I have selected to help me remove them, for the good of the community. Repeated violations can result in posting or commenting capability being removed on a temporary or permanent basis, as required. This does not prevent the violator from seeing posts or comments made to the community by others, simply from joining in on that discussion, or starting a new one. One of the strengths of Reddit is that if a violator feels that they have been unfairly treated, they can move to another subreddit community that covers similar material, or start a brand new subreddit community to cover similar material if they wish to use that option, in much the same way that someone who has been repeatedly escorted out of a drinking establishment for improper behavior can in turn create their own establishment, and build a customer base of like-minded peers. Part of those tasks are accomplished by automation, such as the &quot;Automoderator&quot; feature, which streamlines moderator response via advanced scripting. If I create a rule saying &quot;No illegal postings of episodes of this show&quot; in a subreddit dedicated to that show, I can manually remove any post that includes illegal postings or links to pirated copies, or I can employ the Automoderator function to automatically remove any posts that are made to specific websites which are devoted towards piracy. This stops my community from getting into trouble by gaining a reputation in which illegal content can be obtained. Likewise, if someone has posted content the community has found repugnant and rejected, I can manually add them to a &quot;Manually screen all future activity from this individual before it goes live on the community&quot; filter, or have the Automoderator do it for me. Subreddit communities can have up to tens of millions of active subscribers, as well as anyone on the Internet who creates an account and visits the community without subscribing. Moderation teams simply can&#39;t handle tens of millions of independent actions without assistance. Losing this automation would be exactly the same as losing the ability to spamfilter email, leaving users to hunt and peck for actual communications amidst all the falsified posts from malicious actors engaging in hate mail, advertising spam, or phishing attempts to gain financial credentials. In the same vein, moderation teams often have to resolve situations caused by individuals acting with malice aforethought to cause problems and provoke hostile reactions, commonly known as &#39;trolling&#39;. There have been more instances than I can count wherein myself or one of my team members have had to deal with individuals who show up and comment that only people who (insert extremely negative commentary based on racial, gender, sexual orientation, political orientation, religious views, age, physical / mental / emotional / spiritual health, etc) could be fans of the (musical band, television show, amateur cover of professional recording, etc) in question, and otherwise attempt to disrupt the community, typically with popular political slogans attached. Again, Automoderator is a valuable, if not vital, tool in preventing these disruptions from occurring, by flagging said content for manual review before it can be seen by the community as a whole. Ladies and gentlemen of the court, if these malicious actors are allowed to say that no one is permitted to take any sort of action regarding their engagement, because their discrimination, slurs, and rabid hostility is their &quot;freely chosen venue of political expression&quot; or &quot;preferred method of free speech, and I as a volunteer who created the community am prevented from doing anything about the individuals or their behaviors? If volunteer moderators, or the owners of the website that hosts these communities, are prevented from using automation to stop the community from drowning in a flood of this activity, while the malicious actors claim that they have a constitutional right to overwhelm the community with said behavior, and automation can not be used to stop them? If communities degenerate into a baseline of &quot;Malicious actors can completely disrupt all communication as they choose, with the community unable to respond adequately to the flood, and moderators barred from using automation to help stem the tide.&quot;? Then Internet communication forums will suffer, and perhaps die, as any attempt at discourse can be destroyed by this behavior. My communities would be unable to discuss the topics at hand due to the interference of malicious actors, essentially squatting in the community yelling profanities, and claiming that if the community can&#39;t out-yell them by sinking to their level, the community deserves to die. There are millions of Americans who use the Internet to talk to one another every day. There are tens of thousands of them who use Reddit to do so in the subreddit communities I manage, freely and of my own will, in an attempt to give them a space to do so. There are tens of thousands more who want nothing more than to disrupt those talks, because they don&#39;t care for the subject matter in question, because they are fans of competing bands or shows and feel that they can elevate their own interests by tearing down the interests of others, or they simply enjoy ruining someone else&#39;s good time. And there&#39;s only me to try and keep the off-topic spam, discrimination, and hate out of the community, so people can go back to talking about the band, or television show, or computer science field in question. Without the ability to rely on technology such as automation in order to keep off-topic spam, discrimination, and hate out of the community, the community will grind to a stop, and the malicious actors win.",
+          "contentTextLength": 6462,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Full comment from u/halaku : My name is [redacted] I have been using Reddit for over eleven years. I have created subreddit communities to moderate, and taken over moderation duties when previous volunteers have wished to stop. I currently moderate multiple communities that are f",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:098d88a5ce32a70e",
+          "externalId": "t1_j55zy1r",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit’s Defense of Section 230 to the Supreme Court",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2023-01-20T17:15:31+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j55zy1r/",
+          "url": "https://www.reddit.com/r/reddit/comments/10h2fz7/reddits_defense_of_section_230_to_the_supreme/j55zy1r/",
+          "contentText": "Please see thread for the full comments submitted by the moderators who signed onto the Brief with us.",
+          "contentTextLength": 102,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Please see thread for the full comments submitted by the moderators who signed onto the Brief with us.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:ba6ce1ccfeeecf17",
+          "externalId": "t1_iz560si",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Reddit Recap 2022: Thanks for being here. Even if things were a mess out there.",
+          "author": "/u/reddit",
+          "community": "recap",
+          "communityUrl": "https://www.reddit.com/r/recap/",
+          "categories": [
+            {
+              "term": "recap",
+              "label": "r/recap"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2022-12-06T15:47:33+00:00",
+          "permalink": "https://www.reddit.com/r/recap/comments/ze94hc/reddit_recap_2022_thanks_for_being_here_even_if/iz560si/",
+          "url": "https://www.reddit.com/r/recap/comments/ze94hc/reddit_recap_2022_thanks_for_being_here_even_if/iz560si/",
+          "contentText": "Ahem.",
+          "contentTextLength": 5,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Ahem.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:9e01ac05b4975840",
+          "externalId": "t1_i0xqgsa",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Why is Karma? Or, how the internet learned to love the upvote",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2022-03-16T21:26:15+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/tfsv26/why_is_karma_or_how_the_internet_learned_to_love/i0xqgsa/",
+          "url": "https://www.reddit.com/r/reddit/comments/tfsv26/why_is_karma_or_how_the_internet_learned_to_love/i0xqgsa/",
+          "contentText": "no",
+          "contentTextLength": 2,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "no",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:e127709d1ba6c2bd",
+          "externalId": "t1_hx44xml",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Why is Subreddit? Or, a Brief History of the Subreddit",
+          "author": "/u/reddit",
+          "community": "reddit",
+          "communityUrl": "https://www.reddit.com/r/reddit/",
+          "categories": [
+            {
+              "term": "reddit",
+              "label": "r/reddit"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2022-02-16T01:22:50+00:00",
+          "permalink": "https://www.reddit.com/r/reddit/comments/sta5wl/why_is_subreddit_or_a_brief_history_of_the/hx44xml/",
+          "url": "https://www.reddit.com/r/reddit/comments/sta5wl/why_is_subreddit_or_a_brief_history_of_the/hx44xml/",
+          "contentText": "chicken butt",
+          "contentTextLength": 12,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "chicken butt",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:ddb40f28ca7a5ac8",
+          "externalId": "t1_hog2soh",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Sat 2021-12-11",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-14T00:03:36+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/rf1y5i/sat_20211211/hog2soh/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/rf1y5i/sat_20211211/hog2soh/",
+          "contentText": "A verdict has been reached! one of our servers - go forth as McServerface and let the world know of ye.",
+          "contentTextLength": 103,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "A verdict has been reached! one of our servers - go forth as McServerface and let the world know of ye.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:451846102fc30aa8",
+          "externalId": "t1_hobcmxx",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on Fri 2021-12-10",
+          "author": "/u/reddit",
+          "community": "nameaserver",
+          "communityUrl": "https://www.reddit.com/r/nameaserver/",
+          "categories": [
+            {
+              "term": "nameaserver",
+              "label": "r/nameaserver"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-13T00:08:02+00:00",
+          "permalink": "https://www.reddit.com/r/nameaserver/comments/rec8j2/fri_20211210/hobcmxx/",
+          "url": "https://www.reddit.com/r/nameaserver/comments/rec8j2/fri_20211210/hobcmxx/",
+          "contentText": "It is decided! one of our servers - you shall go by that name no longer. You are hereby named ButterMyBuns.",
+          "contentTextLength": 107,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "It is decided! one of our servers - you shall go by that name no longer. You are hereby named ButterMyBuns.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:d567dfc871e8852c",
+          "externalId": "t1_hngykbi",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on What COVID number will MOH report on Tues 7th Dec?",
+          "author": "/u/reddit",
+          "community": "SingaporeRaw",
+          "communityUrl": "https://www.reddit.com/r/SingaporeRaw/",
+          "categories": [
+            {
+              "term": "SingaporeRaw",
+              "label": "r/SingaporeRaw"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:54:32+00:00",
+          "permalink": "https://www.reddit.com/r/SingaporeRaw/comments/raaeyu/what_covid_number_will_moh_report_on_tues_7th_dec/hngykbi/",
+          "url": "https://www.reddit.com/r/SingaporeRaw/comments/raaeyu/what_covid_number_will_moh_report_on_tues_7th_dec/hngykbi/",
+          "contentText": "Release the hounds!!!!!",
+          "contentTextLength": 23,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Release the hounds!!!!!",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:d90c1a35a079acdc",
+          "externalId": "t1_hngvkxl",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on How many members will r/NonPoliticalTwitter gain from now until January 1, 2022? (Currently at 117,770 members)",
+          "author": "/u/reddit",
+          "community": "HolUp",
+          "communityUrl": "https://www.reddit.com/r/HolUp/",
+          "categories": [
+            {
+              "term": "HolUp",
+              "label": "r/HolUp"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:34:05+00:00",
+          "permalink": "https://www.reddit.com/r/HolUp/comments/ra9y75/how_many_members_will_rnonpoliticaltwitter_gain/hngvkxl/",
+          "url": "https://www.reddit.com/r/HolUp/comments/ra9y75/how_many_members_will_rnonpoliticaltwitter_gain/hngvkxl/",
+          "contentText": "Whoomp! There it is! Play has begun.",
+          "contentTextLength": 36,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Whoomp! There it is! Play has begun.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:8592b64658ab003e",
+          "externalId": "t1_hngvaoz",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on [MEM@MIA] Do the Grizzlies continue their wire-to-wire streak?",
+          "author": "/u/reddit",
+          "community": "memphisgrizzlies",
+          "communityUrl": "https://www.reddit.com/r/memphisgrizzlies/",
+          "categories": [
+            {
+              "term": "memphisgrizzlies",
+              "label": "r/memphisgrizzlies"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:32:07+00:00",
+          "permalink": "https://www.reddit.com/r/memphisgrizzlies/comments/ra9wj7/memmia_do_the_grizzlies_continue_their_wiretowire/hngvaoz/",
+          "url": "https://www.reddit.com/r/memphisgrizzlies/comments/ra9wj7/memmia_do_the_grizzlies_continue_their_wiretowire/hngvaoz/",
+          "contentText": "Whoomp! There it is! Play has begun.",
+          "contentTextLength": 36,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Whoomp! There it is! Play has begun.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:4a2f20f8f1404b01",
+          "externalId": "t1_hngv66v",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on [MEM@MIA] Predict Tyus Jone's AST/TO ratio",
+          "author": "/u/reddit",
+          "community": "memphisgrizzlies",
+          "communityUrl": "https://www.reddit.com/r/memphisgrizzlies/",
+          "categories": [
+            {
+              "term": "memphisgrizzlies",
+              "label": "r/memphisgrizzlies"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:31:15+00:00",
+          "permalink": "https://www.reddit.com/r/memphisgrizzlies/comments/ra9vu4/memmia_predict_tyus_jones_astto_ratio/hngv66v/",
+          "url": "https://www.reddit.com/r/memphisgrizzlies/comments/ra9vu4/memmia_predict_tyus_jones_astto_ratio/hngv66v/",
+          "contentText": "Let’s get ready to ruuuummmmble!",
+          "contentTextLength": 32,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Let’s get ready to ruuuummmmble!",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:a893d871a159ac75",
+          "externalId": "t1_hngun4c",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on [MEM@MIA] Who wins tonight?",
+          "author": "/u/reddit",
+          "community": "memphisgrizzlies",
+          "communityUrl": "https://www.reddit.com/r/memphisgrizzlies/",
+          "categories": [
+            {
+              "term": "memphisgrizzlies",
+              "label": "r/memphisgrizzlies"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:27:33+00:00",
+          "permalink": "https://www.reddit.com/r/memphisgrizzlies/comments/ra9sn6/memmia_who_wins_tonight/hngun4c/",
+          "url": "https://www.reddit.com/r/memphisgrizzlies/comments/ra9sn6/memmia_who_wins_tonight/hngun4c/",
+          "contentText": "Let’s get ready to ruuuummmmble!",
+          "contentTextLength": 32,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Let’s get ready to ruuuummmmble!",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:7c8bc2080d6535ad",
+          "externalId": "t1_hngrji4",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on The r/formula1 Predictions Tournament: Who will win the 2021 Drivers' Championship?",
+          "author": "/u/reddit",
+          "community": "formula1",
+          "communityUrl": "https://www.reddit.com/r/formula1/",
+          "categories": [
+            {
+              "term": "formula1",
+              "label": "r/formula1"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:05:26+00:00",
+          "permalink": "https://www.reddit.com/r/formula1/comments/ra9atw/the_rformula1_predictions_tournament_who_will_win/hngrji4/",
+          "url": "https://www.reddit.com/r/formula1/comments/ra9atw/the_rformula1_predictions_tournament_who_will_win/hngrji4/",
+          "contentText": "Whoomp! There it is! Play has begun.",
+          "contentTextLength": 36,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Whoomp! There it is! Play has begun.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:cc71033092ac7288",
+          "externalId": "t1_hngr4x8",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on The r/formula1 Predictions Tournament: Who will win the Abu Dhabi GP?",
+          "author": "/u/reddit",
+          "community": "formula1",
+          "communityUrl": "https://www.reddit.com/r/formula1/",
+          "categories": [
+            {
+              "term": "formula1",
+              "label": "r/formula1"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:02:24+00:00",
+          "permalink": "https://www.reddit.com/r/formula1/comments/ra98bk/the_rformula1_predictions_tournament_who_will_win/hngr4x8/",
+          "url": "https://www.reddit.com/r/formula1/comments/ra98bk/the_rformula1_predictions_tournament_who_will_win/hngr4x8/",
+          "contentText": "Happy Predictions! And may the odds be ever in your favor.",
+          "contentTextLength": 58,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Happy Predictions! And may the odds be ever in your favor.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        },
+        {
+          "id": "feed:1bb40b459429375b",
+          "externalId": "t1_hngqva3",
+          "itemType": "comment",
+          "bucketId": "user-comments",
+          "source": "reddit_public_atom_feed",
+          "provider": "reddit_public_atom_feed",
+          "title": "/u/reddit on The r/formula1 Predictions Tournament: Who will be on pole position for the Abu Dhabi GP?",
+          "author": "/u/reddit",
+          "community": "formula1",
+          "communityUrl": "https://www.reddit.com/r/formula1/",
+          "categories": [
+            {
+              "term": "formula1",
+              "label": "r/formula1"
+            }
+          ],
+          "publishedAt": null,
+          "updatedAt": "2021-12-06T15:00:23+00:00",
+          "permalink": "https://www.reddit.com/r/formula1/comments/ra96kz/the_rformula1_predictions_tournament_who_will_be/hngqva3/",
+          "url": "https://www.reddit.com/r/formula1/comments/ra96kz/the_rformula1_predictions_tournament_who_will_be/hngqva3/",
+          "contentText": "Whoomp! There it is! Play has begun.",
+          "contentTextLength": 36,
+          "contentTextTruncated": false,
+          "contentSourceElement": "content",
+          "contentPreview": "Whoomp! There it is! Play has begun.",
+          "contentHtmlPersisted": false,
+          "rawContentPersisted": false,
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+          "rawFeedPersisted": false,
+          "rawBodyPersisted": false,
+          "authMaterialPersisted": false
+        }
+      ]
+    }
+  ],
+  "resume": {
+    "supported": true,
+    "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-state.json",
+    "strategy": "skip_completed_buckets_and_reuse_existing_jsonl_artifacts"
+  }
+}

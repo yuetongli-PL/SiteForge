@@ -1,0 +1,951 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-09T06:43:39.155Z",
+  "scoring": {
+    "layerWeights": {
+      "discovery": 30,
+      "execution": 35,
+      "task": 35
+    },
+    "discoveryWeights": {
+      "能力语义准确性": 20,
+      "能力粒度合理性": 15,
+      "证据完整性": 15,
+      "候选能力解释性": 10,
+      "程序接口发现真实性": 10,
+      "站点类型识别准确性": 10,
+      "适配器选择合理性": 10,
+      "安全边界发现": 10
+    },
+    "executionWeights": {
+      "参数/槽位建模质量": 15,
+      "执行计划完整性": 15,
+      "运行时绑定稳定性": 15,
+      "单能力执行成功率": 15,
+      "结果验证能力": 15,
+      "输出结构化质量": 10,
+      "错误恢复能力": 10,
+      "执行安全治理": 5
+    },
+    "taskWeights": {
+      "用户意图覆盖率": 10,
+      "意图分发准确率": 10,
+      "多步任务规划质量": 15,
+      "能力组合成功率": 15,
+      "上下文传递正确率": 10,
+      "端到端任务完成率": 20,
+      "任务结果质量": 10,
+      "失败解释与修复建议": 5,
+      "任务级安全合规": 5
+    },
+    "hardCapRules": [
+      "正文、简介、评论、章节内容被提升为能力：总分封顶 60",
+      "只读内容被误判为发布、提交、删除、支付：总分封顶 65",
+      "虚构程序接口能力：总分封顶 70",
+      "active 能力大量没有执行计划：总分封顶 75",
+      "无法解释失败原因：总分封顶 80",
+      "敏感材料进入报告、技能或能力字段：不合格"
+    ]
+  },
+  "minimumTotalScore": 100,
+  "allPassed": true,
+  "sites": [
+    {
+      "siteKey": "t-powers",
+      "siteId": "t-powers.co.jp-4fa773a1",
+      "url": "https://www.t-powers.co.jp/",
+      "registryKey": "www.t-powers.co.jp",
+      "registryHost": "www.t-powers.co.jp",
+      "buildId": "20260609T061522049Z",
+      "skillId": "t-powers",
+      "skillDir": ".siteforge/sites/t-powers.co.jp-4fa773a1/current",
+      "artifactDir": ".siteforge/sites/t-powers.co.jp-4fa773a1/builds/20260609T061522049Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 24,
+      "nonRuntimeOrDisabledCapabilityCount": 4,
+      "disabledRiskCapabilityCount": 2,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 7,
+        "selectedGroups": [
+          "contact-boundary",
+          "event-media",
+          "home",
+          "news-updates",
+          "person-directory",
+          "release-listings",
+          "sitemap",
+          "topic-directory",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "so-agent",
+      "siteId": "so-agent.jp-636b440c",
+      "url": "http://so-agent.jp/",
+      "registryKey": "so-agent.jp",
+      "registryHost": "so-agent.jp",
+      "buildId": "20260609T061741491Z",
+      "skillId": "so-agent",
+      "skillDir": ".siteforge/sites/so-agent.jp-636b440c/current",
+      "artifactDir": ".siteforge/sites/so-agent.jp-636b440c/builds/20260609T061741491Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 15,
+      "nonRuntimeOrDisabledCapabilityCount": 1,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 4,
+        "selectedGroups": [
+          "home",
+          "news-updates",
+          "person-directory",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "robots-unavailable",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "moodyz",
+      "siteId": "moodyz.com-c086e87f",
+      "url": "https://moodyz.com/top",
+      "registryKey": "moodyz.com",
+      "registryHost": "moodyz.com",
+      "buildId": "20260609T062021444Z",
+      "skillId": "moodyz",
+      "skillDir": ".siteforge/sites/moodyz.com-c086e87f/current",
+      "artifactDir": ".siteforge/sites/moodyz.com-c086e87f/builds/20260609T062021444Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 24,
+      "nonRuntimeOrDisabledCapabilityCount": 5,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 13,
+        "selectedGroups": [
+          "detail-pages",
+          "genre-directory",
+          "help",
+          "home",
+          "label-directory",
+          "person-directory",
+          "policy-pages",
+          "ranking-lists",
+          "release-listings",
+          "reserve-listings",
+          "search",
+          "series-directory",
+          "sitemap",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "dahlia",
+      "siteId": "dahlia-av.jp-f794ab63",
+      "url": "https://dahlia-av.jp/",
+      "registryKey": "dahlia-av.jp",
+      "registryHost": "dahlia-av.jp",
+      "buildId": "20260609T062251408Z",
+      "skillId": "dahlia",
+      "skillDir": ".siteforge/sites/dahlia-av.jp-f794ab63/current",
+      "artifactDir": ".siteforge/sites/dahlia-av.jp-f794ab63/builds/20260609T062251408Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 21,
+      "nonRuntimeOrDisabledCapabilityCount": 2,
+      "disabledRiskCapabilityCount": 2,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 8,
+        "selectedGroups": [
+          "/works/:item",
+          "contact-boundary",
+          "genre-directory",
+          "news-updates",
+          "person-directory",
+          "policy-pages",
+          "release-listings",
+          "search",
+          "sitemap",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "sod",
+      "siteId": "sod.co.jp-65d1a02e",
+      "url": "https://www.sod.co.jp/",
+      "registryKey": "www.sod.co.jp",
+      "registryHost": "www.sod.co.jp",
+      "buildId": "20260609T062336574Z",
+      "skillId": "sod",
+      "skillDir": ".siteforge/sites/sod.co.jp-65d1a02e/current",
+      "artifactDir": ".siteforge/sites/sod.co.jp-65d1a02e/builds/20260609T062336574Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 14,
+      "nonRuntimeOrDisabledCapabilityCount": 4,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 9,
+        "selectedGroups": [
+          "event-media",
+          "genre-directory",
+          "home",
+          "label-directory",
+          "maker-directory",
+          "news-updates",
+          "person-directory",
+          "release-listings",
+          "series-directory",
+          "sitemap"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "s1",
+      "siteId": "s1s1s1.com-4fdf0909",
+      "url": "https://s1s1s1.com/top",
+      "registryKey": "s1s1s1.com",
+      "registryHost": "s1s1s1.com",
+      "buildId": "20260609T062406841Z",
+      "skillId": "s-av-s1-no-1-style",
+      "skillDir": ".siteforge/sites/s1s1s1.com-4fdf0909/current",
+      "artifactDir": ".siteforge/sites/s1s1s1.com-4fdf0909/builds/20260609T062406841Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 24,
+      "nonRuntimeOrDisabledCapabilityCount": 4,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 12,
+        "selectedGroups": [
+          "detail-pages",
+          "genre-directory",
+          "help",
+          "home",
+          "person-directory",
+          "policy-pages",
+          "ranking-lists",
+          "release-listings",
+          "reserve-listings",
+          "search",
+          "series-directory",
+          "sitemap",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "attackers",
+      "siteId": "attackers.net-d8c8b3fb",
+      "url": "https://attackers.net/top",
+      "registryKey": "attackers.net",
+      "registryHost": "attackers.net",
+      "buildId": "20260609T062637859Z",
+      "skillId": "attackers",
+      "skillDir": ".siteforge/sites/attackers.net-d8c8b3fb/current",
+      "artifactDir": ".siteforge/sites/attackers.net-d8c8b3fb/builds/20260609T062637859Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 27,
+      "nonRuntimeOrDisabledCapabilityCount": 3,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 14,
+        "selectedGroups": [
+          "detail-pages",
+          "genre-directory",
+          "help",
+          "home",
+          "label-directory",
+          "person-directory",
+          "policy-pages",
+          "ranking-lists",
+          "release-listings",
+          "reserve-listings",
+          "search",
+          "series-directory",
+          "sitemap",
+          "special-pages",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "km-produce",
+      "siteId": "km-produce.com-af1ddc05",
+      "url": "https://www.km-produce.com/",
+      "registryKey": "www.km-produce.com",
+      "registryHost": "www.km-produce.com",
+      "buildId": "20260609T062849103Z",
+      "skillId": "km-produce",
+      "skillDir": ".siteforge/sites/km-produce.com-af1ddc05/current",
+      "artifactDir": ".siteforge/sites/km-produce.com-af1ddc05/builds/20260609T062849103Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 27,
+      "nonRuntimeOrDisabledCapabilityCount": 7,
+      "disabledRiskCapabilityCount": 2,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 11,
+        "selectedGroups": [
+          "/store",
+          "contact-boundary",
+          "event-media",
+          "genre-directory",
+          "home",
+          "label-directory",
+          "news-updates",
+          "person-directory",
+          "policy-pages",
+          "ranking-lists",
+          "search",
+          "sitemap",
+          "topic-directory",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "rookie",
+      "siteId": "rookie-av.jp-64e7e465",
+      "url": "https://rookie-av.jp/top",
+      "registryKey": "rookie-av.jp",
+      "registryHost": "rookie-av.jp",
+      "buildId": "20260609T063049538Z",
+      "skillId": "rookie",
+      "skillDir": ".siteforge/sites/rookie-av.jp-64e7e465/current",
+      "artifactDir": ".siteforge/sites/rookie-av.jp-64e7e465/builds/20260609T063049538Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 26,
+      "nonRuntimeOrDisabledCapabilityCount": 1,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 11,
+        "selectedGroups": [
+          "detail-pages",
+          "genre-directory",
+          "help",
+          "home",
+          "person-directory",
+          "policy-pages",
+          "ranking-lists",
+          "release-listings",
+          "reserve-listings",
+          "search",
+          "series-directory",
+          "sitemap",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "madonna",
+      "siteId": "madonna-av.com-4f7bee91",
+      "url": "https://madonna-av.com/top",
+      "registryKey": "madonna-av.com",
+      "registryHost": "madonna-av.com",
+      "buildId": "20260609T063340197Z",
+      "skillId": "madonna",
+      "skillDir": ".siteforge/sites/madonna-av.com-4f7bee91/current",
+      "artifactDir": ".siteforge/sites/madonna-av.com-4f7bee91/builds/20260609T063340197Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 28,
+      "nonRuntimeOrDisabledCapabilityCount": 1,
+      "disabledRiskCapabilityCount": 1,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 12,
+        "selectedGroups": [
+          "detail-pages",
+          "genre-directory",
+          "help",
+          "home",
+          "label-directory",
+          "person-directory",
+          "policy-pages",
+          "ranking-lists",
+          "release-listings",
+          "reserve-listings",
+          "search",
+          "series-directory",
+          "sitemap",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence",
+        "sitemap-read-timeout"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    },
+    {
+      "siteKey": "dogma",
+      "siteId": "dogma.co.jp-aee5e575",
+      "url": "http://www.dogma.co.jp/",
+      "registryKey": "www.dogma.co.jp",
+      "registryHost": "www.dogma.co.jp",
+      "buildId": "20260609T063616173Z",
+      "skillId": "dogma",
+      "skillDir": ".siteforge/sites/dogma.co.jp-aee5e575/current",
+      "artifactDir": ".siteforge/sites/dogma.co.jp-aee5e575/builds/20260609T063616173Z",
+      "resultStatus": "partial_success",
+      "verificationStatus": "passed",
+      "pageReconciliationStatus": "passed",
+      "enabledRuntimeCapabilityCount": 8,
+      "nonRuntimeOrDisabledCapabilityCount": 2,
+      "disabledRiskCapabilityCount": 2,
+      "businessCoverage": {
+        "status": "configured",
+        "configuredGroupCount": 3,
+        "selectedGroups": [
+          "home",
+          "sitemap",
+          "utility-pages"
+        ],
+        "missingRequiredGroups": [],
+        "seedCoverageOk": true,
+        "capabilityCoverageOk": true
+      },
+      "warningCodes": [
+        "auth-not-requested",
+        "dynamic-unsupported",
+        "missing_auth_evidence"
+      ],
+      "discoveryScores": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      },
+      "executionScores": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      },
+      "taskScores": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      },
+      "layerScores": {
+        "能力发现层": 100,
+        "能力执行层": 100,
+        "任务完成层": 100
+      },
+      "totalScore": 100,
+      "hardCaps": [],
+      "passed": true
+    }
+  ]
+}

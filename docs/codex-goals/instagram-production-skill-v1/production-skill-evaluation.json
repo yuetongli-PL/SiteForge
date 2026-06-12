@@ -1,0 +1,492 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-09T11:53:18.053Z",
+  "site": {
+    "siteKey": "instagram",
+    "siteId": "instagram.com-ea2ecfbf",
+    "rootUrl": "https://www.instagram.com/",
+    "buildId": "20260609T034125203Z",
+    "buildDir": "C:\\Users\\lyt-p\\Desktop\\SiteForge\\.siteforge\\sites\\instagram.com-ea2ecfbf\\builds\\20260609T034125203Z"
+  },
+  "evidence": {
+    "buildStatus": "success",
+    "verificationStatus": "passed",
+    "registryStatus": "registered",
+    "runtimeExecutionStatus": "completed",
+    "runtimeExecuted": true,
+    "runtimeDescriptorOnly": true,
+    "profileExists": true,
+    "dryRunArtifactCoverage": {
+      "required": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "accounts/items.jsonl",
+        "authors/items.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "archive/index.md"
+      ],
+      "present": 11,
+      "total": 11,
+      "score": 100,
+      "missing": []
+    },
+    "realAttemptStatus": "completed",
+    "relationAttemptStatus": "completed",
+    "relationFailureReasonCode": null,
+    "relationFailureExplained": false,
+    "apiCaptureProbe": {
+      "present": true,
+      "archiveReason": "api-operations-no-archive-seed",
+      "requestCount": 35,
+      "responseCount": 34,
+      "parsedResponseCount": 34,
+      "parsedSeedCandidateCount": 6,
+      "operationCount": 2,
+      "operations": [
+        "graphql",
+        "query"
+      ],
+      "sampleCount": 8,
+      "replayVerified": false,
+      "adapterBound": false,
+      "runtimeTested": false
+    },
+    "apiReplayAudit": {
+      "present": true,
+      "status": "verified",
+      "operationCount": 4,
+      "verifiedOperationCount": 4,
+      "activeApiCapabilityCount": 3,
+      "activeApiCapabilities": [
+        "instagram-api-profile-info",
+        "instagram-api-profile-posts",
+        "instagram-api-profile-relations"
+      ],
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "redactionAuditsPassed": true,
+      "sensitiveMaterialSafe": true,
+      "relationTaskStatus": "completed",
+      "relationTaskCollectedRecordCount": 57
+    },
+    "degradedAttemptStatus": "degraded",
+    "degradedStructureAvailable": true,
+    "degradedCollectedRecordCount": 9,
+    "plannerSelfCheckStatus": "passed",
+    "plannerSelfCheckPassed": true,
+    "realFailureExplained": true,
+    "realContentComplete": true,
+    "realTaskId": "account-works-archive",
+    "accountContentProfileSupported": true,
+    "specifiedUserAllWorksSupported": true
+  },
+  "capabilityState": {
+    "active": [
+      "browse-public-categories",
+      "browse-public-collections",
+      "browse-public-navigation",
+      "browse-public-tags",
+      "navigate-to-author-profile",
+      "open-external-link-preview",
+      "open-public-detail-pages",
+      "open-public-profiles",
+      "open-search-result-detail",
+      "open-timeline-post-detail",
+      "read-media-summary",
+      "read-post-author-summary",
+      "read-post-detail",
+      "read-post-engagement-summary",
+      "read-profile-content",
+      "read-quote-summary",
+      "read-reply-tree-summary",
+      "read-search-result-summaries",
+      "read-user-recent-posts",
+      "search-latest-posts",
+      "search-media-posts",
+      "search-posts",
+      "search-users",
+      "view-homepage"
+    ],
+    "candidate": [
+      {
+        "id": "capture-network-apis",
+        "reason": "API candidates remain debug-only until replay verification and runtime binding evidence are available."
+      },
+      {
+        "id": "read-public-metadata",
+        "reason": "capability-evidence-matrix-incomplete"
+      },
+      {
+        "id": "read-user-media",
+        "reason": "capability-evidence-matrix-incomplete"
+      },
+      {
+        "id": "search-public-content",
+        "reason": "capability-evidence-matrix-incomplete"
+      }
+    ],
+    "disabled": [
+      {
+        "id": "change-account-2fa",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "change-account-email",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "change-account-password",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "change-account-security-settings",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "change-payment-settings",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "create-direct-message-draft",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "create-post-draft",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "create-reply-draft",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "delete-post",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "edit-profile",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "follow-user",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "like-post",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "publish-post",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "publish-reply",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "repost-post",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "send-direct-message",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "unfollow-user",
+        "reason": "site-policy-disabled-action"
+      }
+    ],
+    "counts": {
+      "active": 24,
+      "candidate": 4,
+      "disabled": 17,
+      "activeWithEvidence": 24,
+      "activeWithPlans": 24,
+      "activeWithContracts": 24
+    }
+  },
+  "taskTemplates": [
+    {
+      "id": "account-full-archive",
+      "input": "account",
+      "buckets": [
+        "account-info",
+        "posts",
+        "reels",
+        "media",
+        "following",
+        "followers",
+        "highlights"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task account-full-archive --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task account-full-archive --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "account-works-archive",
+      "input": "account",
+      "buckets": [
+        "account-info",
+        "posts",
+        "reels",
+        "media",
+        "highlights"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task account-works-archive --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task account-works-archive --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "keyword-trend",
+      "input": "query",
+      "buckets": [
+        "search-*"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task keyword-trend --query \"<query>\" --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task keyword-trend --query \"<query>\" --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "industry-report",
+      "input": "query",
+      "buckets": [
+        "search-*"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task industry-report --query \"<query>\" --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task industry-report --query \"<query>\" --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "account-composite-profile",
+      "input": "account",
+      "buckets": [
+        "account-info",
+        "posts",
+        "reels",
+        "following",
+        "followers"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task account-composite-profile --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task account-composite-profile --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "account-content-profile",
+      "input": "account",
+      "buckets": [
+        "account-info",
+        "posts",
+        "reels"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task account-content-profile --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task account-content-profile --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "relation-list-collection",
+      "input": "account",
+      "buckets": [
+        "following",
+        "followers"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task relation-list-collection --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task relation-list-collection --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "event-timeline",
+      "input": "query",
+      "buckets": [
+        "search-*"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task event-timeline --query \"<query>\" --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task event-timeline --query \"<query>\" --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    },
+    {
+      "id": "similar-account-discovery",
+      "input": "account",
+      "buckets": [
+        "seed-profile",
+        "seed-following",
+        "seed-content",
+        "candidate-search"
+      ],
+      "plannerCommand": "node scripts/instagram-research-task-runner.mjs --task similar-account-discovery --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --json",
+      "executeCommand": "node scripts/instagram-research-task-runner.mjs --task similar-account-discovery --account <account> --out-dir .siteforge/instagram-research-tasks/<run-id> --runs-root .siteforge/instagram-live-runs-skill --execute --resume --json"
+    }
+  ],
+  "apiFirstPolicy": {
+    "status": "active_api_with_verified_site_fallback",
+    "activeApiCapabilities": [
+      {
+        "id": "instagram-api-profile-info",
+        "status": "active_api",
+        "operations": [
+          "instagram-web-profile-info"
+        ],
+        "method": "GET",
+        "endpointTemplate": "/api/v1/users/web_profile_info/?username={account}",
+        "verified": true,
+        "replayVerified": true,
+        "adapterBound": true,
+        "runtimeTested": true,
+        "evidence": "docs/codex-goals/instagram-production-skill-v1/evidence/instagram-api-replay-audit.json#/operations/0",
+        "fallback": "verified_site_action"
+      },
+      {
+        "id": "instagram-api-profile-posts",
+        "status": "active_api",
+        "operations": [
+          "instagram-feed-user"
+        ],
+        "method": "GET",
+        "endpointTemplate": "/api/v1/feed/user/{userId}/?count={count}&max_id={cursor?}",
+        "verified": true,
+        "replayVerified": true,
+        "adapterBound": true,
+        "runtimeTested": true,
+        "evidence": "docs/codex-goals/instagram-production-skill-v1/evidence/instagram-api-replay-audit.json#/operations/1",
+        "fallback": "verified_site_action"
+      },
+      {
+        "id": "instagram-api-profile-relations",
+        "status": "active_api",
+        "operations": [
+          "instagram-friendships-following",
+          "instagram-friendships-followers"
+        ],
+        "method": "GET",
+        "endpointTemplate": "/api/v1/friendships/{userId}/{following|followers}/?count={count}&max_id={cursor?}",
+        "verified": true,
+        "replayVerified": true,
+        "adapterBound": true,
+        "runtimeTested": true,
+        "evidence": "docs/codex-goals/instagram-production-skill-v1/evidence/instagram-api-replay-audit.json#/operations/2",
+        "fallback": "verified_site_action"
+      }
+    ],
+    "replayVerifiedApiCount": 4,
+    "activeApiCapabilityCount": 3,
+    "apiReplayAudit": {
+      "present": true,
+      "status": "verified",
+      "operationCount": 4,
+      "verifiedOperationCount": 4,
+      "activeApiCapabilityCount": 3,
+      "activeApiCapabilities": [
+        "instagram-api-profile-info",
+        "instagram-api-profile-posts",
+        "instagram-api-profile-relations"
+      ],
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "redactionAuditsPassed": true,
+      "sensitiveMaterialSafe": true,
+      "relationTaskStatus": "completed",
+      "relationTaskCollectedRecordCount": 57
+    },
+    "fallbackPolicy": "immediate_verified_site_fallback",
+    "falseApiClaimMade": false
+  },
+  "siteFallbacks": {
+    "account-info": "node src/entrypoints/sites/instagram-action.mjs account-info --account <account> --json --quiet",
+    "profile-content": "node src/entrypoints/sites/instagram-action.mjs profile-content --account <account> --content-type <posts|reels|media|highlights> --json --quiet",
+    "profile-following": "node src/entrypoints/sites/instagram-action.mjs profile-following --account <account> --json --quiet",
+    "profile-followers": "node src/entrypoints/sites/instagram-action.mjs profile-followers --account <account> --json --quiet",
+    "search": "node src/entrypoints/sites/instagram-action.mjs search --query \"<query>\" --json --quiet"
+  },
+  "scores": {
+    "discovery": {
+      "metrics": {
+        "semanticAccuracy": 100,
+        "granularity": 100,
+        "evidenceCompleteness": 100,
+        "candidateExplainability": 100,
+        "apiTruthfulness": 100,
+        "siteTypeAccuracy": 100,
+        "adapterChoice": 100,
+        "safetyBoundaryDiscovery": 100
+      },
+      "weights": {
+        "semanticAccuracy": 20,
+        "granularity": 15,
+        "evidenceCompleteness": 15,
+        "candidateExplainability": 10,
+        "apiTruthfulness": 10,
+        "siteTypeAccuracy": 10,
+        "adapterChoice": 10,
+        "safetyBoundaryDiscovery": 10
+      },
+      "score": 100
+    },
+    "execution": {
+      "metrics": {
+        "parameterModeling": 100,
+        "executionPlanCompleteness": 100,
+        "runtimeBindingStability": 100,
+        "singleCapabilitySuccess": 100,
+        "resultValidation": 100,
+        "outputStructureQuality": 100,
+        "errorRecovery": 100,
+        "executionSafety": 100
+      },
+      "weights": {
+        "parameterModeling": 15,
+        "executionPlanCompleteness": 15,
+        "runtimeBindingStability": 15,
+        "singleCapabilitySuccess": 15,
+        "resultValidation": 15,
+        "outputStructureQuality": 10,
+        "errorRecovery": 10,
+        "executionSafety": 5
+      },
+      "score": 100
+    },
+    "taskCompletion": {
+      "metrics": {
+        "userIntentCoverage": 100,
+        "dispatchAccuracy": 100,
+        "multiStepPlanning": 100,
+        "capabilityComposition": 100,
+        "contextTransfer": 100,
+        "endToEndCompletion": 100,
+        "taskResultQuality": 100,
+        "failureExplanation": 100,
+        "taskSafetyCompliance": 100
+      },
+      "weights": {
+        "userIntentCoverage": 10,
+        "dispatchAccuracy": 10,
+        "multiStepPlanning": 15,
+        "capabilityComposition": 15,
+        "contextTransfer": 10,
+        "endToEndCompletion": 20,
+        "taskResultQuality": 10,
+        "failureExplanation": 5,
+        "taskSafetyCompliance": 5
+      },
+      "score": 100
+    },
+    "layerWeights": {
+      "discovery": 30,
+      "execution": 35,
+      "taskCompletion": 35
+    },
+    "weighted": 100,
+    "capped": 100
+  },
+  "hardCapAudit": {
+    "contentFragmentPromotedToCapability": false,
+    "readOnlyMisclassifiedAsMutation": false,
+    "fictionalApiPromoted": false,
+    "activeCapabilitiesMissingPlans": false,
+    "unexplainedFailure": false,
+    "sensitiveMaterialInReportOrSkill": false
+  },
+  "blockers": [],
+  "status": "production_complete",
+  "supportAnswer": {
+    "accountContentProfile": "supported_with_current_artifacts",
+    "specifiedUserAllWorks": "supported",
+    "reason": "已有 account-works-archive 或 account-full-archive 真实 verified site fallback 采集出的脱敏 JSONL 记录，且 userArchiveSupport 达标。"
+  }
+}

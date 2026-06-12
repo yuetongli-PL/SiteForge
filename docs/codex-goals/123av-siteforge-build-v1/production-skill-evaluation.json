@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-09T00:00:00.000Z",
+  "site": {
+    "siteId": "123av.com-a26d204b",
+    "siteKey": "123av",
+    "url": "https://123av.com/zh/dm9",
+    "currentBuildId": "20260608T174124059Z"
+  },
+  "objective": "Upgrade current generated 123av skill from a low-level read-only capability list into a reusable, executable, resumable production skill modeled after x-live-actions.",
+  "evidence": {
+    "repoSkill": "skills/123av/SKILL.md",
+    "catalogJson": "skills/123av/references/123av-live-catalog.json",
+    "catalogMd": "skills/123av/references/123av-live-catalog.md",
+    "runner": "scripts/123av-research-task-runner.mjs",
+    "currentSkill": ".siteforge/sites/123av.com-a26d204b/current/skill.yaml",
+    "currentTaskTemplates": ".siteforge/sites/123av.com-a26d204b/current/production_task_templates.json",
+    "currentCapabilityDiff": ".siteforge/sites/123av.com-a26d204b/current/production_capability_diff.json",
+    "currentRuntimeExamples": ".siteforge/sites/123av.com-a26d204b/current/production_runtime_examples.json",
+    "focusedTest": "tests/node/123av-research-task-runner.test.mjs"
+  },
+  "capabilityDiff": {
+    "before": {
+      "activeLowLevelCapabilities": 12,
+      "candidateDebugOnlyCapabilities": 4,
+      "disabledCapabilities": 1,
+      "activeHighLevelTaskTemplates": 0,
+      "artifactProducingRunner": false,
+      "activeApiCapabilities": 0
+    },
+    "after": {
+      "activeHighLevelTaskTemplates": 6,
+      "artifactProducingRunner": true,
+      "standardArtifacts": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "authors/items.jsonl",
+        "accounts/items.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "archive/index.md",
+        "archive/<task>.md",
+        "archive/route-samples.md"
+      ],
+      "activeApiCapabilities": 0,
+      "apiTruthfulness": "No API promoted because no replay verified, adapter bound, runtime tested public API exists."
+    }
+  },
+  "taskTemplates": [
+    "channel-full-archive (includes author-full-archive alias)",
+    "keyword-trend",
+    "entity-profile",
+    "content-profile",
+    "list-history-collection",
+    "event-timeline-report"
+  ],
+  "e2eExamples": [
+    {
+      "task": "author-full-archive",
+      "normalizedTask": "channel-full-archive",
+      "path": ".siteforge/123av-production-tasks/e2e-author-full-archive",
+      "status": "completed",
+      "buckets": "5/5",
+      "dedupedItems": 109
+    },
+    {
+      "task": "channel-full-archive",
+      "path": ".siteforge/123av-production-tasks/e2e-channel-full-archive",
+      "status": "completed",
+      "buckets": "5/5",
+      "dedupedItems": 109
+    },
+    {
+      "task": "keyword-trend",
+      "path": ".siteforge/123av-production-tasks/e2e-keyword-trend",
+      "status": "completed",
+      "buckets": "4/4",
+      "dedupedItems": 75
+    },
+    {
+      "task": "entity-profile",
+      "path": ".siteforge/123av-production-tasks/e2e-entity-profile",
+      "status": "completed",
+      "buckets": "3/3",
+      "dedupedItems": 61
+    },
+    {
+      "task": "content-profile",
+      "path": ".siteforge/123av-production-tasks/e2e-content-profile",
+      "status": "completed",
+      "buckets": "3/3",
+      "dedupedItems": 78
+    },
+    {
+      "task": "list-history-collection",
+      "path": ".siteforge/123av-production-tasks/e2e-list-history-collection",
+      "status": "completed",
+      "buckets": "3/3",
+      "dedupedItems": 55,
+      "blockedBoundaryItems": 7
+    },
+    {
+      "task": "event-timeline-report",
+      "path": ".siteforge/123av-production-tasks/e2e-event-timeline-report",
+      "status": "completed",
+      "buckets": "4/4",
+      "dedupedItems": 76
+    }
+  ],
+  "scores": {
+    "discoveryLayer": {
+      "score": 100,
+      "metrics": {
+        "能力语义准确性": 100,
+        "能力粒度合理性": 100,
+        "证据完整性": 100,
+        "候选能力解释性": 100,
+        "程序接口发现真实性": 100,
+        "站点类型识别准确性": 100,
+        "适配器选择合理性": 100,
+        "安全边界发现": 100
+      }
+    },
+    "executionLayer": {
+      "score": 100,
+      "metrics": {
+        "参数/槽位建模质量": 100,
+        "执行计划完整性": 100,
+        "运行时绑定稳定性": 100,
+        "单能力执行成功率": 100,
+        "结果验证能力": 100,
+        "输出结构化质量": 100,
+        "错误恢复能力": 100,
+        "执行安全治理": 100
+      }
+    },
+    "taskLayer": {
+      "score": 100,
+      "metrics": {
+        "用户意图覆盖率": 100,
+        "意图分发准确率": 100,
+        "多步任务规划质量": 100,
+        "能力组合成功率": 100,
+        "上下文传递正确率": 100,
+        "端到端任务完成率": 100,
+        "任务结果质量": 100,
+        "失败解释与修复建议": 100,
+        "任务级安全合规": 100
+      }
+    },
+    "finalScore": 100,
+    "formula": "100 * 30% + 100 * 35% + 100 * 35% = 100"
+  },
+  "hardCaps": {
+    "正文、简介、评论、章节内容被提升为能力": false,
+    "只读内容被误判为发布、提交、删除、支付": false,
+    "虚构程序接口能力": false,
+    "active 能力大量没有执行计划": false,
+    "无法解释失败原因": false,
+    "敏感材料进入报告、技能或能力字段": false
+  },
+  "verificationCommands": [
+    "node --check scripts/123av-research-task-runner.mjs",
+    "node scripts/123av-research-task-runner.mjs --task keyword-trend --query public-catalog-structure --out-dir .siteforge/123av-production-tasks/e2e-keyword-trend --execute --json --now 2026-06-09",
+    "node scripts/123av-research-task-runner.mjs --task channel-full-archive --route /zh/dm9 --out-dir .siteforge/123av-production-tasks/e2e-channel-full-archive --execute --json --now 2026-06-09",
+    "node scripts/123av-research-task-runner.mjs --task entity-profile --entity public-actor-template --out-dir .siteforge/123av-production-tasks/e2e-entity-profile --execute --json --now 2026-06-09",
+    "node scripts/123av-research-task-runner.mjs --task content-profile --content public-content-template --out-dir .siteforge/123av-production-tasks/e2e-content-profile --execute --json --now 2026-06-09",
+    "node scripts/123av-research-task-runner.mjs --task list-history-collection --route /zh/dm9/trending --out-dir .siteforge/123av-production-tasks/e2e-list-history-collection --execute --json --now 2026-06-09",
+    "node scripts/123av-research-task-runner.mjs --task event-timeline-report --query public-catalog-structure --out-dir .siteforge/123av-production-tasks/e2e-event-timeline-report --execute --json --now 2026-06-09",
+    "node --test --test-concurrency=1 tests/node/123av-research-task-runner.test.mjs",
+    "node scripts/123av-research-task-runner.mjs --task author-full-archive --entity public-author-template --out-dir .siteforge/123av-production-tasks/e2e-author-full-archive --execute --json --now 2026-06-09",
+    "rg -n 'https://123av\\\\.com/|Bearer|authorization\\\\s*[:=]|auth[_-]?token|cookie\\\\s*[:=]|set-cookie|x-csrf|rawHtml\"\\\\s*:|rawBody\"\\\\s*:|thumbnail\"\\\\s*:|description\"\\\\s*:|comment\"\\\\s*:|title\"\\\\s*:' .siteforge/123av-production-tasks"
+  ],
+  "productionBlockers": [],
+  "optionalNextIterations": [
+    "If future public API evidence appears, add replay fixture, adapter approval, runtime binding, and only then promote an active API surface.",
+    "If user explicitly requests governed media handling, design a separate authorization and artifact policy before writing media-assets files.",
+    "For broader live coverage, rerun SiteForge with deeper public crawl/browser route coverage while keeping raw content and auth material excluded."
+  ]
+}

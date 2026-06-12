@@ -1,0 +1,599 @@
+{
+  "schemaVersion": 2,
+  "artifactFamily": "reddit-public-feed-replay-report",
+  "generatedAt": "2026-06-09T09:48:26.095Z",
+  "replayAttempted": true,
+  "replaySource": "latest reddit-research-task-runner live task-state executions",
+  "activeCapabilityCount": 3,
+  "activeBucketSurfaceCount": 18,
+  "activeEndpointCount": 12,
+  "candidateOrFallbackOnlyCount": 0,
+  "rawFeedPersisted": false,
+  "publicContentTextPersisted": true,
+  "contentHtmlPersisted": false,
+  "rawContentPersisted": false,
+  "contentTextContract": {
+    "field": "contentText",
+    "sourceElements": [
+      "content",
+      "summary",
+      "description",
+      "subtitle"
+    ],
+    "lengthField": "contentTextLength",
+    "truncatedField": "contentTextTruncated",
+    "sourceField": "contentSourceElement"
+  },
+  "authMaterialPersisted": false,
+  "endpoints": [
+    {
+      "id": "keyword-trend:search-posts",
+      "taskId": "keyword-trend",
+      "bucketId": "search-posts",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=new",
+      "httpStatus": 200,
+      "entryCount": 10,
+      "sampleTitles": [
+        "I used AI to build a website for my business and I'm honestly shocked at the result.",
+        "UX/UI & Web Designer — Portfolio + Contact",
+        "Free source : SiteForge : live websites export"
+      ],
+      "publicContent": {
+        "contentFieldCount": 10,
+        "contentTextItemCount": 10,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "keyword-trend:search-communities",
+      "taskId": "keyword-trend",
+      "bucketId": "search-communities",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=relevance",
+      "httpStatus": 200,
+      "entryCount": 8,
+      "sampleTitles": [
+        "Free source : SiteForge : live websites export",
+        "SiteForge - My attempt at another AI website builder pipeline",
+        "Friday End-of-Week Distraction Turned Launch: Built Siteforge.app – AI-Powered One-Pagers with Built-in Monetization While Waiting on My Main SaaS"
+      ],
+      "publicContent": {
+        "contentFieldCount": 8,
+        "contentTextItemCount": 8,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "keyword-trend:search-users",
+      "taskId": "keyword-trend",
+      "bucketId": "search-users",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=new",
+      "httpStatus": 200,
+      "entryCount": 10,
+      "sampleTitles": [
+        "I used AI to build a website for my business and I'm honestly shocked at the result.",
+        "UX/UI & Web Designer — Portfolio + Contact",
+        "Free source : SiteForge : live websites export"
+      ],
+      "publicContent": {
+        "contentFieldCount": 10,
+        "contentTextItemCount": 10,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "subreddit-full-archive:subreddit-public-feed",
+      "taskId": "subreddit-full-archive",
+      "bucketId": "subreddit-public-feed",
+      "capabilityId": "reddit-public-subreddit-atom-feed",
+      "endpoint": "https://www.reddit.com/r/SiteForge/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "TABSHeroForge",
+        "WoWNoob",
+        "Hero Forge Miniatures"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 370,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "subreddit-full-archive:subreddit-hot",
+      "taskId": "subreddit-full-archive",
+      "bucketId": "subreddit-hot",
+      "capabilityId": "reddit-public-subreddit-atom-feed",
+      "endpoint": "https://www.reddit.com/r/SiteForge/hot/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "TABSHeroForge",
+        "WoWNoob",
+        "Hero Forge Miniatures"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 370,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "subreddit-full-archive:subreddit-new",
+      "taskId": "subreddit-full-archive",
+      "bucketId": "subreddit-new",
+      "capabilityId": "reddit-public-subreddit-atom-feed",
+      "endpoint": "https://www.reddit.com/r/SiteForge/new/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "TABSHeroForge",
+        "WoWNoob",
+        "Hero Forge Miniatures"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 370,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "subreddit-full-archive:subreddit-rising",
+      "taskId": "subreddit-full-archive",
+      "bucketId": "subreddit-rising",
+      "capabilityId": "reddit-public-subreddit-atom-feed",
+      "endpoint": "https://www.reddit.com/r/SiteForge/rising/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "TABSHeroForge",
+        "WoWNoob",
+        "Hero Forge Miniatures"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 370,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "subreddit-full-archive:subreddit-search",
+      "taskId": "subreddit-full-archive",
+      "bucketId": "subreddit-search",
+      "capabilityId": "reddit-public-subreddit-atom-feed",
+      "endpoint": "https://www.reddit.com/r/SiteForge/search/.rss?q=SiteForge&restrict_sr=1",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "TABSHeroForge",
+        "WoWNoob",
+        "Hero Forge Miniatures"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 370,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "subreddit-full-archive:subreddit-about",
+      "taskId": "subreddit-full-archive",
+      "bucketId": "subreddit-about",
+      "capabilityId": "reddit-public-subreddit-atom-feed",
+      "endpoint": "https://www.reddit.com/r/SiteForge/.rss",
+      "httpStatus": 200,
+      "entryCount": 1,
+      "sampleTitles": [
+        "search results"
+      ],
+      "publicContent": {
+        "contentFieldCount": 1,
+        "contentTextItemCount": 0,
+        "contentTextMaxLength": 0,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "redditor-profile:user-public-feed",
+      "taskId": "redditor-profile",
+      "bucketId": "user-public-feed",
+      "capabilityId": "reddit-public-user-atom-feed",
+      "endpoint": "https://www.reddit.com/user/reddit/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "Keeping your account safe on reddit",
+        "/u/reddit on ACTION NEEDED: PLEASE READ",
+        "ACTION NEEDED: PLEASE READ"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 7724,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "redditor-profile:user-about",
+      "taskId": "redditor-profile",
+      "bucketId": "user-about",
+      "capabilityId": "reddit-public-user-atom-feed",
+      "endpoint": "https://www.reddit.com/user/reddit/.rss",
+      "httpStatus": 200,
+      "entryCount": 1,
+      "sampleTitles": [
+        "overview for reddit"
+      ],
+      "publicContent": {
+        "contentFieldCount": 1,
+        "contentTextItemCount": 0,
+        "contentTextMaxLength": 0,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "redditor-profile:user-submitted",
+      "taskId": "redditor-profile",
+      "bucketId": "user-submitted",
+      "capabilityId": "reddit-public-user-atom-feed",
+      "endpoint": "https://www.reddit.com/user/reddit/submitted/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "Keeping your account safe on reddit",
+        "ACTION NEEDED: PLEASE READ",
+        "r/Holocaust is reopening"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 1483,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "redditor-profile:user-comments",
+      "taskId": "redditor-profile",
+      "bucketId": "user-comments",
+      "capabilityId": "reddit-public-user-atom-feed",
+      "endpoint": "https://www.reddit.com/user/reddit/comments/.rss",
+      "httpStatus": 200,
+      "entryCount": 25,
+      "sampleTitles": [
+        "/u/reddit on ACTION NEEDED: PLEASE READ",
+        "/u/reddit on Is this a legitimate DM from Reddit, or is this a phishing scam against Reddit mods?",
+        "/u/reddit on Is this really from Reddit? How to tell:"
+      ],
+      "publicContent": {
+        "contentFieldCount": 25,
+        "contentTextItemCount": 25,
+        "contentTextMaxLength": 7724,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "community-discovery:community-search",
+      "taskId": "community-discovery",
+      "bucketId": "community-search",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=relevance",
+      "httpStatus": 200,
+      "entryCount": 8,
+      "sampleTitles": [
+        "Free source : SiteForge : live websites export",
+        "SiteForge - My attempt at another AI website builder pipeline",
+        "Friday End-of-Week Distraction Turned Launch: Built Siteforge.app – AI-Powered One-Pagers with Built-in Monetization While Waiting on My Main SaaS"
+      ],
+      "publicContent": {
+        "contentFieldCount": 8,
+        "contentTextItemCount": 8,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "community-discovery:community-users-search",
+      "taskId": "community-discovery",
+      "bucketId": "community-users-search",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=new",
+      "httpStatus": 200,
+      "entryCount": 10,
+      "sampleTitles": [
+        "I used AI to build a website for my business and I'm honestly shocked at the result.",
+        "UX/UI & Web Designer — Portfolio + Contact",
+        "Free source : SiteForge : live websites export"
+      ],
+      "publicContent": {
+        "contentFieldCount": 10,
+        "contentTextItemCount": 10,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "community-discovery:community-recommend",
+      "taskId": "community-discovery",
+      "bucketId": "community-recommend",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=relevance",
+      "httpStatus": 200,
+      "entryCount": 8,
+      "sampleTitles": [
+        "Free source : SiteForge : live websites export",
+        "SiteForge - My attempt at another AI website builder pipeline",
+        "Friday End-of-Week Distraction Turned Launch: Built Siteforge.app – AI-Powered One-Pagers with Built-in Monetization While Waiting on My Main SaaS"
+      ],
+      "publicContent": {
+        "contentFieldCount": 8,
+        "contentTextItemCount": 8,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "event-timeline:event-search-new",
+      "taskId": "event-timeline",
+      "bucketId": "event-search-new",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=new&t=all",
+      "httpStatus": 200,
+      "entryCount": 10,
+      "sampleTitles": [
+        "I used AI to build a website for my business and I'm honestly shocked at the result.",
+        "UX/UI & Web Designer — Portfolio + Contact",
+        "Free source : SiteForge : live websites export"
+      ],
+      "publicContent": {
+        "contentFieldCount": 10,
+        "contentTextItemCount": 10,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    },
+    {
+      "id": "event-timeline:event-search-relevance",
+      "taskId": "event-timeline",
+      "bucketId": "event-search-relevance",
+      "capabilityId": "reddit-public-search-atom-feed",
+      "endpoint": "https://www.reddit.com/search.rss?q=siteforge&sort=relevance&t=all",
+      "httpStatus": 200,
+      "entryCount": 8,
+      "sampleTitles": [
+        "Free source : SiteForge : live websites export",
+        "SiteForge - My attempt at another AI website builder pipeline",
+        "Friday End-of-Week Distraction Turned Launch: Built Siteforge.app – AI-Powered One-Pagers with Built-in Monetization While Waiting on My Main SaaS"
+      ],
+      "publicContent": {
+        "contentFieldCount": 8,
+        "contentTextItemCount": 8,
+        "contentTextMaxLength": 2423,
+        "contentTextTruncatedCount": 0,
+        "sourceElements": [
+          "content"
+        ],
+        "contentTextPersisted": true,
+        "contentHtmlPersisted": false,
+        "rawContentPersisted": false
+      },
+      "replayVerified": true,
+      "adapterBound": true,
+      "runtimeTested": true,
+      "activationDecision": "active_api",
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    }
+  ],
+  "inactiveExploredEndpoints": []
+}

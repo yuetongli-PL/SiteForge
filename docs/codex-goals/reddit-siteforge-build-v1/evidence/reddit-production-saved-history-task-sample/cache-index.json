@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-production-cache-index",
+  "taskId": "saved-history-archive",
+  "target": "reddit",
+  "artifacts": {
+    "plan": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-plan.json",
+    "state": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-state.json",
+    "summary": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-summary.json",
+    "report": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-report.md",
+    "rawItems": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\raw-items.jsonl",
+    "dedupedItems": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\deduped-items.jsonl",
+    "items": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\items.jsonl",
+    "communities": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\communities.jsonl",
+    "accounts": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\accounts.jsonl",
+    "authors": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\authors.jsonl",
+    "mediaAssets": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\media-assets.json"
+  },
+  "counts": {
+    "rawItems": 11,
+    "dedupedItems": 7,
+    "completedBuckets": 2,
+    "failedBuckets": 0
+  },
+  "privacy": {
+    "requiredArtifacts": [
+      "task-plan.json",
+      "task-state.json",
+      "task-summary.json",
+      "task-report.md",
+      "raw-items.jsonl",
+      "deduped-items.jsonl",
+      "items.jsonl",
+      "communities.jsonl",
+      "accounts.jsonl",
+      "authors.jsonl",
+      "cache-index.json",
+      "cache-index.jsonl",
+      "media-assets.json",
+      "media-assets.jsonl",
+      "archive/*.md"
+    ],
+    "rawPrivateBodyPersisted": false,
+    "rawFeedPersisted": false,
+    "contentHtmlPersisted": false,
+    "publicFeedContentText": {
+      "persisted": true,
+      "field": "contentText",
+      "sourceElements": [
+        "content",
+        "summary",
+        "description",
+        "subtitle"
+      ],
+      "maxChars": 50000,
+      "truncationField": "contentTextTruncated"
+    },
+    "privateContentGovernance": {
+      "explicitAuthorizationRequired": true,
+      "allowFlag": "--allow-private-content",
+      "allowPrivateContent": false,
+      "persistedFields": [
+        "id",
+        "kind",
+        "itemType",
+        "title",
+        "name",
+        "username",
+        "author",
+        "subreddit",
+        "community",
+        "textPreview",
+        "publicDescriptionPreview",
+        "permalink",
+        "url",
+        "profileUrl",
+        "createdUtc",
+        "score",
+        "commentCount",
+        "subscribers",
+        "over18"
+      ],
+      "rawPrivateBodyPersisted": false,
+      "privateContentPersistedWithoutAuthorization": false
+    },
+    "cookieMaterialPersisted": false,
+    "authHeaderPersisted": false,
+    "browserProfilePersisted": false
+  }
+}

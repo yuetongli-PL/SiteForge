@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 1,
+  "redactedPaths": [
+    "persistAuthorization",
+    "plans.0.executionPlan.steps.0.persistAuthorization",
+    "plans.1.executionPlan.steps.0.persistAuthorization",
+    "plans.2.executionPlan.steps.0.persistAuthorization",
+    "plans.3.executionPlan.steps.0.persistAuthorization",
+    "plans.4.executionPlan.steps.0.persistAuthorization",
+    "plans.5.executionPlan.steps.0.persistAuthorization",
+    "plans.6.executionPlan.steps.0.persistAuthorization",
+    "plans.7.executionPlan.steps.0.persistAuthorization",
+    "plans.8.executionPlan.steps.0.persistAuthorization",
+    "plans.9.executionPlan.steps.0.persistAuthorization",
+    "plans.10.executionPlan.steps.0.persistAuthorization",
+    "plans.11.executionPlan.steps.0.persistAuthorization",
+    "plans.12.executionPlan.steps.0.persistAuthorization",
+    "plans.13.executionPlan.steps.0.persistAuthorization",
+    "plans.14.executionPlan.steps.0.persistAuthorization",
+    "plans.15.executionPlan.steps.0.persistAuthorization",
+    "plans.16.executionPlan.steps.0.persistAuthorization",
+    "plans.17.executionPlan.steps.0.persistAuthorization",
+    "plans.18.executionPlan.steps.0.persistAuthorization",
+    "plans.19.executionPlan.steps.0.persistAuthorization",
+    "plans.20.executionPlan.steps.0.persistAuthorization",
+    "plans.21.executionPlan.steps.0.persistAuthorization",
+    "plans.22.executionPlan.steps.0.persistAuthorization",
+    "plans.23.executionPlan.steps.0.persistAuthorization",
+    "plans.24.executionPlan.steps.0.persistAuthorization",
+    "plans.25.executionPlan.steps.0.persistAuthorization",
+    "plans.26.executionPlan.steps.0.persistAuthorization",
+    "plans.27.executionPlan.steps.0.persistAuthorization",
+    "plans.28.executionPlan.steps.0.persistAuthorization",
+    "plans.29.executionPlan.steps.0.persistAuthorization",
+    "plans.30.executionPlan.steps.0.persistAuthorization",
+    "plans.31.executionPlan.steps.0.persistAuthorization",
+    "plans.32.executionPlan.steps.0.persistAuthorization",
+    "plans.33.executionPlan.steps.0.persistAuthorization",
+    "plans.34.executionPlan.steps.0.persistAuthorization",
+    "plans.35.executionPlan.steps.0.persistAuthorization",
+    "plans.36.executionPlan.steps.0.persistAuthorization",
+    "plans.37.executionPlan.steps.0.persistAuthorization",
+    "plans.38.executionPlan.steps.0.persistAuthorization",
+    "plans.39.executionPlan.steps.0.persistAuthorization",
+    "plans.40.executionPlan.steps.0.persistAuthorization",
+    "plans.41.executionPlan.steps.0.persistAuthorization",
+    "plans.42.executionPlan.steps.0.persistAuthorization",
+    "plans.43.executionPlan.steps.0.persistAuthorization",
+    "plans.44.executionPlan.steps.0.persistAuthorization",
+    "plans.45.executionPlan.steps.0.persistAuthorization",
+    "plans.46.executionPlan.steps.0.persistAuthorization",
+    "plans.47.executionPlan.steps.0.persistAuthorization",
+    "plans.48.executionPlan.steps.0.persistAuthorization",
+    "plans.49.executionPlan.steps.0.persistAuthorization",
+    "plans.50.executionPlan.steps.0.persistAuthorization",
+    "plans.51.executionPlan.steps.0.persistAuthorization",
+    "plans.52.executionPlan.steps.0.persistAuthorization",
+    "plans.53.executionPlan.steps.0.persistAuthorization",
+    "plans.54.executionPlan.steps.0.persistAuthorization",
+    "plans.55.executionPlan.steps.0.persistAuthorization",
+    "plans.56.executionPlan.steps.0.persistAuthorization",
+    "plans.57.executionPlan.steps.0.persistAuthorization",
+    "plans.58.executionPlan.steps.0.persistAuthorization",
+    "plans.59.executionPlan.steps.0.persistAuthorization",
+    "plans.60.executionPlan.steps.0.persistAuthorization",
+    "plans.61.executionPlan.steps.0.persistAuthorization",
+    "plans.62.executionPlan.steps.0.persistAuthorization",
+    "plans.63.executionPlan.steps.0.persistAuthorization",
+    "plans.64.executionPlan.steps.0.persistAuthorization",
+    "plans.65.executionPlan.steps.0.persistAuthorization",
+    "plans.66.executionPlan.steps.0.persistAuthorization",
+    "plans.67.executionPlan.steps.0.persistAuthorization",
+    "plans.68.executionPlan.steps.0.persistAuthorization",
+    "plans.69.executionPlan.steps.0.persistAuthorization",
+    "plans.70.executionPlan.steps.0.persistAuthorization",
+    "plans.71.executionPlan.steps.0.persistAuthorization",
+    "plans.72.executionPlan.steps.0.persistAuthorization",
+    "plans.73.executionPlan.steps.0.persistAuthorization",
+    "plans.74.executionPlan.steps.0.persistAuthorization",
+    "plans.75.executionPlan.steps.0.persistAuthorization",
+    "plans.76.executionPlan.steps.0.persistAuthorization",
+    "plans.77.executionPlan.steps.0.persistAuthorization"
+  ],
+  "redactions": [
+    {
+      "path": "persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.0.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.1.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.2.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.3.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.4.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.5.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.6.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.7.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.8.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.9.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.10.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.11.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.12.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.13.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.14.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.15.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.16.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.17.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.18.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.19.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.20.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.21.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.22.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.23.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.24.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.25.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.26.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.27.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.28.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.29.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.30.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.31.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.32.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.33.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.34.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.35.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.36.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.37.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.38.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.39.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.40.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.41.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.42.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.43.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.44.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.45.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.46.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.47.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.48.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.49.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.50.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.51.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.52.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.53.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.54.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.55.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.56.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.57.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.58.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.59.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.60.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.61.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.62.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.63.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.64.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.65.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.66.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.67.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.68.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.69.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.70.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.71.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.72.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.73.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.74.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.75.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.76.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "plans.77.executionPlan.steps.0.persistAuthorization",
+      "reason": "sensitive-field-name"
+    }
+  ],
+  "findings": []
+}

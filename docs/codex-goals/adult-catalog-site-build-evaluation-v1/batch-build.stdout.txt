@@ -1,0 +1,23 @@
+[adult-catalog-build] t-powers https://www.t-powers.co.jp/
+[adult-catalog-build] t-powers exit=1 status=failed report=.siteforge/sites/t-powers.co.jp-4fa773a1/builds/20260608T173615426Z/build_report.user.json
+[adult-catalog-build] so-agent http://so-agent.jp/
+[adult-catalog-build] so-agent exit=1 status=failed report=.siteforge/sites/so-agent.jp-636b440c/builds/20260608T173622234Z/build_report.user.json
+[adult-catalog-build] moodyz https://moodyz.com/top
+[adult-catalog-build] moodyz exit=1 status=failed report=.siteforge/sites/moodyz.com-c086e87f/builds/20260608T173720694Z/build_report.user.json
+[adult-catalog-build] dahlia https://dahlia-av.jp/
+[adult-catalog-build] dahlia exit=1 status=failed report=.siteforge/sites/dahlia-av.jp-f794ab63/builds/20260608T173806558Z/build_report.user.json
+[adult-catalog-build] sod https://www.sod.co.jp/
+[adult-catalog-build] sod exit=0 status=partial_success report=.siteforge/sites/sod.co.jp-65d1a02e/builds/20260608T173820250Z/build_report.user.json
+[adult-catalog-build] s1 https://s1s1s1.com/top
+[adult-catalog-build] s1 exit=0 status=partial_success report=.siteforge/sites/s1s1s1.com-4fdf0909/builds/20260608T173840713Z/build_report.user.json
+[adult-catalog-build] attackers https://attackers.net/top
+[adult-catalog-build] attackers exit=0 status=partial_success report=.siteforge/sites/attackers.net-d8c8b3fb/builds/20260608T173939854Z/build_report.user.json
+[adult-catalog-build] km-produce https://www.km-produce.com/
+[adult-catalog-build] km-produce exit=1 status=failed report=.siteforge/sites/km-produce.com-af1ddc05/builds/20260608T174056232Z/build_report.user.json
+[adult-catalog-build] rookie https://rookie-av.jp/top
+[adult-catalog-build] rookie exit=0 status=partial_success report=.siteforge/sites/rookie-av.jp-64e7e465/builds/20260608T174257839Z/build_report.user.json
+[adult-catalog-build] madonna https://madonna-av.com/top
+[adult-catalog-build] madonna exit=0 status=partial_success report=.siteforge/sites/madonna-av.com-4f7bee91/builds/20260608T174346626Z/build_report.user.json
+[adult-catalog-build] dogma http://www.dogma.co.jp/
+[adult-catalog-build] dogma exit=0 status=partial_success report=.siteforge/sites/dogma.co.jp-aee5e575/builds/20260608T174437252Z/build_report.user.json
+[adult-catalog-build] summary docs/codex-goals/adult-catalog-site-build-evaluation-v1/build-run-summary.json

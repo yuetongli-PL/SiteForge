@@ -1,0 +1,1047 @@
+{
+  "schemaVersion": 5,
+  "artifactFamily": "reddit-production-live-catalog",
+  "generatedAt": "2026-06-09T09:48:26.098Z",
+  "site": {
+    "siteKey": "reddit",
+    "siteId": "reddit.com-14830d0f",
+    "rootUrl": "https://www.reddit.com/",
+    "buildId": "20260609T021031180Z"
+  },
+  "sourceEvidence": {
+    "registry": "config/site-registry.json",
+    "knownSiteAdapter": "src/sites/known-sites/reddit/api-catalog.mjs",
+    "actionEntrypoint": "src/entrypoints/sites/reddit-action.mjs",
+    "runner": "scripts/reddit-research-task-runner.mjs",
+    "runnerTests": "tests/node/reddit-research-task-runner.test.mjs",
+    "capabilities": ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/capabilities.json",
+    "executionContracts": ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/execution_contracts.json",
+    "authState": ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/auth_state_report.json",
+    "authenticatedCrawl": ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/crawl_authenticated.json",
+    "publicJsonReplay": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-json-replay-report.json",
+    "publicFeedReplay": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+    "sampleRuns": {
+      "naturalLanguage": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-production-nl-task-sample/task-summary.json",
+      "subredditArchive": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-production-feed-task-sample/task-summary.json",
+      "redditorProfile": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-production-redditor-task-sample/task-summary.json",
+      "communityDiscovery": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-production-community-task-sample/task-summary.json",
+      "eventTimeline": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-production-timeline-task-sample/task-summary.json",
+      "savedHistory": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-production-saved-history-task-sample/task-summary.json"
+    }
+  },
+  "capabilities": {
+    "activeApi": [
+      {
+        "id": "reddit-public-search-atom-feed",
+        "name": "search public Atom feed surfaces",
+        "safetyLevel": "read_only",
+        "runtime": "curl_http1_public_atom_feed",
+        "reason": "公开 Atom/RSS feed 已由 task runner replay verified、adapter bound、runtime tested；保存 sanitized contentText 与结构字段，不保存 raw feed 或 HTML。",
+        "activeTaskFamilies": [
+          "keyword-trend",
+          "community-discovery",
+          "event-timeline"
+        ],
+        "activeBuckets": [
+          "search-posts",
+          "search-communities",
+          "search-users",
+          "community-search",
+          "community-users-search",
+          "community-recommend",
+          "event-search-new",
+          "event-search-relevance"
+        ],
+        "endpoints": [
+          "https://www.reddit.com/search.rss?q=siteforge&sort=new",
+          "https://www.reddit.com/search.rss?q=siteforge&sort=relevance",
+          "https://www.reddit.com/search.rss?q=siteforge&sort=new&t=all",
+          "https://www.reddit.com/search.rss?q=siteforge&sort=relevance&t=all"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText",
+        "evidence": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+        "activeSurfaceCount": 8,
+        "endpointCount": 4
+      },
+      {
+        "id": "reddit-public-subreddit-atom-feed",
+        "name": "subreddit public Atom feed surfaces",
+        "safetyLevel": "read_only",
+        "runtime": "curl_http1_public_atom_feed",
+        "reason": "公开 Atom/RSS feed 已由 task runner replay verified、adapter bound、runtime tested；保存 sanitized contentText 与结构字段，不保存 raw feed 或 HTML。",
+        "activeTaskFamilies": [
+          "subreddit-full-archive"
+        ],
+        "activeBuckets": [
+          "subreddit-public-feed",
+          "subreddit-hot",
+          "subreddit-new",
+          "subreddit-rising",
+          "subreddit-search",
+          "subreddit-about"
+        ],
+        "endpoints": [
+          "https://www.reddit.com/r/SiteForge/.rss",
+          "https://www.reddit.com/r/SiteForge/hot/.rss",
+          "https://www.reddit.com/r/SiteForge/new/.rss",
+          "https://www.reddit.com/r/SiteForge/rising/.rss",
+          "https://www.reddit.com/r/SiteForge/search/.rss?q=SiteForge&restrict_sr=1"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText",
+        "evidence": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+        "activeSurfaceCount": 6,
+        "endpointCount": 5
+      },
+      {
+        "id": "reddit-public-user-atom-feed",
+        "name": "redditor public Atom feed surfaces",
+        "safetyLevel": "read_only",
+        "runtime": "curl_http1_public_atom_feed",
+        "reason": "公开 Atom/RSS feed 已由 task runner replay verified、adapter bound、runtime tested；保存 sanitized contentText 与结构字段，不保存 raw feed 或 HTML。",
+        "activeTaskFamilies": [
+          "redditor-profile"
+        ],
+        "activeBuckets": [
+          "user-public-feed",
+          "user-about",
+          "user-submitted",
+          "user-comments"
+        ],
+        "endpoints": [
+          "https://www.reddit.com/user/reddit/.rss",
+          "https://www.reddit.com/user/reddit/submitted/.rss",
+          "https://www.reddit.com/user/reddit/comments/.rss"
+        ],
+        "itemMaterial": "sanitized_public_feed_fields_with_contentText",
+        "evidence": "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+        "activeSurfaceCount": 4,
+        "endpointCount": 3
+      }
+    ],
+    "activeSiteFallback": [
+      {
+        "id": "capability:reddit.com-14830d0f:list-notifications",
+        "name": "list notifications",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:list-recommended-timeline-posts",
+        "name": "list recommended timeline posts",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:navigate-to-author-profile",
+        "name": "navigate to author profile",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:open-authenticated-configured-routes",
+        "name": "open authenticated configured routes",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:open-authenticated-overlay-routes",
+        "name": "open authenticated overlay routes",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:open-external-link-preview",
+        "name": "open external link preview",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:open-search-result-detail",
+        "name": "open search result detail",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:open-timeline-post-detail",
+        "name": "open timeline post detail",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-post-author-summary",
+        "name": "read post author summary",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-post-detail",
+        "name": "read post detail",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-post-engagement-summary",
+        "name": "read post engagement summary",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-profile-content",
+        "name": "read profile content",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-quote-summary",
+        "name": "read quote summary",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-reply-tree-summary",
+        "name": "read reply tree summary",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-search-result-summaries",
+        "name": "read search result summaries",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-timeline-post-summaries",
+        "name": "read timeline post summaries",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-user-media",
+        "name": "read user media",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-user-recent-posts",
+        "name": "read user recent posts",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-user-replies",
+        "name": "read user replies",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:search-latest-posts",
+        "name": "search latest posts",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:search-media-posts",
+        "name": "search media posts",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:search-posts",
+        "name": "search posts",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:search-users",
+        "name": "search users",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:view-homepage",
+        "name": "view homepage",
+        "safetyLevel": "read_only",
+        "runtime": "browser_bridge_verified_structure",
+        "reason": "active governed read-only site fallback capability"
+      }
+    ],
+    "candidateApi": [
+      {
+        "id": "reddit-oauth-get-read-templates",
+        "name": "Reddit OAuth GET read templates",
+        "count": 78,
+        "concreteRuntimePlanCount": 42,
+        "parameterizedRuntimeTemplateCount": 36,
+        "reason": "官方 OAuth GET/API 模板已发现并被专属适配器接受，但当前网络/OAuth replay 返回 Reddit network security block，不能标记 active。",
+        "activationRequirement": "提供运行时 OAuth token 与 User-Agent，从允许访问 Reddit API 的网络 replay verify，并证明 adapter bound/runtime tested 且不持久化 auth material。"
+      },
+      {
+        "id": "reddit-private-saved-history-content",
+        "name": "private saved/history content archive",
+        "reason": "登录态 route 结构已验证；runner 已有 --allow-private-content 显式授权门禁和最小字段白名单，但当前缺 OAuth/runtime replay proof，保持 candidate 边界。",
+        "activationRequirement": "需要运行时 OAuth token/User-Agent、用户明确授权 --allow-private-content、最小字段白名单、redaction contract 和单独 runtime proof；未满足时只开放结构归档。"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:capture-network-apis",
+        "name": "capture network APIs",
+        "safetyLevel": "read_only",
+        "reason": "API candidates remain debug-only until replay verification and runtime binding evidence are available."
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:read-media-summary",
+        "name": "read media summary",
+        "safetyLevel": "read_only",
+        "reason": "not-selected-by-setup"
+      }
+    ],
+    "disabled": [
+      {
+        "id": "capability:reddit.com-14830d0f:change-account-2fa",
+        "name": "change account 2fa",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:change-account-email",
+        "name": "change account email",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:change-account-password",
+        "name": "change account password",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:change-account-security-settings",
+        "name": "change account security settings",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:change-payment-settings",
+        "name": "change payment settings",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:create-direct-message-draft",
+        "name": "create direct message draft",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:create-post-draft",
+        "name": "create post draft",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:create-reply-draft",
+        "name": "create reply draft",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:delete-post",
+        "name": "delete post",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:edit-profile",
+        "name": "edit profile",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:follow-user",
+        "name": "follow user",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:like-post",
+        "name": "like post",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:publish-post",
+        "name": "publish post",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:publish-reply",
+        "name": "publish reply",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:repost-post",
+        "name": "repost post",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:send-direct-message",
+        "name": "send direct message",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      },
+      {
+        "id": "capability:reddit.com-14830d0f:unfollow-user",
+        "name": "unfollow user",
+        "safetyLevel": "state_changing",
+        "reason": "site-policy-disabled-action"
+      }
+    ]
+  },
+  "api": {
+    "operationCount": 202,
+    "methodCounts": {
+      "GET": 78,
+      "PATCH": 3,
+      "POST": 109,
+      "DELETE": 7,
+      "PUT": 5
+    },
+    "readTemplateCount": 78,
+    "writeDisabled": 124,
+    "verifiedActiveApiCount": 3,
+    "verifiedActiveBucketSurfaceCount": 18,
+    "verifiedActiveEndpointCount": 12,
+    "publicJsonReplay": {
+      "replayAttempted": true,
+      "replayVerified": false,
+      "adapterBound": true,
+      "runtimeTested": false,
+      "status": "blocked",
+      "reasonCode": "reddit-network-security-blocked",
+      "activationDecision": "not_active",
+      "rawBodyPersisted": false,
+      "authMaterialPersisted": false,
+      "remediation": "Current network receives Reddit network-security block pages instead of JSON. Use a user-authorized Browser Bridge fallback now; retry API replay from a permitted network or with OAuth runtime inputs before promoting active API capabilities."
+    },
+    "publicFeedReplay": {
+      "replayAttempted": true,
+      "activeCapabilityCount": 3,
+      "activeBucketSurfaceCount": 18,
+      "activeEndpointCount": 12,
+      "publicContentTextPersisted": true,
+      "contentHtmlPersisted": false,
+      "rawFeedPersisted": false,
+      "authMaterialPersisted": false
+    }
+  },
+  "taskTemplates": [
+    {
+      "id": "subreddit-full-archive",
+      "input": "subreddit",
+      "description": "归档一个 subreddit 的公开 feed、hot/new/rising、站内搜索和 about/profile 摘要，并保存 feed 提供的 sanitized contentText。",
+      "plannerCommand": "node scripts/reddit-research-task-runner.mjs --task subreddit-full-archive --subreddit <subreddit> --out-dir .siteforge/reddit-research-tasks/<run-id> --dry-run --json",
+      "executeCommand": "node scripts/reddit-research-task-runner.mjs --task subreddit-full-archive --subreddit <subreddit> --out-dir .siteforge/reddit-research-tasks/<run-id> --execute --resume --json",
+      "resumeStrategy": "复用 task-state.json，跳过已完成 bucket，失败 bucket 记录 layer/reason/remediation 后可恢复。",
+      "artifactContract": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "items.jsonl",
+        "communities.jsonl",
+        "accounts.jsonl",
+        "authors.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "media-assets.json",
+        "media-assets.jsonl",
+        "archive/*.md"
+      ],
+      "failureExplanation": [
+        "planner",
+        "api_auth",
+        "api",
+        "rate_limit",
+        "permission",
+        "selector_or_route",
+        "site_fallback_degraded_structure_only",
+        "site_policy",
+        "reddit_network_security_blocked"
+      ]
+    },
+    {
+      "id": "keyword-trend",
+      "input": "query",
+      "description": "围绕关键词收集公开搜索结果正文，并从结果中派生社区、作者和趋势分析字段。",
+      "plannerCommand": "node scripts/reddit-research-task-runner.mjs --task keyword-trend --query \"<query>\" --out-dir .siteforge/reddit-research-tasks/<run-id> --dry-run --json",
+      "executeCommand": "node scripts/reddit-research-task-runner.mjs --task keyword-trend --query \"<query>\" --out-dir .siteforge/reddit-research-tasks/<run-id> --execute --resume --json",
+      "resumeStrategy": "复用 task-state.json，跳过已完成 bucket，失败 bucket 记录 layer/reason/remediation 后可恢复。",
+      "artifactContract": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "items.jsonl",
+        "communities.jsonl",
+        "accounts.jsonl",
+        "authors.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "media-assets.json",
+        "media-assets.jsonl",
+        "archive/*.md"
+      ],
+      "failureExplanation": [
+        "planner",
+        "api_auth",
+        "api",
+        "rate_limit",
+        "permission",
+        "selector_or_route",
+        "site_fallback_degraded_structure_only",
+        "site_policy",
+        "reddit_network_security_blocked"
+      ]
+    },
+    {
+      "id": "redditor-profile",
+      "input": "account",
+      "description": "为一个公开 redditor 构建 profile、submitted、comments 和公开 activity 正文画像。",
+      "plannerCommand": "node scripts/reddit-research-task-runner.mjs --task redditor-profile --account <account> --out-dir .siteforge/reddit-research-tasks/<run-id> --dry-run --json",
+      "executeCommand": "node scripts/reddit-research-task-runner.mjs --task redditor-profile --account <account> --out-dir .siteforge/reddit-research-tasks/<run-id> --execute --resume --json",
+      "resumeStrategy": "复用 task-state.json，跳过已完成 bucket，失败 bucket 记录 layer/reason/remediation 后可恢复。",
+      "artifactContract": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "items.jsonl",
+        "communities.jsonl",
+        "accounts.jsonl",
+        "authors.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "media-assets.json",
+        "media-assets.jsonl",
+        "archive/*.md"
+      ],
+      "failureExplanation": [
+        "planner",
+        "api_auth",
+        "api",
+        "rate_limit",
+        "permission",
+        "selector_or_route",
+        "site_fallback_degraded_structure_only",
+        "site_policy",
+        "reddit_network_security_blocked"
+      ]
+    },
+    {
+      "id": "community-discovery",
+      "input": "query",
+      "description": "从公开搜索 feed 中发现相关社区、作者和候选关系，不虚构 subreddit search API。",
+      "plannerCommand": "node scripts/reddit-research-task-runner.mjs --task community-discovery --query \"<query>\" --out-dir .siteforge/reddit-research-tasks/<run-id> --dry-run --json",
+      "executeCommand": "node scripts/reddit-research-task-runner.mjs --task community-discovery --query \"<query>\" --out-dir .siteforge/reddit-research-tasks/<run-id> --execute --resume --json",
+      "resumeStrategy": "复用 task-state.json，跳过已完成 bucket，失败 bucket 记录 layer/reason/remediation 后可恢复。",
+      "artifactContract": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "items.jsonl",
+        "communities.jsonl",
+        "accounts.jsonl",
+        "authors.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "media-assets.json",
+        "media-assets.jsonl",
+        "archive/*.md"
+      ],
+      "failureExplanation": [
+        "planner",
+        "api_auth",
+        "api",
+        "rate_limit",
+        "permission",
+        "selector_or_route",
+        "site_fallback_degraded_structure_only",
+        "site_policy",
+        "reddit_network_security_blocked"
+      ]
+    },
+    {
+      "id": "event-timeline",
+      "input": "query",
+      "description": "用 latest 和 relevance 搜索 bucket 重建公开事件时间线。",
+      "plannerCommand": "node scripts/reddit-research-task-runner.mjs --task event-timeline --query \"<query>\" --out-dir .siteforge/reddit-research-tasks/<run-id> --dry-run --json",
+      "executeCommand": "node scripts/reddit-research-task-runner.mjs --task event-timeline --query \"<query>\" --out-dir .siteforge/reddit-research-tasks/<run-id> --execute --resume --json",
+      "resumeStrategy": "复用 task-state.json，跳过已完成 bucket，失败 bucket 记录 layer/reason/remediation 后可恢复。",
+      "artifactContract": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "items.jsonl",
+        "communities.jsonl",
+        "accounts.jsonl",
+        "authors.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "media-assets.json",
+        "media-assets.jsonl",
+        "archive/*.md"
+      ],
+      "failureExplanation": [
+        "planner",
+        "api_auth",
+        "api",
+        "rate_limit",
+        "permission",
+        "selector_or_route",
+        "site_fallback_degraded_structure_only",
+        "site_policy",
+        "reddit_network_security_blocked"
+      ]
+    },
+    {
+      "id": "saved-history-archive",
+      "input": "none",
+      "description": "登录态 saved/subscribed 归档：优先受控 OAuth saved/subreddits GET candidate；缺 token、权限、未验证或缺少 --allow-private-content 时立即 fallback 到结构归档。私有正文仅在显式授权和字段白名单下保存 sanitized item，raw private body 不采集、不持久化。",
+      "plannerCommand": "node scripts/reddit-research-task-runner.mjs --task saved-history-archive --out-dir .siteforge/reddit-research-tasks/<run-id> --dry-run --json",
+      "executeCommand": "node scripts/reddit-research-task-runner.mjs --task saved-history-archive --collection-mode api-first --out-dir .siteforge/reddit-research-tasks/<run-id> --execute --resume --json",
+      "resumeStrategy": "复用 task-state.json，跳过已完成 bucket，失败 bucket 记录 layer/reason/remediation 后可恢复。",
+      "artifactContract": [
+        "task-plan.json",
+        "task-state.json",
+        "task-summary.json",
+        "task-report.md",
+        "raw-items.jsonl",
+        "deduped-items.jsonl",
+        "items.jsonl",
+        "communities.jsonl",
+        "accounts.jsonl",
+        "authors.jsonl",
+        "cache-index.json",
+        "cache-index.jsonl",
+        "media-assets.json",
+        "media-assets.jsonl",
+        "archive/*.md"
+      ],
+      "failureExplanation": [
+        "planner",
+        "api_auth",
+        "api",
+        "rate_limit",
+        "permission",
+        "selector_or_route",
+        "site_fallback_degraded_structure_only",
+        "site_policy",
+        "reddit_network_security_blocked"
+      ]
+    }
+  ],
+  "sampleRuns": {
+    "naturalLanguage": {
+      "schemaVersion": 1,
+      "artifactFamily": "reddit-production-research-task-summary",
+      "taskId": "keyword-trend",
+      "target": "siteforge",
+      "status": "completed",
+      "bucketCount": 3,
+      "completedBucketCount": 3,
+      "apiCompletedBucketCount": 3,
+      "siteFallbackBucketCount": 0,
+      "blockedBucketCount": 0,
+      "rawItemCount": 28,
+      "dedupedItemCount": 28,
+      "descriptorOnlyItemCount": 0,
+      "evidenceCompleteness": {
+        "score": 100,
+        "grade": "complete_or_degraded_complete",
+        "caveat": null
+      },
+      "quality": {
+        "zeroEvidenceBuckets": [],
+        "degradedBuckets": [],
+        "blockedBuckets": []
+      },
+      "safety": {
+        "sideEffectAttempted": false,
+        "mutationActionsBlockedByDefault": true,
+        "cookieMaterialPersisted": false,
+        "authHeaderPersisted": false,
+        "browserProfilePersisted": false,
+        "rawPrivateBodyPersisted": false
+      },
+      "artifacts": {
+        "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample",
+        "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\task-plan.json",
+        "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\task-state.json",
+        "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\task-summary.json",
+        "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\task-report.md",
+        "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\raw-items.jsonl",
+        "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\deduped-items.jsonl",
+        "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\items.jsonl",
+        "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\communities.jsonl",
+        "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\accounts.jsonl",
+        "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\authors.jsonl",
+        "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\cache-index.json",
+        "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\cache-index.jsonl",
+        "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\media-assets.json",
+        "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\media-assets.jsonl",
+        "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-nl-task-sample\\archive"
+      }
+    },
+    "subredditArchive": {
+      "schemaVersion": 1,
+      "artifactFamily": "reddit-production-research-task-summary",
+      "taskId": "subreddit-full-archive",
+      "target": "SiteForge",
+      "status": "completed",
+      "bucketCount": 6,
+      "completedBucketCount": 6,
+      "apiCompletedBucketCount": 6,
+      "siteFallbackBucketCount": 0,
+      "blockedBucketCount": 0,
+      "rawItemCount": 126,
+      "dedupedItemCount": 126,
+      "descriptorOnlyItemCount": 0,
+      "evidenceCompleteness": {
+        "score": 100,
+        "grade": "complete_or_degraded_complete",
+        "caveat": null
+      },
+      "quality": {
+        "zeroEvidenceBuckets": [],
+        "degradedBuckets": [],
+        "blockedBuckets": []
+      },
+      "safety": {
+        "sideEffectAttempted": false,
+        "mutationActionsBlockedByDefault": true,
+        "cookieMaterialPersisted": false,
+        "authHeaderPersisted": false,
+        "browserProfilePersisted": false,
+        "rawPrivateBodyPersisted": false
+      },
+      "artifacts": {
+        "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample",
+        "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\task-plan.json",
+        "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\task-state.json",
+        "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\task-summary.json",
+        "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\task-report.md",
+        "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\raw-items.jsonl",
+        "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\deduped-items.jsonl",
+        "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\items.jsonl",
+        "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\communities.jsonl",
+        "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\accounts.jsonl",
+        "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\authors.jsonl",
+        "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\cache-index.json",
+        "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\cache-index.jsonl",
+        "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\media-assets.json",
+        "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\media-assets.jsonl",
+        "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-feed-task-sample\\archive"
+      }
+    },
+    "redditorProfile": {
+      "schemaVersion": 1,
+      "artifactFamily": "reddit-production-research-task-summary",
+      "taskId": "redditor-profile",
+      "target": "reddit",
+      "status": "completed",
+      "bucketCount": 4,
+      "completedBucketCount": 4,
+      "apiCompletedBucketCount": 4,
+      "siteFallbackBucketCount": 0,
+      "blockedBucketCount": 0,
+      "rawItemCount": 76,
+      "dedupedItemCount": 76,
+      "descriptorOnlyItemCount": 0,
+      "evidenceCompleteness": {
+        "score": 100,
+        "grade": "complete_or_degraded_complete",
+        "caveat": null
+      },
+      "quality": {
+        "zeroEvidenceBuckets": [],
+        "degradedBuckets": [],
+        "blockedBuckets": []
+      },
+      "safety": {
+        "sideEffectAttempted": false,
+        "mutationActionsBlockedByDefault": true,
+        "cookieMaterialPersisted": false,
+        "authHeaderPersisted": false,
+        "browserProfilePersisted": false,
+        "rawPrivateBodyPersisted": false
+      },
+      "artifacts": {
+        "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample",
+        "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-plan.json",
+        "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-state.json",
+        "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-summary.json",
+        "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-report.md",
+        "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\raw-items.jsonl",
+        "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\deduped-items.jsonl",
+        "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\items.jsonl",
+        "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\communities.jsonl",
+        "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\accounts.jsonl",
+        "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\authors.jsonl",
+        "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\cache-index.json",
+        "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\cache-index.jsonl",
+        "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\media-assets.json",
+        "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\media-assets.jsonl",
+        "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\archive"
+      }
+    },
+    "communityDiscovery": {
+      "schemaVersion": 1,
+      "artifactFamily": "reddit-production-research-task-summary",
+      "taskId": "community-discovery",
+      "target": "siteforge",
+      "status": "completed",
+      "bucketCount": 3,
+      "completedBucketCount": 3,
+      "apiCompletedBucketCount": 3,
+      "siteFallbackBucketCount": 0,
+      "blockedBucketCount": 0,
+      "rawItemCount": 26,
+      "dedupedItemCount": 26,
+      "descriptorOnlyItemCount": 0,
+      "evidenceCompleteness": {
+        "score": 100,
+        "grade": "complete_or_degraded_complete",
+        "caveat": null
+      },
+      "quality": {
+        "zeroEvidenceBuckets": [],
+        "degradedBuckets": [],
+        "blockedBuckets": []
+      },
+      "safety": {
+        "sideEffectAttempted": false,
+        "mutationActionsBlockedByDefault": true,
+        "cookieMaterialPersisted": false,
+        "authHeaderPersisted": false,
+        "browserProfilePersisted": false,
+        "rawPrivateBodyPersisted": false
+      },
+      "artifacts": {
+        "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample",
+        "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\task-plan.json",
+        "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\task-state.json",
+        "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\task-summary.json",
+        "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\task-report.md",
+        "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\raw-items.jsonl",
+        "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\deduped-items.jsonl",
+        "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\items.jsonl",
+        "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\communities.jsonl",
+        "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\accounts.jsonl",
+        "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\authors.jsonl",
+        "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\cache-index.json",
+        "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\cache-index.jsonl",
+        "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\media-assets.json",
+        "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\media-assets.jsonl",
+        "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-community-task-sample\\archive"
+      }
+    },
+    "eventTimeline": {
+      "schemaVersion": 1,
+      "artifactFamily": "reddit-production-research-task-summary",
+      "taskId": "event-timeline",
+      "target": "siteforge",
+      "status": "completed",
+      "bucketCount": 2,
+      "completedBucketCount": 2,
+      "apiCompletedBucketCount": 2,
+      "siteFallbackBucketCount": 0,
+      "blockedBucketCount": 0,
+      "rawItemCount": 18,
+      "dedupedItemCount": 18,
+      "descriptorOnlyItemCount": 0,
+      "evidenceCompleteness": {
+        "score": 100,
+        "grade": "complete_or_degraded_complete",
+        "caveat": null
+      },
+      "quality": {
+        "zeroEvidenceBuckets": [],
+        "degradedBuckets": [],
+        "blockedBuckets": []
+      },
+      "safety": {
+        "sideEffectAttempted": false,
+        "mutationActionsBlockedByDefault": true,
+        "cookieMaterialPersisted": false,
+        "authHeaderPersisted": false,
+        "browserProfilePersisted": false,
+        "rawPrivateBodyPersisted": false
+      },
+      "artifacts": {
+        "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample",
+        "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-plan.json",
+        "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-state.json",
+        "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-summary.json",
+        "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-report.md",
+        "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\raw-items.jsonl",
+        "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\deduped-items.jsonl",
+        "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\items.jsonl",
+        "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\communities.jsonl",
+        "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\accounts.jsonl",
+        "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\authors.jsonl",
+        "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\cache-index.json",
+        "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\cache-index.jsonl",
+        "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\media-assets.json",
+        "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\media-assets.jsonl",
+        "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\archive"
+      }
+    },
+    "savedHistory": {
+      "schemaVersion": 1,
+      "artifactFamily": "reddit-production-research-task-summary",
+      "taskId": "saved-history-archive",
+      "target": "reddit",
+      "status": "completed",
+      "bucketCount": 2,
+      "completedBucketCount": 2,
+      "apiCompletedBucketCount": 0,
+      "siteFallbackBucketCount": 2,
+      "blockedBucketCount": 0,
+      "rawItemCount": 11,
+      "dedupedItemCount": 7,
+      "descriptorOnlyItemCount": 7,
+      "evidenceCompleteness": {
+        "score": 100,
+        "grade": "complete_or_degraded_complete",
+        "caveat": "Some buckets are verified site structure only until OAuth API replay succeeds."
+      },
+      "quality": {
+        "zeroEvidenceBuckets": [],
+        "degradedBuckets": [
+          "saved-route-structure",
+          "subscribed-communities"
+        ],
+        "blockedBuckets": []
+      },
+      "safety": {
+        "sideEffectAttempted": false,
+        "mutationActionsBlockedByDefault": true,
+        "cookieMaterialPersisted": false,
+        "authHeaderPersisted": false,
+        "browserProfilePersisted": false,
+        "rawPrivateBodyPersisted": false
+      },
+      "artifacts": {
+        "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample",
+        "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-plan.json",
+        "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-state.json",
+        "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-summary.json",
+        "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\task-report.md",
+        "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\raw-items.jsonl",
+        "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\deduped-items.jsonl",
+        "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\items.jsonl",
+        "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\communities.jsonl",
+        "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\accounts.jsonl",
+        "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\authors.jsonl",
+        "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\cache-index.json",
+        "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\cache-index.jsonl",
+        "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\media-assets.json",
+        "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\media-assets.jsonl",
+        "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-saved-history-task-sample\\archive"
+      }
+    }
+  },
+  "siteFallback": {
+    "provider": "browser_bridge_verified_structure",
+    "authVerified": true,
+    "routeCount": 21,
+    "capturedRouteCount": 21,
+    "missingRouteCount": 0,
+    "savedMaterial": "sanitized_structure_summary_only",
+    "caveat": "仅结构证据；不得把 descriptor-only 结构摘要描述成私有正文或完整内容采集。"
+  },
+  "safety": {
+    "cookieMaterialPersisted": false,
+    "tokenPersisted": false,
+    "authHeaderPersisted": false,
+    "browserProfilePersisted": false,
+    "rawPrivateBodyPersisted": false,
+    "rawFeedPersisted": false,
+    "publicContentTextPersisted": true,
+    "contentHtmlPersisted": false,
+    "privateContentGovernance": {
+      "explicitAuthorizationRequired": true,
+      "allowFlag": "--allow-private-content",
+      "persistedFields": [
+        "id",
+        "kind",
+        "itemType",
+        "title",
+        "name",
+        "username",
+        "author",
+        "subreddit",
+        "community",
+        "textPreview",
+        "publicDescriptionPreview",
+        "permalink",
+        "url",
+        "profileUrl",
+        "createdUtc",
+        "score",
+        "commentCount",
+        "subscribers",
+        "over18"
+      ],
+      "rawPrivateBodyPersisted": false,
+      "privateContentPersistedWithoutAuthorization": false
+    },
+    "mutationDefault": "disabled_or_blocked"
+  },
+  "scoring": {
+    "totalScore": 99.45,
+    "layerScores": {
+      "能力发现层": 99.8,
+      "能力执行层": 99.6,
+      "任务完成层": 99
+    },
+    "notOneHundredReason": "公开 feed 正文 contentText 已解决；OAuth JSON/API replay 仍 blocked，登录态 saved/history 只能安全执行结构归档；因此不能声称总分 100。"
+  }
+}

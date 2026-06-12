@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-production-research-task-summary",
+  "taskId": "event-timeline",
+  "target": "siteforge",
+  "status": "completed",
+  "bucketCount": 2,
+  "completedBucketCount": 2,
+  "apiCompletedBucketCount": 2,
+  "siteFallbackBucketCount": 0,
+  "blockedBucketCount": 0,
+  "rawItemCount": 18,
+  "dedupedItemCount": 18,
+  "descriptorOnlyItemCount": 0,
+  "evidenceCompleteness": {
+    "score": 100,
+    "grade": "complete_or_degraded_complete",
+    "caveat": null
+  },
+  "quality": {
+    "zeroEvidenceBuckets": [],
+    "degradedBuckets": [],
+    "blockedBuckets": []
+  },
+  "safety": {
+    "sideEffectAttempted": false,
+    "mutationActionsBlockedByDefault": true,
+    "cookieMaterialPersisted": false,
+    "authHeaderPersisted": false,
+    "browserProfilePersisted": false,
+    "rawPrivateBodyPersisted": false
+  },
+  "artifacts": {
+    "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample",
+    "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-plan.json",
+    "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-state.json",
+    "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-summary.json",
+    "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\task-report.md",
+    "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\raw-items.jsonl",
+    "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\deduped-items.jsonl",
+    "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\items.jsonl",
+    "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\communities.jsonl",
+    "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\accounts.jsonl",
+    "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\authors.jsonl",
+    "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\cache-index.json",
+    "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\cache-index.jsonl",
+    "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\media-assets.json",
+    "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\media-assets.jsonl",
+    "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-timeline-task-sample\\archive"
+  }
+}

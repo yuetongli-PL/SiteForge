@@ -1,0 +1,3532 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-api-read-batch-report",
+  "generatedAt": "2026-06-09T01:25:15.444Z",
+  "sourceReferences": [
+    "https://www.reddit.com/dev/api/"
+  ],
+  "runtimeMode": "reddit_oauth_read_runtime",
+  "mode": "preflight-parameterized",
+  "legacyExecuteFlag": false,
+  "responseMaterial": "sanitized_summary_only",
+  "persistResponseBody": false,
+  "persistAuthorization": "[REDACTED]",
+  "persistCookies": false,
+  "credentialSource": {
+    "tokenEnv": null,
+    "userAgentEnv": null,
+    "tokenProvided": false,
+    "userAgentProvided": false,
+    "tokenPersisted": false,
+    "userAgentPersisted": false
+  },
+  "parameterSeedSummary": {
+    "includeParameterized": false,
+    "providedParameterNames": [
+      "article",
+      "conversation_id",
+      "location",
+      "multipath",
+      "names",
+      "page",
+      "sort",
+      "srname",
+      "srnames",
+      "subreddit",
+      "thread",
+      "update_id",
+      "username",
+      "where"
+    ],
+    "customParameterNames": [
+      "article",
+      "subreddit"
+    ],
+    "sourceStatusValues": [
+      "operator_supplied",
+      "placeholder_only",
+      "synthetic_public_seed"
+    ],
+    "seedConfidenceValues": [
+      "operator_asserted",
+      "synthetic_likely",
+      "synthetic_placeholder"
+    ],
+    "seedPrivacyBoundaryValues": [
+      "auth_private",
+      "moderator_limited",
+      "public_read",
+      "unknown"
+    ],
+    "endpointSeedPolicyValues": [
+      "endpoint_specific_synthetic_seed",
+      "operator_supplied_runtime_param",
+      "parameter_name_default_seed",
+      "placeholder_resolution_only"
+    ],
+    "valuesPersisted": false
+  },
+  "summary": {
+    "totalRuntimePlans": 78,
+    "concreteRuntimePlanCount": 42,
+    "parameterizedRuntimeTemplateCount": 36,
+    "selectedPlanCount": 78,
+    "selectedConcretePlanCount": 42,
+    "selectedParameterizedPlanCount": 36,
+    "plannedCount": 78,
+    "executedCount": 0,
+    "successCount": 0,
+    "blockedCount": 0,
+    "missingCredentialBlockedCount": 0,
+    "parameterSeedMissingCount": 0,
+    "concretePlannedCount": 42,
+    "concreteExecutedCount": 0,
+    "concreteSuccessCount": 0,
+    "concreteBlockedCount": 0,
+    "concreteMissingCredentialBlockedCount": 0,
+    "parameterizedPlannedCount": 36,
+    "parameterizedExecutedCount": 0,
+    "parameterizedSuccessCount": 0,
+    "parameterizedBlockedCount": 0,
+    "parameterizedMissingCredentialBlockedCount": 0,
+    "parameterizedSeedMissingCount": 0,
+    "parameterizedSeedSourceStatusCounts": {
+      "synthetic_public_seed": 22,
+      "operator_supplied": 8,
+      "placeholder_only": 9
+    },
+    "parameterizedSeedConfidenceCounts": {
+      "synthetic_likely": 22,
+      "operator_asserted": 8,
+      "synthetic_placeholder": 9
+    },
+    "parameterizedPrivacyBoundaryCounts": {
+      "auth_private": 3,
+      "public_read": 23,
+      "unknown": 11,
+      "moderator_limited": 2
+    },
+    "parameterizedPlaceholderOnlyCount": 9,
+    "parameterizedPlanOnlyCount": 8,
+    "parameterizedLiveExecutableCount": 28
+  },
+  "status": {
+    "batchMode": "preflight-parameterized",
+    "apiBatchReadExecution": "planned_not_executed",
+    "concreteBatchReadExecution": "planned_not_executed",
+    "parameterizedBatchReadExecution": "not_selected",
+    "oauthCredentialInput": "missing",
+    "parameterizedTemplateCoverage": "not_selected",
+    "writeAndMutationActions": "not_selected_disabled_by_default"
+  },
+  "results": [
+    {
+      "operationId": "reddit-api-get-45a4cb83d4",
+      "anchorId": "GET_api_v1_me",
+      "method": "GET",
+      "pathTemplate": "/api/v1/me",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/me",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/me",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-ed473d2302",
+      "anchorId": "GET_api_v1_me_karma",
+      "method": "GET",
+      "pathTemplate": "/api/v1/me/karma",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/me/karma",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/me/karma",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0f4f1186c3",
+      "anchorId": "GET_api_v1_me_prefs",
+      "method": "GET",
+      "pathTemplate": "/api/v1/me/prefs",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/me/prefs",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/me/prefs",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-361cbcaede",
+      "anchorId": "GET_api_v1_me_trophies",
+      "method": "GET",
+      "pathTemplate": "/api/v1/me/trophies",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/me/trophies",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/me/trophies",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0b83fdf943",
+      "anchorId": "GET_prefs_{where}",
+      "method": "GET",
+      "pathTemplate": "/prefs/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "where"
+      ],
+      "parameterSeedSources": {
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "where": "auth_private"
+      },
+      "endpointSeedPolicy": {
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/prefs/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "auth_private",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/prefs/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-6d016c62c0",
+      "anchorId": "GET_api_announcements_v1",
+      "method": "GET",
+      "pathTemplate": "/api/announcements/v1",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/announcements/v1",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/announcements/v1",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-bfd648bbb4",
+      "anchorId": "GET_api_needs_captcha",
+      "method": "GET",
+      "pathTemplate": "/api/needs_captcha",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/needs_captcha",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/needs_captcha",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-91e2611219",
+      "anchorId": "GET_api_v1_{subreddit}_emojis_all",
+      "method": "GET",
+      "pathTemplate": "/api/v1/:subreddit/emojis/all",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedSources": {
+        "subreddit": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "subreddit": "operator_supplied"
+      },
+      "seedConfidence": {
+        "subreddit": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "subreddit": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "subreddit": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/:subreddit/emojis/all",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "subreddit",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/{subreddit}/emojis/all",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-3b413864b0",
+      "anchorId": "GET_api_flairlist",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/flairlist",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/flairlist",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/flairlist",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-884e93075e",
+      "anchorId": "GET_api_link_flair",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/link_flair",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/link_flair",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/link_flair",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-9b6e111527",
+      "anchorId": "GET_api_link_flair_v2",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/link_flair_v2",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/link_flair_v2",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/link_flair_v2",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-360b816423",
+      "anchorId": "GET_api_user_flair",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/user_flair",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/user_flair",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/user_flair",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-b00acea112",
+      "anchorId": "GET_api_user_flair_v2",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/user_flair_v2",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/user_flair_v2",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/user_flair_v2",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-84746968ac",
+      "anchorId": "GET_api_info",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/info",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/info",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/info",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-d5714669ba",
+      "anchorId": "GET_api_morechildren",
+      "method": "GET",
+      "pathTemplate": "/api/morechildren",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/morechildren",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/morechildren",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-ea0f20d3bd",
+      "anchorId": "GET_api_saved_categories",
+      "method": "GET",
+      "pathTemplate": "/api/saved_categories",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/saved_categories",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/saved_categories",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-1a9c7658b5",
+      "anchorId": "GET_best",
+      "method": "GET",
+      "pathTemplate": "/best",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/best",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/best",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0364e9a875",
+      "anchorId": "GET_by_id_{names}",
+      "method": "GET",
+      "pathTemplate": "/by_id/:names",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "names"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "names"
+      ],
+      "parameterSeedSources": {
+        "names": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "names": "placeholder_only"
+      },
+      "seedConfidence": {
+        "names": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "names": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "names": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/by_id/:names",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "names",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/by_id/{names}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-4458e466d3",
+      "anchorId": "GET_comments_{article}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/comments/:article",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "article"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "article"
+      ],
+      "parameterSeedSources": {
+        "article": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "article": "operator_supplied"
+      },
+      "seedConfidence": {
+        "article": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "article": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "article": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/comments/:article",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "article",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/comments/{article}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0fc60b2b9b",
+      "anchorId": "GET_duplicates_{article}",
+      "method": "GET",
+      "pathTemplate": "/duplicates/:article",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "article"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "article"
+      ],
+      "parameterSeedSources": {
+        "article": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "article": "operator_supplied"
+      },
+      "seedConfidence": {
+        "article": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "article": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "article": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/duplicates/:article",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "article",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/duplicates/{article}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-99bcb365a9",
+      "anchorId": "GET_hot",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/hot",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/hot",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/hot",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-1d30d38c69",
+      "anchorId": "GET_new",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/new",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/new",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/new",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-1278fcb616",
+      "anchorId": "GET_rising",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/rising",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/rising",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/rising",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-81e3c5950b",
+      "anchorId": "GET_{sort}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/:sort",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "sort"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "sort"
+      ],
+      "parameterSeedSources": {
+        "sort": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "sort": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "sort": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "sort": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "sort": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/:sort",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "sort",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/{sort}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-8ba57167d2",
+      "anchorId": "GET_api_live_by_id_{names}",
+      "method": "GET",
+      "pathTemplate": "/api/live/by_id/:names",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "names"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "names"
+      ],
+      "parameterSeedSources": {
+        "names": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "names": "placeholder_only"
+      },
+      "seedConfidence": {
+        "names": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "names": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "names": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/live/by_id/:names",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "names",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/live/by_id/{names}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-50584962ee",
+      "anchorId": "GET_api_live_happening_now",
+      "method": "GET",
+      "pathTemplate": "/api/live/happening_now",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/live/happening_now",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/live/happening_now",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-b296bd8854",
+      "anchorId": "GET_live_{thread}",
+      "method": "GET",
+      "pathTemplate": "/live/:thread",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "thread"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "thread"
+      ],
+      "parameterSeedSources": {
+        "thread": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "thread": "placeholder_only"
+      },
+      "seedConfidence": {
+        "thread": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "thread": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "thread": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/live/:thread",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "thread",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/live/{thread}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-60cd504e0b",
+      "anchorId": "GET_live_{thread}_about",
+      "method": "GET",
+      "pathTemplate": "/live/:thread/about",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "thread"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "thread"
+      ],
+      "parameterSeedSources": {
+        "thread": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "thread": "placeholder_only"
+      },
+      "seedConfidence": {
+        "thread": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "thread": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "thread": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/live/:thread/about",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "thread",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/live/{thread}/about",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-74a015c3b4",
+      "anchorId": "GET_live_{thread}_contributors",
+      "method": "GET",
+      "pathTemplate": "/live/:thread/contributors",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "thread"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "thread"
+      ],
+      "parameterSeedSources": {
+        "thread": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "thread": "placeholder_only"
+      },
+      "seedConfidence": {
+        "thread": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "thread": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "thread": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/live/:thread/contributors",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "thread",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/live/{thread}/contributors",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-4847421404",
+      "anchorId": "GET_live_{thread}_discussions",
+      "method": "GET",
+      "pathTemplate": "/live/:thread/discussions",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "thread"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "thread"
+      ],
+      "parameterSeedSources": {
+        "thread": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "thread": "placeholder_only"
+      },
+      "seedConfidence": {
+        "thread": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "thread": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "thread": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/live/:thread/discussions",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "thread",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/live/{thread}/discussions",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-b1b33d6f2d",
+      "anchorId": "GET_live_{thread}_updates_{update_id}",
+      "method": "GET",
+      "pathTemplate": "/live/:thread/updates/:update_id",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "thread",
+        "update_id"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "thread",
+        "update_id"
+      ],
+      "parameterSeedSources": {
+        "thread": "synthetic_public_seed",
+        "update_id": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "thread": "placeholder_only",
+        "update_id": "placeholder_only"
+      },
+      "seedConfidence": {
+        "thread": "synthetic_placeholder",
+        "update_id": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "thread": "unknown",
+        "update_id": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "thread": "placeholder_resolution_only",
+        "update_id": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/live/:thread/updates/:update_id",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "thread",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        },
+        {
+          "name": "update_id",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/live/{thread}/updates/{update_id}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-e386568b09",
+      "anchorId": "GET_message_{where}",
+      "method": "GET",
+      "pathTemplate": "/message/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "where"
+      ],
+      "parameterSeedSources": {
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "where": "auth_private"
+      },
+      "endpointSeedPolicy": {
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/message/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "auth_private",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/message/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-dd2940d6e6",
+      "anchorId": "GET_api_v1_scopes",
+      "method": "GET",
+      "pathTemplate": "/api/v1/scopes",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/scopes",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/scopes",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-f62dad5bf5",
+      "anchorId": "GET_about_log",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/about/log",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/about/log",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/about/log",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-2dbbb85a38",
+      "anchorId": "GET_about_{location}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/about/:location",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "location"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "location"
+      ],
+      "parameterSeedSources": {
+        "location": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "location": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "location": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "location": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "location": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/about/:location",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "location",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/about/{location}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-83648ffd3f",
+      "anchorId": "GET_stylesheet",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/stylesheet",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/stylesheet",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/stylesheet",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-89da1203f1",
+      "anchorId": "GET_api_mod_conversations",
+      "method": "GET",
+      "pathTemplate": "/api/mod/conversations",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/mod/conversations",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/mod/conversations",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-71fbecac4b",
+      "anchorId": "GET_api_mod_conversations_:conversation_id",
+      "method": "GET",
+      "pathTemplate": "/api/mod/conversations/:conversation_id",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "conversation_id"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "conversation_id"
+      ],
+      "parameterSeedSources": {
+        "conversation_id": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "conversation_id": "placeholder_only"
+      },
+      "seedConfidence": {
+        "conversation_id": "synthetic_placeholder"
+      },
+      "seedPrivacyBoundary": {
+        "conversation_id": "unknown"
+      },
+      "endpointSeedPolicy": {
+        "conversation_id": "placeholder_resolution_only"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/mod/conversations/:conversation_id",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "conversation_id",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "placeholder_only",
+          "seedConfidence": "synthetic_placeholder",
+          "seedPrivacyBoundary": "unknown",
+          "endpointSeedPolicy": "placeholder_resolution_only",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/mod/conversations/{conversation_id}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-ecb74ba203",
+      "anchorId": "GET_api_mod_conversations_subreddits",
+      "method": "GET",
+      "pathTemplate": "/api/mod/conversations/subreddits",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/mod/conversations/subreddits",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/mod/conversations/subreddits",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-b1254507c5",
+      "anchorId": "GET_api_mod_conversations_unread_count",
+      "method": "GET",
+      "pathTemplate": "/api/mod/conversations/unread/count",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/mod/conversations/unread/count",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/mod/conversations/unread/count",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-c5b404b636",
+      "anchorId": "GET_api_mod_notes",
+      "method": "GET",
+      "pathTemplate": "/api/mod/notes",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/mod/notes",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/mod/notes",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-a43cc88de3",
+      "anchorId": "GET_api_mod_notes_recent",
+      "method": "GET",
+      "pathTemplate": "/api/mod/notes/recent",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/mod/notes/recent",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/mod/notes/recent",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-21f3d4a683",
+      "anchorId": "GET_api_multi_mine",
+      "method": "GET",
+      "pathTemplate": "/api/multi/mine",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/multi/mine",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/multi/mine",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-b7c45c664c",
+      "anchorId": "GET_api_multi_user_{username}",
+      "method": "GET",
+      "pathTemplate": "/api/multi/user/:username",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "username"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "username"
+      ],
+      "parameterSeedSources": {
+        "username": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "username": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "username": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "username": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "username": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/multi/user/:username",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "username",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/multi/user/{username}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-8094900726",
+      "anchorId": "GET_api_multi_{multipath}",
+      "method": "GET",
+      "pathTemplate": "/api/multi/:multipath",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "multipath"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "multipath"
+      ],
+      "parameterSeedSources": {
+        "multipath": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "multipath": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "multipath": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "multipath": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "multipath": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/multi/:multipath",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "multipath",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/multi/{multipath}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-c6c1b4a81d",
+      "anchorId": "GET_api_multi_{multipath}_description",
+      "method": "GET",
+      "pathTemplate": "/api/multi/:multipath/description",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "multipath"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "multipath"
+      ],
+      "parameterSeedSources": {
+        "multipath": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "multipath": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "multipath": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "multipath": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "multipath": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/multi/:multipath/description",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "multipath",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/multi/{multipath}/description",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-780e948f11",
+      "anchorId": "GET_api_multi_{multipath}_r_{srname}",
+      "method": "GET",
+      "pathTemplate": "/api/multi/:multipath/r/:srname",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "multipath",
+        "srname"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "multipath",
+        "srname"
+      ],
+      "parameterSeedSources": {
+        "multipath": "synthetic_public_seed",
+        "srname": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "multipath": "synthetic_public_seed",
+        "srname": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "multipath": "synthetic_likely",
+        "srname": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "multipath": "public_read",
+        "srname": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "multipath": "parameter_name_default_seed",
+        "srname": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/multi/:multipath/r/:srname",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "multipath",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        },
+        {
+          "name": "srname",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/multi/{multipath}/r/{srname}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-613f9e8579",
+      "anchorId": "GET_search",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/search",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/search",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/search",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-c5fc67c980",
+      "anchorId": "GET_about_{where}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/about/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "where"
+      ],
+      "parameterSeedSources": {
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "where": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/about/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/about/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0e942aa5dc",
+      "anchorId": "GET_api_recommend_sr_{srnames}",
+      "method": "GET",
+      "pathTemplate": "/api/recommend/sr/:srnames",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "srnames"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "srnames"
+      ],
+      "parameterSeedSources": {
+        "srnames": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "srnames": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "srnames": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "srnames": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "srnames": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/recommend/sr/:srnames",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "srnames",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/recommend/sr/{srnames}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-2063ede161",
+      "anchorId": "GET_api_search_reddit_names",
+      "method": "GET",
+      "pathTemplate": "/api/search_reddit_names",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/search_reddit_names",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/search_reddit_names",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0acdb895be",
+      "anchorId": "GET_api_submit_text",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/submit_text",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/submit_text",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/submit_text",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0a39ef55a5",
+      "anchorId": "GET_api_subreddit_autocomplete",
+      "method": "GET",
+      "pathTemplate": "/api/subreddit_autocomplete",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/subreddit_autocomplete",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/subreddit_autocomplete",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-e3559254fb",
+      "anchorId": "GET_api_subreddit_autocomplete_v2",
+      "method": "GET",
+      "pathTemplate": "/api/subreddit_autocomplete_v2",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/subreddit_autocomplete_v2",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/subreddit_autocomplete_v2",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-1d9954b33d",
+      "anchorId": "GET_api_v1_{subreddit}_post_requirements",
+      "method": "GET",
+      "pathTemplate": "/api/v1/:subreddit/post_requirements",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedSources": {
+        "subreddit": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "subreddit": "operator_supplied"
+      },
+      "seedConfidence": {
+        "subreddit": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "subreddit": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "subreddit": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/:subreddit/post_requirements",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "subreddit",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/{subreddit}/post_requirements",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-ac8231baef",
+      "anchorId": "GET_r_{subreddit}_about",
+      "method": "GET",
+      "pathTemplate": "/r/:subreddit/about",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedSources": {
+        "subreddit": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "subreddit": "operator_supplied"
+      },
+      "seedConfidence": {
+        "subreddit": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "subreddit": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "subreddit": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/r/:subreddit/about",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "subreddit",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/r/{subreddit}/about",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-db50337b1f",
+      "anchorId": "GET_r_{subreddit}_about_edit",
+      "method": "GET",
+      "pathTemplate": "/r/:subreddit/about/edit",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedSources": {
+        "subreddit": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "subreddit": "operator_supplied"
+      },
+      "seedConfidence": {
+        "subreddit": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "subreddit": "moderator_limited"
+      },
+      "endpointSeedPolicy": {
+        "subreddit": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/r/:subreddit/about/edit",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "subreddit",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "moderator_limited",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/r/{subreddit}/about/edit",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-220c4cfa22",
+      "anchorId": "GET_r_{subreddit}_about_rules",
+      "method": "GET",
+      "pathTemplate": "/r/:subreddit/about/rules",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedSources": {
+        "subreddit": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "subreddit": "operator_supplied"
+      },
+      "seedConfidence": {
+        "subreddit": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "subreddit": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "subreddit": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/r/:subreddit/about/rules",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "subreddit",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/r/{subreddit}/about/rules",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-78faee84e2",
+      "anchorId": "GET_r_{subreddit}_about_traffic",
+      "method": "GET",
+      "pathTemplate": "/r/:subreddit/about/traffic",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "subreddit"
+      ],
+      "parameterSeedSources": {
+        "subreddit": "operator_supplied"
+      },
+      "parameterSeedSourceStatus": {
+        "subreddit": "operator_supplied"
+      },
+      "seedConfidence": {
+        "subreddit": "operator_asserted"
+      },
+      "seedPrivacyBoundary": {
+        "subreddit": "moderator_limited"
+      },
+      "endpointSeedPolicy": {
+        "subreddit": "operator_supplied_runtime_param"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/r/:subreddit/about/traffic",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "subreddit",
+          "source": "operator_supplied",
+          "sourceStatus": "operator_supplied",
+          "seedConfidence": "operator_asserted",
+          "seedPrivacyBoundary": "moderator_limited",
+          "endpointSeedPolicy": "operator_supplied_runtime_param",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/r/{subreddit}/about/traffic",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-63ea781aa9",
+      "anchorId": "GET_sidebar",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/sidebar",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/sidebar",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/sidebar",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-5dced604d0",
+      "anchorId": "GET_sticky",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/sticky",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/sticky",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/sticky",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-fde7e1b8b0",
+      "anchorId": "GET_subreddits_mine_{where}",
+      "method": "GET",
+      "pathTemplate": "/subreddits/mine/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "where"
+      ],
+      "parameterSeedSources": {
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "where": "auth_private"
+      },
+      "endpointSeedPolicy": {
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/subreddits/mine/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "auth_private",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/subreddits/mine/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-93e3587d77",
+      "anchorId": "GET_subreddits_search",
+      "method": "GET",
+      "pathTemplate": "/subreddits/search",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/subreddits/search",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/subreddits/search",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-a838f31c48",
+      "anchorId": "GET_subreddits_{where}",
+      "method": "GET",
+      "pathTemplate": "/subreddits/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "where"
+      ],
+      "parameterSeedSources": {
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "where": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/subreddits/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/subreddits/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-14f5c6f198",
+      "anchorId": "GET_users_search",
+      "method": "GET",
+      "pathTemplate": "/users/search",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/users/search",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/users/search",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-6856b975cc",
+      "anchorId": "GET_users_{where}",
+      "method": "GET",
+      "pathTemplate": "/users/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "where"
+      ],
+      "parameterSeedSources": {
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "where": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/users/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/users/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0eb9893217",
+      "anchorId": "GET_api_user_data_by_account_ids",
+      "method": "GET",
+      "pathTemplate": "/api/user_data_by_account_ids",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/user_data_by_account_ids",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/user_data_by_account_ids",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-0a1433cfaa",
+      "anchorId": "GET_api_username_available",
+      "method": "GET",
+      "pathTemplate": "/api/username_available",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/username_available",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/username_available",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-be3432bcc7",
+      "anchorId": "GET_api_v1_user_{username}_trophies",
+      "method": "GET",
+      "pathTemplate": "/api/v1/user/:username/trophies",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "username"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "username"
+      ],
+      "parameterSeedSources": {
+        "username": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "username": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "username": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "username": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "username": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/api/v1/user/:username/trophies",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "username",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/api/v1/user/{username}/trophies",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-23d71e44de",
+      "anchorId": "GET_user_{username}_about",
+      "method": "GET",
+      "pathTemplate": "/user/:username/about",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "username"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "username"
+      ],
+      "parameterSeedSources": {
+        "username": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "username": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "username": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "username": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "username": "parameter_name_default_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/user/:username/about",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "username",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/user/{username}/about",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-cc60fea76e",
+      "anchorId": "GET_user_{username}_{where}",
+      "method": "GET",
+      "pathTemplate": "/user/:username/:where",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "username",
+        "where"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "username",
+        "where"
+      ],
+      "parameterSeedSources": {
+        "username": "synthetic_public_seed",
+        "where": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "username": "synthetic_public_seed",
+        "where": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "username": "synthetic_likely",
+        "where": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "username": "public_read",
+        "where": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "username": "parameter_name_default_seed",
+        "where": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "single_endpoint_template",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "/user/:username/:where",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "username",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "parameter_name_default_seed",
+          "valuePersisted": false
+        },
+        {
+          "name": "where",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/user/{username}/{where}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-3a9a257a7f",
+      "anchorId": "GET_api_widgets",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/api/widgets",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/api/widgets",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/api/widgets",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-be861b2b31",
+      "anchorId": "GET_wiki_discussions_{page}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/wiki/discussions/:page",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "page"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "page"
+      ],
+      "parameterSeedSources": {
+        "page": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "page": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "page": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "page": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "page": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/wiki/discussions/:page",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "page",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/wiki/discussions/{page}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-6c92af3640",
+      "anchorId": "GET_wiki_pages",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/wiki/pages",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/wiki/pages",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/wiki/pages",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-a0880206da",
+      "anchorId": "GET_wiki_revisions",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/wiki/revisions",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready",
+      "parameterized": false,
+      "parameterNames": [],
+      "parameterSeedStatus": "not_required",
+      "missingSeedNames": [],
+      "providedParameterNames": [],
+      "parameterSeedSources": {},
+      "parameterSeedSourceStatus": {},
+      "seedConfidence": {},
+      "seedPrivacyBoundary": {},
+      "endpointSeedPolicy": {},
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/wiki/revisions",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [],
+      "endpointTemplate": "https://oauth.reddit.com/wiki/revisions",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-97ad72315d",
+      "anchorId": "GET_wiki_revisions_{page}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/wiki/revisions/:page",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "page"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "page"
+      ],
+      "parameterSeedSources": {
+        "page": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "page": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "page": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "page": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "page": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/wiki/revisions/:page",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "page",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/wiki/revisions/{page}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-2d7a31ee2e",
+      "anchorId": "GET_wiki_settings_{page}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/wiki/settings/:page",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "page"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "page"
+      ],
+      "parameterSeedSources": {
+        "page": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "page": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "page": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "page": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "page": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/wiki/settings/:page",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "page",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/wiki/settings/{page}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    },
+    {
+      "operationId": "reddit-api-get-f6cf607564",
+      "anchorId": "GET_wiki_{page}",
+      "method": "GET",
+      "pathTemplate": "[/r/:subreddit]/wiki/:page",
+      "runtimeMode": "reddit_oauth_read_runtime",
+      "status": "runtime_plan_ready_requires_path_parameters",
+      "parameterized": true,
+      "parameterNames": [
+        "page"
+      ],
+      "parameterSeedStatus": "provided",
+      "missingSeedNames": [],
+      "providedParameterNames": [
+        "page"
+      ],
+      "parameterSeedSources": {
+        "page": "synthetic_public_seed"
+      },
+      "parameterSeedSourceStatus": {
+        "page": "synthetic_public_seed"
+      },
+      "seedConfidence": {
+        "page": "synthetic_likely"
+      },
+      "seedPrivacyBoundary": {
+        "page": "public_read"
+      },
+      "endpointSeedPolicy": {
+        "page": "endpoint_specific_synthetic_seed"
+      },
+      "endpointVariantStatus": "global_variant_selected",
+      "selectedEndpointTemplateIndex": 0,
+      "resolvedEndpointHost": "oauth.reddit.com",
+      "resolvedPathTemplate": "[/r/:subreddit]/wiki/:page",
+      "runtimeParamValuePersisted": false,
+      "seedValuePersisted": false,
+      "parameterBindingsSummary": [
+        {
+          "name": "page",
+          "source": "synthetic_public_seed",
+          "sourceStatus": "synthetic_public_seed",
+          "seedConfidence": "synthetic_likely",
+          "seedPrivacyBoundary": "public_read",
+          "endpointSeedPolicy": "endpoint_specific_synthetic_seed",
+          "valuePersisted": false
+        }
+      ],
+      "endpointTemplate": "https://oauth.reddit.com/wiki/{page}",
+      "responseMaterial": "sanitized_summary_only",
+      "execution": {
+        "status": "planned",
+        "reasonCode": "reddit_oauth_or_user_agent_required",
+        "responseMaterial": "sanitized_summary_only"
+      }
+    }
+  ]
+}

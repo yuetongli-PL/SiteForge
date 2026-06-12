@@ -1,0 +1,498 @@
+{
+  "schemaVersion": 1,
+  "redactedPaths": [
+    "summary.browserProfilePersisted",
+    "routeQueue.0.browserProfilePersisted",
+    "routeQueue.1.browserProfilePersisted",
+    "routeQueue.2.browserProfilePersisted",
+    "routeQueue.3.browserProfilePersisted",
+    "routeQueue.4.browserProfilePersisted",
+    "routeQueue.5.browserProfilePersisted",
+    "routeQueue.6.browserProfilePersisted",
+    "routeQueue.7.browserProfilePersisted",
+    "routeQueue.8.browserProfilePersisted",
+    "routeQueue.9.browserProfilePersisted",
+    "routeQueue.10.browserProfilePersisted",
+    "routeQueue.11.browserProfilePersisted",
+    "routeQueue.12.browserProfilePersisted",
+    "routeQueue.13.browserProfilePersisted",
+    "routeQueue.14.browserProfilePersisted",
+    "routeQueue.15.browserProfilePersisted",
+    "routeQueue.16.browserProfilePersisted",
+    "routeQueue.17.browserProfilePersisted",
+    "routeQueue.18.browserProfilePersisted",
+    "routeQueue.19.browserProfilePersisted",
+    "routeQueue.20.browserProfilePersisted",
+    "routeQueue.21.browserProfilePersisted",
+    "routeQueue.22.browserProfilePersisted",
+    "routeQueue.23.browserProfilePersisted",
+    "routeQueue.24.browserProfilePersisted",
+    "routeQueue.25.browserProfilePersisted",
+    "routeQueue.26.browserProfilePersisted",
+    "routeQueue.27.browserProfilePersisted",
+    "routeQueue.28.browserProfilePersisted",
+    "routeQueue.29.browserProfilePersisted",
+    "routeQueue.30.browserProfilePersisted",
+    "routeQueue.31.browserProfilePersisted",
+    "routeQueue.32.browserProfilePersisted",
+    "routeQueue.33.browserProfilePersisted",
+    "routeQueue.34.browserProfilePersisted",
+    "routeQueue.35.browserProfilePersisted",
+    "routeQueue.36.browserProfilePersisted",
+    "routeQueue.37.browserProfilePersisted",
+    "routeQueue.38.browserProfilePersisted",
+    "routeQueue.39.browserProfilePersisted",
+    "routeQueue.40.browserProfilePersisted",
+    "routeQueue.41.browserProfilePersisted",
+    "routeQueue.42.browserProfilePersisted",
+    "routeQueue.43.browserProfilePersisted",
+    "routeQueue.44.browserProfilePersisted",
+    "routeQueue.45.browserProfilePersisted",
+    "routeQueue.46.browserProfilePersisted",
+    "routeQueue.47.browserProfilePersisted",
+    "routeQueue.48.browserProfilePersisted",
+    "routeQueue.49.browserProfilePersisted",
+    "routeQueue.50.browserProfilePersisted",
+    "routeQueue.51.browserProfilePersisted",
+    "routeQueue.52.browserProfilePersisted",
+    "routeQueue.53.browserProfilePersisted",
+    "routeQueue.54.browserProfilePersisted",
+    "routeQueue.55.browserProfilePersisted",
+    "routeQueue.56.browserProfilePersisted",
+    "routeQueue.57.browserProfilePersisted",
+    "routeQueue.58.browserProfilePersisted",
+    "routeQueue.59.browserProfilePersisted",
+    "routeQueue.60.browserProfilePersisted",
+    "routeQueue.61.browserProfilePersisted",
+    "routeQueue.62.browserProfilePersisted",
+    "routeQueue.63.browserProfilePersisted",
+    "routeQueue.64.browserProfilePersisted",
+    "routeQueue.65.browserProfilePersisted",
+    "routeQueue.66.browserProfilePersisted",
+    "routeQueue.67.browserProfilePersisted",
+    "routeQueue.68.browserProfilePersisted",
+    "routeQueue.69.browserProfilePersisted",
+    "routeQueue.70.browserProfilePersisted",
+    "routeQueue.71.browserProfilePersisted",
+    "routeQueue.72.browserProfilePersisted",
+    "routeQueue.73.browserProfilePersisted",
+    "routeQueue.74.browserProfilePersisted",
+    "routeQueue.75.browserProfilePersisted",
+    "routeQueue.76.browserProfilePersisted",
+    "routeQueue.77.browserProfilePersisted",
+    "routeQueue.78.browserProfilePersisted",
+    "routeQueue.79.browserProfilePersisted",
+    "routeQueue.80.browserProfilePersisted",
+    "routeQueue.81.browserProfilePersisted",
+    "routeQueue.82.browserProfilePersisted",
+    "routeQueue.83.browserProfilePersisted",
+    "routeQueue.84.browserProfilePersisted",
+    "routeQueue.85.browserProfilePersisted",
+    "routeQueue.86.browserProfilePersisted",
+    "routeQueue.87.browserProfilePersisted",
+    "routeQueue.88.browserProfilePersisted",
+    "routeQueue.89.browserProfilePersisted",
+    "routeQueue.90.browserProfilePersisted",
+    "routeQueue.91.browserProfilePersisted",
+    "routeQueue.92.browserProfilePersisted",
+    "routeQueue.93.browserProfilePersisted",
+    "routeQueue.94.browserProfilePersisted",
+    "routeQueue.95.browserProfilePersisted",
+    "executionBoundary.browserProfilePersisted"
+  ],
+  "redactions": [
+    {
+      "path": "summary.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.0.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.1.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.2.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.3.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.4.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.5.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.6.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.7.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.8.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.9.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.10.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.11.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.12.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.13.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.14.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.15.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.16.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.17.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.18.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.19.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.20.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.21.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.22.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.23.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.24.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.25.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.26.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.27.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.28.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.29.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.30.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.31.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.32.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.33.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.34.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.35.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.36.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.37.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.38.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.39.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.40.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.41.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.42.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.43.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.44.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.45.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.46.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.47.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.48.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.49.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.50.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.51.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.52.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.53.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.54.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.55.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.56.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.57.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.58.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.59.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.60.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.61.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.62.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.63.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.64.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.65.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.66.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.67.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.68.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.69.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.70.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.71.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.72.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.73.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.74.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.75.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.76.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.77.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.78.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.79.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.80.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.81.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.82.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.83.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.84.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.85.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.86.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.87.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.88.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.89.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.90.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.91.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.92.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.93.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.94.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "routeQueue.95.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    },
+    {
+      "path": "executionBoundary.browserProfilePersisted",
+      "reason": "sensitive-field-name"
+    }
+  ],
+  "findings": []
+}

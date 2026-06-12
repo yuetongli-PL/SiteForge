@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-live-readiness-report",
+  "generatedAt": "2026-06-09T01:25:34.802Z",
+  "credentialSource": {
+    "tokenEnv": null,
+    "userAgentEnv": null,
+    "tokenProvided": false,
+    "userAgentProvided": false,
+    "tokenPersisted": false,
+    "userAgentPersisted": false
+  },
+  "summary": {
+    "liveSuccessCount": 0,
+    "blockerCount": 1,
+    "selectedApiPlans": 78,
+    "apiPlansBlocked": 0,
+    "apiPlansSucceeded": 0,
+    "browserBridgeEligibleRoutes": 362,
+    "browserBridgeCapturedRoutes": 0,
+    "browserBridgeMissingRoutes": 0,
+    "browserBridgeRawMissingRoutes": 0,
+    "browserBridgeBoundaryDispositionRoutes": 0,
+    "browserBridgeLiveRequiredMissingRoutes": 0,
+    "canExecuteOauthReadBatch": false,
+    "canRetryBrowserBridgeRoutes": false,
+    "cookiePersisted": false,
+    "tokenPersisted": false,
+    "rawHtmlPersisted": false,
+    "browserStatePersisted": false
+  },
+  "status": {
+    "fullSiteLiveReadiness": "blocked_external_access_boundary",
+    "genericLiveCrawl": "not_blocked_by_supplied_robots_evidence",
+    "oauthReadBatch": "blocked_missing_oauth_input",
+    "browserBridgeRoutes": "waiting_for_verified_browser_bridge_session",
+    "cookieCrawl": "not_verified",
+    "writeAndMutationActions": "recorded_disabled_by_default"
+  },
+  "commands": {
+    "readOnlyApiBatch": null,
+    "readOnlyApiBatchArgs": null,
+    "readOnlyApiBatchAfterOauth": "node src/entrypoints/sites/reddit-action.mjs api-read-batch --runtime-index docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_oauth_api_runtime_plan_index.json --out-dir docs\\codex-goals\\reddit-siteforge-build-v1\\evidence --batch-mode execute-all --include-parameterized --limit 78 --json",
+    "readOnlyApiBatchAfterOauthArgs": [
+      "node",
+      "src/entrypoints/sites/reddit-action.mjs",
+      "api-read-batch",
+      "--runtime-index",
+      "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_oauth_api_runtime_plan_index.json",
+      "--out-dir",
+      "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence",
+      "--batch-mode",
+      "execute-all",
+      "--include-parameterized",
+      "--limit",
+      "78",
+      "--json"
+    ],
+    "browserBridgeRouteQueue": "node src/entrypoints/sites/reddit-action.mjs browser-bridge-route-queue --out-dir docs\\codex-goals\\reddit-siteforge-build-v1\\evidence --json",
+    "browserBridgeRouteQueueArgs": [
+      "node",
+      "src/entrypoints/sites/reddit-action.mjs",
+      "browser-bridge-route-queue",
+      "--out-dir",
+      "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence",
+      "--json"
+    ],
+    "cumulativeBrowserBridgeLiveReport": null
+  },
+  "blockers": [
+    {
+      "id": "reddit-oauth-inputs-missing",
+      "layer": "reddit_oauth_api_runtime",
+      "status": "blocked",
+      "reasonCode": "reddit_oauth_credential_and_user_agent_required",
+      "operatorActionRequired": true,
+      "remediation": "Provide a runtime Reddit OAuth credential and descriptive User-Agent, then run the read-only API batch."
+    }
+  ],
+  "boundaries": [],
+  "nextSteps": [
+    {
+      "id": "provide-oauth-inputs",
+      "status": "required",
+      "action": "Provide Reddit OAuth credential and descriptive User-Agent as runtime environment inputs."
+    },
+    {
+      "id": "verify-browser-bridge-session",
+      "status": "required_before_route_retry",
+      "action": "Verify Browser Bridge session and robots-allowed route access before retrying authenticated routes."
+    }
+  ]
+}

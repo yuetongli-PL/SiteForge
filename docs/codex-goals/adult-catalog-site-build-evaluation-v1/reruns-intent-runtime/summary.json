@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-06-08T18:25:15.402Z",
+  "targets": [
+    {
+      "siteKey": "t-powers",
+      "url": "https://www.t-powers.co.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "buildId": "20260608T182203318Z",
+      "skillId": "t-powers",
+      "reportPath": ".siteforge/sites/t-powers.co.jp-4fa773a1/builds/20260608T182203318Z/build_report.user.json"
+    },
+    {
+      "siteKey": "moodyz",
+      "url": "https://moodyz.com/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "buildId": "20260608T182211499Z",
+      "skillId": "moodyz",
+      "reportPath": ".siteforge/sites/moodyz.com-c086e87f/builds/20260608T182211499Z/build_report.user.json"
+    },
+    {
+      "siteKey": "dahlia",
+      "url": "https://dahlia-av.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "buildId": "20260608T182235911Z",
+      "skillId": "dahlia",
+      "reportPath": ".siteforge/sites/dahlia-av.jp-f794ab63/builds/20260608T182235911Z/build_report.user.json"
+    },
+    {
+      "siteKey": "s1",
+      "url": "https://s1s1s1.com/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "buildId": "20260608T182249559Z",
+      "skillId": "s-av-s1-no-1-style",
+      "reportPath": ".siteforge/sites/s1s1s1.com-4fdf0909/builds/20260608T182249559Z/build_report.user.json"
+    },
+    {
+      "siteKey": "km-produce",
+      "url": "https://www.km-produce.com/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "buildId": "20260608T182339070Z",
+      "skillId": "km-produce",
+      "reportPath": ".siteforge/sites/km-produce.com-af1ddc05/builds/20260608T182339070Z/build_report.user.json"
+    },
+    {
+      "siteKey": "rookie",
+      "url": "https://rookie-av.jp/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "buildId": "20260608T182451575Z",
+      "skillId": "rookie",
+      "reportPath": ".siteforge/sites/rookie-av.jp-64e7e465/builds/20260608T182451575Z/build_report.user.json"
+    }
+  ]
+}

@@ -1,0 +1,415 @@
+{
+  "mainBuild": "zhihu-comprehensive-coverage-v17",
+  "activeTotal": 37,
+  "requestedCapabilitiesOk": true,
+  "tasksOk": true,
+  "capRows": [
+    {
+      "name": "list hot broadcasts",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/drama/feed",
+      "resources": [
+        "/drama/feed"
+      ],
+      "slots": []
+    },
+    {
+      "name": "list topic discussions",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/topic/:id/hot",
+      "resources": [
+        "/topic/{topic_id}/hot",
+        "/topic/{topic_id}/top-answers"
+      ],
+      "slots": [
+        "topic_id"
+      ]
+    },
+    {
+      "name": "list topic featured",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/topic/:id/top-answers",
+      "resources": [
+        "/topic/{topic_id}/hot",
+        "/topic/{topic_id}/top-answers"
+      ],
+      "slots": [
+        "topic_id"
+      ]
+    },
+    {
+      "name": "list user activities",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/activities",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user answers",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/answers",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user questions",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/asks",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user articles",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/posts",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user columns",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/columns",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user pins",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/pins",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user collections",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/collections",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user videos",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/zvideos",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    },
+    {
+      "name": "list user following",
+      "ok": true,
+      "status": "active",
+      "routeTemplate": "/people/zhihuadmin/following",
+      "resources": [
+        "/people/{account}/activities",
+        "/people/{account}/answers",
+        "/people/{account}/asks",
+        "/people/{account}/posts",
+        "/people/{account}/columns",
+        "/people/{account}/pins",
+        "/people/{account}/collections",
+        "/people/{account}/zvideos",
+        "/people/{account}/following"
+      ],
+      "slots": [
+        "account"
+      ]
+    }
+  ],
+  "taskRows": [
+    {
+      "task": "list recommended timeline posts",
+      "buildId": "zhihu-comprehensive-task-recommended-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_feed_read_completed",
+      "pathTemplate": "/"
+    },
+    {
+      "task": "list followed users",
+      "buildId": "zhihu-comprehensive-task-followed-users-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_followed_users_read_completed",
+      "pathTemplate": "/follow"
+    },
+    {
+      "task": "list hot posts",
+      "buildId": "zhihu-comprehensive-task-hot-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_hot_posts_read_completed",
+      "pathTemplate": "/hot"
+    },
+    {
+      "task": "list hot broadcasts",
+      "buildId": "zhihu-comprehensive-task-hot-broadcasts-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_hot_broadcasts_read_completed",
+      "pathTemplate": "/drama/feed"
+    },
+    {
+      "task": "list topic discussions",
+      "buildId": "zhihu-comprehensive-task-topic-discussions-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_topic_discussions_read_completed",
+      "pathTemplate": "/topic/{topic_id}/hot"
+    },
+    {
+      "task": "list topic featured",
+      "buildId": "zhihu-comprehensive-task-topic-featured-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_topic_featured_read_completed",
+      "pathTemplate": "/topic/{topic_id}/top-answers"
+    },
+    {
+      "task": "search posts",
+      "buildId": "zhihu-comprehensive-task-search-posts-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_search_read_completed",
+      "pathTemplate": "/search?type=content&q={query}"
+    },
+    {
+      "task": "search users",
+      "buildId": "zhihu-comprehensive-task-search-users-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_search_read_completed",
+      "pathTemplate": "/search?type=people&q={query}"
+    },
+    {
+      "task": "list notifications",
+      "buildId": "zhihu-comprehensive-task-notifications-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_notifications_read_completed",
+      "pathTemplate": "/notifications"
+    },
+    {
+      "task": "read profile content",
+      "buildId": "zhihu-comprehensive-task-profile-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_profile_read_completed",
+      "pathTemplate": "/people/{account}"
+    },
+    {
+      "task": "list user activities",
+      "buildId": "zhihu-comprehensive-task-user-activities-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_activities_read_completed",
+      "pathTemplate": "/people/{account}/activities"
+    },
+    {
+      "task": "list user answers",
+      "buildId": "zhihu-comprehensive-task-user-answers-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_answers_read_completed",
+      "pathTemplate": "/people/{account}/answers"
+    },
+    {
+      "task": "list user questions",
+      "buildId": "zhihu-comprehensive-task-user-questions-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_questions_read_completed",
+      "pathTemplate": "/people/{account}/asks"
+    },
+    {
+      "task": "list user articles",
+      "buildId": "zhihu-comprehensive-task-user-articles-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_articles_read_completed",
+      "pathTemplate": "/people/{account}/posts"
+    },
+    {
+      "task": "list user columns",
+      "buildId": "zhihu-comprehensive-task-user-columns-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_columns_read_completed",
+      "pathTemplate": "/people/{account}/columns"
+    },
+    {
+      "task": "list user pins",
+      "buildId": "zhihu-comprehensive-task-user-pins-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_pins_read_completed",
+      "pathTemplate": "/people/{account}/pins"
+    },
+    {
+      "task": "list user collections",
+      "buildId": "zhihu-comprehensive-task-user-collections-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_collections_read_completed",
+      "pathTemplate": "/people/{account}/collections"
+    },
+    {
+      "task": "list user videos",
+      "buildId": "zhihu-comprehensive-task-user-videos-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_videos_read_completed",
+      "pathTemplate": "/people/{account}/zvideos"
+    },
+    {
+      "task": "list user following",
+      "buildId": "zhihu-comprehensive-task-user-following-v18",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_user_following_read_completed",
+      "pathTemplate": "/people/{account}/following"
+    },
+    {
+      "task": "view question detail",
+      "buildId": "zhihu-comprehensive-task-question-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_question_detail_read_completed",
+      "pathTemplate": "/question/{question_id}"
+    },
+    {
+      "task": "view answer detail",
+      "buildId": "zhihu-comprehensive-task-answer-v17",
+      "ok": true,
+      "status": "completed",
+      "providerId": "zhihu_readonly_provider",
+      "outcome": "zhihu_answer_detail_read_completed",
+      "pathTemplate": "/question/{question_id}/answer/{answer_id}"
+    }
+  ]
+}

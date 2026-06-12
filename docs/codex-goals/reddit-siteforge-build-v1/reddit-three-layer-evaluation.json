@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 2,
+  "artifactFamily": "reddit-legacy-three-layer-evaluation-superseded",
+  "generatedAt": "2026-06-09T09:48:26.097Z",
+  "supersededBy": "docs/codex-goals/reddit-siteforge-build-v1/reddit-production-three-layer-evaluation.json",
+  "previousScore100ClaimSuperseded": true,
+  "currentTotalScore": 99.45,
+  "reason": "Production skill复核发现 OAuth JSON/API replay blocked，saved/history 仅结构归档，因此不能继续声称 100 分。"
+}

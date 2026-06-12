@@ -1,0 +1,457 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-production-research-task-plan",
+  "siteKey": "reddit",
+  "generatedAt": "2026-06-09T09:18:51.009Z",
+  "task": {
+    "id": "redditor-profile",
+    "label": "Redditor profile and content portrait",
+    "target": "reddit",
+    "requiredParameters": [
+      "account"
+    ],
+    "missingParameters": [],
+    "collectionMode": "api-first",
+    "noStallPolicy": {
+      "apiFirstFallback": "verified_site_fallback_without_cooldown",
+      "sameSurfaceCooldown": "do_not_wait",
+      "resume": "reuse_task_state_before_live_retry"
+    }
+  },
+  "inputs": {
+    "request": null,
+    "subreddit": null,
+    "account": "reddit",
+    "query": null,
+    "from": null,
+    "to": null,
+    "maxItems": 100,
+    "maxContentChars": 50000,
+    "downloadMedia": false
+  },
+  "planner": {
+    "mode": "explicit_task",
+    "request": null,
+    "inference": null,
+    "dispatchTarget": "redditor-profile",
+    "dispatchConfidence": 1
+  },
+  "evidence": {
+    "buildDir": ".siteforge\\sites\\reddit.com-14830d0f\\builds\\20260609T021031180Z",
+    "evidenceDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence",
+    "apiRuntimeIndex": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_oauth_api_runtime_plan_index.json",
+    "apiReadBatchReport": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_api_read_batch_report.json",
+    "browserBridgeRouteQueue": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_browser_bridge_route_queue.json",
+    "authStateReport": ".siteforge\\sites\\reddit.com-14830d0f\\builds\\20260609T021031180Z\\auth_state_report.json",
+    "authenticatedCrawl": ".siteforge\\sites\\reddit.com-14830d0f\\builds\\20260609T021031180Z\\crawl_authenticated.json"
+  },
+  "layout": {
+    "outDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample",
+    "planPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-plan.json",
+    "statePath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-state.json",
+    "summaryPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-summary.json",
+    "reportPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\task-report.md",
+    "rawItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\raw-items.jsonl",
+    "dedupedItemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\deduped-items.jsonl",
+    "itemsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\items.jsonl",
+    "communitiesPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\communities.jsonl",
+    "accountsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\accounts.jsonl",
+    "authorsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\authors.jsonl",
+    "cacheIndexPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\cache-index.json",
+    "cacheIndexJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\cache-index.jsonl",
+    "mediaAssetsPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\media-assets.json",
+    "mediaAssetsJsonlPath": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\media-assets.jsonl",
+    "archiveDir": "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit-production-redditor-task-sample\\archive"
+  },
+  "buckets": [
+    {
+      "id": "user-public-feed",
+      "label": "Redditor public Atom feed",
+      "analysisRole": "posts",
+      "activeProgrammatic": {
+        "kind": "api",
+        "provider": "reddit_public_atom_feed",
+        "verified": true,
+        "status": "replay_verified_adapter_bound_runtime_tested",
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/.rss"
+        ],
+        "operation": {
+          "method": "GET",
+          "url": "https://www.reddit.com/user/reddit/.rss",
+          "feedKind": "atom",
+          "pathParams": {
+            "username": "reddit"
+          },
+          "includeFeedProfile": false,
+          "profileOnly": false,
+          "profileKind": null
+        },
+        "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+        "rawFeedPersisted": false,
+        "activationEvidence": [
+          "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+          "tests/node/reddit-research-task-runner.test.mjs"
+        ]
+      },
+      "primary": null,
+      "fallback": {
+        "kind": "site",
+        "provider": "browser_bridge_verified_structure",
+        "routeTemplates": [
+          "/user/reddit/",
+          "/user/reddit/comments"
+        ],
+        "command": null,
+        "reasonCode": "api_unavailable_use_verified_browser_bridge",
+        "savedMaterial": "sanitized_structure_summary_only"
+      },
+      "noStallPolicy": {
+        "apiLocalFailureFallback": "immediate_verified_site_fallback",
+        "sameSurfaceCooldown": "do_not_wait"
+      }
+    },
+    {
+      "id": "user-about",
+      "label": "Redditor about profile",
+      "analysisRole": "profile",
+      "activeProgrammatic": {
+        "kind": "api",
+        "provider": "reddit_public_atom_feed",
+        "verified": true,
+        "status": "replay_verified_adapter_bound_runtime_tested",
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/.rss"
+        ],
+        "operation": {
+          "method": "GET",
+          "url": "https://www.reddit.com/user/reddit/.rss",
+          "feedKind": "atom",
+          "pathParams": {
+            "username": "reddit"
+          },
+          "includeFeedProfile": true,
+          "profileOnly": true,
+          "profileKind": "redditor"
+        },
+        "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+        "rawFeedPersisted": false,
+        "activationEvidence": [
+          "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+          "tests/node/reddit-research-task-runner.test.mjs"
+        ]
+      },
+      "primary": {
+        "kind": "api",
+        "verified": false,
+        "status": "candidate_until_replay_verified",
+        "command": [
+          "node",
+          "src/entrypoints/sites/reddit-action.mjs",
+          "api-read",
+          "--source",
+          "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_dev_api.html",
+          "--path",
+          "/user/:username/about",
+          "--method",
+          "GET",
+          "--template-index",
+          "0",
+          "--execute",
+          "--json",
+          "--param",
+          "username=reddit"
+        ],
+        "operation": {
+          "method": "GET",
+          "pathTemplate": "/user/:username/about",
+          "pathParams": {
+            "username": "reddit"
+          },
+          "query": {}
+        },
+        "activationRequirement": "replay_verified_adapter_bound_runtime_tested"
+      },
+      "fallback": {
+        "kind": "site",
+        "provider": "browser_bridge_verified_structure",
+        "routeTemplates": [
+          "/user/reddit/",
+          "/search"
+        ],
+        "command": null,
+        "reasonCode": "api_unavailable_use_verified_browser_bridge",
+        "savedMaterial": "sanitized_structure_summary_only"
+      },
+      "noStallPolicy": {
+        "apiLocalFailureFallback": "immediate_verified_site_fallback",
+        "sameSurfaceCooldown": "do_not_wait"
+      }
+    },
+    {
+      "id": "user-submitted",
+      "label": "Redditor submitted posts",
+      "analysisRole": "posts",
+      "activeProgrammatic": {
+        "kind": "api",
+        "provider": "reddit_public_atom_feed",
+        "verified": true,
+        "status": "replay_verified_adapter_bound_runtime_tested",
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/submitted/.rss"
+        ],
+        "operation": {
+          "method": "GET",
+          "url": "https://www.reddit.com/user/reddit/submitted/.rss",
+          "feedKind": "atom",
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "includeFeedProfile": false,
+          "profileOnly": false,
+          "profileKind": null
+        },
+        "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+        "rawFeedPersisted": false,
+        "activationEvidence": [
+          "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+          "tests/node/reddit-research-task-runner.test.mjs"
+        ]
+      },
+      "primary": {
+        "kind": "api",
+        "verified": false,
+        "status": "candidate_until_replay_verified",
+        "command": [
+          "node",
+          "src/entrypoints/sites/reddit-action.mjs",
+          "api-read",
+          "--source",
+          "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_dev_api.html",
+          "--path",
+          "/user/:username/:where",
+          "--method",
+          "GET",
+          "--template-index",
+          "0",
+          "--execute",
+          "--json",
+          "--param",
+          "username=reddit",
+          "--param",
+          "where=submitted",
+          "--query",
+          "limit=100"
+        ],
+        "operation": {
+          "method": "GET",
+          "pathTemplate": "/user/:username/:where",
+          "pathParams": {
+            "username": "reddit",
+            "where": "submitted"
+          },
+          "query": {
+            "limit": 100
+          }
+        },
+        "activationRequirement": "replay_verified_adapter_bound_runtime_tested"
+      },
+      "fallback": {
+        "kind": "site",
+        "provider": "browser_bridge_verified_structure",
+        "routeTemplates": [
+          "/user/reddit/",
+          "/search"
+        ],
+        "command": null,
+        "reasonCode": "api_unavailable_use_verified_browser_bridge",
+        "savedMaterial": "sanitized_structure_summary_only"
+      },
+      "noStallPolicy": {
+        "apiLocalFailureFallback": "immediate_verified_site_fallback",
+        "sameSurfaceCooldown": "do_not_wait"
+      }
+    },
+    {
+      "id": "user-comments",
+      "label": "Redditor comments",
+      "analysisRole": "comments",
+      "activeProgrammatic": {
+        "kind": "api",
+        "provider": "reddit_public_atom_feed",
+        "verified": true,
+        "status": "replay_verified_adapter_bound_runtime_tested",
+        "command": [
+          "curl.exe",
+          "--http1.1",
+          "-L",
+          "-sS",
+          "-A",
+          "SiteForgeRedditReplay/1.0 (read-only evidence; contact: local-codex)",
+          "-H",
+          "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "-w",
+          "\nSITEFORGE_HTTP_STATUS:%{http_code}\n",
+          "https://www.reddit.com/user/reddit/comments/.rss"
+        ],
+        "operation": {
+          "method": "GET",
+          "url": "https://www.reddit.com/user/reddit/comments/.rss",
+          "feedKind": "atom",
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "includeFeedProfile": false,
+          "profileOnly": false,
+          "profileKind": null
+        },
+        "savedMaterial": "sanitized_public_feed_fields_with_contentText",
+        "rawFeedPersisted": false,
+        "activationEvidence": [
+          "docs/codex-goals/reddit-siteforge-build-v1/evidence/reddit-public-feed-replay-report.json",
+          "tests/node/reddit-research-task-runner.test.mjs"
+        ]
+      },
+      "primary": {
+        "kind": "api",
+        "verified": false,
+        "status": "candidate_until_replay_verified",
+        "command": [
+          "node",
+          "src/entrypoints/sites/reddit-action.mjs",
+          "api-read",
+          "--source",
+          "docs\\codex-goals\\reddit-siteforge-build-v1\\evidence\\reddit_dev_api.html",
+          "--path",
+          "/user/:username/:where",
+          "--method",
+          "GET",
+          "--template-index",
+          "0",
+          "--execute",
+          "--json",
+          "--param",
+          "username=reddit",
+          "--param",
+          "where=comments",
+          "--query",
+          "limit=100"
+        ],
+        "operation": {
+          "method": "GET",
+          "pathTemplate": "/user/:username/:where",
+          "pathParams": {
+            "username": "reddit",
+            "where": "comments"
+          },
+          "query": {
+            "limit": 100
+          }
+        },
+        "activationRequirement": "replay_verified_adapter_bound_runtime_tested"
+      },
+      "fallback": {
+        "kind": "site",
+        "provider": "browser_bridge_verified_structure",
+        "routeTemplates": [
+          "/user/reddit/comments",
+          "/user/reddit/"
+        ],
+        "command": null,
+        "reasonCode": "api_unavailable_use_verified_browser_bridge",
+        "savedMaterial": "sanitized_structure_summary_only"
+      },
+      "noStallPolicy": {
+        "apiLocalFailureFallback": "immediate_verified_site_fallback",
+        "sameSurfaceCooldown": "do_not_wait"
+      }
+    }
+  ],
+  "outputContract": {
+    "requiredArtifacts": [
+      "task-plan.json",
+      "task-state.json",
+      "task-summary.json",
+      "task-report.md",
+      "raw-items.jsonl",
+      "deduped-items.jsonl",
+      "items.jsonl",
+      "communities.jsonl",
+      "accounts.jsonl",
+      "authors.jsonl",
+      "cache-index.json",
+      "cache-index.jsonl",
+      "media-assets.json",
+      "media-assets.jsonl",
+      "archive/*.md"
+    ],
+    "rawPrivateBodyPersisted": false,
+    "rawFeedPersisted": false,
+    "contentHtmlPersisted": false,
+    "publicFeedContentText": {
+      "persisted": true,
+      "field": "contentText",
+      "sourceElements": [
+        "content",
+        "summary",
+        "description",
+        "subtitle"
+      ],
+      "maxChars": 50000,
+      "truncationField": "contentTextTruncated"
+    },
+    "cookieMaterialPersisted": false,
+    "authHeaderPersisted": false,
+    "browserProfilePersisted": false
+  },
+  "safety": {
+    "mutationActionsDefault": "blocked",
+    "blockedActions": [
+      "post",
+      "reply",
+      "comment",
+      "vote",
+      "save",
+      "hide",
+      "report",
+      "follow",
+      "message",
+      "delete",
+      "payment",
+      "account_settings"
+    ],
+    "mediaDownloads": "disabled"
+  }
+}

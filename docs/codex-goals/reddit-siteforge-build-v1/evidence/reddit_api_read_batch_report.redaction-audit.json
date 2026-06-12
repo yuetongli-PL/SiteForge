@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "redactedPaths": [
+    "persistAuthorization"
+  ],
+  "redactions": [
+    {
+      "path": "persistAuthorization",
+      "reason": "sensitive-field-name"
+    }
+  ],
+  "findings": []
+}

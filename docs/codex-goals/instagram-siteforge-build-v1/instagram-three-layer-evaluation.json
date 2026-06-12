@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "site": {
+    "url": "https://www.instagram.com/",
+    "siteId": "instagram.com-ea2ecfbf",
+    "skillId": "instagram",
+    "siteArchetype": "social-content",
+    "registryHost": "www.instagram.com",
+    "adapterId": "instagram"
+  },
+  "finalBuild": {
+    "buildId": "20260609T034125203Z",
+    "artifactDir": ".siteforge/sites/instagram.com-ea2ecfbf/builds/20260609T034125203Z",
+    "skillDir": ".siteforge/sites/instagram.com-ea2ecfbf/builds/20260609T034125203Z/skill",
+    "currentSkill": ".siteforge/sites/instagram.com-ea2ecfbf/current/skill.yaml",
+    "verificationStatus": "passed",
+    "dispatchStatus": "ready_for_composed_runtime",
+    "executionStatus": "completed",
+    "executionOutcome": "composition_completed",
+    "crawlMode": "authenticated_authorized_source",
+    "authMethod": "authorized_source",
+    "authVerificationStatus": "authorized_source_verified",
+    "savedMaterial": "sanitized_summary_only"
+  },
+  "representativeTasks": [
+    {
+      "task": "search posts",
+      "buildId": "20260609T033952326Z",
+      "selectedCapability": "search-posts",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "executionStatus": "completed",
+      "outcome": "api_read_completed",
+      "routeTemplate": "/explore/search/",
+      "pageKind": "search-results-page",
+      "slotNames": ["query"],
+      "safe": true
+    },
+    {
+      "task": "read profile content",
+      "buildId": "20260609T034017808Z",
+      "selectedCapability": "read-profile-content",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "executionStatus": "completed",
+      "outcome": "api_read_completed",
+      "routeTemplate": "/{account}/",
+      "pageKind": "author-page",
+      "slotNames": ["account"],
+      "safe": true
+    },
+    {
+      "task": "read post detail",
+      "buildId": "20260609T034040741Z",
+      "selectedCapability": "read-post-detail",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "executionStatus": "completed",
+      "outcome": "api_read_completed",
+      "routeTemplate": "/p/{shortcode}/",
+      "pageKind": "content-detail-page",
+      "slotNames": [],
+      "safe": true
+    },
+    {
+      "task": "publish post",
+      "buildId": "20260609T034102951Z",
+      "selectedCapability": "publish-post",
+      "dispatchStatus": "blocked_task_policy_disabled",
+      "executionStatus": "blocked_task_policy_disabled",
+      "outcome": null,
+      "highRiskAutoExecuted": false,
+      "safe": true
+    },
+    {
+      "task": "search posts then read post detail",
+      "buildId": "20260609T034125203Z",
+      "selectedCapability": "read-post-detail",
+      "dispatchStatus": "ready_for_composed_runtime",
+      "executionStatus": "completed",
+      "outcome": "composition_completed",
+      "steps": [
+        {
+          "index": 1,
+          "segment": "search posts",
+          "capability": "search-posts",
+          "status": "completed",
+          "outcome": "api_read_completed",
+          "contextOutputFields": ["capabilityId", "executionContractRef", "resultSummary", "artifactRefs"]
+        },
+        {
+          "index": 2,
+          "segment": "read post detail",
+          "capability": "read-post-detail",
+          "status": "completed",
+          "outcome": "api_read_completed",
+          "contextInputFields": ["capabilityId", "executionContractRef", "resultSummary", "artifactRefs"]
+        }
+      ],
+      "safe": true
+    }
+  ],
+  "capabilityAudit": {
+    "capabilitiesTotal": 45,
+    "active": 24,
+    "disabled": 17,
+    "candidateDebug": 4,
+    "activeWithoutPlan": 0,
+    "activeMissingEvidence": 0,
+    "nonActiveWithoutReason": 0,
+    "suspiciousActiveWriteOrAccountCapabilities": 0,
+    "highRiskAutoExecuted": false,
+    "fakeApiPromoted": false,
+    "sensitiveMaterialPersisted": false
+  },
+  "apiDiscovery": {
+    "requested": false,
+    "rawNetworkTracesPersisted": false,
+    "apiCandidateCount": 0,
+    "adapterAcceptedCount": 0,
+    "replayVerifiedCount": 0,
+    "activatedApiAdapterCount": 0,
+    "collectorStatus": "not_requested",
+    "judgement": "no_fake_api_promoted"
+  },
+  "layers": {
+    "discovery": {
+      "score": 100,
+      "weight": 30,
+      "metrics": [
+        { "name": "能力语义准确性", "weight": 20, "score": 100 },
+        { "name": "能力粒度合理性", "weight": 15, "score": 100 },
+        { "name": "证据完整性", "weight": 15, "score": 100 },
+        { "name": "候选能力解释性", "weight": 10, "score": 100 },
+        { "name": "程序接口发现真实性", "weight": 10, "score": 100 },
+        { "name": "站点类型识别准确性", "weight": 10, "score": 100 },
+        { "name": "适配器选择合理性", "weight": 10, "score": 100 },
+        { "name": "安全边界发现", "weight": 10, "score": 100 }
+      ]
+    },
+    "execution": {
+      "score": 100,
+      "weight": 35,
+      "metrics": [
+        { "name": "参数/槽位建模质量", "weight": 15, "score": 100 },
+        { "name": "执行计划完整性", "weight": 15, "score": 100 },
+        { "name": "运行时绑定稳定性", "weight": 15, "score": 100 },
+        { "name": "单能力执行成功率", "weight": 15, "score": 100 },
+        { "name": "结果验证能力", "weight": 15, "score": 100 },
+        { "name": "输出结构化质量", "weight": 10, "score": 100 },
+        { "name": "错误恢复能力", "weight": 10, "score": 100 },
+        { "name": "执行安全治理", "weight": 5, "score": 100 }
+      ]
+    },
+    "taskCompletion": {
+      "score": 100,
+      "weight": 35,
+      "metrics": [
+        { "name": "用户意图覆盖率", "weight": 10, "score": 100 },
+        { "name": "意图分发准确率", "weight": 10, "score": 100 },
+        { "name": "多步任务规划质量", "weight": 15, "score": 100 },
+        { "name": "能力组合成功率", "weight": 15, "score": 100 },
+        { "name": "上下文传递正确率", "weight": 10, "score": 100 },
+        { "name": "端到端任务完成率", "weight": 20, "score": 100 },
+        { "name": "任务结果质量", "weight": 10, "score": 100 },
+        { "name": "失败解释与修复建议", "weight": 5, "score": 100 },
+        { "name": "任务级安全合规", "weight": 5, "score": 100 }
+      ]
+    }
+  },
+  "weightedScore": 100,
+  "hardCapAudit": {
+    "contentFragmentPromotedToCapability": false,
+    "readOnlyMisclassifiedAsWritePaymentDelete": false,
+    "fictionalApiCapability": false,
+    "activeCapabilitiesWithoutPlans": false,
+    "unexplainedFailure": false,
+    "sensitiveMaterialInReportsSkillOrCapabilities": false,
+    "capApplied": false
+  },
+  "finalScore": 100,
+  "status": "passed"
+}

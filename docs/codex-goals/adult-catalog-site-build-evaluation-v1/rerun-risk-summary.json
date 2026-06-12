@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-06-08T18:01:22.856Z",
+  "targets": [
+    {
+      "siteKey": "t-powers",
+      "url": "https://www.t-powers.co.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T175917207Z",
+      "skillId": "t-powers",
+      "reportPath": ".siteforge/sites/t-powers.co.jp-4fa773a1/builds/20260608T175917207Z/build_report.user.json"
+    },
+    {
+      "siteKey": "moodyz",
+      "url": "https://moodyz.com/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T175927888Z",
+      "skillId": "moodyz",
+      "reportPath": ".siteforge/sites/moodyz.com-c086e87f/builds/20260608T175927888Z/build_report.user.json"
+    },
+    {
+      "siteKey": "s1",
+      "url": "https://s1s1s1.com/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T175954484Z",
+      "skillId": "s-av-s1-no-1-style",
+      "reportPath": ".siteforge/sites/s1s1s1.com-4fdf0909/builds/20260608T175954484Z/build_report.user.json"
+    },
+    {
+      "siteKey": "rookie",
+      "url": "https://rookie-av.jp/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T180020223Z",
+      "skillId": "rookie",
+      "reportPath": ".siteforge/sites/rookie-av.jp-64e7e465/builds/20260608T180020223Z/build_report.user.json"
+    },
+    {
+      "siteKey": "madonna",
+      "url": "https://madonna-av.com/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T180044459Z",
+      "skillId": "madonna",
+      "reportPath": ".siteforge/sites/madonna-av.com-4f7bee91/builds/20260608T180044459Z/build_report.user.json"
+    },
+    {
+      "siteKey": "dogma",
+      "url": "http://www.dogma.co.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T180108203Z",
+      "skillId": "dogma",
+      "reportPath": ".siteforge/sites/dogma.co.jp-aee5e575/builds/20260608T180108203Z/build_report.user.json"
+    }
+  ]
+}

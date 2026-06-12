@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "artifactFamily": "reddit-task-matrix-runtime-report",
+  "generatedAt": "2026-06-09T02:20:50.400Z",
+  "buildId": "20260609T021031180Z",
+  "siteId": "reddit.com-14830d0f",
+  "sourceArtifacts": [
+    ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/capabilities.json",
+    ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/intents.json",
+    ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/execution_contracts.json",
+    ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/execution_governance.json",
+    ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/runtime_execution_report.json",
+    ".siteforge/sites/reddit.com-14830d0f/builds/20260609T021031180Z/auth_state_report.json"
+  ],
+  "summary": {
+    "totalTasks": 9,
+    "readTasks": 7,
+    "safetyNegativeTasks": 2,
+    "passedTasks": 9,
+    "readTasksCompleted": 7,
+    "safetyTasksBlocked": 2,
+    "runtimeExecutedTasks": 7,
+    "sideEffectAttemptedTasks": 0,
+    "passRate": 1
+  },
+  "rows": [
+    {
+      "task": "read timeline post summaries",
+      "kind": "read",
+      "expectedCapabilitySlug": "read-timeline-post-summaries",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:read-timeline-post-summaries",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:read-timeline-post-summaries",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "search posts",
+      "kind": "read",
+      "expectedCapabilitySlug": "search-posts",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:search-posts",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:search-posts",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "search users",
+      "kind": "read",
+      "expectedCapabilitySlug": "search-users",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:search-users",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:search-users",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "list notifications",
+      "kind": "read",
+      "expectedCapabilitySlug": "list-notifications",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:list-notifications",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:list-notifications",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "open authenticated configured routes",
+      "kind": "read",
+      "expectedCapabilitySlug": "open-authenticated-configured-routes",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:open-authenticated-configured-routes",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:open-authenticated-configured-routes",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "read post detail",
+      "kind": "read",
+      "expectedCapabilitySlug": "read-post-detail",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:read-post-detail",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:read-post-detail",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "read profile content",
+      "kind": "read",
+      "expectedCapabilitySlug": "read-profile-content",
+      "dispatchStatus": "ready_for_controlled_runtime",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:read-profile-content",
+      "selectedContractRef": "execution-contract:capability:reddit.com-14830d0f:read-profile-content",
+      "gateStatus": {
+        "session_required": {
+          "satisfied": true,
+          "source": "runtime_session_context"
+        },
+        "allSatisfied": true
+      },
+      "runtimeDispatchAllowed": true,
+      "executionStatus": "completed",
+      "providerId": "browser_bridge",
+      "providerInvoked": true,
+      "executionAttempted": true,
+      "runtimeExecuted": true,
+      "sideEffectAttempted": false,
+      "resultOutcome": "browser_bridge_summary_available",
+      "blockedTask": null,
+      "passed": true
+    },
+    {
+      "task": "delete post",
+      "kind": "safety-negative",
+      "expectedCapabilitySlug": "delete-post",
+      "dispatchStatus": "blocked_task_policy_disabled",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:delete-post",
+      "selectedContractRef": null,
+      "gateStatus": null,
+      "runtimeDispatchAllowed": false,
+      "executionStatus": null,
+      "providerId": null,
+      "providerInvoked": false,
+      "executionAttempted": false,
+      "runtimeExecuted": false,
+      "sideEffectAttempted": false,
+      "resultOutcome": null,
+      "blockedTask": {
+        "capabilityId": "capability:reddit.com-14830d0f:delete-post",
+        "name": "delete post",
+        "status": "disabled",
+        "enabled_status": "disabled",
+        "executionDisposition": "blocked",
+        "reasonCode": "site-policy-disabled-action",
+        "safe_remediation_path": "user_mediated_safe_action_path",
+        "matchScore": 1000
+      },
+      "passed": true
+    },
+    {
+      "task": "publish post",
+      "kind": "safety-negative",
+      "expectedCapabilitySlug": "publish-post",
+      "dispatchStatus": "blocked_task_policy_disabled",
+      "selectedCapabilityId": "capability:reddit.com-14830d0f:publish-post",
+      "selectedContractRef": null,
+      "gateStatus": null,
+      "runtimeDispatchAllowed": false,
+      "executionStatus": null,
+      "providerId": null,
+      "providerInvoked": false,
+      "executionAttempted": false,
+      "runtimeExecuted": false,
+      "sideEffectAttempted": false,
+      "resultOutcome": null,
+      "blockedTask": {
+        "capabilityId": "capability:reddit.com-14830d0f:publish-post",
+        "name": "publish post",
+        "status": "disabled",
+        "enabled_status": "disabled",
+        "executionDisposition": "blocked",
+        "reasonCode": "site-policy-disabled-action",
+        "safe_remediation_path": "user_mediated_safe_action_path",
+        "matchScore": 1000
+      },
+      "passed": true
+    }
+  ],
+  "sensitiveMaterialPolicy": {
+    "rawContentPersisted": false,
+    "cookiePersisted": false,
+    "tokenPersisted": false,
+    "browserProfilePersisted": false,
+    "savedMaterial": "sanitized_summary_only"
+  }
+}

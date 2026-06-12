@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 2,
+  "artifactFamily": "reddit-public-json-api-replay-report",
+  "generatedAt": "2026-06-09T06:15:47.557Z",
+  "replayAttempted": true,
+  "replayVerified": false,
+  "adapterBound": true,
+  "runtimeTested": false,
+  "status": "blocked",
+  "reasonCode": "reddit-network-security-blocked",
+  "endpoints": [
+    {
+      "id": "www-public-json",
+      "endpoint": "https://www.reddit.com/r/SiteForge/new.json?limit=1",
+      "curlExitCode": 0,
+      "httpStatus": 403,
+      "contentType": "text/html",
+      "bodyBytes": 189908,
+      "jsonParsed": false,
+      "isJsonListing": false,
+      "networkSecurityBlocked": true,
+      "replayVerified": false,
+      "bodyPersistedForAudit": false,
+      "auditMaterial": "http_status_content_type_and_block_reason_only"
+    },
+    {
+      "id": "old-public-json",
+      "endpoint": "https://old.reddit.com/r/SiteForge/new.json?limit=1",
+      "curlExitCode": 0,
+      "httpStatus": 403,
+      "contentType": "text/html",
+      "bodyBytes": 189908,
+      "jsonParsed": false,
+      "isJsonListing": false,
+      "networkSecurityBlocked": true,
+      "replayVerified": false,
+      "bodyPersistedForAudit": false,
+      "auditMaterial": "http_status_content_type_and_block_reason_only"
+    },
+    {
+      "id": "oauth-me",
+      "endpoint": "https://oauth.reddit.com/api/v1/me",
+      "curlExitCode": 0,
+      "httpStatus": 403,
+      "contentType": "text/html",
+      "bodyBytes": 189908,
+      "jsonParsed": false,
+      "isJsonListing": false,
+      "networkSecurityBlocked": true,
+      "replayVerified": false,
+      "bodyPersistedForAudit": false,
+      "auditMaterial": "http_status_content_type_and_block_reason_only"
+    }
+  ],
+  "userAgentRetry": {
+    "attempted": true,
+    "generatedAt": "2026-06-09T06:32:00.000Z",
+    "userAgentMaterialPersisted": false,
+    "acceptHeader": "application/json",
+    "result": "still_blocked",
+    "endpoints": [
+      {
+        "id": "www-public-json-ua",
+        "endpoint": "https://www.reddit.com/r/SiteForge/new.json?limit=1",
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "jsonParsed": false,
+        "networkSecurityBlocked": true,
+        "bodyBytes": 189908,
+        "bodyPersistedForAudit": false
+      },
+      {
+        "id": "search-public-json-ua",
+        "endpoint": "https://www.reddit.com/search.json?q=siteforge&limit=1",
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "jsonParsed": false,
+        "networkSecurityBlocked": true,
+        "bodyBytes": 189908,
+        "bodyPersistedForAudit": false
+      },
+      {
+        "id": "old-public-json-ua",
+        "endpoint": "https://old.reddit.com/r/SiteForge/new.json?limit=1",
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "jsonParsed": false,
+        "networkSecurityBlocked": true,
+        "bodyBytes": 189908,
+        "bodyPersistedForAudit": false
+      }
+    ]
+  },
+  "rawBodyPersisted": false,
+  "authMaterialPersisted": false,
+  "tokenPersisted": false,
+  "cookiePersisted": false,
+  "activationDecision": "not_active",
+  "remediation": "Current network receives Reddit network-security block pages instead of JSON. Use a user-authorized Browser Bridge fallback now; retry API replay from a permitted network or with OAuth runtime inputs before promoting active API capabilities."
+}

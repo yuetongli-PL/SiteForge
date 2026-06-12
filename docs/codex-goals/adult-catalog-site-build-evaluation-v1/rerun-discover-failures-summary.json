@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-06-08T17:49:55.558Z",
+  "targets": [
+    {
+      "siteKey": "t-powers",
+      "url": "https://www.t-powers.co.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T174817069Z",
+      "skillId": "t-powers",
+      "reportPath": ".siteforge/sites/t-powers.co.jp-4fa773a1/builds/20260608T174817069Z/build_report.user.json",
+      "stderrTail": []
+    },
+    {
+      "siteKey": "so-agent",
+      "url": "http://so-agent.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T174829176Z",
+      "skillId": "so-agent",
+      "reportPath": ".siteforge/sites/so-agent.jp-636b440c/builds/20260608T174829176Z/build_report.user.json",
+      "stderrTail": []
+    },
+    {
+      "siteKey": "moodyz",
+      "url": "https://moodyz.com/top",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T174910788Z",
+      "skillId": "moodyz",
+      "reportPath": ".siteforge/sites/moodyz.com-c086e87f/builds/20260608T174910788Z/build_report.user.json",
+      "stderrTail": []
+    },
+    {
+      "siteKey": "dahlia",
+      "url": "https://dahlia-av.jp/",
+      "exitCode": 0,
+      "resultStatus": "partial_success",
+      "reasonCode": null,
+      "buildId": "20260608T174939247Z",
+      "skillId": "dahlia",
+      "reportPath": ".siteforge/sites/dahlia-av.jp-f794ab63/builds/20260608T174939247Z/build_report.user.json",
+      "stderrTail": []
+    }
+  ]
+}

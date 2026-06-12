@@ -13,6 +13,7 @@ coverage/
 /outputs/
 .siteforge/
 *.log
+*.pid
 .env
 .env.*
 !.env.example

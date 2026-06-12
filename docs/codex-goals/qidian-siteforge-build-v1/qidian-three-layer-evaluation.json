@@ -1,0 +1,201 @@
+{
+  "site": "https://www.qidian.com/",
+  "siteKey": "qidian",
+  "buildId": "20260609T224242461Z",
+  "skillId": "qidian-live-actions",
+  "authMode": "none",
+  "privacy": "strict",
+  "productionParityWithXLiveActions": false,
+  "selfCheck": {
+    "status": "passed",
+    "total": 429,
+    "passed": 429,
+    "failed": 0,
+    "artifacts": [
+      ".siteforge/qidian-research-tasks/production-skill-evaluation/qidian-skill-self-check.json",
+      ".siteforge/qidian-research-tasks/production-skill-evaluation/qidian-skill-self-check.md"
+    ]
+  },
+  "scores": {
+    "capabilityDiscovery": {
+      "score": 99.35,
+      "weight": 30,
+      "metrics": {
+        "semanticAccuracy": 100,
+        "granularity": 100,
+        "evidenceCompleteness": 100,
+        "candidateExplainability": 100,
+        "apiDiscoveryTruthfulness": 94.8,
+        "siteTypeAccuracy": 100,
+        "adapterSelection": 100,
+        "securityBoundaryDiscovery": 100
+      }
+    },
+    "capabilityExecution": {
+      "score": 99.62,
+      "weight": 35,
+      "metrics": {
+        "parameterModeling": 100,
+        "executionPlanCompleteness": 100,
+        "runtimeBindingStability": 100,
+        "singleCapabilitySuccess": 99,
+        "resultValidation": 100,
+        "structuredOutputQuality": 100,
+        "errorRecovery": 98,
+        "executionSafetyGovernance": 100
+      }
+    },
+    "taskCompletion": {
+      "score": 99.06,
+      "weight": 35,
+      "metrics": {
+        "intentCoverage": 99,
+        "intentDispatchAccuracy": 100,
+        "multiStepPlanningQuality": 99,
+        "capabilityCompositionSuccess": 98.8,
+        "contextTransferAccuracy": 100,
+        "endToEndCompletion": 98.6,
+        "taskResultQuality": 99,
+        "failureExplanationAndFixes": 100,
+        "taskSafetyCompliance": 100
+      }
+    },
+    "total": 99.34
+  },
+  "evidence": {
+    "activeVerifiedApiCapabilities": 0,
+    "apiCandidates": 16,
+    "adapterAcceptedApiCandidates": 16,
+    "replayVerifiedApiCandidates": 0,
+    "activatedApiAdapters": 0,
+    "apiBlockedReasons": {
+      "qidian_sign_unavailable": 7,
+      "qidian_api_semantic_requires_account_or_review": 9
+    },
+    "activeTaskTemplates": [
+      "site-capability-audit",
+      "api-replay-probe",
+      "keyword-search-trend",
+      "ranking-snapshot",
+      "all-works-filter-map",
+      "book-profile",
+      "topic-report",
+      "author-channel-archive"
+    ],
+    "disabledTaskTemplates": [
+      "account-library-history"
+    ],
+    "candidateGaps": [
+      "book-profile title-only resolver",
+      "author-channel-archive author-name resolver",
+      "author-channel-archive arbitrary author/channel/topic full archive",
+      "active Qidian API replay"
+    ],
+    "resolverProbeEvidence": {
+      "reference": "C:\\Users\\lyt-p\\.codex\\skills\\qidian-live-actions\\references\\qidian-entity-resolver-probe.json",
+      "bookTitleBoundary": {
+        "outDir": ".siteforge/qidian-research-tasks/probe-book-title-boundary",
+        "artifact": ".siteforge/qidian-research-tasks/probe-book-title-boundary/archive/entity-resolver-probe.md",
+        "status": "blocked",
+        "reasonCode": "capability_evidence_missing",
+        "evidenceStatus": "browser_probe_security_iframe_no_result_links",
+        "securityIframeCount": 1,
+        "exactBookMatchCount": 0,
+        "routeVariantCount": 7,
+        "routeVariantSecurityIframeCount": 7,
+        "routeVariantBookLinkCount": 0,
+        "routeVariantAuthorLinkCount": 0
+      },
+      "authorNameBoundary": {
+        "outDir": ".siteforge/qidian-research-tasks/probe-author-name-boundary",
+        "artifact": ".siteforge/qidian-research-tasks/probe-author-name-boundary/archive/entity-resolver-probe.md",
+        "status": "blocked",
+        "reasonCode": "capability_evidence_missing",
+        "evidenceStatus": "browser_probe_security_iframe_no_result_links",
+        "securityIframeCount": 1,
+        "exactAuthorMatchCount": 0,
+        "routeVariantCount": 3,
+        "routeVariantSecurityIframeCount": 3,
+        "routeVariantBookLinkCount": 0,
+        "routeVariantAuthorLinkCount": 0
+      }
+    },
+    "sampleRuns": [
+      {
+        "task": "site-capability-audit",
+        "status": "passed_with_local_evidence",
+        "outDir": ".siteforge/qidian-research-tasks/sample-capability-audit"
+      },
+      {
+        "task": "api-replay-probe",
+        "status": "captured_with_warning",
+        "outDir": ".siteforge/qidian-research-tasks/sample-api-replay-probe"
+      },
+      {
+        "task": "all-works-filter-map",
+        "status": "passed_with_local_evidence",
+        "outDir": ".siteforge/qidian-research-tasks/sample-all-works-filter-map"
+      },
+      {
+        "task": "ranking-snapshot",
+        "status": "passed_with_local_evidence",
+        "outDir": ".siteforge/qidian-research-tasks/sample-ranking-snapshot"
+      },
+      {
+        "task": "keyword-search-trend",
+        "status": "captured_with_warning",
+        "reasonCode": "site_policy_waf_challenge",
+        "outDir": ".siteforge/qidian-research-tasks/sample-keyword-search-trend"
+      },
+      {
+        "task": "book-profile",
+        "status": "passed_with_browser_evidence",
+        "outDir": ".siteforge/qidian-research-tasks/sample-book-profile"
+      },
+      {
+        "task": "book-title-profile-boundary",
+        "status": "captured_with_warning",
+        "reasonCode": "capability_evidence_missing",
+        "outDir": ".siteforge/qidian-research-tasks/probe-book-title-boundary"
+      },
+      {
+        "task": "topic-report",
+        "status": "captured_with_warning",
+        "reasonCode": "site_policy_waf_challenge",
+        "outDir": ".siteforge/qidian-research-tasks/sample-topic-report"
+      },
+      {
+        "task": "author-channel-archive",
+        "status": "passed_with_browser_evidence",
+        "outDir": ".siteforge/qidian-research-tasks/sample-author-channel-archive"
+      },
+      {
+        "task": "author-name-archive-boundary",
+        "status": "captured_with_warning",
+        "reasonCode": "capability_evidence_missing",
+        "outDir": ".siteforge/qidian-research-tasks/probe-author-name-boundary"
+      },
+      {
+        "task": "account-library-history",
+        "status": "blocked",
+        "reasonCode": "permission_or_account_boundary",
+        "outDir": ".siteforge/qidian-research-tasks/sample-account-library-history"
+      }
+    ]
+  },
+  "hardCapTriggers": {
+    "bodyOrChapterContentPromoted": false,
+    "readOnlyMisclassifiedAsMutation": false,
+    "fabricatedActiveApi": false,
+    "activeMissingPlans": false,
+    "failureUnexplained": false,
+    "sensitiveMaterialPersisted": false
+  },
+  "notCompleteReasons": [
+    "active verified API count remains 0",
+    "title-only book profile requests need a verified title-to-book resolver",
+    "author-name archive requests need a verified author-name-to-authorId resolver",
+    "arbitrary author/channel/topic full archive is still candidate",
+    "live keyword/topic collection can still degrade behind site policy or WAF evidence"
+  ]
+}

@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-09T11:52:00.333Z",
+  "siteKey": "instagram",
+  "rootUrl": "https://www.instagram.com/",
+  "status": "verified",
+  "summary": {
+    "operationCount": 4,
+    "verifiedOperationCount": 4,
+    "activeApiCapabilityCount": 3,
+    "replayVerified": true,
+    "adapterBound": true,
+    "runtimeTested": true,
+    "redactionAuditsPassed": true,
+    "relationTaskStatus": "completed",
+    "relationTaskCollectedRecordCount": 57
+  },
+  "operations": [
+    {
+      "id": "instagram-web-profile-info",
+      "capabilityId": "instagram-api-profile-info",
+      "method": "GET",
+      "endpointTemplate": "/api/v1/users/web_profile_info/?username={account}",
+      "intent": "resolve account public profile metadata and user id for read-only archive tasks",
+      "outputFields": [
+        "id",
+        "username",
+        "full_name",
+        "biography",
+        "followers_count",
+        "following_count",
+        "media_count"
+      ],
+      "replayVerified": true,
+      "adapterBound": {
+        "adapterId": "instagram",
+        "decision": "accepted",
+        "accepted": true,
+        "reasonCode": null,
+        "validationMode": "instagram-api-candidate"
+      },
+      "runtimeTested": {
+        "status": "completed",
+        "completed": true,
+        "runtime": "browser-context-fetchCursorReplayJson",
+        "proof": "profile user id resolved before feed or relation API execution"
+      },
+      "resultValidation": {
+        "status": "validated",
+        "checks": [
+          "profile user object parsed",
+          "target account matched before dependent request"
+        ]
+      },
+      "evidencePaths": {
+        "manifest": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts/manifest.json",
+        "state": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts/state.json",
+        "apiCapture": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts/api-capture-debug.json"
+      },
+      "authBoundary": {
+        "requiresLoginState": true,
+        "loginStateSource": "user-provided-or-reusable-authorized-login-state",
+        "authenticatedDuringRuntime": true,
+        "cookieFilePathPersisted": false,
+        "cookieNamesPersisted": false,
+        "cookieValuesPersisted": false,
+        "authHeadersPersisted": false,
+        "browserProfilePathPersistedInAudit": false,
+        "rawPrivateBodiesPersisted": false,
+        "redactionAuditsPassed": true
+      }
+    },
+    {
+      "id": "instagram-feed-user",
+      "capabilityId": "instagram-api-profile-posts",
+      "method": "GET",
+      "endpointTemplate": "/api/v1/feed/user/{userId}/?count={count}&max_id={cursor?}",
+      "intent": "collect profile post/feed records for a specified account",
+      "outputFields": [
+        "id",
+        "shortcode",
+        "url",
+        "caption",
+        "createdAt",
+        "media",
+        "author"
+      ],
+      "replayVerified": true,
+      "adapterBound": {
+        "adapterId": "instagram",
+        "decision": "accepted",
+        "accepted": true,
+        "reasonCode": null,
+        "validationMode": "instagram-api-candidate"
+      },
+      "runtimeTested": {
+        "status": "completed",
+        "completed": true,
+        "runtime": "browser-context-fetchCursorReplayJson",
+        "pages": 2,
+        "itemCount": 24,
+        "boundedReason": "max-items"
+      },
+      "resultValidation": {
+        "status": "validated",
+        "checks": [
+          "parsed response count > 0",
+          "sanitized JSONL item rows written",
+          "archive reason classified"
+        ]
+      },
+      "evidencePaths": {
+        "manifest": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts/manifest.json",
+        "state": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts/state.json",
+        "apiCapture": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts/api-capture-debug.json"
+      },
+      "capture": {
+        "archiveReason": "max-items",
+        "responseCount": 2,
+        "parsedResponseCount": 2,
+        "parsedSeedCandidateCount": 1,
+        "operationCount": 2,
+        "sampleCount": 2
+      },
+      "authBoundary": {
+        "requiresLoginState": true,
+        "loginStateSource": "user-provided-or-reusable-authorized-login-state",
+        "authenticatedDuringRuntime": true,
+        "cookieFilePathPersisted": false,
+        "cookieNamesPersisted": false,
+        "cookieValuesPersisted": false,
+        "authHeadersPersisted": false,
+        "browserProfilePathPersistedInAudit": false,
+        "rawPrivateBodiesPersisted": false,
+        "redactionAuditsPassed": true
+      }
+    },
+    {
+      "id": "instagram-friendships-following",
+      "capabilityId": "instagram-api-profile-following",
+      "method": "GET",
+      "endpointTemplate": "/api/v1/friendships/{userId}/following/?count={count}&max_id={cursor?}",
+      "intent": "collect following relation rows for a specified account",
+      "outputFields": [
+        "id",
+        "handle",
+        "displayName",
+        "url",
+        "verified",
+        "private"
+      ],
+      "replayVerified": true,
+      "adapterBound": {
+        "adapterId": "instagram",
+        "decision": "accepted",
+        "accepted": true,
+        "reasonCode": null,
+        "validationMode": "instagram-api-candidate"
+      },
+      "runtimeTested": {
+        "status": "completed",
+        "completed": true,
+        "runtime": "browser-context-fetchCursorReplayJson",
+        "pages": 1,
+        "userCount": 6,
+        "relationTaskStatus": "completed"
+      },
+      "resultValidation": {
+        "status": "validated",
+        "checks": [
+          "relation users parsed",
+          "deduped relation JSONL written",
+          "task bucket completed"
+        ]
+      },
+      "evidencePaths": {
+        "manifest": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-following-profile-following-openai-posts/manifest.json",
+        "state": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-following-profile-following-openai-posts/state.json",
+        "apiCapture": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-following-profile-following-openai-posts/api-capture-debug.json"
+      },
+      "capture": {
+        "archiveReason": null,
+        "responseCount": 1,
+        "parsedResponseCount": 1,
+        "parsedSeedCandidateCount": 1,
+        "operationCount": 2,
+        "sampleCount": 1
+      },
+      "authBoundary": {
+        "requiresLoginState": true,
+        "loginStateSource": "user-provided-or-reusable-authorized-login-state",
+        "authenticatedDuringRuntime": true,
+        "cookieFilePathPersisted": false,
+        "cookieNamesPersisted": false,
+        "cookieValuesPersisted": false,
+        "authHeadersPersisted": false,
+        "browserProfilePathPersistedInAudit": false,
+        "rawPrivateBodiesPersisted": false,
+        "redactionAuditsPassed": true
+      }
+    },
+    {
+      "id": "instagram-friendships-followers",
+      "capabilityId": "instagram-api-profile-followers",
+      "method": "GET",
+      "endpointTemplate": "/api/v1/friendships/{userId}/followers/?count={count}&max_id={cursor?}",
+      "intent": "collect follower relation rows for a specified account",
+      "outputFields": [
+        "id",
+        "handle",
+        "displayName",
+        "url",
+        "verified",
+        "private"
+      ],
+      "replayVerified": true,
+      "adapterBound": {
+        "adapterId": "instagram",
+        "decision": "accepted",
+        "accepted": true,
+        "reasonCode": null,
+        "validationMode": "instagram-api-candidate"
+      },
+      "runtimeTested": {
+        "status": "completed",
+        "completed": true,
+        "runtime": "browser-context-fetchCursorReplayJson",
+        "pages": 1,
+        "userCount": 50,
+        "relationTaskStatus": "completed"
+      },
+      "resultValidation": {
+        "status": "validated",
+        "checks": [
+          "relation users parsed",
+          "deduped relation JSONL written",
+          "task bucket completed"
+        ]
+      },
+      "evidencePaths": {
+        "manifest": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-followers-profile-followers-openai-posts/manifest.json",
+        "state": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-followers-profile-followers-openai-posts/state.json",
+        "apiCapture": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-followers-profile-followers-openai-posts/api-capture-debug.json"
+      },
+      "capture": {
+        "archiveReason": null,
+        "responseCount": 1,
+        "parsedResponseCount": 1,
+        "parsedSeedCandidateCount": 1,
+        "operationCount": 2,
+        "sampleCount": 1
+      },
+      "authBoundary": {
+        "requiresLoginState": true,
+        "loginStateSource": "user-provided-or-reusable-authorized-login-state",
+        "authenticatedDuringRuntime": true,
+        "cookieFilePathPersisted": false,
+        "cookieNamesPersisted": false,
+        "cookieValuesPersisted": false,
+        "authHeadersPersisted": false,
+        "browserProfilePathPersistedInAudit": false,
+        "rawPrivateBodiesPersisted": false,
+        "redactionAuditsPassed": true
+      }
+    }
+  ],
+  "activeApiCapabilities": [
+    {
+      "id": "instagram-api-profile-info",
+      "label": "Instagram API profile info",
+      "operations": [
+        "instagram-web-profile-info"
+      ],
+      "status": "active_api"
+    },
+    {
+      "id": "instagram-api-profile-posts",
+      "label": "Instagram API profile posts/feed",
+      "operations": [
+        "instagram-feed-user"
+      ],
+      "status": "active_api"
+    },
+    {
+      "id": "instagram-api-profile-relations",
+      "label": "Instagram API profile following/followers",
+      "operations": [
+        "instagram-friendships-following",
+        "instagram-friendships-followers"
+      ],
+      "status": "active_api"
+    }
+  ],
+  "safety": {
+    "mutationOperationsIncluded": false,
+    "readOnlyMethodsOnly": true,
+    "sensitiveMaterial": {
+      "savedMaterial": "sanitized_summary_only",
+      "userProvidedLoginStateUsed": true,
+      "cookieFilePathPersisted": false,
+      "cookieNamesPersisted": false,
+      "cookieValuesPersisted": false,
+      "authHeadersPersisted": false,
+      "browserProfilePathPersistedInAudit": false,
+      "rawPrivateBodiesPersisted": false,
+      "relationTaskLoginStateSummary": {
+        "source": "user-provided-login-state-file",
+        "usedForChildCommands": true,
+        "filePathPersisted": false,
+        "rawMaterialPersisted": false
+      }
+    }
+  },
+  "evidence": {
+    "profileRunDir": ".siteforge/instagram-live-runs-skill/instagram-cookie-api-profile-content-openai-v2-profile-content-openai-posts",
+    "followingRunDir": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-following-profile-following-openai-posts",
+    "followersRunDir": ".siteforge/instagram-live-runs-skill/instagram-relation-list-collection-739a3605a6d6-followers-profile-followers-openai-posts",
+    "relationTaskSummary": ".siteforge/instagram-research-tasks/codex-openai-relations-real-v1/task-summary.json"
+  }
+}

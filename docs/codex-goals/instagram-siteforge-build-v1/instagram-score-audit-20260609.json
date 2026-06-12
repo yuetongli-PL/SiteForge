@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-06-09",
+  "question": "复核下确认所有指标都达标，总分100分，不存在错估吗？",
+  "initialClaim": {
+    "score": 100,
+    "verdict": "overestimated"
+  },
+  "issuesFound": [
+    {
+      "id": "auth-state-overclaim",
+      "description": "认证态报告口径不准",
+      "fixed": true
+    },
+    {
+      "id": "route-overmatching",
+      "description": "Instagram 语义能力路由绑定过宽",
+      "fixed": true
+    },
+    {
+      "id": "missing-composed-runtime",
+      "description": "复合任务未形成多能力链路",
+      "fixed": true
+    },
+    {
+      "id": "runtime-structured-output",
+      "description": "descriptor-only read 输出缺少稳定 structuredResult",
+      "fixed": true
+    },
+    {
+      "id": "setup-review-warning-overcount",
+      "description": "非推荐 setup review 缺口误报成默认能力缺证据",
+      "fixed": true
+    }
+  ],
+  "finalEvidence": {
+    "primaryBuildId": "20260609T034125203Z",
+    "primaryBuildDir": ".siteforge/sites/instagram.com-ea2ecfbf/builds/20260609T034125203Z",
+    "verificationStatus": "passed",
+    "runtimeDispatchStatus": "ready_for_composed_runtime",
+    "runtimeExecutionStatus": "completed",
+    "runtimeOutcome": "composition_completed",
+    "capabilityAudit": {
+      "activeWithoutPlan": 0,
+      "activeMissingEvidence": 0,
+      "nonActiveWithoutReason": 0,
+      "suspiciousActiveWriteOrAccountCapabilities": 0,
+      "highRiskAutoExecuted": false,
+      "fakeApiPromoted": false
+    },
+    "representativeTaskBuilds": {
+      "search posts": "20260609T033952326Z",
+      "read profile content": "20260609T034017808Z",
+      "read post detail": "20260609T034040741Z",
+      "publish post": "20260609T034102951Z",
+      "search posts then read post detail": "20260609T034125203Z"
+    }
+  },
+  "score": {
+    "discovery": 100,
+    "execution": 100,
+    "taskCompletion": 100,
+    "weighted": 100,
+    "final": 100
+  },
+  "hardCapAudit": {
+    "contentFragmentPromotedToCapability": false,
+    "readOnlyMisclassifiedAsWritePaymentDelete": false,
+    "fictionalApiCapability": false,
+    "activeCapabilitiesWithoutPlans": false,
+    "unexplainedFailure": false,
+    "sensitiveMaterialInReportsSkillOrCapabilities": false,
+    "capApplied": false
+  },
+  "verdict": "passed"
+}

@@ -1,5 +1,5 @@
 (() => {
-  const SITEFORGE_BRIDGE_CONTENT_VERSION = 'route-queue-chinese-semantic-v7';
+  const SITEFORGE_BRIDGE_CONTENT_VERSION = 'route-queue-x-api-runtime-v8';
   const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.getAttribute('content') || '';
   if (meta('siteforge-browser-bridge') !== '1') {
     return;

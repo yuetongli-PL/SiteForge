@@ -1,5 +1,6 @@
 import path from 'node:path';
 import process from 'node:process';
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { initializeCliUtf8 } from '../../infra/cli.mjs';
@@ -32,6 +33,17 @@ const SITEFORGE_AUTH_MODES = new Set(ACCEPTED_ENUM_VALUE_BUILD_FLAGS.get('--auth
 const SITEFORGE_LOCAL_CONFIG_FILE = 'siteforge.local.json';
 const CAPABILITY_INTENT_SUMMARY_HTML_FILE = 'capability_intent_summary.html';
 const BUILD_SCHEMA_VERSION = 1;
+
+class CookieSourceError extends Error {
+  constructor(message, reasonCode, reasonAction = null) {
+    super(message);
+    this.name = 'CookieSourceError';
+    this.reasonCode = reasonCode;
+    this.code = reasonCode;
+    this.reason = message;
+    this.reasonAction = reasonAction;
+  }
+}
 
 async function readJsonIfExists(filePath) {
   if (!filePath) {
@@ -503,7 +515,8 @@ function buildSiteForgeCliFailureResult(inputUrl, error) {
     artifactDir: report.artifactDir ?? error?.artifactDir ?? null,
     failedStage: report.failedStage ?? error?.stage ?? null,
     reasonCode: report.reasonCode ?? error?.reasonCode ?? error?.code ?? 'build-failed',
-    reason: report.reason ?? null,
+    reason: report.reason ?? error?.reason ?? null,
+    reasonAction: report.reasonAction ?? error?.reasonAction ?? null,
     warningCodes: report.warningCodes ?? [],
     warnings: report.warnings ?? [],
     summary: report.summary ?? {
@@ -648,6 +661,122 @@ async function closeSiteForgeWebInteraction(options = /** @type {any} */ ({})) {
   }
 }
 
+async function readStdinText() {
+  if (process.stdin.isTTY) {
+    return '';
+  }
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function execFileText(command, args, options = /** @type {any} */ ({})) {
+  return new Promise((resolve) => {
+    execFile(command, args, {
+      ...options,
+      windowsHide: true,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    }, (error, stdout) => {
+      if (error) {
+        resolve('');
+        return;
+      }
+      resolve(String(stdout ?? ''));
+    });
+  });
+}
+
+function parseWindowsRegistryEnvValue(output, name) {
+  const expected = String(name ?? '').trim();
+  if (!expected) {
+    return '';
+  }
+  for (const rawLine of String(output ?? '').split(/\r?\n/u)) {
+    const line = rawLine.trimStart();
+    if (!line.startsWith(`${expected} `) && !line.startsWith(`${expected}\t`)) {
+      continue;
+    }
+    const match = line.match(/^\S+\s+REG_\w+\s+([\s\S]*)$/u);
+    if (match?.[1]) {
+      return String(match[1]).trim();
+    }
+  }
+  return '';
+}
+
+async function readWindowsPersistedEnvironmentVariable(name) {
+  if (process.platform !== 'win32') {
+    return '';
+  }
+  const keys = [
+    'HKCU\\Environment',
+    'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment',
+  ];
+  for (const key of keys) {
+    const output = await execFileText('reg.exe', ['query', key, '/v', String(name)]);
+    const value = parseWindowsRegistryEnvValue(output, name);
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+}
+
+export async function materializeCookieSourceOptions(options = /** @type {any} */ ({}), {
+  env = process.env,
+  cwd = process.cwd(),
+  stdinReader = readStdinText,
+  persistedEnvReader = readWindowsPersistedEnvironmentVariable,
+} = /** @type {any} */ ({})) {
+  if (typeof options.apiReplayCookieHeader === 'string' && options.apiReplayCookieHeader.trim()) {
+    return options;
+  }
+  let cookie = '';
+  if (options.cookieEnv) {
+    const envName = String(options.cookieEnv);
+    cookie = String(env[envName] ?? '').trim();
+    if (!cookie && typeof persistedEnvReader === 'function') {
+      cookie = String(await persistedEnvReader(envName) ?? '').trim();
+    }
+    if (!cookie) {
+      throw new CookieSourceError(
+        `Environment variable ${options.cookieEnv} is empty or not set`,
+        'runtime.cookie_env_missing',
+        `Set ${options.cookieEnv} as a process or Windows User/Machine environment variable, or use --cookie-file/--cookie-stdin for an ephemeral cookie source.`,
+      );
+    }
+  } else if (options.cookieFile) {
+    const cookiePath = path.resolve(cwd, String(options.cookieFile));
+    cookie = String(await readFile(cookiePath, 'utf8')).trim();
+    if (!cookie) {
+      throw new CookieSourceError(
+        'Cookie file is empty',
+        'runtime.cookie_file_empty',
+        'Provide a non-empty cookie file and remove it after verification.',
+      );
+    }
+  } else if (options.cookieStdin === true) {
+    cookie = String(await stdinReader()).trim();
+    if (!cookie) {
+      throw new CookieSourceError(
+        'Cookie stdin is empty',
+        'runtime.cookie_stdin_empty',
+        'Pipe a non-empty cookie string to stdin for this single execution.',
+      );
+    }
+  }
+  if (!cookie) {
+    return options;
+  }
+  return {
+    ...options,
+    apiReplayCookieHeader: cookie,
+  };
+}
+
 function readValue(args, current, index, options = /** @type {any} */ ({})) {
   return readCliValue(args, current, index, options);
 }
@@ -669,6 +798,37 @@ function readOptionalValue(args, current, index) {
   return {
     value: next,
     nextIndex: index + 1,
+  };
+}
+
+function parseRuntimeSlotValue(value) {
+  const text = String(value ?? '').trim();
+  const separator = text.indexOf('=');
+  if (separator <= 0) {
+    throw new Error('--slot must use name=value');
+  }
+  const name = text.slice(0, separator).trim();
+  const slotValue = text.slice(separator + 1);
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/u.test(name)) {
+    throw new Error('--slot name must start with a letter and contain only letters, numbers, "_" or "-"');
+  }
+  return { name, value: slotValue };
+}
+
+function addRuntimeSlotValue(options, rawValue) {
+  const parsed = parseRuntimeSlotValue(rawValue);
+  const runtimeContext = options.runtimeExecutionContext && typeof options.runtimeExecutionContext === 'object' && !Array.isArray(options.runtimeExecutionContext)
+    ? options.runtimeExecutionContext
+    : {};
+  const slotValues = runtimeContext.slotValues && typeof runtimeContext.slotValues === 'object' && !Array.isArray(runtimeContext.slotValues)
+    ? runtimeContext.slotValues
+    : {};
+  options.runtimeExecutionContext = {
+    ...runtimeContext,
+    slotValues: {
+      ...slotValues,
+      [parsed.name]: parsed.value,
+    },
   };
 }
 
@@ -734,6 +894,12 @@ export function parseCliArgs(argv) {
         index = nextIndex;
         break;
       }
+      case '--slot': {
+        const { value, nextIndex } = readValue(args, current, index);
+        addRuntimeSlotValue(options, value);
+        index = nextIndex;
+        break;
+      }
       case '--confirm-risk': {
         const { value, nextIndex } = readValue(args, current, index);
         options.confirmRisk = value;
@@ -773,10 +939,21 @@ export function parseCliArgs(argv) {
         options.renderJs = true;
         options.renderJsExplicit = true;
         break;
+      case '--browser-bridge-managed':
+        options.browserBridgeManaged = true;
+        break;
+      case '--browser-bridge-api-replay-managed':
+        options.browserBridgeApiReplayManaged = true;
+        break;
       case '--auth': {
         const { value, nextIndex } = readValue(args, current, index);
         options.authMode = normalizeChoice(value, SITEFORGE_AUTH_MODES, '--auth');
         options.authModeExplicit = true;
+        if (options.authMode === 'browser') {
+          options.strictBrowserAuth = true;
+        } else if (options.authMode === 'cookie') {
+          options.strictCookieAuth = true;
+        }
         if (options.authMode === 'none') {
           options.ignoreLocalCookieConfig = true;
         }
@@ -1173,6 +1350,7 @@ export async function applyLocalBuildConfig(inputUrl, options, {
       deep: build.deep === true,
       renderJs: build.renderJs === true ? true : build.renderJs === false ? false : null,
       browserBridgeManaged: build.browserBridgeManaged === true,
+      browserBridgeApiReplayManaged: build.browserBridgeApiReplayManaged === true,
       maxDepth: Number.isFinite(Number(build.maxDepth)) ? Number(build.maxDepth) : null,
       maxPages: Number.isFinite(Number(build.maxPages)) ? Number(build.maxPages) : null,
       maxSeeds: Number.isFinite(Number(build.maxSeeds)) ? Number(build.maxSeeds) : null,
@@ -1191,6 +1369,7 @@ export async function applyLocalBuildConfig(inputUrl, options, {
     }
   }
   if (build.browserBridgeManaged === true) next.browserBridgeManaged = true;
+  if (build.browserBridgeApiReplayManaged === true) next.browserBridgeApiReplayManaged = true;
   if (Number.isFinite(Number(build.maxDepth)) && options.maxDepthExplicit !== true) next.maxDepth = Math.max(1, Number(build.maxDepth));
   if (Number.isFinite(Number(build.maxPages)) && options.maxPagesExplicit !== true) next.maxPages = Math.max(1, Number(build.maxPages));
   if (Number.isFinite(Number(build.maxSeeds)) && options.maxSeedsExplicit !== true) next.maxSeeds = Math.max(1, Number(build.maxSeeds));
@@ -1260,6 +1439,7 @@ async function runCli() {
   let setup;
   try {
     buildOptions = await applyLocalBuildConfig(url, options);
+    buildOptions = await materializeCookieSourceOptions(buildOptions);
     setup = await prepareSiteForgeBuildSetup(url, buildOptions);
     setup.buildOptions = applyDefaultProductionRuntimeProviderRegistry(setup.buildOptions);
     result = await runSiteForgeBuild(url, setup.buildOptions);

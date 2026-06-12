@@ -13,11 +13,15 @@ import {
 const API_READ_PROVIDER_ID = 'api_read_provider';
 const READ_KINDS = Object.freeze(new Set(['api', 'api_request', 'read', 'query', 'search', 'navigate', 'public_http']));
 const BLOCKED_KINDS = Object.freeze(new Set(['download', 'export', 'write', 'submit', 'payment', 'destructive', 'form_or_action']));
-const BLOCKED_TEXT_PATTERN = /\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|post)\b/iu;
+const BLOCKED_TEXT_PATTERN = /\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish)\b/iu;
 
 function normalizeText(value, fallback = '') {
   const text = String(value ?? '').trim();
   return text || fallback;
+}
+
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))].sort();
 }
 
 function normalizeKind(value) {
@@ -73,9 +77,103 @@ function isBlockedDescriptor(descriptor = {}) {
   return BLOCKED_TEXT_PATTERN.test(descriptorText(descriptor));
 }
 
+function isBrowserBridgeDescriptor(descriptor = {}) {
+  return normalizeKind(descriptor.executionContract?.runtimeBinding?.kind) === 'browser_bridge'
+    || normalizeKind(descriptor.executionContract?.runtimeBinding?.providerId) === 'browser_bridge'
+    || normalizeKind(descriptor.runtimeContext?.runtimeBindingKind) === 'browser_bridge';
+}
+
 function supportsApiRead(descriptor = {}) {
+  if (isBrowserBridgeDescriptor(descriptor)) return false;
   if (isBlockedDescriptor(descriptor)) return false;
   return READ_KINDS.has(descriptorKind(descriptor));
+}
+
+function slotBindingsFromDescriptor({
+  executionContract,
+  capability,
+} = {}) {
+  const bindings = [
+    ...(executionContract?.payloadTemplate?.slotBindings ?? []),
+    ...(capability?.inputs ?? []),
+  ].filter((slot) => slot && typeof slot === 'object');
+  const byName = new Map();
+  for (const slot of bindings) {
+    const name = normalizeText(slot.name);
+    if (!name || byName.has(name)) continue;
+    byName.set(name, {
+      name,
+      type: normalizeText(slot.type, 'string'),
+      required: slot.required === true,
+    });
+  }
+  return [...byName.values()];
+}
+
+function routeTemplateFromDescriptor({
+  executionContract,
+  capability,
+} = {}) {
+  return normalizeText(
+    executionContract?.payloadTemplate?.steps?.find?.((step) => normalizeText(step?.routeTemplate))?.routeTemplate
+      ?? capability?.routeTemplate
+      ?? capability?.routePath,
+    null,
+  );
+}
+
+function pageKindFromDescriptor({
+  executionContract,
+  capability,
+} = {}) {
+  return normalizeText(
+    executionContract?.payloadTemplate?.steps?.find?.((step) => normalizeText(step?.pageKind))?.pageKind
+      ?? capability?.pageKind
+      ?? capability?.page_type,
+    null,
+  );
+}
+
+function buildStructuredReadResult(options = {}) {
+  const {
+    invocationRequest,
+    executionContract,
+    capability,
+    runtimeContext,
+  } = options;
+  const slots = slotBindingsFromDescriptor({ executionContract, capability });
+  return {
+    kind: 'descriptor_read_summary',
+    status: 'completed',
+    capabilityId: invocationRequest?.capabilityId ?? executionContract?.capabilityId ?? capability?.id ?? null,
+    executionContractRef: invocationRequest?.executionContractRef ?? executionContract?.executionContractRef ?? executionContract?.id ?? null,
+    runtimeMode: 'descriptor_only_read',
+    contractKind: descriptorKind({
+      invocationRequest,
+      executionContract,
+      capability,
+      runtimeContext,
+    }),
+    routeTemplate: routeTemplateFromDescriptor({ executionContract, capability }),
+    pageKind: pageKindFromDescriptor({ executionContract, capability }),
+    slotSchema: slots,
+    slotNames: slots.map((slot) => slot.name),
+    outputFields: uniqueStrings([
+      'capabilityId',
+      'executionContractRef',
+      'runtimeMode',
+      'contractKind',
+      'routeTemplate',
+      'pageKind',
+      'slotSchema',
+      'slotNames',
+      'evidenceStatus',
+      'savedMaterial',
+    ]),
+    evidenceStatus: normalizeText(capability?.evidence_status ?? capability?.evidenceStatus, 'verified'),
+    savedMaterial: 'sanitized_summary_only',
+    redactionRequired: true,
+  };
 }
 
 /** @param {Record<string, any>} options */
@@ -102,6 +200,7 @@ function buildApiReadSummary(options = {}) {
     savedMaterial: 'sanitized_summary_only',
     redactionRequired: true,
   };
+  summary.structuredResult = buildStructuredReadResult(options);
   assertNoExecutionSensitiveMaterial(summary);
   return summary;
 }

@@ -4,7 +4,10 @@ import { uniqueSortedStrings } from '../../../shared/normalize.mjs';
 import { displayBuildWarning } from './build-report-display.mjs';
 
 export function buildUserFacingWarnings(report, resultStatus, context = null, partialSuccessReasons = /** @type {any[]} */ ([])) {
-  const warnings = uniqueSortedStrings((report?.warnings ?? []).map((warning) => displayBuildWarning(warning)));
+  const verificationPassed = report?.summary?.verificationStatus === 'passed';
+  const warnings = uniqueSortedStrings((report?.warnings ?? [])
+    .filter((warning) => !(verificationPassed && String(warning ?? '') === 'validation-failed'))
+    .map((warning) => displayBuildWarning(warning)));
   if (resultStatus === 'partial_success') {
     warnings.push(...partialSuccessReasons);
   }

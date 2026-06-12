@@ -1876,6 +1876,123 @@ function summarizeBody(body) {
   }
 }
 
+function sanitizeRedditPreview(value, maxLength = 280) {
+  return stripTags(value)
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function stableRedditItemId(item = /** @type {any} */ ({}), fallbackPrefix = 'reddit-item') {
+  const stable = item.name ?? item.id ?? item.permalink ?? item.url ?? JSON.stringify(Object.keys(item).sort());
+  return `${fallbackPrefix}:${createHash('sha1').update(String(stable ?? '')).digest('hex').slice(0, 12)}`;
+}
+
+function sanitizeRedditThing(kind, data = /** @type {any} */ ({}), source = /** @type {any} */ ({})) {
+  const thingKind = String(kind ?? data.kind ?? '').trim();
+  const base = {
+    id: data.name ?? data.id ?? stableRedditItemId(data),
+    kind: thingKind || null,
+    source: source.source ?? 'reddit_api',
+    operationId: source.operationId ?? null,
+    pathTemplate: source.pathTemplate ?? null,
+    capturedAt: source.capturedAt ?? null,
+    rawBodyPersisted: false,
+    authMaterialPersisted: false,
+  };
+  if (thingKind === 't5' || data.display_name || data.display_name_prefixed) {
+    return {
+      ...base,
+      itemType: 'community',
+      name: data.display_name_prefixed ?? (data.display_name ? `r/${data.display_name}` : null),
+      title: sanitizeRedditPreview(data.title ?? data.display_name_prefixed ?? data.display_name, 180),
+      publicDescriptionPreview: sanitizeRedditPreview(data.public_description ?? data.description, 280),
+      subscribers: Number.isFinite(Number(data.subscribers)) ? Number(data.subscribers) : null,
+      url: data.url ? `https://www.reddit.com${data.url}` : null,
+      over18: typeof data.over18 === 'boolean' ? data.over18 : null,
+    };
+  }
+  if (thingKind === 't2' || data.name?.startsWith?.('t2_')) {
+    return {
+      ...base,
+      itemType: 'account',
+      username: data.name_prefixed ?? data.name ?? null,
+      createdUtc: Number.isFinite(Number(data.created_utc)) ? Number(data.created_utc) : null,
+      linkKarma: Number.isFinite(Number(data.link_karma)) ? Number(data.link_karma) : null,
+      commentKarma: Number.isFinite(Number(data.comment_karma)) ? Number(data.comment_karma) : null,
+      profileUrl: data.name ? `https://www.reddit.com/user/${encodeURIComponent(String(data.name))}/` : null,
+    };
+  }
+  return {
+    ...base,
+    itemType: thingKind === 't1' ? 'comment' : 'post',
+    title: sanitizeRedditPreview(data.title, 240),
+    textPreview: sanitizeRedditPreview(data.selftext ?? data.body, 280),
+    author: data.author ?? null,
+    subreddit: data.subreddit_name_prefixed ?? (data.subreddit ? `r/${data.subreddit}` : null),
+    createdUtc: Number.isFinite(Number(data.created_utc)) ? Number(data.created_utc) : null,
+    score: Number.isFinite(Number(data.score)) ? Number(data.score) : null,
+    commentCount: Number.isFinite(Number(data.num_comments)) ? Number(data.num_comments) : null,
+    permalink: data.permalink ? `https://www.reddit.com${data.permalink}` : null,
+    url: data.url_overridden_by_dest ?? data.url ?? null,
+    over18: typeof data.over_18 === 'boolean' ? data.over_18 : null,
+  };
+}
+
+function collectRedditThings(value, source, items = []) {
+  if (!value || typeof value !== 'object') {
+    return items;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectRedditThings(item, source, items);
+    }
+    return items;
+  }
+  if (value.kind && value.data && typeof value.data === 'object') {
+    if (Array.isArray(value.data.children)) {
+      for (const child of value.data.children) {
+        collectRedditThings(child, source, items);
+      }
+      return items;
+    }
+    items.push(sanitizeRedditThing(value.kind, value.data, source));
+    return items;
+  }
+  if (Array.isArray(value.children)) {
+    for (const child of value.children) {
+      collectRedditThings(child, source, items);
+    }
+  }
+  return items;
+}
+
+export function extractSanitizedRedditApiItems(body, {
+  operationId = null,
+  pathTemplate = null,
+  capturedAt = new Date().toISOString(),
+  safety = null,
+  maxItems = 100,
+} = /** @type {any} */ ({})) {
+  if (safety === 'read_authenticated_or_moderator_limited') {
+    return [];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(String(body ?? ''));
+  } catch {
+    return [];
+  }
+  const items = collectRedditThings(parsed, {
+    source: 'reddit_oauth_api',
+    operationId,
+    pathTemplate,
+    capturedAt,
+  }).slice(0, Math.max(0, Number(maxItems) || 0));
+  assertNoForbiddenPatterns(items);
+  return items;
+}
+
 export function resolveRedditCredentialEnv(env = process.env) {
   const tokenEnv = REDDIT_TOKEN_ENV_VARS.find((name) => String(env[name] ?? '').trim()) ?? null;
   const userAgentEnv = REDDIT_USER_AGENT_ENV_VARS.find((name) => String(env[name] ?? '').trim()) ?? null;
@@ -1938,6 +2055,12 @@ export async function executeRedditApiReadPlan(plan, {
     contentType: safeHeaderValue(headers, 'content-type'),
     responseMaterial: 'sanitized_summary_only',
     bodySummary: summarizeBody(body),
+    items: response.ok ? extractSanitizedRedditApiItems(body, {
+      operationId: plan.operationId,
+      pathTemplate: plan.pathTemplate,
+      safety: plan.safety,
+    }) : [],
+    itemMaterial: 'sanitized_item_fields_only',
     bodyPersisted: false,
     authorizationPersisted: false,
     cookieMaterialPersisted: false,

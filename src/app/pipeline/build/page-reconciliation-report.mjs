@@ -39,6 +39,27 @@ function isConcreteReconciliationUrl(urlValue) {
     && !placeholderRoutePattern.test(decodedText);
 }
 
+function isPlaceholderReconciliationUrl(urlValue) {
+  return !isConcreteReconciliationUrl(urlValue);
+}
+
+function hasInformativeCategoryLabel(value) {
+  const text = String(value ?? '').trim();
+  return Boolean(text)
+    && text !== '-'
+    && !/^link-\d+$/iu.test(text)
+    && !/^item-\d+$/iu.test(text);
+}
+
+function isActionableMissingCategoryLink(link) {
+  const label = reconciliationLinkLabel(link);
+  const url = reconciliationLinkUrl(link);
+  if (hasInformativeCategoryLabel(label)) {
+    return true;
+  }
+  return !isPlaceholderReconciliationUrl(url);
+}
+
 function reconciliationRouteTemplateKey(urlValue, rootUrl = null) {
   const exactKey = reconciliationRouteKey(urlValue, rootUrl);
   const templateKey = sanitizeEvidenceRef(exactKey);
@@ -66,6 +87,18 @@ export function isReconciliationCategoryLink(link) {
   const kind = String(link?.kind ?? link?.semanticKind ?? link?.structureType ?? '').toLowerCase();
   const haystack = `${url} ${label} ${kind}`.toLowerCase();
   return /category|categories|genre|genres|channel|channels|section|sections|classify|\bcat\b|分类|类目|類別|频道|頻道|分区|标签|榜单/u.test(haystack);
+}
+
+function hasExplicitChallengeSignal(page) {
+  const text = [
+    page?.normalizedUrl,
+    page?.url,
+    page?.title,
+    page?.pageType,
+    page?.publicEvidenceStatus,
+    page?.blockerCategory,
+  ].join(' ');
+  return /楠岃瘉鐮亅楠岃瘉|椋庢帶|瀹夊叏鏍￠獙|涓棿椤祙captcha|challenge|turnstile|verify|checkpoint|cf-mitigated|cdn-cgi\/challenge-platform|cloudflare/iu.test(text);
 }
 
 function isChallengeLikePage(page) {
@@ -164,6 +197,7 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     title: sanitizedStructureText(page.title ?? page.pageType ?? 'challenge-like-page', 80, 'challenge-like-page'),
     sourceLayer: page.sourceLayer ?? null,
     reasonCode: 'challenge_or_probe_detected',
+    diagnosticOnly: !hasExplicitChallengeSignal(page),
   }));
   const expectedCategoryLinks = [];
   const seenCategoryKeys = new Set();
@@ -203,6 +237,7 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     .filter((link) => !graphUrls.exact.has(link.routeKey)
       && !(link.routeTemplateKey && graphUrls.templates.has(link.routeTemplateKey)))
     .map(({ routeKey, routeTemplateKey, ...link }) => link);
+  const blockingMissingCategoryLinks = missingCategoryLinks.filter(isActionableMissingCategoryLink);
   const capabilities = stageResults.discoverCapabilities?.capabilities ?? [];
   const intents = stageResults.generateIntents?.intents ?? [];
   const categoryCapabilityRecords = capabilities.filter((capability) => PAGE_RECONCILIATION_CATEGORY_TEXT_PATTERN.test([
@@ -238,9 +273,19 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     callable: intent.callable === true,
     hasChineseUtterance: hasChineseText(intent.canonicalUtterance ?? intent.canonical_utterance),
   }));
+  const categoryClosureSatisfied = expectedCategoryLinks.length > 0
+    && blockingMissingCategoryLinks.length === 0
+    && categoryCapabilities.length > 0
+    && categoryIntentRows.length > 0
+    && categoryCapabilities.some((capability) => capability.hasChineseName)
+    && categoryIntentRows.some((intent) => intent.hasChineseUtterance);
+  const explicitChallengePages = challengePages.filter((page) => page.diagnosticOnly !== true);
+  const coveredDiagnosticChallengeSignals = categoryClosureSatisfied
+    ? challengePages.length - explicitChallengePages.length
+    : 0;
   const reasonCodes = [];
-  if (challengePages.length) reasonCodes.push('challenge_or_probe_detected');
-  if (expectedCategoryLinks.length && missingCategoryLinks.length) reasonCodes.push('category_links_missing_from_graph');
+  if (explicitChallengePages.length || (challengePages.length && !categoryClosureSatisfied)) reasonCodes.push('challenge_or_probe_detected');
+  if (expectedCategoryLinks.length && blockingMissingCategoryLinks.length) reasonCodes.push('category_links_missing_from_graph');
   if (expectedCategoryLinks.length && !categoryCapabilities.length) reasonCodes.push('category_capability_missing');
   if (expectedCategoryLinks.length && categoryCapabilities.length && !categoryIntentRows.length) reasonCodes.push('category_intent_missing');
   if (categoryCapabilities.length && !categoryCapabilities.some((capability) => capability.hasChineseName)) reasonCodes.push('category_capability_missing_chinese_name');
@@ -254,8 +299,10 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     primaryReasonCode: outcome.primaryReasonCode,
     retryDisposition: outcome.retryDisposition,
     challengeLikePages: challengePages.length,
+    coveredDiagnosticChallengeSignals,
     expectedCategoryLinks: expectedCategoryLinks.length,
     missingCategoryLinks: missingCategoryLinks.length,
+    blockingMissingCategoryLinks: blockingMissingCategoryLinks.length,
     categoryCapabilities: categoryCapabilities.length,
     categoryIntents: categoryIntentRows.length,
     reasonCodes: uniqueSortedStrings(reasonCodes),
@@ -274,6 +321,7 @@ export function buildPageReconciliationReport(context, stageResults, report = /*
     challengePages,
     expectedCategoryLinks: expectedCategoryLinks.map(({ routeKey, routeTemplateKey, ...link }) => link),
     missingCategoryLinks,
+    blockingMissingCategoryLinks,
     categoryCapabilities,
     categoryIntents: categoryIntentRows,
     safety: {

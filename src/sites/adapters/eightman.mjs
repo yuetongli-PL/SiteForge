@@ -11,8 +11,6 @@ import { endpointParts } from './url-parts.mjs';
 export const EIGHTMAN_HOSTS = Object.freeze([
   'www.8man.jp',
   '8man.jp',
-  'so-agent.jp',
-  'www.so-agent.jp',
 ]);
 
 export const EIGHTMAN_TERMINOLOGY = Object.freeze({

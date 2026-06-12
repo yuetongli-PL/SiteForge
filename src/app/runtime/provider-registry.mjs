@@ -29,12 +29,13 @@ function isPlainObject(value) {
 function inferKindFromText(value) {
   const text = normalizeKind(value);
   if (!text) return '';
+  if (/\bnavigate\b|navigate|\bpublic_http\b|public_http|\bpublic_rendered\b|public_rendered|\bauthorized_summary\b|authorized_summary/iu.test(text)) return 'read';
   if (/\bexport\b|export/iu.test(text)) return 'download';
   if (/\bapi\b|api/iu.test(text)) return 'read';
   if (/\bdownload\b|download/iu.test(text)) return 'download';
   if (/\bpay\b|pay|\bpayment\b|payment|\bpurchase\b|purchase|\bbilling\b|billing/iu.test(text)) return 'payment';
   if (/\bdelete\b|delete|\bdestroy\b|destroy|\bclear\b|clear|\breset\b|reset|\bcancel\b|cancel|\brevoke\b|revoke/iu.test(text)) return 'destructive';
-  if (/\bwrite\b|write|\bsubmit\b|submit|\bupdate\b|update|\bcreate\b|create|\bpost\b|post/iu.test(text)) return 'write';
+  if (/\bwrite\b|write|\bsubmit\b|submit|\bupdate\b|update|\bcreate\b|create|\bpublish\b|publish/iu.test(text)) return 'write';
   if (/\bread\b|read|\bquery\b|query|\bsearch\b|search|\bfetch\b|fetch|\bview\b|view/iu.test(text)) return 'read';
   return '';
 }
@@ -50,6 +51,7 @@ export function inferRuntimeCapabilityKind({
     runtimeContext?.operationKind,
     executionContract?.capabilityKind,
     executionContract?.operationKind,
+    executionContract?.runtimeBinding?.kind,
     executionContract?.contractKind,
     capability?.capabilityKind,
     capability?.kind,

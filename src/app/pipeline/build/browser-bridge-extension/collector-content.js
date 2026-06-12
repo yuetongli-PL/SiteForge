@@ -1,5 +1,5 @@
 (() => {
-  const SITEFORGE_COLLECTOR_CONTENT_VERSION = 'route-queue-chinese-semantic-v7';
+  const SITEFORGE_COLLECTOR_CONTENT_VERSION = 'route-queue-x-api-runtime-v8';
   const SITEFORGE_COLLECT_MESSAGE_TYPE = `siteforge-collect-structure:${SITEFORGE_COLLECTOR_CONTENT_VERSION}`;
   if (globalThis.__SITEFORGE_BROWSER_BRIDGE_COLLECTOR_VERSION__ === SITEFORGE_COLLECTOR_CONTENT_VERSION) {
     return;

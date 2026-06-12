@@ -53,6 +53,7 @@ import {
 import { siteRecordWithKnownAdapterAllowedDomains } from './site-record-hosts.mjs';
 import {
   knownPolicyAllowsUserAuthorizedSetup,
+  knownPolicyBusinessCoverageSeedRoutes,
   knownPolicyCapabilityPressure,
   knownPolicyRecommendedCapabilities,
   knownPolicySummary,
@@ -924,11 +925,17 @@ function knownPolicyFollowingRoutePath(knownSitePolicy = null) {
   if (siteKey === 'reddit') {
     return '/subreddits/mine/';
   }
+  if (siteKey === 'zhihu') {
+    return '/follow';
+  }
   return siteKey === 'douyin' ? '/follow' : '/following';
 }
 
 function knownPolicyHomeRoutePath(knownSitePolicy = null) {
   const siteKey = String(knownSitePolicy?.siteKey ?? knownSitePolicy?.adapterId ?? '').toLowerCase();
+  if (siteKey === 'zhihu') {
+    return '/';
+  }
   return siteKey === 'reddit' ? '/' : '/home';
 }
 
@@ -1444,6 +1451,44 @@ async function readKnownSitePolicy(paths) {
     }
   }
   return knownPolicySummary(null, null);
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function comparableRepoSkillDir(value) {
+  const text = String(value ?? '').trim().replace(/\\/gu, '/').toLowerCase();
+  if (!text) {
+    return null;
+  }
+  const marker = '/skills/';
+  const markerIndex = text.lastIndexOf(marker);
+  if (markerIndex >= 0) {
+    return text.slice(markerIndex + 1);
+  }
+  return text.startsWith('skills/') ? text : text.replace(/^\.?\//u, '');
+}
+
+function comparableKnownSitePolicy(policy = null) {
+  if (!policy || typeof policy !== 'object') {
+    return null;
+  }
+  return {
+    ...policy,
+    repoSkillDir: comparableRepoSkillDir(policy.repoSkillDir),
+  };
+}
+
+function savedProfileMatchesKnownPolicy(profile, currentPolicy) {
+  return stableJson(comparableKnownSitePolicy(profile?.knownSitePolicy ?? null))
+    === stableJson(comparableKnownSitePolicy(currentPolicy ?? null));
 }
 
 function isUsableSavedBuildProfile(profile) {
@@ -2280,6 +2325,9 @@ async function applyCrawlContractChoice({ inputUrl, paths, setupPlan, options, r
   const authOptions = {
     ...options,
   };
+  if (!authOptions.authCheckUrl && setupPlan.knownSitePolicy?.auth?.authCheckUrl) {
+    authOptions.authCheckUrl = setupPlan.knownSitePolicy.auth.authCheckUrl;
+  }
   const policyAuthRoutes = knownPolicyAuthRouteTargets(setupPlan.knownSitePolicy);
   if (policyAuthRoutes.length) {
     authOptions.authRoutes = uniqueSortedStrings([
@@ -2618,7 +2666,7 @@ function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
   const supportsSocialContent = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-content');
   const supportsSocialRelations = policySupportsCapabilityFamily(knownSitePolicy, 'query-social-relations');
   const followingRoutePath = knownPolicyFollowingRoutePath(knownSitePolicy);
-  const routes = new Set();
+  const routes = new Set(knownSitePolicy.auth?.authRoutes ?? []);
   if (supportsSocialContent) {
     routes.add(knownPolicyHomeRoutePath(knownSitePolicy));
   }
@@ -2640,10 +2688,22 @@ function knownPolicyAuthRouteTargets(knownSitePolicy = null) {
   if (supported.has('list-lists')) {
     routes.add('/i/lists');
   }
+  if (supported.has('list-explore-topics')) {
+    routes.add('/explore');
+  }
   if (supported.has('list-direct-messages')) {
     routes.add('/messages');
   }
+  for (const seed of knownPolicyBusinessCoverageSeedRoutes(knownSitePolicy)) {
+    if (seed?.path) {
+      routes.add(seed.path);
+    }
+  }
   return [...routes].sort((left, right) => left.localeCompare(right, 'en'));
+}
+
+function knownPolicyPublicRevisitRouteTargets(knownSitePolicy = null) {
+  return uniqueSortedStrings(knownSitePolicy?.auth?.publicRevisitRoutes ?? []);
 }
 
 const KNOWN_POLICY_LOGIN_CAPABILITY_IDS = new Set([
@@ -2651,12 +2711,36 @@ const KNOWN_POLICY_LOGIN_CAPABILITY_IDS = new Set([
   'list-followed-updates',
   'recommended-timeline-posts',
   'list-recommended-timeline-posts',
+  'list-hot-posts',
+  'list-hot-broadcasts',
   'list-notifications',
+  'list-topic-discussions',
+  'list-topic-featured',
+  'list-user-activities',
+  'list-user-answers',
+  'list-user-articles',
+  'list-user-collections',
+  'list-user-columns',
+  'list-user-following',
+  'list-user-pins',
+  'list-user-questions',
+  'list-user-videos',
   'notifications',
+  'read-search-result-summaries',
+  'open-search-result-detail',
+  'search-latest-posts',
+  'search-media-posts',
+  'search-users',
+  'view-question-detail',
+  'view-answer-detail',
+  'view-post-detail',
+  'view-post-replies',
   'list-bookmarks',
   'bookmarks',
   'list-lists',
   'lists',
+  'list-explore-topics',
+  'explore-topics',
   'list-direct-messages',
   'direct-messages',
   'messages',
@@ -2666,8 +2750,14 @@ function knownPolicyRequiresLoginCapabilityIds(knownSitePolicy = null) {
   if (!knownSitePolicy) {
     return [];
   }
-  return uniqueSortedStrings(knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized: true })
-    .map((capability) => normalizeCapabilityId(capability.id ?? capability.name))
+  const recommendedIds = knownPolicyRecommendedCapabilities(knownSitePolicy, { userAuthorized: true })
+    .map((capability) => normalizeCapabilityId(capability.id ?? capability.name));
+  const supportedIds = (knownSitePolicy.supportedIntents ?? [])
+    .map((id) => normalizeCapabilityId(id));
+  const coverageCapabilityIds = knownPolicyBusinessCoverageSeedRoutes(knownSitePolicy)
+    .flatMap((seed) => seed.capabilityIds ?? [])
+    .map((id) => normalizeCapabilityId(id));
+  return uniqueSortedStrings([...recommendedIds, ...supportedIds, ...coverageCapabilityIds]
     .filter((id) => KNOWN_POLICY_LOGIN_CAPABILITY_IDS.has(id)));
 }
 
@@ -2785,10 +2875,12 @@ function coverageTargetsFromSetupPlan(setupPlan = /** @type {any} */ ({})) {
   ]);
   const requiresLoginCapabilities = knownPolicyRequiresLoginCapabilityIds(setupPlan.knownSitePolicy);
   const localRevisitRoutes = localConfig.publicRevisitRoutes ?? [];
+  const policyRevisitRoutes = knownPolicyPublicRevisitRouteTargets(setupPlan.knownSitePolicy);
   return {
     publicRoutes,
     authRoutes,
     publicRevisitRoutes: uniqueSortedStrings([
+      ...policyRevisitRoutes,
       ...localRevisitRoutes,
       ...publicRoutes.slice(0, 12),
     ]),
@@ -3429,9 +3521,12 @@ export async function prepareSiteForgeBuildSetup(inputUrl, options = /** @type {
   const paths = buildSetupAssistantPaths(inputUrl, options);
   const interactive = resolveSetupInteractive(options);
   const savedProfileCandidate = await readJsonOrNull(paths.savedBuildProfilePath);
+  const currentKnownSitePolicy = await readKnownSitePolicy(paths);
   const savedProfile = options.strictCookieAuth === true || options.strictBrowserAuth === true
     ? null
-    : isUsableSavedBuildProfile(savedProfileCandidate) ? savedProfileCandidate : null;
+    : isUsableSavedBuildProfile(savedProfileCandidate) && savedProfileMatchesKnownPolicy(savedProfileCandidate, currentKnownSitePolicy)
+      ? savedProfileCandidate
+      : null;
 
   if (!savedProfile) {
     let { setupPlan, robotsPolicy } = await generateSetupPlan(inputUrl, { ...options, buildId: paths.buildId, cwd: paths.cwd });

@@ -6,6 +6,7 @@
 
 | Site | Download availability |
 | --- | --- |
+| `123av.com` | no download availability declared |
 | `attackers.net` | no download availability declared |
 | `dahlia-av.jp` | no download availability declared |
 | `jable.tv` | downloads declared: video, media-bundle; available: none; blocked: video, media-bundle; reason: jable-native-resolver-required |
@@ -13,12 +14,14 @@
 | `moodyz.com` | no download availability declared |
 | `rookie-av.jp` | no download availability declared |
 | `s1s1s1.com` | no download availability declared |
+| `so-agent.jp` | no download availability declared |
+| `weibo.com` | reason: robots-disallowed |
 | `www.8man.jp` | no download availability declared |
 | `www.bilibili.com` | downloads declared: video, media-bundle; available: video, media-bundle |
 | `www.bz888888888.com` | downloads declared: book; available: none; blocked: book; reason: blocked-by-cloudflare-challenge; requires: pypy3, tesseract; dependency reason: runtime-dependency-missing, ocr-dependency-missing |
 | `www.dogma.co.jp` | no download availability declared |
 | `www.douyin.com` | downloads declared: video, media-bundle; available: video, media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
-| `www.instagram.com` | downloads declared: social-archive, media-bundle; available: none; blocked: social-archive, media-bundle; reason: download-layer-removed; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.instagram.com` | downloads declared: social-archive, media-bundle; available: media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
 | `www.km-produce.com` | no download availability declared |
 | `www.maxing.jp` | no download availability declared |
 | `www.qidian.com` | no download availability declared |
@@ -26,6 +29,7 @@
 | `www.sod.co.jp` | no download availability declared |
 | `www.t-powers.co.jp` | no download availability declared |
 | `www.xiaohongshu.com` | downloads declared: image-note, media-bundle; available: image-note, media-bundle; requires: pypy3; dependency reason: runtime-dependency-missing |
+| `www.zhihu.com` | reason: robots-disallowed |
 | `x.com` | downloads declared: social-archive, media-bundle; available: none; blocked: social-archive, media-bundle; reason: download-layer-removed; requires: pypy3; dependency reason: runtime-dependency-missing |
 
 

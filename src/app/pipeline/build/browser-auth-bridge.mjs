@@ -219,7 +219,11 @@ async function openManagedBrowserBridgeSession({
   targetUrl,
   options = /** @type {any} */ ({}),
 } = /** @type {any} */ ({})) {
-  const launchArgs = managedBrowserBridgeLaunchArgs();
+  const configuredUserAgent = String(options.browserBridgeUserAgent ?? options.userAgent ?? '').trim();
+  const launchArgs = [
+    ...managedBrowserBridgeLaunchArgs(),
+    ...(configuredUserAgent ? [`--user-agent=${configuredUserAgent}`] : []),
+  ];
   const browserPath = await detectManagedBrowserBridgeBrowserPath(options);
   const cookieParams = cookieParamsFromHeader(
     options.apiReplayCookieHeader ?? options.cookieHeader,
@@ -246,6 +250,7 @@ async function openManagedBrowserBridgeSession({
   const session = await openBrowserSession({
     browserPath,
     headless: false,
+    userAgent: configuredUserAgent || undefined,
     timeoutMs,
     fullPage: false,
     viewport,
@@ -284,6 +289,50 @@ function browserBridgeRequestedTimeoutMs(options = /** @type {any} */ ({})) {
 function browserBridgeApiReplayTimeoutMs(options = /** @type {any} */ ({})) {
   const configured = Number(options.browserBridgeApiReplayTimeoutMs);
   return Math.max(1000, Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_API_REPLAY_TIMEOUT_MS);
+}
+
+function browserBridgeCloseTimeoutMs(options = /** @type {any} */ ({})) {
+  return boundedPositiveInteger(
+    options.browserBridgeCloseTimeoutMs,
+    5000,
+    { min: 100, max: 30000 },
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function closeManagedBridgeSessionBounded(session, options = /** @type {any} */ ({})) {
+  if (typeof session?.close !== 'function') {
+    return;
+  }
+  const closePromise = Promise.resolve()
+    .then(() => session.close())
+    .catch(() => undefined);
+  await Promise.race([
+    closePromise,
+    delay(browserBridgeCloseTimeoutMs(options)),
+  ]);
+}
+
+async function closeBridgeServerBounded(server, options = /** @type {any} */ ({})) {
+  if (!server?.listening) {
+    return;
+  }
+  const closePromise = new Promise((resolve) => {
+    try {
+      server.closeIdleConnections?.();
+      server.closeAllConnections?.();
+      server.close(() => resolve(undefined));
+    } catch {
+      resolve(undefined);
+    }
+  });
+  await Promise.race([
+    closePromise,
+    delay(browserBridgeCloseTimeoutMs(options)),
+  ]);
 }
 
 function browserBridgeMaxRetryPasses(options = /** @type {any} */ ({})) {
@@ -390,6 +439,160 @@ function normalizeRouteUrl(value, site) {
   return parsed.toString();
 }
 
+function isXKnownSite(site, parsedUrl = null) {
+  const siteKey = String(site?.siteKey ?? site?.key ?? '').toLowerCase();
+  const siteId = String(site?.id ?? '').toLowerCase();
+  const host = String(site?.host ?? parsedUrl?.hostname ?? '').toLowerCase();
+  const rootHost = (() => {
+    try {
+      return new URL(site?.rootUrl ?? '').hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  return siteKey === 'x'
+    || siteId === 'x'
+    || host === 'x.com'
+    || rootHost === 'x.com';
+}
+
+const X_RESERVED_ROOT_SEGMENTS = new Set([
+  'account',
+  'compose',
+  'download',
+  'explore',
+  'home',
+  'i',
+  'intent',
+  'jobs',
+  'login',
+  'logout',
+  'messages',
+  'notifications',
+  'oauth',
+  'premium_sign_up',
+  'privacy',
+  'search',
+  'settings',
+  'share',
+  'tos',
+]);
+
+function routePathnameFromTemplateLike(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return null;
+  }
+  try {
+    return new URL(raw).pathname.replace(/\/+$/u, '') || '/';
+  } catch {
+    const pathname = (raw.split(/[?#]/u)[0] || '/').trim();
+    return (pathname.startsWith('/') ? pathname : `/${pathname}`).replace(/\/+$/u, '') || '/';
+  }
+}
+
+function isParameterizedRouteSegment(segment) {
+  return /^:[a-z][a-z0-9_-]*$/iu.test(String(segment ?? ''));
+}
+
+function xParameterizedSegmentCanMatchConcrete(paramSegment, concreteSegment, segmentIndex) {
+  const concrete = String(concreteSegment ?? '').toLowerCase();
+  if (!concrete || isParameterizedRouteSegment(concrete)) {
+    return false;
+  }
+  if (segmentIndex !== 0) {
+    return true;
+  }
+  const paramName = String(paramSegment ?? '').replace(/^:/u, '').toLowerCase();
+  if (!['account', 'current_account', 'handle', 'screen_name', 'screenname', 'user', 'username'].includes(paramName)) {
+    return false;
+  }
+  return !X_RESERVED_ROOT_SEGMENTS.has(concrete);
+}
+
+function xRouteFamilyPathMatches(leftPath, rightPath) {
+  if (!leftPath || !rightPath) {
+    return false;
+  }
+  if (leftPath === rightPath) {
+    return true;
+  }
+  const leftSegments = leftPath.split('/').filter(Boolean);
+  const rightSegments = rightPath.split('/').filter(Boolean);
+  if (leftSegments.length !== rightSegments.length) {
+    return false;
+  }
+  return leftSegments.every((leftSegment, index) => {
+    const rightSegment = rightSegments[index];
+    if (leftSegment === rightSegment) {
+      return true;
+    }
+    const leftParameterized = isParameterizedRouteSegment(leftSegment);
+    const rightParameterized = isParameterizedRouteSegment(rightSegment);
+    if (leftParameterized && rightParameterized) {
+      return true;
+    }
+    if (leftParameterized) {
+      return xParameterizedSegmentCanMatchConcrete(leftSegment, rightSegment, index);
+    }
+    if (rightParameterized) {
+      return xParameterizedSegmentCanMatchConcrete(rightSegment, leftSegment, index);
+    }
+    return false;
+  });
+}
+
+function xRouteFamilyMatches(leftValue, rightValue, site) {
+  if (!isXKnownSite(site)) {
+    return false;
+  }
+  return xRouteFamilyPathMatches(
+    routePathnameFromTemplateLike(leftValue),
+    routePathnameFromTemplateLike(rightValue),
+  );
+}
+
+function xRouteFamilyMatchForPayloadRoute(payload, normalizedUrl, route, site, {
+  includeNormalizedUrl = true,
+} = /** @type {any} */ ({})) {
+  if (pageStructureScore(payload) <= 0) {
+    return false;
+  }
+  const payloadCandidates = [
+    payload?.routeTemplate,
+    payload?.routePattern,
+    payload?.targetRoute,
+    payload?.path,
+    payload?.route,
+    ...(includeNormalizedUrl ? [normalizedUrl] : []),
+  ].filter((value) => String(value ?? '').trim());
+  const routeCandidates = [
+    route?.routeTemplate,
+    route?.targetUrl,
+  ].filter((value) => String(value ?? '').trim());
+  return payloadCandidates.some((payloadCandidate) => (
+    routeCandidates.some((routeCandidate) => xRouteFamilyMatches(payloadCandidate, routeCandidate, site))
+  ));
+}
+
+function payloadHasRouteTemplate(payload) {
+  return Boolean(String(payload?.routeTemplate ?? payload?.routePattern ?? '').trim());
+}
+
+function browserBridgeNavigationUrl(normalizedUrl, site) {
+  const parsed = new URL(normalizedUrl);
+  if (
+    isXKnownSite(site, parsed)
+    && (parsed.pathname.replace(/\/+$/u, '') || '/') === '/search'
+    && !parsed.searchParams.has('q')
+  ) {
+    parsed.searchParams.set('q', 'siteforge');
+    parsed.searchParams.set('src', 'typed_query');
+    return normalizeUrl(parsed.toString(), site.rootUrl);
+  }
+  return normalizedUrl;
+}
+
 function browserBridgeRouteAllowedByRobots(urlValue, options = /** @type {any} */ ({})) {
   if (options.userAuthorizedBrowserLive === true || options.browserBridgeUserAuthorizedLive === true) {
     return true;
@@ -457,6 +660,7 @@ function routeQueueFromConfiguredRoutes({
     if (!normalizedUrl) {
       continue;
     }
+    normalizedUrl = browserBridgeNavigationUrl(normalizedUrl, site);
     const sourceLayer = routeSourceLayer(entry.sourceLayer);
     const key = `${sourceLayer}\u0000${normalizedUrl}`;
     if (seen.has(key)) {
@@ -621,8 +825,8 @@ function safeNumber(value) {
 }
 
 function sanitizeRouteTemplate(value) {
-  const text = boundedText(value, null, 240);
-  if (!text || !text.startsWith('/') || /[?#<>"'{}]|(?:authorization|bearer|cookie|token|secret|session|password|localStorage|sessionStorage|raw\s+dom|raw\s+html)/iu.test(text)) {
+  const text = String(value ?? '').replace(/\s+/gu, ' ').trim().slice(0, 240);
+  if (!text || !text.startsWith('/') || /[?#<>"'{}=]|(?:authorization|bearer|cookie|token|secret|session|password|localStorage|sessionStorage|raw\s+dom|raw\s+html)/iu.test(text)) {
     return null;
   }
   return text;
@@ -1031,6 +1235,15 @@ function matchedRouteForPayload(payload, site, routeMaps) {
       return routeById;
     }
     if (
+      routeSourceLayer(payload?.sourceLayer) === routeById.sourceLayer
+      && isInternalUrl(normalizedUrl, site.allowedDomains)
+      && xRouteFamilyMatchForPayloadRoute(payload, normalizedUrl, routeById, site, {
+        includeNormalizedUrl: !payloadHasRouteTemplate(payload),
+      })
+    ) {
+      return routeById;
+    }
+    if (
       bridgeVersionCompatible(payload?.collectorVersion)
       && routeSourceLayer(payload?.sourceLayer) === routeById.sourceLayer
       && isInternalUrl(normalizedUrl, site.allowedDomains)
@@ -1042,7 +1255,28 @@ function matchedRouteForPayload(payload, site, routeMaps) {
   if (!normalizedUrl) {
     return null;
   }
-  return routeMaps.byKey.get(`${routeSourceLayer(payload?.sourceLayer)}\u0000${normalizedUrl}`) ?? null;
+  const sourceLayer = routeSourceLayer(payload?.sourceLayer);
+  const keyedRoute = routeMaps.byKey.get(`${sourceLayer}\u0000${normalizedUrl}`) ?? null;
+  if (
+    keyedRoute
+    && (
+      !isXKnownSite(site)
+      || !payloadHasRouteTemplate(payload)
+      || xRouteFamilyMatchForPayloadRoute(payload, normalizedUrl, keyedRoute, site, {
+        includeNormalizedUrl: false,
+      })
+    )
+  ) {
+    return keyedRoute;
+  }
+  return routeMaps.expected.find((route) => (
+      route.sourceLayer === sourceLayer
+      && isInternalUrl(normalizedUrl, site.allowedDomains)
+      && xRouteFamilyMatchForPayloadRoute(payload, normalizedUrl, route, site, {
+        includeNormalizedUrl: !payloadHasRouteTemplate(payload),
+      })
+    ))
+    ?? null;
 }
 
 function routeResultsFromSummary(routes, structureSummary, site) {
@@ -1686,6 +1920,10 @@ function apiReplayRuntimePageUrl(endpoint, runtimeParameterSource = null) {
   return apiReplayPageUrl(endpoint);
 }
 
+function browserBridgeApiReplayCredentialsMode(authBoundary) {
+  return String(authBoundary ?? '').trim() === 'public_browser_bridge' ? 'same-origin' : 'include';
+}
+
 async function runBrowserBridgeApiReplayWithExtension({
   inputUrl,
   site,
@@ -1694,6 +1932,7 @@ async function runBrowserBridgeApiReplayWithExtension({
   runtimeEndpoint = null,
   runtimeParameterSource = null,
   responseEvidence = null,
+  authBoundary = 'browser_bridge',
   options = /** @type {any} */ ({}),
   openBrowser,
 } = /** @type {any} */ ({})) {
@@ -1710,6 +1949,7 @@ async function runBrowserBridgeApiReplayWithExtension({
   const replayEndpoint = normalizeUrl(endpoint, site?.rootUrl ?? inputUrl);
   const parsedEndpoint = new URL(replayEndpoint);
   const replayPageUrl = apiReplayRuntimePageUrl(replayEndpoint, runtimeParameterSource);
+  const timeoutMs = browserBridgeApiReplayTimeoutMs(options);
   const nonce = randomBytes(16).toString('hex');
   const extensionStages = new Set();
   let resolveSubmission;
@@ -1753,6 +1993,16 @@ async function runBrowserBridgeApiReplayWithExtension({
             allowedOrigin: parsedEndpoint.origin,
             runtimeParameterSource,
             responseEvidence,
+            authBoundary,
+            fetchOptions: {
+              credentials: browserBridgeApiReplayCredentialsMode(authBoundary),
+              method,
+              body: null,
+              persistCookies: false,
+              persistStorage: false,
+              persistResponseBody: false,
+              responseMaterial: SANITIZED_SUMMARY_ONLY,
+            },
           },
         })));
         return;
@@ -1810,24 +2060,57 @@ async function runBrowserBridgeApiReplayWithExtension({
   });
 
   let managedBridgeSession = null;
+  let openTimedOut = false;
   try {
     const bridgeUrl = `http://127.0.0.1:${browserBridgeServerPort(server)}/?nonce=${nonce}`;
-    try {
-      if (useManagedBridge) {
-        managedBridgeSession = await openManagedBrowserBridgeSession({
-          bridgeUrl,
-          site,
-          targetUrl: replayPageUrl,
-          options,
-        });
-      } else {
-        await openBrowser(bridgeUrl);
-      }
-    } catch (error) {
-      await managedBridgeSession?.close?.();
-      throw error;
+    let openTimeout = null;
+    const openResult = await Promise.race([
+      (async () => {
+        try {
+          if (useManagedBridge) {
+            const session = await openManagedBrowserBridgeSession({
+              bridgeUrl,
+              site,
+              targetUrl: replayPageUrl,
+              options,
+            });
+            if (openTimedOut) {
+              await closeManagedBridgeSessionBounded(session, options);
+            } else {
+              managedBridgeSession = session;
+            }
+          } else {
+            await openBrowser(bridgeUrl);
+          }
+          return { ok: true, error: null };
+        } catch (error) {
+          return { ok: false, error };
+        }
+      })(),
+      new Promise((resolve) => {
+        openTimeout = setTimeout(() => resolve({ ok: false, timeout: true, error: null }), timeoutMs);
+      }),
+    ]);
+    if (openTimeout) {
+      clearTimeout(openTimeout);
     }
-    const timeoutMs = browserBridgeApiReplayTimeoutMs(options);
+    if (openResult?.timeout === true) {
+      openTimedOut = true;
+      return {
+        status: 'skipped',
+        reasonCode: 'browser_bridge_replay_open_timeout',
+        httpStatus: null,
+        contentType: null,
+        responseKind: null,
+        extensionStages: [...extensionStages].sort(),
+      };
+    }
+    if (openResult?.ok !== true) {
+      if (useManagedBridge) {
+        await closeManagedBridgeSessionBounded(managedBridgeSession, options);
+      }
+      throw openResult?.error ?? new Error('browser bridge replay open failed');
+    }
     const replayResult = await Promise.race([
       submission,
       new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
@@ -1852,8 +2135,8 @@ async function runBrowserBridgeApiReplayWithExtension({
       responseKind: null,
     };
   } finally {
-    await managedBridgeSession?.close?.();
-    await new Promise((resolve) => server.close(() => resolve(undefined)));
+    await closeManagedBridgeSessionBounded(managedBridgeSession, options);
+    await closeBridgeServerBounded(server, options);
   }
 }
 
@@ -1865,6 +2148,7 @@ export async function runBrowserBridgeApiReplay({
   runtimeEndpoint = null,
   runtimeParameterSource = null,
   responseEvidence = null,
+  authBoundary = 'browser_bridge',
   options = /** @type {any} */ ({}),
   robotsPolicy = null,
   openBrowser = null,
@@ -1918,6 +2202,7 @@ export async function runBrowserBridgeApiReplay({
       runtimeEndpoint,
       runtimeParameterSource,
       responseEvidence,
+      authBoundary,
       options,
       openBrowser,
     });
@@ -1931,10 +2216,10 @@ export async function runBrowserBridgeApiReplay({
       runtimeParameterSource,
       responseEvidence,
       method: normalizedMethod,
-      authBoundary: 'browser_bridge',
+      authBoundary,
       runtimeBoundary: 'browser_bridge_page_context_fetch',
       fetchOptions: {
-        credentials: 'include',
+        credentials: browserBridgeApiReplayCredentialsMode(authBoundary),
         method: normalizedMethod,
         body: null,
         persistCookies: false,

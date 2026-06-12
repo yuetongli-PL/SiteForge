@@ -16,6 +16,7 @@ import {
   redactPublicIdentifierText,
   redactUrl,
 } from '../../../domain/sessions/security-guard.mjs';
+import { uniqueSortedStrings } from '../../../shared/normalize.mjs';
 
 export const RISK_POLICY_SCHEMA_VERSION = 1;
 export const SANITIZED_SUMMARY_ONLY = 'sanitized_summary_only';
@@ -156,6 +157,12 @@ export const FORCED_DISABLED_ACTIONS = Object.freeze([
   'checkout',
   'purchase',
   'change_payment',
+  'submit',
+  'send',
+  'publish',
+  'contact',
+  'upload',
+  'save',
 ]);
 
 export const EVIDENCE_SOURCE_KINDS = Object.freeze([
@@ -312,6 +319,12 @@ export function findForcedDisabledActions(value) {
     ['pay', /\u652f\u4ed8|\u4ed8\u6b3e|\u4ed8\u8d39|\u5145\u503c|\u6253\u8d4f/u],
     ['checkout', /\u7ed3\u8d26|\u4e0b\u5355/u],
     ['change_payment', /\u4fee\u6539\u4ed8\u6b3e\u65b9\u5f0f|\u66f4\u6362\u652f\u4ed8\u65b9\u5f0f|\u6dfb\u52a0\u94f6\u884c\u5361/u],
+    ['submit', /\u63d0\u4ea4/u],
+    ['send', /\u53d1\u9001/u],
+    ['publish', /\u53d1\u5e03/u],
+    ['contact', /\u8054\u7cfb|\u806f\u7d61/u],
+    ['upload', /\u4e0a\u4f20|\u4e0a\u50b3/u],
+    ['save', /\u4fdd\u5b58/u],
   ]);
   for (const [action, pattern] of localizedPatterns) {
     if (pattern.test(String(value ?? ''))) {
@@ -607,7 +620,7 @@ function capabilityRequiresManualReview(capability = /** @type {any} */ ({}), re
 }
 
 function capabilityHasPrivateBodyRisk(capability = /** @type {any} */ ({})) {
-  return /direct[-_\s]?message.*(?:detail|body|conversation)|private[-_\s]?message.*(?:detail|body|conversation)|private inbox|notification body|body text|raw body|private body/iu
+  return /direct[-_\s]?message.*(?:detail|body|conversation)|private[-_\s]?message.*(?:detail|body|conversation)|private inbox|notification (?:body|detail|content)|bookmark(?:ed)? post (?:body|detail|content)|saved item (?:body|detail|content)|body text|raw body|private body/iu
     .test(joinedCapabilityText(capability));
 }
 
@@ -1260,9 +1273,16 @@ function riskPolicyRuntimeDefaults(policy, options = /** @type {any} */ ({})) {
 export function createCapabilityRiskPolicy(capability = /** @type {any} */ ({})) {
   const riskLevel = inferCapabilityRiskLevel(capability);
   const defaults = RISK_LEVEL_DEFAULTS[riskLevel] ?? RISK_LEVEL_DEFAULTS.read_public_low;
-  const forcedActions = forcedDisabledActionsForCapabilityActionText(capability);
+  const sitePolicyForcedActions = Array.isArray(capability.sitePolicyDisabledActions)
+    ? capability.sitePolicyDisabledActions.map(normalizeRiskToken).filter(Boolean)
+    : [];
+  const forcedActions = uniqueSortedStrings([
+    ...forcedDisabledActionsForCapabilityActionText(capability),
+    ...sitePolicyForcedActions,
+  ]);
   const text = joinedCapabilityText(capability);
-  const forcedDisabled = forcedActions.length > 0 || DESTRUCTIVE_ACTION_PATTERN.test(text) || PAYMENT_ACTION_PATTERN.test(text);
+  const sitePolicyDisabled = capability.sitePolicyDisabled === true || sitePolicyForcedActions.length > 0;
+  const forcedDisabled = sitePolicyDisabled || forcedActions.length > 0 || DESTRUCTIVE_ACTION_PATTERN.test(text) || PAYMENT_ACTION_PATTERN.test(text);
   const highRiskGoverned = !forcedDisabled && capabilityRequiresHighRiskExecutionGovernance(capability, { riskLevel });
   const executionDisposition = forcedDisabled
     ? 'blocked'
@@ -1276,8 +1296,10 @@ export function createCapabilityRiskPolicy(capability = /** @type {any} */ ({}))
     executionDisposition,
     executionGates: defaults.executionGates,
   }, executionDisposition);
-  const reasonCode = forcedDisabled
-    ? 'forced-action-disabled'
+  const reasonCode = sitePolicyDisabled
+    ? 'site-policy-disabled-action'
+    : forcedDisabled
+      ? 'forced-action-disabled'
     : disabled
       ? `${riskLevel}-default-disabled`
       : `${riskLevel}-${executionDisposition}`;
@@ -1303,6 +1325,8 @@ export function createCapabilityRiskPolicy(capability = /** @type {any} */ ({}))
 function enforceDraftOnlyPlan(plan = /** @type {any} */ ({})) {
   return {
     ...plan,
+    governedExecution: true,
+    executionDisposition: 'confirm_required',
     mode: 'dry_run',
     dryRunOnly: true,
     requiresConfirmation: true,
@@ -1310,6 +1334,8 @@ function enforceDraftOnlyPlan(plan = /** @type {any} */ ({})) {
     draftOnly: true,
     steps: (Array.isArray(plan.steps) ? plan.steps : []).map((step) => ({
       ...step,
+      governedExecution: true,
+      executionDisposition: 'confirm_required',
       submit: false,
       finalSubmit: false,
       autoExecute: false,
@@ -1321,12 +1347,16 @@ function enforceDraftOnlyPlan(plan = /** @type {any} */ ({})) {
 function enforceLimitedReadPlan(plan = /** @type {any} */ ({})) {
   return {
     ...plan,
+    governedExecution: true,
+    executionDisposition: 'controlled',
     mode: plan.mode === 'dry_run' ? plan.mode : 'limited_read',
     autoExecute: false,
     limitedOutputOnly: true,
     savedMaterial: SANITIZED_SUMMARY_ONLY,
     steps: (Array.isArray(plan.steps) ? plan.steps : []).map((step) => ({
       ...step,
+      governedExecution: true,
+      executionDisposition: 'controlled',
       submit: false,
       autoExecute: false,
       limitedOutputOnly: true,
@@ -1377,9 +1407,17 @@ function enforceGovernedPlan(plan = /** @type {any} */ ({}), disposition = 'conf
   };
 }
 
+function isSitePolicyDisabledCapability(capability = /** @type {any} */ ({})) {
+  return capability.sitePolicyDisabled === true
+    || (Array.isArray(capability.sitePolicyDisabledActions) && capability.sitePolicyDisabledActions.length > 0)
+    || capability.activationBlockedReason === 'site-policy-disabled-action'
+    || capability.disabledReason === 'site-policy-disabled-action';
+}
+
 export function applyCapabilityRiskPolicy(capability = /** @type {any} */ ({})) {
   const riskPolicy = createCapabilityRiskPolicy(capability);
   const isCandidate = capability.status === 'candidate';
+  const sitePolicyDisabled = isSitePolicyDisabledCapability(capability);
   const enabledStatus = normalizeCapabilityEnablementStatus(capability, riskPolicy);
   const disposition = governedDispositionForCapability(capability, riskPolicy);
   const executionGates = executionGatesForCapability(capability, riskPolicy, disposition);
@@ -1419,10 +1457,14 @@ export function applyCapabilityRiskPolicy(capability = /** @type {any} */ ({})) 
     next.executionPlan = enforceGovernedPlan(next.executionPlan, disposition);
   }
   if (disposition === 'blocked' || enabledStatus === 'disabled') {
+    const disabledLifecycle = sitePolicyDisabled || (!next.executionPlan && next.status !== 'candidate');
+    const disabledNext = disabledLifecycle
+      ? (({ executionPlan: _executionPlan, ...rest }) => rest)(next)
+      : next;
     return decorateCapabilitySafeRemediation({
-      ...next,
-      status: next.status === 'candidate' ? 'candidate' : 'active',
-      enabled: true,
+      ...disabledNext,
+      status: disabledLifecycle ? 'disabled' : (next.status === 'candidate' ? 'candidate' : 'active'),
+      enabled: !disabledLifecycle,
       enabled_status: 'disabled',
       evidence_status: capability.evidence_status ?? normalizeCapabilityEvidenceStatus({ ...capability, enabled_status: 'enabled' }, 'enabled'),
       default_policy: 'disabled',
@@ -1430,11 +1472,31 @@ export function applyCapabilityRiskPolicy(capability = /** @type {any} */ ({})) 
       executionDisabledByDefault: true,
       disabledReason: next.riskPolicy.reasonCode,
       displayStatus: 'governed_blocked',
-      planCallable: Boolean(next.executionPlan),
+      planCallable: disabledLifecycle ? false : Boolean(disabledNext.executionPlan),
       runtimeCallable: disposition !== 'blocked',
       autoExecutable: false,
       executionDisposition: disposition,
       executionGates,
+    });
+  }
+  if (!next.executionPlan && next.informational !== true && next.status !== 'candidate') {
+    return decorateCapabilitySafeRemediation({
+      ...next,
+      status: 'disabled',
+      enabled: false,
+      enabled_status: 'disabled',
+      evidence_status: capability.evidence_status ?? normalizeCapabilityEvidenceStatus({ ...capability, enabled_status: 'enabled' }, 'enabled'),
+      default_policy: 'disabled',
+      disabledByPolicy: true,
+      executionDisabledByDefault: true,
+      disabledReason: 'execution-plan-missing',
+      activationBlockedReason: capability.activationBlockedReason ?? 'execution-plan-missing',
+      displayStatus: 'governed_blocked',
+      planCallable: false,
+      runtimeCallable: false,
+      autoExecutable: false,
+      executionDisposition: 'blocked',
+      executionGates: uniqueExecutionGates([...executionGates, 'permission_required']),
     });
   }
   if (disposition !== 'allow') {
@@ -1468,9 +1530,11 @@ export function applyCapabilityRiskPolicy(capability = /** @type {any} */ ({})) 
 export function applyRiskDefaults(capability = /** @type {any} */ ({}), options = /** @type {any} */ ({})) {
   const riskLevel = options.riskLevel ?? capability.risk_level ?? inferCapabilityRiskLevel(capability);
   const policy = riskPolicyForLevel(riskLevel);
+  const sitePolicyDisabled = isSitePolicyDisabledCapability(capability);
   const forceDisabled = options.forceDisabled === true
     && (
       findForcedDisabledActions(joinedCapabilityText(capability)).length > 0
+      || capabilityHasPrivateBodyRisk(capability)
       || DESTRUCTIVE_ACTION_PATTERN.test(joinedCapabilityText(capability))
       || PAYMENT_ACTION_PATTERN.test(joinedCapabilityText(capability))
     );
@@ -1537,16 +1601,20 @@ export function applyRiskDefaults(capability = /** @type {any} */ ({}), options 
     if (next.executionPlan) {
       next.executionPlan = enforceGovernedPlan(next.executionPlan, executionDisposition);
     }
+    const disabledLifecycle = sitePolicyDisabled || (!next.executionPlan && next.status !== 'candidate');
+    const disabledNext = disabledLifecycle
+      ? (({ executionPlan: _executionPlan, ...rest }) => rest)(next)
+      : next;
     return {
-      ...next,
-      status: next.status === 'candidate' ? 'candidate' : 'active',
-      enabled: true,
+      ...disabledNext,
+      status: disabledLifecycle ? 'disabled' : (next.status === 'candidate' ? 'candidate' : 'active'),
+      enabled: !disabledLifecycle,
       disabledByPolicy: true,
       executionDisabledByDefault: true,
       disabledReason: next.riskPolicy.reasonCode,
       displayStatus: 'governed_blocked',
-      planCallable: Boolean(next.executionPlan),
-      runtimeCallable: executionDisposition !== 'blocked' && Boolean(next.executionPlan),
+      planCallable: disabledLifecycle ? false : Boolean(disabledNext.executionPlan),
+      runtimeCallable: executionDisposition !== 'blocked' && Boolean(disabledNext.executionPlan),
       autoExecutable: false,
       executionDisposition,
       executionGates,

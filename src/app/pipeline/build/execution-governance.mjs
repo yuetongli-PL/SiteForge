@@ -216,9 +216,15 @@ function sanitizedDownloaderTaskDescriptor(capability = /** @type {any} */ ({}),
   return descriptor;
 }
 
-function runtimeProviderIdForCapability(capability = /** @type {any} */ ({}), operationKind = 'navigate') {
+function runtimeProviderIdForCapability(context = null, capability = /** @type {any} */ ({}), operationKind = 'navigate') {
   if (operationKind === 'download') {
     return safeDescriptorText(capability.downloaderTaskDescriptor?.providerId) ?? 'known_site_downloader';
+  }
+  if (isWeiboReadonlyCapability(context, capability)) {
+    return 'weibo_readonly_provider';
+  }
+  if (isZhihuReadonlyCapability(context, capability)) {
+    return 'zhihu_readonly_provider';
   }
   return capability?.providerId ?? null;
 }
@@ -358,10 +364,12 @@ function executionGatesForContract({
   operationKind = 'navigate',
   riskLevel = 'read_public_low',
 } = {}) {
-  if (disposition === 'allow') {
-    return [];
-  }
   const governedRisk = destructive === true || payment === true || highRisk === true || riskLevel === 'account_security_critical';
+  if (disposition === 'allow') {
+    return uniqueExecutionGates([
+      sessionRequired === true ? 'session_required' : null,
+    ]);
+  }
   return uniqueExecutionGates([
     disposition === 'confirm_required' || governedRisk ? 'confirm_required' : null,
     governedRisk || riskLevel === 'read_private_high' ? 'audit_required' : null,
@@ -412,6 +420,7 @@ function sanitizeStepTemplate(step = /** @type {any} */ ({})) {
     actionRef: actionRef ? String(actionRef) : null,
     routeRef: routeRef ? String(routeRef) : null,
     routeTemplate: step.routeTemplate ?? step.routePath ?? null,
+    pageKind: step.pageKind ?? step.pageType ?? null,
     endpointTemplate: step.endpoint ? String(step.endpoint).replace(/[?&](?:token|auth|sid|session|cookie|csrf|access_token|refresh_token)=[^&]+/giu, '') : null,
     slotNames: [
       ...(Array.isArray(step.slotNames) ? step.slotNames : []),
@@ -606,6 +615,500 @@ function highRiskTags({ destructive = false, payment = false, highRisk = false }
   ].filter(Boolean);
 }
 
+function hostFromMaybeUrl(value) {
+  try {
+    return new URL(String(value ?? '')).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function contextSiteHostTokens(context = null) {
+  return [
+    context?.site?.host,
+    context?.site?.hostname,
+    hostFromMaybeUrl(context?.site?.rootUrl),
+    hostFromMaybeUrl(context?.site?.normalizedUrl),
+    hostFromMaybeUrl(context?.site?.inputUrl),
+    ...(Array.isArray(context?.site?.allowedDomains) ? context.site.allowedDomains : []),
+  ]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isWeiboContext(context = null) {
+  const siteKey = normalizeToken(context?.setupProfile?.knownSitePolicy?.siteKey ?? context?.site?.siteKey ?? context?.site?.key);
+  const adapterId = normalizeToken(context?.setupProfile?.knownSitePolicy?.adapterId ?? context?.site?.adapterId);
+  const hosts = contextSiteHostTokens(context);
+  return siteKey === 'weibo'
+    || adapterId === 'weibo'
+    || hosts.some((host) => host === 'weibo.com' || host === 's.weibo.com' || host.endsWith('.weibo.com'));
+}
+
+function isXContext(context = null) {
+  const siteKey = normalizeToken(context?.setupProfile?.knownSitePolicy?.siteKey ?? context?.site?.siteKey ?? context?.site?.key);
+  const adapterId = normalizeToken(context?.setupProfile?.knownSitePolicy?.adapterId ?? context?.site?.adapterId);
+  const hosts = contextSiteHostTokens(context);
+  return siteKey === 'x'
+    || siteKey === 'twitter'
+    || adapterId === 'x'
+    || adapterId === 'twitter'
+    || hosts.some((host) => host === 'x.com' || host === 'twitter.com' || host.endsWith('.x.com') || host.endsWith('.twitter.com'));
+}
+
+function isRedditContext(context = null) {
+  const siteKey = normalizeToken(context?.setupProfile?.knownSitePolicy?.siteKey ?? context?.site?.siteKey ?? context?.site?.key);
+  const adapterId = normalizeToken(context?.setupProfile?.knownSitePolicy?.adapterId ?? context?.site?.adapterId);
+  const hosts = contextSiteHostTokens(context);
+  return siteKey === 'reddit'
+    || adapterId === 'reddit'
+    || hosts.some((host) => host === 'reddit.com' || host === 'www.reddit.com' || host.endsWith('.reddit.com'));
+}
+
+function isSocialBrowserBridgeReadonlyContext(context = null) {
+  return isXContext(context) || isRedditContext(context);
+}
+
+function isWeiboSearchCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const searchLike = /\bsearch\b/u.test(text)
+    && /\b(?:posts?|content|public)\b/u.test(text)
+    && !/\b(?:users?|profiles?|accounts?|people)\b/u.test(text);
+  return isWeiboContext(context)
+    && searchLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboFollowedUsersCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const followedUsersLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:followed-users|followed\s+users|following\s+(?:accounts|list)|who\s+do\s+i\s+follow)\b/u.test(text)
+    && !/\b(?:updates?|timeline|posts?|feed|followers?|fans?)\b/u.test(text);
+  return isWeiboContext(context)
+    && followedUsersLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboUserPostsCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const postsLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:user-posts|user\s+posts|profile\s+posts|mymblog)\b/u.test(text);
+  return isWeiboContext(context)
+    && postsLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboUserAlbumsCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const albumsLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:user-albums|user-photos|user\s+(?:albums|photos)|photos\/get_all)\b/u.test(text);
+  return isWeiboContext(context)
+    && albumsLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboUserVideosCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const videosLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:user-videos|user\s+videos|profile\s+videos|feature=3)\b/u.test(text);
+  return isWeiboContext(context)
+    && videosLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboUserArticlesCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const articlesLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:user-articles|user\s+articles|profile\s+articles|feature=7)\b/u.test(text);
+  return isWeiboContext(context)
+    && articlesLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboUserAudioCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const audioLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:user-audio|user\s+audio|profile\s+audio|getaudiolist|tabtype=audio)\b/u.test(text);
+  return isWeiboContext(context)
+    && audioLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboHotSearchCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const hotSearchLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:hot-search|hot\s+search(?:es)?|realtime\s+hot\s+search|side\/hotsearch)\b/u.test(text);
+  return isWeiboContext(context)
+    && hotSearchLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboHotRankHourCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const hotRankHourLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:hot-rank-hour|hourly\s+hot\s+rank|hot_band|hot-band)\b/u.test(text);
+  return isWeiboContext(context)
+    && hotRankHourLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboHotTimelineCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const hotTimelineLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:hot-timeline|hottimeline|hot\s+timeline|popular\s+(?:weibo\s+)?posts?|hot-rank-(?:yesterday|day-before-yesterday|week|male|female)|(?:yesterday|weekly?|male|female)\s+hot\s+rank|day-before-yesterday\s+hot\s+rank|day\s+before\s+yesterday\s+hot\s+rank)\b/u.test(text);
+  return isWeiboContext(context)
+    && hotTimelineLike
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|like|repost|send|upload)\b/u.test(text);
+}
+
+function isWeiboReadonlyCapability(context = null, capability = /** @type {any} */ ({})) {
+  return isWeiboSearchCapability(context, capability)
+    || isWeiboFollowedUsersCapability(context, capability)
+    || isWeiboUserPostsCapability(context, capability)
+    || isWeiboUserAlbumsCapability(context, capability)
+    || isWeiboUserVideosCapability(context, capability)
+    || isWeiboUserArticlesCapability(context, capability)
+    || isWeiboUserAudioCapability(context, capability)
+    || isWeiboHotSearchCapability(context, capability)
+    || isWeiboHotRankHourCapability(context, capability)
+    || isWeiboHotTimelineCapability(context, capability);
+}
+
+function isZhihuContext(context = null) {
+  const siteKey = normalizeToken(context?.setupProfile?.knownSitePolicy?.siteKey ?? context?.site?.siteKey ?? context?.site?.key);
+  const adapterId = normalizeToken(context?.setupProfile?.knownSitePolicy?.adapterId ?? context?.site?.adapterId);
+  const hosts = contextSiteHostTokens(context);
+  return siteKey === 'zhihu'
+    || adapterId === 'zhihu'
+    || hosts.some((host) => host === 'www.zhihu.com' || host === 'zhihu.com' || host.endsWith('.zhihu.com'));
+}
+
+function zhihuReadonlyTextAllowed(text) {
+  return !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|vote|like|collect|message|send|upload)\b/u.test(text);
+}
+
+function isZhihuSearchCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const searchLike = (text.includes('search-posts') || /\bsearch\b/u.test(text))
+    && /\b(?:posts?|content|question|answer|public|zhihu)\b/u.test(text);
+  return isZhihuContext(context)
+    && searchLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuFollowedUsersCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const followedUsersLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:followed-users|followed\s+users|following\s+(?:accounts|list)|who\s+do\s+i\s+follow)\b/u.test(text);
+  return isZhihuContext(context)
+    && followedUsersLike
+    && !/\b(?:list-user-following|user\s+following)\b/u.test(text)
+    && !/\b(?:delete|destroy|clear|reset|cancel|revoke|pay|payment|purchase|checkout|billing|download|export|write|submit|update|create|publish|follow account|follow user|unfollow|vote|like|collect|message|send|upload)\b/u.test(text);
+}
+
+function isZhihuFeedCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const feedLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\b(?:followed-updates|followed\s+updates|recommended-timeline|timeline|feed|homepage)\b/u.test(text);
+  return isZhihuContext(context)
+    && feedLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuNotificationsCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const notificationsLike = /\b(?:list|read|show)\b/u.test(text)
+    && /\bnotifications?\b/u.test(text);
+  return isZhihuContext(context)
+    && notificationsLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuProfileCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const profileLike = /\b(?:profile-content|list-profile-content|account-info|profile)\b/u.test(text);
+  return isZhihuContext(context)
+    && profileLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuProfileTabCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const profileTabLike = /\b(?:list-user-(?:activities|answers|questions|articles|columns|pins|collections|videos|following)|user\s+(?:activities|answers|questions|articles|columns|pins|collections|videos|following))\b/u.test(text);
+  return isZhihuContext(context)
+    && profileTabLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuHotCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const hotLike = /\b(?:list|read|show|view|open)\b/u.test(text)
+    && /\b(?:list-hot-posts|hot-posts|hot\s+posts|hot\s+list|hot\s+ranking|zhihu\s+hot)\b/u.test(text);
+  return isZhihuContext(context)
+    && hotLike
+    && !/\b(?:list-hot-broadcasts|hot-broadcasts|hot\s+broadcasts?|drama\s+feed|live\s+feed)\b/u.test(text)
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuHotBroadcastCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const hotBroadcastLike = /\b(?:list|read|show|view|open)\b/u.test(text)
+    && /\b(?:list-hot-broadcasts|hot-broadcasts|hot\s+broadcasts?|drama\s+feed|live\s+feed)\b/u.test(text);
+  return isZhihuContext(context)
+    && hotBroadcastLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuTopicCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const topicLike = /\b(?:list|read|show|view|open)\b/u.test(text)
+    && /\b(?:list-topic-(?:discussions|featured)|topic-(?:discussions|featured)|topic\s+(?:discussions|featured|top\s+answers?))\b/u.test(text);
+  return isZhihuContext(context)
+    && topicLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuQuestionCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const questionLike = /\b(?:view|open|read|show)\b/u.test(text)
+    && /\b(?:view-question-detail|question-detail|question\s+detail)\b/u.test(text);
+  return isZhihuContext(context)
+    && questionLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuAnswerCapability(context = null, capability = /** @type {any} */ ({})) {
+  const text = joinedCapabilityText(capability).toLowerCase();
+  const answerLike = /\b(?:view|open|read|show)\b/u.test(text)
+    && /\b(?:view-answer-detail|answer-detail|answer\s+detail)\b/u.test(text);
+  return isZhihuContext(context)
+    && answerLike
+    && zhihuReadonlyTextAllowed(text);
+}
+
+function isZhihuReadonlyCapability(context = null, capability = /** @type {any} */ ({})) {
+  return isZhihuSearchCapability(context, capability)
+    || isZhihuFollowedUsersCapability(context, capability)
+    || isZhihuFeedCapability(context, capability)
+    || isZhihuNotificationsCapability(context, capability)
+    || isZhihuProfileCapability(context, capability)
+    || isZhihuProfileTabCapability(context, capability)
+    || isZhihuHotCapability(context, capability)
+    || isZhihuHotBroadcastCapability(context, capability)
+    || isZhihuTopicCapability(context, capability)
+    || isZhihuQuestionCapability(context, capability)
+    || isZhihuAnswerCapability(context, capability);
+}
+
+function contextSiteOrigin(context = null) {
+  for (const value of [
+    context?.site?.rootUrl,
+    context?.site?.normalizedUrl,
+    context?.site?.inputUrl,
+  ]) {
+    try {
+      const origin = new URL(String(value ?? '')).origin;
+      if (origin && origin !== 'null') return origin;
+    } catch {
+      // Continue to host/domain fallbacks.
+    }
+  }
+  for (const host of contextSiteHostTokens(context)) {
+    try {
+      const origin = new URL(`https://${host}`).origin;
+      if (origin && origin !== 'null') return origin;
+    } catch {
+      // Continue to the final sentinel fallback.
+    }
+  }
+  return 'https://example.invalid';
+}
+
+function isBrowserBridgeReadonlyCapability(context = null, capability = /** @type {any} */ ({}), plan = /** @type {any} */ ({}), operationKind = null) {
+  const providerId = normalizeToken(capability.providerId ?? capability.runtimeProviderId);
+  const runtimeMode = normalizeToken(capability.runtimeMode ?? capability.executionPlan?.runtimeMode ?? plan?.runtimeMode);
+  const bindingKind = runtimeKindForCapability(capability, plan);
+  const operation = normalizeToken(operationKind ?? operationKindForPlan(capability, plan));
+  return isSocialBrowserBridgeReadonlyContext(context)
+    && (providerId === 'browser_bridge' || bindingKind === 'browser_bridge' || runtimeMode === 'browser_bridge_required')
+    && !['download', 'form_or_action', 'adapter_action'].includes(operation)
+    && !isDestructiveCapability(capability)
+    && !isPaymentCapability(capability);
+}
+
+function isAuthorizedSummaryReadonlyCapability(capability = /** @type {any} */ ({}), plan = /** @type {any} */ ({}), operationKind = null) {
+  const providerId = normalizeToken(capability.providerId ?? capability.runtimeProviderId);
+  const bindingKind = runtimeKindForCapability(capability, plan);
+  const operation = normalizeToken(operationKind ?? operationKindForPlan(capability, plan));
+  const planStepsUseAuthorizedSummary = planSteps(plan).some((step) => (
+    normalizeToken(step?.routeState?.source) === 'authorized-source-structure-summary'
+    || normalizeToken(step?.source) === 'authorized-source-structure-summary'
+  ));
+  return (providerId === 'authorized_summary' || bindingKind === 'authorized_summary' || planStepsUseAuthorizedSummary)
+    && !['download', 'form_or_action', 'adapter_action', 'write', 'submit'].includes(operation)
+    && !isDestructiveCapability(capability)
+    && !isPaymentCapability(capability);
+}
+
+function runtimeAuthRequiredForCapability(context = null, capability = /** @type {any} */ ({})) {
+  return capability?.authRequired === true
+    || capability?.requiresAuth === true
+    || capability?.requiresSession === true
+    || capability?.requiresUserAuthorization === true
+    || ['read_personal_medium', 'read_private_high', 'account_security_critical'].includes(riskLevelOf(capability))
+    || isWeiboReadonlyCapability(context, capability)
+    || isZhihuReadonlyCapability(context, capability);
+}
+
+function authRequirementForCapability(context = null, capability = /** @type {any} */ ({}), operationKind = null, {
+  materialRequired = runtimeAuthRequiredForCapability(context, capability),
+} = {}) {
+  if (!materialRequired) {
+    return {
+      required: false,
+      mode: 'none',
+      scopes: [],
+      material: {
+        allowedTypes: [],
+        injectionTarget: 'http_request',
+      },
+      policy: {
+        requireGovernanceGate: true,
+        allowCredentialForwarding: false,
+        allowRawHeaderAudit: false,
+        allowRawCookieAudit: false,
+        allowRawBodyAudit: false,
+      },
+    };
+  }
+  const weiboSearch = isWeiboSearchCapability(context, capability);
+  const weiboFollowedUsers = isWeiboFollowedUsersCapability(context, capability);
+  const weiboUserPosts = isWeiboUserPostsCapability(context, capability);
+  const weiboUserAlbums = isWeiboUserAlbumsCapability(context, capability);
+  const weiboUserVideos = isWeiboUserVideosCapability(context, capability);
+  const weiboUserArticles = isWeiboUserArticlesCapability(context, capability);
+  const weiboUserAudio = isWeiboUserAudioCapability(context, capability);
+  const weiboHotSearch = isWeiboHotSearchCapability(context, capability);
+  const weiboHotRankHour = isWeiboHotRankHourCapability(context, capability);
+  const weiboHotTimeline = isWeiboHotTimelineCapability(context, capability);
+  const weiboReadonly = weiboSearch || weiboFollowedUsers || weiboUserPosts || weiboUserAlbums || weiboUserVideos || weiboUserArticles || weiboUserAudio || weiboHotSearch || weiboHotRankHour || weiboHotTimeline;
+  const weiboRequiredSlots = weiboSearch
+    ? ['query']
+    : (weiboFollowedUsers || weiboUserPosts || weiboUserAlbums || weiboUserVideos || weiboUserArticles || weiboUserAudio)
+      ? ['uid']
+      : null;
+  const zhihuSearch = isZhihuSearchCapability(context, capability);
+  const zhihuFollowedUsers = isZhihuFollowedUsersCapability(context, capability);
+  const zhihuFeed = isZhihuFeedCapability(context, capability);
+  const zhihuNotifications = isZhihuNotificationsCapability(context, capability);
+  const zhihuProfile = isZhihuProfileCapability(context, capability);
+  const zhihuProfileTab = isZhihuProfileTabCapability(context, capability);
+  const zhihuHot = isZhihuHotCapability(context, capability);
+  const zhihuHotBroadcast = isZhihuHotBroadcastCapability(context, capability);
+  const zhihuTopic = isZhihuTopicCapability(context, capability);
+  const zhihuQuestion = isZhihuQuestionCapability(context, capability);
+  const zhihuAnswer = isZhihuAnswerCapability(context, capability);
+  const zhihuReadonly = zhihuSearch
+    || zhihuFollowedUsers
+    || zhihuFeed
+    || zhihuNotifications
+    || zhihuProfile
+    || zhihuProfileTab
+    || zhihuHot
+    || zhihuHotBroadcast
+    || zhihuTopic
+    || zhihuQuestion
+    || zhihuAnswer;
+  let scopeOrigin = contextSiteOrigin(context);
+  let scopeResources = null;
+  if (weiboSearch) {
+    scopeOrigin = 'https://s.weibo.com';
+    scopeResources = ['/weibo'];
+  } else if (weiboUserAlbums) {
+    scopeOrigin = 'https://photo.weibo.com';
+    scopeResources = ['/photos/get_all'];
+  } else if (weiboFollowedUsers) {
+    scopeOrigin = 'https://weibo.com';
+    scopeResources = ['/ajax/friendships/friends'];
+  } else if (weiboUserPosts || weiboUserVideos || weiboUserArticles) {
+    scopeOrigin = 'https://weibo.com';
+    scopeResources = ['/ajax/statuses/mymblog'];
+  } else if (weiboUserAudio) {
+    scopeOrigin = 'https://weibo.com';
+    scopeResources = ['/ajax/profile/getAudioList'];
+  } else if (weiboHotSearch) {
+    scopeOrigin = 'https://weibo.com';
+    scopeResources = ['/ajax/side/hotSearch'];
+  } else if (weiboHotRankHour) {
+    scopeOrigin = 'https://weibo.com';
+    scopeResources = ['/ajax/statuses/hot_band'];
+  } else if (weiboHotTimeline) {
+    scopeOrigin = 'https://weibo.com';
+    scopeResources = ['/ajax/feed/hottimeline'];
+  } else if (zhihuReadonly) {
+    scopeOrigin = 'https://www.zhihu.com';
+    scopeResources = zhihuSearch
+      ? ['/search']
+      : zhihuProfileTab
+        ? ['/people/{account}/activities', '/people/{account}/answers', '/people/{account}/asks', '/people/{account}/posts', '/people/{account}/columns', '/people/{account}/pins', '/people/{account}/collections', '/people/{account}/zvideos', '/people/{account}/following']
+        : zhihuFollowedUsers
+          ? ['/follow']
+          : zhihuNotifications
+            ? ['/notifications']
+            : zhihuProfile
+              ? ['/people/{account}']
+              : zhihuHotBroadcast
+                ? ['/drama/feed']
+                : zhihuHot
+                  ? ['/hot']
+                  : zhihuTopic
+                    ? ['/topic/{topic_id}/hot', '/topic/{topic_id}/top-answers']
+                    : zhihuQuestion
+                      ? ['/question/{question_id}']
+                      : zhihuAnswer
+                        ? ['/question/{question_id}/answer/{answer_id}', '/answer/{answer_id}']
+                        : zhihuFeed
+                          ? ['/']
+                          : null;
+  }
+  return {
+    required: true,
+    mode: 'session_handle',
+    scopes: [
+      {
+        origin: scopeOrigin,
+        operations: operationKind === 'download' ? ['download'] : ['read', 'query'],
+        ...(scopeResources ? { resources: scopeResources } : {}),
+      },
+    ],
+    material: {
+      allowedTypes: ['cookie'],
+      injectionTarget: 'http_request',
+    },
+    policy: {
+      requireGovernanceGate: true,
+      allowCredentialForwarding: false,
+      allowRawHeaderAudit: false,
+      allowRawCookieAudit: false,
+      allowRawBodyAudit: false,
+      ...(weiboReadonly && weiboRequiredSlots ? { requireExplicitSlots: weiboRequiredSlots } : {}),
+      ...(zhihuReadonly && (zhihuSearch || zhihuProfile || zhihuProfileTab || zhihuTopic || zhihuQuestion || zhihuAnswer)
+        ? {
+          requireExplicitSlots: zhihuSearch
+            ? ['query']
+            : zhihuProfile || zhihuProfileTab
+              ? ['account']
+              : zhihuTopic
+                ? ['topic_id']
+                : zhihuQuestion
+                ? ['question_id']
+                : ['answer_id'],
+        }
+        : {}),
+    },
+  };
+}
+
 export function buildExecutionContract({
   context,
   capability,
@@ -617,14 +1120,16 @@ export function buildExecutionContract({
   const payment = isPaymentCapability(capability) || normalizeToken(capability?.safetyLevel ?? capability?.safety) === 'payment';
   const highRiskAction = isHighRiskCapability(capability);
   const planCallable = capability?.status === 'active' && Boolean(plan);
-  const sessionRequired = capability?.authRequired === true
-    || capability?.requiresAuth === true
-    || capability?.requiresSession === true
-    || capability?.requiresUserAuthorization === true
-    || ['read_personal_medium', 'read_private_high', 'account_security_critical'].includes(riskLevelOf(capability));
+  const sessionRequired = runtimeAuthRequiredForCapability(context, capability);
   const executionVerdict = executionVerdictForDisposition(disposition);
   const operationKind = operationKindForPlan(capability, plan ?? {});
   const riskLevel = riskLevelOf(capability);
+  const browserBridgeReadonly = isBrowserBridgeReadonlyCapability(context, capability, plan ?? {}, operationKind);
+  const authorizedSummaryReadonly = isAuthorizedSummaryReadonlyCapability(capability, plan ?? {}, operationKind);
+  const authMaterialRequired = sessionRequired && !browserBridgeReadonly && !authorizedSummaryReadonly;
+  const authRequirement = authRequirementForCapability(context, capability, operationKind, {
+    materialRequired: authMaterialRequired,
+  });
   const executionGates = executionGatesForContract({
     disposition,
     destructive,
@@ -697,9 +1202,10 @@ export function buildExecutionContract({
     sessionRequirementRef: sessionRequired
       ? `session-requirement:${safeIdPart(capability?.id ?? capability?.name, 'capability')}`
       : null,
-    authRequirementRef: sessionRequired
+    authRequirementRef: authMaterialRequired
       ? `auth-requirement:${safeIdPart(capability?.id ?? capability?.name, 'capability')}`
       : null,
+    authRequirement,
     riskPolicyRef: riskPolicyId,
     approvalPolicyRef: disposition === 'allow' ? null : `approval-policy:${safeIdPart(capability?.id ?? capability?.name, 'capability')}`,
     auditPolicyRef: disposition === 'allow' ? null : `audit-policy:${safeIdPart(capability?.id ?? capability?.name, 'capability')}`,
@@ -709,7 +1215,7 @@ export function buildExecutionContract({
     runtimeBinding: {
       id: runtimeBindingId,
       kind: runtimeKindForCapability(capability, plan ?? {}),
-      providerId: runtimeProviderIdForCapability(capability, operationKind),
+      providerId: runtimeProviderIdForCapability(context, capability, operationKind),
       adapterRef: capability?.apiAdapter?.adapterDecisionRef ?? capability?.siteAdapterRef ?? null,
       downloaderTaskDescriptor: operationKind === 'download'
         ? sanitizedDownloaderTaskDescriptor(capability, plan ?? {}, disposition)
@@ -974,11 +1480,17 @@ function authStateSatisfiesRuntimeConstraint(authStateReport = /** @type {any} *
 function hasRuntimeConstraintsSatisfied(context = /** @type {any} */ ({}), contract = /** @type {any} */ ({})) {
   const sessionRequired = Boolean(contract.sessionRequirementRef);
   const authRequired = Boolean(contract.authRequirementRef);
+  const runtimeSessionAvailable = Boolean(
+    context.runtimeSessionAuth?.sessionHandle
+    && context.runtimeExecutionContext?.sessionVault,
+  );
   const sessionSatisfied = !sessionRequired
     || context.session?.available === true
+    || runtimeSessionAvailable
     || context.runtimeConstraints?.sessionSatisfied === true
     || authStateSatisfiesRuntimeConstraint(context.authStateReport);
   const authSatisfied = !authRequired
+    || runtimeSessionAvailable
     || context.runtimeConstraints?.authSatisfied === true
     || authStateSatisfiesRuntimeConstraint(context.authStateReport);
   const executionGrantSatisfied = contract.highRiskAction !== true
@@ -1233,6 +1745,69 @@ function buildIntentIndex(intents = /** @type {any[]} */ ([])) {
   return { byId, byCapabilityId };
 }
 
+function capabilityIntentTexts(capability = /** @type {any} */ ({}), intentIndex = /** @type {any} */ ({})) {
+  const byCapabilityId = intentIndex.byCapabilityId ?? new Map();
+  const texts = [
+    capability.id,
+    capability.name,
+    capability.user_facing_name,
+    capability.userFacingName,
+    capability.description,
+    capability.action,
+    capability.object,
+  ].map((value) => String(value ?? '').trim()).filter(Boolean);
+  for (const intent of byCapabilityId.get(capability.id) ?? []) {
+    texts.push(...intentTexts(intent));
+  }
+  return [...new Set(texts)];
+}
+
+function isBlockedTaskCapability(capability = /** @type {any} */ ({})) {
+  return capability.status === 'disabled'
+    || capability.enabled_status === 'disabled'
+    || capability.executionDisposition === 'blocked'
+    || capability.runtimeCallable === false
+    || capability.callable === false;
+}
+
+function selectBlockedCapabilityForTask(task, capabilities = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
+  const normalizedTask = normalizeToken(task);
+  if (!normalizedTask || !Array.isArray(capabilities) || capabilities.length === 0) {
+    return null;
+  }
+  const intentIndex = buildIntentIndex(intents);
+  const scored = capabilities
+    .filter(isBlockedTaskCapability)
+    .map((capability) => {
+      const score = capabilityIntentTexts(capability, intentIndex)
+        .reduce((best, text) => Math.max(best, dispatchTextScore(task, text)), 0);
+      return { capability, score };
+    })
+    .filter((entry) => entry.score >= 800)
+    .sort((left, right) => right.score - left.score);
+  return scored[0] ?? null;
+}
+
+function contractTaskScore(task, contract = /** @type {any} */ ({}), intents = /** @type {any[]} */ ([])) {
+  if (!contract) {
+    return 0;
+  }
+  const normalizedTask = normalizeToken(task);
+  if (
+    normalizedTask
+    && (
+      normalizeToken(contract.capabilityId) === normalizedTask
+      || normalizeToken(contract.id) === normalizedTask
+      || contract.intentIds?.some((intentId) => normalizeToken(intentId) === normalizedTask)
+    )
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const intentIndex = buildIntentIndex(intents);
+  return contractIntentTexts(contract, intentIndex)
+    .reduce((best, text) => Math.max(best, dispatchTextScore(task, text)), 0);
+}
+
 function selectContractForTask(task, contracts = /** @type {any[]} */ ([]), intents = /** @type {any[]} */ ([])) {
   const normalizedTask = normalizeToken(task);
   if (!normalizedTask) {
@@ -1266,6 +1841,184 @@ function selectContractForTask(task, contracts = /** @type {any[]} */ ([]), inte
     return scored[0].contract;
   }
   return contracts.find((contract) => downloadBookTaskMatchesContract(task, contract)) ?? null;
+}
+
+function taskCompositionSegments(task) {
+  const text = String(task ?? '').trim();
+  if (!text) {
+    return [];
+  }
+  const normalized = text
+    .replace(/\s*(?:->|=>|＞|→)\s*/gu, ' then ')
+    .replace(/\b(?:and\s+then|then)\b/giu, ' then ')
+    .replace(/(?:然后|接着|再|并且随后|随后)/gu, ' then ');
+  const segments = normalized
+    .split(/\bthen\b/giu)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.length > 1 ? segments : [];
+}
+
+function buildRuntimeStepForSelection({
+  context,
+  taskSegment,
+  selected,
+  governance,
+  executeRequested,
+}) {
+  const decision = selected
+    ? governance?.decisions?.find((candidate) => candidate.contractRef === selected.id) ?? null
+    : null;
+  const requiredGates = selected && decision ? runtimeTaskGatesForContract(selected, decision) : [];
+  const runtimeVerdict = selected && decision ? runtimeTaskVerdictForContract(selected, decision, requiredGates) : null;
+  const stepContext = {
+    ...context,
+    options: {
+      ...(context?.options ?? {}),
+      executionTask: taskSegment,
+    },
+  };
+  const runtimeGateStatus = selected && decision
+    ? runtimeGateStatusForContract(stepContext, selected, decision, requiredGates)
+    : null;
+  const runtimeInvocationRequest = selected && decision
+    ? createRuntimeRequestForSelection({
+      context: stepContext,
+      selected,
+      decision,
+      runtimeVerdict,
+      requiredGates,
+    })
+    : null;
+  const runtimePolicyDecision = executeRequested && runtimeInvocationRequest && selected && decision
+    ? createRuntimePolicyDecision({
+      context: stepContext,
+      selected,
+      decision,
+      runtimeVerdict,
+      requiredGates,
+      runtimeGateStatus,
+      executeRequested,
+    })
+    : null;
+  const runtimeDecision = runtimeInvocationRequest && runtimePolicyDecision
+    ? evaluateRuntimeInvocationDispatch({
+      invocationRequest: runtimeInvocationRequest,
+      policyDecision: runtimePolicyDecision,
+      gateStatus: runtimeGateStatus,
+    })
+    : null;
+  return {
+    selected,
+    decision,
+    requiredGates,
+    runtimeVerdict,
+    runtimeGateStatus,
+    runtimeInvocationRequest,
+    runtimePolicyDecision,
+    runtimeDecision,
+    runtimeDispatchAllowed: runtimeDecision?.runtimeDispatchAllowed === true,
+  };
+}
+
+function buildTaskCompositionPlan({
+  context,
+  contracts = /** @type {any[]} */ ([]),
+  intents = /** @type {any[]} */ ([]),
+  governance,
+  executeRequested = false,
+}) {
+  const task = context?.options?.executionTask ?? null;
+  const segments = taskCompositionSegments(task);
+  if (segments.length < 2) {
+    return null;
+  }
+  const steps = segments.map((segment, index) => {
+    const selected = selectContractForTask(segment, contracts, intents);
+    const runtime = buildRuntimeStepForSelection({
+      context,
+      taskSegment: segment,
+      selected,
+      governance,
+      executeRequested,
+    });
+    return {
+      index: index + 1,
+      taskSegment: segment,
+      selectedContractRef: selected?.id ?? null,
+      selectedCapabilityId: selected?.capabilityId ?? null,
+      selectedVerdict: runtime.runtimeVerdict ?? runtime.decision?.verdict ?? null,
+      selectedGates: runtime.requiredGates,
+      selectedGateStatus: runtime.runtimeGateStatus ?? runtime.decision?.gateStatus ?? null,
+      runtimeDispatchAllowed: runtime.runtimeDispatchAllowed,
+      runtimeInvocationRequest: runtime.runtimeInvocationRequest,
+      runtimePolicyDecision: runtime.runtimePolicyDecision,
+      runtimeDecision: runtime.runtimeDecision,
+      status: !selected
+        ? 'blocked_step_not_resolved'
+        : executeRequested
+          ? runtime.runtimeDecision?.status ?? 'blocked_by_runtime'
+          : 'planned_no_execute_flag',
+      contextTransfer: {
+        inputFromPreviousStep: index === 0 ? null : {
+          stepIndex: index,
+          fields: [
+            'capabilityId',
+            'executionContractRef',
+            'resultSummary',
+            'artifactRefs',
+          ],
+        },
+        outputToNextStep: index === segments.length - 1 ? null : {
+          stepIndex: index + 2,
+          fields: [
+            'capabilityId',
+            'executionContractRef',
+            'resultSummary',
+            'artifactRefs',
+          ],
+        },
+      },
+    };
+  });
+  const unresolved = steps.filter((step) => !step.selectedContractRef);
+  const blocked = steps.filter((step) => step.selectedContractRef && executeRequested && step.runtimeDispatchAllowed !== true);
+  const allResolved = unresolved.length === 0;
+  const allDispatchAllowed = allResolved && (!executeRequested || blocked.length === 0);
+  return {
+    plan: {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      artifactFamily: 'siteforge-task-composition-plan',
+      task,
+      status: !allResolved
+        ? 'blocked_composition_step_not_resolved'
+        : !executeRequested
+          ? 'planned_composition_no_execute_flag'
+          : allDispatchAllowed
+            ? 'ready_for_composed_runtime'
+            : 'blocked_composition_runtime',
+      stepCount: steps.length,
+      steps,
+      contextTransfer: {
+        status: allResolved ? 'modeled' : 'blocked_by_unresolved_step',
+        requiredFields: [
+          'capabilityId',
+          'executionContractRef',
+          'resultSummary',
+          'artifactRefs',
+        ],
+      },
+      summary: {
+        resolvedSteps: steps.filter((step) => step.selectedContractRef).length,
+        unresolvedSteps: unresolved.length,
+        runtimeDispatchAllowedSteps: steps.filter((step) => step.runtimeDispatchAllowed === true).length,
+        blockedSteps: blocked.length,
+      },
+    },
+    primaryContract: steps.at(-1)?.selectedContractRef
+      ? contracts.find((contract) => contract.id === steps.at(-1).selectedContractRef) ?? null
+      : null,
+  };
 }
 
 function downloadBookTaskMatchesContract(task, contract = /** @type {any} */ ({})) {
@@ -1382,10 +2135,27 @@ function runtimeExecutionReason(status) {
   if (status === 'blocked_task_not_resolved') {
     return 'task did not resolve to a compiled execution contract';
   }
+  if (status === 'blocked_task_policy_disabled') {
+    return 'task matched a disabled capability and cannot be dispatched to runtime';
+  }
   if (status === 'ready_for_direct_runtime' || status === 'ready_for_controlled_runtime') {
     return 'runtime decision allows dispatch; side-effect provider execution remains inside app/runtime boundary';
   }
   return status ?? 'runtime_not_requested';
+}
+
+function blockedTaskRuntimeReason(blockedSelection = null) {
+  const capability = blockedSelection?.capability ?? null;
+  if (!capability) {
+    return 'task matched a disabled capability and cannot be dispatched to runtime';
+  }
+  const reason = capability.activationBlockedReason
+    ?? capability.disabledReason
+    ?? capability.riskPolicy?.reasonCode
+    ?? capability.safe_remediation_path
+    ?? capability.enabled_status
+    ?? 'disabled';
+  return `task matched disabled capability ${capability.id}; runtime dispatch blocked by ${reason}`;
 }
 
 function createRuntimeRequestForSelection({
@@ -1399,6 +2169,16 @@ function createRuntimeRequestForSelection({
     return null;
   }
   const runtimeContractRef = runtimeContractRefForSelection(selected);
+  const runtimeSessionAuth = context?.runtimeSessionAuth ?? null;
+  const requestAuth = selected.authRequirement?.required === true && runtimeSessionAuth?.sessionHandle
+    ? {
+      sessionHandle: runtimeSessionAuth.sessionHandle,
+      authGate: {
+        satisfied: true,
+        source: runtimeSessionAuth.source ?? 'ephemeral_runtime_session',
+      },
+    }
+    : undefined;
   return createRuntimeInvocationRequest({
     capabilityPlan: {
       siteId: safeRefIdPart(selected.siteId ?? context?.site?.id ?? 'site', 'site'),
@@ -1420,6 +2200,7 @@ function createRuntimeRequestForSelection({
     taskId: context?.options?.executionTask ? `task:${safeRefIdPart(context.options.executionTask, 'task')}` : undefined,
     traceId: context?.buildId ? `trace:${safeRefIdPart(context.buildId, 'build')}` : undefined,
     correlationId: context?.buildId ? `correlation:${safeRefIdPart(context.buildId, 'build')}` : undefined,
+    auth: requestAuth,
   });
 }
 
@@ -1473,11 +2254,92 @@ export function buildRuntimeDispatchReport({
   context,
   contracts = /** @type {any[]} */ ([]),
   intents = /** @type {any[]} */ ([]),
+  capabilities = /** @type {any[]} */ ([]),
   governance,
 } = /** @type {any} */ ({})) {
   const executeRequested = context?.options?.execute === true;
   const task = context?.options?.executionTask ?? null;
-  const selected = selectContractForTask(task, contracts, intents);
+  const composition = buildTaskCompositionPlan({
+    context,
+    contracts,
+    intents,
+    governance,
+    executeRequested,
+  });
+  const taskCompositionPlan = composition?.plan ?? null;
+  const selected = composition?.primaryContract ?? selectContractForTask(task, contracts, intents);
+  const blockedSelection = selectBlockedCapabilityForTask(task, capabilities, intents);
+  const selectedScore = selected ? contractTaskScore(task, selected, intents) : 0;
+  if (
+    blockedSelection
+    && taskCompositionPlan?.status !== 'ready_for_composed_runtime'
+    && (!selected || blockedSelection.score > selectedScore)
+  ) {
+    const capability = blockedSelection.capability;
+    return {
+      schemaVersion: BUILD_SCHEMA_VERSION,
+      artifactFamily: 'siteforge-runtime-dispatch-report',
+      buildId: context?.buildId ?? null,
+      siteId: context?.site?.id ?? null,
+      executeRequested,
+      taskPlanningRequested: Boolean(task),
+      runtimeExecutionRequested: executeRequested && Boolean(task),
+      task,
+      status: 'blocked_task_policy_disabled',
+      taskCompositionPlan,
+      runtimeInvocationRequest: null,
+      runtimePolicyDecision: null,
+      runtimeDecision: null,
+      selectedContractRef: null,
+      selectedCapabilityId: capability.id ?? null,
+      selectedVerdict: 'blocked',
+      selectedGates: [],
+      selectedGateStatus: null,
+      selectedHighRiskAction: ['write_high', 'download_high', 'account_security_critical'].includes(capability.risk_level)
+        || capability.safetyLevel === 'state_changing',
+      selectedImpactScope: null,
+      runtimeExecuted: false,
+      sideEffectAttempted: false,
+      runtimeDispatchAllowed: false,
+      runtimeExecutionReason: blockedTaskRuntimeReason(blockedSelection),
+      decision: null,
+      blockedTask: {
+        capabilityId: capability.id ?? null,
+        name: capability.name ?? null,
+        status: capability.status ?? null,
+        enabled_status: capability.enabled_status ?? null,
+        executionDisposition: capability.executionDisposition ?? null,
+        reasonCode: capability.activationBlockedReason
+          ?? capability.disabledReason
+          ?? capability.riskPolicy?.reasonCode
+          ?? null,
+        safe_remediation_path: capability.safe_remediation_path ?? capability.safe_remediation?.path ?? null,
+        matchScore: blockedSelection.score,
+      },
+      executionConsent: {
+        naturalLanguageRequestGrantsExecution: false,
+        verdict: 'blocked',
+        gates: [],
+        gateStatus: null,
+        sitePolicyExplicitAllowSatisfied: false,
+        strongConfirmationSatisfied: false,
+        completeAuditSatisfied: false,
+        runtimeConstraintsSatisfied: false,
+        allGovernanceGatesSatisfied: false,
+        allRuntimeGatesSatisfied: false,
+      },
+      audit: {
+        auditRequired: true,
+        requiredFields: [],
+        materialPersistence: {
+          auth: false,
+          browserState: false,
+          payload: false,
+        },
+        replayableDecision: true,
+      },
+    };
+  }
   const decision = selected
     ? governance?.decisions?.find((candidate) => candidate.contractRef === selected.id) ?? null
     : null;
@@ -1519,6 +2381,14 @@ export function buildRuntimeDispatchReport({
     selected,
     runtimeDecision,
   });
+  const effectiveStatus = taskCompositionPlan?.status === 'ready_for_composed_runtime'
+    ? 'ready_for_composed_runtime'
+    : taskCompositionPlan?.status?.startsWith?.('blocked_composition')
+      ? taskCompositionPlan.status
+      : status;
+  const runtimeDispatchAllowed = taskCompositionPlan
+    ? taskCompositionPlan.status === 'ready_for_composed_runtime'
+    : runtimeDecision?.runtimeDispatchAllowed === true;
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     artifactFamily: 'siteforge-runtime-dispatch-report',
@@ -1528,7 +2398,8 @@ export function buildRuntimeDispatchReport({
     taskPlanningRequested: Boolean(task),
     runtimeExecutionRequested: executeRequested && Boolean(task),
     task,
-    status,
+    status: effectiveStatus,
+    taskCompositionPlan,
     runtimeInvocationRequest,
     runtimePolicyDecision,
     runtimeDecision,
@@ -1543,8 +2414,10 @@ export function buildRuntimeDispatchReport({
     selectedImpactScope: selected?.impactScope ?? null,
     runtimeExecuted: false,
     sideEffectAttempted: false,
-    runtimeDispatchAllowed: runtimeDecision?.runtimeDispatchAllowed === true,
-    runtimeExecutionReason: runtimeExecutionReason(status),
+    runtimeDispatchAllowed,
+    runtimeExecutionReason: taskCompositionPlan?.status === 'ready_for_composed_runtime'
+      ? 'runtime decision allows all composition steps; app/runtime will execute the governed read-only chain'
+      : runtimeExecutionReason(effectiveStatus),
     decision,
     executionConsent: {
       naturalLanguageRequestGrantsExecution: false,
@@ -1596,8 +2469,10 @@ export function buildRuntimeExecutionReport({
       ? 'runtime.execute_flag_not_provided'
       : dispatchReport?.status === 'blocked_task_required'
         ? 'runtime.task_required'
-        : dispatchReport?.status === 'blocked_task_not_resolved'
-          ? 'runtime.task_not_resolved'
+      : dispatchReport?.status === 'blocked_task_not_resolved'
+        ? 'runtime.task_not_resolved'
+        : dispatchReport?.status === 'blocked_task_policy_disabled'
+          ? 'runtime.policy_disabled_task'
           : dispatchReport?.runtimeDispatchAllowed === true
             ? null
             : 'runtime.dispatch_not_allowed';

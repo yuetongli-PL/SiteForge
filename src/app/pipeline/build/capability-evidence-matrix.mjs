@@ -228,18 +228,51 @@ export function buildCapabilityEvidenceMatrix(context, capability = /** @type {a
   const hasListContainer = nodes.some((node) => (
     node.listPresent === true
     || node.emptyStatePresent === true
-    || /list|timeline|notification|bookmark|direct_message|following/u.test(String(node.classification ?? node.pageType ?? node.structureType ?? ''))
+    || /list|timeline|notification|bookmark|direct_message|following|search(?:[-_]?(?:results?|route|page|group))?/u.test([
+      node.classification,
+      node.pageType,
+      node.structureType,
+      node.title,
+    ].join(' '))
   ));
   if (authRequired && hasListContainer) observedEvidence.add('list_container_present');
+  const hasDetailContainer = nodes.some((node) => (
+    Number(node.visibleItemCount ?? 0) > 0
+    && /(?:^|[-_\s])(?:content|post|article|media|reel|story)?[-_\s]?detail(?:[-_\s]|$)|content-detail-page|post_detail|article_detail/u.test(
+      [
+        node.classification,
+        node.pageType,
+        node.structureType,
+        node.title,
+      ].join(' '),
+    )
+  ));
+  if (authRequired && hasDetailContainer) observedEvidence.add('detail_structure_present');
   const hasVisibleItemsOrEmptyState = nodes.some((node) => Number(node.visibleItemCount ?? 0) > 0 || node.emptyStatePresent === true);
   if (authRequired && hasVisibleItemsOrEmptyState) observedEvidence.add('visible_item_count_or_empty_state');
   const actionRequiresEntryEvidenceOnly = ['create', 'submit', 'upload', 'download', 'manage'].includes(String(capability.action ?? '').toLowerCase())
     || ['state_changing', 'payment', 'destructive'].includes(String(capability.safetyLevel ?? '').toLowerCase());
+  const detailCapability = nodes.some((node) => (
+    /content-detail-page|post_detail|article_detail/u.test([
+      node.classification,
+      node.pageType,
+      node.structureType,
+      node.title,
+    ].join(' '))
+  )) || /post detail|timeline post detail|post author|post engagement|reply tree|quote|external link/u.test([
+    capability.name,
+    capability.object,
+    capability.description,
+    capability.category,
+    capability.setupCapabilityId,
+  ].join(' ').toLowerCase());
   const requiredEvidence = authRequired
     ? apiAdapterReplayVerified
       ? ['source_node_present', 'not_login_wall', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
       : authenticatedRouteOnly || actionRequiresEntryEvidenceOnly
       ? ['source_node_present', 'route_accessible', 'not_login_wall', 'sanitized_evidence_present', 'risk_policy_passed']
+      : detailCapability
+      ? ['source_node_present', 'route_accessible', 'not_login_wall', 'detail_structure_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
       : ['source_node_present', 'route_accessible', 'not_login_wall', 'list_container_present', 'visible_item_count_or_empty_state', 'risk_policy_passed']
     : apiAdapterReplayVerified
       ? ['source_node_present', 'public_route_accessible', 'sanitized_evidence_present', 'api_replay_verified', 'risk_policy_passed']
@@ -294,6 +327,13 @@ export function applyCapabilityEvidenceMatrix(context, capability = /** @type {a
       : findForcedDisabledActions(`${next.name ?? ''} ${next.object ?? ''} ${next.action ?? ''}`).length > 0);
   if (forcedRiskDisabled) {
     const disposition = 'blocked';
+    const sitePolicyDisabled = next.sitePolicyDisabled === true
+      || next.activationBlockedReason === 'site-policy-disabled-action'
+      || next.disabledReason === 'site-policy-disabled-action'
+      || (Array.isArray(next.sitePolicyDisabledActions) && next.sitePolicyDisabledActions.length > 0);
+    const disabledLifecycle = sitePolicyDisabled
+      || next.status === 'disabled'
+      || (!next.executionPlan && next.enabled_status === 'disabled');
     if (next.executionPlan) {
       next.executionPlan = {
         ...next.executionPlan,
@@ -313,12 +353,14 @@ export function applyCapabilityEvidenceMatrix(context, capability = /** @type {a
         })),
       };
     }
-    next.status = 'active';
+    next.status = disabledLifecycle ? 'disabled' : 'active';
+    next.enabled = disabledLifecycle ? false : next.enabled;
+    next.disabledByPolicy = disabledLifecycle ? true : next.disabledByPolicy;
     next.enabled_status = 'disabled';
     next.default_policy = next.enabled_status;
     next.evidence_status = 'disabled';
-    next.activationBlockedReason = next.activationBlockedReason ?? 'forced-action-disabled';
-    next.planCallable = Boolean(next.executionPlan);
+    next.activationBlockedReason = next.activationBlockedReason ?? (sitePolicyDisabled ? 'site-policy-disabled-action' : 'forced-action-disabled');
+    next.planCallable = disabledLifecycle ? false : Boolean(next.executionPlan);
     next.runtimeCallable = disposition !== 'blocked';
     next.autoExecutable = false;
     next.executionDisposition = disposition;

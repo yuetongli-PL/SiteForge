@@ -65,6 +65,7 @@ const USER_FACING_LABELS_ZH = Object.freeze(new Map([
   ['read followers', '读取粉丝列表'],
   ['list account followers', '读取粉丝列表'],
   ['list explore topics', '读取探索话题'],
+  ['list hot posts', '读取热榜内容'],
   ['list recommended timeline posts', '读取推荐时间线帖子'],
   ['read recommended timeline', '读取推荐时间线'],
   ['list profile content', '读取个人主页内容'],
@@ -84,6 +85,8 @@ const USER_FACING_LABELS_ZH = Object.freeze(new Map([
   ['send direct message', '自动发送私信'],
   ['view post detail', '读取帖子详情'],
   ['view post replies', '读取帖子回复'],
+  ['view question detail', '读取问题详情'],
+  ['view answer detail', '读取回答详情'],
   ['view post media', '读取帖子媒体摘要'],
   ['follow account', '关注账号'],
   ['unfollow account', '取关账号'],
@@ -103,6 +106,18 @@ const USER_FACING_LABELS_ZH = Object.freeze(new Map([
   ['change account password', '修改账号密码'],
   ['change account 2fa', '修改两步验证'],
   ['change payment settings', '修改付款设置'],
+  ['list hot broadcasts', '\u8bfb\u53d6\u70ed\u64ad\u6458\u8981'],
+  ['list topic discussions', '\u8bfb\u53d6\u8bdd\u9898\u8ba8\u8bba'],
+  ['list topic featured', '\u8bfb\u53d6\u8bdd\u9898\u7cbe\u534e'],
+  ['list user activities', '\u8bfb\u53d6\u7528\u6237\u52a8\u6001'],
+  ['list user answers', '\u8bfb\u53d6\u7528\u6237\u56de\u7b54'],
+  ['list user questions', '\u8bfb\u53d6\u7528\u6237\u63d0\u95ee'],
+  ['list user articles', '\u8bfb\u53d6\u7528\u6237\u6587\u7ae0'],
+  ['list user columns', '\u8bfb\u53d6\u7528\u6237\u4e13\u680f'],
+  ['list user pins', '\u8bfb\u53d6\u7528\u6237\u60f3\u6cd5'],
+  ['list user collections', '\u8bfb\u53d6\u7528\u6237\u6536\u85cf'],
+  ['list user videos', '\u8bfb\u53d6\u7528\u6237\u89c6\u9891'],
+  ['list user following', '\u8bfb\u53d6\u7528\u6237\u5173\u6ce8\u5217\u8868'],
 ]));
 
 const BLOCKED_ACTION_LABELS_ZH = Object.freeze(new Map([
@@ -325,7 +340,7 @@ function normalizedIntentSeeds(capability) {
           : Array.isArray(seed.negative_examples) && seed.negative_examples.length
             ? seed.negative_examples
             : ['submit a payment', 'delete account data'],
-        slots: Array.isArray(seed.slots) ? seed.slots : [],
+        slots: Array.isArray(seed.slots) && seed.slots.length ? seed.slots : capability.inputs ?? [],
         invocationScore: Number.isFinite(Number(seed.invocationScore)) ? Number(seed.invocationScore) : 0.72,
       };
     }
@@ -334,7 +349,7 @@ function normalizedIntentSeeds(capability) {
       canonicalUtterance: utterance,
       utteranceExamples: [utterance],
       negativeExamples: ['submit a payment', 'delete account data'],
-      slots: [],
+      slots: capability.inputs ?? [],
       invocationScore: 0.72,
     };
   });
@@ -361,7 +376,7 @@ function normalizedIntentSeeds(capability) {
       canonicalUtterance: phrase,
       utteranceExamples: [phrase],
       negativeExamples: ['submit a payment', 'delete account data'],
-      slots: [],
+      slots: capability.inputs ?? [],
       invocationScore: 0.72,
     });
   }
@@ -406,6 +421,112 @@ function nodePageKind(node = /** @type {any} */ ({})) {
     ?? null;
 }
 
+const RESERVED_SOCIAL_ROOT_SEGMENTS = new Set([
+  'account',
+  'compose',
+  'download',
+  'explore',
+  'home',
+  'i',
+  'intent',
+  'jobs',
+  'login',
+  'logout',
+  'messages',
+  'notifications',
+  'oauth',
+  'p',
+  'premium_sign_up',
+  'privacy',
+  'reel',
+  'reels',
+  'search',
+  'settings',
+  'share',
+  'stories',
+  'tos',
+  'tv',
+]);
+
+function routeTemplatePathname(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const normalizeTemplatePath = (pathname) => pathname
+    .replace(/%7B/giu, '{')
+    .replace(/%7D/giu, '}')
+    .replace(/\/+$/u, '') || '/';
+  try {
+    return normalizeTemplatePath(new URL(raw).pathname);
+  } catch {
+    const pathname = (raw.split(/[?#]/u)[0] || '/').trim();
+    return normalizeTemplatePath(pathname.startsWith('/') ? pathname : `/${pathname}`);
+  }
+}
+
+function isParameterizedRouteSegment(segment) {
+  return /^(?::[a-z][a-z0-9_-]*|\{[a-z][a-z0-9_-]*\})$/iu.test(String(segment ?? ''));
+}
+
+function parameterizedSegmentCanMatchConcrete(paramSegment, concreteSegment, segmentIndex) {
+  const concrete = String(concreteSegment ?? '').toLowerCase();
+  if (!concrete || isParameterizedRouteSegment(concrete)) return false;
+  if (segmentIndex !== 0) return true;
+  const paramName = String(paramSegment ?? '').replace(/^:/u, '').replace(/^\{|\}$/gu, '').toLowerCase();
+  if (!['account', 'current_account', 'handle', 'screen_name', 'screenname', 'user', 'username'].includes(paramName)) {
+    return false;
+  }
+  return !RESERVED_SOCIAL_ROOT_SEGMENTS.has(concrete);
+}
+
+function routeTemplatesEquivalent(leftValue, rightValue) {
+  const leftPath = routeTemplatePathname(leftValue);
+  const rightPath = routeTemplatePathname(rightValue);
+  if (!leftPath || !rightPath) return false;
+  if (leftPath === rightPath) return true;
+  const leftSegments = leftPath.split('/').filter(Boolean);
+  const rightSegments = rightPath.split('/').filter(Boolean);
+  if (leftSegments.length !== rightSegments.length) return false;
+  return leftSegments.every((leftSegment, index) => {
+    const rightSegment = rightSegments[index];
+    if (leftSegment === rightSegment) return true;
+    const leftParameterized = isParameterizedRouteSegment(leftSegment);
+    const rightParameterized = isParameterizedRouteSegment(rightSegment);
+    if (leftParameterized && rightParameterized) return true;
+    if (leftParameterized) return parameterizedSegmentCanMatchConcrete(leftSegment, rightSegment, index);
+    if (rightParameterized) return parameterizedSegmentCanMatchConcrete(rightSegment, leftSegment, index);
+    return false;
+  });
+}
+
+function routeTemplateSatisfiesPreference(routeTemplate, preferredValue) {
+  const routePath = routeTemplatePathname(routeTemplate);
+  const preferredPath = routeTemplatePathname(preferredValue);
+  if (!routePath || !preferredPath) return false;
+  if (routePath === preferredPath) return true;
+  const routeSegments = routePath.split('/').filter(Boolean);
+  const preferredSegments = preferredPath.split('/').filter(Boolean);
+  if (routeSegments.length !== preferredSegments.length) return false;
+  return routeSegments.every((routeSegment, index) => {
+    const preferredSegment = preferredSegments[index];
+    if (routeSegment === preferredSegment) return true;
+    const routeParameterized = isParameterizedRouteSegment(routeSegment);
+    const preferredParameterized = isParameterizedRouteSegment(preferredSegment);
+    if (routeParameterized && preferredParameterized) return true;
+    if (preferredParameterized) return parameterizedSegmentCanMatchConcrete(preferredSegment, routeSegment, index);
+    return false;
+  });
+}
+
+function routeTemplateMatchesPreference(routeTemplate, routeTemplates = []) {
+  if (!routeTemplates.length) return true;
+  return routeTemplates.some((candidate) => routeTemplateSatisfiesPreference(routeTemplate, candidate));
+}
+
+function routeTemplatePreferenceRank(routeTemplate, routeTemplates = []) {
+  if (!routeTemplates.length) return 0;
+  return routeTemplates.findIndex((candidate) => routeTemplateSatisfiesPreference(routeTemplate, candidate));
+}
+
 function routeStateDescriptorFromNode(node = /** @type {any} */ ({})) {
   if (!node || typeof node !== 'object') return null;
   const routeTemplate = nodeRouteTemplate(node);
@@ -443,41 +564,71 @@ function routePreferenceForDefinition(definition = /** @type {any} */ ({})) {
     pageKinds: [],
     requireRouteTemplate: false,
     requireTabState: false,
+    allowMissingTabState: true,
   };
 
   if (/recommended|for you/u.test(text)) {
-    pref.routeTemplates.push('/home');
-    pref.tabStates.push('for_you');
+    pref.routeTemplates.push('/home', '/');
+    pref.tabStates.push('for_you', 'recommended');
     pref.pageKinds.push('home');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   } else if (/following timeline|followed updates/u.test(text)) {
-    pref.routeTemplates.push('/home', '/following');
+    pref.routeTemplates.push('/home', '/following', '/follow');
     pref.tabStates.push('following');
-    pref.pageKinds.push('home');
+    pref.pageKinds.push('home', 'author-list-page');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   } else if (/timeline/u.test(text)) {
-    pref.routeTemplates.push('/home');
-    pref.tabStates.push('for_you', 'home-timeline');
+    pref.routeTemplates.push('/home', '/');
+    pref.tabStates.push('for_you', 'recommended', 'home-timeline');
     pref.pageKinds.push('home');
+    pref.requireRouteTemplate = true;
+    pref.requireTabState = true;
+  }
+
+  if (/hot posts|hot list|ranking|trending/u.test(text)) {
+    pref.routeTemplates.push('/hot');
+    pref.tabStates.push('hot');
+    pref.pageKinds.push('category-page', 'ranking', 'category');
+    pref.requireRouteTemplate = true;
+    pref.requireTabState = true;
+  }
+  if (/hot broadcasts|hot broadcast|drama feed|live feed/u.test(text)) {
+    pref.routeTemplates.push('/drama/feed');
+    pref.tabStates.push('hot');
+    pref.pageKinds.push('category-page', 'media-page', 'broadcast-page');
+    pref.requireRouteTemplate = true;
+    pref.requireTabState = true;
+  }
+  if (/topic discussion|topic discussions/u.test(text)) {
+    pref.routeTemplates.push('/topic/:topicId/hot', '/topic/{topicId}/hot');
+    pref.tabStates.push('discussions');
+    pref.pageKinds.push('category-page', 'topic-page');
+    pref.requireRouteTemplate = true;
+    pref.requireTabState = true;
+  }
+  if (/topic featured|featured answers/u.test(text)) {
+    pref.routeTemplates.push('/topic/:topicId/top-answers', '/topic/{topicId}/top-answers');
+    pref.tabStates.push('featured');
+    pref.pageKinds.push('category-page', 'topic-page');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   }
 
   if (/search/u.test(text)) {
-    pref.routeTemplates.push('/search');
-    pref.pageKinds.push('search');
+    pref.routeTemplates.push('/search', '/explore/search');
+    pref.pageKinds.push('search', 'search-results-page', 'search_page');
     if (/latest/u.test(text)) pref.tabStates.push('latest');
     else if (/user|people/u.test(text)) pref.tabStates.push('people');
     else if (/media/u.test(text)) pref.tabStates.push('media');
-    else pref.tabStates.push('top', 'search');
+    else pref.tabStates.push('top', 'search', 'content');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   }
 
   if (/notification|mention/u.test(text)) {
-    pref.pageKinds.push('notifications');
+    pref.pageKinds.push('notifications', 'notification-page');
     if (/mention/u.test(text)) {
       pref.routeTemplates.push('/notifications/mentions');
       pref.tabStates.push('mentions');
@@ -485,7 +636,7 @@ function routePreferenceForDefinition(definition = /** @type {any} */ ({})) {
       pref.routeTemplates.push('/notifications/verified');
       pref.tabStates.push('verified');
     } else {
-      pref.routeTemplates.push('/notifications');
+      pref.routeTemplates.push('/notifications', '/accounts/activity');
       pref.tabStates.push('all', 'notifications');
     }
     pref.requireRouteTemplate = true;
@@ -493,7 +644,7 @@ function routePreferenceForDefinition(definition = /** @type {any} */ ({})) {
   }
 
   if (/bookmark/u.test(text)) {
-    pref.routeTemplates.push('/i/bookmarks');
+    pref.routeTemplates.push('/i/bookmarks', '/:account/saved');
     pref.tabStates.push('saved', 'bookmarks');
     pref.pageKinds.push('bookmarks');
     pref.requireRouteTemplate = true;
@@ -514,41 +665,78 @@ function routePreferenceForDefinition(definition = /** @type {any} */ ({})) {
   }
 
   if (/direct message|private message|\bdm\b/u.test(text)) {
-    pref.routeTemplates.push('/messages');
+    pref.routeTemplates.push('/messages', '/direct', '/direct/inbox');
     pref.tabStates.push('inbox', 'direct-messages');
-    pref.pageKinds.push('messages');
+    pref.pageKinds.push('messages', 'message-page');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   }
 
-  if (/profile|author|followers|following users|recent user posts|user replies|user media/u.test(text)) {
-    if (/repl/u.test(text)) {
-      pref.routeTemplates.push('/:handle/with_replies');
+  if (/profile|author|followers|following users|recent user posts|user (?:activities|answers|questions|articles|columns|pins|collections|videos|replies|media|following)/u.test(text)) {
+    if (/user activities/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/activities', '/people/{urlToken}/activities');
+      pref.tabStates.push('activities');
+    } else if (/user answers/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/answers', '/people/{urlToken}/answers');
+      pref.tabStates.push('answers');
+    } else if (/user questions/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/asks', '/people/{urlToken}/asks');
+      pref.tabStates.push('questions');
+    } else if (/user articles/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/posts', '/people/{urlToken}/posts');
+      pref.tabStates.push('articles');
+    } else if (/user columns/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/columns', '/people/{urlToken}/columns');
+      pref.tabStates.push('columns');
+    } else if (/user pins/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/pins', '/people/{urlToken}/pins');
+      pref.tabStates.push('pins');
+    } else if (/user collections/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/collections', '/people/{urlToken}/collections');
+      pref.tabStates.push('collections');
+    } else if (/user videos/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/zvideos', '/people/{urlToken}/zvideos');
+      pref.tabStates.push('videos');
+    } else if (/user following|following users/u.test(text)) {
+      pref.routeTemplates.push('/people/:account/following', '/people/{urlToken}/following', '/follow');
+      pref.tabStates.push('following');
+      pref.pageKinds.push('author-list-page');
+    } else if (/repl/u.test(text)) {
+      pref.routeTemplates.push('/:handle/with_replies', '/people/:account');
       pref.tabStates.push('replies');
     } else if (/media/u.test(text)) {
-      pref.routeTemplates.push('/:handle/media');
+      pref.routeTemplates.push('/:handle/media', '/:account/reels', '/people/:account', '/org/:account');
       pref.tabStates.push('media');
     } else {
-      pref.routeTemplates.push('/:handle');
+      pref.routeTemplates.push('/:handle', '/:account', '/people/:account', '/org/:account');
       pref.tabStates.push('posts', 'profile');
     }
-    pref.pageKinds.push('profile', 'author');
+    pref.pageKinds.push('profile', 'author', 'author-page', 'profile_detail');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   }
 
   if (/post detail|reply tree|quote|post author|post engagement|external link|timeline post detail/u.test(text)) {
-    pref.routeTemplates.push('/:handle/status/:postId');
+    pref.routeTemplates.push(
+      '/:handle/status/:postId',
+      '/p/:shortcode',
+      '/reel/:shortcode',
+      '/tv/:shortcode',
+      '/question/:questionId',
+      '/question/:questionId/answer/:answerId',
+      '/answer/:answerId',
+      '/zvideo/:videoId',
+    );
     pref.tabStates.push('detail');
-    pref.pageKinds.push('post_detail');
+    pref.pageKinds.push('post_detail', 'content-detail-page', 'article_detail');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   }
 
   if (/settings|account|payment|password|email|2fa|security/u.test(text)) {
-    pref.routeTemplates.push('/settings');
+    pref.routeTemplates.push('/settings', '/accounts/edit');
     pref.tabStates.push('entry');
-    pref.pageKinds.push('settings');
+    pref.pageKinds.push('settings', 'settings-page');
     pref.requireRouteTemplate = true;
     pref.requireTabState = true;
   }
@@ -563,12 +751,18 @@ function routePreferenceScore(node = /** @type {any} */ ({}), preference = /** @
   const routeTemplate = nodeRouteTemplate(node);
   const tabState = nodeTabState(node);
   const pageKind = nodePageKind(node);
-  const routeMatch = !preference.routeTemplates?.length || preference.routeTemplates.includes(routeTemplate);
-  const tabMatch = !preference.tabStates?.length || preference.tabStates.includes(tabState);
+  const routeMatch = routeTemplateMatchesPreference(routeTemplate, preference.routeTemplates ?? []);
+  const tabMatch = !preference.tabStates?.length
+    || preference.tabStates.includes(tabState)
+    || (!tabState && preference.allowMissingTabState === true);
   if (preference.requireRouteTemplate && !routeMatch) return -1;
   if (preference.requireTabState && !tabMatch) return -1;
   let score = 0;
-  if (routeTemplate && routeMatch) score += 10;
+  if (routeTemplate && routeMatch) {
+    const routeRank = routeTemplatePreferenceRank(routeTemplate, preference.routeTemplates ?? []);
+    const rankBonus = routeRank >= 0 ? Math.max(0, (preference.routeTemplates?.length ?? 0) - routeRank) : 0;
+    score += 10 + rankBonus;
+  }
   if (tabState && tabMatch) score += 8;
   if (pageKind && preference.pageKinds?.includes(pageKind)) score += 5;
   if (node.type === 'page') score += 2;
@@ -607,11 +801,18 @@ function graphHasStatefulRouteTemplateEvidence(graph = /** @type {any} */ ({})) 
   return (graph?.nodes ?? []).some((node) => nodeRouteTemplate(node) && nodeTabState(node));
 }
 
+function graphHasRouteTemplateEvidence(graph = /** @type {any} */ ({})) {
+  return (graph?.nodes ?? []).some((node) => nodeRouteTemplate(node));
+}
+
 function findEntryNodesForDefinition(graph, definition = /** @type {any} */ ({}), fallbackCount = 1) {
   const preference = routePreferenceForDefinition(definition);
   const preferred = findRoutePreferredNodes(graph, preference, fallbackCount);
   if (preferred.length) return preferred;
-  if ((preference.requireRouteTemplate || preference.requireTabState) && graphHasStatefulRouteTemplateEvidence(graph)) {
+  if (
+    (preference.requireRouteTemplate && graphHasRouteTemplateEvidence(graph))
+    || (preference.requireTabState && graphHasStatefulRouteTemplateEvidence(graph))
+  ) {
     return [];
   }
   return findEntryNodes(graph, definition.nodeHints ?? [], fallbackCount);
@@ -669,6 +870,48 @@ function isSocialAutoCapabilityContext(context = /** @type {any} */ ({}), graph 
   });
 }
 
+function socialSiteLabelForIntent(context = /** @type {any} */ ({})) {
+  const siteKey = String(context?.setupProfile?.knownSitePolicy?.siteKey ?? '').trim().toLowerCase();
+  const adapterId = String(context?.setupProfile?.knownSitePolicy?.adapterId ?? '').trim().toLowerCase();
+  const key = siteKey || adapterId;
+  if (key === 'instagram') return 'Instagram';
+  if (key === 'x') return 'X';
+  if (key === 'weibo') return 'Weibo';
+  if (key === 'zhihu') return 'Zhihu';
+  if (key === 'reddit') return 'Reddit';
+  return '站内';
+}
+
+function isZhihuAutoCapabilityContext(context = /** @type {any} */ ({})) {
+  const policy = context?.setupProfile?.knownSitePolicy ?? {};
+  const siteKey = String(policy.siteKey ?? context?.site?.siteKey ?? '').trim().toLowerCase();
+  const adapterId = String(policy.adapterId ?? context?.site?.adapterId ?? '').trim().toLowerCase();
+  let host = '';
+  try {
+    host = new URL(context?.site?.rootUrl ?? context?.site?.normalizedUrl ?? '').hostname.toLowerCase();
+  } catch {
+    host = '';
+  }
+  return siteKey === 'zhihu'
+    || adapterId === 'zhihu'
+    || host === 'www.zhihu.com'
+    || host === 'zhihu.com'
+    || host.endsWith('.zhihu.com');
+}
+
+function siteSpecificDefinitionIntents(definition = /** @type {any} */ ({}), context = /** @type {any} */ ({})) {
+  const label = socialSiteLabelForIntent(context);
+  return (definition.intents ?? []).map((intent) => {
+    if (intent === '搜索 X 上的内容') {
+      return label === 'X' ? intent : `搜索 ${label} 上的内容`;
+    }
+    if (intent === 'search X posts') {
+      return label === 'X' ? intent : `search ${label === '站内' ? 'site' : label} posts`;
+    }
+    return intent;
+  });
+}
+
 const CAPABILITY_DEFINITIONS = Object.freeze([
   {
     name: 'read recommended timeline',
@@ -701,6 +944,55 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
     object: 'timeline post summaries',
     nodeHints: ['timeline-post-summary', 'post_card_list'],
     intents: ['总结时间线帖子', '查看帖子摘要', '读取首页帖子列表'],
+  },
+  {
+    name: 'list hot posts',
+    userFacingName: '读取热榜内容',
+    category: 'category',
+    setupCapabilityId: 'list-hot-posts',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'hot posts',
+    nodeHints: ['hot-posts', 'hot-list', 'ranking-list'],
+    intents: ['查看知乎热榜', '读取热榜内容', '总结热榜条目'],
+  },
+  {
+    name: 'list hot broadcasts',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list hot broadcasts',
+    category: 'media',
+    setupCapabilityId: 'list-hot-broadcasts',
+    riskLevel: 'read_personal_medium',
+    action: 'view',
+    object: 'hot broadcasts',
+    nodeHints: ['hot-broadcasts', 'drama-feed', 'live-feed'],
+    intents: ['list hot broadcasts', 'show hot live feed summaries', 'read hot broadcast summaries'],
+  },
+  {
+    name: 'list topic discussions',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list topic discussions',
+    category: 'topic',
+    setupCapabilityId: 'list-topic-discussions',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'topic discussions',
+    inputs: [{ name: 'topic_id', type: 'string', required: false }],
+    nodeHints: ['topic-discussions', 'topic-hot'],
+    intents: ['list topic discussions', 'show topic discussions', 'read topic discussion summaries'],
+  },
+  {
+    name: 'list topic featured',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list topic featured answers',
+    category: 'topic',
+    setupCapabilityId: 'list-topic-featured',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'topic featured answers',
+    inputs: [{ name: 'topic_id', type: 'string', required: false }],
+    nodeHints: ['topic-featured', 'topic-top-answers'],
+    intents: ['list topic featured answers', 'show topic featured answers', 'read topic top answer summaries'],
   },
   {
     name: 'open timeline post detail',
@@ -820,6 +1112,123 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
     intents: ['读取个人主页内容', '查看某个用户主页'],
   },
   {
+    name: 'list user activities',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user activities',
+    category: 'profile',
+    setupCapabilityId: 'list-user-activities',
+    riskLevel: 'read_personal_medium',
+    action: 'view',
+    object: 'user activities',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-activities'],
+    intents: ['list user activities', 'show user activity feed', 'read user activity summaries'],
+  },
+  {
+    name: 'list user answers',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user answers',
+    category: 'profile',
+    setupCapabilityId: 'list-user-answers',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'user answers',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-answers'],
+    intents: ['list user answers', 'show user answers', 'read user answer summaries'],
+  },
+  {
+    name: 'list user questions',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user questions',
+    category: 'profile',
+    setupCapabilityId: 'list-user-questions',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'user questions',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-questions', 'profile-asks'],
+    intents: ['list user questions', 'show user questions', 'read user question summaries'],
+  },
+  {
+    name: 'list user articles',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user articles',
+    category: 'profile',
+    setupCapabilityId: 'list-user-articles',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'user articles',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-articles', 'profile-posts'],
+    intents: ['list user articles', 'show user articles', 'read user article summaries'],
+  },
+  {
+    name: 'list user columns',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user columns',
+    category: 'profile',
+    setupCapabilityId: 'list-user-columns',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'user columns',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-columns'],
+    intents: ['list user columns', 'show user columns', 'read user column summaries'],
+  },
+  {
+    name: 'list user pins',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user pins',
+    category: 'profile',
+    setupCapabilityId: 'list-user-pins',
+    riskLevel: 'read_personal_medium',
+    action: 'view',
+    object: 'user pins',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-pins'],
+    intents: ['list user pins', 'show user thoughts', 'read user pin summaries'],
+  },
+  {
+    name: 'list user collections',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user collections',
+    category: 'profile',
+    setupCapabilityId: 'list-user-collections',
+    riskLevel: 'read_personal_medium',
+    action: 'view',
+    object: 'user collections',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-collections'],
+    intents: ['list user collections', 'show user collections', 'read user collection summaries'],
+  },
+  {
+    name: 'list user videos',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user videos',
+    category: 'profile',
+    setupCapabilityId: 'list-user-videos',
+    riskLevel: 'read_public_low',
+    action: 'view',
+    object: 'user videos',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-videos', 'profile-zvideos'],
+    intents: ['list user videos', 'show user videos', 'read user video summaries'],
+  },
+  {
+    name: 'list user following',
+    siteKeys: ['zhihu'],
+    userFacingName: 'list user following',
+    category: 'profile',
+    setupCapabilityId: 'list-user-following',
+    riskLevel: 'read_personal_medium',
+    action: 'view',
+    object: 'user following',
+    inputs: [{ name: 'account', type: 'string', required: false }],
+    nodeHints: ['profile-following'],
+    intents: ['list user following', 'show user following list', 'read user following summaries'],
+  },
+  {
     name: 'read user recent posts',
     userFacingName: '读取用户最近帖子',
     category: 'profile',
@@ -879,6 +1288,7 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
     name: 'read post detail',
     userFacingName: '读取帖子详情',
     category: 'post_detail',
+    semanticPriority: 2,
     riskLevel: 'read_public_low',
     action: 'view',
     object: 'post detail',
@@ -1283,30 +1693,40 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
   },
 ]);
 
+function isDraftCapabilityDefinition(definition = /** @type {any} */ ({})) {
+  return /draft|compose/iu.test([
+    definition.name,
+    definition.object,
+    definition.userFacingName,
+    ...(Array.isArray(definition.intents) ? definition.intents : []),
+  ].filter(Boolean).join(' '));
+}
+
 function buildPlanForCapability(capability, definition, entryNodes, buildExecutionPlan) {
   if (capability.status !== 'active') {
     return null;
   }
   const disposition = capability.executionDisposition ?? (capability.enabled_status === 'disabled' ? 'blocked' : 'allow');
   const blocked = disposition === 'blocked';
-  const governed = disposition !== 'allow';
-  const isDraft = blocked || capability.enabled_status === 'draft_only' || capability.default_policy === 'draft_only';
+  const isDraft = blocked || capability.enabled_status === 'draft_only' || capability.default_policy === 'draft_only' || isDraftCapabilityDefinition(definition);
+  const effectiveDisposition = blocked ? 'blocked' : isDraft ? 'confirm_required' : disposition;
+  const governed = effectiveDisposition !== 'allow';
   const isLimited = capability.enabled_status === 'limited_enabled';
   const isAllowedAction = !blocked && !isDraft && !isLimited && ['create', 'submit', 'manage', 'upload', 'download'].includes(definition.action);
-  const requiresConfirmation = disposition === 'confirm_required';
+  const requiresConfirmation = isDraft || effectiveDisposition === 'confirm_required';
   const entryNode = selectRouteStateNode(entryNodes);
   const routeState = routeStateDescriptorFromNode(entryNode);
   return buildExecutionPlan(capability.id, {
-    mode: blocked ? 'dry_run' : isLimited ? 'limited_read' : isAllowedAction ? 'action' : 'read_only',
-    dryRunOnly: blocked,
+    mode: blocked || isDraft ? 'dry_run' : isLimited ? 'limited_read' : isAllowedAction ? 'action' : 'read_only',
+    dryRunOnly: blocked || isDraft,
     requiresConfirmation,
     autoExecute: false,
     governedExecution: governed,
-    executionDisposition: disposition,
+    executionDisposition: effectiveDisposition,
     limitedOutputOnly: isLimited,
     savedMaterial: 'sanitized_summary_only',
     steps: [{
-      kind: blocked ? 'governed_action_contract' : isAllowedAction ? 'site_action' : 'read_sanitized_summary',
+      kind: blocked || isDraft ? 'governed_action_contract' : isAllowedAction ? 'site_action' : 'read_sanitized_summary',
       action: definition.action,
       object: definition.object,
       nodeId: entryNode?.id,
@@ -1316,13 +1736,13 @@ function buildPlanForCapability(capability, definition, entryNodes, buildExecuti
       routeStateId: routeState?.stateId ?? null,
       tabState: routeState?.tabState ?? null,
       pageKind: routeState?.pageKind ?? null,
-      submit: isAllowedAction,
+      submit: false,
       finalSubmit: false,
       upload: isAllowedAction && definition.action === 'upload',
       selectSensitiveRecipient: false,
       autoExecute: false,
       governedExecution: governed,
-      executionDisposition: disposition,
+      executionDisposition: effectiveDisposition,
       limitedOutputOnly: isLimited,
       savedMaterial: 'sanitized_summary_only',
     }],
@@ -1344,6 +1764,12 @@ export function buildAutoDiscoveredCapabilities({
   }
   const capabilities = /** @type {any[]} */ ([]);
   for (const definition of CAPABILITY_DEFINITIONS) {
+    if (Array.isArray(definition.siteKeys) && definition.siteKeys.includes('zhihu') && !isZhihuAutoCapabilityContext(context)) {
+      continue;
+    }
+    if (isZhihuAutoCapabilityContext(context) && definition.name === 'open notification related post') {
+      continue;
+    }
     const entryNodes = findEntryNodesForDefinition(graph, definition, 1);
     if (!entryNodes.length) {
       continue;
@@ -1354,7 +1780,7 @@ export function buildAutoDiscoveredCapabilities({
     const baseEvidence = evidenceForNodes(entryNodes);
     const seeded = makeCapability(context, {
       name: definition.name,
-      description: `${definition.userFacingName}: generated from sanitized route, structure, and control evidence.`,
+      description: `${definition.userFacingName} through a bounded read-only site adapter path.`,
       action: definition.action,
       object: definition.object,
       userValue: definition.userFacingName,
@@ -1378,13 +1804,14 @@ export function buildAutoDiscoveredCapabilities({
       }),
       internal_name: definition.name,
       category: definition.category,
+      semanticPriority: definition.semanticPriority ?? 0,
       routeTemplate: entryRouteState?.routeTemplate ?? routeStateNode?.routePattern ?? null,
       routePath: entryRouteState?.routePath ?? routeStateNode?.routePath ?? null,
       routeState: entryRouteState,
       routeStateId: entryRouteState?.stateId ?? null,
       tabState: entryRouteState?.tabState ?? null,
       pageKind: entryRouteState?.pageKind ?? null,
-      intents: definition.intents,
+      intents: siteSpecificDefinitionIntents(definition, context),
     });
     const capability = applyRiskDefaults(seeded, {
       riskLevel: definition.riskLevel,
@@ -1397,6 +1824,17 @@ export function buildAutoDiscoveredCapabilities({
       userReason: definition.userReason,
       userStrategy: definition.userStrategy,
     });
+    if (
+      isDraftCapabilityDefinition(definition)
+      && capability.status === 'active'
+      && capability.enabled_status !== 'disabled'
+    ) {
+      capability.enabled_status = 'draft_only';
+      capability.default_policy = 'draft_only';
+      capability.executionDisposition = 'confirm_required';
+      capability.executionDisabledByDefault = true;
+      capability.autoExecutable = false;
+    }
     capability.safetyLevel = riskPolicyForLevel(definition.riskLevel).safetyLevel;
     capability.executionPlan = buildPlanForCapability(capability, definition, entryNodes, buildExecutionPlan);
     if (!capability.executionPlan) {
@@ -1503,7 +1941,11 @@ export function generateAutoIntentRecords(context, capabilities = /** @type {any
     const seeds = normalizedIntentSeeds(capability);
     const planCallable = capability.status === 'active' && Boolean(capability.executionPlan);
     const callable = planCallable;
-    const safeRemediation = capability.runtimeCallable === true && enabledStatus !== 'disabled'
+    const runtimeCallable = callable && capability.runtimeCallable === true && isCallableEnablementStatus(enabledStatus);
+    const intentExecutionDisposition = runtimeCallable
+      ? capability.executionDisposition ?? (isCallableEnablementStatus(enabledStatus) ? 'allow' : 'confirm_required')
+      : 'blocked';
+    const safeRemediation = runtimeCallable === true && enabledStatus !== 'disabled'
       ? null
       : capability.safe_remediation ?? publicSafeRemediation(buildCapabilitySafeRemediationPath(capability));
     for (const [index, seed] of seeds.entries()) {
@@ -1530,9 +1972,9 @@ export function generateAutoIntentRecords(context, capabilities = /** @type {any
           : fallbackEvidence(context),
         callable,
         planCallable,
-        runtimeCallable: capability.runtimeCallable === true,
-        autoExecutable: capability.autoExecutable === true,
-        executionDisposition: capability.executionDisposition ?? (isCallableEnablementStatus(enabledStatus) ? 'allow' : 'confirm_required'),
+        runtimeCallable,
+        autoExecutable: runtimeCallable && capability.autoExecutable === true,
+        executionDisposition: intentExecutionDisposition,
         executionContractRef: capability.executionContractRef ?? null,
         enabled_status: enabledStatus,
         safe_remediation_path: safeRemediation?.path ?? null,
@@ -1656,7 +2098,7 @@ const COMPAT_INTENT_PHRASES = Object.freeze({
   'list followed updates': ['list followed updates', 'show followed account posts', 'read followed timeline updates'],
   'list recommended timeline posts': ['list recommended timeline posts', '读取时间线上被推荐的帖子', '读取推荐时间线帖子', 'show For You timeline posts', 'read recommended timeline items'],
   'list profile content': ['list profile content', 'show account posts', 'open profile posts'],
-  'search posts': ['search posts', 'find posts about a topic', 'search X posts'],
+  'search posts': ['search posts', 'find posts about a topic', 'search social posts'],
   'list notifications': ['list notifications', 'show notification summaries', 'read recent notifications'],
   'list bookmarks': ['list bookmarks', 'show saved posts', 'read bookmark summaries'],
   'list lists': ['list lists', 'show user lists', 'read list summaries'],
@@ -1834,19 +2276,22 @@ function compatExecutionPlan(capabilityId, homepage, context, routeState = compa
   const governed = options.governed === true;
   const disposition = options.executionDisposition ?? (governed ? 'blocked' : 'allow');
   const blocked = disposition === 'blocked';
+  const draftOnly = blocked || options.draftOnly === true;
+  const executionDisposition = blocked ? 'blocked' : draftOnly ? 'confirm_required' : disposition;
+  const governedExecution = governed || draftOnly;
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     id: `plan:${capabilityId.replace(/^capability:/u, '')}`,
     capabilityId,
-    mode: blocked ? 'dry_run' : 'action',
-    dryRunOnly: blocked,
-    requiresConfirmation: disposition === 'confirm_required',
+    mode: draftOnly ? 'dry_run' : 'action',
+    dryRunOnly: draftOnly,
+    requiresConfirmation: draftOnly || disposition === 'confirm_required',
     autoExecute: false,
-    draftOnly: blocked,
-    governedExecution: governed,
-    executionDisposition: disposition,
+    draftOnly,
+    governedExecution,
+    executionDisposition,
     steps: [{
-      kind: blocked ? 'governed_action_contract' : 'site_action',
+      kind: draftOnly ? 'governed_action_contract' : 'site_action',
       action: options.action ?? 'draft',
       url: new URL(routeState.routePath || '/compose/post', context.site.rootUrl).toString(),
       nodeId: homepage?.id,
@@ -1856,14 +2301,14 @@ function compatExecutionPlan(capabilityId, homepage, context, routeState = compa
       routeStateId: routeState.stateId ?? null,
       tabState: routeState.tabState ?? null,
       pageKind: routeState.pageKind ?? routeState.pageType ?? null,
-      submit: !blocked,
+      submit: false,
       finalSubmit: false,
-      upload: !blocked && options.action === 'upload',
+      upload: !draftOnly && options.action === 'upload',
       selectSensitiveRecipient: false,
       autoExecute: false,
-      draftOnly: blocked,
-      governedExecution: governed,
-      executionDisposition: disposition,
+      draftOnly,
+      governedExecution,
+      executionDisposition,
       requiresUserAuthorization: true,
     }],
   };
@@ -1889,6 +2334,8 @@ const COMPAT_SEMANTIC_NAME_ALIASES = Object.freeze(new Map([
   ['read direct message conversation summaries', 'direct-message-summaries'],
   ['draft direct message', 'direct-message-draft'],
   ['create direct message draft', 'direct-message-draft'],
+  ['view post detail', 'post-detail'],
+  ['read post detail', 'post-detail'],
 ]));
 
 function compatSemanticNameKey(value) {
@@ -1970,6 +2417,7 @@ function compatGenerateAutoCapabilities(context, {
         governed: governedDisabled,
         executionDisposition: capability.executionDisposition,
         action,
+        draftOnly: isDraft,
       });
     }
     generated.push(capability);
@@ -1990,6 +2438,10 @@ function compatGenerateAutoIntentRecords(context, capabilities = /** @type {any[
     for (const [index, descriptor] of enriched.intents.entries()) {
       const planCallable = enriched.status === 'active' && Boolean(enriched.executionPlan);
       const callable = planCallable;
+      const runtimeCallable = callable && enriched.runtimeCallable === true && isCallableEnablementStatus(enriched.enabled_status);
+      const intentExecutionDisposition = runtimeCallable
+        ? enriched.executionDisposition ?? (isCallableEnablementStatus(enriched.enabled_status) ? 'allow' : 'confirm_required')
+        : 'blocked';
       const evidence = Array.isArray(enriched.evidence) && enriched.evidence.length
         ? enriched.evidence
         : [buildEvidence({
@@ -2014,9 +2466,9 @@ function compatGenerateAutoIntentRecords(context, capabilities = /** @type {any[
         evidence,
         callable,
         planCallable,
-        runtimeCallable: enriched.runtimeCallable === true,
-        autoExecutable: enriched.autoExecutable === true,
-        executionDisposition: enriched.executionDisposition ?? (isCallableEnablementStatus(enriched.enabled_status) ? 'allow' : 'confirm_required'),
+        runtimeCallable,
+        autoExecutable: runtimeCallable && enriched.autoExecutable === true,
+        executionDisposition: intentExecutionDisposition,
         executionContractRef: enriched.executionContractRef ?? null,
         enabled_status: enriched.enabled_status,
         evidence_status: enriched.evidence_status,

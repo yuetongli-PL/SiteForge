@@ -1,8 +1,9 @@
 // @ts-check
 
-export const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v7';
+export const EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION = 'route-queue-x-api-runtime-v8';
 export const COMPATIBLE_BROWSER_BRIDGE_EXTENSION_VERSIONS = Object.freeze([
   EXPECTED_BROWSER_BRIDGE_EXTENSION_VERSION,
+  'route-queue-chinese-semantic-v7',
   'route-queue-chinese-semantic-v6',
 ]);
 

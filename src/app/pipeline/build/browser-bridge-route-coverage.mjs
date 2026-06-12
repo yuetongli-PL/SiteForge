@@ -47,16 +47,27 @@ function routeResultLooksStaticResource(context = /** @type {any} */ ({}), resul
 
 export function routeTemplateComparisonValues(context = /** @type {any} */ ({}), values = /** @type {any[]} */ ([])) {
   const variants = new Set();
+  const addDynamicParamVariant = (value) => {
+    const normalized = String(value ?? '').replace(/\/:[^/?#]+/gu, '/:param');
+    if (normalized && normalized !== value) {
+      addVariant(normalized);
+    }
+  };
   const addVariant = (value) => {
     const text = String(value ?? '').trim();
     if (!text) {
       return;
     }
     variants.add(text);
+    addDynamicParamVariant(text);
     if (text !== '/' && text.endsWith('/')) {
-      variants.add(text.replace(/\/+$/u, ''));
+      const trimmed = text.replace(/\/+$/u, '');
+      variants.add(trimmed);
+      addDynamicParamVariant(trimmed);
     } else if (text !== '/') {
-      variants.add(`${text}/`);
+      const trailed = `${text}/`;
+      variants.add(trailed);
+      addDynamicParamVariant(trailed);
     }
   };
   for (const value of values) {

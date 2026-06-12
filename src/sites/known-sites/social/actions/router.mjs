@@ -21,6 +21,9 @@ import {
   resolveSiteBrowserSessionOptions,
 } from '../../../../infra/auth/site-auth.mjs';
 import {
+  applyBrowserCookiesFromFile,
+} from '../../../../infra/auth/browser-cookie-file.mjs';
+import {
   prepareSiteSessionGovernance,
   readAuthSessionState,
   resolveAuthSessionPolicy,
@@ -183,6 +186,58 @@ const SOCIAL_SITES = Object.freeze({
       relationLink: 'a[href^="/"][role="link"]',
     },
   },
+  weibo: {
+    siteKey: 'weibo',
+    host: 'weibo.com',
+    baseUrl: 'https://weibo.com',
+    homeUrl: 'https://weibo.com/',
+    defaultProfilePath: path.join(REPO_ROOT, 'profiles', 'weibo.com.json'),
+    reservedSegments: [
+      'ajax',
+      'api',
+      'at',
+      'feed',
+      'home',
+      'login',
+      'message',
+      'messages',
+      'notice',
+      'notifications',
+      'p',
+      'passport',
+      'search',
+      'searchall',
+      'settings',
+      'signup',
+      'u',
+    ],
+    routes: {
+      profile: '/u/{account}',
+      posts: '/u/{account}',
+      replies: '/u/{account}?tab=replies',
+      media: '/u/{account}?tab=media',
+      highlights: '/u/{account}?tab=featured',
+      articles: '/u/{account}?tab=article',
+      following: '/p/100505{account}/myfollow',
+      followers: '/p/100505{account}/follow',
+      search: 'https://s.weibo.com/weibo',
+    },
+    searchMode: 'url-query',
+    contentSelectors: {
+      item: '.card-wrap, .vue-recycle-scroller__item-view, article, [class*="Feed"], [class*="feed"]',
+      text: '[node-type="feed_list_content"], .txt, article, [class*="text"], [class*="content"]',
+      link: 'a[href*="/status/"], a[href*="/u/"], a[href*="/n/"], a[href*="/p/"]',
+      timestamp: 'time[datetime], [date], [class*="time"], [node-type="feed_list_item_date"]',
+      media: 'img, video, source',
+    },
+    accountSelectors: {
+      currentProfileLink: 'a[href^="/u/"], a[href^="/n/"], a[href*="weibo.com/u/"]',
+      displayName: 'h1, [class*="name"], [class*="Name"], [node-type="name"]',
+      bio: '[class*="bio"], [class*="intro"], [class*="description"], [node-type="intro"]',
+      statLinks: 'a[href*="/follow"], a[href*="/myfollow"], a[href*="/followers"]',
+      relationLink: 'a[href^="/u/"], a[href^="/n/"], a[href*="uid="]',
+    },
+  },
 });
 
 const ACTION_ALIASES = Object.freeze({
@@ -249,6 +304,8 @@ const CONTENT_TYPE_ALIASES = Object.freeze({
   photos: 'media',
   video: 'media',
   videos: 'media',
+  article: 'articles',
+  articles: 'articles',
   reel: 'reels',
   reels: 'reels',
   highlight: 'highlights',
@@ -272,6 +329,9 @@ function normalizeSiteId(value) {
   if (normalized === 'ig' || normalized === 'instagram' || normalized === 'instagram.com' || normalized === 'www.instagram.com') {
     return 'instagram';
   }
+  if (normalized === 'weibo' || normalized === 'weibo.com' || normalized === 'www.weibo.com' || normalized === 's.weibo.com') {
+    return 'weibo';
+  }
   if (SOCIAL_SITES[normalized]) {
     return normalized;
   }
@@ -281,7 +341,7 @@ function normalizeSiteId(value) {
 export function resolveSocialSiteConfig(site) {
   const siteId = normalizeSiteId(site);
   if (!siteId || !SOCIAL_SITES[siteId]) {
-    throw new Error(`Unsupported social site ${JSON.stringify(site)}. Expected x or instagram.`);
+    throw new Error(`Unsupported social site ${JSON.stringify(site)}. Expected x, instagram, or weibo.`);
   }
   return SOCIAL_SITES[siteId];
 }
@@ -1443,7 +1503,7 @@ export function buildSocialActionPlan(input = /** @type {any} */ ({})) {
       query,
       ...dateWindow,
     });
-    requiresAuth = config.siteKey === 'x' || config.siteKey === 'instagram';
+    requiresAuth = config.siteKey === 'x' || config.siteKey === 'instagram' || config.siteKey === 'weibo';
   } else if (action === 'read-route') {
     if (!routePath) {
       throw new Error('read-route requires a supported X --route path.');
@@ -3642,13 +3702,14 @@ function pageScrollToBottom(config = /** @type {any} */ ({}), request = /** @typ
   const scroller = findDialogScroller();
   if (scroller) {
     const dialog = document.querySelector('div[role="dialog"]');
-    const linkCountBefore = dialog ? dialog.querySelectorAll(config.accountSelectors.relationLink).length : 0;
+    const relationLinkSelector = config.accountSelectors.relationLink;
+    const linkCountBefore = dialog ? dialog.querySelectorAll(relationLinkSelector).length : 0;
     const candidates = dialog
       ? [dialog, ...dialog.querySelectorAll('*')]
         .filter((node) => node.scrollHeight > node.clientHeight + 8)
         .sort((left, right) => {
-          const leftLinks = left.querySelectorAll?.(config.accountSelectors.relationLink).length ?? 0;
-          const rightLinks = right.querySelectorAll?.(config.accountSelectors.relationLink).length ?? 0;
+          const leftLinks = left.querySelectorAll?.(relationLinkSelector).length ?? 0;
+          const rightLinks = right.querySelectorAll?.(relationLinkSelector).length ?? 0;
           if (leftLinks !== rightLinks) {
             return rightLinks - leftLinks;
           }
@@ -3672,12 +3733,12 @@ function pageScrollToBottom(config = /** @type {any} */ ({}), request = /** @typ
         after: node.scrollTop || 0,
         height: node.scrollHeight,
         clientHeight: node.clientHeight,
-        linkCount: node.querySelectorAll?.(config.accountSelectors.relationLink).length ?? 0,
+        linkCount: node.querySelectorAll?.(relationLinkSelector).length ?? 0,
       };
     });
-    const lastRelationLink = dialog ? [...dialog.querySelectorAll(config.accountSelectors.relationLink)].at(-1) : null;
+    const lastRelationLink = dialog ? [...dialog.querySelectorAll(relationLinkSelector)].at(-1) : null;
     lastRelationLink?.scrollIntoView?.({ block: 'end', inline: 'nearest' });
-    const linkCountAfter = dialog ? dialog.querySelectorAll(config.accountSelectors.relationLink).length : linkCountBefore;
+    const linkCountAfter = dialog ? dialog.querySelectorAll(relationLinkSelector).length : linkCountBefore;
     return {
       target: 'dialog',
       before: attempts[0]?.before ?? scroller.scrollTop,
@@ -4986,6 +5047,44 @@ function collectXRelationEntries(json) {
   };
 }
 
+function normalizeInstagramRelationUser(user = /** @type {any} */ ({})) {
+  const handle = cleanText(user?.username || user?.handle || '');
+  const id = user?.pk ?? user?.id ?? user?.pk_id ?? null;
+  if (!handle && id === null) {
+    return null;
+  }
+  return {
+    handle: handle || null,
+    id: id !== null && id !== undefined ? String(id) : null,
+    url: handle ? `https://www.instagram.com/${handle}/` : null,
+    label: cleanText(user?.full_name || user?.fullName || user?.name || handle || '') || null,
+    displayName: cleanText(user?.full_name || user?.fullName || user?.name || '') || null,
+    verified: Boolean(user?.is_verified || user?.verified),
+    private: Boolean(user?.is_private || user?.private),
+    source: 'instagram-api-relation',
+  };
+}
+
+function collectInstagramRelationEntries(json) {
+  const users = /** @type {any[]} */ ([]);
+  const sourceUsers = Array.isArray(json?.users)
+    ? json.users
+    : Array.isArray(json?.data?.users)
+      ? json.data.users
+      : [];
+  for (const candidate of sourceUsers) {
+    const user = normalizeInstagramRelationUser(candidate);
+    if (user) {
+      users.push(user);
+    }
+  }
+  const nextCursor = json?.next_max_id ?? json?.nextMaxId ?? json?.paging_info?.max_id ?? null;
+  return {
+    users: mergeByKey(users, (entry) => entry.handle?.toLowerCase() || entry.id || entry.url, Number.MAX_SAFE_INTEGER),
+    nextCursor: nextCursor ? String(nextCursor) : null,
+  };
+}
+
 function isXRelationApiUrl(url, action) {
   const value = String(url ?? '');
   return action === 'profile-followers'
@@ -5328,6 +5427,14 @@ export function parseSocialRelationApiPayload(site, json) {
   const config = resolveSocialSiteConfig(site);
   if (config.siteKey === 'x') {
     const relation = collectXRelationEntries(json);
+    return {
+      users: relation.users,
+      nextCursor: relation.nextCursor,
+      riskSignals: detectApiPayloadRisk(json),
+    };
+  }
+  if (config.siteKey === 'instagram') {
+    const relation = collectInstagramRelationEntries(json);
     return {
       users: relation.users,
       nextCursor: relation.nextCursor,
@@ -6379,6 +6486,20 @@ function instagramFeedUserPageUrl(userId) {
   return url.toString();
 }
 
+function instagramFriendshipRelationFromAction(action) {
+  return action === 'profile-followers' ? 'followers' : 'following';
+}
+
+function instagramFriendshipPageUrl(userId, action, cursor = null) {
+  const relation = instagramFriendshipRelationFromAction(action);
+  const url = new URL(`https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/${relation}/`);
+  url.searchParams.set('count', '12');
+  if (cursor) {
+    url.searchParams.set('max_id', cursor);
+  }
+  return url.toString();
+}
+
 function extractInstagramProfileInfoUser(json, requestedAccount = null) {
   const user = json?.data?.user || json?.user || null;
   if (!user || typeof user !== 'object') {
@@ -6434,6 +6555,27 @@ function instagramDirectArchiveCapture(profileUrl, feedUrl, events = /** @type {
     operations: [
       { operationName: 'instagram-web-profile-info', url: profileUrl, method: 'GET' },
       { operationName: 'instagram-feed-user', url: feedUrl, method: 'GET' },
+    ],
+    samples: events.slice(-API_CAPTURE_SAMPLE_LIMIT),
+    driftSamples: [],
+    rawDriftSampleCount: 0,
+    rawDriftSamples: [],
+    errors: [],
+  };
+}
+
+function instagramDirectRelationCapture(profileUrl, relationUrl, events = /** @type {any[]} */ ([])) {
+  return {
+    requestCount: null,
+    networkResponseCount: null,
+    responseCount: events.filter((entry) => entry?.status).length,
+    capturedBodyCount: null,
+    bodyErrorCount: null,
+    parsedResponseCount: events.filter((entry) => entry?.userCount !== undefined).length,
+    parsedSeedCandidateCount: events.some((entry) => Number(entry?.userCount) > 0 || entry?.nextCursor) ? 1 : 0,
+    operations: [
+      { operationName: 'instagram-web-profile-info', url: profileUrl, method: 'GET' },
+      { operationName: 'instagram-friendships-relation', url: relationUrl, method: 'GET' },
     ],
     samples: events.slice(-API_CAPTURE_SAMPLE_LIMIT),
     driftSamples: [],
@@ -6643,6 +6785,150 @@ async function collectInstagramFeedUserArchive(session, config, plan, settings, 
     riskEvents,
     boundarySignals: dedupeSortedStrings(riskSignals),
     resumed: Boolean(previousItems.length || previousArchive?.nextCursor),
+  };
+}
+
+async function collectInstagramRelationApiUsers(session, config, plan, settings, checkpoint = null) {
+  if (config?.siteKey !== 'instagram' || !isSocialRelationAction(plan.action) || !plan.account) {
+    return null;
+  }
+  const headers = instagramApiV1Headers();
+  const profileUrl = instagramWebProfileInfoUrl(plan.account);
+  const profileResult = await fetchCursorReplayJson(session, {
+    url: profileUrl,
+    method: 'GET',
+    headers,
+  }, settings);
+  const profileUser = profileResult.ok ? extractInstagramProfileInfoUser(profileResult.json, plan.account) : null;
+  const userId = profileUser?.id || null;
+  const relationUrl = userId ? instagramFriendshipPageUrl(userId, plan.action) : null;
+  const riskSignals = [...(profileResult.riskSignals ?? [])];
+  const riskEvents = (profileResult.attempts || []).map((attempt) => ({
+    ...attempt,
+    url: profileUrl,
+  }));
+  if (!userId || !relationUrl) {
+    return {
+      strategy: 'instagram-friendships-api',
+      complete: false,
+      reason: profileResult.ok ? 'instagram-profile-user-id-missing' : profileResult.reason || 'instagram-profile-info-fetch-failed',
+      pages: 0,
+      users: [],
+      nextCursor: null,
+      targetUserId: userId,
+      seedUrl: relationUrl,
+      requestTemplate: relationUrl ? sanitizeSocialApiRequestTemplate({ url: relationUrl, method: 'GET', headers }) : null,
+      capture: instagramDirectRelationCapture(profileUrl, relationUrl, []),
+      riskSignals: dedupeSortedStrings(riskSignals),
+      riskEvents,
+      boundarySignals: dedupeSortedStrings(riskSignals),
+    };
+  }
+
+  const maxPages = Math.max(1, Number(settings.maxApiPages) || 1);
+  const maxUsers = Math.max(1, Number(settings.maxUsers ?? settings.maxItems) || DEFAULT_MAX_USERS);
+  const requestTemplate = sanitizeSocialApiRequestTemplate({ url: relationUrl, method: 'GET', headers });
+  let users = /** @type {any[]} */ ([]);
+  let cursor = null;
+  let pages = 0;
+  let reason = 'max-api-pages';
+  const samples = /** @type {any[]} */ ([]);
+  while (pages < maxPages && users.length < maxUsers) {
+    const request = {
+      url: instagramFriendshipPageUrl(userId, plan.action, cursor),
+      method: 'GET',
+      headers,
+    };
+    const fetchResult = await fetchCursorReplayJson(session, request, settings);
+    riskEvents.push(...(fetchResult.attempts || []).map((attempt) => ({
+      ...attempt,
+      url: request.url,
+    })));
+    riskSignals.push(...(fetchResult.riskSignals ?? []));
+    if (!fetchResult.ok) {
+      reason = fetchResult.reason || 'instagram-relation-fetch-failed';
+      break;
+    }
+    const parsed = parseSocialRelationApiPayload(config.siteKey, fetchResult.json);
+    riskSignals.push(...(parsed.riskSignals ?? []));
+    pages += 1;
+    users = mergeByKey([
+      ...users,
+      ...parsed.users,
+    ], (entry) => entry.handle?.toLowerCase() || entry.id || entry.url, maxUsers);
+    cursor = parsed.nextCursor;
+    samples.push({
+      url: request.url,
+      status: fetchResult.status,
+      userCount: parsed.users.length,
+      nextCursor: parsed.nextCursor ?? null,
+    });
+    await checkpoint?.writeRows?.(checkpointRowsForUsers(users));
+    if (parsed.riskSignals?.length) {
+      reason = apiRiskReasonFromSignals(parsed.riskSignals) || 'api-risk-signal';
+      break;
+    }
+    if (users.length >= maxUsers) {
+      reason = 'max-users';
+      break;
+    }
+    if (!cursor) {
+      reason = null;
+      break;
+    }
+  }
+
+  const boundedBy = boundedReasonFromArchiveReason(reason);
+  return {
+    strategy: 'instagram-friendships-api',
+    complete: reason === null,
+    reason,
+    bounded: Boolean(boundedBy),
+    boundedBy,
+    pages,
+    users,
+    nextCursor: reason === null ? null : cursor || null,
+    targetUserId: userId,
+    seedUrl: relationUrl,
+    requestTemplate,
+    capture: instagramDirectRelationCapture(profileUrl, relationUrl, samples),
+    riskSignals: dedupeSortedStrings(riskSignals),
+    riskEvents,
+    boundarySignals: dedupeSortedStrings(riskSignals),
+  };
+}
+
+function pageResultFromInstagramRelationApi(plan, relationApi) {
+  return {
+    account: {
+      handle: plan.account ?? null,
+      url: plan.account ? `https://www.instagram.com/${plan.account}/` : null,
+    },
+    currentAccount: plan.account ?? null,
+    finalUrl: plan.url,
+    title: null,
+    surfaceInventory: null,
+    relations: relationApi.users,
+    items: [],
+    media: [],
+    archive: {
+      strategy: relationApi.strategy,
+      complete: relationApi.complete,
+      reason: relationApi.reason,
+      bounded: relationApi.bounded,
+      boundedBy: relationApi.boundedBy,
+      pages: relationApi.pages,
+      apiItemCount: relationApi.users.length,
+      dedupedItemCount: relationApi.users.length,
+      seedUrl: relationApi.seedUrl,
+      requestTemplate: relationApi.requestTemplate,
+      nextCursor: relationApi.nextCursor,
+      targetUserId: relationApi.targetUserId,
+      capture: relationApi.capture,
+      boundarySignals: relationApi.boundarySignals,
+    },
+    riskSignals: relationApi.riskSignals,
+    riskEvents: relationApi.riskEvents,
   };
 }
 
@@ -9300,10 +9586,11 @@ async function prepareSocialRelationSurface(session, config, plan, settings) {
     account: plan.account,
     action: plan.action,
   });
+  const relationSettleTimeoutMs = Math.min(settings.timeoutMs, 15_000);
   if (clickResult?.clicked) {
     await sleep(Math.max(settings.scrollWaitMs, 1500));
     try {
-      await session.waitForSettled?.(createWaitPolicy(settings.timeoutMs));
+      await session.waitForSettled?.(createWaitPolicy(relationSettleTimeoutMs));
     } catch {
       // Instagram relation dialogs can update through SPA navigation; extraction below is the verifier.
     }
@@ -9365,6 +9652,7 @@ function normalizeRunSettings(plan, options = /** @type {any} */ ({})) {
     browserPath: options.browserPath || process.env[`BWS_${envToken}_BROWSER_PATH`],
     browserProfileRoot: options.browserProfileRoot || process.env[`BWS_${envToken}_BROWSER_PROFILE_ROOT`],
     userDataDir: options.userDataDir || process.env[`BWS_${envToken}_USER_DATA_DIR`],
+    cookieFile: options.cookieFile ? path.resolve(String(options.cookieFile)) : null,
     headless: options.headless === undefined ? false : Boolean(options.headless),
     reuseLoginState: options.reuseLoginState,
     autoLogin: options.autoLogin,
@@ -9561,6 +9849,7 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
   let session = null;
   let apiCapture = null;
   let authResult = null;
+  let providedLoginState = null;
   let finalResult = /** @type {any} */ (null);
   let sessionCloseSummary = null;
   try {
@@ -9604,6 +9893,25 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
     }, {
       userDataDirPrefix: `${plan.siteKey}-social-browser-`,
     });
+    if (settings.cookieFile) {
+      try {
+        providedLoginState = await applyBrowserCookiesFromFile(session, settings.cookieFile, {
+          targetUrl: initialNavigationUrl,
+        });
+      } catch (error) {
+        providedLoginState = {
+          source: 'user-provided-login-state-file',
+          status: 'apply-failed',
+          applied: false,
+          parsed: false,
+          rawMaterialPersisted: false,
+          filePathPersisted: false,
+          namesPersisted: false,
+          valuesPersisted: false,
+          reasonCode: normalizeText(error?.code) || 'login-state-file-apply-failed',
+        };
+      }
+    }
     apiCapture = shouldCaptureApi && typeof session?.send === 'function' && typeof session?.client?.on === 'function'
       ? await createSocialApiCapture(session, config, settings, plan)
       : null;
@@ -9684,35 +9992,47 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
           media: 0,
         },
       });
-      surfacePreparation = await prepareSocialRelationSurface(session, config, executionPlan, settings);
-      await checkpoint.write({
-        status: 'running',
-        phase: 'collecting-dom',
-        updatedAt: new Date().toISOString(),
-        currentUrl: executionPlan.url,
-        counts: {
-          items: loadedCheckpoint.previousItems.length,
-          media: 0,
-        },
-      });
-      const domPageSettings = settings.apiCursor && settings.fullArchive
-        ? { ...settings, maxScrolls: Math.min(settings.maxScrolls, 1) }
-        : settings;
-      const domPageResult = await collectSocialPage(session, config, executionPlan, domPageSettings);
-      const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action))
-        && !isNoContentReadRoutePlan(executionPlan);
-      let apiArchive = /** @type {any} */ (shouldCollectContentApiArchive
-        ? await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint, {
-          seedOnly: false,
-        })
-        : null);
-      if (shouldCollectContentApiArchive && isInstagramFeedUserArchivePlan(config, executionPlan, settings)) {
-        const instagramFeedArchive = await collectInstagramFeedUserArchive(session, config, executionPlan, settings, checkpoint);
-        if (shouldPreferInstagramDirectArchive(apiArchive, instagramFeedArchive)) {
-          apiArchive = instagramFeedArchive;
+      const instagramRelationApi = config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action)
+        ? await collectInstagramRelationApiUsers(session, config, executionPlan, settings, checkpoint)
+        : null;
+      if (instagramRelationApi?.users?.length || instagramRelationApi?.complete === true) {
+        surfacePreparation = {
+          status: 'api-relation-ready',
+          strategy: instagramRelationApi.strategy,
+          skippedDomDialog: true,
+        };
+        pageResult = pageResultFromInstagramRelationApi(executionPlan, instagramRelationApi);
+      } else {
+        surfacePreparation = await prepareSocialRelationSurface(session, config, executionPlan, settings);
+        await checkpoint.write({
+          status: 'running',
+          phase: 'collecting-dom',
+          updatedAt: new Date().toISOString(),
+          currentUrl: executionPlan.url,
+          counts: {
+            items: loadedCheckpoint.previousItems.length,
+            media: 0,
+          },
+        });
+        const domPageSettings = settings.apiCursor && settings.fullArchive
+          ? { ...settings, maxScrolls: Math.min(settings.maxScrolls, 1) }
+          : settings;
+        const domPageResult = await collectSocialPage(session, config, executionPlan, domPageSettings);
+        const shouldCollectContentApiArchive = !(config.siteKey === 'instagram' && isSocialRelationAction(executionPlan.action))
+          && !isNoContentReadRoutePlan(executionPlan);
+        let apiArchive = /** @type {any} */ (shouldCollectContentApiArchive
+          ? await collectSocialApiArchive(session, config, executionPlan, settings, apiCapture, checkpoint, {
+            seedOnly: false,
+          })
+          : null);
+        if (shouldCollectContentApiArchive && isInstagramFeedUserArchivePlan(config, executionPlan, settings)) {
+          const instagramFeedArchive = await collectInstagramFeedUserArchive(session, config, executionPlan, settings, checkpoint);
+          if (shouldPreferInstagramDirectArchive(apiArchive, instagramFeedArchive)) {
+            apiArchive = instagramFeedArchive;
+          }
         }
+        pageResult = mergePageResultWithArchive(domPageResult, apiArchive, settings, executionPlan);
       }
-      pageResult = mergePageResultWithArchive(domPageResult, apiArchive, settings, executionPlan);
       if (config.siteKey === 'x' && isSocialRelationAction(executionPlan.action)) {
         const relationApi = /** @type {any} */ (await collectXRelationApiUsers(session, executionPlan, settings, apiCapture, checkpoint));
         if (relationApi) {
@@ -9853,6 +10173,7 @@ export async function runSocialAction(options = /** @type {any} */ ({}), deps = 
       generatedAt: new Date().toISOString(),
       plan: executionPlan,
       auth: authResult ?? null,
+      providedLoginState,
       surfacePreparation,
       result: resultPayload,
       download,

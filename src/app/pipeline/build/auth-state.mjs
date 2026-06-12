@@ -49,7 +49,7 @@ export function authRuntimeMaterialFrom(target) {
   return cloneRuntimeMaterial(target?.[AUTH_RUNTIME_MATERIAL_SYMBOL] ?? null);
 }
 
-export const AUTH_METHODS = Object.freeze(['none', 'cookie', 'browser']);
+export const AUTH_METHODS = Object.freeze(['none', 'cookie', 'browser', 'authorized_source']);
 
 export const AUTH_VERIFICATION_STATUSES = Object.freeze([
   'not_requested',
@@ -64,6 +64,7 @@ export const AUTH_VERIFICATION_STATUSES = Object.freeze([
   'browser_verified_partial',
   'browser_blocked',
   'browser_check_failed',
+  'authorized_source_verified',
 ]);
 
 export const CAPABILITY_EVIDENCE_LEVEL_RANK = Object.freeze({
@@ -117,6 +118,10 @@ export function canRunAuthenticatedLayer(authStateReport = null) {
     return status === 'browser_verified_partial'
       && authStateReport?.verified === true
       && browserBridgeHasCapturedRouteResult(authStateReport?.browserBridge);
+  }
+  if (authStateReport?.authMethod === 'authorized_source') {
+    return authStateReport?.authVerificationStatus === 'authorized_source_verified'
+      && authStateReport?.verified === true;
   }
   return false;
 }
@@ -617,7 +622,13 @@ export function normalizeAuthStateReport(report = /** @type {any} */ ({}), {
   const browserBridge = browserBridgeSummary(report.browserBridge, { site });
   const status = normalizeAuthVerificationStatus(
     report.authVerificationStatus,
-    method === 'cookie' ? 'cookie_missing' : method === 'browser' ? 'browser_bridge_missing' : 'not_requested',
+    method === 'cookie'
+      ? 'cookie_missing'
+      : method === 'browser'
+        ? 'browser_bridge_missing'
+        : method === 'authorized_source'
+          ? 'authorized_source_verified'
+          : 'not_requested',
   );
   const browserPartial = method === 'browser'
     && report.verified === true
@@ -625,7 +636,8 @@ export function normalizeAuthStateReport(report = /** @type {any} */ ({}), {
     && browserBridge.capturedRouteCount > 0
     && browserBridge.missingRouteCount > 0;
   const verified = ((method === 'cookie' && status === 'cookie_verified')
-    || (method === 'browser' && ['browser_verified', 'browser_verified_partial'].includes(status)))
+    || (method === 'browser' && ['browser_verified', 'browser_verified_partial'].includes(status))
+    || (method === 'authorized_source' && status === 'authorized_source_verified'))
     && report.verified === true;
   const finalUrl = sanitizedFinalUrl(report.finalUrl, site);
   const verifiedRoutes = Array.isArray(report.verifiedRoutes)
@@ -641,11 +653,29 @@ export function normalizeAuthStateReport(report = /** @type {any} */ ({}), {
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     artifactFamily: AUTH_STATE_ARTIFACT_FAMILY,
-    crawlMode: verified ? (method === 'browser' ? 'authenticated_browser' : 'authenticated_cookie') : crawlMode,
+    crawlMode: verified
+      ? (method === 'browser'
+        ? 'authenticated_browser'
+        : method === 'authorized_source'
+          ? 'authenticated_authorized_source'
+          : 'authenticated_cookie')
+      : crawlMode,
     authMethod: method,
-    authVerificationStatus: verified ? (method === 'browser' ? (browserPartial ? 'browser_verified_partial' : status) : 'cookie_verified') : status,
+    authVerificationStatus: verified
+      ? (method === 'browser'
+        ? (browserPartial ? 'browser_verified_partial' : status)
+        : method === 'authorized_source'
+          ? 'authorized_source_verified'
+          : 'cookie_verified')
+      : status,
     verified,
-    source: report.source ?? (method === 'cookie' ? 'cookie_header_verification' : method === 'browser' ? 'default_browser_bridge' : 'public_only'),
+    source: report.source ?? (method === 'cookie'
+      ? 'cookie_header_verification'
+      : method === 'browser'
+        ? 'default_browser_bridge'
+        : method === 'authorized_source'
+          ? 'authorized_source_sanitized_summary'
+          : 'public_only'),
     finalUrl,
     blockingSignals: uniqueStrings(report.blockingSignals ?? []),
     positiveSignals: uniqueStrings(report.positiveSignals ?? []),
@@ -1092,11 +1122,24 @@ export function createCrawlContract({
   const authenticated = canRunAuthenticatedLayer(normalizedReport);
   const authenticatedCookie = authenticated && normalizedReport.authMethod === 'cookie';
   const authenticatedBrowser = authenticated && normalizedReport.authMethod === 'browser';
+  const authenticatedAuthorizedSource = authenticated && normalizedReport.authMethod === 'authorized_source';
   return {
     schemaVersion: BUILD_SCHEMA_VERSION,
     artifactFamily: 'siteforge-crawl-contract',
-    crawlMode: authenticated ? (authenticatedBrowser ? 'authenticated_browser' : 'authenticated_cookie') : 'public_only',
-    sourceMode: sourceMode ?? (authenticated ? (authenticatedBrowser ? (normalizedReport.authVerificationStatus === 'browser_verified_partial' ? 'browser_bridge_partial' : 'browser_bridge_verified') : 'cookie_verified') : 'live_static'),
+    crawlMode: authenticated
+      ? (authenticatedBrowser
+        ? 'authenticated_browser'
+        : authenticatedAuthorizedSource
+          ? 'authenticated_authorized_source'
+          : 'authenticated_cookie')
+      : 'public_only',
+    sourceMode: sourceMode ?? (authenticated
+      ? (authenticatedBrowser
+        ? (normalizedReport.authVerificationStatus === 'browser_verified_partial' ? 'browser_bridge_partial' : 'browser_bridge_verified')
+        : authenticatedAuthorizedSource
+          ? 'authorized_source_sanitized_summary'
+          : 'cookie_verified')
+      : 'live_static'),
     authMethod: normalizedReport.authMethod,
     authVerificationStatus: normalizedReport.authVerificationStatus,
     coverageTargets: {

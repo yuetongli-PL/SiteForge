@@ -236,11 +236,102 @@ function isAuthorizedSourceRecord(value = /** @type {any} */ ({})) {
     || value?.discoveredBy === 'authorized_source';
 }
 
+function isSanitizedSummaryEvidence(value = /** @type {any} */ ({})) {
+  return value?.saved_material === SANITIZED_SUMMARY_ONLY
+    && value?.raw_content_saved === false
+    && value?.private_content_saved === false;
+}
+
+function hasOnlySanitizedSummaryEvidence(value = /** @type {any} */ ([])) {
+  const evidence = arrayOf(value);
+  return evidence.length > 0 && evidence.every(isSanitizedSummaryEvidence);
+}
+
+function browserBridgeRouteCoverageComplete(authStateReport = /** @type {any} */ ({})) {
+  const bridge = authStateReport?.browserBridge ?? {};
+  return bridge.used === true
+    && Number(bridge.capturedRouteCount) > 0
+    && Number(bridge.missingRouteCount) === 0
+    && (bridge.routeCoverageStatus === 'complete' || bridge.routeCoverageStatus === 'captured_with_boundary_disposition');
+}
+
+function controlledAuthenticatedRouteOnlyPolicy({
+  context,
+  discoverSeeds,
+  staticPages,
+  authenticatedPages,
+  publicRenderedPages,
+  robotsPolicy,
+}) {
+  const active = Boolean(
+    robotsPolicy?.disallowPaths?.length
+      && !arrayOf(discoverSeeds.seeds).length
+      && !staticPages.length
+      && !publicRenderedPages.length
+      && authenticatedPages.length > 0
+      && canRunAuthenticatedLayer(context?.authStateReport)
+      && browserBridgeRouteCoverageComplete(context?.authStateReport)
+      && authenticatedPages.every((page) => {
+        const sourceLayer = page?.sourceLayer === 'authenticated_overlay' ? 'authenticated_overlay' : 'authenticated';
+        return ['authenticated', 'authenticated_overlay'].includes(sourceLayer)
+          && page?.authRequired !== false
+          && hasOnlySanitizedSummaryEvidence(page?.evidence);
+      })
+  );
+  return {
+    active,
+    reason: active ? 'controlled-authenticated-route-only' : null,
+    authenticatedPages: authenticatedPages.length,
+    publicRenderedPages: publicRenderedPages.length,
+    staticPages: staticPages.length,
+    browserBridge: {
+      used: context?.authStateReport?.browserBridge?.used === true,
+      capturedRouteCount: context?.authStateReport?.browserBridge?.capturedRouteCount ?? null,
+      missingRouteCount: context?.authStateReport?.browserBridge?.missingRouteCount ?? null,
+      routeCoverageStatus: context?.authStateReport?.browserBridge?.routeCoverageStatus ?? null,
+    },
+  };
+}
+
+function robotsPolicyFromDiscoverSeeds(discoverSeeds = /** @type {any} */ ({})) {
+  if (discoverSeeds.robotsPolicy) return discoverSeeds.robotsPolicy;
+  const robots = discoverSeeds.robots;
+  if (!robots || typeof robots !== 'object') return null;
+  if (Array.isArray(robots.groups)) return robots;
+  const disallowPaths = arrayOf(robots.disallowPaths);
+  if (!disallowPaths.length) return null;
+  return {
+    ...robots,
+    groups: [{
+      agents: ['*'],
+      rules: disallowPaths.map((pathValue) => ({ type: 'disallow', path: String(pathValue) })),
+    }],
+  };
+}
+
+function isControlledAuthenticatedRouteNode(node = /** @type {any} */ ({}), policy = /** @type {any} */ ({})) {
+  if (policy.active !== true) return false;
+  if (!hasOnlySanitizedSummaryEvidence(node?.evidence)) return false;
+  return ['authenticated', 'authenticated_overlay'].includes(node?.sourceLayer)
+    || node?.authRequired === true;
+}
+
+function allowsKnownPolicyRobotsUnavailableFallback(context = /** @type {any} */ ({}), discoverSeeds = /** @type {any} */ ({})) {
+  const knownPolicy = context.setupProfile?.knownSitePolicy;
+  const fallback = knownPolicy?.robotsUnavailableFallback;
+  return discoverSeeds.robots?.status === 'known_policy_fallback'
+    && fallback?.status === 'enabled'
+    && fallback?.usePublicRouteTemplates === true
+    && arrayOf(knownPolicy?.publicRouteTemplates).some((route) => route?.seedable === true && route?.path)
+    && arrayOf(discoverSeeds.seeds).length > 0;
+}
+
 function validateGraphDocument(document, {
   label,
   context,
   homepageReachable,
   robotsPolicy,
+  controlledAuthenticatedRouteOnly,
   acc,
 }) {
   const nodes = arrayOf(document?.nodes);
@@ -313,6 +404,9 @@ function validateGraphDocument(document, {
       }
       const nodeUrl = node?.normalizedUrl ?? node?.url;
       if (!nodeUrl) {
+        continue;
+      }
+      if (isControlledAuthenticatedRouteNode(node, controlledAuthenticatedRouteOnly)) {
         continue;
       }
       if (!isUrlAllowedByRobots(nodeUrl, robotsPolicy)) {
@@ -988,11 +1082,28 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
     : arrayOf(crawlRendered.pages);
   const alternativePageEvidenceCount = authenticatedPages.length + publicRenderedPages.length;
   const authorizedSourcePages = staticPages.filter(isAuthorizedSourceRecord);
+  const homepageReachable = staticPages.some((page) => page.normalizedUrl === context.site.rootUrl);
+  const robotsPolicy = robotsPolicyFromDiscoverSeeds(discoverSeeds);
+  const controlledAuthenticatedRouteOnly = controlledAuthenticatedRouteOnlyPolicy({
+    context,
+    discoverSeeds,
+    staticPages,
+    authenticatedPages,
+    publicRenderedPages,
+    robotsPolicy,
+  });
   if (!arrayOf(discoverSeeds.seeds).length && !authorizedSourcePages.length) {
-    acc.fail('nodes', 'seeds.empty', 'Seed discovery produced no crawlable URLs.', {
-      ...(arrayOf(discoverSeeds.robotsExcludedUrls).length ? normalizeSiteForgeReason('robots-disallowed') : normalizeSiteForgeReason('empty-seed-set')),
-      excludedUrls: arrayOf(discoverSeeds.robotsExcludedUrls),
-    });
+    if (controlledAuthenticatedRouteOnly.active === true) {
+      acc.warn('nodes', 'seeds.empty.controlled_authenticated_route_only', 'Seed discovery produced no public crawlable URLs; validated controlled authenticated Browser Bridge route evidence instead.', {
+        policyOutcome: controlledAuthenticatedRouteOnly.reason,
+        excludedUrls: arrayOf(discoverSeeds.robotsExcludedUrls),
+      });
+    } else {
+      acc.fail('nodes', 'seeds.empty', 'Seed discovery produced no crawlable URLs.', {
+        ...(arrayOf(discoverSeeds.robotsExcludedUrls).length ? normalizeSiteForgeReason('robots-disallowed') : normalizeSiteForgeReason('empty-seed-set')),
+        excludedUrls: arrayOf(discoverSeeds.robotsExcludedUrls),
+      });
+    }
   }
   if (!staticPages.length && alternativePageEvidenceCount <= 0) {
     const warningReason = selectSiteForgePrimaryReason(
@@ -1003,11 +1114,9 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
       ...(warningReason?.reasonCode === 'validation-failed' ? normalizeSiteForgeReason('empty-crawl') : warningReason),
     });
   }
-  const homepageReachable = staticPages.some((page) => page.normalizedUrl === context.site.rootUrl);
-  const robotsPolicy = discoverSeeds.robotsPolicy ?? null;
   const robotsStatus = discoverSeeds.robots?.status ?? (robotsPolicy ? 'parsed' : 'unknown');
   const liveRobotsRequired = Boolean(context?.source);
-  if (liveRobotsRequired && robotsStatus !== 'parsed') {
+  if (liveRobotsRequired && robotsStatus !== 'parsed' && !allowsKnownPolicyRobotsUnavailableFallback(context, discoverSeeds)) {
     acc.fail('nodes', 'robots.unavailable', `Live build requires fetched robots.txt before validation; status was ${robotsStatus}.`, {
       status: robotsStatus,
       reason: discoverSeeds.robots?.reason ?? null,
@@ -1045,6 +1154,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
     context,
     homepageReachable,
     robotsPolicy,
+    controlledAuthenticatedRouteOnly,
     acc,
   });
   const classifiedGraphGate = validateGraphDocument(getStage(stageResults, 'classifyNodes').graph, {
@@ -1052,6 +1162,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
     context,
     homepageReachable,
     robotsPolicy,
+    controlledAuthenticatedRouteOnly,
     acc,
   });
 
@@ -1187,6 +1298,7 @@ export async function createSiteForgeOutputValidationReport(context, stageResult
         homepagePresent: classifiedGraphGate.homepagePresent || graphGate.homepagePresent,
         edgeRefsValid: graphGate.edgeRefsValid && classifiedGraphGate.edgeRefsValid,
         robotsDisallowedAbsent: graphGate.robotsAllowed && classifiedGraphGate.robotsAllowed,
+        controlledAuthenticatedRouteOnly,
         duplicateRatio: duplicateRatioComputable ? duplicateRatio : null,
         duplicateRatioThreshold: OUTPUT_VALIDATION_DUPLICATE_RATIO_THRESHOLD,
       },

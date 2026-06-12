@@ -50,6 +50,7 @@ const SAFE_CAPABILITY_FIELDS = Object.freeze([
   'approvalActionKinds',
   'baseUrl',
   'capabilityFamilies',
+  'disabledActionKinds',
   'downloader',
   'host',
   'pageTypes',

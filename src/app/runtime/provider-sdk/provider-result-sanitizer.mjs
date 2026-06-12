@@ -31,6 +31,7 @@ const SUMMARY_ALLOWED_KEYS = Object.freeze(new Set([
   'responseMaterial',
   'slotNames',
   'payloadTemplate',
+  'structuredResult',
   'downloads',
   'warnings',
 ]));
@@ -102,4 +103,3 @@ export function sanitizeProviderError(error = {}, options = {}) {
   assertNoProviderRawMaterial(sanitized, options.label ?? 'ProviderError');
   return sanitized;
 }
-

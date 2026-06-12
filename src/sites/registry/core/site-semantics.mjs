@@ -119,13 +119,17 @@ export function remapSupportedIntent(intentType, context) {
       }
       return intentType;
     case 'jable':
+    case '123av':
       switch (intentType) {
         case 'search-book':
+        case 'search-work':
           return 'search-video';
         case 'open-book':
+        case 'open-work':
           return 'open-video';
         case 'open-author':
-          return 'open-model';
+        case 'open-model':
+          return resolveSemanticSiteKey(context) === '123av' ? 'open-actress' : 'open-model';
         case 'download-book':
           return 'download-video';
         default:

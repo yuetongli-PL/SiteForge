@@ -3,6 +3,7 @@
 import { hostFromUrl, sanitizeHost } from '../../shared/normalize.mjs';
 import { readSiteContext } from '../registry/core/context.mjs';
 import { maybeLoadValidatedProfileForHost, maybeLoadValidatedProfileForUrl } from '../registry/core/profiles.mjs';
+import { oneTwoThreeAvAdapter } from './123av.mjs';
 import { attackersAdapter } from './attackers.mjs';
 import { chapterContentAdapter } from './chapter-content.mjs';
 import { dahliaAdapter } from './dahlia.mjs';
@@ -21,12 +22,16 @@ import { qidianAdapter } from './qidian.mjs';
 import { redditAdapter } from './reddit.mjs';
 import { rookieAdapter } from './rookie.mjs';
 import { s1Adapter } from './s1.mjs';
+import { soAgentAdapter } from './so-agent.mjs';
 import { sodAdapter } from './sod.mjs';
 import { tPowersAdapter } from './t-powers.mjs';
+import { weiboAdapter } from './weibo.mjs';
 import { xAdapter } from './x.mjs';
 import { xiaohongshuAdapter } from './xiaohongshu.mjs';
+import { zhihuAdapter } from './zhihu.mjs';
 
 const ADAPTERS = Object.freeze([
+  oneTwoThreeAvAdapter,
   attackersAdapter,
   dahliaAdapter,
   dogmaAdapter,
@@ -38,11 +43,14 @@ const ADAPTERS = Object.freeze([
   moodyzAdapter,
   rookieAdapter,
   s1Adapter,
+  soAgentAdapter,
   sodAdapter,
   tPowersAdapter,
   bilibiliAdapter,
   douyinAdapter,
   xiaohongshuAdapter,
+  zhihuAdapter,
+  weiboAdapter,
   xAdapter,
   instagramAdapter,
   redditAdapter,

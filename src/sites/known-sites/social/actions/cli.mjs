@@ -32,6 +32,7 @@ const SEARCH_ACTION_TOKENS = new Set(['search', 'search-book', 'search-content',
 export const SOCIAL_ACTION_HELP = `Internal script usage:
   node src/entrypoints/sites/x-action.mjs <action> [options]
   node src/entrypoints/sites/instagram-action.mjs <action> [options]
+  node src/entrypoints/sites/weibo-action.mjs <action> [options]
 
 Public command:
   siteforge build <url>
@@ -40,7 +41,7 @@ Common actions include profile-content, full-archive, search, profile-following,
 profile-followers, followed-posts-by-date, read-route, and account-info.
 
 Options:
-  --site <x|instagram>              Override the wrapper default site.
+  --site <x|instagram|weibo>        Override the wrapper default site.
   --account <handle>                Target account or profile handle.
   --query <value>                   Search query.
   --route <path>                    Safe same-site read-route start path.
@@ -64,6 +65,7 @@ Options:
   --out-dir <dir>                   Artifact output root.
   --resume                          Resume from existing checkpoint state.
   --dry-run                         Plan without performing browser/media work when supported.
+  --cookie-file <path>              Use a user-provided login-state cookie file for this run only.
   --session-manifest <path>         Consume a unified runs/session health manifest.
   --session-health-plan             Generate and consume a unified session health manifest first.
   --no-session-health-plan          Use the legacy session provider path.
@@ -140,6 +142,7 @@ export function parseSocialActionArgs(argv = process.argv.slice(2), defaults = /
     browserPath: lastFlagValue(flags, 'browser-path'),
     browserProfileRoot: lastFlagValue(flags, 'browser-profile-root'),
     userDataDir: lastFlagValue(flags, 'user-data-dir'),
+    cookieFile: lastFlagValue(flags, 'cookie-file', lastFlagValue(flags, 'cookies-file')),
     sessionManifest: lastFlagValue(flags, 'session-manifest'),
     sessionProvider: lastFlagValue(flags, 'session-provider'),
     useUnifiedSessionHealth: flags['no-session-health-plan'] === true

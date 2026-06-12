@@ -37,6 +37,8 @@ const INTENT_LABELS = Object.freeze({
   'open-utility-page': 'open utility page',
   'open-auth-page': 'open login page',
   'download-book': 'download post media',
+  'list-explore-topics': 'list explore posts',
+  'list-notifications': 'list notifications',
   'profile-content': 'list profile posts',
   'list-profile-content': 'list profile posts',
   'list-author-posts': 'list profile posts',
@@ -47,6 +49,7 @@ const INTENT_LABELS = Object.freeze({
   'list-followed-users': 'list followed profiles',
   'list-followed-updates': 'list followed profile posts',
   'account-info': 'get profile information',
+  'search-posts': 'search Instagram',
 });
 
 function isReservedRootSegment(segment) {
@@ -100,11 +103,18 @@ function inferInstagramPageType({ pathname = '' } = /** @type {any} */ ({})) {
     normalizedPath.startsWith('/p/')
     || normalizedPath.startsWith('/reel/')
     || normalizedPath.startsWith('/tv/')
+    || normalizedPath.startsWith('/stories/')
   ) {
-    return 'book-detail-page';
+    return 'content-detail-page';
+  }
+  if (normalizedPath.startsWith('/accounts/activity')) {
+    return 'notification-page';
+  }
+  if (normalizedPath.startsWith('/accounts/edit')) {
+    return 'settings-page';
   }
   if (normalizedPath.startsWith('/direct')) {
-    return 'author-list-page';
+    return 'message-page';
   }
   if (/^\/[^/]+\/(?:following|followers)(?:\/|$)/u.test(normalizedPath)) {
     return 'author-list-page';
@@ -125,7 +135,13 @@ function isInstagramApiCandidate(candidate = /** @type {any} */ ({})) {
   const { host, pathname } = endpointParts(candidate);
   return siteKey === 'instagram'
     && INSTAGRAM_HOSTS.includes(host)
+    && isReadOnlyMethod(candidate)
     && pathname.startsWith('/api/');
+}
+
+function isReadOnlyMethod(candidate = /** @type {any} */ ({})) {
+  const method = String(candidate?.endpoint?.method ?? candidate?.method ?? 'GET').trim().toUpperCase();
+  return method === 'GET' || method === 'HEAD';
 }
 
 const INSTAGRAM_HEALTH_SIGNAL_MAP = Object.freeze({

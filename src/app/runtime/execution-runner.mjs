@@ -333,6 +333,7 @@ function normalizeProviderResult(provider, providerResult) {
   const result = isPlainObject(providerResult) ? providerResult : {};
   const status = normalizeText(result.status, 'completed');
   const reasonCode = normalizeText(result.reasonCode);
+  const sideEffectAttempted = result.sideEffectAttempted === false ? false : true;
   const resultSummary = isPlainObject(result.resultSummary)
     ? result.resultSummary
     : {
@@ -346,9 +347,11 @@ function normalizeProviderResult(provider, providerResult) {
     status,
     reasonCode: reasonCode || null,
     runtimeExecuted: result.runtimeExecuted !== false,
-    sideEffectAttempted: result.sideEffectAttempted === false ? false : true,
-    sideEffectSucceeded: result.sideEffectSucceeded === true
-      || (result.sideEffectFailed !== true && status === 'completed'),
+    sideEffectAttempted,
+    sideEffectSucceeded: sideEffectAttempted && (
+      result.sideEffectSucceeded === true
+      || (result.sideEffectFailed !== true && status === 'completed')
+    ),
     sideEffectFailed: result.sideEffectFailed === true,
     artifactRefs: artifactRefsFromResult(result),
     authSummary: result.authSummary

@@ -17,10 +17,12 @@ import {
 const AUTH_SUPPORTED_PROVIDER_IDS = Object.freeze(new Set([
   'api_read_provider',
   'download_provider',
+  'weibo_readonly_provider',
+  'zhihu_readonly_provider',
   'browser_action_provider',
 ]));
 const AUTH_V1_OPERATIONS = Object.freeze(new Set(['read', 'query', 'download', 'write', 'submit', 'form_or_action']));
-const AUTH_HTTP_PROVIDER_IDS = Object.freeze(new Set(['api_read_provider', 'download_provider']));
+const AUTH_HTTP_PROVIDER_IDS = Object.freeze(new Set(['api_read_provider', 'download_provider', 'weibo_readonly_provider', 'zhihu_readonly_provider']));
 const AUTH_BROWSER_PROVIDER_IDS = Object.freeze(new Set(['browser_action_provider']));
 const AUTH_BROWSER_OPERATIONS = Object.freeze(new Set(['write', 'submit', 'form_or_action']));
 const AUTH_MATERIAL_TYPES = Object.freeze(new Set([
@@ -180,13 +182,27 @@ function operationCovered(operation, allowedScope) {
   return allowedScope.operations?.includes(operation);
 }
 
+function escapeRegex(value) {
+  return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function resourcePatternCovered(resource, allowedResource) {
+  const candidate = normalizeText(resource);
+  const allowed = normalizeText(allowedResource);
+  if (!candidate || !allowed) return false;
+  if (candidate === allowed) return true;
+  if (!/\{[a-z][a-z0-9_-]*\}/iu.test(allowed)) return false;
+  const pattern = `^${escapeRegex(allowed).replace(/\\\{[a-z][a-z0-9_-]*\\\}/giu, '[^/?#]+')}$`;
+  return new RegExp(pattern, 'u').test(candidate);
+}
+
 function resourceCovered(resource, allowedScope) {
   if (!resource) {
     return !Array.isArray(allowedScope.resources) || allowedScope.resources.length === 0;
   }
   return !Array.isArray(allowedScope.resources)
     || allowedScope.resources.length === 0
-    || allowedScope.resources.includes(resource);
+    || allowedScope.resources.some((allowedResource) => resourcePatternCovered(resource, allowedResource));
 }
 
 function scopeEntryCovered(candidate, allowedScope) {
@@ -886,7 +902,9 @@ export function isUrlCoveredByAuthScopes(options = {}) {
     if (!Array.isArray(scope.resources) || scope.resources.length === 0) {
       return true;
     }
-    return resourceCandidates.some((resource) => scope.resources.includes(resource));
+    return resourceCandidates.some((resource) => (
+      scope.resources.some((allowedResource) => resourcePatternCovered(resource, allowedResource))
+    ));
   });
 }
 

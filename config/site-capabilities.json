@@ -372,11 +372,9 @@
         "book-detail-page",
         "category-page",
         "home",
-        "search-results-page",
         "utility-page"
       ],
       "capabilityFamilies": [
-        "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
@@ -393,49 +391,31 @@
       ],
       "publicRouteTemplates": [
         {
-          "id": "moodyz-works-date",
-          "path": "/works/date",
-          "pageType": "category-page",
+          "id": "moodyz-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
           "capabilityFamilies": [
-            "navigate-to-category"
+            "navigate-to-author"
           ],
           "seedable": true
         },
         {
-          "id": "moodyz-search",
-          "path": "/search",
-          "pageType": "search-results-page",
+          "id": "moodyz-actress-a",
+          "path": "/actress/a",
+          "pageType": "author-list-page",
           "capabilityFamilies": [
-            "search-content"
+            "navigate-to-author"
           ],
           "seedable": true
         },
         {
-          "id": "moodyz-top",
-          "path": "/top",
-          "pageType": "category-page",
+          "id": "moodyz-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
           "capabilityFamilies": [
-            "navigate-to-category"
+            "navigate-to-author"
           ],
-          "seedable": true
-        },
-        {
-          "id": "moodyz-reserve-list",
-          "path": "/works/list/reserve",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "moodyz-release-list",
-          "path": "/works/list/release",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
+          "seedable": false
         },
         {
           "id": "moodyz-date-list-template",
@@ -456,13 +436,13 @@
           "seedable": false
         },
         {
-          "id": "moodyz-series-list-template",
-          "pathTemplate": "/works/list/series/{seriesId}",
-          "pageType": "category-page",
+          "id": "moodyz-help",
+          "path": "/help",
+          "pageType": "utility-page",
           "capabilityFamilies": [
-            "navigate-to-category"
+            "navigate-to-utility-page"
           ],
-          "seedable": false
+          "seedable": true
         },
         {
           "id": "moodyz-label-list-template",
@@ -474,11 +454,74 @@
           "seedable": false
         },
         {
+          "id": "moodyz-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-recruit-1",
+          "path": "/recruit/1",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
           "id": "moodyz-recruit-template",
           "pathTemplate": "/recruit/{page}",
           "pageType": "utility-page",
           "capabilityFamilies": [
             "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "moodyz-release-list",
+          "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-reserve-list",
+          "path": "/works/list/reserve",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-series-list-template",
+          "pathTemplate": "/works/list/series/{seriesId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
           ],
           "seedable": false
         },
@@ -492,20 +535,20 @@
           "seedable": true
         },
         {
-          "id": "moodyz-link",
-          "path": "/link",
-          "pageType": "utility-page",
+          "id": "moodyz-special-hamedori",
+          "path": "/special/hamedori",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-utility-page"
+            "navigate-to-category"
           ],
           "seedable": true
         },
         {
-          "id": "moodyz-help",
-          "path": "/help",
-          "pageType": "utility-page",
+          "id": "moodyz-top",
+          "path": "/top",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-utility-page"
+            "navigate-to-category"
           ],
           "seedable": true
         },
@@ -517,11 +560,42 @@
             "navigate-to-content"
           ],
           "seedable": false
+        },
+        {
+          "id": "moodyz-works-date",
+          "path": "/works/date",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-works-genre",
+          "path": "/works/genre",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "moodyz-works-label",
+          "path": "/works/label",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
         }
       ],
       "host": "moodyz.com",
-      "safeActionKinds": [],
-      "approvalActionKinds": [],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
       "siteKey": "moodyz",
       "adapterId": "moodyz"
     },
@@ -690,6 +764,256 @@
         "schema_validation_failed"
       ]
     },
+    "123av.com": {
+      "baseUrl": "https://123av.com/zh/dm9",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "book-detail-page",
+        "category-page",
+        "home",
+        "search-results-page",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "list-category-videos",
+        "open-actress",
+        "open-category",
+        "open-utility-page",
+        "open-video",
+        "search-video"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "123av-localized-home",
+          "path": "/zh",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-catalog",
+          "path": "/zh/dm9",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-censored",
+          "path": "/zh/dm9/censored",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-weekly-hot",
+          "path": "/zh/dm9/weekly-hot",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-monthly-hot",
+          "path": "/zh/dm9/monthly-hot",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-new-release",
+          "path": "/zh/dm9/new-release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-recent-update",
+          "path": "/zh/dm9/recent-update",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-today-hot",
+          "path": "/zh/dm9/today-hot",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-trending",
+          "path": "/zh/dm9/trending",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-dm9-uncensored",
+          "path": "/zh/dm9/uncensored",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-actresses",
+          "path": "/zh/actresses",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-search",
+          "path": "/zh/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-2257",
+          "path": "/zh/2257",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-abuse",
+          "path": "/zh/abuse",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "123av-video-detail-template",
+          "pathTemplate": "/{locale}/v/{videoSlug}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "123av-tag-template",
+          "pathTemplate": "/{locale}/tags/{tagSlug}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "123av-catalog-template",
+          "pathTemplate": "/{locale}/{catalogSlug}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "123av-catalog-sort-template",
+          "pathTemplate": "/{locale}/{catalogSlug}/{sortSlug}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "123av-actress-template",
+          "pathTemplate": "/{locale}/actresses/{actressSlug}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "host": "123av.com",
+      "siteKey": "123av",
+      "adapterId": "123av",
+      "routingNotes": [
+        "Treat 123av as an adult catalog-detail site with public read-only navigation only.",
+        "Do not promote individual video titles, descriptions, comments, thumbnails, or recommendation text as capabilities.",
+        "Do not expose download, media-resolution, login, upload, write, payment, account mutation, or private-message actions for this site."
+      ],
+      "reasonCodes": [
+        "unsupported_url",
+        "unsupported_capability",
+        "parse_failed",
+        "missing_required_field",
+        "pagination_exhausted",
+        "network_failed",
+        "auth_required",
+        "blocked_by_policy",
+        "api-verification-failed",
+        "api-catalog-entry-blocked",
+        "schema_validation_failed"
+      ]
+    },
     "www.t-powers.co.jp": {
       "baseUrl": "https://www.t-powers.co.jp/release/",
       "primaryArchetype": "catalog-detail",
@@ -845,6 +1169,102 @@
       "siteKey": "t-powers",
       "adapterId": "t-powers"
     },
+    "so-agent.jp": {
+      "baseUrl": "http://so-agent.jp/",
+      "primaryArchetype": "catalog-detail",
+      "pageTypes": [
+        "author-list-page",
+        "author-page",
+        "category-page",
+        "home",
+        "utility-page"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-utility-page"
+      ],
+      "supportedIntents": [
+        "open-author",
+        "open-category",
+        "open-utility-page"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "so-agent-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "so-agent-model-index",
+          "path": "/model.php",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "so-agent-model-template",
+          "pathTemplate": "/model/{modelSlug}/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "so-agent-news",
+          "path": "/news.php",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "so-agent-company",
+          "path": "/company.php",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "so-agent-recruit",
+          "path": "/recruit.php",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [],
+      "host": "so-agent.jp",
+      "siteKey": "so-agent",
+      "adapterId": "so-agent",
+      "routingNotes": [
+        "Public routes are read-only navigation only.",
+        "No public search form, download route, write operation, login flow, payment flow, or API surface was observed in the public structural audit."
+      ],
+      "reasonCodes": [
+        "unsupported_url",
+        "unsupported_capability",
+        "parse_failed",
+        "network_failed",
+        "api-verification-failed",
+        "api-catalog-entry-blocked"
+      ]
+    },
     "www.8man.jp": {
       "baseUrl": "https://www.8man.jp/",
       "primaryArchetype": "catalog-detail",
@@ -961,42 +1381,6 @@
       ],
       "publicRouteTemplates": [
         {
-          "id": "dahlia-work-list",
-          "path": "/work/",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "dahlia-work-page-template",
-          "pathTemplate": "/work/page/{page}",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "dahlia-search-template",
-          "pathTemplate": "/?s={query}",
-          "pageType": "search-results-page",
-          "capabilityFamilies": [
-            "search-content"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "dahlia-work-detail-template",
-          "pathTemplate": "/works/{workId}",
-          "pageType": "book-detail-page",
-          "capabilityFamilies": [
-            "navigate-to-content"
-          ],
-          "seedable": false
-        },
-        {
           "id": "dahlia-actress",
           "path": "/actress",
           "pageType": "author-list-page",
@@ -1013,6 +1397,15 @@
             "navigate-to-author"
           ],
           "seedable": false
+        },
+        {
+          "id": "dahlia-contact",
+          "path": "/contact",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
         },
         {
           "id": "dahlia-news",
@@ -1033,13 +1426,67 @@
           "seedable": false
         },
         {
-          "id": "dahlia-contact",
-          "path": "/contact",
+          "id": "dahlia-privacy-policy",
+          "path": "/privacy-policy",
           "pageType": "utility-page",
           "capabilityFamilies": [
             "navigate-to-utility-page"
           ],
           "seedable": true
+        },
+        {
+          "id": "dahlia-recruit",
+          "path": "/recruit",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dahlia-search-template",
+          "pathTemplate": "/?s={query}",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-work-detail-slug-template",
+          "pathTemplate": "/works/{workSlug}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-work-detail-template",
+          "pathTemplate": "/works/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "dahlia-work-list",
+          "path": "/work/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dahlia-work-page-template",
+          "pathTemplate": "/work/page/{page}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
         }
       ],
       "safeActionKinds": [
@@ -1062,42 +1509,21 @@
         "book-detail-page",
         "category-page",
         "home",
-        "search-results-page",
         "utility-page"
       ],
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content"
+        "navigate-to-utility-page"
       ],
       "supportedIntents": [
         "open-actress",
         "open-category",
         "open-utility-page",
-        "open-work",
-        "search-work"
+        "open-work"
       ],
       "publicRouteTemplates": [
-        {
-          "id": "sod-newreleases-archive",
-          "path": "/newreleases/archive/",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "sod-search",
-          "path": "/search",
-          "pageType": "search-results-page",
-          "capabilityFamilies": [
-            "search-content"
-          ],
-          "seedable": true
-        },
         {
           "id": "sod-actress",
           "path": "/actress",
@@ -1106,6 +1532,42 @@
             "navigate-to-author"
           ],
           "seedable": true
+        },
+        {
+          "id": "sod-actress-detail-template",
+          "pathTemplate": "/actress/{actressSlug}/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "sod-event-detail-template",
+          "pathTemplate": "/event/{eventSlug}/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "sod-events",
+          "path": "/events/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-feature-template",
+          "pathTemplate": "/feature/{featureSlug}/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
         },
         {
           "id": "sod-genre",
@@ -1135,8 +1597,8 @@
           "seedable": true
         },
         {
-          "id": "sod-series",
-          "path": "/series",
+          "id": "sod-newreleases-archive",
+          "path": "/newreleases/archive/",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1144,11 +1606,38 @@
           "seedable": true
         },
         {
+          "id": "sod-newreleases-page-template",
+          "pathTemplate": "/newreleases/archive/page/{page}/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
           "id": "sod-performer",
           "path": "/performer",
           "pageType": "author-list-page",
           "capabilityFamilies": [
             "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-root-http-canonical",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "sod-series",
+          "path": "/series",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
           ],
           "seedable": true
         },
@@ -1165,9 +1654,6 @@
       "safeActionKinds": [
         "navigate"
       ],
-      "approvalActionKinds": [
-        "search-submit"
-      ],
       "host": "www.sod.co.jp",
       "siteKey": "sod",
       "adapterId": "sod"
@@ -1182,7 +1668,6 @@
         "book-detail-page",
         "category-page",
         "home",
-        "search-results-page",
         "utility-page"
       ],
       "capabilityFamilies": [
@@ -1201,8 +1686,107 @@
       ],
       "publicRouteTemplates": [
         {
-          "id": "s1-top",
-          "path": "/top",
+          "id": "s1-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-actress-a",
+          "path": "/actress/a",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-genre-list-template",
+          "pathTemplate": "/works/list/genre/{genreId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-recruit-1",
+          "path": "/recruit/1",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-recruit-template",
+          "pathTemplate": "/recruit/{page}",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-release-list",
+          "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-reserve-list",
+          "path": "/works/list/reserve",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1219,8 +1803,53 @@
           "seedable": true
         },
         {
+          "id": "s1-series-list-template",
+          "pathTemplate": "/works/list/series/{seriesId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "s1-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-top",
+          "path": "/top",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
           "id": "s1-works",
           "path": "/works",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "s1-works-date",
+          "path": "/works/date",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1244,60 +1873,6 @@
             "navigate-to-category"
           ],
           "seedable": true
-        },
-        {
-          "id": "s1-works-date",
-          "path": "/works/date",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "s1-actress",
-          "path": "/actress",
-          "pageType": "author-list-page",
-          "capabilityFamilies": [
-            "navigate-to-author"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "s1-genre-list-template",
-          "pathTemplate": "/works/list/genre/{genreId}",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "s1-series-list-template",
-          "pathTemplate": "/works/list/series/{seriesId}",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "s1-date-list-template",
-          "pathTemplate": "/works/list/date/{date}",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "s1-work-detail-template",
-          "pathTemplate": "/works/detail/{workId}",
-          "pageType": "book-detail-page",
-          "capabilityFamilies": [
-            "navigate-to-content"
-          ],
-          "seedable": false
         }
       ],
       "safeActionKinds": [
@@ -1339,8 +1914,116 @@
       ],
       "publicRouteTemplates": [
         {
-          "id": "attackers-top",
-          "path": "/top",
+          "id": "attackers-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-actress-a",
+          "path": "/actress/a",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "attackers-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "attackers-genre-list-template",
+          "pathTemplate": "/works/list/genre/{genreId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "attackers-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-label-list-template",
+          "pathTemplate": "/works/list/label/{labelId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "attackers-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-recruit-1",
+          "path": "/recruit/1",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-recruit-template",
+          "pathTemplate": "/recruit/{page}",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "attackers-release-list",
+          "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-reserve-list",
+          "path": "/works/list/reserve",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1357,6 +2040,51 @@
           "seedable": true
         },
         {
+          "id": "attackers-series-list-template",
+          "pathTemplate": "/works/list/series/{seriesId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "attackers-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-special-pdf-download",
+          "path": "/special/pdf_download/index.html",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-top",
+          "path": "/top",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
           "id": "attackers-works",
           "path": "/works",
           "pageType": "category-page",
@@ -1366,11 +2094,38 @@
           "seedable": true
         },
         {
-          "id": "attackers-actress",
-          "path": "/actress",
-          "pageType": "author-list-page",
+          "id": "attackers-works-date",
+          "path": "/works/date",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-author"
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-works-genre",
+          "path": "/works/genre",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-works-label",
+          "path": "/works/label",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "attackers-works-series",
+          "path": "/works/series",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
           ],
           "seedable": true
         }
@@ -1415,80 +2170,8 @@
       ],
       "publicRouteTemplates": [
         {
-          "id": "km-produce-label-bazooka",
-          "path": "/label/page/2?works=bazooka",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-search",
-          "path": "/search",
-          "pageType": "search-results-page",
-          "capabilityFamilies": [
-            "search-content"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-ranking",
-          "path": "/ranking",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-tag-list",
-          "path": "/tag",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-works",
-          "path": "/works",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-works-vr",
-          "path": "/works-vr",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-works-sell",
-          "path": "/works-sell",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-topic-list",
-          "path": "/topics",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-girls",
-          "path": "/girls",
+          "id": "km-produce-actress",
+          "path": "/actress",
           "pageType": "author-list-page",
           "capabilityFamilies": [
             "navigate-to-author"
@@ -1496,26 +2179,8 @@
           "seedable": true
         },
         {
-          "id": "km-produce-event",
-          "path": "/event",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-kmp-movies",
-          "path": "/kmp_movies",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "km-produce-contents",
-          "path": "/contents",
+          "id": "km-produce-ad-contact",
+          "path": "/ad_contact",
           "pageType": "utility-page",
           "capabilityFamilies": [
             "navigate-to-utility-page"
@@ -1532,6 +2197,60 @@
           "seedable": true
         },
         {
+          "id": "km-produce-contents",
+          "path": "/contents",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-event",
+          "path": "/event",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-girls",
+          "path": "/girls",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-kmp-movies",
+          "path": "/kmp_movies",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-label",
+          "path": "/label",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-label-bazooka",
+          "path": "/label/page/2?works=bazooka",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
           "id": "km-produce-policy",
           "path": "/policy",
           "pageType": "utility-page",
@@ -1541,11 +2260,11 @@
           "seedable": true
         },
         {
-          "id": "km-produce-ad-contact",
-          "path": "/ad_contact",
-          "pageType": "utility-page",
+          "id": "km-produce-ranking",
+          "path": "/ranking",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-utility-page"
+            "navigate-to-category"
           ],
           "seedable": true
         },
@@ -1555,6 +2274,78 @@
           "pageType": "utility-page",
           "capabilityFamilies": [
             "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-tag-list",
+          "path": "/tag",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-topic-list",
+          "path": "/topics",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-work-category-template",
+          "pathTemplate": "/works/category/{categorySlug}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "km-produce-work-detail-template",
+          "pathTemplate": "/works/{workSlug}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "km-produce-works",
+          "path": "/works",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-works-sell",
+          "path": "/works-sell",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "km-produce-works-vr",
+          "path": "/works-vr",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
           ],
           "seedable": true
         }
@@ -1597,8 +2388,125 @@
       ],
       "publicRouteTemplates": [
         {
+          "id": "rookie-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-actress-a",
+          "path": "/actress/a",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-recruit-template",
+          "pathTemplate": "/recruit/{page}",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
           "id": "rookie-release-list",
           "path": "/works/list/release",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-reserve-list",
+          "path": "/works/list/reserve",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "rookie-work-detail-template",
+          "pathTemplate": "/works/detail/{workId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "rookie-works-date",
+          "path": "/works/date",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1620,105 +2528,6 @@
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-works-date",
-          "path": "/works/date",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-search",
-          "path": "/search",
-          "pageType": "search-results-page",
-          "capabilityFamilies": [
-            "search-content"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-reserve-list",
-          "path": "/works/list/reserve",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-work-detail-template",
-          "pathTemplate": "/works/detail/{workId}",
-          "pageType": "book-detail-page",
-          "capabilityFamilies": [
-            "navigate-to-content"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "rookie-recruit-template",
-          "pathTemplate": "/recruit/{page}",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "rookie-actress-detail-template",
-          "pathTemplate": "/actress/detail/{actressId}",
-          "pageType": "author-page",
-          "capabilityFamilies": [
-            "navigate-to-author"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "rookie-date-list-template",
-          "pathTemplate": "/works/list/date/{date}",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "rookie-sitemap",
-          "path": "/sitemap",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-link",
-          "path": "/link",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-help",
-          "path": "/help",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "rookie-privacy",
-          "path": "/privacy",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
           ],
           "seedable": true
         }
@@ -1761,6 +2570,78 @@
       ],
       "publicRouteTemplates": [
         {
+          "id": "madonna-actress",
+          "path": "/actress",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-actress-a",
+          "path": "/actress/a",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-actress-detail-template",
+          "pathTemplate": "/actress/detail/{actressId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-date-list-template",
+          "pathTemplate": "/works/list/date/{date}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-help",
+          "path": "/help",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-label-list-template",
+          "pathTemplate": "/works/list/label/{labelId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-link",
+          "path": "/link",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-privacy",
+          "path": "/privacy",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
           "id": "madonna-release-list",
           "path": "/works/list/release",
           "pageType": "category-page",
@@ -1770,44 +2651,8 @@
           "seedable": true
         },
         {
-          "id": "madonna-special",
-          "path": "/special",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "madonna-works-genre",
-          "path": "/works/genre",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "madonna-works-series",
-          "path": "/works/series",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "madonna-works-label",
-          "path": "/works/label",
-          "pageType": "category-page",
-          "capabilityFamilies": [
-            "navigate-to-category"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "madonna-works-date",
-          "path": "/works/date",
+          "id": "madonna-reserve-list",
+          "path": "/works/list/reserve",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1824,8 +2669,26 @@
           "seedable": true
         },
         {
-          "id": "madonna-reserve-list",
-          "path": "/works/list/reserve",
+          "id": "madonna-series-list-template",
+          "pathTemplate": "/works/list/series/{seriesId}",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "madonna-sitemap",
+          "path": "/sitemap",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "madonna-special",
+          "path": "/special",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
@@ -1842,56 +2705,38 @@
           "seedable": false
         },
         {
-          "id": "madonna-label-list-template",
-          "pathTemplate": "/works/list/label/{labelId}",
+          "id": "madonna-works-date",
+          "path": "/works/date",
           "pageType": "category-page",
           "capabilityFamilies": [
             "navigate-to-category"
           ],
-          "seedable": false
+          "seedable": true
         },
         {
-          "id": "madonna-actress-detail-template",
-          "pathTemplate": "/actress/detail/{actressId}",
-          "pageType": "author-page",
+          "id": "madonna-works-genre",
+          "path": "/works/genre",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-author"
-          ],
-          "seedable": false
-        },
-        {
-          "id": "madonna-sitemap",
-          "path": "/sitemap",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
+            "navigate-to-category"
           ],
           "seedable": true
         },
         {
-          "id": "madonna-link",
-          "path": "/link",
-          "pageType": "utility-page",
+          "id": "madonna-works-label",
+          "path": "/works/label",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-utility-page"
+            "navigate-to-category"
           ],
           "seedable": true
         },
         {
-          "id": "madonna-help",
-          "path": "/help",
-          "pageType": "utility-page",
+          "id": "madonna-works-series",
+          "path": "/works/series",
+          "pageType": "category-page",
           "capabilityFamilies": [
-            "navigate-to-utility-page"
-          ],
-          "seedable": true
-        },
-        {
-          "id": "madonna-privacy",
-          "path": "/privacy",
-          "pageType": "utility-page",
-          "capabilityFamilies": [
-            "navigate-to-utility-page"
+            "navigate-to-category"
           ],
           "seedable": true
         }
@@ -2096,20 +2941,17 @@
         "book-detail-page",
         "category-page",
         "home",
-        "search-results-page",
         "utility-page"
       ],
       "capabilityFamilies": [
         "navigate-to-category",
         "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content"
+        "navigate-to-utility-page"
       ],
       "supportedIntents": [
         "open-category",
         "open-utility-page",
-        "open-work",
-        "search-work"
+        "open-work"
       ],
       "publicRouteTemplates": [
         {
@@ -2122,6 +2964,15 @@
           "seedable": true
         },
         {
+          "id": "dogma-download-template",
+          "pathTemplate": "/{downloadId}-download",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
           "id": "dogma-home",
           "path": "/",
           "pageType": "home",
@@ -2129,13 +2980,37 @@
             "navigate-to-category"
           ],
           "seedable": true
+        },
+        {
+          "id": "dogma-ja0-sitemap",
+          "path": "/1_ja_0_sitemap.xml",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dogma-ja1-sitemap",
+          "path": "/1_ja_1_sitemap.xml",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": true
+        },
+        {
+          "id": "dogma-sitemap-template",
+          "pathTemplate": "/{locale}_ja_{index}_sitemap.xml",
+          "pageType": "utility-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
         }
       ],
       "safeActionKinds": [
         "navigate"
-      ],
-      "approvalActionKinds": [
-        "search-submit"
       ],
       "host": "www.dogma.co.jp",
       "siteKey": "dogma",
@@ -2284,9 +3159,660 @@
       "siteKey": "xiaohongshu",
       "adapterId": "xiaohongshu"
     },
+    "www.zhihu.com": {
+      "baseUrl": "https://www.zhihu.com/",
+      "primaryArchetype": "social-content",
+      "pageTypes": [
+        "auth-page",
+        "author-list-page",
+        "author-page",
+        "category-page",
+        "content-detail-page",
+        "home",
+        "notification-page",
+        "search-results-page",
+        "settings-page",
+        "write-entry-disabled"
+      ],
+      "capabilityFamilies": [
+        "disabled-social-mutation",
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
+        "query-account-profile",
+        "query-comment-thread",
+    "query-notifications",
+    "query-media-content",
+    "query-social-content",
+        "query-social-relations",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "supportedIntents": [
+        "account-info",
+        "list-comment-thread",
+        "list-followed-updates",
+        "list-followed-users",
+    "list-hot-posts",
+    "list-hot-broadcasts",
+    "list-notifications",
+    "list-profile-content",
+    "list-recommended-timeline-posts",
+    "list-topic-discussions",
+    "list-topic-featured",
+    "list-user-activities",
+    "list-user-answers",
+    "list-user-articles",
+    "list-user-collections",
+    "list-user-columns",
+    "list-user-following",
+    "list-user-pins",
+    "list-user-questions",
+    "list-user-videos",
+    "open-author",
+        "open-category",
+        "open-comment",
+        "open-post",
+        "open-search-result-detail",
+        "open-utility-page",
+        "profile-content",
+        "read-search-result-summaries",
+        "search-latest-posts",
+        "search-media-posts",
+        "search-users",
+        "view-answer-detail",
+        "view-question-detail",
+        "search-posts"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "zhihu-auth-home",
+          "path": "/",
+          "pageType": "home",
+          "businessArea": "home-feed",
+          "capabilityIds": [
+            "list-recommended-timeline-posts",
+            "list-followed-updates"
+          ],
+          "tabStates": [
+            "recommended",
+            "following"
+          ],
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "zhihu-auth-follow",
+          "path": "/follow",
+          "pageType": "author-list-page",
+          "businessArea": "social-relations",
+          "capabilityIds": [
+            "list-followed-users",
+            "list-followed-updates"
+          ],
+          "tabStates": [
+            "following"
+          ],
+          "capabilityFamilies": [
+            "query-social-content",
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+    {
+      "id": "zhihu-hot",
+      "path": "/hot",
+          "pageType": "category-page",
+          "businessArea": "hot-ranking",
+          "capabilityIds": [
+            "list-hot-posts",
+            "open-category"
+          ],
+          "tabStates": [
+            "hot"
+          ],
+          "capabilityFamilies": [
+            "navigate-to-category",
+            "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-hot-broadcasts",
+      "path": "/drama/feed",
+      "pageType": "category-page",
+      "businessArea": "hot-broadcasts",
+      "capabilityIds": [
+        "list-hot-broadcasts"
+      ],
+      "tabStates": [
+        "hot"
+      ],
+      "capabilityFamilies": [
+        "query-media-content",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+        {
+          "id": "zhihu-search",
+          "path": "/search",
+          "samplePath": "/search?q=siteforge&type=content",
+          "pageType": "search-results-page",
+          "businessArea": "search",
+          "capabilityIds": [
+            "search-posts",
+            "search-users",
+            "search-latest-posts",
+            "search-media-posts",
+            "read-search-result-summaries",
+            "open-search-result-detail"
+          ],
+          "tabStates": [
+            "content",
+            "people",
+            "latest",
+            "media"
+          ],
+          "capabilityFamilies": [
+            "search-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "zhihu-notifications",
+          "path": "/notifications",
+          "pageType": "notification-page",
+          "businessArea": "notifications",
+          "capabilityIds": [
+            "list-notifications"
+          ],
+          "tabStates": [
+            "all"
+          ],
+          "capabilityFamilies": [
+            "query-notifications"
+          ],
+          "seedable": false
+        },
+    {
+      "id": "zhihu-profile-template",
+      "samplePath": "/people/zhihuadmin",
+      "pathTemplate": "/people/{urlToken}",
+          "pageType": "author-page",
+          "businessArea": "profile",
+          "capabilityIds": [
+            "account-info",
+            "list-profile-content",
+            "open-author",
+            "profile-content",
+            "read-media-summary",
+            "read-user-recent-posts"
+          ],
+          "tabStates": [
+            "profile",
+            "posts",
+            "media"
+          ],
+          "capabilityFamilies": [
+            "query-account-profile",
+            "query-social-content"
+          ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-activities-template",
+      "samplePath": "/people/zhihuadmin/activities",
+      "pathTemplate": "/people/{urlToken}/activities",
+      "pageType": "author-page",
+      "businessArea": "profile-activities",
+      "capabilityIds": [
+        "list-user-activities"
+      ],
+      "tabStates": [
+        "activities"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-answers-template",
+      "samplePath": "/people/zhihuadmin/answers",
+      "pathTemplate": "/people/{urlToken}/answers",
+      "pageType": "author-page",
+      "businessArea": "profile-answers",
+      "capabilityIds": [
+        "list-user-answers"
+      ],
+      "tabStates": [
+        "answers"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-questions-template",
+      "samplePath": "/people/zhihuadmin/asks",
+      "pathTemplate": "/people/{urlToken}/asks",
+      "pageType": "author-page",
+      "businessArea": "profile-questions",
+      "capabilityIds": [
+        "list-user-questions"
+      ],
+      "tabStates": [
+        "questions"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-articles-template",
+      "samplePath": "/people/zhihuadmin/posts",
+      "pathTemplate": "/people/{urlToken}/posts",
+      "pageType": "author-page",
+      "businessArea": "profile-articles",
+      "capabilityIds": [
+        "list-user-articles"
+      ],
+      "tabStates": [
+        "articles"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-columns-template",
+      "samplePath": "/people/zhihuadmin/columns",
+      "pathTemplate": "/people/{urlToken}/columns",
+      "pageType": "author-page",
+      "businessArea": "profile-columns",
+      "capabilityIds": [
+        "list-user-columns"
+      ],
+      "tabStates": [
+        "columns"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-pins-template",
+      "samplePath": "/people/zhihuadmin/pins",
+      "pathTemplate": "/people/{urlToken}/pins",
+      "pageType": "author-page",
+      "businessArea": "profile-pins",
+      "capabilityIds": [
+        "list-user-pins"
+      ],
+      "tabStates": [
+        "pins"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-collections-template",
+      "samplePath": "/people/zhihuadmin/collections",
+      "pathTemplate": "/people/{urlToken}/collections",
+      "pageType": "author-page",
+      "businessArea": "profile-collections",
+      "capabilityIds": [
+        "list-user-collections"
+      ],
+      "tabStates": [
+        "collections"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-videos-template",
+      "samplePath": "/people/zhihuadmin/zvideos",
+      "pathTemplate": "/people/{urlToken}/zvideos",
+      "pageType": "author-page",
+      "businessArea": "profile-videos",
+      "capabilityIds": [
+        "list-user-videos"
+      ],
+      "tabStates": [
+        "videos"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-media-content",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-following-template",
+      "samplePath": "/people/zhihuadmin/following",
+      "pathTemplate": "/people/{urlToken}/following",
+      "pageType": "author-list-page",
+      "businessArea": "profile-following",
+      "capabilityIds": [
+        "list-user-following"
+      ],
+      "tabStates": [
+        "following"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-relations"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-topic-discussions-template",
+      "samplePath": "/topic/19607535/hot",
+      "pathTemplate": "/topic/{topicId}/hot",
+      "pageType": "category-page",
+      "businessArea": "topic-discussions",
+      "capabilityIds": [
+        "list-topic-discussions"
+      ],
+      "tabStates": [
+        "discussions"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-category",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-topic-featured-template",
+      "samplePath": "/topic/19607535/top-answers",
+      "pathTemplate": "/topic/{topicId}/top-answers",
+      "pageType": "category-page",
+      "businessArea": "topic-featured",
+      "capabilityIds": [
+        "list-topic-featured"
+      ],
+      "tabStates": [
+        "featured"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-category",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+        {
+          "id": "zhihu-question-template",
+          "samplePath": "/question/19550228",
+          "pathTemplate": "/question/{questionId}",
+          "pageType": "content-detail-page",
+          "businessArea": "question-detail",
+          "capabilityIds": [
+            "list-comment-thread",
+            "open-comment",
+            "open-post",
+            "view-question-detail",
+            "view-post-detail",
+            "view-post-replies"
+          ],
+          "tabStates": [
+            "detail"
+          ],
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-comment-thread",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "zhihu-answer-template",
+          "samplePath": "/question/19550228/answer/25354498",
+          "pathTemplate": "/question/{questionId}/answer/{answerId}",
+          "pageType": "content-detail-page",
+          "businessArea": "answer-detail",
+          "capabilityIds": [
+            "list-comment-thread",
+            "open-comment",
+            "open-post",
+            "view-answer-detail",
+            "view-post-detail",
+            "view-post-replies"
+          ],
+          "tabStates": [
+            "detail"
+          ],
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-comment-thread",
+            "query-social-content"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "host": "www.zhihu.com",
+      "siteKey": "zhihu",
+      "adapterId": "zhihu",
+      "siteAccessStatus": "blocked_live_robots_disallowed",
+      "genericLiveBuild": {
+        "status": "blocked",
+        "reasonCode": "robots-disallowed",
+        "reason": "www.zhihu.com robots.txt disallows generic SiteForge live crawling for User-Agent: *. Read-only capability promotion requires user-authorized sanitized structure summaries, official/API metadata, or deterministic local validation.",
+        "alternativeAccessPaths": [
+          "Use official/API metadata with documented permission and rate boundaries.",
+          "Use user-authorized sanitized structure summaries for authenticated read-only surfaces.",
+          "Use deterministic local HTTP validation for tests without claiming live Zhihu support."
+        ]
+      },
+      "routingNotes": [
+        "Model Zhihu as a social-content site, not a book, catalog, ecommerce, or news site.",
+        "Authenticated read-only capability candidates require route-specific sanitized Browser Bridge evidence before activation.",
+        "Write, answer, comment, vote, like, collect, follow, delete, message, upload, payment, and account mutation actions remain disabled by default.",
+        "Do not persist answer body, article body, comment body, cookies, tokens, Authorization headers, browser profiles, or raw private DOM."
+      ],
+      "reasonCodes": [
+        "unsupported_url",
+        "unsupported_capability",
+        "parse_failed",
+        "missing_required_field",
+        "network_failed",
+        "auth_required",
+        "robots-disallowed",
+        "blocked_by_policy",
+        "api-verification-failed",
+        "api-catalog-entry-blocked",
+        "schema_validation_failed"
+      ]
+    },
+    "weibo.com": {
+      "baseUrl": "https://weibo.com/",
+      "primaryArchetype": "social-content",
+      "pageTypes": [
+        "auth-page",
+        "author-page",
+        "content-detail-page",
+        "home",
+        "message-page",
+        "notification-page",
+        "search-results-page",
+        "settings-page",
+        "write-entry-disabled"
+      ],
+      "capabilityFamilies": [
+        "disabled-social-mutation",
+        "navigate-to-author",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
+        "query-account-profile",
+        "query-notifications",
+        "query-social-content",
+        "query-social-relations",
+        "search-content"
+      ],
+      "supportedIntents": [
+        "account-info",
+        "list-followed-updates",
+        "list-followed-users",
+        "list-notifications",
+        "list-profile-content",
+        "open-author",
+        "open-post",
+        "open-utility-page",
+        "profile-content",
+        "search-posts"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "weibo-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "weibo-profile-nickname-template",
+          "pathTemplate": "/n/{screenName}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "weibo-profile-id-template",
+          "pathTemplate": "/u/{userId}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "navigate-to-author",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "weibo-post-detail-template",
+          "pathTemplate": "/{profileId}/{postId}",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "weibo-search-template",
+          "pathTemplate": "/search/{query}",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content"
+          ],
+          "seedable": false
+        }
+      ],
+      "safeActionKinds": [
+        "navigate"
+      ],
+      "approvalActionKinds": [
+        "search-submit"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "repost",
+        "read_dm",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "host": "weibo.com",
+      "siteKey": "weibo",
+      "adapterId": "weibo",
+      "genericLiveBuild": {
+        "status": "blocked",
+        "reasonCode": "robots-disallowed",
+        "reason": "Weibo generic public crawl is blocked by robots; read-only capability promotion requires user-authorized sanitized structure summaries, official/API metadata, or deterministic local validation.",
+        "alternativeAccessPaths": [
+          "Use official/API metadata with documented permission and rate boundaries.",
+          "Use user-authorized sanitized structure summaries for authenticated read-only surfaces.",
+          "Use deterministic local HTTP validation for tests without claiming live support."
+        ]
+      },
+      "routingNotes": [
+        "Model Weibo as a social-content site, not a book/catalog site.",
+        "Authenticated read-only capability candidates require capability-specific evidence before activation.",
+        "Write, post, comment, repost, follow, like, delete, message, upload, payment, and account mutation actions remain disabled by default."
+      ]
+    },
     "x.com": {
       "baseUrl": "https://x.com/",
-      "primaryArchetype": "catalog-detail",
+      "primaryArchetype": "social-content",
       "pageTypes": [
         "auth-page",
         "author-list-page",
@@ -2306,6 +3832,7 @@
         "navigate-to-utility-page",
         "open-auth-page",
         "query-account-profile",
+        "query-notifications",
         "query-social-content",
         "query-social-relations",
         "search-content",
@@ -2315,8 +3842,12 @@
         "account-info",
         "full-archive",
         "list-author-following",
+        "list-bookmarks",
+        "list-explore-topics",
         "list-followed-updates",
         "list-followed-users",
+        "list-lists",
+        "list-notifications",
         "list-profile-content",
         "open-author",
         "open-category",
@@ -2330,6 +3861,150 @@
       ],
       "approvalActionKinds": [
         "search-submit"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "repost",
+        "read_dm",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "x-auth-home",
+          "path": "/home",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-following-feed",
+          "path": "/following",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-content",
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-notifications",
+          "path": "/notifications",
+          "pageType": "notification-page",
+          "capabilityFamilies": [
+            "query-notifications"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-bookmarks",
+          "path": "/i/bookmarks",
+          "pageType": "history-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-lists",
+          "path": "/i/lists",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile",
+          "pathTemplate": "/{account}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-account-profile",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-replies",
+          "pathTemplate": "/{account}/with_replies",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-media",
+          "pathTemplate": "/{account}/media",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-highlights",
+          "pathTemplate": "/{account}/highlights",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-following",
+          "pathTemplate": "/{account}/following",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-followers",
+          "pathTemplate": "/{account}/followers",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-status-detail",
+          "pathTemplate": "/{account}/status/{statusId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        }
       ],
       "host": "x.com",
       "siteKey": "x",
@@ -2381,24 +4056,30 @@
     },
     "www.instagram.com": {
       "baseUrl": "https://www.instagram.com/",
-      "primaryArchetype": "catalog-detail",
+      "primaryArchetype": "social-content",
       "pageTypes": [
         "auth-page",
         "author-list-page",
         "author-page",
-        "book-detail-page",
         "category-page",
         "content-detail-page",
         "home",
+        "message-page",
+        "notification-page",
+        "settings-page",
+        "write-entry-disabled",
         "search-results-page"
       ],
       "capabilityFamilies": [
+        "disabled-social-mutation",
         "download-content",
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
         "navigate-to-utility-page",
+        "open-auth-page",
         "query-account-profile",
+        "query-notifications",
         "query-social-content",
         "query-social-relations",
         "search-content",
@@ -2409,16 +4090,172 @@
         "download-media",
         "full-archive",
         "list-author-following",
+        "list-explore-topics",
         "list-followed-updates",
         "list-followed-users",
+        "list-notifications",
         "list-profile-content",
+        "open-auth-page",
         "open-author",
         "open-category",
         "open-post",
         "open-reel",
+        "open-settings-page",
         "open-utility-page",
-        "profile-content",
-        "search-content"
+        "search-posts"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "instagram-auth-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-auth-explore",
+          "path": "/explore/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-auth-search",
+          "path": "/explore/search/",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-auth-notifications",
+          "path": "/accounts/activity/",
+          "pageType": "notification-page",
+          "capabilityFamilies": [
+            "query-notifications"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-login",
+          "path": "/accounts/login/",
+          "pageType": "auth-page",
+          "capabilityFamilies": [
+            "open-auth-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-settings",
+          "path": "/accounts/edit/",
+          "pageType": "settings-page",
+          "capabilityFamilies": [
+            "navigate-to-utility-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-direct-boundary",
+          "path": "/direct/inbox/",
+          "pageType": "message-page",
+          "capabilityFamilies": [
+            "disabled-social-mutation"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile",
+          "pathTemplate": "/{account}/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-account-profile",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-reels",
+          "pathTemplate": "/{account}/reels/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-tagged",
+          "pathTemplate": "/{account}/tagged/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-following",
+          "pathTemplate": "/{account}/following/",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-followers",
+          "pathTemplate": "/{account}/followers/",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-post-detail",
+          "pathTemplate": "/p/{shortcode}/",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-reel-detail",
+          "pathTemplate": "/reel/{shortcode}/",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-story-detail",
+          "pathTemplate": "/stories/{account}/{storyId}/",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-hashtag",
+          "pathTemplate": "/explore/tags/{tag}/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category",
+            "query-social-content"
+          ],
+          "seedable": false
+        }
       ],
       "safeActionKinds": [
         "navigate"
@@ -2429,25 +4266,76 @@
       "host": "www.instagram.com",
       "siteKey": "instagram",
       "adapterId": "instagram",
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
       "downloader": {
-        "status": "blocked",
-        "supported": false,
+        "status": "supported",
+        "supported": true,
+        "requiresLogin": true,
+        "liveAccessStatus": "auth_required",
+        "liveAccessReasonCode": "auth_required",
         "taskTypes": [
-          "social-archive",
           "media-bundle"
         ],
         "declaredTaskTypes": [
           "social-archive",
           "media-bundle"
         ],
-        "availableTaskTypes": [],
-        "blockedTaskTypes": [
-          "social-archive",
+        "availableTaskTypes": [
           "media-bundle"
         ],
-        "reasonCode": "download-layer-removed",
-        "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
-      }
+        "blockedTaskTypes": [],
+        "reason": "Governed Instagram action tasks may download discovered image/video binaries into local media artifacts when media download is enabled."
+      },
+      "routingNotes": [
+        "Model Instagram as an authenticated social-content site, not a book or generic catalog site.",
+        "Do not promote captions, comments, profile bios, post titles, recommendation text, thumbnails, or direct-message text as capabilities.",
+        "Authenticated read-only capability activation requires bounded user-authorized browser evidence; raw credentials, cookies, profile paths, storage, DOM, HTML, account identifiers, and private bodies must not be persisted.",
+        "Posting, commenting, replying, following, liking, deleting, messaging, profile edits, upload, payment, account mutation, and private-message read actions remain disabled by default."
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "logged-out dynamic shell",
+          "login and risk-control surfaces",
+          "private direct-message and account settings surfaces",
+          "write, upload, follow, like, comment, delete, payment, and account mutation controls"
+        ],
+        "notes": [
+          "Generic logged-out crawl is not sufficient proof for Instagram capability coverage; use user-authorized bounded SiteAdapter evidence and never persist raw session material."
+        ]
+      },
+      "reasonCodes": [
+        "unsupported_url",
+        "unsupported_capability",
+        "parse_failed",
+        "missing_required_field",
+        "network_failed",
+        "auth_required",
+        "blocked_by_policy",
+        "api-verification-failed",
+        "api-catalog-entry-blocked",
+        "schema_validation_failed"
+      ]
     },
     "www.reddit.com": {
       "baseUrl": "https://www.reddit.com/",
@@ -2535,9 +4423,37 @@
       "approvalActionKinds": [
         "search-submit"
       ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
       "host": "www.reddit.com",
       "siteKey": "reddit",
       "adapterId": "reddit",
+      "auth": {
+        "required": true,
+        "mode": "browser",
+        "evidencePersistence": "sanitized-structure-only",
+        "sessionMaterialPersistence": "forbidden"
+      },
       "genericLiveBuild": {
         "status": "limited",
         "reasonCode": "robots-disallowed",

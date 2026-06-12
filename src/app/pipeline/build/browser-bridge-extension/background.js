@@ -1,5 +1,5 @@
 const activeTabs = new Map();
-const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-chinese-semantic-v7';
+const SITEFORGE_BRIDGE_EXTENSION_VERSION = 'route-queue-x-api-runtime-v8';
 const SITEFORGE_COLLECT_MESSAGE_TYPE = `siteforge-collect-structure:${SITEFORGE_BRIDGE_EXTENSION_VERSION}`;
 const ROUTE_COLLECT_FALLBACK_DELAY_MS = 6500;
 const ROUTE_STABLE_AFTER_COMPLETE_MS = 1500;
@@ -137,6 +137,9 @@ function normalizedApiReplay(session) {
   if (endpoint.hostname !== allowedHost || pageUrl.hostname !== allowedHost) {
     return null;
   }
+  const credentials = ['include', 'same-origin'].includes(String(apiReplay?.fetchOptions?.credentials || 'include'))
+    ? String(apiReplay.fetchOptions.credentials)
+    : 'include';
   return {
     id: String(apiReplay?.id || 'api-replay-1'),
     endpoint: endpoint.toString(),
@@ -146,6 +149,9 @@ function normalizedApiReplay(session) {
     endpointTemplate,
     runtimeParameterSource: apiReplay?.runtimeParameterSource || null,
     responseEvidence: apiReplay?.responseEvidence || null,
+    fetchOptions: {
+      credentials,
+    },
     extensionStatusUrl: session?.extensionStatusUrl || '',
   };
 }
@@ -196,7 +202,13 @@ async function executeApiReplayFetch(tabId, replay) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
-    func: async ({ endpoint, endpointTemplate, method, allowedHost, runtimeParameterSource, responseEvidence, extensionStatusUrl, replayId }) => {
+    func: async ({ endpoint, endpointTemplate, method, allowedHost, runtimeParameterSource, responseEvidence, fetchOptions, extensionStatusUrl, replayId }) => {
+      const requestedCredentials = String(fetchOptions?.credentials || 'include');
+      const runtimeFetchOptions = {
+        credentials: ['include', 'same-origin'].includes(requestedCredentials)
+          ? requestedCredentials
+          : 'include',
+      };
       const reportStage = (stage) => {
         if (!extensionStatusUrl || !stage) {
           return;
@@ -248,7 +260,7 @@ async function executeApiReplayFetch(tabId, replay) {
         if (!sourceKind) {
           return { endpoint: endpointTemplate || endpoint, reasonCode: null };
         }
-        if (sourceKind === 'qidian_yuew_sign') {
+        if (sourceKind === 'qidian_yuew_sign' || sourceKind === 'x_web_auth_headers') {
           return { endpoint: endpointTemplate || endpoint, reasonCode: null };
         }
         if (sourceKind !== 'douyin_self_user_render_data') {
@@ -345,11 +357,15 @@ async function executeApiReplayFetch(tabId, replay) {
           return { headers: {} };
         }
         reportStage(`qidian-api-replay:${replayId || 'replay'}:sign-wait`);
-        const csrf = qidianCsrfToken();
         const fock = await waitForQidianFock();
-        if (!csrf || typeof fock?.sign !== 'function') {
+        if (typeof fock?.sign !== 'function') {
           reportStage(`qidian-api-replay:${replayId || 'replay'}:sign-unavailable`);
           return { error: 'qidian_sign_unavailable' };
+        }
+        const csrf = qidianCsrfToken();
+        if (!csrf) {
+          reportStage(`qidian-api-replay:${replayId || 'replay'}:csrf-unavailable`);
+          return { error: 'qidian_csrf_unavailable' };
         }
         try {
           fock.initialize?.();
@@ -377,6 +393,30 @@ async function executeApiReplayFetch(tabId, replay) {
           return { error: 'qidian_sign_failed' };
         }
       };
+      const xWebAuthHeaders = async () => {
+        if (String(runtimeParameterSource?.kind || '') !== 'x_web_auth_headers') {
+          return { headers: {} };
+        }
+        const csrfCookieName = normalizeTextLocal(runtimeParameterSource?.csrfCookieName || 'ct0');
+        let csrf = cookieValue(csrfCookieName);
+        for (let attempt = 0; !csrf && attempt < 20; attempt += 1) {
+          await sleepLocal(250);
+          csrf = cookieValue(csrfCookieName);
+        }
+        if (!csrf) {
+          return { error: 'x_csrf_unavailable' };
+        }
+        const language = normalizeTextLocal(navigator?.language || 'en').split('-')[0] || 'en';
+        return {
+          headers: {
+            Accept: 'application/json, text/plain, */*',
+            'x-csrf-token': csrf,
+            'x-twitter-active-user': 'yes',
+            'x-twitter-auth-type': 'OAuth2Session',
+            'x-twitter-client-language': language,
+          },
+        };
+      };
       try {
         reportStage(`api-replay-script-started:${replayId || 'replay'}`);
         const resolved = resolveRuntimeEndpoint();
@@ -399,12 +439,25 @@ async function executeApiReplayFetch(tabId, replay) {
             responseKind: null,
           };
         }
+        const authHeaders = await xWebAuthHeaders();
+        if (authHeaders.error) {
+          return {
+            status: 'failed',
+            reasonCode: authHeaders.error,
+            httpStatus: null,
+            contentType: null,
+            responseKind: null,
+          };
+        }
         reportStage(`qidian-api-replay:${replayId || 'replay'}:fetch-started`);
         const fetchEndpoint = appendQidianCsrfQuery(resolved.endpoint, signedHeaders.csrf);
         const response = await fetch(fetchEndpoint, {
           method,
-          headers: signedHeaders.headers,
-          credentials: 'include',
+          headers: {
+            ...signedHeaders.headers,
+            ...authHeaders.headers,
+          },
+          credentials: runtimeFetchOptions.credentials,
           cache: 'no-store',
           redirect: 'follow',
         });
@@ -468,6 +521,7 @@ async function executeApiReplayFetch(tabId, replay) {
       allowedHost: replay.allowedHost,
       runtimeParameterSource: replay.runtimeParameterSource,
       responseEvidence: replay.responseEvidence,
+      fetchOptions: replay.fetchOptions,
       extensionStatusUrl: replay.extensionStatusUrl,
       replayId: replay.id,
     }],

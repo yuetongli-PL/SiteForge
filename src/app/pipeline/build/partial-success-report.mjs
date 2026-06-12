@@ -54,6 +54,18 @@ export function safePublicReasonCode(value) {
   return /^[a-z0-9][a-z0-9._-]{0,120}$/u.test(text) ? text : null;
 }
 
+function setupReviewHasActionableMissingEvidence(setupCollectionReview) {
+  const records = Array.isArray(setupCollectionReview?.missingRecords)
+    ? setupCollectionReview.missingRecords
+    : null;
+  if (records) {
+    return records.some((record) => record?.recommended !== false);
+  }
+  return Number(setupCollectionReview?.missingRecordCount ?? 0) > 0
+    || Number(setupCollectionReview?.summary?.capabilities?.missing ?? 0) > 0
+    || Number(setupCollectionReview?.summary?.intents?.missing ?? 0) > 0;
+}
+
 export function buildPartialSuccessReasons({
   context,
   report,
@@ -106,9 +118,7 @@ export function buildPartialSuccessReasons({
   if ((groups.limited_enabled ?? []).length > 0) {
     reasons.push(`${groups.limited_enabled.length} sensitive read-only capabilities are limited to sanitized structural summaries.`);
   }
-  const missingSetupEvidence = Number(setupCollectionReview?.missingRecordCount ?? 0) > 0
-    || Number(setupCollectionReview?.summary?.capabilities?.missing ?? 0) > 0
-    || Number(setupCollectionReview?.summary?.intents?.missing ?? 0) > 0;
+  const missingSetupEvidence = setupReviewHasActionableMissingEvidence(setupCollectionReview);
   if (missingSetupEvidence) {
     reasons.push('Some capabilities still lack confirmation or capability-level evidence.');
   }

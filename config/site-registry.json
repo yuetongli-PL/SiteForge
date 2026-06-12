@@ -71,10 +71,36 @@
     },
     "moodyz.com": {
       "canonicalBaseUrl": "https://moodyz.com/works/date",
-      "repoSkillDir": "skills/moodyz-works",
+      "siteArchetype": "catalog-detail",
       "host": "moodyz.com",
       "siteKey": "moodyz",
-      "adapterId": "moodyz"
+      "adapterId": "moodyz",
+      "repoSkillDir": "skills/moodyz",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "home",
+          "release-listings",
+          "reserve-listings",
+          "genre-directory",
+          "label-directory",
+          "person-directory",
+          "search",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
+      }
     },
     "jable.tv": {
       "canonicalBaseUrl": "https://jable.tv/",
@@ -114,22 +140,122 @@
       },
       "rankingQueryEntrypoint": "src/entrypoints/sites/jable-ranking.mjs"
     },
+    "123av.com": {
+      "canonicalBaseUrl": "https://123av.com/zh/dm9",
+      "siteArchetype": "catalog-detail",
+      "host": "123av.com",
+      "siteKey": "123av",
+      "adapterId": "123av",
+      "repoSkillDir": "skills/123av",
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "search-content"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "accessSignals": {
+        "notes": [
+          "Static public structure evidence was observed for the requested localized catalog route, catalog sort routes, video detail route templates, tags, actress index, search form, and compliance utility pages.",
+          "No public API signal was observed in sampled static routes; API promotion remains disabled until future replay evidence is adapter-validated."
+        ]
+      },
+      "routingNotes": [
+        "Treat 123av as an adult catalog-detail site with public read-only navigation only.",
+        "Do not promote individual video titles, descriptions, comments, thumbnails, or recommendation text as capabilities.",
+        "Do not expose download, media-resolution, login, upload, write, payment, account mutation, or private-message actions for this site."
+      ]
+    },
     "www.t-powers.co.jp": {
       "canonicalBaseUrl": "https://www.t-powers.co.jp/release/",
       "siteArchetype": "catalog-detail",
       "host": "www.t-powers.co.jp",
       "siteKey": "t-powers",
       "adapterId": "t-powers",
+      "repoSkillDir": "skills/t-powers",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
-        "navigate-to-utility-page"
+        "navigate-to-utility-page",
+        "search-content",
+        "switch-in-page-state"
       ],
       "accessSignals": {
         "notes": [
           "Browser Bridge captured release, talent, topic, blog, contact, and event routes; company and root routes showed challenge surfaces."
         ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "release-listings",
+          "person-directory",
+          "topic-directory",
+          "event-media",
+          "utility-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
+      }
+    },
+    "so-agent.jp": {
+      "canonicalBaseUrl": "http://so-agent.jp/",
+      "siteArchetype": "catalog-detail",
+      "host": "so-agent.jp",
+      "siteKey": "so-agent",
+      "adapterId": "so-agent",
+      "repoSkillDir": "skills/so-agent",
+      "robotsUnavailableFallback": {
+        "status": "enabled",
+        "reasonCode": "robots-unavailable",
+        "usePublicRouteTemplates": true,
+        "scope": "public-read-only-known-routes"
+      },
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-utility-page"
+      ],
+      "accessSignals": {
+        "notes": [
+          "Public structural audit observed root, model index, model profile, news, company, and recruit routes. robots.txt and sitemap.xml returned 404 in this environment; no public API or search form was observed."
+        ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "home",
+          "person-directory",
+          "ranking-lists",
+          "utility-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
       }
     },
     "www.8man.jp": {
@@ -160,13 +286,25 @@
       "host": "dahlia-av.jp",
       "siteKey": "dahlia",
       "adapterId": "dahlia",
+      "repoSkillDir": "skills/dahlia",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content"
-      ]
+        "navigate-to-utility-page"
+      ],
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "release-listings",
+          "person-directory",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
+      }
     },
     "www.sod.co.jp": {
       "canonicalBaseUrl": "https://www.sod.co.jp/newreleases/archive/",
@@ -174,13 +312,31 @@
       "host": "www.sod.co.jp",
       "siteKey": "sod",
       "adapterId": "sod",
+      "repoSkillDir": "skills/sod",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
         "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content"
-      ]
+        "navigate-to-utility-page"
+      ],
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "home",
+          "release-listings",
+          "genre-directory",
+          "label-directory",
+          "maker-directory",
+          "series-directory",
+          "person-directory",
+          "event-media",
+          "special-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
+      }
     },
     "s1s1s1.com": {
       "canonicalBaseUrl": "https://s1s1s1.com/top",
@@ -188,6 +344,7 @@
       "host": "s1s1s1.com",
       "siteKey": "s1",
       "adapterId": "s1",
+      "repoSkillDir": "skills/s1",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
@@ -204,6 +361,23 @@
         "notes": [
           "Browser Bridge saw a challenge on /top and no captured route summary; do not bypass challenge surfaces."
         ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "home",
+          "release-listings",
+          "reserve-listings",
+          "genre-directory",
+          "series-directory",
+          "person-directory",
+          "search",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
       }
     },
     "attackers.net": {
@@ -212,6 +386,7 @@
       "host": "attackers.net",
       "siteKey": "attackers",
       "adapterId": "attackers",
+      "repoSkillDir": "skills/attackers",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
@@ -228,6 +403,24 @@
         "notes": [
           "Browser Bridge saw a challenge on /top and no captured route summary; do not bypass challenge surfaces."
         ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "home",
+          "release-listings",
+          "reserve-listings",
+          "genre-directory",
+          "series-directory",
+          "label-directory",
+          "person-directory",
+          "search",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
       }
     },
     "www.km-produce.com": {
@@ -236,6 +429,7 @@
       "host": "www.km-produce.com",
       "siteKey": "km-produce",
       "adapterId": "km-produce",
+      "repoSkillDir": "skills/km-produce",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
@@ -243,7 +437,25 @@
         "navigate-to-utility-page",
         "search-content",
         "switch-in-page-state"
-      ]
+      ],
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "release-listings",
+          "ranking-lists",
+          "topic-directory",
+          "genre-directory",
+          "label-directory",
+          "person-directory",
+          "event-media",
+          "search",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
+      }
     },
     "rookie-av.jp": {
       "canonicalBaseUrl": "https://rookie-av.jp/works/list/release",
@@ -251,6 +463,7 @@
       "host": "rookie-av.jp",
       "siteKey": "rookie",
       "adapterId": "rookie",
+      "repoSkillDir": "skills/rookie",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
@@ -265,6 +478,22 @@
         "notes": [
           "Browser Bridge captured release list and search routes; detail and reserve routes showed challenge surfaces."
         ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "release-listings",
+          "reserve-listings",
+          "genre-directory",
+          "series-directory",
+          "person-directory",
+          "search",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
       }
     },
     "madonna-av.com": {
@@ -273,6 +502,7 @@
       "host": "madonna-av.com",
       "siteKey": "madonna",
       "adapterId": "madonna",
+      "repoSkillDir": "skills/madonna",
       "capabilityFamilies": [
         "navigate-to-author",
         "navigate-to-category",
@@ -287,6 +517,24 @@
         "notes": [
           "Browser Bridge captured release list and search routes; detail and reserve routes showed challenge surfaces."
         ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "release-listings",
+          "reserve-listings",
+          "genre-directory",
+          "series-directory",
+          "label-directory",
+          "person-directory",
+          "special-pages",
+          "search",
+          "utility-pages",
+          "detail-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": []
       }
     },
     "www.maxing.jp": {
@@ -309,15 +557,28 @@
       "host": "www.dogma.co.jp",
       "siteKey": "dogma",
       "adapterId": "dogma",
+      "repoSkillDir": "skills/dogma",
       "capabilityFamilies": [
         "navigate-to-category",
         "navigate-to-content",
-        "navigate-to-utility-page",
-        "search-content"
+        "navigate-to-utility-page"
       ],
       "accessSignals": {
         "notes": [
           "Browser Bridge captured only the public download utility page in this run; no executable read-only endpoints were observed."
+        ]
+      },
+      "businessCoverageModel": {
+        "schemaVersion": 1,
+        "strategy": "systematic-public-route-business-area-seeds",
+        "requiredAreas": [
+          "home",
+          "sitemap",
+          "utility-pages"
+        ],
+        "evidenceBoundary": "public route templates, sitemap routes, and sanitized structure summaries only",
+        "notes": [
+          "Only public root, download utility, and sitemap XML routes are verified in current evidence; richer catalog areas remain unclaimed."
         ]
       }
     },
@@ -429,9 +690,571 @@
       "adapterId": "xiaohongshu",
       "repoSkillDir": "skills/xiaohongshu-explore"
     },
+    "www.zhihu.com": {
+      "canonicalBaseUrl": "https://www.zhihu.com/",
+      "siteArchetype": "social-content",
+      "host": "www.zhihu.com",
+      "siteKey": "zhihu",
+      "adapterId": "zhihu",
+      "siteAccessStatus": "blocked_live_robots_disallowed",
+      "genericLiveBuild": {
+        "status": "blocked",
+        "reasonCode": "robots-disallowed",
+        "reason": "www.zhihu.com robots.txt disallows generic SiteForge live crawling for User-Agent: *. Do not bypass robots, login walls, risk controls, or platform access controls.",
+        "alternativeAccessPaths": [
+          "Use an official/API or platform-authorized integration with documented permission, rate, and data-use boundaries.",
+          "Use a user-authorized bounded Zhihu SiteAdapter workflow with explicit consent, sanitized structure summaries, and no raw credential, cookie, browser profile, storage, or private body persistence.",
+          "Use deterministic local HTTP validation for CI or documentation, clearly labeled as not live Zhihu support."
+        ]
+      },
+      "auth": {
+        "required": true,
+        "mode": "browser",
+        "authCheckUrl": "https://www.zhihu.com/",
+      "authRoutes": [
+        "https://www.zhihu.com/",
+        "https://www.zhihu.com/follow",
+        "https://www.zhihu.com/hot",
+        "https://www.zhihu.com/drama/feed",
+        "https://www.zhihu.com/notifications",
+        "https://www.zhihu.com/people/zhihuadmin",
+        "https://www.zhihu.com/people/zhihuadmin/activities",
+        "https://www.zhihu.com/people/zhihuadmin/answers",
+        "https://www.zhihu.com/people/zhihuadmin/asks",
+        "https://www.zhihu.com/people/zhihuadmin/posts",
+        "https://www.zhihu.com/people/zhihuadmin/columns",
+        "https://www.zhihu.com/people/zhihuadmin/pins",
+        "https://www.zhihu.com/people/zhihuadmin/collections",
+        "https://www.zhihu.com/people/zhihuadmin/zvideos",
+        "https://www.zhihu.com/people/zhihuadmin/following",
+        "https://www.zhihu.com/topic/19607535/hot",
+        "https://www.zhihu.com/topic/19607535/top-answers",
+        "https://www.zhihu.com/question/19550228",
+        "https://www.zhihu.com/question/19550228/answer/25354498",
+        "https://www.zhihu.com/search?q=siteforge&type=content",
+          "https://www.zhihu.com/search?q=siteforge&type=people",
+          "https://www.zhihu.com/search?q=siteforge&type=content&sort=latest",
+          "https://www.zhihu.com/search?q=siteforge&type=content&filter=media"
+        ],
+        "publicRevisitRoutes": [
+          "https://www.zhihu.com/"
+        ],
+        "evidencePersistence": "sanitized-structure-only",
+        "sessionMaterialPersistence": "forbidden"
+      },
+      "capabilityFamilies": [
+        "disabled-social-mutation",
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
+        "query-account-profile",
+    "query-comment-thread",
+    "query-media-content",
+    "query-notifications",
+        "query-social-content",
+        "query-social-relations",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "zhihu-auth-home",
+          "path": "/",
+          "pageType": "home",
+          "businessArea": "home-feed",
+          "capabilityIds": [
+            "list-recommended-timeline-posts",
+            "list-followed-updates"
+          ],
+          "tabStates": [
+            "recommended",
+            "following"
+          ],
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "zhihu-auth-follow",
+          "path": "/follow",
+          "pageType": "author-list-page",
+          "businessArea": "social-relations",
+          "capabilityIds": [
+            "list-followed-users",
+            "list-followed-updates"
+          ],
+          "tabStates": [
+            "following"
+          ],
+          "capabilityFamilies": [
+            "query-social-content",
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+    {
+      "id": "zhihu-hot",
+      "path": "/hot",
+          "pageType": "category-page",
+          "businessArea": "hot-ranking",
+          "capabilityIds": [
+            "list-hot-posts",
+            "open-category"
+          ],
+          "tabStates": [
+            "hot"
+          ],
+          "capabilityFamilies": [
+            "navigate-to-category",
+            "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-hot-broadcasts",
+      "path": "/drama/feed",
+      "pageType": "category-page",
+      "businessArea": "hot-broadcasts",
+      "capabilityIds": [
+        "list-hot-broadcasts"
+      ],
+      "tabStates": [
+        "hot"
+      ],
+      "capabilityFamilies": [
+        "query-media-content",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+        {
+          "id": "zhihu-search",
+          "path": "/search",
+          "samplePath": "/search?q=siteforge&type=content",
+          "pageType": "search-results-page",
+          "businessArea": "search",
+          "capabilityIds": [
+            "search-posts",
+            "search-users",
+            "search-latest-posts",
+            "search-media-posts",
+            "read-search-result-summaries",
+            "open-search-result-detail"
+          ],
+          "tabStates": [
+            "content",
+            "people",
+            "latest",
+            "media"
+          ],
+          "capabilityFamilies": [
+            "search-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "zhihu-notifications",
+          "path": "/notifications",
+          "pageType": "notification-page",
+          "businessArea": "notifications",
+          "capabilityIds": [
+            "list-notifications"
+          ],
+          "tabStates": [
+            "all"
+          ],
+          "capabilityFamilies": [
+            "query-notifications"
+          ],
+          "seedable": false
+        },
+    {
+      "id": "zhihu-profile-template",
+      "samplePath": "/people/zhihuadmin",
+      "pathTemplate": "/people/{urlToken}",
+          "pageType": "author-page",
+          "businessArea": "profile",
+          "capabilityIds": [
+            "account-info",
+            "list-profile-content",
+            "open-author",
+            "profile-content",
+            "read-media-summary",
+            "read-user-recent-posts"
+          ],
+          "tabStates": [
+            "profile",
+            "posts",
+            "media"
+          ],
+          "capabilityFamilies": [
+            "query-account-profile",
+            "query-social-content"
+          ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-activities-template",
+      "samplePath": "/people/zhihuadmin/activities",
+      "pathTemplate": "/people/{urlToken}/activities",
+      "pageType": "author-page",
+      "businessArea": "profile-activities",
+      "capabilityIds": [
+        "list-user-activities"
+      ],
+      "tabStates": [
+        "activities"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-answers-template",
+      "samplePath": "/people/zhihuadmin/answers",
+      "pathTemplate": "/people/{urlToken}/answers",
+      "pageType": "author-page",
+      "businessArea": "profile-answers",
+      "capabilityIds": [
+        "list-user-answers"
+      ],
+      "tabStates": [
+        "answers"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-questions-template",
+      "samplePath": "/people/zhihuadmin/asks",
+      "pathTemplate": "/people/{urlToken}/asks",
+      "pageType": "author-page",
+      "businessArea": "profile-questions",
+      "capabilityIds": [
+        "list-user-questions"
+      ],
+      "tabStates": [
+        "questions"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-articles-template",
+      "samplePath": "/people/zhihuadmin/posts",
+      "pathTemplate": "/people/{urlToken}/posts",
+      "pageType": "author-page",
+      "businessArea": "profile-articles",
+      "capabilityIds": [
+        "list-user-articles"
+      ],
+      "tabStates": [
+        "articles"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-columns-template",
+      "samplePath": "/people/zhihuadmin/columns",
+      "pathTemplate": "/people/{urlToken}/columns",
+      "pageType": "author-page",
+      "businessArea": "profile-columns",
+      "capabilityIds": [
+        "list-user-columns"
+      ],
+      "tabStates": [
+        "columns"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-pins-template",
+      "samplePath": "/people/zhihuadmin/pins",
+      "pathTemplate": "/people/{urlToken}/pins",
+      "pageType": "author-page",
+      "businessArea": "profile-pins",
+      "capabilityIds": [
+        "list-user-pins"
+      ],
+      "tabStates": [
+        "pins"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-collections-template",
+      "samplePath": "/people/zhihuadmin/collections",
+      "pathTemplate": "/people/{urlToken}/collections",
+      "pageType": "author-page",
+      "businessArea": "profile-collections",
+      "capabilityIds": [
+        "list-user-collections"
+      ],
+      "tabStates": [
+        "collections"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-videos-template",
+      "samplePath": "/people/zhihuadmin/zvideos",
+      "pathTemplate": "/people/{urlToken}/zvideos",
+      "pageType": "author-page",
+      "businessArea": "profile-videos",
+      "capabilityIds": [
+        "list-user-videos"
+      ],
+      "tabStates": [
+        "videos"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-media-content",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-profile-following-template",
+      "samplePath": "/people/zhihuadmin/following",
+      "pathTemplate": "/people/{urlToken}/following",
+      "pageType": "author-list-page",
+      "businessArea": "profile-following",
+      "capabilityIds": [
+        "list-user-following"
+      ],
+      "tabStates": [
+        "following"
+      ],
+      "capabilityFamilies": [
+        "query-account-profile",
+        "query-social-relations"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-topic-discussions-template",
+      "samplePath": "/topic/19607535/hot",
+      "pathTemplate": "/topic/{topicId}/hot",
+      "pageType": "category-page",
+      "businessArea": "topic-discussions",
+      "capabilityIds": [
+        "list-topic-discussions"
+      ],
+      "tabStates": [
+        "discussions"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-category",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+    {
+      "id": "zhihu-topic-featured-template",
+      "samplePath": "/topic/19607535/top-answers",
+      "pathTemplate": "/topic/{topicId}/top-answers",
+      "pageType": "category-page",
+      "businessArea": "topic-featured",
+      "capabilityIds": [
+        "list-topic-featured"
+      ],
+      "tabStates": [
+        "featured"
+      ],
+      "capabilityFamilies": [
+        "navigate-to-category",
+        "query-social-content"
+      ],
+      "seedable": false
+    },
+        {
+          "id": "zhihu-question-template",
+          "samplePath": "/question/19550228",
+          "pathTemplate": "/question/{questionId}",
+          "pageType": "content-detail-page",
+          "businessArea": "question-detail",
+          "capabilityIds": [
+            "list-comment-thread",
+            "open-comment",
+            "open-post",
+            "view-question-detail",
+            "view-post-detail",
+            "view-post-replies"
+          ],
+          "tabStates": [
+            "detail"
+          ],
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-comment-thread",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "zhihu-answer-template",
+          "samplePath": "/question/19550228/answer/25354498",
+          "pathTemplate": "/question/{questionId}/answer/{answerId}",
+          "pageType": "content-detail-page",
+          "businessArea": "answer-detail",
+          "capabilityIds": [
+            "list-comment-thread",
+            "open-comment",
+            "open-post",
+            "view-answer-detail",
+            "view-post-detail",
+            "view-post-replies"
+          ],
+          "tabStates": [
+            "detail"
+          ],
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-comment-thread",
+            "query-social-content"
+          ],
+          "seedable": false
+        }
+      ],
+      "routingNotes": [
+        "Do not route www.zhihu.com through generic live URL-to-Skill collection; robots disallows generic crawling for this environment.",
+        "Authenticated Zhihu capability claims require user-authorized bounded browser evidence such as route templates, page types, visible item counts, control types, and structure hashes, not raw session material or private body text.",
+        "Do not promote answer bodies, article bodies, comments, recommendations, or page fragments as capabilities; only route-level read abilities and sanitized summaries are eligible.",
+        "Keep answering, article publishing, commenting, voting, liking, collecting, following, deleting, messaging, account mutation, payment, and upload operations disabled unless a separate governed write contract is explicitly reviewed."
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "robots.txt User-Agent: * Disallow: /",
+          "login prompts and risk-control surfaces",
+          "authenticated feed, follow, notifications, settings, publishing, voting, collecting, messaging, and account surfaces"
+        ],
+        "notes": [
+          "Generic public crawl is not sufficient proof for Zhihu capability coverage; prefer authorized bounded adapter evidence or official/API metadata."
+        ]
+      },
+      "repoSkillDir": "skills/zhihu"
+    },
+    "weibo.com": {
+      "canonicalBaseUrl": "https://weibo.com/",
+      "siteArchetype": "social-content",
+      "host": "weibo.com",
+      "siteKey": "weibo",
+      "adapterId": "weibo",
+      "siteAccessStatus": "blocked_live_robots_disallowed",
+      "genericLiveBuild": {
+        "status": "blocked",
+        "reasonCode": "robots-disallowed",
+        "reason": "weibo.com robots.txt disallows the generic SiteForge live crawler from root-level public collection. Do not bypass robots, login walls, risk controls, or platform access controls.",
+        "alternativeAccessPaths": [
+          "Use an official/API or platform-authorized integration with terms-compatible access and documented rate, permission, and data-use boundaries.",
+          "Use a user-authorized bounded Weibo SiteAdapter workflow with explicit consent, sanitized structure summaries, and no raw credential, cookie, browser profile, storage, or private body persistence.",
+          "Use deterministic local HTTP validation for CI or documentation, clearly labeled as not live Weibo support."
+        ]
+      },
+      "capabilityFamilies": [
+        "navigate-to-author",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
+        "query-account-profile",
+        "query-notifications",
+        "query-social-content",
+        "query-social-relations",
+        "search-content"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "repost",
+        "read_dm",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "routingNotes": [
+        "Do not route weibo.com through generic live URL-to-Skill collection; root-level public collection is blocked by robots for the generic crawler.",
+        "Authenticated Weibo capability claims require user-authorized bounded evidence such as route templates, page types, visible item counts, control types, and structure hashes, not raw session material.",
+        "Keep posting, commenting, reposting, following, liking, deleting, messaging, account mutation, payment, and upload operations disabled unless a separate governed write contract is explicitly reviewed."
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "robots.txt Disallow: / for generic crawlers",
+          "logged-out visitor redirect to passport.weibo.com",
+          "login, risk-control, posting, messaging, and account surfaces"
+        ],
+        "notes": [
+          "Generic public crawl is not sufficient proof for Weibo capability coverage; prefer authorized bounded adapter evidence and official/API metadata."
+        ]
+      },
+      "repoSkillDir": "skills/weibo"
+    },
     "x.com": {
       "canonicalBaseUrl": "https://x.com/",
-      "siteArchetype": "catalog-detail",
+      "siteArchetype": "social-content",
       "host": "x.com",
       "siteKey": "x",
       "adapterId": "x",
@@ -447,7 +1270,30 @@
         ]
       },
       "downloadEntrypoint": "src/entrypoints/sites/x-action.mjs",
-      "downloadSessionRequirement": "optional",
+      "downloadSessionRequirement": "required",
+      "auth": {
+        "required": true,
+        "mode": "browser",
+        "authCheckUrl": "https://x.com/home",
+        "authRoutes": [
+          "https://x.com/i/bookmarks",
+          "https://x.com/i/lists",
+          "https://x.com/explore",
+          "https://x.com/following",
+          "https://x.com/home",
+          "https://x.com/notifications",
+          "https://x.com/OpenAI",
+          "https://x.com/OpenAI/media",
+          "https://x.com/OpenAI/status/1947628731142648113",
+          "https://x.com/OpenAI/with_replies",
+          "https://x.com/search?q=siteforge&src=typed_query"
+        ],
+        "publicRevisitRoutes": [
+          "https://x.com/"
+        ],
+        "evidencePersistence": "sanitized-structure-only",
+        "sessionMaterialPersistence": "forbidden"
+      },
       "downloadTaskTypes": [
         "social-archive",
         "media-bundle"
@@ -486,13 +1332,165 @@
       "templateVersion": 3,
       "capabilityFamilies": [
         "download-content",
+        "navigate-to-author",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
         "query-account-profile",
+        "query-notifications",
         "query-social-content",
-        "query-social-relations"
+        "query-social-relations",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "repost",
+        "read_dm",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "x-auth-home",
+          "path": "/home",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-following-feed",
+          "path": "/following",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-content",
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-search",
+          "path": "/search",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-notifications",
+          "path": "/notifications",
+          "pageType": "notification-page",
+          "capabilityFamilies": [
+            "query-notifications"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-bookmarks",
+          "path": "/i/bookmarks",
+          "pageType": "history-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-auth-lists",
+          "path": "/i/lists",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile",
+          "pathTemplate": "/{account}",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-account-profile",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-replies",
+          "pathTemplate": "/{account}/with_replies",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-media",
+          "pathTemplate": "/{account}/media",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-highlights",
+          "pathTemplate": "/{account}/highlights",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-following",
+          "pathTemplate": "/{account}/following",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-profile-followers",
+          "pathTemplate": "/{account}/followers",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "x-status-detail",
+          "pathTemplate": "/{account}/status/{statusId}",
+          "pageType": "book-detail-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        }
       ],
       "routingNotes": [
         "Do not route x.com through generic live URL-to-Skill collection; root-level public collection is blocked by robots for the generic crawler.",
-        "Keep any future X enablement on official/API, platform-authorized, user-authorized bounded SiteAdapter, or deterministic local HTTP validation paths."
+        "Authenticated X capability claims require user-authorized bounded browser evidence such as route templates, page types, visible item counts, control types, and structure hashes, not raw session material.",
+        "Keep posting, replying, reposting, following, liking, deleting, messaging, account mutation, payment, subscription, and upload operations disabled unless a separate governed write contract is explicitly reviewed."
       ],
       "accessSignals": {
         "restrictionSignals": [
@@ -507,12 +1505,35 @@
     },
     "www.instagram.com": {
       "canonicalBaseUrl": "https://www.instagram.com/",
-      "siteArchetype": "catalog-detail",
+      "siteArchetype": "social-content",
       "host": "www.instagram.com",
       "siteKey": "instagram",
       "adapterId": "instagram",
       "downloadEntrypoint": "src/entrypoints/sites/instagram-action.mjs",
       "downloadSessionRequirement": "required",
+      "auth": {
+        "required": true,
+        "mode": "browser",
+        "authCheckUrl": "https://www.instagram.com/",
+        "authRoutes": [
+          "https://www.instagram.com/",
+          "https://www.instagram.com/accounts/activity/",
+          "https://www.instagram.com/accounts/edit/",
+          "https://www.instagram.com/direct/inbox/",
+          "https://www.instagram.com/explore/",
+          "https://www.instagram.com/explore/search/",
+          "https://www.instagram.com/openai/",
+          "https://www.instagram.com/openai/followers/",
+          "https://www.instagram.com/openai/following/",
+          "https://www.instagram.com/openai/reels/",
+          "https://www.instagram.com/openai/tagged/"
+        ],
+        "publicRevisitRoutes": [
+          "https://www.instagram.com/"
+        ],
+        "evidencePersistence": "sanitized-structure-only",
+        "sessionMaterialPersistence": "forbidden"
+      },
       "downloadTaskTypes": [
         "social-archive",
         "media-bundle"
@@ -521,29 +1542,25 @@
         "social-archive",
         "media-bundle"
       ],
-      "availableDownloadTaskTypes": [],
-      "blockedDownloadTaskTypes": [
-        "social-archive",
+      "availableDownloadTaskTypes": [
         "media-bundle"
       ],
+      "blockedDownloadTaskTypes": [],
       "downloadSupport": {
-        "status": "blocked",
-        "supported": false,
+        "status": "supported",
+        "supported": true,
         "taskTypes": [
-          "social-archive",
           "media-bundle"
         ],
         "declaredTaskTypes": [
           "social-archive",
           "media-bundle"
         ],
-        "availableTaskTypes": [],
-        "blockedTaskTypes": [
-          "social-archive",
+        "availableTaskTypes": [
           "media-bundle"
         ],
-        "reasonCode": "download-layer-removed",
-        "reason": "Social media download routing records a blocked report only; no media fetch or archive execution is exposed."
+        "blockedTaskTypes": [],
+        "reason": "Governed Instagram action tasks may download discovered image/video binaries into local media artifacts when media download is enabled."
       },
       "repoSkillDir": "skills/instagram",
       "scriptLanguage": "python",
@@ -551,10 +1568,191 @@
       "templateVersion": 3,
       "capabilityFamilies": [
         "download-content",
+        "navigate-to-author",
+        "navigate-to-category",
+        "navigate-to-content",
+        "navigate-to-utility-page",
+        "open-auth-page",
         "query-account-profile",
+        "query-notifications",
         "query-social-content",
-        "query-social-relations"
-      ]
+        "query-social-relations",
+        "search-content",
+        "switch-in-page-state"
+      ],
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
+      ],
+      "publicRouteTemplates": [
+        {
+          "id": "instagram-auth-home",
+          "path": "/",
+          "pageType": "home",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-auth-explore",
+          "path": "/explore/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-auth-search",
+          "path": "/explore/search/",
+          "pageType": "search-results-page",
+          "capabilityFamilies": [
+            "search-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-auth-notifications",
+          "path": "/accounts/activity/",
+          "pageType": "notification-page",
+          "capabilityFamilies": [
+            "query-notifications"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-login",
+          "path": "/accounts/login/",
+          "pageType": "auth-page",
+          "capabilityFamilies": [
+            "open-auth-page"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile",
+          "pathTemplate": "/{account}/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-account-profile",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-reels",
+          "pathTemplate": "/{account}/reels/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-tagged",
+          "pathTemplate": "/{account}/tagged/",
+          "pageType": "author-page",
+          "capabilityFamilies": [
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-following",
+          "pathTemplate": "/{account}/following/",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-profile-followers",
+          "pathTemplate": "/{account}/followers/",
+          "pageType": "author-list-page",
+          "capabilityFamilies": [
+            "query-social-relations"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-post-detail",
+          "pathTemplate": "/p/{shortcode}/",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-reel-detail",
+          "pathTemplate": "/reel/{shortcode}/",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-story-detail",
+          "pathTemplate": "/stories/{account}/{storyId}/",
+          "pageType": "content-detail-page",
+          "capabilityFamilies": [
+            "navigate-to-content",
+            "query-social-content"
+          ],
+          "seedable": false
+        },
+        {
+          "id": "instagram-hashtag",
+          "pathTemplate": "/explore/tags/{tag}/",
+          "pageType": "category-page",
+          "capabilityFamilies": [
+            "navigate-to-category",
+            "query-social-content"
+          ],
+          "seedable": false
+        }
+      ],
+      "routingNotes": [
+        "Model Instagram as an authenticated social-content site, not a book or generic catalog site.",
+        "Authenticated Instagram capability claims require a user-authorized bounded browser session and sanitized route, page type, count, control, or structure-hash evidence only.",
+        "Keep posting, commenting, replying, following, liking, deleting, messaging, profile edits, upload, payment, account mutation, and private-message read actions disabled unless a separate governed write or private-data contract is reviewed."
+      ],
+      "accessSignals": {
+        "restrictionSignals": [
+          "logged-out dynamic shell",
+          "login and risk-control surfaces",
+          "private direct-message and account settings surfaces",
+          "write, upload, follow, like, comment, delete, payment, and account mutation controls"
+        ],
+        "notes": [
+          "Generic logged-out crawl is not sufficient proof for Instagram capability coverage; use user-authorized bounded SiteAdapter evidence and never persist raw session material."
+        ]
+      }
     },
     "www.reddit.com": {
       "canonicalBaseUrl": "https://www.reddit.com/",
@@ -565,6 +1763,7 @@
       "host": "www.reddit.com",
       "siteKey": "reddit",
       "adapterId": "reddit",
+      "repoSkillDir": "skills/reddit",
       "downloadSessionRequirement": "required",
       "downloadTaskTypes": [
         "social-archive",
@@ -603,11 +1802,65 @@
         "navigate-to-category",
         "navigate-to-content",
         "navigate-to-utility-page",
+        "open-auth-page",
         "query-account-profile",
+        "query-comment-thread",
+        "query-community-metadata",
+        "query-media-content",
+        "query-moderation-content",
+        "query-notifications",
+        "query-private-messages",
         "query-social-content",
         "query-social-relations",
+        "query-wiki-content",
         "search-content",
         "switch-in-page-state"
+      ],
+      "auth": {
+        "required": true,
+        "mode": "browser",
+        "authCheckUrl": "https://www.reddit.com/subreddits/mine/",
+        "authRoutes": [
+          "https://www.reddit.com/",
+          "https://www.reddit.com/search/?q=siteforge&type=link",
+          "https://www.reddit.com/subreddits/",
+          "https://www.reddit.com/subreddits/mine/",
+          "https://www.reddit.com/message/inbox/",
+          "https://www.reddit.com/notifications",
+          "https://www.reddit.com/settings/",
+          "https://www.reddit.com/user/me/saved/",
+          "https://www.reddit.com/r/SiteForge/",
+          "https://www.reddit.com/r/SiteForge/search/?q=siteforge&restrict_sr=1"
+        ],
+        "publicRevisitRoutes": [
+          "https://www.reddit.com/",
+          "https://www.reddit.com/search/?q=siteforge&type=link",
+          "https://www.reddit.com/subreddits/"
+        ],
+        "evidencePersistence": "sanitized-structure-only",
+        "sessionMaterialPersistence": "forbidden"
+      },
+      "disabledActionKinds": [
+        "change_2fa",
+        "change_email",
+        "change_password",
+        "change_payment",
+        "change_security_settings",
+        "create_dm_draft",
+        "create_post_draft",
+        "create_reply_draft",
+        "delete",
+        "edit_profile",
+        "follow",
+        "like",
+        "payment",
+        "publish",
+        "publish_reply",
+        "read_dm",
+        "repost",
+        "send_dm",
+        "unfollow",
+        "upload"
       ],
       "routingNotes": [
         "Use a user-authorized bounded Reddit SiteAdapter workflow with explicit consent, sanitized SessionView summaries, and no raw credential, cookie, or browser profile persistence.",

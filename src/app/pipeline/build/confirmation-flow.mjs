@@ -246,5 +246,11 @@ export function confirmationCapabilitiesForGroup(capabilities = /** @type {any[]
 }
 
 export function shouldSkipInStrictPrivacy(capability = /** @type {any} */ ({})) {
-  return isSensitiveReadCapability(capability);
+  const evidenceModel = asLowerText(capability.evidenceModel ?? capability.evidence_model);
+  const savedMaterial = Array.isArray(capability.saved_material)
+    ? capability.saved_material.map(asLowerText)
+    : [asLowerText(capability.saved_material ?? capability.savedMaterial)];
+  const routeAccessOnly = evidenceModel === 'authenticated_route_only'
+    && savedMaterial.includes('sanitized_route_access_only');
+  return isSensitiveReadCapability(capability) && !routeAccessOnly;
 }
